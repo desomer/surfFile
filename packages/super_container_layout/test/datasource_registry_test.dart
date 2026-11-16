@@ -41,6 +41,10 @@ void main() {
   late List<DataProviderRequest> searches;
   late List<DataProviderRequest> mutations;
   Completer<void>? readGate;
+  Completer<void>? createGate;
+  Completer<void>? createStarted;
+  bool createReturnsEntity = true;
+  bool updateReturnsEntity = true;
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('datasource-registry-');
@@ -63,6 +67,10 @@ void main() {
     searches = [];
     mutations = [];
     readGate = null;
+    createGate = null;
+    createStarted = null;
+    createReturnsEntity = true;
+    updateReturnsEntity = true;
   });
 
   tearDown(() async {
@@ -99,7 +107,11 @@ void main() {
           mutations.add(request);
           final entity = {'id': 99, 'nom': 'Nouveau'};
           server.insert(0, entity);
-          return DataProviderResult(data: entity, raw: entity);
+          createStarted?.complete();
+          await createGate?.future;
+          return createReturnsEntity
+              ? DataProviderResult(data: entity, raw: entity)
+              : const DataProviderResult();
         },
       ),
     );
@@ -120,7 +132,9 @@ void main() {
         onExecute: (request) async {
           mutations.add(request);
           final entity = find(request.context['key'])..['nom'] = 'Modifié';
-          return DataProviderResult(data: [entity]);
+          return updateReturnsEntity
+              ? DataProviderResult(data: [entity])
+              : const DataProviderResult();
         },
       ),
     );
@@ -291,6 +305,81 @@ void main() {
         await datasources.run('clients', DatasourceCommand.delete);
         expect(await ids(), [1]);
         expect((await documentOf('clients'))['detail'], <String, Object?>{});
+      },
+    );
+
+    test(
+      'concurrent mutations are refused and local changes request refresh',
+      () async {
+        final datasources = store.datasources;
+        await datasources.run('clients', DatasourceCommand.search);
+        expect((await pageState()).needsRefresh, isFalse);
+
+        createGate = Completer<void>();
+        createStarted = Completer<void>();
+        final first = datasources.run('clients', DatasourceCommand.create);
+        await createStarted!.future;
+        final duplicate = await datasources.run(
+          'clients',
+          DatasourceCommand.create,
+          reportErrors: false,
+        );
+        expect(duplicate.phase, DataProviderPhase.error);
+        expect(duplicate.message, contains('est déjà en cours'));
+        expect(mutations, hasLength(1));
+
+        createGate!.complete();
+        expect((await first).phase, DataProviderPhase.success);
+        expect((await pageState()).needsRefresh, isTrue);
+        await datasources.run('clients', DatasourceCommand.search);
+        expect((await pageState()).needsRefresh, isFalse);
+      },
+    );
+
+    test(
+      'update rereads an entity omitted from the mutation response',
+      () async {
+        final datasources = store.datasources;
+        await datasources.run('clients', DatasourceCommand.search);
+        select(0);
+        await datasources.run('clients', DatasourceCommand.read);
+        updateReturnsEntity = false;
+
+        final status = await datasources.run(
+          'clients',
+          DatasourceCommand.update,
+        );
+
+        expect(status.phase, DataProviderPhase.success);
+        expect(status.message, isNull);
+        expect((await store.readArray('clients', 'rows')).first, {
+          'id': 1,
+          'nom': 'Modifié',
+        });
+        expect((await documentOf('clients'))['detail'], {
+          'id': 1,
+          'nom': 'Modifié',
+        });
+        expect((await pageState()).needsRefresh, isTrue);
+      },
+    );
+
+    test(
+      'successful create without an entity reports incomplete sync',
+      () async {
+        final datasources = store.datasources;
+        await datasources.run('clients', DatasourceCommand.search);
+        createReturnsEntity = false;
+
+        final status = await datasources.run(
+          'clients',
+          DatasourceCommand.create,
+          reportErrors: false,
+        );
+
+        expect(status.phase, DataProviderPhase.success);
+        expect(status.message, contains('synchronisation locale incomplète'));
+        expect((await pageState()).needsRefresh, isTrue);
       },
     );
 

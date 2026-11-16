@@ -585,6 +585,8 @@ class DatasourceRegistry extends ChangeNotifier
     runtime.mutation = command;
     try {
       return await action();
+    } on Object catch (error) {
+      return _fail(runtime, command, _messageOf(error), reportErrors);
     } finally {
       runtime.mutation = null;
       _rerunInvalidatedSearch(runtime);
@@ -1139,8 +1141,8 @@ class DatasourceRegistry extends ChangeNotifier
     if (row == null) return false;
     final list = _targetOf(config, DatasourceOperation.search);
     final index = row.index;
-    if (list != null && index != null) {
-      if (insert != null && live()) {
+    if (list != null) {
+      if (insert != null && index != null && live()) {
         store
             .bindingOf(list.repositoryId!)
             .array(_canonical(list.path))
@@ -1214,6 +1216,9 @@ class DatasourceRegistry extends ChangeNotifier
           : 'la relecture par Read n’a retourné aucune entité de même clé.';
     }
     final message = '$_incomplete$reason';
+    if (config.search != null) {
+      await _listChanged(config, runtime, 0, live);
+    }
     if (reportErrors && live()) store.reportBindingError(message);
     return message;
   }
@@ -1420,8 +1425,8 @@ class DatasourceRegistry extends ChangeNotifier
             store
                 .bindingOf(list.repositoryId!)
                 .removed(_canonical(list.path), const [], removed);
-            await _listChanged(config, runtime, -1, live);
           }
+          await _listChanged(config, runtime, removed >= 0 ? -1 : 0, live);
         }
         if (await _writeDetail(
           config,

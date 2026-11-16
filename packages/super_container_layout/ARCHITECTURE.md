@@ -89,7 +89,15 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 - L'entité courante est la ligne du `JsonListScope` (si `arrayTemplate` est le
   tableau de la recherche), sinon la ligne sélectionnée, sinon le détail
   Read. Les réponses périmées sont ignorées ; l'état observable est
-  `stateOf(id)` (`DatasourceStatus`).
+  `stateOf(id)` (`DatasourceStatus`). Après les mutations, le champ
+  `needsRefresh` de `DatasourcePageState` signale qu'une recherche explicite
+  est nécessaire pour réconcilier filtrage, ordre et pages ; le total n'est
+  ajusté que lorsqu'une ligne est effectivement insérée ou retirée.
+- Create / Update sans entité retournée tentent une relecture par Read quand
+  une clé est connue. En l'absence de réponse exploitable, la mutation distante
+  reste réussie et l'état indique « synchronisation locale incomplète ».
+  Une seconde mutation concurrente sur la même datasource est refusée plutôt
+  que mise en file d'attente.
 - Le comportement `datasource` (`DatasourceAction`) persiste seulement
   `datasourceId`, `command` et, pour le tri, `field`/`direction`. Une
   datasource utilisée par l'`Appearance` et un provider utilisé par une

@@ -1079,7 +1079,7 @@ await store.datasources.run('clients', DatasourceCommand.nextPage);
 
 - **Search** écrit les lignes dans le `target` du provider Search et l'état de
   la recherche (`page`, `pageSize`, `offset`, `total`, `pageCount`,
-  `hasNext`, `hasPrevious`, `cursor`, `nextCursor`, `sort`) dans
+  `hasNext`, `hasPrevious`, `cursor`, `nextCursor`, `sort`, `needsRefresh`) dans
   `search.state`, exclu des paramètres du filtre. Pagination par page
   (`page`/`size`, première page 0 ou 1), par position (`offset`/`limit`) ou
   par curseur (`cursor`/`limit`, `nextCursorPath`) ; `totalPath` est
@@ -1099,8 +1099,15 @@ await store.datasources.run('clients', DatasourceCommand.nextPage);
 - Après **Create**, l'entité retournée est insérée au début ou à la fin de la
   liste et sélectionnée ; **Read** écrit le détail (`target` du provider
   Read) ; **Update** remplace la ligne et le détail de même clé ; **Delete**
-  retire la ligne et vide le détail correspondant. Sans entité dans la
-  réponse, la datasource relit l'entité ou relance la recherche.
+  retire la ligne et vide le détail correspondant. Une réponse Create ou
+  Update sans entité provoque une relecture par Read si possible ; si elle
+  échoue ou n'est pas configurée, l'opération distante reste réussie mais
+  l'état expose une synchronisation locale incomplète. Les mutations locales
+  marquent `search.state.needsRefresh` : la liste peut diverger du filtrage,
+  de l'ordre ou des pages du serveur. L'application peut alors lancer
+  `DatasourceCommand.refresh` explicitement.
+- Une seconde mutation pendant une mutation en cours est refusée avec un
+  message explicite ; les mutations ne sont pas mises en file d'attente.
 
 Commandes : `search`, `refresh`, `firstPage`, `previousPage`, `nextPage`,
 `loadMore` (ajoute la page suivante sans doublon), `sort`, `create`, `read`,
