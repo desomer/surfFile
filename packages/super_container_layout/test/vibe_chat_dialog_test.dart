@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,9 +13,12 @@ import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
+import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_list_view.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
@@ -885,7 +889,13 @@ void main() {
                             systemInstruction,
                             VibeChatDialog.defaultSystemInstruction,
                           );
-                          expect(staticGuide, 'Guide de test.');
+                          expect(
+                            staticGuide,
+                            VibeChatDialog.composeStaticGuide(
+                              screenGuide: 'Guide de test.',
+                              defaultDesignGuide: 'Design de test.',
+                            ),
+                          );
                           streamController =
                               StreamController<GeminiStreamEvent>();
                           return streamController.stream;
@@ -1989,12 +1999,502 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'live streaming builds zones progressively in real time, persists once on completion, and groups the whole turn into a single Undo entry',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final store = _CountingAppearanceStore(Appearance());
+      final mainLayout = registry.layoutController('mainLayout');
+      addTearDown(registry.unbindAppearance);
+
+      late StreamController<GeminiStreamEvent> streamController;
+      late ValueNotifier<Appearance> appAppearance;
+      late EditorHistoryController appHistory;
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              appHistory = EditorHistoryScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 360,
+                    height: 560,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) {
+                              streamController =
+                                  StreamController<GeminiStreamEvent>();
+                              return streamController.stream;
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(router: router, appearanceStore: store, registry: registry),
+      );
+      await tester.pumpAndSettle();
+
+      // Active le mode édition pour que EditorHistoryController enregistre l'historique Undo
+      final editScopeContext = tester.element(
+        find.byKey(const ValueKey('vibe-chat-input')),
+      );
+      StyleEditScope.controllerOf(editScopeContext)!.value = true;
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Construis le tableau de bord zone par zone.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pump();
+
+      var accumulated = '';
+      void emitDelta(String delta, {bool isDone = false}) {
+        accumulated += delta;
+        streamController.add(
+          GeminiStreamEvent(
+            deltaText: delta,
+            accumulatedText: accumulated,
+            isDone: isDone,
+            usedContextCache: true,
+          ),
+        );
+      }
+
+      // Étape 1 : message + style + conteneur parent mainLayout (avant l'arrivée des composants feuilles)
+      emitDelta(
+        '{"message":"Construction en direct","vibe":{'
+        '"styles":{"background":{"color":"#0F172A"}},'
+        '"components":{"mainLayout":{"type":"layout","north":true,"northSize":56,'
+        '"placements":{"north":[{"id":"live-header","type":"registry:Value"}],'
+        '"center":[{"id":"live-cta","type":"registry:Action"}]}}',
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(mainLayout.value.placementsOf(SuperLayoutZone.north), [
+        'live-header',
+      ]);
+      expect(mainLayout.value.placementsOf(SuperLayoutZone.center), [
+        'live-cta',
+      ]);
+      expect(
+        appAppearance.value.style('background').color,
+        const Color(0xFF0F172A),
+      );
+      // Aucune écriture disque intermédiaire pendant le streaming !
+      expect(store.saveCalls, 0);
+
+      // Étape 2 : le composant de la zone nord se referme -> affiché immédiatement
+      emitDelta(',"live-header":{"type":"value","text":"En-tête Temps Réel"}');
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('En-tête Temps Réel'), findsOneWidget);
+      expect(find.text('Lancer l’analyse'), findsNothing);
+      expect(store.saveCalls, 0);
+
+      // Étape 3 : le composant de la zone centrale se referme -> affiché immédiatement avant la fin du flux
+      emitDelta(',"live-cta":{"type":"action","label":"Lancer l’analyse"}');
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Lancer l’analyse'), findsOneWidget);
+      expect(store.saveCalls, 0);
+
+      // Étape 4 : fermeture finale du flux -> sauvegarde unique et une seule entrée Undo
+      emitDelta('}}}', isDone: true);
+      await streamController.close();
+      await tester.pumpAndSettle();
+
+      expect(store.saveCalls, 1);
+      expect(appHistory.canUndo, isTrue);
+
+      // Un seul Undo annule l'intégralité du tour streamé !
+      appHistory.undo();
+      await tester.pumpAndSettle();
+      expect(mainLayout.value.placedSlotIds, isEmpty);
+      expect(appAppearance.value.components, isEmpty);
+      expect(appHistory.canUndo, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'live streaming auto-navigates to newly created page and rolls back route and state on retry',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final store = _CountingAppearanceStore(Appearance());
+      final pageRouting = EditorPageRouter(
+        baseConfig: RoutingConfig(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (_, _) => const Text('Accueil Initial'),
+            ),
+          ],
+        ),
+      );
+      addTearDown(pageRouting.dispose);
+
+      var attemptCount = 0;
+      late StreamController<GeminiStreamEvent> attempt1Stream;
+      late StreamController<GeminiStreamEvent> attempt2Stream;
+
+      final controller = PersistentAppearanceController(
+        store,
+        (_) {},
+        validateAppearance: (value) => pageRouting.validate(value.pageCatalog),
+      );
+      registry.bindAppearance(controller);
+      addTearDown(registry.unbindAppearance);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        DefaultAssetBundle(
+          bundle: _GuideBundle(),
+          child: SuperAppScope(
+            app: SuperApp(
+              router: pageRouting.router,
+              pageRouting: pageRouting,
+              registry: registry,
+            ),
+            child: AppearanceScope(
+              controller: controller,
+              child: MaterialApp.router(
+                routerConfig: pageRouting.router,
+                builder: (context, child) => Scaffold(
+                  body: Row(
+                    children: [
+                      Expanded(child: child!),
+                      SizedBox(
+                        width: 360,
+                        height: 560,
+                        child: Overlay(
+                          initialEntries: [
+                            OverlayEntry(
+                              builder: (_) => VibeChatDialog(
+                                controller: controller,
+                                registry: registry,
+                                validateAppearance: (value) =>
+                                    pageRouting.validate(value.pageCatalog),
+                                codec: const AppearanceCodec(),
+                                initialQuestioningLevel:
+                                    VibeQuestioningLevel.none,
+                                onClose: () {},
+                                onDrag: (_) {},
+                                generate: (_) =>
+                                    Future.error('Should use streamGenerate'),
+                                streamGenerate:
+                                    (
+                                      prompt, {
+                                      systemInstruction,
+                                      staticGuide,
+                                      attachments = const [],
+                                      speedMode = VibeAiSpeedMode.fast,
+                                    }) {
+                                      attemptCount++;
+                                      if (attemptCount == 1) {
+                                        attempt1Stream =
+                                            StreamController<
+                                              GeminiStreamEvent
+                                            >();
+                                        return attempt1Stream.stream;
+                                      }
+                                      attempt2Stream =
+                                          StreamController<GeminiStreamEvent>();
+                                      return attempt2Stream.stream;
+                                    },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Accueil Initial'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Crée une page /analytics.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pump();
+
+      // Tentative 1 : émet pageCatalog en tête -> bascule immédiatement sur /analytics en live !
+      const attempt1Part1 =
+          '{"message":"Création page","vibe":{'
+          '"pageCatalog":{"pages":[{"id":"analytics-page","name":"Analytique","path":"/analytics"}]},'
+          '"components":{';
+      attempt1Stream.add(
+        const GeminiStreamEvent(
+          deltaText: attempt1Part1,
+          accumulatedText: attempt1Part1,
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        pageRouting.router.routeInformationProvider.value.uri.path,
+        '/analytics',
+      );
+
+      // La fin de la tentative 1 contient un composant orphelin -> rejetée et rollback vers '/' !
+      const attempt1Part2 = '"orphan":{"type":"value","text":"Détaché"}}}}';
+      const attempt1Full = '$attempt1Part1$attempt1Part2';
+      attempt1Stream.add(
+        const GeminiStreamEvent(
+          deltaText: attempt1Part2,
+          accumulatedText: attempt1Full,
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await attempt1Stream.close();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      // La tentative 2 a démarré après rollback complet vers '/' et apparence initiale vide !
+      expect(attemptCount, 2);
+      expect(pageRouting.router.routeInformationProvider.value.uri.path, '/');
+      expect(controller.value.components, isEmpty);
+      expect(controller.value.pageCatalog.pages, isEmpty);
+
+      // Tentative 2 : émet pageCatalog + scaffold de la page -> bascule live sur /analytics !
+      const attempt2Part1 =
+          '{"message":"Page Analytique prête.","vibe":{'
+          '"pageCatalog":{"pages":[{"id":"analytics-page","name":"Analytique","path":"/analytics"}]},'
+          '"components":{"analytics-page":{"type":"scaffold","placements":{"body":[{"id":"analytics-kpi","type":"registry:Value"}]}}';
+      attempt2Stream.add(
+        const GeminiStreamEvent(
+          deltaText: attempt2Part1,
+          accumulatedText: attempt2Part1,
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(
+        pageRouting.router.routeInformationProvider.value.uri.path,
+        '/analytics',
+      );
+
+      // Puis le composant feuille arrive dans le flux -> visible en direct avant isDone !
+      const attempt2Part2 =
+          ',"analytics-kpi":{"type":"value","text":"CA : 128 k€"}';
+      attempt2Stream.add(
+        const GeminiStreamEvent(
+          deltaText: attempt2Part2,
+          accumulatedText: '$attempt2Part1$attempt2Part2',
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('CA : 128 k€'), findsOneWidget);
+
+      // Fin du flux de la tentative 2
+      const attempt2Part3 = '}}}';
+      attempt2Stream.add(
+        const GeminiStreamEvent(
+          deltaText: attempt2Part3,
+          accumulatedText: '$attempt2Part1$attempt2Part2$attempt2Part3',
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await attempt2Stream.close();
+      await tester.pumpAndSettle();
+
+      expect(
+        pageRouting.router.routeInformationProvider.value.uri.path,
+        '/analytics',
+      );
+      expect(find.text('CA : 128 k€'), findsOneWidget);
+      expect(find.text('Page Analytique prête.'), findsOneWidget);
+      expect(store.saveCalls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test('SCREEN_DESIGN_AI_GUIDE.md documents modern Design System rules and its reference JSON recipe applies cleanly', () {
+    final guideFile = File('SCREEN_DESIGN_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_DESIGN_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md');
+    expect(guideFile.existsSync(), isTrue);
+    final content = guideFile.readAsStringSync();
+
+    expect(content, contains('theme:surfaceContainerLowest'));
+    expect(content, contains('theme:outlineVariant'));
+    expect(content, contains('60 / 30 / 10'));
+    expect(content, contains('autoSides'));
+    expect(content, contains('expandSlots'));
+
+    final jsonBlockMatch = RegExp(r'```json\s*([\s\S]*?)\s*```')
+        .firstMatch(content);
+    expect(jsonBlockMatch, isNotNull);
+    final recipeJson = jsonBlockMatch!.group(1)!;
+    final updated = AppearanceTransfer.applyVibe(Appearance(), recipeJson);
+    expect(updated.layout('mainLayout').west, isTrue);
+    expect(updated.layout('mainLayout').westSize, 320);
+    expect(updated.layout('mainLayout').autoSides, isEmpty);
+    expect(updated.style('card-detail').borderWidth, 1);
+    expect(updated.style('list-items:item').states?.hasSelected, isTrue);
+  });
+
+  test('SCREEN_JSON_AI_GUIDE.md documents the mainLayout lateral autoSides prohibition and center expansion rule', () {
+    final guideFile = File('SCREEN_JSON_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_JSON_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md');
+    expect(guideFile.existsSync(), isTrue);
+    final content = guideFile.readAsStringSync();
+
+    expect(
+      content,
+      contains("Règle absolue d'auto-dimensionnement sur `mainLayout`"),
+    );
+    expect(content, contains('westSize'));
+    expect(content, contains('eastSize'));
+    expect(content, contains('expandSlots: true'));
+  });
+
+  test('AI guides and system instruction enforce strict key/value SuperValue atomicity and forbid multiline textarea summaries', () {
+    final jsonGuideFile = File('SCREEN_JSON_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_JSON_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md');
+    final designGuideFile = File('SCREEN_DESIGN_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_DESIGN_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md');
+    expect(jsonGuideFile.existsSync(), isTrue);
+    expect(designGuideFile.existsSync(), isTrue);
+
+    final jsonGuide = jsonGuideFile.readAsStringSync();
+    final designGuide = designGuideFile.readAsStringSync();
+    const sysInstruction = VibeChatDialog.defaultSystemInstruction;
+
+    for (final doc in [jsonGuide, designGuide, sysInstruction]) {
+      expect(doc, contains('explanation'));
+      expect(doc, contains('dynamicData'));
+      expect(doc, contains('textarea'));
+      expect(doc, contains('SuperTable'));
+    }
+    expect(sysInstruction, contains("Respect strict de la règle d'atomicité"));
+    expect(
+      sysInstruction,
+      contains('préfère systématiquement 1 seul SuperValue avec "label"'),
+    );
+    expect(
+      jsonGuide,
+      contains('préférer 1 seul `SuperValue` avec `label` + valeur'),
+    );
+    expect(designGuide, contains('style de label fort custom'));
+  });
+
+  test('loadStaticGuide combines JSON guide, default Design System guide, and optional host overrides', () async {
+    final bundle = _NamedGuideBundle({
+      'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
+      'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
+    });
+
+    final combined = await VibeChatDialog.loadStaticGuide(bundle);
+    expect(combined, contains('Grammaire JSON de base.'));
+    expect(combined, contains('GUIDE DE DESIGN SYSTEM :'));
+    expect(combined, contains('Design System moderne par défaut.'));
+
+    final extended = await VibeChatDialog.loadStaticGuide(
+      bundle,
+      customDesignGuide: 'Utilise un rayon de 8px sur les cartes.',
+    );
+    expect(extended, contains('Design System moderne par défaut.'));
+    expect(extended, contains('RÈGLES DE DESIGN SPÉCIFIQUES À L’APPLICATION'));
+    expect(extended, contains('Utilise un rayon de 8px sur les cartes.'));
+
+    final replaceBundle = _NamedGuideBundle({
+      'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
+      'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
+    });
+    final replaced = await VibeChatDialog.loadStaticGuide(
+      replaceBundle,
+      customDesignGuide: 'Charte SurfFile exclusive.',
+      replaceDefaultDesignGuide: true,
+    );
+    expect(replaced, contains('Grammaire JSON de base.'));
+    expect(replaced, isNot(contains('Design System moderne par défaut.')));
+    expect(replaced, contains('GUIDE DE DESIGN SYSTEM DE L’APPLICATION :'));
+    expect(replaced, contains('Charte SurfFile exclusive.'));
+    expect(replaceBundle.loads, ['SCREEN_JSON_AI_GUIDE.md']);
+  });
+}
+
+class _NamedGuideBundle extends CachingAssetBundle {
+  _NamedGuideBundle(this.assets);
+
+  final Map<String, String> assets;
+  final List<String> loads = <String>[];
+
+  @override
+  Future<ByteData> load(String key) async {
+    loads.add(key);
+    final value = assets[key];
+    if (value == null) {
+      throw FlutterError('Asset "$key" not found.');
+    }
+    return ByteData.sublistView(Uint8List.fromList(utf8.encode(value)));
+  }
 }
 
 class _GuideBundle extends CachingAssetBundle {
   @override
-  Future<ByteData> load(String key) async =>
-      ByteData.sublistView(Uint8List.fromList(utf8.encode('Guide de test.')));
+  Future<ByteData> load(String key) async {
+    final text = key.contains('DESIGN') ? 'Design de test.' : 'Guide de test.';
+    return ByteData.sublistView(Uint8List.fromList(utf8.encode(text)));
+  }
 }
 
 class _MemoryAppearanceStore extends AppearanceStore {
@@ -2007,4 +2507,19 @@ class _MemoryAppearanceStore extends AppearanceStore {
 
   @override
   Future<void> save(Appearance appearance) async {}
+}
+
+class _CountingAppearanceStore extends AppearanceStore {
+  _CountingAppearanceStore(this.initial);
+
+  final Appearance initial;
+  int saveCalls = 0;
+
+  @override
+  Future<Appearance> load() async => initial;
+
+  @override
+  Future<void> saveEncoded(String encoded) async {
+    saveCalls++;
+  }
 }

@@ -1,6 +1,8 @@
 /// Bulles de conversation, indicateurs de génération et pièces jointes du chat Vibe.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
@@ -129,11 +131,21 @@ class VibeMessageBubble extends StatelessWidget {
     final isResolvedAskUser =
         message.askUserAnswers != null || message.askUserDismissed;
 
-    return Align(
-      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 340),
-        margin: const EdgeInsets.symmetric(vertical: 4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 340.0;
+        final maxBubbleWidth = askUser != null && !isResolvedAskUser
+            ? math.max(340.0, math.min(960.0, availableWidth - 16.0))
+            : math.max(340.0, math.min(820.0, availableWidth * 0.80));
+        return Align(
+          alignment: message.isUser
+              ? Alignment.centerRight
+              : Alignment.centerLeft,
+          child: Container(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(
           color: message.isUser
@@ -261,6 +273,8 @@ class VibeMessageBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+      },
     );
   }
 }
@@ -416,52 +430,64 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Align(
-      key: const ValueKey('vibe-chat-streaming-bubble'),
-      alignment: Alignment.centerLeft,
-      child: ValueListenableBuilder<VibeStreamSnapshot?>(
-        valueListenable: snapshot,
-        builder: (context, current, _) {
-          final streamedMessage = current?.message;
-          if (current == null || streamedMessage == null) {
-            return Container(
-              constraints: const BoxConstraints(maxWidth: 340),
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox.square(
-                    dimension: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 340.0;
+        final maxBubbleWidth = math.max(
+          340.0,
+          math.min(820.0, availableWidth * 0.80),
+        );
+        return Align(
+          key: const ValueKey('vibe-chat-streaming-bubble'),
+          alignment: Alignment.centerLeft,
+          child: ValueListenableBuilder<VibeStreamSnapshot?>(
+            valueListenable: snapshot,
+            builder: (context, current, _) {
+              final streamedMessage = current?.message;
+              if (current == null || streamedMessage == null) {
+                return Container(
+                  constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
                   ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Génération en cours…',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox.square(
+                        dimension: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Génération en cours…',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          final count = current.estimatedComponentCount;
-          final patchLabel = count > 0
-              ? 'Construction du patch UI ($count composant${count > 1 ? 's' : ''})…'
-              : 'Construction du patch UI…';
+              final count = current.estimatedComponentCount;
+              final patchLabel = count > 0
+                  ? 'Construction du patch UI ($count composant${count > 1 ? 's' : ''})…'
+                  : 'Construction du patch UI…';
 
-          return Container(
-            constraints: const BoxConstraints(maxWidth: 340),
-            margin: const EdgeInsets.symmetric(vertical: 4),
+              return Container(
+                constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                margin: const EdgeInsets.symmetric(vertical: 4),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
@@ -521,6 +547,8 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
           );
         },
       ),
+    );
+      },
     );
   }
 }

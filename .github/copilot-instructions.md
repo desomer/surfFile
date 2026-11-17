@@ -5,6 +5,7 @@ Ce dépôt contient l'application Flutter Desktop **SurfFile** (`lib/`) et le pa
 ## Guides de référence
 - **Architecture et index des 302 fichiers du package** : [`packages/super_container_layout/ARCHITECTURE.md`](../packages/super_container_layout/ARCHITECTURE.md)
 - **Spécification JSON GenUI / Vibe IA** : [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](../packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md)
+- **Guide Design System moderne pour l'IA** : [`packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md`](../packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md)
 - **Instructions détaillées pour `super_container_layout`** : [`.github/instructions/super-container-layout.instructions.md`](instructions/super-container-layout.instructions.md)
 
 ## Règles essentielles

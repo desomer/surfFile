@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -323,9 +324,15 @@ void main() {
       prompt,
       contains('guide de test disponible uniquement via le chemin de package'),
     );
+    expect(
+      prompt,
+      contains('guide design disponible uniquement via le chemin de package'),
+    );
     expect(assetBundle.loads, [
       'SCREEN_JSON_AI_GUIDE.md',
       'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
+      'SCREEN_DESIGN_AI_GUIDE.md',
+      'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
     ]);
     expect(prompt, contains('ÉTAT ACTUEL (JSON)'));
     expect(tester.takeException(), isNull);
@@ -442,7 +449,9 @@ void main() {
     final initial = tester.getRect(
       find.byKey(const ValueKey('vibe-chat-dialog')),
     );
-    expect(initial, const Rect.fromLTWH(544, 184, 440, 600));
+    expect(initial.width, 880);
+    expect(initial.center.dx, 500);
+    expect(initial.overlaps(banner(tester)), isFalse);
     final gesture = await tester.startGesture(
       tester.getCenter(find.byKey(const ValueKey('vibe-chat-drag'))),
     );
@@ -457,6 +466,14 @@ void main() {
     expect(moved.top, closeTo(initial.top - 40, 1));
     expect(moved.right, lessThanOrEqualTo(1000));
     expect(moved.bottom, lessThanOrEqualTo(800));
+
+    // Réduction manuelle en bas à droite : position compacte indépendante du drag étendu
+    await tester.tap(find.byKey(const ValueKey('vibe-chat-toggle-expand')));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('vibe-chat-dialog'))),
+      const Rect.fromLTWH(544, 184, 440, 600),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -602,6 +619,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
     await tester.pumpAndSettle();
     final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    // En mode compact (bas droit), une bannière courte laisse le chat descendre jusqu'en bas (884),
+    // puis l'élargissement de la bannière le remonte au-dessus d'elle.
+    await tester.tap(find.byKey(const ValueKey('vibe-chat-toggle-expand')));
+    await tester.pumpAndSettle();
     expect(tester.getRect(chat).bottom, 884);
     expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
 
@@ -687,6 +710,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
     await tester.pumpAndSettle();
     final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+    await tester.tap(find.byKey(const ValueKey('vibe-chat-toggle-expand')));
+    await tester.pumpAndSettle();
     expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
     expect(tester.getRect(chat).bottom, 884);
     await pumpWithAppearance(
@@ -808,6 +834,139 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'AI chat wizard expands in the center during question phases and shrinks to bottom-right during AI construction',
+    (tester) async {
+      addTearDown(tester.view.reset);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 900);
+
+      final mode = ValueNotifier(true);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+
+      var turn = 0;
+      late Completer<String> constructionCompleter;
+
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: mode,
+          child: AppearanceScope(
+            controller: appearance,
+            child: AppearanceServicesScope(
+              codec: const AppearanceCodec(),
+              child: MaterialApp(
+                builder: (context, child) => DefaultAssetBundle(
+                  bundle: _FallbackGuideBundle(),
+                  child: Stack(
+                    children: [
+                      child!,
+                      Positioned.fill(
+                        child: StyleEditBanner(
+                          aiResponseGenerator: (_) {
+                            turn++;
+                            if (turn == 1 || turn == 3) {
+                              return Future.value(
+                                jsonEncode({
+                                  'message': 'Précise le style souhaité :',
+                                  'askUser': {
+                                    'questions': [
+                                      {
+                                        'id': 'theme_choice',
+                                        'title': 'Palette principale',
+                                        'type': 'single',
+                                        'options': [
+                                          'Océan profond',
+                                          'Forêt boréale',
+                                          'Ambre solaire',
+                                        ],
+                                        'default': 'Océan profond',
+                                      },
+                                    ],
+                                  },
+                                  'vibe': null,
+                                }),
+                              );
+                            }
+                            constructionCompleter = Completer<String>();
+                            return constructionCompleter.future;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                home: const Scaffold(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Ouverture : wizard centré sur presque tout l'écran (88% de 1200 = 1056px)
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+      await tester.pumpAndSettle();
+      final chatFinder = find.byKey(const ValueKey('vibe-chat-dialog'));
+      final openRect = tester.getRect(chatFinder);
+      expect(openRect.width, 1056);
+      expect(openRect.center.dx, 600);
+      expect(openRect.height, greaterThan(700));
+      expect(openRect.overlaps(banner(tester)), isFalse);
+
+      // 2. Envoi initial -> l'IA répond avec un questionnaire askUser : reste grand et centré,
+      // et la carte de questions profite de la grande largeur (> 700px au lieu de 340px)
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Crée un écran d’accueil.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      final askRect = tester.getRect(chatFinder);
+      expect(askRect.width, 1056);
+      expect(askRect.center.dx, 600);
+      final askCardRect = tester.getRect(
+        find.byKey(const ValueKey('vibe-ask-user-card')),
+      );
+      expect(askCardRect.width, greaterThan(700));
+
+      // 3. Validation des questions -> entrée immédiate en phase de construction IA :
+      // le wizard se réduit en bas à droite (440 × 600) avant même la fin de la réponse !
+      await tester.tap(find.byKey(const ValueKey('vibe-ask-user-skip')));
+      await tester.pump();
+      expect(
+        tester.getRect(chatFinder),
+        const Rect.fromLTWH(1200 - 440 - 16, 900 - 600 - 16, 440, 600),
+      );
+
+      // La construction se termine : le panneau reste réduit en bas à droite pour laisser voir l'écran
+      constructionCompleter.complete(
+        '{"message":"Écran construit.","vibe":{"accent":"#0EA5E9"}}',
+      );
+      await tester.pumpAndSettle();
+      expect(appearance.value.accent, const Color(0xFF0EA5E9));
+      expect(
+        tester.getRect(chatFinder),
+        const Rect.fromLTWH(1200 - 440 - 16, 900 - 600 - 16, 440, 600),
+      );
+
+      // 4. Nouvelle demande déclenchant une nouvelle phase de questions -> se ré-agrandit au centre !
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Ajoute une section analytique.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      final reExpandedRect = tester.getRect(chatFinder);
+      expect(reExpandedRect.width, 1056);
+      expect(reExpandedRect.center.dx, 600);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _FallbackGuideBundle extends CachingAssetBundle {
@@ -821,6 +980,15 @@ class _FallbackGuideBundle extends CachingAssetBundle {
         Uint8List.fromList(
           utf8.encode(
             'guide de test disponible uniquement via le chemin de package',
+          ),
+        ),
+      );
+    }
+    if (key == 'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md') {
+      return ByteData.sublistView(
+        Uint8List.fromList(
+          utf8.encode(
+            'guide design disponible uniquement via le chemin de package',
           ),
         ),
       );

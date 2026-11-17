@@ -606,13 +606,13 @@ extension _SuperLayoutSlots on SuperLayoutState {
     SuperLayoutZone zone,
     Set<SuperLayoutZone> autoSides,
     bool editMode,
-    Size layoutSize,
-  ) {
+    Size layoutSize, {
+    required bool shrinkWidth,
+    required bool shrinkHeight,
+    required bool hasHorizontalSide,
+  }) {
     final content = config.contentZone(zone);
     final slots = _slotsOf(config, content);
-    final fitScope = SlotContentFitScope.maybeOf(context);
-    final shrinkWidth = widget.shrinkWrap || (fitScope?.fitWidth ?? false);
-    final shrinkHeight = widget.shrinkWrap || (fitScope?.fitHeight ?? false);
     if (slots.isEmpty) {
       final flow = config.flowOf(zone);
       final axis = config.axisOf(zone);
@@ -645,7 +645,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     final canEditSlots =
         widget.editable &&
         (StyleEditScope.controllerOf(context)?.value ?? false);
-    return SlotStack(
+    final stack = SlotStack(
       slots: slots,
       focusKeys: _slotFocusKeys,
       axis: axis,
@@ -696,5 +696,13 @@ extension _SuperLayoutSlots on SuperLayoutState {
           ? (shrinkWidth || autoWidth)
           : (shrinkHeight || autoHeight)),
     );
+    if (zone == SuperLayoutZone.center && hasHorizontalSide && !shrinkWidth) {
+      return SlotContentFitScope(
+        fitWidth: false,
+        fitHeight: shrinkHeight,
+        child: stack,
+      );
+    }
+    return stack;
   }
 }

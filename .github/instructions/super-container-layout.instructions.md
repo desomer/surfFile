@@ -5,7 +5,7 @@ applyTo: "packages/super_container_layout/**"
 
 # Instructions spécifiques au package `super_container_layout`
 
-Consultez [`packages/super_container_layout/ARCHITECTURE.md`](../../packages/super_container_layout/ARCHITECTURE.md) pour l'index complet des fichiers et [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) pour la grammaire JSON GenUI.
+Consultez [`packages/super_container_layout/ARCHITECTURE.md`](../../packages/super_container_layout/ARCHITECTURE.md) pour l'index complet des fichiers, [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) pour la grammaire JSON GenUI et [`packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md) pour le Design System moderne transmis à l'IA.
 
 ## 1. Convention de documentation Dartdoc
 - Chaque fichier sous `packages/super_container_layout/lib/` doit débuter par un commentaire `///` en français expliquant le rôle du fichier et ses interactions avec les classes voisines, suivi de la directive `library;`.

@@ -1,7 +1,7 @@
 /// Interface de chat IA (« Vibe ») pour la génération et la modification incrémentale d'écrans ([VibeChatDialog]).
 ///
-/// Met en cache le guide `SCREEN_JSON_AI_GUIDE.md` ([VibeChatDialog.warmUp]), assemble un instantané
-/// JSON compact (global ou ciblé sur un [VibeChatScope]), diffuse la réponse en direct via
+/// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md` et `SCREEN_DESIGN_AI_GUIDE.md` ([VibeChatDialog.warmUp]),
+/// assemble un instantané JSON compact (global ou ciblé sur un [VibeChatScope]), diffuse la réponse en direct via
 /// [streamGemini] ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un questionnaire
 /// de clarification interactif ([VibeAskUserRequest]), et applique le patch via `AppearanceTransfer.applyVibe`.
 library;
@@ -27,9 +27,11 @@ import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../services/pages/editor_page_router.dart';
 import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
+import '../history/editor_history.dart';
 import '../slots/editor_context_menu.dart';
 import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
@@ -69,6 +71,11 @@ class VibeChatDialog extends StatefulWidget {
     this.pasteAttachments,
     this.validateAppearance,
     this.registry,
+    this.pageRouting,
+    this.customDesignGuide,
+    this.replaceDefaultDesignGuide = false,
+    this.expanded,
+    this.onExpandedChanged,
     super.key,
   });
 
@@ -80,14 +87,22 @@ class VibeChatDialog extends StatefulWidget {
   /// Instructions système invariantes transmises au modèle GenUI pour le chat Vibe IA.
   static const String defaultSystemInstruction = '''
 Tu es l’assistant de création d’écrans de super_container_layout. Réponds en français.
-Utilise exclusivement le guide de modélisation et l’état actuel de l’application fournis.
+Utilise exclusivement le guide de modélisation JSON, le guide de Design System et l’état actuel de l’application fournis.
+Applique systématiquement les règles du Design System (surfaces sémantiques theme:*, hiérarchie typographique, grille d'espacement 4/8px, ergonomie Desktop productive, discipline des boutons d'action et micro-interactions) sauf consigne esthétique explicite contraire de l'utilisateur ; si des règles de design spécifiques à l'application sont fournies, elles prévalent sur le Design System générique.
 Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" EN PREMIER (avant "askUser" et "vibe") pour permettre l'affichage instantané en streaming, selon l'un des 3 modes suivants :
 1. Création ou modification directe de l'écran : renvoie {"message":"résumé bref en français","vibe":{...}}. Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "behaviors", "usages", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
+Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
+- Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
+- Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
 Règles pour "askUser" :
 - Respecte strictement le NIVEAU DE QUESTIONNEMENT du tour courant (si le niveau vaut 0/Aucun ou si les réponses viennent d'être fournies, n'utilise jamais "askUser" et génère directement {"message":"...","vibe":{...}}).
 - Fournis toujours des valeurs "default" pertinentes sur chaque question posée.
+Priorité absolue — Respect strict de la règle d'atomicité lors de chaque génération de layout, fiche ou formulaire :
+- Ne concatène jamais un libellé et une donnée dans le "text" d'un même SuperValue (ex: jamais "Statut : En cours"), ni plusieurs attributs métier dans un seul composant.
+- En mode visualisation ("mode": "display"), un SuperValue possède nativement "label" et une valeur ("text" ou "binding") : préfère systématiquement 1 seul SuperValue avec "label" + "text" (usage "dynamicData") ou "binding" plutôt que 2 SuperValue séparés, SAUF si le label requiert un style ou une disposition fortement personnalisés (auquel cas décompose en 1 SuperValue étiquette fixe avec usage "explanation" + "translationKey", et 1 SuperValue distinct pour la valeur avec usage "dynamicData" ou "binding").
+- Évite tout placeholder de texte libre multiligne (textarea / maxLines > 1) pour représenter des listes ou récapitulatifs métier (affaires, contrats, interlocuteurs, etc., même si la demande mentionne « résumé », « récapitulatif » ou « notes ») : utilise systématiquement des cartes, des champs unitaires SuperValue atomiques, une SuperListView ou un tableau SuperTable.
 Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
@@ -99,8 +114,15 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
     'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
   ];
 
+  static const List<String> _designGuideAssets = [
+    'SCREEN_DESIGN_AI_GUIDE.md',
+    'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
+  ];
+
   static String? _cachedRootBundleGuide;
   static Future<String>? _inFlightRootBundleGuide;
+  static String? _cachedRootBundleDesignGuide;
+  static Future<String?>? _inFlightRootBundleDesignGuide;
 
   /// Contrôleur réactif de l'apparence courante à lire et mettre à jour.
   final ValueNotifier<Appearance> controller;
@@ -154,7 +176,62 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   /// Registre optionnel fournissant les composants instanciés et leurs configurations par défaut.
   final Registry? registry;
 
-  static Future<String> _loadGuideFromBundle(AssetBundle bundle) async {
+  /// Routeur dynamique optionnel permettant de basculer en direct sur toute nouvelle page créée.
+  ///
+  /// Lorsqu'il est omis, celui du [SuperApp] englobant est utilisé automatiquement s'il existe.
+  final EditorPageRouter? pageRouting;
+
+  /// Directives de design personnalisées fournies par l'application hôte.
+  ///
+  /// Par défaut ([replaceDefaultDesignGuide] à `false`), ces règles viennent compléter
+  /// et surcharger ponctuellement le guide `SCREEN_DESIGN_AI_GUIDE.md` embarqué.
+  final String? customDesignGuide;
+
+  /// Lorsque `true` et que [customDesignGuide] est non vide, remplace intégralement
+  /// le guide `SCREEN_DESIGN_AI_GUIDE.md` par défaut au lieu de le compléter.
+  final bool replaceDefaultDesignGuide;
+
+  /// Indique si le wizard est affiché en grand format centré (`true`, phases de questions)
+  /// ou réduit en bas à droite (`false`, phase de construction par l'IA).
+  final bool? expanded;
+
+  /// Callback notifié lorsque le wizard s'agrandit (phase de questions) ou se réduit (phase de construction).
+  final ValueChanged<bool>? onExpandedChanged;
+
+  /// Assemble le guide statique complet envoyé au modèle à partir du guide JSON
+  /// technique [screenGuide], du guide de Design System par défaut [defaultDesignGuide]
+  /// et d'éventuelles règles spécifiques à l'application hôte [customDesignGuide].
+  static String composeStaticGuide({
+    required String screenGuide,
+    String? defaultDesignGuide,
+    String? customDesignGuide,
+    bool replaceDefaultDesignGuide = false,
+  }) {
+    final trimmedScreen = screenGuide.trim();
+    final trimmedDefaultDesign = defaultDesignGuide?.trim() ?? '';
+    final trimmedCustomDesign = customDesignGuide?.trim() ?? '';
+    final buffer = StringBuffer(trimmedScreen);
+
+    final includeDefault =
+        trimmedDefaultDesign.isNotEmpty &&
+        !(replaceDefaultDesignGuide && trimmedCustomDesign.isNotEmpty);
+    if (includeDefault) {
+      buffer
+        ..write('\n\n---\n\nGUIDE DE DESIGN SYSTEM :\n')
+        ..write(trimmedDefaultDesign);
+    }
+    if (trimmedCustomDesign.isNotEmpty) {
+      final heading = includeDefault
+          ? 'RÈGLES DE DESIGN SPÉCIFIQUES À L’APPLICATION (PRIORITAIRES) :'
+          : 'GUIDE DE DESIGN SYSTEM DE L’APPLICATION :';
+      buffer
+        ..write('\n\n---\n\n$heading\n')
+        ..write(trimmedCustomDesign);
+    }
+    return buffer.toString();
+  }
+
+  static Future<String> _loadScreenGuideFromBundle(AssetBundle bundle) async {
     final isRoot = identical(bundle, rootBundle);
     if (isRoot) {
       final cached = _cachedRootBundleGuide;
@@ -200,11 +277,76 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
     }
   }
 
-  /// Précharge en mémoire le guide `SCREEN_JSON_AI_GUIDE.md` depuis [bundle] et préchauffe
-  /// silencieusement la connexion TLS ainsi que le cache de contexte Gemini pour [speedMode].
+  static Future<String?> _loadDesignGuideFromBundle(AssetBundle bundle) async {
+    final isRoot = identical(bundle, rootBundle);
+    if (isRoot) {
+      final cached = _cachedRootBundleDesignGuide;
+      if (cached != null) return cached;
+      final inFlight = _inFlightRootBundleDesignGuide;
+      if (inFlight != null) return inFlight;
+    }
+
+    Future<String?> load() async {
+      for (final asset in _designGuideAssets) {
+        try {
+          final guide = await bundle.loadString(asset);
+          if (guide.trim().isNotEmpty) {
+            if (isRoot) {
+              _cachedRootBundleDesignGuide = guide;
+            }
+            return guide;
+          }
+        } on FlutterError {
+          // Continue vers le chemin de package ou repli gracieux sur les bundles de test minimaux.
+        }
+      }
+      return null;
+    }
+
+    if (!isRoot) {
+      return load();
+    }
+    final future = load();
+    _inFlightRootBundleDesignGuide = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_inFlightRootBundleDesignGuide, future)) {
+        _inFlightRootBundleDesignGuide = null;
+      }
+    }
+  }
+
+  /// Charge et assemble le guide statique complet (`SCREEN_JSON_AI_GUIDE.md` +
+  /// `SCREEN_DESIGN_AI_GUIDE.md` + [customDesignGuide] éventuel) depuis [bundle].
+  static Future<String> loadStaticGuide(
+    AssetBundle bundle, {
+    String? customDesignGuide,
+    bool replaceDefaultDesignGuide = false,
+  }) async {
+    final trimmedCustom = customDesignGuide?.trim() ?? '';
+    final skipDefaultDesign =
+        replaceDefaultDesignGuide && trimmedCustom.isNotEmpty;
+    final screenGuide = await _loadScreenGuideFromBundle(bundle);
+    final defaultDesignGuide = skipDefaultDesign
+        ? null
+        : await _loadDesignGuideFromBundle(bundle);
+    return composeStaticGuide(
+      screenGuide: screenGuide,
+      defaultDesignGuide: defaultDesignGuide,
+      customDesignGuide: customDesignGuide,
+      replaceDefaultDesignGuide: replaceDefaultDesignGuide,
+    );
+  }
+
+  /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md` et `SCREEN_DESIGN_AI_GUIDE.md`
+  /// depuis [bundle] et préchauffe silencieusement la connexion TLS ainsi que le cache de
+  /// contexte Gemini pour [speedMode].
   static Future<void> warmUp(
     AssetBundle bundle, {
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    String? customDesignGuide,
+    bool replaceDefaultDesignGuide = false,
   }) async {
     try {
       final isWidgetTestBinding = WidgetsBinding.instance.runtimeType
@@ -218,7 +360,11 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
           identical(bundle, rootBundle)) {
         return;
       }
-      final guide = await _loadGuideFromBundle(bundle);
+      final guide = await loadStaticGuide(
+        bundle,
+        customDesignGuide: customDesignGuide,
+        replaceDefaultDesignGuide: replaceDefaultDesignGuide,
+      );
       if (isWidgetTestBinding && !hasDotenvKey) {
         return;
       }
@@ -236,35 +382,74 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   /// `StyleEditBanner` panel when mounted, or falls back to an editor dialog.
   static Future<void> showScoped(
     BuildContext context,
-    VibeChatScope scope,
-  ) async {
+    VibeChatScope scope, {
+    String? customDesignGuide,
+    bool? replaceDefaultDesignGuide,
+  }) async {
     if (VibeChatScope.onOpenRequested case final handler? when handler(scope)) {
       return;
     }
     final appearance = AppearanceScope.controllerOf(context);
     if (appearance == null) return;
     final codec = AppearanceServicesScope.codecOf(context);
-    final registry = SuperApp.maybeOf(context)?.registry;
+    final app = SuperApp.maybeOf(context);
+    final registry = app?.registry;
+    final effectiveCustomDesignGuide =
+        customDesignGuide ?? app?.customDesignGuide;
+    final effectiveReplaceDefaultDesignGuide =
+        replaceDefaultDesignGuide ?? (app?.replaceDefaultDesignGuide ?? false);
+    var expanded = true;
     await showEditorDialog<void>(
       context: context,
       target: context,
       barrierDismissible: true,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: SizedBox(
-          width: 440,
-          height: 600,
-          child: VibeChatDialog(
-            controller: appearance,
-            codec: codec,
-            registry: registry,
-            scope: scope,
-            onClose: () => Navigator.of(dialogContext).pop(),
-            onDrag: (_) {},
-            generate: callGemini,
-          ),
-        ),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final screen = MediaQuery.sizeOf(dialogContext);
+          final width = expanded
+              ? (screen.width <= 520
+                    ? screen.width
+                    : (screen.width * 0.88).roundToDouble())
+              : 440.0;
+          final height = expanded
+              ? (screen.height <= 360
+                    ? screen.height
+                    : (screen.height * 0.88).roundToDouble())
+              : 600.0;
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            insetPadding: expanded
+                ? const EdgeInsets.all(20)
+                : const EdgeInsets.only(
+                    right: 16,
+                    bottom: 16,
+                    left: 16,
+                    top: 16,
+                  ),
+            alignment: expanded ? Alignment.center : Alignment.bottomRight,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: VibeChatDialog(
+                controller: appearance,
+                codec: codec,
+                registry: registry,
+                scope: scope,
+                customDesignGuide: effectiveCustomDesignGuide,
+                replaceDefaultDesignGuide: effectiveReplaceDefaultDesignGuide,
+                expanded: expanded,
+                onExpandedChanged: (next) {
+                  if (expanded == next) return;
+                  setDialogState(() => expanded = next);
+                },
+                onClose: () => Navigator.of(dialogContext).pop(),
+                onDrag: (_) {},
+                generate: callGemini,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -317,6 +502,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   final ValueNotifier<VibeStreamSnapshot?> _streamingSnapshot =
       ValueNotifier<VibeStreamSnapshot?>(null);
   VibeStreamSnapshot? _pendingSnapshot;
+  _LiveTurnSession? _activeTurnSession;
   bool _frameSnapshotScheduled = false;
   bool _didWarmUpDependencies = false;
   bool _sending = false;
@@ -325,6 +511,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   late VibeChatScope? _scope = widget.scope;
   late VibeAiSpeedMode _speedMode = widget.initialSpeedMode;
   late VibeQuestioningLevel _questioningLevel = widget.initialQuestioningLevel;
+  late bool _expanded = widget.expanded ?? true;
 
   bool get _isAfterAskUserReply {
     for (var i = _messages.length - 1; i >= 0; i--) {
@@ -352,6 +539,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         VibeChatDialog.warmUp(
           DefaultAssetBundle.of(context),
           speedMode: _speedMode,
+          customDesignGuide: widget.customDesignGuide,
+          replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
         ),
       );
     }
@@ -363,19 +552,50 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     if (oldWidget.scope != widget.scope) {
       _scope = widget.scope;
     }
-    if (oldWidget.initialSpeedMode != widget.initialSpeedMode) {
-      _speedMode = widget.initialSpeedMode;
+    final designChanged =
+        oldWidget.customDesignGuide != widget.customDesignGuide ||
+        oldWidget.replaceDefaultDesignGuide != widget.replaceDefaultDesignGuide;
+    if (oldWidget.initialSpeedMode != widget.initialSpeedMode ||
+        designChanged) {
+      if (oldWidget.initialSpeedMode != widget.initialSpeedMode) {
+        _speedMode = widget.initialSpeedMode;
+      }
       if (_usesStreamingGenerator) {
         unawaited(
           VibeChatDialog.warmUp(
             DefaultAssetBundle.of(context),
             speedMode: _speedMode,
+            customDesignGuide: widget.customDesignGuide,
+            replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
           ),
         );
       }
     }
     if (oldWidget.initialQuestioningLevel != widget.initialQuestioningLevel) {
       _questioningLevel = widget.initialQuestioningLevel;
+    }
+    if (widget.expanded != null &&
+        widget.expanded != oldWidget.expanded &&
+        widget.expanded != _expanded) {
+      _expanded = widget.expanded!;
+    }
+  }
+
+  void _setExpanded(bool expanded) {
+    if (_expanded == expanded) return;
+    if (mounted) {
+      setState(() => _expanded = expanded);
+    } else {
+      _expanded = expanded;
+    }
+    widget.onExpandedChanged?.call(expanded);
+  }
+
+  void _syncExpansionFromSnapshot(VibeStreamSnapshot snapshot) {
+    if (snapshot.hasVibeObject) {
+      _setExpanded(false);
+    } else if (snapshot.hasAskUserObject) {
+      _setExpanded(true);
     }
   }
 
@@ -384,7 +604,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     setState(() => _speedMode = mode);
     if (_usesStreamingGenerator) {
       unawaited(
-        VibeChatDialog.warmUp(DefaultAssetBundle.of(context), speedMode: mode),
+        VibeChatDialog.warmUp(
+          DefaultAssetBundle.of(context),
+          speedMode: mode,
+          customDesignGuide: widget.customDesignGuide,
+          replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+        ),
       );
     }
   }
@@ -398,6 +623,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void _publishStreamSnapshot(VibeStreamSnapshot snapshot) {
     if (!_frameSnapshotScheduled) {
       _streamingSnapshot.value = snapshot;
+      _syncExpansionFromSnapshot(snapshot);
+      _applyLivePreviewFromSnapshot(snapshot);
       _frameSnapshotScheduled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _frameSnapshotScheduled = false;
@@ -406,10 +633,132 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         if (pending != null) {
           _pendingSnapshot = null;
           _streamingSnapshot.value = pending;
+          _syncExpansionFromSnapshot(pending);
+          _applyLivePreviewFromSnapshot(pending);
         }
       });
     } else {
       _pendingSnapshot = snapshot;
+    }
+  }
+
+  void _setPreviewAppearance(Appearance appearance) {
+    final controller = widget.controller;
+    if (controller is PersistentAppearanceController) {
+      controller.setPreviewValue(appearance);
+    } else {
+      controller.value = appearance;
+    }
+  }
+
+  void _applyLivePreviewFromSnapshot(VibeStreamSnapshot snapshot) {
+    final session = _activeTurnSession;
+    if (session == null ||
+        snapshot.hasAskUserObject ||
+        snapshot.patchRevision <= session.lastAppliedPatchRevision) {
+      return;
+    }
+    session.lastAppliedPatchRevision = snapshot.patchRevision;
+    final rawPatch = snapshot.partialVibePatch;
+    if (rawPatch == null) return;
+
+    final activeScope = _scope;
+    final effectivePatch = activeScope == null
+        ? rawPatch
+        : VibeChatDialog.filterPatchToScope(
+            session.baseAppearance,
+            rawPatch,
+            activeScope,
+          );
+    if (!_hasPatchChanges(effectivePatch)) return;
+
+    try {
+      final previewAppearance = AppearanceTransfer.applyVibeMap(
+        session.baseAppearance,
+        effectivePatch,
+        codec: widget.codec,
+        normalizeRoundTrip: false,
+      );
+      widget.validateAppearance?.call(previewAppearance);
+      _setPreviewAppearance(previewAppearance);
+      session.hasAppliedLivePreview = true;
+      if (activeScope == null) {
+        _maybeNavigateToNewLivePage(session, previewAppearance);
+      }
+    } on FormatException {
+      // Les erreurs transitoires d'entrées partielles sont ignorées jusqu'à la validation finale.
+    } on ArgumentError {
+      // Ignoré pendant le flux incrémental.
+    } on StateError {
+      // Ignoré pendant le flux incrémental.
+    }
+  }
+
+  void _maybeNavigateToNewLivePage(
+    _LiveTurnSession session,
+    Appearance appearance,
+  ) {
+    final routing = session.pageRouting;
+    if (routing == null) return;
+    final addedPages = [
+      for (final page in appearance.pageCatalog.pages)
+        if (!session.initialPageIds.contains(page.id)) page,
+    ];
+    if (addedPages.isEmpty) return;
+
+    final homeId = appearance.pageCatalog.homePageId;
+    final targetPage =
+        addedPages.where((page) => page.id == homeId).firstOrNull ??
+        addedPages.first;
+    if (session.liveNavigatedPageId == targetPage.id) return;
+
+    try {
+      routing.synchronize(appearance.pageCatalog);
+      final requiredParams = routing.parametersOf(targetPage);
+      final params = requiredParams.isEmpty
+          ? const <String, String>{}
+          : targetPage.defaultParameters;
+      final location = routing.locationFor(targetPage, params);
+      session.liveNavigatedPageId = targetPage.id;
+      routing.router.go(location);
+    } on FormatException {
+      // Chemin ou paramètres par défaut incomplets : pas de navigation forcée.
+    }
+  }
+
+  void _rollbackLivePreview(_LiveTurnSession session) {
+    session.lastAppliedPatchRevision = 0;
+    if (session.hasAppliedLivePreview ||
+        !identical(widget.controller.value, session.rawInitialAppearance)) {
+      try {
+        _setPreviewAppearance(session.rawInitialAppearance);
+      } catch (_) {
+        // Ignore en cas de contrôleur déjà disposé.
+      }
+      session.hasAppliedLivePreview = false;
+    }
+    if (session.liveNavigatedPageId != null) {
+      final routing = session.pageRouting;
+      final previousLocation = session.initialRouteLocation;
+      session.liveNavigatedPageId = null;
+      if (routing != null) {
+        try {
+          routing.synchronize(session.rawInitialAppearance.pageCatalog);
+          final currentLocation = routing
+              .router
+              .routeInformationProvider
+              .value
+              .uri
+              .toString();
+          if (previousLocation != null &&
+              previousLocation.isNotEmpty &&
+              currentLocation != previousLocation) {
+            routing.router.go(previousLocation);
+          }
+        } catch (_) {
+          // Ignore lors de la restauration de route.
+        }
+      }
     }
   }
 
@@ -534,6 +883,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     );
     if ((request.isEmpty && attachments.isEmpty) || _sending) return;
     _input.clear();
+    if (_questioningLevel == VibeQuestioningLevel.none) {
+      _setExpanded(false);
+    }
     setState(() {
       _pendingAttachments.clear();
       _attachmentError = null;
@@ -568,6 +920,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       return;
     }
     final normalizedAnswers = Map<String, Object?>.unmodifiable(answers);
+    _setExpanded(false);
     setState(() {
       _messages[messageIndex] = target.copyWith(
         askUserAnswers: normalizedAnswers,
@@ -595,7 +948,32 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     String? promptOverride,
     List<VibeChatAttachment> attachments = const [],
   }) async {
+    final history = EditorHistoryScope.controllerOf(context);
+    final resolvedPageRouting =
+        widget.pageRouting ?? SuperApp.maybeOf(context)?.pageRouting;
+    final rawInitialAppearance = widget.controller.value;
+    final baseAppearance = _currentAppearance;
+    final initialInstantiatedIds = widget.registry == null
+        ? null
+        : Set<String>.unmodifiable(widget.registry!.instantiatedComponentIds);
+    final session = _LiveTurnSession(
+      rawInitialAppearance: rawInitialAppearance,
+      baseAppearance: baseAppearance,
+      initialInstantiatedIds: initialInstantiatedIds,
+      pageRouting: resolvedPageRouting,
+      initialRouteLocation: resolvedPageRouting
+          ?.router
+          .routeInformationProvider
+          .value
+          .uri
+          .toString(),
+      initialPageIds: {
+        for (final page in baseAppearance.pageCatalog.pages) page.id,
+      },
+    );
+
     _lastFailedResponse = null;
+    _activeTurnSession = session;
     setState(() {
       _sending = true;
       _messages.add(
@@ -612,31 +990,44 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       '[Vibe IA] Nouvelle demande utilisateur : "$displayUserText" '
       '(pièces jointes: ${attachments.map((a) => a.name).toList()})',
     );
+    history?.beginTransaction();
     try {
       final guide = await _loadGuide(context);
-      final turnPrompt = _buildTurnPrompt();
+      final turnPrompt = _buildTurnPrompt(
+        appearanceOverride: session.baseAppearance,
+        instantiatedIdsOverride: session.initialInstantiatedIds,
+      );
       final generated = await _generateAndApply(
         turnPrompt,
         systemGuide: guide,
+        session: session,
         attachments: attachments,
       );
       if (generated.appearance case final appearance?) {
+        _setExpanded(false);
         widget.controller.value = appearance;
+        if (_scope == null) {
+          _maybeNavigateToNewLivePage(session, appearance);
+        }
         debugPrint(
           '[Vibe IA] Apparence mise à jour avec succès '
           '(composants: ${appearance.components.length}, '
           'styles: ${appearance.styles.length}, '
           'pages: ${appearance.pageCatalog.pages.length}).',
         );
-      } else if (generated.askUser case final askUser?) {
-        debugPrint(
-          '[Vibe IA] Questionnaire de clarification reçu '
-          '(${askUser.questions.length} question(s)).',
-        );
       } else {
-        debugPrint(
-          '[Vibe IA] Réponse textuelle affichée sans modification d’apparence.',
-        );
+        _rollbackLivePreview(session);
+        if (generated.askUser case final askUser?) {
+          _setExpanded(true);
+          debugPrint(
+            '[Vibe IA] Questionnaire de clarification reçu '
+            '(${askUser.questions.length} question(s)).',
+          );
+        } else {
+          debugPrint(
+            '[Vibe IA] Réponse textuelle affichée sans modification d’apparence.',
+          );
+        }
       }
       final summary = generated.result['message'];
       final fallbackText =
@@ -650,6 +1041,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         askUser: generated.appearance == null ? generated.askUser : null,
       );
     } on FormatException catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (FormatException): $cause\n'
@@ -661,6 +1053,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on ArgumentError catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (ArgumentError): $cause\n$stackTrace',
@@ -670,6 +1063,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on StateError catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (StateError): $cause\n$stackTrace',
@@ -679,6 +1073,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on FlutterError catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint('AI screen guide could not be loaded: $cause\n$stackTrace');
       _appendMessage(
@@ -686,6 +1081,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on Exception catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (${error.runtimeType}): $cause\n'
@@ -696,6 +1092,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } catch (error, stackTrace) {
+      _rollbackLivePreview(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed with unexpected error '
@@ -706,8 +1103,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } finally {
+      _activeTurnSession = null;
       _pendingSnapshot = null;
       _streamingSnapshot.value = null;
+      history?.commitTransaction();
       if (mounted) setState(() => _sending = false);
     }
   }
@@ -796,6 +1195,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   _generateAndApply(
     String turnPrompt, {
     required String systemGuide,
+    required _LiveTurnSession session,
     List<VibeChatAttachment> attachments = const [],
   }) async {
     var currentTurnPrompt = turnPrompt;
@@ -803,6 +1203,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       if (attempt > 0) {
         _pendingSnapshot = null;
         _streamingSnapshot.value = null;
+        _rollbackLivePreview(session);
       }
       final useStreaming = _usesStreamingGenerator;
       debugPrint(
@@ -880,7 +1281,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _lastFailedResponse = null;
           return (appearance: null, result: result, askUser: askUser);
         }
-        final current = _currentAppearance;
+        final current = session.baseAppearance;
         final activeScope = _scope;
         final effectivePatch = activeScope == null
             ? patch
@@ -930,10 +1331,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           );
           rethrow;
         }
-        _validatePatchedComponents(current, appearance, effectivePatch);
+        _validatePatchedComponents(
+          current,
+          appearance,
+          effectivePatch,
+          instantiatedIds: session.initialInstantiatedIds,
+        );
         _lastFailedResponse = null;
         return (appearance: appearance, result: result, askUser: null);
       } catch (error) {
+        _rollbackLivePreview(session);
         final isValidationError =
             error is FormatException ||
             error is ArgumentError ||
@@ -1005,8 +1412,9 @@ $response
   void _validatePatchedComponents(
     Appearance current,
     Appearance next,
-    Map<String, dynamic> patch,
-  ) {
+    Map<String, dynamic> patch, {
+    Set<String>? instantiatedIds,
+  }) {
     final activeScope = _scope;
     final reachable = <String>{};
     if (activeScope != null) {
@@ -1021,9 +1429,12 @@ $response
         );
       }
     } else {
+      final effectiveInstantiatedIds =
+          instantiatedIds ?? widget.registry?.instantiatedComponentIds;
       final pending = [
-        ...?widget.registry?.instantiatedComponentIds,
-        if (widget.registry == null) ...current.components.keys,
+        ...?effectiveInstantiatedIds,
+        if (widget.registry == null && instantiatedIds == null)
+          ...current.components.keys,
         for (final page in next.pageCatalog.pages) page.id,
       ];
       while (pending.isNotEmpty) {
@@ -1040,7 +1451,7 @@ $response
           ),
           final ScaffoldPageConfig scaffold =>
             scaffold.native.placements.values.expand((ids) => ids),
-          _ => const <String>[],
+          _ => VibeScopeHelpers.childrenOfComponent(component),
         };
         pending.addAll(children);
       }
@@ -1070,7 +1481,11 @@ $response
   }
 
   Future<String> _loadGuide(BuildContext context) =>
-      VibeChatDialog._loadGuideFromBundle(DefaultAssetBundle.of(context));
+      VibeChatDialog.loadStaticGuide(
+        DefaultAssetBundle.of(context),
+        customDesignGuide: widget.customDesignGuide,
+        replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+      );
 
   String _buildConversationHistory() {
     return VibePromptBuilder.buildConversationHistory(
@@ -1080,16 +1495,20 @@ $response
     );
   }
 
-  String _buildTurnPrompt() {
+  String _buildTurnPrompt({
+    Appearance? appearanceOverride,
+    Iterable<String>? instantiatedIdsOverride,
+  }) {
     return VibePromptBuilder.buildTurnPrompt(
       questioningDirective: _questioningLevel.promptDirective(
         afterAskUserReply: _isAfterAskUserReply,
       ),
       conversation: _buildConversationHistory(),
-      appearance: _currentAppearance,
+      appearance: appearanceOverride ?? _currentAppearance,
       codec: widget.codec,
       scope: _scope,
-      instantiatedComponentIds: widget.registry?.instantiatedComponentIds,
+      instantiatedComponentIds:
+          instantiatedIdsOverride ?? widget.registry?.instantiatedComponentIds,
     );
   }
 
@@ -1176,6 +1595,19 @@ $response
                     ),
                   ),
                   Icon(Icons.drag_indicator, color: scheme.onPrimary, size: 18),
+                  if (widget.onExpandedChanged != null)
+                    IconButton(
+                      key: const ValueKey('vibe-chat-toggle-expand'),
+                      tooltip: _expanded
+                          ? 'Réduire en bas à droite'
+                          : 'Agrandir au centre',
+                      onPressed: () => _setExpanded(!_expanded),
+                      icon: Icon(
+                        _expanded ? Icons.close_fullscreen : Icons.open_in_full,
+                        color: scheme.onPrimary,
+                        size: 18,
+                      ),
+                    ),
                   IconButton(
                     key: const ValueKey('vibe-chat-close'),
                     tooltip: 'Fermer le chat',
@@ -1486,4 +1918,26 @@ $response
       ),
     );
   }
+}
+
+final class _LiveTurnSession {
+  _LiveTurnSession({
+    required this.rawInitialAppearance,
+    required this.baseAppearance,
+    required this.initialInstantiatedIds,
+    required this.pageRouting,
+    required this.initialRouteLocation,
+    required this.initialPageIds,
+  });
+
+  final Appearance rawInitialAppearance;
+  final Appearance baseAppearance;
+  final Set<String>? initialInstantiatedIds;
+  final EditorPageRouter? pageRouting;
+  final String? initialRouteLocation;
+  final Set<String> initialPageIds;
+
+  int lastAppliedPatchRevision = 0;
+  bool hasAppliedLivePreview = false;
+  String? liveNavigatedPageId;
 }

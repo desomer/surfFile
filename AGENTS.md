@@ -9,6 +9,7 @@ Ce dépôt est un monorepo Flutter comprenant l'application de bureau **SurfFile
 Avant toute modification, consultez les guides spécialisés du dépôt :
 - [`packages/super_container_layout/ARCHITECTURE.md`](packages/super_container_layout/ARCHITECTURE.md) : Cartographie des couches, flux de données (`Appearance` ↔ `Registry`, `JsonListScope`, `EditorPageGraph`, `applyVibe`) et **index complet des 302 fichiers Dart** de `super_container_layout`.
 - [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) : Spécification complète du format JSON plat GenUI (`components`, `styles`, `behaviors`, `pageCatalog`) utilisé pour la persistance et l'assistant IA intégré (Vibe Chat).
+- [`packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md`](packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md) : Design System moderne (tokens `theme:*`, typographie, grille 4/8px, ergonomie Desktop, hiérarchie d'actions et micro-interactions) injecté dans l'assistant Vibe IA.
 - [`packages/super_container_layout/README.md`](packages/super_container_layout/README.md) : Documentation fonctionnelle et exemples d'utilisation des widgets, éditeurs et services de `super_container_layout`.
 - [`README.md`](README.md) : Intégration de `super_container_layout` dans l'application hôte `SurfFile`.
 

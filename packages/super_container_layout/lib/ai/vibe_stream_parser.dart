@@ -1,10 +1,13 @@
 /// Analyseur incrémental de flux JSON SSE ([VibeIncrementalStreamParser]) pour le chat Vibe IA.
 ///
-/// Extrait en temps réel le champ texte de premier niveau `"message"` ainsi que
-/// la progression du patch `"vibe"` (`hasVibeObject`, `estimatedComponentCount`)
-/// et la détection du questionnaire `"askUser"` (`hasAskUserObject`)
-/// au fil de l'arrivée des fragments texte bruts, avant la fin complète du flux JSON.
+/// Extrait en temps réel le champ texte de premier niveau `"message"`,
+/// les entrées complètes du patch `"vibe"` (`partialVibePatch`, `patchRevision`,
+/// `hasVibeObject`, `estimatedComponentCount`) et la détection du questionnaire
+/// `"askUser"` (`hasAskUserObject`) au fil de l'arrivée des fragments texte bruts,
+/// avant la fin complète du flux JSON.
 library;
+
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -19,6 +22,8 @@ class VibeStreamSnapshot {
     this.hasAskUserObject = false,
     this.estimatedComponentCount = 0,
     this.receivedChars = 0,
+    this.partialVibePatch,
+    this.patchRevision = 0,
   });
 
   /// Instantané initial vide avant réception de tout fragment.
@@ -48,6 +53,13 @@ class VibeStreamSnapshot {
   /// Nombre total de caractères bruts accumulés dans le tampon depuis le début du flux.
   final int receivedChars;
 
+  /// Patch cumulatif immuable contenant toutes les entrées de `"vibe"` déjà
+  /// complètement fermées dans le flux JSON, ou `null` tant qu'aucune entrée n'est complète.
+  final Map<String, dynamic>? partialVibePatch;
+
+  /// Compteur monotone incrémenté à chaque nouvelle entrée complète ajoutée à [partialVibePatch].
+  final int patchRevision;
+
   /// Retourne une copie modifiée de cet instantané.
   VibeStreamSnapshot copyWith({
     String? message,
@@ -57,6 +69,9 @@ class VibeStreamSnapshot {
     bool? hasAskUserObject,
     int? estimatedComponentCount,
     int? receivedChars,
+    Map<String, dynamic>? partialVibePatch,
+    bool clearPartialVibePatch = false,
+    int? patchRevision,
   }) => VibeStreamSnapshot(
     message: clearMessage ? null : (message ?? this.message),
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
@@ -65,6 +80,10 @@ class VibeStreamSnapshot {
     estimatedComponentCount:
         estimatedComponentCount ?? this.estimatedComponentCount,
     receivedChars: receivedChars ?? this.receivedChars,
+    partialVibePatch: clearPartialVibePatch
+        ? null
+        : (partialVibePatch ?? this.partialVibePatch),
+    patchRevision: patchRevision ?? this.patchRevision,
   );
 
   /// Compare deux instantanés par égalité de valeur.
@@ -77,7 +96,9 @@ class VibeStreamSnapshot {
           other.hasVibeObject == hasVibeObject &&
           other.hasAskUserObject == hasAskUserObject &&
           other.estimatedComponentCount == estimatedComponentCount &&
-          other.receivedChars == receivedChars;
+          other.receivedChars == receivedChars &&
+          other.patchRevision == patchRevision &&
+          (other.partialVibePatch == null) == (partialVibePatch == null);
 
   /// Code de hachage cohérent avec [operator ==].
   @override
@@ -88,6 +109,8 @@ class VibeStreamSnapshot {
     hasAskUserObject,
     estimatedComponentCount,
     receivedChars,
+    patchRevision,
+    partialVibePatch != null,
   );
 
   /// Représentation textuelle de diagnostic de l'instantané.
@@ -99,7 +122,8 @@ class VibeStreamSnapshot {
       'hasVibeObject: $hasVibeObject, '
       'hasAskUserObject: $hasAskUserObject, '
       'estimatedComponentCount: $estimatedComponentCount, '
-      'receivedChars: $receivedChars'
+      'receivedChars: $receivedChars, '
+      'patchRevision: $patchRevision'
       ')';
 }
 
@@ -138,10 +162,42 @@ class VibeIncrementalStreamParser {
   bool _hasMessageStarted = false;
   bool _isMessageComplete = false;
 
+  static const Set<String> _sectionMapKeys = <String>{
+    'components',
+    'styles',
+    'behaviors',
+    'usages',
+  };
+
+  static const Set<String> _ignoredMetaKeys = <String>{
+    'version',
+    'vibe',
+    'merge',
+    'format',
+    'groups',
+    'data',
+  };
+
+  static const Set<String> _directRootPatchKeys = <String>{
+    'mode',
+    'accent',
+    'backgroundOpacity',
+    'windowOpacity',
+    'windowEffect',
+    'pageCatalog',
+  };
+
   bool _hasVibeObject = false;
   bool _hasAskUserObject = false;
   final Set<String> _seenComponentIds = <String>{};
   int _estimatedComponentCount = 0;
+
+  _ActiveValueCapture? _activeCapture;
+  final Map<String, Object?> _rootPatchEntries = <String, Object?>{};
+  final Map<String, Map<String, Object?>> _sectionPatchEntries =
+      <String, Map<String, Object?>>{};
+  Map<String, dynamic>? _cachedPartialPatch;
+  int _patchRevision = 0;
 
   VibeStreamSnapshot _current = VibeStreamSnapshot.empty;
 
@@ -176,6 +232,11 @@ class VibeIncrementalStreamParser {
     _hasAskUserObject = false;
     _seenComponentIds.clear();
     _estimatedComponentCount = 0;
+    _activeCapture = null;
+    _rootPatchEntries.clear();
+    _sectionPatchEntries.clear();
+    _cachedPartialPatch = null;
+    _patchRevision = 0;
     _current = VibeStreamSnapshot.empty;
   }
 
@@ -234,9 +295,21 @@ class VibeIncrementalStreamParser {
       hasAskUserObject: _hasAskUserObject,
       estimatedComponentCount: _estimatedComponentCount,
       receivedChars: _receivedChars,
+      partialVibePatch: _patchRevision == 0
+          ? null
+          : (_cachedPartialPatch ??= _buildFrozenPartialPatch()),
+      patchRevision: _patchRevision,
     );
     return _current;
   }
+
+  Map<String, dynamic> _buildFrozenPartialPatch() =>
+      Map<String, dynamic>.unmodifiable({
+        ..._rootPatchEntries,
+        for (final entry in _sectionPatchEntries.entries)
+          if (entry.value.isNotEmpty)
+            entry.key: Map<String, dynamic>.unmodifiable(entry.value),
+      });
 
   void _enterRootObject() {
     _stage = _ParserStage.json;
@@ -250,6 +323,7 @@ class VibeIncrementalStreamParser {
 
   void _consumeJsonCodeUnit(int cu) {
     if (_inString) {
+      _activeCapture?.buffer.writeCharCode(cu);
       _consumeStringCodeUnit(cu);
       return;
     }
@@ -257,9 +331,17 @@ class VibeIncrementalStreamParser {
     if (_inPrimitive) {
       if (_isPrimitiveTerminator(cu)) {
         _inPrimitive = false;
+        if (_activeCapture?.kind == _CaptureKind.primitive) {
+          _completeCapture();
+        }
       } else {
+        _activeCapture?.buffer.writeCharCode(cu);
         return;
       }
+    }
+
+    if (_activeCapture != null) {
+      _activeCapture!.buffer.writeCharCode(cu);
     }
 
     if (_isWhitespace(cu)) {
@@ -337,6 +419,10 @@ class VibeIncrementalStreamParser {
         _keyBuffer.clear();
         _keyOverflow = false;
         _stringTarget = _StringTarget.componentKey;
+      case _FrameKind.sectionMapObject:
+        _keyBuffer.clear();
+        _keyOverflow = false;
+        _stringTarget = _StringTarget.sectionEntryKey;
       case _FrameKind.otherObject:
       case _FrameKind.array:
         _stringTarget = _StringTarget.otherKey;
@@ -352,33 +438,129 @@ class VibeIncrementalStreamParser {
     _pendingHighSurrogate = null;
   }
 
+  bool _isPatchContainerFrame(_FrameKind kind) =>
+      kind == _FrameKind.vibeObject || kind == _FrameKind.vibeDataObject;
+
+  bool _shouldCaptureDirectPatchKey(_FrameKind parentKind, String key) {
+    if (key.isEmpty || _ignoredMetaKeys.contains(key)) return false;
+    if (_isPatchContainerFrame(parentKind)) {
+      return !_sectionMapKeys.contains(key);
+    }
+    if (parentKind == _FrameKind.rootObject) {
+      return _directRootPatchKeys.contains(key);
+    }
+    return false;
+  }
+
+  void _beginCapture({
+    required String? section,
+    required String entryKey,
+    required _CaptureKind kind,
+    required int firstCodeUnit,
+    int targetStackDepth = 0,
+  }) {
+    final capture = _ActiveValueCapture(
+      section: section,
+      entryKey: entryKey,
+      kind: kind,
+      targetStackDepth: targetStackDepth,
+    )..buffer.writeCharCode(firstCodeUnit);
+    _activeCapture = capture;
+  }
+
+  void _completeCapture() {
+    final capture = _activeCapture;
+    if (capture == null) return;
+    _activeCapture = null;
+    final rawValue = capture.buffer.toString();
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(rawValue);
+    } on FormatException {
+      return;
+    }
+    if (capture.section case final section?) {
+      final map = _sectionPatchEntries.putIfAbsent(
+        section,
+        () => <String, Object?>{},
+      );
+      map[capture.entryKey] = decoded;
+    } else {
+      _rootPatchEntries[capture.entryKey] = decoded;
+    }
+    _patchRevision++;
+    _cachedPartialPatch = null;
+  }
+
   void _startValue(_ContainerFrame parent, int cu) {
     final key = parent.pendingKey;
     parent.pendingKey = null;
     parent.phase = _ContainerPhase.expectCommaOrEnd;
 
+    final String? captureSection;
+    final String? captureKey;
+    if (_activeCapture == null && key != null && key.isNotEmpty) {
+      if (parent.kind == _FrameKind.componentsObject) {
+        captureSection = 'components';
+        captureKey = key;
+      } else if (parent.kind == _FrameKind.sectionMapObject &&
+          parent.sectionName != null) {
+        captureSection = parent.sectionName;
+        captureKey = key;
+      } else if (_shouldCaptureDirectPatchKey(parent.kind, key)) {
+        if (parent.kind == _FrameKind.rootObject) {
+          _hasVibeObject = true;
+        }
+        captureSection = null;
+        captureKey = key;
+      } else {
+        captureSection = null;
+        captureKey = null;
+      }
+    } else {
+      captureSection = null;
+      captureKey = null;
+    }
+
     if (cu == 0x7B) {
       // '{'
-      final _FrameKind childKind;
+      _FrameKind childKind = _FrameKind.otherObject;
+      String? childSection;
       if (parent.kind == _FrameKind.rootObject && key == 'vibe') {
         _hasVibeObject = true;
         childKind = _FrameKind.vibeObject;
       } else if (parent.kind == _FrameKind.rootObject && key == 'askUser') {
         _hasAskUserObject = true;
-        childKind = _FrameKind.otherObject;
-      } else if (parent.kind == _FrameKind.vibeObject && key == 'components') {
-        childKind = _FrameKind.componentsObject;
-      } else if (parent.kind == _FrameKind.vibeObject && key == 'data') {
+      } else if ((_isPatchContainerFrame(parent.kind) ||
+              parent.kind == _FrameKind.rootObject) &&
+          key != null &&
+          _sectionMapKeys.contains(key)) {
+        _hasVibeObject = true;
+        if (key == 'components') {
+          childKind = _FrameKind.componentsObject;
+        } else {
+          childKind = _FrameKind.sectionMapObject;
+          childSection = key;
+        }
+      } else if (_isPatchContainerFrame(parent.kind) && key == 'data') {
         childKind = _FrameKind.vibeDataObject;
-      } else if (parent.kind == _FrameKind.vibeDataObject &&
-          key == 'components') {
-        childKind = _FrameKind.componentsObject;
-      } else {
-        childKind = _FrameKind.otherObject;
       }
       _stack.add(
-        _ContainerFrame(kind: childKind, phase: _ContainerPhase.expectKeyOrEnd),
+        _ContainerFrame(
+          kind: childKind,
+          phase: _ContainerPhase.expectKeyOrEnd,
+          sectionName: childSection,
+        ),
       );
+      if (captureKey != null) {
+        _beginCapture(
+          section: captureSection,
+          entryKey: captureKey,
+          kind: _CaptureKind.container,
+          firstCodeUnit: cu,
+          targetStackDepth: _stack.length,
+        );
+      }
     } else if (cu == 0x5B) {
       // '['
       if (parent.kind == _FrameKind.rootObject && key == 'askUser') {
@@ -390,6 +572,15 @@ class VibeIncrementalStreamParser {
           phase: _ContainerPhase.expectValueOrEnd,
         ),
       );
+      if (captureKey != null) {
+        _beginCapture(
+          section: captureSection,
+          entryKey: captureKey,
+          kind: _CaptureKind.container,
+          firstCodeUnit: cu,
+          targetStackDepth: _stack.length,
+        );
+      }
     } else if (cu == 0x22) {
       // '"'
       if (parent.kind == _FrameKind.rootObject &&
@@ -404,8 +595,24 @@ class VibeIncrementalStreamParser {
       _inString = true;
       _strMode = _StrMode.normal;
       _pendingHighSurrogate = null;
+      if (captureKey != null) {
+        _beginCapture(
+          section: captureSection,
+          entryKey: captureKey,
+          kind: _CaptureKind.string,
+          firstCodeUnit: cu,
+        );
+      }
     } else {
       _inPrimitive = true;
+      if (captureKey != null) {
+        _beginCapture(
+          section: captureSection,
+          entryKey: captureKey,
+          kind: _CaptureKind.primitive,
+          firstCodeUnit: cu,
+        );
+      }
     }
   }
 
@@ -499,13 +706,14 @@ class VibeIncrementalStreamParser {
         _cachedMessage = null;
       case _StringTarget.key:
         if (!_keyOverflow) {
-          if (_keyBuffer.length >= 32) {
+          if (_keyBuffer.length >= 128) {
             _keyOverflow = true;
           } else {
             _keyBuffer.writeCharCode(codePoint);
           }
         }
       case _StringTarget.componentKey:
+      case _StringTarget.sectionEntryKey:
         _keyBuffer.writeCharCode(codePoint);
       case _StringTarget.otherKey:
       case _StringTarget.skip:
@@ -522,8 +730,14 @@ class VibeIncrementalStreamParser {
         frame.phase = _ContainerPhase.expectColon;
       case _StringTarget.componentKey:
         final frame = _stack.last;
-        _seenComponentIds.add(_keyBuffer.toString());
+        final key = _keyBuffer.toString();
+        _seenComponentIds.add(key);
         _estimatedComponentCount = _seenComponentIds.length;
+        frame.pendingKey = key;
+        frame.phase = _ContainerPhase.expectColon;
+      case _StringTarget.sectionEntryKey:
+        final frame = _stack.last;
+        frame.pendingKey = _keyBuffer.toString();
         frame.phase = _ContainerPhase.expectColon;
       case _StringTarget.otherKey:
         _stack.last.phase = _ContainerPhase.expectColon;
@@ -533,10 +747,18 @@ class VibeIncrementalStreamParser {
       case _StringTarget.skip:
         break;
     }
+    if (_activeCapture?.kind == _CaptureKind.string) {
+      _completeCapture();
+    }
   }
 
   void _popFrame() {
     _stack.removeLast();
+    if (_activeCapture != null &&
+        _activeCapture!.kind == _CaptureKind.container &&
+        _stack.length < _activeCapture!.targetStackDepth) {
+      _completeCapture();
+    }
     if (_stack.isEmpty) {
       _stage = _ParserStage.done;
     }
@@ -570,6 +792,7 @@ enum _FrameKind {
   vibeObject,
   vibeDataObject,
   componentsObject,
+  sectionMapObject,
   otherObject,
   array,
 }
@@ -582,14 +805,43 @@ enum _ContainerPhase {
   expectCommaOrEnd,
 }
 
-enum _StringTarget { key, componentKey, otherKey, messageValue, skip }
+enum _StringTarget {
+  key,
+  componentKey,
+  sectionEntryKey,
+  otherKey,
+  messageValue,
+  skip,
+}
 
 enum _StrMode { normal, escape, unicode }
 
+enum _CaptureKind { container, string, primitive }
+
 final class _ContainerFrame {
-  _ContainerFrame({required this.kind, required this.phase});
+  _ContainerFrame({
+    required this.kind,
+    required this.phase,
+    this.sectionName,
+  });
 
   final _FrameKind kind;
+  final String? sectionName;
   _ContainerPhase phase;
   String? pendingKey;
+}
+
+final class _ActiveValueCapture {
+  _ActiveValueCapture({
+    required this.section,
+    required this.entryKey,
+    required this.kind,
+    required this.targetStackDepth,
+  });
+
+  final String? section;
+  final String entryKey;
+  final _CaptureKind kind;
+  final int targetStackDepth;
+  final StringBuffer buffer = StringBuffer();
 }

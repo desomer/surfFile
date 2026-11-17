@@ -204,12 +204,41 @@ class AppearanceTransfer {
     if (raw is! Map<String, dynamic>) {
       throw const FormatException('Invalid appearance export.');
     }
+    return applyVibeMap(current, raw, codec: codec);
+  }
+
+  /// Applique directement un patch GenUI [raw] déjà décodé sur [current].
+  ///
+  /// Utilisé notamment pour le rendu incrémental en streaming afin d'éviter
+  /// une sérialisation intermédiaire superflue à chaque palier du flux.
+  static Appearance applyVibeMap(
+    Appearance current,
+    Map<String, dynamic> raw, {
+    AppearanceCodec codec = const AppearanceCodec(),
+    bool normalizeRoundTrip = true,
+  }) {
     final payload = raw['data'] is Map<String, dynamic>
         ? <String, dynamic>{
             ...(raw['data'] as Map<String, dynamic>),
             'merge': true,
           }
         : <String, dynamic>{...raw, 'merge': true};
+    if (!normalizeRoundTrip) {
+      final version = raw['version'] is int
+          ? raw['version'] as int
+          : codec.schemaVersion;
+      final normalized = codec.normalizeTransfer(payload, version);
+      final filtered = <String, dynamic>{
+        for (final entry in normalized.entries)
+          if (entry.key == 'vibe' ||
+              entry.key == 'merge' ||
+              _groupOf(entry.key) == TransferGroup.styles ||
+              _groupOf(entry.key) == TransferGroup.layouts)
+            entry.key: entry.value,
+      };
+      final patched = codec.patchFromJson(current, filtered);
+      return _keepBoundUsages(current, patched);
+    }
     final next = import(current, jsonEncode(payload), const {
       TransferGroup.styles,
       TransferGroup.layouts,

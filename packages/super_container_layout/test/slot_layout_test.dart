@@ -1230,7 +1230,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<ComponentDragLabel>(find.byKey(const ValueKey('slot-label-b')))
+            .widget<ComponentDragLabel>(
+              find.byKey(const ValueKey('slot-label-b')),
+            )
             .highlighted,
         isFalse,
       );
@@ -2677,6 +2679,126 @@ void main() {
           -120,
         );
         expect(tester.getTopLeft(find.byKey(const ValueKey('box-h3'))).dx, 220);
+      },
+    );
+
+    testWidgets(
+      'greedy auto-sized west or east side is capped at 45% width to preserve at least 55% for center',
+      (tester) async {
+        for (final side in [SuperLayoutZone.west, SuperLayoutZone.east]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: SizedBox(
+                  width: 600,
+                  height: 400,
+                  child: SuperLayout(
+                    config: SuperLayoutConfig(
+                      west: side == SuperLayoutZone.west,
+                      east: side == SuperLayoutZone.east,
+                      autoSides: {side},
+                      placements: {
+                        side: ['greedy-side'],
+                        SuperLayoutZone.center: ['main-card'],
+                      },
+                    ),
+                    slots: [
+                      _slot(
+                        'greedy-side',
+                        width: double.infinity,
+                        sizing: SlotSizing.fill,
+                      ),
+                      _slot('main-card', sizing: SlotSizing.fill),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final sideRect = tester.getRect(
+            find.byKey(const ValueKey('box-greedy-side')),
+          );
+          final centerRect = tester.getRect(
+            find.byKey(const ValueKey('box-main-card')),
+          );
+          expect(sideRect.width, closeTo(270, 0.01));
+          expect(centerRect.width, closeTo(330, 0.01));
+          expect(tester.takeException(), isNull);
+        }
+      },
+    );
+
+    testWidgets(
+      'center expands with priority when layout has a lateral side even inside fitWidth or vertical scroll scopes',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: SlotContentFitScope(
+                  fitWidth: true,
+                  fitHeight: true,
+                  child: SuperLayout(
+                    config: const SuperLayoutConfig(
+                      west: true,
+                      westSize: 280,
+                      autoSides: {SuperLayoutZone.west},
+                      placements: {
+                        SuperLayoutZone.west: ['left-unbounded'],
+                        SuperLayoutZone.center: ['center-card'],
+                      },
+                    ),
+                    slots: [
+                      BuilderSlot(
+                        id: 'left-unbounded',
+                        label: 'Left',
+                        builder: (_) => const SizedBox(
+                          key: ValueKey('left-pane'),
+                          width: 2000,
+                          height: 180,
+                        ),
+                      ),
+                      BuilderSlot(
+                        id: 'center-card',
+                        label: 'Center',
+                        builder: (_) => EditableSurface(
+                          id: 'card-main',
+                          label: 'Card centrale',
+                          child: const SizedBox(
+                            key: ValueKey('center-pane'),
+                            height: 120,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final leftRect = tester.getRect(
+          find.byKey(const ValueKey('left-pane')),
+        );
+        final centerRect = tester.getRect(
+          find.byKey(const ValueKey('super-layout-center')),
+        );
+        final cardRect = tester.getRect(
+          find.byWidgetPredicate(
+            (w) => w is EditableSurface && w.id == 'card-main',
+          ),
+        );
+        expect(leftRect.width, closeTo(360, 0.01));
+        expect(centerRect.left, closeTo(360, 0.01));
+        expect(centerRect.width, closeTo(440, 0.01));
+        expect(cardRect.width, closeTo(440, 0.01));
+        expect(tester.takeException(), isNull);
       },
     );
   });

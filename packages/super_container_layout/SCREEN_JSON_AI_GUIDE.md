@@ -40,8 +40,8 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 
 | Concept | Syntaxe recommandée pour l'IA | Syntaxes alternatives acceptées |
 | :--- | :--- | :--- |
-| **Couleurs** | Chaîne hexadécimale `"#RRGGBB"` (ex: `"#5268D9"`) ou `"#AARRGGBB"` avec transparence (ex: `"#80FFFFFF"`) | `"#RGB"`, `"#ARGB"`, `"0xAARRGGBB"` ou entier ARGB 32 bits |
-| **Couleurs du thème** | `"theme:primary"`, `"theme:onPrimary"`, `"theme:primaryContainer"`, `"theme:onPrimaryContainer"` | Rôles `ColorScheme` Material 3 : `secondary*`, `tertiary*`, `surface`, `onSurface`, `onSurfaceVariant`, `surfaceDim`, `surfaceBright`, `surfaceContainer*`, `outline`, `outlineVariant`, `inverseSurface`, `onInverseSurface`, `inversePrimary`, `error*`, `onError*`, `shadow`, `scrim`, `surfaceTint` et rôles `*Fixed*` |
+| **Couleurs du thème (à privilégier — Material 3)** | `"theme:primary"`, `"theme:onPrimary"`, `"theme:primaryContainer"`, `"theme:onPrimaryContainer"`, `"theme:surface"`, `"theme:surfaceContainerLow"`, `"theme:onSurface"`, `"theme:onSurfaceVariant"`, `"theme:outlineVariant"` | Tous les rôles `ColorScheme` Material 3 : `secondary*`, `tertiary*`, `surfaceDim`, `surfaceBright`, `surfaceContainer*`, `outline`, `inverseSurface`, `onInverseSurface`, `inversePrimary`, `error*`, `onError*`, `shadow`, `scrim`, `surfaceTint` et rôles `*Fixed*` |
+| **Couleurs fixes (`accent` ou palette imposée)** | Chaîne hexadécimale `"#RRGGBB"` (ex: `"#5268D9"`) ou `"#AARRGGBB"` avec transparence (ex: `"#80FFFFFF"`) | `"#RGB"`, `"#ARGB"`, `"0xAARRGGBB"` ou entier ARGB 32 bits |
 | **Dimensions de slot** | `"64px"`, `"50%"`, ou nombre `64` (pixels) | `{"value": 64, "unit": "px" \| "percent"}` |
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
@@ -74,12 +74,16 @@ les résultats du cache. Ne pas inventer un calcul non déclaré.
   sont gérés par le runtime. Les erreurs ne sont pas remplacées par une valeur
   par défaut. Les fonctions ne sont pas sérialisables ni définissables par l'IA.
 
+### Couleurs du thème Material 3 (`theme:<rôle>` à privilégier)
+
+**Règle de compatibilité Material 3** : privilégie systématiquement les couleurs de thème `"theme:<rôle>"` plutôt que des valeurs hexadécimales `#RRGGBB` codées en dur (sauf pour la propriété racine `"accent"` ou demande explicite d'une couleur fixe). Ainsi, tout l'écran s'adapte automatiquement au `ColorScheme` Material 3 généré depuis `accent` ainsi qu'au basculement entre mode clair (`"light"`) et mode sombre (`"dark"`), en respectant les paires de contraste Material 3 (`surface*` $\leftrightarrow$ `onSurface` / `onSurfaceVariant`, `primaryContainer` $\leftrightarrow$ `onPrimaryContainer`, `secondaryContainer` $\leftrightarrow$ `onSecondaryContainer`, `errorContainer` $\leftrightarrow$ `onErrorContainer`).
+
 Les références `theme:rôle` sont sensibles à la casse et suivent le thème actif
 au rendu : elles ne sont pas converties en hexadécimal lors de la sauvegarde ou
 de l'export compact. Les rôles inconnus sont rejetés. Elles s'utilisent dans les
 propriétés de couleur des composants, styles, états, dégradés, ombres et néons.
 Exemple : `"styles": {"card": {"color": "theme:primaryContainer",
-"borderColor": "theme:outline"}}`. La propriété racine `accent` reste une couleur
+"borderColor": "theme:outlineVariant"}}`. La propriété racine `accent` reste une couleur
 fixe, puisqu'elle sert à générer le `ColorScheme`. Pour le style `background`,
 les rôles sont résolus depuis le schéma généré par cet accent et la luminosité
 demandée, sans boucle de dépendance avec la couleur du fond.
@@ -110,6 +114,15 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    `"decoration"`, `"feedback"`). Lis les usages existants et renseigne
    **obligatoirement un usage pour chaque nouveau composant sans liaison de
    données** (voir « Usages des composants » ci-dessous).
+
+**Ordre d'émission recommandé pour le streaming live** : le moteur applique
+les entrées complètes du patch `"vibe"` en direct au fil du flux SSE. Afin que
+l'utilisateur voie les pages et les zones apparaître puis se remplir en temps
+réel, émets les clés dans cet ordre :
+1. `pageCatalog` et les éventuels réglages globaux de thème (`mode`, `accent`, etc.) ;
+2. `styles` ;
+3. `components` de **haut en bas (Top-Down)** : d'abord la page ou le conteneur parent/racine avec ses `placements`, `slotTypes` et `slotLabels`, puis les sous-conteneurs/zones dans l'ordre visuel, et enfin les composants feuilles de chaque zone ;
+4. `behaviors` et `usages`.
 
 **Règle obligatoire à la création** : dans le même patch que chaque nouveau
 composant, fournis son **nom d'édition explicite** dans les `slotLabels` de son
@@ -217,6 +230,20 @@ Règles :
   explicite de l'utilisateur.
 - **Objet strict** : un usage contient uniquement `"kind"` et, pour
   `"explanation"`, `"translationKey"`.
+- **Atomicité stricte clé/valeur (`1 attribut métier = 1 SuperValue`, jamais de concaténation dans `text`)** :
+  ne concatène **jamais** un libellé et une donnée dans la propriété `text` d'un
+  même `SuperValue` (proscrire `"text": "Client : Jean Dupont"`), ni plusieurs
+  champs métier ou un récapitulatif multi-lignes dans un bloc `textarea`.
+  - **Cas standard à privilégier en mode visualisation (`mode: "display"`)** :
+    utilise **1 seul `SuperValue`** en renseignant sa propriété native **`label`**
+    pour l'étiquette et **`text`** (usage `"dynamicData"` ou `"staticData"`) ou
+    **`binding`** pour la valeur (ex: `{"type": "value", "label": "Client", "text": "Jean Dupont"}`).
+  - **Exception (style de label fortement personnalisé)** : ne décompose en
+    **2 `SuperValue` distincts** (`1 SuperValue` étiquette fixe en `"explanation"` +
+    `translationKey`, et `1 SuperValue` valeur en `"dynamicData"` ou `binding`)
+    **que si** le label exige un style typographique/visuel ou un placement sur
+    mesure (ex: ligne horizontale `spaceBetween`, taille/couleur/graisse custom
+    propre au label).
 
 ```json
 {
@@ -240,9 +267,9 @@ parent ; chacune reçoit un usage sauf celles qui possèdent une liaison.
   "mode": "light",
   "accent": "#5268D9",
   "styles": {
-    "background": { "color": "#F5F7FA", "padding": 12 },
-    "card-detail": { "color": "#FFFFFF", "radius": 16, "padding": 20, "elevation": 3 },
-    "list-clients:item": { "color": "#FFFFFF", "radius": 10, "hoverEffect": true }
+    "background": { "color": "theme:surfaceContainerLowest", "padding": 0 },
+    "card-detail": { "color": "theme:surface", "radius": 16, "padding": 20, "borderWidth": 1, "borderColor": "theme:outlineVariant" },
+    "list-clients:item": { "color": "theme:surfaceContainerLow", "radius": 10, "hoverEffect": true }
   },
   "behaviors": {
     "list-clients:item": [
@@ -359,7 +386,9 @@ parent ; chacune reçoit un usage sauf celles qui possèdent une liaison.
       "kind": "textAndIcon",
       "variant": "filled",
       "label": "Enregistrer",
-      "icon": "save"
+      "icon": "save",
+      "color": "theme:onPrimary",
+      "iconColor": "theme:onPrimary"
     }
   },
   "usages": {
@@ -512,7 +541,8 @@ Si la zone contient déjà des composants à conserver, inclus aussi leurs place
 6. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
 7. **Noms obligatoires** : pour chaque nouveau slot, vérifie la présence d'un nom non vide dans les `slotLabels` du parent approprié, y compris dans les gabarits de listes. Ni l'ID, ni `label`, ni `text` ne remplacent ce nom d'édition.
 8. **Usages obligatoires** : chaque nouveau composant sans liaison de données possède une entrée non nulle dans `usages` dans ce patch. Chaque `"explanation"` porte une `translationKey` lowerCamelCase. N'émets aucun usage pour les composants liés, même si la liaison est ajoutée dans le même patch (voir « Usages des composants »).
-9. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
+9. **Atomicité clé/valeur, propriété `label` native & zéro bloc texte libre fourre-tout** : vérifie qu'aucun `SuperValue` ne concatène une étiquette et une donnée dans `text` (`"Clé : Valeur"`), et qu'aucun récapitulatif ou liste métier (affaires, contrats, interlocuteurs, même demandé sous les termes « résumé » ou « notes ») n'est rendu par un bloc texte libre multiligne / `textarea`. En visualisation (`mode: "display"`), **privilégie 1 seul `SuperValue` utilisant `label` + `text`/`binding`** ; ne crée 2 `SuperValue` séparés (`"explanation"` + `"dynamicData"`/`binding`) que si le label requiert un style ou une mise en page fortement personnalisés. Structure les listes/synthèses en cartes, champs unitaires, `SuperListView` ou `SuperTable`.
+10. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
 
 Ces vérifications préviennent les erreurs de génération les plus courantes ; elles ne remplacent pas le décodage, la validation des modèles ni la vérification du rendu.
 
@@ -562,6 +592,13 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
   - **Bonne pratique (empilement de `Card`, boutons ou champs sans occuper toute la hauteur)** :
     - Par défaut dans `center`, les composants sans `preferredHeight` se partagent toute la hauteur (`expandSlots: true`). Pour empiler des cartes (`Card`) ou contrôles qui s'adaptent à la hauteur de leur contenu, configure `zoneFlows.center` avec `"expandSlots": false` (et `"scrollable": true` si la liste de composants peut dépasser l'écran), ou mets `"fitContent": true` sur les slots concernés dans `slotSizeConstraints`.
     - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"mainLayout"` (ou le layout de la page).
+  - **Règles de dimensionnement (`autoSides`, défilement et `Card` enveloppante)** :
+    - **Règle 1 : Pas d'`autoSides` sur les volets latéraux contenant des listes ou layouts complexes**. Un panneau latéral (`westSize` ou `eastSize`) doit avoir une taille fixe explicite (ex: `340px`) sans figurer dans `autoSides` dès lors qu'il héberge une `ListView` ou un contenu défilant.
+    - **Règle 2 : Jamais d'`autoSides` sur un layout feuille défilant**. Retirer `autoSides` de tout `layout` dont une zone est `scrollable: true`.
+    - **Règle 3 : `card` enveloppante sans contrainte zéro**. Les cartes mono-enfant (`Card`) doivent s'étirer naturellement (`expandSlots: true` dans le parent `mainLayout`) pour que leur enfant prenne toute la hauteur disponible du viewport.
+  - **Règle absolue d'auto-dimensionnement sur `mainLayout`** :
+    - N'incluez **jamais** `"west"` ou `"east"` dans `autoSides` sur le conteneur racine `mainLayout` (ou tout layout parent direct de volets latéraux) : ces colonnes doivent obligatoirement être dimensionnées via `westSize` ou `eastSize` (ex: `280` à `360`).
+    - La zone `center` de `mainLayout` doit toujours conserver `expandSlots: true` (valeur par défaut) avec une `Card` centrale extensible, sous peine de voir le volet latéral absorber toute la largeur disponible et occulter la vue centrale.
   - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots
     enfants, indexés par leur `id` de placement (voir l'exemple de nommage
     ci-dessus).
@@ -683,6 +720,16 @@ Propriétés communes dans `components[id]` pour `"native"` :
 
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un sélecteur de choix :
+- **Règle d'atomicité obligatoire (`1 attribut métier = 1 SuperValue`, `label` natif en visualisation & respect des `usages` — priorité absolue)** :
+  - **Interdiction absolue de fusionner libellé et donnée dans `text`** : n'écris **jamais** `"Clé : Valeur"` dans le `text` d'un `SuperValue` (ex: proscrire `"text": "Total HT : 1 280 €"` ou `"text": "Statut : En cours"`), ce qui casse la traduction du libellé et empêche le `binding` direct de la valeur.
+  - **Choix par défaut en mode visualisation (`mode: "display"`) — préférer 1 seul `SuperValue` avec `label` + valeur** : en `mode: "display"` comme en `mode: "input"`, `SuperValue` embarque nativement une propriété **`label`** (affichée proprement au-dessus de la valeur via un `InputDecorator` dense sans bordure) et une valeur (**`text`** ou **`binding`**). **Privilégie systématiquement ce `SuperValue` unique** (`"label": "Total HT"` + `"text": "1 280 €"` avec usage `"dynamicData"`, ou `"binding": "factures[?].totalHt"`) plutôt que de créer 2 `SuperValue` séparés.
+  - **Exception — quand utiliser 2 `SuperValue` distincts** : ne sépare un couple clé/valeur en **deux composants distincts** (`1 SuperValue` pour l'étiquette fixe avec usage `"explanation"` + `translationKey`, et `1 SuperValue` distinct pour la valeur avec usage `"dynamicData"` ou `binding`) **que si le style ou la disposition du label est fortement personnalisé** (typographie/taille/couleur/graisse propre au label différente du rendu Material standard, disposition côte à côte en ligne `row` avec `spaceBetween`, en-tête de carte KPI sur mesure, ou unité séparée en `"staticData"`).
+  - **Interdiction des placeholders de texte libre multilignes (`textarea`) pour les listes et récapitulatifs** : lorsque l'utilisateur demande des listes, fiches ou récapitulatifs métier (ex: affaires, contrats, interlocuteurs, commandes, suivi), **même s'il emploie les mots « résumé », « récapitulatif », « synthèse » ou « notes »**, n'opte **jamais** pour un bloc `SuperValue` multiligne (`minLines` / `maxLines > 1` ou texte libre concaténé avec `\n`) servant de fourre-tout. Modélise-les systématiquement sous forme de **cartes (`Card` / `IterableContent`)**, de **champs unitaires atomiques** (un `SuperValue` par attribut métier avec `label` + `text`/`binding`), d'une **`SuperListView`** ou d'un **tableau (`SuperTable`)**. Réserve un champ multiligne (`maxLines > 1`) exclusivement à la saisie ou l'affichage d'un authentique commentaire rédigeable unitaire (`usage: "userInput"` ou `binding` de texte libre dédié).
+  - **Un seul attribut par `binding`** : un `binding` (`"clients[?].nom"`) cible **un seul chemin** du repository JSON (aucune interpolation multi-champs dans un même `SuperValue`).
+  - Exemples concrets :
+    - **À éviter absolument** : `"text": "Total HT : 1 280 €"`, `"text": "Jean Dupont • Lyon • Actif"`, ou un bloc multiligne `"Affaire : Refonte ERP\nContrat : Annuel\nInterlocuteur : Claire Martin"`.
+    - **À privilégier par défaut (visualisation standard)** : un `SuperValue` unitaire par attribut avec son `label` intégré — ex: `{"type": "value", "mode": "display", "label": "Total HT", "text": "1 280 €"}` (usage `"dynamicData"`, ou `"binding": "factures[?].totalHt"`).
+    - **À réserver aux styles de label fortement customisés** : dans un `Layout` (`"row"` ou `"column"`), `1 SuperValue` pour le label customisé (`"Total HT"`, usage `"explanation"` + `translationKey`) + `1 SuperValue` distinct pour la valeur (`"1 280"`, usage `"dynamicData"` ou `binding`).
 - `mode` : `"display"` par défaut (sauf pour `kind: "choice"`, qui utilise `"input"`) ou `"input"`.
 - `kind` : `"text"` (défaut), `"checkbox"`, `"switch"` (`"switchControl"`) ou `"choice"` (alias `"choise"`).
 - Pour `kind: "choice"`, l'IA doit toujours fournir explicitement `"mode": "input"` (Saisie) : le mode Affichage n'expose pas le sélecteur d'options et une valeur initiale vide paraît donc vide. À la création, si `mode` est omis, la configuration choisit `"input"` pour `kind: "choice"` et `"display"` pour les autres types.
@@ -691,7 +738,7 @@ Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un 
 - `label`, `placeholder` : `string`.
 - `enabled` (`true`), `readOnly` (`false`), `obscureText` (`false`) : `bool`.
 - `minLines` (`1`), `maxLines` (`1`) : `int` (`maxLines >= minLines >= 1`).
-- Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
+- Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"theme:<rôle>"` recommandé Material 3, ou `"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
 - `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}` (supporte `string` ou `List<string>` pour les choix multiples).
 - `field` (`SuperTextFieldConfig`, pour `mode: "input"` et `kind: "text"`).
 - `choice` (`SuperChoiceConfig`, pour `kind: "choice"`) :
@@ -712,6 +759,7 @@ Affiche un bouton interactif :
 - `iconSize` (`number > 0`), `iconSpacing` (`number >= 0`, défaut `8`).
 - `enabled` (`bool`, défaut `true`).
 - Typographie & Couleurs : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`.
+  - **Contraste obligatoire sur `variant: "filled"`** : déclare systématiquement `"color": "theme:onPrimary"` et `"iconColor": "theme:onPrimary"` (ou la paire sémantique correspondante si `backgroundColor` est surchargé : `"theme:secondary"` $\rightarrow$ `"theme:onSecondary"`, `"theme:error"` $\rightarrow$ `"theme:onError"`, `"theme:errorContainer"` $\rightarrow$ `"theme:onErrorContainer"`) afin de verrouiller un contraste AA/AAA conforme.
 - `style` (`ContainerStyle`) : style de surface avancé optionnel.
 - `propertyBindings` & `states` : liaisons repository et états nommés/automatiques (voir § 4.8).
 
@@ -1126,7 +1174,7 @@ acceptent aussi les valeurs négatives hors plage. Les opacités restent limité
    - `"liquidGlass"` : effet verre liquide translucide appliquant automatiquement un flou d'arrière-plan (`BackdropFilter` de `20px` par défaut, surchargeable via `backdropBlur`), un dégradé diagonal translucide et un contour lumineux.
 
 2. **Remplissage : Couleur unie, Dégradés et Image de fond (`color` & `fill`)** :
-   - `color` : `"#RRGGBB"` ou `"#AARRGGBB"` — couleur unie de la carte lorsque `fill.type` vaut `"solid"` (le texte interne ajuste automatiquement son contraste clair/sombre sauf en `liquidGlass`).
+   - `color` : `"theme:<rôle>"` (recommandé pour la compatibilité Material 3, ex: `"theme:surface"`, `"theme:surfaceContainerLow"`) ou `"#RRGGBB"` / `"#AARRGGBB"` — couleur unie de la carte lorsque `fill.type` vaut `"solid"` (le texte interne ajuste automatiquement son contraste clair/sombre sauf en `liquidGlass`).
    - `fill` (`ContainerFill`) :
      - `type` :
        - `"solid"` (défaut) : utilise la couleur unie `color`.
@@ -1149,7 +1197,7 @@ acceptent aussi les valeurs négatives hors plage. Les opacités restent limité
 4. **Bordures (`borderWidth`, `borderWidths`, `borderColor`, `borderLine`)** :
    - `borderWidth` : nombre positif ou nul (slider `0` à `4`, `0` par défaut, aucune bordure) — épaisseur uniforme, sans plafond JSON.
    - `borderWidths` : `[top, right, bottom, left]` où chaque valeur est positive ou nulle — épaisseur indépendante par côté, sans plafond JSON (ex: `[0, 0, 0, 4]` pour une barre d'accentuation uniquement à gauche).
-   - `borderColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
+   - `borderColor` : `"theme:<rôle>"` (ex: `"theme:outlineVariant"`, `"theme:outline"`) ou `"#RRGGBB"` / `"#AARRGGBB"`.
    - `borderLine` : style du trait : `"solid"` (plein, défaut), `"dashed"` (tireté), `"dotted"` (pointillé).
 
 5. **Ombres portées, Ombre intérieure en creux et Halo Néon (`elevation`, `shadowOpacity`, `shadow`, `innerShadow`, `neon`)** :

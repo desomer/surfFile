@@ -58,6 +58,8 @@ class SuperApp extends StatefulWidget {
     this.repositoryStore,
     this.eventBus,
     this.editorBannerAlignment,
+    this.customDesignGuide,
+    this.replaceDefaultDesignGuide = false,
   });
 
   final GoRouter router;
@@ -68,6 +70,12 @@ class SuperApp extends StatefulWidget {
 
   /// Position initiale de la bannière d'édition ; `null` la place en haut.
   final Alignment? editorBannerAlignment;
+
+  /// Directives de design spécifiques à l'application hôte injectées dans le chat Vibe IA.
+  final String? customDesignGuide;
+
+  /// Lorsque `true` et que [customDesignGuide] est renseigné, remplace le guide de design par défaut.
+  final bool replaceDefaultDesignGuide;
 
   /// Application-owned event bus; this widget never closes it.
   final SuperEventBus? eventBus;
@@ -463,6 +471,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
           child: StyleEditBanner(
             navigatorKey: navigatorKey,
             initialAlignment: widget.editorBannerAlignment,
+            customDesignGuide: widget.customDesignGuide,
+            replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
             validateAppearance: (appearance) =>
                 widget.pageRouting?.validate(appearance.pageCatalog),
             onManagePages: widget.pageRouting == null || widget.registry == null

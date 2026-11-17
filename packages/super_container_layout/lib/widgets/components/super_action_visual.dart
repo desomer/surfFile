@@ -32,24 +32,72 @@ Widget buildSuperActionVisual({
 }) {
   final variant = config.effectiveVariant(inTab: inTab);
   final scheme = Theme.of(context).colorScheme;
-  textStyle = textStyle.copyWith(color: textStyle.color.resolveTheme(context));
+  final explicitColor = config.color.resolveTheme(context);
+  final explicitIconColor = config.iconColor.resolveTheme(context);
+  final typographyOnlyStyle = TextStyle(
+    inherit: textStyle.inherit,
+    fontFamily: textStyle.fontFamily,
+    fontFamilyFallback: textStyle.fontFamilyFallback,
+    fontSize: textStyle.fontSize,
+    fontWeight: textStyle.fontWeight,
+    fontStyle: textStyle.fontStyle,
+    letterSpacing: textStyle.letterSpacing,
+    wordSpacing: textStyle.wordSpacing,
+    textBaseline: textStyle.textBaseline,
+    height: textStyle.height,
+    leadingDistribution: textStyle.leadingDistribution,
+    locale: textStyle.locale,
+    decoration: textStyle.decoration,
+  );
   final effectiveOnPressed = config.enabled ? (onPressed ?? () {}) : null;
   final align = switch (config.textAlign) {
     TextAlign.start || TextAlign.left => MainAxisAlignment.start,
     TextAlign.end || TextAlign.right => MainAxisAlignment.end,
     _ => MainAxisAlignment.center,
   };
+  final hasCustomSurface =
+      variant == SuperActionVariant.surface ||
+      config.style.fill.type != FillType.solid ||
+      config.style.hasImage ||
+      config.style.neon != null ||
+      config.style.shadow != null ||
+      config.style.hasInnerShadow ||
+      config.style.effectiveBackdropBlur > 0 ||
+      config.style.pattern != SurfacePattern.none ||
+      config.style.hoverEffect ||
+      (config.style.transform != null && !config.style.transform!.isIdentity);
+
+  final defaultSurfaceFg = switch (variant) {
+    SuperActionVariant.filled ||
+    SuperActionVariant.surface => scheme.onPrimary,
+    SuperActionVariant.tonal => scheme.onSecondaryContainer,
+    SuperActionVariant.elevated ||
+    SuperActionVariant.outlined ||
+    SuperActionVariant.text => scheme.primary,
+    SuperActionVariant.icon => scheme.onSurfaceVariant,
+  };
+
+  final Color? resolvedChildTextColor = hasCustomSurface
+      ? (explicitColor ?? defaultSurfaceFg)
+      : variant == SuperActionVariant.filled
+      ? (explicitColor ?? (config.enabled ? scheme.onPrimary : null))
+      : explicitColor;
+  final Color? resolvedChildIconColor = hasCustomSurface
+      ? (explicitIconColor ?? explicitColor ?? defaultSurfaceFg)
+      : variant == SuperActionVariant.filled
+      ? (explicitIconColor ??
+            explicitColor ??
+            (config.enabled ? scheme.onPrimary : null))
+      : (explicitIconColor ?? explicitColor);
+
   final hasIcon = config.kind.hasIcon && config.icon.trim().isNotEmpty;
   final iconData = hasIcon ? SuperActionIcons.resolve(config.icon) : null;
-  final effectiveIconColor =
-      config.iconColor.resolveTheme(context) ??
-      config.color.resolveTheme(context);
   final iconWidget = hasIcon
       ? Icon(
           iconData,
           key: iconKey,
           size: config.iconSize,
-          color: effectiveIconColor,
+          color: resolvedChildIconColor,
         )
       : SizedBox(
           key: iconKey,
@@ -59,7 +107,9 @@ Widget buildSuperActionVisual({
   final textWidget = Text(
     config.label,
     key: labelKey,
-    style: textStyle,
+    style: resolvedChildTextColor != null
+        ? typographyOnlyStyle.copyWith(color: resolvedChildTextColor)
+        : typographyOnlyStyle,
     textAlign: config.textAlign,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
@@ -91,18 +141,6 @@ Widget buildSuperActionVisual({
     ),
   };
 
-  final hasCustomSurface =
-      variant == SuperActionVariant.surface ||
-      config.style.fill.type != FillType.solid ||
-      config.style.hasImage ||
-      config.style.neon != null ||
-      config.style.shadow != null ||
-      config.style.hasInnerShadow ||
-      config.style.effectiveBackdropBlur > 0 ||
-      config.style.pattern != SurfacePattern.none ||
-      config.style.hoverEffect ||
-      (config.style.transform != null && !config.style.transform!.isIdentity);
-
   Widget button;
   if (hasCustomSurface) {
     final surfaceStyle = config.style.copyWith(
@@ -124,15 +162,6 @@ Widget buildSuperActionVisual({
       SuperActionVariant.text ||
       SuperActionVariant.icon => Colors.transparent,
     };
-    final defaultFg = switch (variant) {
-      SuperActionVariant.filled ||
-      SuperActionVariant.surface => scheme.onPrimary,
-      SuperActionVariant.tonal => scheme.onSecondaryContainer,
-      SuperActionVariant.elevated ||
-      SuperActionVariant.outlined ||
-      SuperActionVariant.text => scheme.primary,
-      SuperActionVariant.icon => scheme.onSurfaceVariant,
-    };
     final pad =
         config.horizontalPadding != null || config.verticalPadding != null
         ? EdgeInsets.symmetric(
@@ -147,7 +176,7 @@ Widget buildSuperActionVisual({
             horizontal: config.kind == SuperActionKind.icon ? 10 : 16,
             vertical: 10,
           );
-    final fg = config.color.resolveTheme(context) ?? defaultFg;
+    final fg = explicitColor ?? defaultSurfaceFg;
     button = Padding(
       padding: surfaceStyle.outerMargin,
       child: StyledSurface(
@@ -163,11 +192,11 @@ Widget buildSuperActionVisual({
             padding: pad,
             child: IconTheme.merge(
               data: IconThemeData(
-                color: effectiveIconColor ?? fg,
+                color: resolvedChildIconColor ?? fg,
                 size: config.iconSize ?? 20,
               ),
               child: DefaultTextStyle.merge(
-                style: textStyle.copyWith(color: fg),
+                style: typographyOnlyStyle.copyWith(color: fg),
                 child: innerContent,
               ),
             ),
@@ -182,7 +211,8 @@ Widget buildSuperActionVisual({
     final bg =
         config.backgroundColor.resolveTheme(context) ??
         config.style.color.resolveTheme(context);
-    final fg = config.color.resolveTheme(context);
+    final fg = explicitColor;
+    final effectiveIconColor = explicitIconColor ?? explicitColor;
     final bColor =
         config.borderColor.resolveTheme(context) ??
         config.style.borderColor.resolveTheme(context);
@@ -216,16 +246,28 @@ Widget buildSuperActionVisual({
         ? BorderSide(color: bColor ?? scheme.outline, width: bWidth ?? 1)
         : null;
 
+    final filledStyle = FilledButton.styleFrom(
+      backgroundColor: bg,
+      foregroundColor: fg ?? scheme.onPrimary,
+      iconColor: effectiveIconColor ?? scheme.onPrimary,
+      iconSize: config.iconSize,
+      textStyle: typographyOnlyStyle,
+      elevation: elev,
+      padding: pad,
+      shape: shape,
+      side: side,
+    );
+
     final buttonStyle = ButtonStyle(
       backgroundColor: bg != null ? WidgetStatePropertyAll(bg) : null,
       foregroundColor: fg != null ? WidgetStatePropertyAll(fg) : null,
-      iconColor: (effectiveIconColor != null)
+      iconColor: effectiveIconColor != null
           ? WidgetStatePropertyAll(effectiveIconColor)
           : null,
       iconSize: config.iconSize != null
           ? WidgetStatePropertyAll(config.iconSize)
           : null,
-      textStyle: WidgetStatePropertyAll(textStyle),
+      textStyle: WidgetStatePropertyAll(typographyOnlyStyle),
       elevation: elev != null ? WidgetStatePropertyAll(elev) : null,
       padding: pad != null ? WidgetStatePropertyAll(pad) : null,
       shape: shape != null ? WidgetStatePropertyAll(shape) : null,
@@ -236,7 +278,7 @@ Widget buildSuperActionVisual({
       SuperActionVariant.filled => FilledButton(
         key: buttonKey,
         focusNode: focusNode,
-        style: buttonStyle,
+        style: filledStyle,
         onPressed: effectiveOnPressed,
         child: innerContent,
       ),

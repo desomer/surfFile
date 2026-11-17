@@ -116,6 +116,14 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
     persist();
   }
 
+  /// Met à jour l'apparence affichée en direct (par ex. durant le streaming Vibe IA)
+  /// sans déclencher d'écriture intermédiaire dans [store].
+  void setPreviewValue(Appearance appearance) {
+    final next = store.codec.prepare(appearance);
+    validateAppearance?.call(next);
+    super.value = next;
+  }
+
   void reset() {
     store.codec.resetAdditional();
     value = store.codec.defaults;

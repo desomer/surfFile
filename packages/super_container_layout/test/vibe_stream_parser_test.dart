@@ -324,5 +324,86 @@ void main() {
         expect(parser.current.estimatedComponentCount, 1);
       },
     );
+
+    test(
+      'extrait incrémentalement partialVibePatch et patchRevision à chaque entrée fermée de vibe (thème, pageCatalog, styles, components, null, behaviors, usages)',
+      () {
+        final parser = VibeIncrementalStreamParser();
+
+        var snap = parser.addChunk('{"message":"Construction live","vibe":{');
+        expect(snap.partialVibePatch, isNull);
+        expect(snap.patchRevision, 0);
+
+        // 1. Scalaires de thème et pageCatalog
+        snap = parser.addChunk(
+          '"mode":"dark","backgroundOpacity":0.85,'
+          '"pageCatalog":{"pages":[{"id":"dash","name":"Dashboard","path":"/dash"}]},',
+        );
+        expect(snap.patchRevision, 3);
+        expect(snap.partialVibePatch!['mode'], 'dark');
+        expect(snap.partialVibePatch!['backgroundOpacity'], 0.85);
+        expect(
+          (snap.partialVibePatch!['pageCatalog'] as Map)['pages'],
+          hasLength(1),
+        );
+
+        // 2. Styles : la première entrée est fermée, la seconde est encore ouverte
+        snap = parser.addChunk(
+          '"styles":{"card-1":{"color":"#1E293B","radius":12},"card-2":{"color":"#',
+        );
+        expect(snap.patchRevision, 4);
+        final stylesStep1 =
+            snap.partialVibePatch!['styles'] as Map<String, dynamic>;
+        expect(stylesStep1.keys, ['card-1']);
+        expect((stylesStep1['card-1'] as Map)['radius'], 12);
+
+        // Fermeture de card-2 et ouverture de components avec suppression null + accolade dans texte échappé
+        snap = parser.addChunk(
+          '334155"}},'
+          '"components":{"legacy-slot":null,'
+          '"dash":{"type":"scaffold","placements":{"body":[{"id":"kpi","type":"registry:Value"}]}},'
+          '"kpi":{"type":"value","text":"Valeur {A} \\"OK\\" 🚀',
+        );
+        expect(snap.patchRevision, 7);
+        final componentsStep1 =
+            snap.partialVibePatch!['components'] as Map<String, dynamic>;
+        expect(componentsStep1.containsKey('legacy-slot'), isTrue);
+        expect(componentsStep1['legacy-slot'], isNull);
+        expect(componentsStep1.containsKey('dash'), isTrue);
+        // "kpi" n'est pas encore fermé : il ne doit pas encore figurer dans partialVibePatch
+        expect(componentsStep1.containsKey('kpi'), isFalse);
+        // En revanche son ID a déjà été compté dans estimatedComponentCount
+        expect(snap.estimatedComponentCount, 3);
+
+        // Fermeture de "kpi", puis behaviors et usages caractère par caractère
+        const tail =
+            '"}},'
+            '"behaviors":{"kpi":[{"id":"b1","trigger":"tap","action":{"type":"emitEvent","eventId":"kpi.tap"}}]},'
+            '"usages":{"kpi":{"kind":"staticData"}}}}';
+        for (var i = 0; i < tail.length; i++) {
+          snap = parser.addChunk(tail[i]);
+        }
+
+        expect(snap.patchRevision, 10);
+        final finalComponents =
+            snap.partialVibePatch!['components'] as Map<String, dynamic>;
+        expect(
+          (finalComponents['kpi'] as Map)['text'],
+          'Valeur {A} "OK" 🚀',
+        );
+        expect(
+          (snap.partialVibePatch!['behaviors'] as Map).containsKey('kpi'),
+          isTrue,
+        );
+        expect(
+          ((snap.partialVibePatch!['usages'] as Map)['kpi'] as Map)['kind'],
+          'staticData',
+        );
+
+        parser.reset();
+        expect(parser.current.partialVibePatch, isNull);
+        expect(parser.current.patchRevision, 0);
+      },
+    );
   });
 }

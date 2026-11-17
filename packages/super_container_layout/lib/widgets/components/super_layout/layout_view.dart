@@ -265,12 +265,21 @@ extension _SuperLayoutView on SuperLayoutState {
                   _hasContent(config, config.contentZone(side)))
                 side,
           };
+          final hasHorizontalSide =
+              (config.west &&
+                  !closed(SuperLayoutZone.west) &&
+                  !emptyAutoSides.contains(SuperLayoutZone.west)) ||
+              (config.east &&
+                  !closed(SuperLayoutZone.east) &&
+                  !emptyAutoSides.contains(SuperLayoutZone.east));
           return LayoutBuilder(
             builder: (context, constraints) {
               final layoutSize = constraints.biggest;
               final fitScope = SlotContentFitScope.maybeOf(context);
               final shrinkWidth =
-                  widget.shrinkWrap || (fitScope?.fitWidth ?? false);
+                  widget.shrinkWrap ||
+                  ((fitScope?.fitWidth ?? false) &&
+                      !(hasHorizontalSide && constraints.maxWidth.isFinite));
               final shrinkHeight =
                   widget.shrinkWrap || (fitScope?.fitHeight ?? false);
               return _ZoneLayout(
@@ -351,6 +360,9 @@ extension _SuperLayoutView on SuperLayoutState {
                                       autoSides,
                                       editMode,
                                       layoutSize,
+                                      shrinkWidth: shrinkWidth,
+                                      shrinkHeight: shrinkHeight,
+                                      hasHorizontalSide: hasHorizontalSide,
                                     ),
                                   ),
                                 ),

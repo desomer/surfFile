@@ -36,7 +36,8 @@ class SlotAddition {
 /// nom. Le widget occupe tout l'espace disponible.
 ///
 /// Un côté en taille automatique ([SuperLayoutConfig.autoSides]) prend la
-/// taille de son contenu ; le centre reçoit le reste.
+/// taille de son contenu (plafonnée à 45 % de la largeur disponible pour
+/// `west` et `east`), et le centre occupe prioritairement tout l'espace restant.
 class SuperLayout extends SuperStatefulComponent<SuperLayoutConfig> {
   const SuperLayout({
     this.id,

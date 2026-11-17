@@ -638,4 +638,82 @@ void main() {
       expect(saved!.propertyBindings, isEmpty);
     },
   );
+
+  testWidgets(
+    'SuperAction filled variant defaults text and icon colors to colorScheme.onPrimary even inside onSurface containers',
+    (tester) async {
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
+      );
+      final expectedOnPrimary = theme.colorScheme.onPrimary;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: DefaultTextStyle(
+              style: TextStyle(color: theme.colorScheme.onSurface),
+              child: IconTheme(
+                data: IconThemeData(color: theme.colorScheme.onSurface),
+                child: const Column(
+                  children: [
+                    SuperAction(
+                      id: 'btn-filled-default',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        variant: SuperActionVariant.filled,
+                        label: 'Publier',
+                        icon: 'send',
+                      ),
+                    ),
+                    SuperAction(
+                      id: 'btn-filled-surface',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        variant: SuperActionVariant.filled,
+                        label: 'Valider',
+                        icon: 'check',
+                        style: ContainerStyle(hoverEffect: true),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final filledButton = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('super-action-button-btn-filled-default')),
+      );
+      expect(
+        filledButton.style?.foregroundColor?.resolve(const <WidgetState>{}),
+        expectedOnPrimary,
+      );
+      expect(
+        filledButton.style?.iconColor?.resolve(const <WidgetState>{}),
+        expectedOnPrimary,
+      );
+
+      final defaultLabel = tester.widget<Text>(
+        find.byKey(const ValueKey('super-action-label-btn-filled-default')),
+      );
+      final defaultIcon = tester.widget<Icon>(
+        find.byKey(const ValueKey('super-action-icon-btn-filled-default')),
+      );
+      expect(defaultLabel.style?.color, expectedOnPrimary);
+      expect(defaultIcon.color, expectedOnPrimary);
+
+      final surfaceLabel = tester.widget<Text>(
+        find.byKey(const ValueKey('super-action-label-btn-filled-surface')),
+      );
+      final surfaceIcon = tester.widget<Icon>(
+        find.byKey(const ValueKey('super-action-icon-btn-filled-surface')),
+      );
+      expect(surfaceLabel.style?.color, expectedOnPrimary);
+      expect(surfaceIcon.color, expectedOnPrimary);
+    },
+  );
 }

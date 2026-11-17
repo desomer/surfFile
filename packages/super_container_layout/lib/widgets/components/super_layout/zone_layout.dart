@@ -202,23 +202,66 @@ class _RenderZoneLayout extends RenderBox
     );
   }
 
-  BoxConstraints _naturalLimits(SuperLayoutZone zone, BoxConstraints limits) {
+  static const double _maxAutoSideWidthRatio = 0.45;
+
+  static double _maxAutoSideWidth(double maxWidth) =>
+      maxWidth.isFinite ? maxWidth * _maxAutoSideWidthRatio : double.infinity;
+
+  bool _hasActiveSide(SuperLayoutZone side) =>
+      _config.hasSide(side) &&
+      !_emptyAutoSides.contains(side) &&
+      !_config.collapsedSides.containsKey(side);
+
+  BoxConstraints _naturalLimits(
+    SuperLayoutZone zone,
+    BoxConstraints limits, {
+    double? measuredWest,
+    double? measuredEast,
+  }) {
     double fixed(SuperLayoutZone side) =>
-        !_config.hasSide(side) ||
-            _config.isAuto(side) ||
-            _config.collapsedSides.containsKey(side)
+        !_hasActiveSide(side) || _autoSides.contains(side)
         ? 0
         : _config.sizeOf(side);
     final west = fixed(SuperLayoutZone.west);
     final east = fixed(SuperLayoutZone.east);
+    final westReserved = measuredWest ?? west;
+    final eastReserved = measuredEast ?? east;
+    final autoSideMaxWidth = _maxAutoSideWidth(limits.maxWidth);
+    final autoWest =
+        _hasActiveSide(SuperLayoutZone.west) &&
+        _autoSides.contains(SuperLayoutZone.west);
+    final autoEast =
+        _hasActiveSide(SuperLayoutZone.east) &&
+        _autoSides.contains(SuperLayoutZone.east);
     final width = switch (zone) {
+      SuperLayoutZone.west ||
+      SuperLayoutZone.nw ||
+      SuperLayoutZone.sw when autoWest => autoSideMaxWidth,
       SuperLayoutZone.west ||
       SuperLayoutZone.nw ||
       SuperLayoutZone.sw when west > 0 => math.min(limits.maxWidth, west),
       SuperLayoutZone.east ||
       SuperLayoutZone.ne ||
+      SuperLayoutZone.se when autoEast => autoSideMaxWidth,
+      SuperLayoutZone.east ||
+      SuperLayoutZone.ne ||
       SuperLayoutZone.se when east > 0 => math.min(limits.maxWidth, east),
-      SuperLayoutZone.center => math.max(0.0, limits.maxWidth - west - east),
+      SuperLayoutZone.center => math.max(
+        0.0,
+        limits.maxWidth - westReserved - eastReserved,
+      ),
+      SuperLayoutZone.north => math.max(
+        0.0,
+        limits.maxWidth -
+            (_config.nw == CornerMerge.row ? 0.0 : westReserved) -
+            (_config.ne == CornerMerge.row ? 0.0 : eastReserved),
+      ),
+      SuperLayoutZone.south => math.max(
+        0.0,
+        limits.maxWidth -
+            (_config.sw == CornerMerge.row ? 0.0 : westReserved) -
+            (_config.se == CornerMerge.row ? 0.0 : eastReserved),
+      ),
       _ => limits.maxWidth,
     };
     final north = fixed(SuperLayoutZone.north);
@@ -232,29 +275,52 @@ class _RenderZoneLayout extends RenderBox
       SuperLayoutZone.se when south > 0 => math.min(limits.maxHeight, south),
       _ => limits.maxHeight,
     };
-    return BoxConstraints(maxWidth: width, maxHeight: height);
+    final tightenCenterWidth =
+        zone == SuperLayoutZone.center && !_shrinkWidth && width.isFinite;
+    return BoxConstraints(
+      minWidth: tightenCenterWidth ? width : 0,
+      maxWidth: width,
+      maxHeight: height,
+    );
   }
 
   ({Size size, Map<SuperLayoutZone, double> sides}) _measureContent(
     BoxConstraints limits,
     Size Function(RenderBox, BoxConstraints) measure,
   ) {
-    final sizes = <SuperLayoutZone, Size>{};
+    final children = <SuperLayoutZone, RenderBox>{};
     for (var child = firstChild; child != null; child = childAfter(child)) {
       final data = child.parentData! as _ZoneParentData;
       if (!data.overlay && !_config.collapsedSides.containsKey(data.zone)) {
-        sizes[data.zone!] = measure(child, _naturalLimits(data.zone!, limits));
+        children[data.zone!] = child;
+      }
+    }
+    final sizes = <SuperLayoutZone, Size>{};
+    for (final zone in const [
+      SuperLayoutZone.west,
+      SuperLayoutZone.east,
+      SuperLayoutZone.nw,
+      SuperLayoutZone.sw,
+      SuperLayoutZone.ne,
+      SuperLayoutZone.se,
+    ]) {
+      if (children[zone] case final child?) {
+        sizes[zone] = measure(child, _naturalLimits(zone, limits));
       }
     }
     double width(SuperLayoutZone zone) => sizes[zone]?.width ?? 0;
     double height(SuperLayoutZone zone) => sizes[zone]?.height ?? 0;
-    double side(SuperLayoutZone zone, double natural) =>
-        _emptyAutoSides.contains(zone)
+    final autoSideMaxWidth = _maxAutoSideWidth(limits.maxWidth);
+    double side(
+      SuperLayoutZone zone,
+      double natural, {
+      double maxAuto = double.infinity,
+    }) =>
+        _emptyAutoSides.contains(zone) ||
+            _config.collapsedSides.containsKey(zone)
         ? 0
-        : _config.collapsedSides.containsKey(zone)
-        ? 0
-        : _config.isAuto(zone)
-        ? natural
+        : _autoSides.contains(zone)
+        ? math.min(natural, maxAuto)
         : _config.sizeOf(zone);
     final west = _config.west
         ? side(
@@ -264,6 +330,7 @@ class _RenderZoneLayout extends RenderBox
               width(SuperLayoutZone.nw),
               width(SuperLayoutZone.sw),
             ].reduce(math.max),
+            maxAuto: autoSideMaxWidth,
           )
         : 0.0;
     final east = _config.east
@@ -274,8 +341,26 @@ class _RenderZoneLayout extends RenderBox
               width(SuperLayoutZone.ne),
               width(SuperLayoutZone.se),
             ].reduce(math.max),
+            maxAuto: autoSideMaxWidth,
           )
         : 0.0;
+    for (final zone in const [
+      SuperLayoutZone.north,
+      SuperLayoutZone.south,
+      SuperLayoutZone.center,
+    ]) {
+      if (children[zone] case final child?) {
+        sizes[zone] = measure(
+          child,
+          _naturalLimits(
+            zone,
+            limits,
+            measuredWest: west,
+            measuredEast: east,
+          ),
+        );
+      }
+    }
     final north = _config.north
         ? side(
             SuperLayoutZone.north,
@@ -364,14 +449,15 @@ class _RenderZoneLayout extends RenderBox
       ...?natural?.sides,
       for (final side in _emptyAutoSides) side: 0,
     };
+    final autoSideMaxWidth = _maxAutoSideWidth(size.width);
     for (final side in const [SuperLayoutZone.west, SuperLayoutZone.east]) {
       final child = content[side];
       if (_shrinkAny || child == null || !_autoSides.contains(side)) continue;
       child.layout(
-        BoxConstraints(maxWidth: size.width, maxHeight: size.height),
+        BoxConstraints(maxWidth: autoSideMaxWidth, maxHeight: size.height),
         parentUsesSize: true,
       );
-      measured[side] = child.size.width;
+      measured[side] = math.min(child.size.width, autoSideMaxWidth);
     }
     // La largeur du Nord et du Sud dépend de celle de l'Ouest et de l'Est.
     final widths = _config.resolve(size, measured: measured);
@@ -445,9 +531,23 @@ class _RenderZoneLayout extends RenderBox
       // changerait la taille mesurée.
       // Keep natural content on its measurement constraints so size changes
       // propagate back to the wrapping parent, including asynchronous bindings.
-      final naturalLimits = _naturalLimits(zone, constraints);
-      final freeWidth = _shrinkWidth || autoAxis == Axis.horizontal;
+      final naturalLimits = _naturalLimits(
+        zone,
+        constraints,
+        measuredWest: measured[SuperLayoutZone.west],
+        measuredEast: measured[SuperLayoutZone.east],
+      );
+      final prioritizeCenter =
+          zone == SuperLayoutZone.center &&
+          !_shrinkWidth &&
+          (_hasActiveSide(SuperLayoutZone.west) ||
+              _hasActiveSide(SuperLayoutZone.east));
+      final freeWidth =
+          !prioritizeCenter && (_shrinkWidth || autoAxis == Axis.horizontal);
       final freeHeight = _shrinkHeight || autoAxis == Axis.vertical;
+      final compressedAutoSide =
+          autoAxis == Axis.horizontal &&
+          rect.width + 1e-6 < (measured[zone] ?? 0);
       child.layout(
         !overlay && (freeWidth || freeHeight)
             ? BoxConstraints(
@@ -455,7 +555,7 @@ class _RenderZoneLayout extends RenderBox
                 maxWidth: _shrinkWidth
                     ? naturalLimits.maxWidth
                     : freeWidth
-                    ? size.width
+                    ? (compressedAutoSide ? rect.width : autoSideMaxWidth)
                     : rect.width,
                 minHeight: freeHeight ? 0 : rect.height,
                 maxHeight: _shrinkHeight
