@@ -707,6 +707,7 @@ class _SuperListViewState extends State<SuperListView>
           slots: widget.slots,
           config: value,
           style: rowStyle,
+          bindLayoutToRegistry: false,
           resolveSelectionAndHover:
               !animateIndicators ||
               (rowStyle.states?.selected?.properties.contains(

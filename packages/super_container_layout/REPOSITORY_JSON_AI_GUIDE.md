@@ -160,14 +160,75 @@ Les jokers `[?]` d'un chemin sont résolus à l'exécution **de gauche à droite
 
 1. **Passe 1 — Portée itérative englobante (`JsonListScope`)** :
    - Chaque ligne rendue par une collection (`SuperListView`, `SuperTable`, `SuperTreeView`, ou `SuperTab` en `mode: "dynamic"`) enveloppe ses enfants dans un `JsonListScope` fournissant le `repositoryId` de la collection et les indices de lignes englobantes (`[i]`, `[i, j]`, …).
-   - **Bonne pratique à l'intérieur d'une collection liée** : omets le préfixe `repositoryId` sur les enfants afin d'hériter automatiquement du repository de la collection englobante :
-     - Dans le `template` d'une `SuperListView` liée à `"crm_clients:clients"`, écris simplement `"binding": "clients[?].nom"` (forme compacte à `repositoryId` hérité).
-     - Dans un `SuperTreeView` lié à `"crm_clients:dossiers"`, écris `"binding": "nom"` (chemin relatif au nœud courant) ou `"binding": "dossiers[?].nom"`.
+   - **Règle impérative du chemin complet avec `[?]` (même en mode « hérité de la liste englobante »)** :
+     - Dans le gabarit (`template`, colonnes ou contenu dynamique) d'une `SuperListView`, d'une `SuperTable` ou d'un `SuperTab` dynamique, **omettre le `repositoryId` ne dispense jamais d'écrire le chemin complet depuis la racine du repository avec le(s) joker(s) `[?]`** (forme `tableau[?].attribut` ou `parent[?].sousTableau[?].attribut`).
+     - **Correct** : dans une `SuperListView` liée à `"crm_clients:clients"` (ou `"deals"`), écris `"binding": "clients[?].nom"` (ou `"deals[?].title"`), et pour une sous-liste liée à `"clients[?].commandes"`, écris `"binding": "clients[?].commandes[?].montantHt"`.
+     - **Strictement interdit** : n'écris **jamais** un nom d'attribut seul sans son préfixe tableau `[?]` (ex. `"binding": "nom"` ou `"binding": "title"`). Dans une liste, `JsonListScope` hérite uniquement du `repositoryId` et fournit les indices de `[?]` : un chemin sans `[?]` comme `"title"` est résolu à la **racine** du repository (`document["title"]`, pas `deals[i]["title"]`), renvoie `null` et rend le composant vide (`width: 0`).
+     - **Seule exception** : à l'intérieur d'un `SuperTreeView` lié à `"crm_clients:dossiers"`, les enfants peuvent utiliser un chemin relatif au nœud courant (`"nom"`) ou le chemin complet (`"dossiers[?].nom"`).
 2. **Passe 2 — Sélection Maître / Détail hors collection (`JsonArrayBinding`)** :
    - Lorsqu'un chemin comporte encore un ou plusieurs `[?]` non fournis par une collection englobante (par exemple un composant placé dans le panneau central `card-detail`, **en dehors** de la `SuperListView` placée en `west`), `JsonListScope.resolveSelected` remplace chaque `[?]` restant par l'**indice de la ligne actuellement sélectionnée** dans le `JsonArrayBinding` correspondant (`store.bindingOf(repoId).array('clients')`).
    - Cela réalise nativement le pattern **Maître / Détail** (et même **Maître / Sous-maître / Détail** avec `"crm_clients:clients[?].commandes"` pour une sous-liste détail et `"crm_clients:clients[?].commandes[?].montantHt"` pour le détail de la sous-ligne sélectionnée), sans aucun code ni événement manuel.
    - **Exigence impérative hors collection** : tout composant placé en dehors d'une collection englobante **doit déclarer explicitement son `repositoryId`** (`"crm_clients:clients[?].nom"` ou `{"repositoryId": "crm_clients", "path": "clients[?].nom"}`). Sans `repositoryId` explicite hors liste, la validation échoue avec *« Repository hérité indisponible »*.
    - Tant qu'aucune ligne n'est sélectionnée dans le tableau maître, la liaison retourne `binding: null` : les composants détail restent proprement vides et désactivés (non modifiables) sans lever d'erreur.
+
+### 3.3. Règle impérative Maître / Esclave : attributs JSON imbriqués (jamais de clé étrangère)
+
+`JsonAttributePath` ne supporte **aucune jointure** entre tableaux indépendants et **aucun prédicat de filtre** (les expressions du type `commandes[?(@.clientId == ...)]` sont formellement interdites). En revanche, `JsonListScope.resolveSelected` résout nativement toute chaîne de jokers `[?]` imbriqués de gauche à droite en s'appuyant sur la sélection active de chaque niveau (`JsonArrayBinding`).
+
+**Règle absolue** :
+- **À ne JAMAIS faire (modèle relationnel plat)** : ne sépare **jamais** une entité maître et ses entités esclaves dans deux tableaux de premier niveau reliés par une clé étrangère (ex. `"clients": [{"id": "C1", ...}]` + `"commandes": [{"id": "CMD-1", "clientId": "C1", ...}]`). Une telle liste `"commandes"` ne serait **jamais filtrée** lors du clic sur un client.
+- **À TOUJOURS faire (attributs imbriqués dans le maître)** : modélise toute relation **Maître / Esclave** directement par des **attributs imbriqués à l'intérieur de chaque objet maître** :
+  1. **Relation 1-N (Maître $\rightarrow$ Esclave)** : imbrique un **sous-tableau** dans l'objet maître (ex. `"commandes": [...]` dans chaque client $\rightarrow$ chemin `"crm_clients:clients[?].commandes"`).
+  2. **Relation multi-niveaux (Maître $\rightarrow$ Sous-maître $\rightarrow$ Détail)** : imbrique un sous-tableau dans le sous-tableau (ex. `"lignes": [...]` dans chaque commande $\rightarrow$ chemin `"crm_clients:clients[?].commandes[?].lignes"`).
+  3. **Relation 1-1 / groupe de détails structurés** : imbrique un **sous-objet** dans l'objet maître (ex. `"adresse": {"rue": "...", "codePostal": "...", "ville": "..."}` $\rightarrow$ chemin `"crm_clients:clients[?].adresse.ville"`).
+
+**Contrat exact des `binding` selon l'emplacement du composant** :
+
+| Rôle dans l'écran | Emplacement du composant | Syntaxe `binding` à utiliser | Résolution des `[?]` |
+| :--- | :--- | :--- | :--- |
+| **Liste / Table / Graphe / Onglets maître** | Zone maître (ex. `west`) | `"<repo>:clients"` | Sélection stockée dans `array('clients')` |
+| **Champs détail 1-1 du maître** *(y compris sous-objet imbriqué)* | Hors liste maître (ex. panneau `center`) | `"<repo>:clients[?].nom"` / `"<repo>:clients[?].adresse.ville"` | `[?]` résolu par la sélection maître active (`repositoryId` explicite obligatoire) |
+| **Liste / Table / Graphe / Onglets esclave** | Hors liste maître (ex. panneau `center`) | `"<repo>:clients[?].commandes"` | `[?]` résolu par le client sélectionné (`repositoryId` explicite obligatoire) |
+| **Liste esclave imbriquée dans une ligne maître** | Dans le `template` de la liste maître | `"clients[?].commandes"` | `[?]` résolu par la portée de ligne maître (`repositoryId` hérité) |
+| **Cellule / champ dans la ligne esclave** | Dans le `template` ou `cell:<col>` de l'esclave | `"clients[?].commandes[?].montantHt"` | 1er `[?]` = client maître sélectionné ; 2e `[?]` = ligne courante de la portée esclave (`repositoryId` hérité) |
+| **Détail de la ligne esclave sélectionnée** | Hors liste esclave (ex. fiche sous-détail) | `"<repo>:clients[?].commandes[?].montantHt"` | 1er `[?]` = client maître sélectionné ; 2e `[?]` = commande esclave sélectionnée pour ce client (`repositoryId` explicite obligatoire) |
+
+**Exemple ciblé de modélisation Maître / Esclave imbriquée** :
+
+```json
+{
+  "clients": [
+    {
+      "id": "CLI-001",
+      "nom": "Claire Martin",
+      "adresse": {
+        "rue": "14 rue de la République",
+        "codePostal": "69002",
+        "ville": "Lyon"
+      },
+      "commandes": [
+        {
+          "id": "CMD-101",
+          "date": "2026-10-14",
+          "montantHt": 2450.0,
+          "statut": "payee",
+          "lignes": [
+            { "id": "L-1", "designation": "Audit architecture", "quantite": 2, "puHt": 950.0 },
+            { "id": "L-2", "designation": "Support mensuel", "quantite": 1, "puHt": 550.0 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- Liste maître (`SuperListView` `list-clients`) : `"binding": "crm_clients:clients"`
+- Ville du client sélectionné (`SuperValue` hors liste) : `"binding": "crm_clients:clients[?].adresse.ville"`
+- Liste esclave des commandes du client sélectionné (`SuperTable` / `SuperListView` `table-commandes` hors liste maître) : `"binding": "crm_clients:clients[?].commandes"`
+- Montant dans une cellule/ligne de `table-commandes` : `"binding": "clients[?].commandes[?].montantHt"`
+- Sous-table des lignes de la commande sélectionnée (`SuperTable` `table-lignes` hors `table-commandes`) : `"binding": "crm_clients:clients[?].commandes[?].lignes"`
+- Désignation dans une cellule de `table-lignes` : `"binding": "clients[?].commandes[?].lignes[?].designation"`
 
 ---
 
@@ -218,7 +279,8 @@ Dans `JsonRepositoryStore`, lorsque l'utilisateur clique sur le bouton **Ajouter
 
 **Conséquence directe** :
 1. **Toutes les lignes** d'un tableau doivent posséder **exactement le même ensemble de clés** avec les **mêmes types JSON**.
-2. **Ne mets jamais `null` ni clé manquante dans les objets d'exemple (et tout particulièrement sur le dernier élément `items.last`)** pour un champ texte, numérique, booléen ou sous-tableau : utilise `""` (ou mieux, une vraie valeur métier réaliste), `0`, `false` ou `[]`. Si `items.last` contient `"telephone": null` ou omet `"montantHt"`, toutes les futures lignes créées par l'utilisateur hériteront de `null` ou n'auront pas la clé attendue !
+2. **Ne mets jamais `null` ni clé manquante dans les objets d'exemple (et tout particulièrement sur le dernier élément `items.last`)** pour un champ texte, numérique, booléen, sous-objet ou sous-tableau : utilise `""` (ou mieux, une vraie valeur métier réaliste), `0`, `false` ou `[]`. Si `items.last` contient `"telephone": null` ou omet `"montantHt"` / `"commandes"`, toutes les futures lignes créées par l'utilisateur hériteront de `null` ou n'auront pas la clé attendue !
+3. **Sous-tableaux esclaves imbriqués (`allowAdd: true`)** : chaque ligne maître doit toujours initialiser son sous-tableau esclave (`"commandes": [...]` ou `[]`, jamais `null`). Lorsqu'une liste esclave autorise `allowAdd: true`, veille à ce que les enregistrements maîtres initiaux embarquent **2 à 4 éléments esclaves homogènes** (avec un dernier élément esclave entièrement renseigné) afin que `blank(items.last)` dispose d'un gabarit complet lors de l'ajout d'un nouvel élément esclave ; lors de l'ajout d'un nouveau maître, `blank(List)` initialise automatiquement son sous-tableau esclave à `[]`.
 
 ### 5.2. Couverture complète des états nommés et des branches conditionnelles
 

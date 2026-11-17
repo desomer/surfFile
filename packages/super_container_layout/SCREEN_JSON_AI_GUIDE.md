@@ -48,6 +48,22 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` ; `"@nom"`, `"@stats.total"`, `"@actifs[?].nom"` ou `"articles[?].@montant"` pour des calculs déclarés par code, en lecture seule |
 | **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:Indicator"`, `"registry:Separator"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"Indicator"`, `"SuperIndicator"`, `"Icon"`, `"Separator"`, `"SuperSeparator"`, `"Divider"`, `"Spacer"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
 
+> **Règle Maître / Esclave (attributs JSON imbriqués)** : `JsonAttributePath` ne supporte ni jointure ni filtre relationnel (`clientId`). Modélise toujours les relations Maître / Esclave par des **attributs imbriqués** dans l'objet maître (`"<repo>:clients[?].commandes"` pour une collection esclave, `"<repo>:clients[?].commandes[?].montantHt"` pour son détail ou ses cellules, `"<repo>:clients[?].adresse.ville"` pour un sous-objet 1-1) — jamais par deux tableaux plats séparés. Voir [`REPOSITORY_JSON_AI_GUIDE.md`](REPOSITORY_JSON_AI_GUIDE.md) (section 3.3).
+
+### Règle impérative d'héritage de repository & branches sœurs (Pattern Maître / Détail)
+
+1. **Périmètre strict de la liaison courte héritée** :
+   - La forme courte sans identifiant de repository (ex. `clients[?].nom`) est réservée **exclusivement aux composants enfants directs** d'un conteneur fournissant déjà ce scope (à l'intérieur du `template` d'une `ListView`, des cellules d'une `Table`, ou du `content` d'un `SuperTab` dynamique).
+   - L'héritage ne se propage **jamais horizontalement entre branches sœurs** d'un layout (par exemple du panneau `west` vers la fiche détaillée en zone `center`).
+
+2. **Règle absolue pour la fiche détaillée (branche sœur)** :
+   - Tout composant situé en dehors de l'arborescence de la liste source — qu'il s'agisse de champs atomiques `SuperValue`, de KPIs, de sous-listes imbriquées ou de graphiques `Chart` — **doit impérativement déclarer le `repositoryId` explicite** :
+     - Forme compacte recommandée : `"<repoId>:comptes[?].propriété"` ou `"<alias>:comptes[?].propriété"`
+     - Forme objet : `{"repositoryId": "<repoId>", "path": "comptes[?].propriété"}`
+
+3. **Mécanisme de sélection Maître / Détail** :
+   - Le runtime synchronise automatiquement l'indice sélectionné `[?]` entre tous les composants partageant le même `repositoryId` dans le document. Préciser le préfixe du repository est ce qui permet à la vue centrale de se synchroniser avec la ligne active du volet latéral.
+
 ---
 
 ### Liaisons sur des attributs calculés
@@ -800,6 +816,9 @@ Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
      - C'est ce layout qui organise les cellules et zones de la ligne. Sa configuration structurelle est persistée dans l'attribut `"template"` (alias `"row"`) de la liste.
 - **Important (`IterableContent` déjà intégré par défaut)** : chaque ligne d'une `ListView` **est déjà enveloppée automatiquement dans un `IterableContent`** par le framework !
   - **À ne JAMAIS faire** : n'ajoute pas de `"registry:Card"` ni de `"registry:IterableContent"` dans `template.placements.center` pour styliser la ligne elle-même, cela créerait une double boîte inutile. Place directement tes composants feuilles (`Value`, `Action`, etc.) dans les zones de `template.placements` !
+- **Règle impérative sur les `binding` des enfants de `template` (mode « hérité de la liste englobante »)** :
+  - Même lorsque les composants du `template` héritent du repository de la liste (sans `repositoryId`), **chaque `binding` (`SuperValue`, `propertyBindings`, `states.binding`, `bindState`, `onTooltip`, etc.) doit toujours partir de la racine du repository avec `[?]`** (ex. `"clients[?].nom"`, `"deals[?].title"`, `"clients[?].commandes[?].ref"`).
+  - N'écris **jamais** un chemin nu sans tableau ni `[?]` (ex. `"binding": "title"` ou `"binding": "nom"`), car il serait lu à la racine du JSON au lieu de la ligne courante et laisserait les valeurs vides.
 - Propriétés de `components[listId]` (`type: "list"`) :
   - `binding` : `"clients"` (si imbriquée) ou `{"repositoryId": "<32hex>", "path": "clients"}`.
   - `axis` : `"vertical"` (défaut) ou `"horizontal"`.

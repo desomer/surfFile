@@ -561,5 +561,39 @@ void main() {
         expect(parser.rawBuffer, isEmpty);
       },
     );
+
+    test(
+      'expose activeSection et activeEntryKey en direct pendant le streaming d’une entrée vibe puis les réinitialise à sa fermeture',
+      () {
+        final parser = VibeIncrementalStreamParser();
+
+        // Pendant le streaming de "repositories", activeSection/activeEntryKey restent nuls.
+        var snap = parser.addChunk(
+          '{"message":"MAJ","repositories":{"repo1":{"items":[1',
+        );
+        expect(snap.activeSection, isNull);
+        expect(snap.activeEntryKey, isNull);
+
+        // Dès l'ouverture du style "card-1", activeSection et activeEntryKey sont exposés.
+        snap = parser.addChunk(']}},"vibe":{"styles":{"card-1":{"color":"#');
+        expect(snap.activeSection, 'styles');
+        expect(snap.activeEntryKey, 'card-1');
+
+        // À la fermeture de "card-1" et de "styles", ils repassent à null.
+        snap = parser.addChunk('112233"}},');
+        expect(snap.activeSection, isNull);
+        expect(snap.activeEntryKey, isNull);
+
+        // Pendant le streaming du composant "kpi-1", ils indiquent components / kpi-1.
+        snap = parser.addChunk('"components":{"kpi-1":{"type":"value","text":"4');
+        expect(snap.activeSection, 'components');
+        expect(snap.activeEntryKey, 'kpi-1');
+
+        // Puis repassent à null à la fermeture.
+        snap = parser.addChunk('2"}}}');
+        expect(snap.activeSection, isNull);
+        expect(snap.activeEntryKey, isNull);
+      },
+    );
   });
 }

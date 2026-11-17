@@ -47,6 +47,7 @@ import 'vibe_chat_widgets.dart';
 import 'vibe_prompt_builder.dart';
 import 'vibe_repository_applier.dart';
 import 'vibe_scope_helpers.dart';
+import 'vibe_work_highlight.dart';
 import '../../appearance/appearance_scope.dart';
 
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
@@ -120,6 +121,8 @@ Règles pour "repositories" (création et mise à jour des repositories JSON) :
 - Lorsqu'une section REPOSITORIES DISPONIBLES (JSON) est fournie dans le contexte du tour, tu peux créer de nouveaux repositories ou mettre à jour/peupler des repositories existants via la clé optionnelle "repositories" placée après "message" et avant "vibe" : {"message":"...","repositories":{"<idOuAlias>":{"name":"...","mode":"merge","data":{...}}},"vibe":{...}} (ou "vibe": null si la demande ne modifie que les données des repositories sans changer l'écran). Si aucune section REPOSITORIES DISPONIBLES (JSON) n'est présente dans le contexte, n'émets pas la clé "repositories".
 - Respecte impérativement l'ordre d'émission live : "message" -> "repositories" -> "vibe", afin que les repositories soient créés et peuplés avant l'instanciation des composants liés.
 - Réutilise systématiquement les identifiants ("id") existants de REPOSITORIES DISPONIBLES lorsqu'un repository correspond au domaine métier. Pour tout nouveau repository, choisis un alias snake_case (^[a-z0-9_]{1,32}\$, sans inventer d'ID de 32 caractères hexadécimaux) et utilise directement cet alias dans les bindings "<alias>:chemin" (ou {"repositoryId":"<alias>","path":"chemin"}) de "vibe".
+- Chemins de liaison dans une liste/table/onglet dynamique (mode « hérité de la liste englobante ») : écris TOUJOURS le chemin complet depuis la racine du repository avec joker(s) [?] (ex: "deals[?].title", "clients[?].nom", "clients[?].commandes[?].ref"), même si repositoryId est omis ; n'écris JAMAIS un nom de champ nu comme "title" ou "nom" (sauf dans un SuperTreeView), sinon il est lu à la racine du document et affiche vide.
+- Héritage strictement descendant (Pattern Maître / Détail) : l'héritage de repositoryId ne se propage JAMAIS horizontalement vers une branche sœur (ex: du panneau west vers la fiche détaillée en center). Tout composant hors de la liste source (SuperValue, KPI, sous-liste, Chart) DOIT déclarer explicitement son préfixe "<repoId>:..." ou "<alias>:..." (ou {"repositoryId":"...","path":"..."}) afin que le runtime synchronise sa sélection [?].
 - Dans chaque entrée de "repositories", "data" doit être un objet JSON {...} à la racine, et aucune clé JSON stockée ne doit jamais débuter par "@" (préfixe strictement réservé aux attributs calculés en lecture seule) ni contenir ".", "[", "]", "?" ou espace.
 Règles pour "askUser" :
 - Quelle que soit l'étape (création initiale, ajout, modification d'un écran existant ou d'un scope ciblé), applique systématiquement le NIVEAU DE QUESTIONNEMENT défini par le slider dans le contexte du tour courant, sans restreindre les questions à la première étape (seul le niveau 0/Aucun ou le tour d'application immédiate des réponses qui viennent d'être fournies désactive "askUser").
@@ -851,6 +854,57 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
   }
 
+  void _syncStreamingWorkHighlight(
+    _LiveTurnSession session,
+    VibeStreamSnapshot snapshot,
+  ) {
+    const highlightSections = <String>{
+      'components',
+      'styles',
+      'behaviors',
+      'usages',
+    };
+    final entryKey = snapshot.activeEntryKey;
+    final section = snapshot.activeSection;
+    if (entryKey == null ||
+        entryKey.isEmpty ||
+        section == null ||
+        !highlightSections.contains(section)) {
+      VibeWorkHighlightController.instance.clearStreamingTargets();
+      return;
+    }
+    final activeScope = _scope;
+    if (activeScope != null) {
+      final allowed = VibeScopeHelpers.existingSubtreeIds(
+        session.lastPreviewAppearance,
+        activeScope,
+      );
+      if (entryKey != activeScope.canonicalComponentId &&
+          !allowed.contains(entryKey)) {
+        VibeWorkHighlightController.instance.clearStreamingTargets();
+        return;
+      }
+    }
+    VibeWorkHighlightController.instance.setStreamingTargets([entryKey]);
+  }
+
+  void _pulseAppearanceDiff(
+    _LiveTurnSession session,
+    Appearance nextAppearance,
+  ) {
+    final diff = VibeAppearanceDiff.compute(
+      session.lastPreviewAppearance,
+      nextAppearance,
+    );
+    session.lastPreviewAppearance = nextAppearance;
+    if (!diff.isEmpty) {
+      VibeWorkHighlightController.instance.pulseTargets(
+        addedIds: diff.addedIds,
+        modifiedIds: diff.modifiedIds,
+      );
+    }
+  }
+
   void _applyLivePreviewFromSnapshot(VibeStreamSnapshot snapshot) {
     final session = _activeTurnSession;
     if (session == null ||
@@ -858,6 +912,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         snapshot.hasAskUserObject) {
       return;
     }
+    _syncStreamingWorkHighlight(session, snapshot);
 
     if (session.repoTransaction != null &&
         (snapshot.partialRepositoriesPatch != null ||
@@ -948,6 +1003,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       );
       widget.validateAppearance?.call(previewAppearance);
       _setPreviewAppearance(previewAppearance);
+      _pulseAppearanceDiff(session, previewAppearance);
       session.hasAppliedLivePreview = true;
       if (activeScope == null) {
         _maybeNavigateToNewLivePage(session, previewAppearance);
@@ -995,6 +1051,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   void _rollbackLivePreview(_LiveTurnSession session) {
     session.lastAppliedPatchRevision = 0;
+    session.lastPreviewAppearance = session.baseAppearance;
+    VibeWorkHighlightController.instance.clearAll();
     if (session.hasAppliedLivePreview ||
         !identical(widget.controller.value, session.rawInitialAppearance)) {
       try {
@@ -1200,6 +1258,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   @override
   void dispose() {
+    if (_activeTurnSession != null) {
+      VibeWorkHighlightController.instance.clearStreamingTargets();
+    }
     _pendingSnapshot = null;
     _streamingSnapshot.dispose();
     _input.dispose();
@@ -1450,6 +1511,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         _setExpanded(false);
         if (generated.appearance case final appearance?) {
           widget.controller.value = appearance;
+          _pulseAppearanceDiff(session, appearance);
           if (_scope == null) {
             _maybeNavigateToNewLivePage(session, appearance);
           }
@@ -1558,6 +1620,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } finally {
+      VibeWorkHighlightController.instance.clearStreamingTargets();
       _activeTurnSession = null;
       _pendingSnapshot = null;
       _streamingSnapshot.value = null;
@@ -2493,7 +2556,7 @@ final class _LiveTurnSession {
     required this.initialRouteLocation,
     required this.initialPageIds,
     this.repoTransaction,
-  });
+  }) : lastPreviewAppearance = baseAppearance;
 
   final Appearance rawInitialAppearance;
   final Appearance baseAppearance;
@@ -2503,6 +2566,7 @@ final class _LiveTurnSession {
   final Set<String> initialPageIds;
   final VibeRepositoryTurnTransaction? repoTransaction;
 
+  Appearance lastPreviewAppearance;
   int lastAppliedPatchRevision = 0;
   int lastAppliedRepositoriesRevision = 0;
   Future<void> liveRepoQueue = Future<void>.value();

@@ -32,6 +32,7 @@ class IterableContent extends SuperStatefulComponent<SuperLayoutConfig> {
     this.applyPadding,
     this.applyMargin = true,
     this.resolveSelectionAndHover = true,
+    this.bindLayoutToRegistry = true,
     this.onEditSize,
     this.dimensionDelegateBuilder,
     this.sizeConstraints,
@@ -56,6 +57,12 @@ class IterableContent extends SuperStatefulComponent<SuperLayoutConfig> {
   final bool? applyPadding;
   final bool applyMargin;
   final bool resolveSelectionAndHover;
+
+  /// Indique si la disposition interne doit utiliser le contrôleur du registre pour [id].
+  ///
+  /// À désactiver lorsque le parent (comme `SuperListView`) fournit déjà un
+  /// `config` lié au registre sous son propre identifiant.
+  final bool bindLayoutToRegistry;
   final Future<void> Function()? onEditSize;
   final EditorDimensionDelegate Function()? dimensionDelegateBuilder;
   final SlotSizeConstraints? sizeConstraints;
@@ -90,7 +97,8 @@ class _IterableContentState extends State<IterableContent> {
     final registry = SuperApp.maybeOf(context)?.registry;
     final id = widget.id;
     final customChild = widget.child;
-    final layout = customChild != null || id == null
+    final layout =
+        customChild != null || id == null || !widget.bindLayoutToRegistry
         ? _layout
         : registry?.layoutController(id, fallback: widget.config) ?? _layout;
     final style = id == null

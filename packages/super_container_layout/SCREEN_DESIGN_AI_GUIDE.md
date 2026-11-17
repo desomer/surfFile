@@ -112,6 +112,20 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
      2. **Jamais d'`autoSides`** sur un `layout` feuille dont une zone a `scrollable: true` $\rightarrow$ définir `"autoSides": []`.
      3. **`Card` enveloppante sans contrainte zéro** : une `Card` mono-enfant principale dans `mainLayout` doit pouvoir s'étirer naturellement (`expandSlots: true` dans le parent `mainLayout`) pour offrir toute la hauteur du viewport à son contenu.
 
+### Règle impérative d'héritage de repository & branches sœurs (Pattern Maître / Détail)
+
+1. **Périmètre strict de la liaison courte héritée** :
+   - La forme courte sans identifiant de repository (ex. `clients[?].nom`) est réservée **exclusivement aux composants enfants directs** d'un conteneur fournissant déjà ce scope (à l'intérieur du `template` d'une `ListView`, des cellules d'une `Table`, ou du `content` d'un `SuperTab` dynamique).
+   - L'héritage ne se propage **jamais horizontalement entre branches sœurs** d'un layout (par exemple du panneau `west` vers la fiche détaillée en zone `center`).
+
+2. **Règle absolue pour la fiche détaillée (branche sœur)** :
+   - Tout composant situé en dehors de l'arborescence de la liste source — qu'il s'agisse de champs atomiques `SuperValue`, de KPIs, de sous-listes imbriquées ou de graphiques `Chart` — **doit impérativement déclarer le `repositoryId` explicite** :
+     - Forme compacte recommandée : `"<repoId>:comptes[?].propriété"` ou `"<alias>:comptes[?].propriété"`
+     - Forme objet : `{"repositoryId": "<repoId>", "path": "comptes[?].propriété"}`
+
+3. **Mécanisme de sélection Maître / Détail** :
+   - Le runtime synchronise automatiquement l'indice sélectionné `[?]` entre tous les composants partageant le même `repositoryId` dans le document. Préciser le préfixe du repository est ce qui permet à la vue centrale de se synchroniser avec la ligne active du volet latéral.
+
 ---
 
 ## 6. Hiérarchie des actions, contrôles & Micro-interactions

@@ -9,8 +9,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/registry.dart';
+import 'package:super_container_layout/models/super_action_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
+import 'package:super_container_layout/models/super_tab_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
@@ -21,10 +24,12 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_work_highlight.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_list_view.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_tab.dart';
 
 Map<String, Object?> _fileListPatch(String layoutId) => {
   'styles': {
@@ -3105,6 +3110,323 @@ void main() {
       expect(find.text('Écran corrigé et prêt.'), findsOneWidget);
       expect(find.text('Donnée validée'), findsOneWidget);
       expect(find.text('Brouillon temporaire'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'live streaming highlights active streaming key, pulses added/modified components for 500 ms without pulsing parent layout, and clears on settle',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      addTearDown(VibeWorkHighlightController.instance.clearAll);
+
+      final initialAppearance = Appearance(
+        components: {
+          'mainLayout': SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: const ['kpi-existing'],
+            },
+            slotTypes: const {'kpi-existing': 'registry:Value'},
+          ),
+          'kpi-existing': const SuperValueConfig(label: 'Avant'),
+        },
+      );
+      final store = _MemoryAppearanceStore(initialAppearance);
+      final registry = Registry()..bootstrap();
+      late ValueNotifier<Appearance> appAppearance;
+
+      late StreamController<GeminiStreamEvent> streamCtrl;
+      final mainLayoutController = registry.layoutController('mainLayout');
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayoutController,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 380,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) {
+                              streamCtrl =
+                                  StreamController<GeminiStreamEvent>();
+                              return streamCtrl.stream;
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Avant'), findsOneWidget);
+      expect(VibeWorkHighlightController.instance.hasActiveHighlights, isFalse);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Mets à jour kpi-existing et ajoute kpi-new.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pump();
+
+      // Chunk 1 : kpi-existing commence à streamer (objet encore ouvert).
+      const part1 =
+          '{"message":"Mise à jour live","vibe":{"components":{'
+          '"kpi-existing":{"type":"value","text":"En cours';
+      streamCtrl.add(
+        const GeminiStreamEvent(
+          deltaText: part1,
+          accumulatedText: part1,
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      expect(
+        VibeWorkHighlightController.instance.streamingIds,
+        {'kpi-existing'},
+      );
+      expect(
+        VibeWorkHighlightController.instance.stateFor('kpi-existing')?.kind,
+        VibeWorkKind.streaming,
+      );
+
+      // Chunk 2 : kpi-existing se ferme (modified), mainLayout ajoute kpi-new (parent exclu),
+      // et kpi-new se ferme (added).
+      const part2 =
+          ' — Après"},'
+          '"mainLayout":{"type":"layout","placements":{"center":[{"id":"kpi-existing","type":"registry:Value"},{"id":"kpi-new","type":"registry:Value"}]}},'
+          '"kpi-new":{"type":"value","text":"Nouveau"}';
+      streamCtrl.add(
+        const GeminiStreamEvent(
+          deltaText: part2,
+          accumulatedText: '$part1$part2',
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(VibeWorkHighlightController.instance.streamingIds, isEmpty);
+      expect(
+        VibeWorkHighlightController.instance.pulsedIds,
+        containsAll(['kpi-existing', 'kpi-new']),
+      );
+      expect(
+        VibeWorkHighlightController.instance.pulsedIds,
+        isNot(contains('mainLayout')),
+      );
+      expect(
+        VibeWorkHighlightController.instance.stateFor('kpi-existing')?.kind,
+        VibeWorkKind.modified,
+      );
+      expect(
+        VibeWorkHighlightController.instance.stateFor('kpi-new')?.kind,
+        VibeWorkKind.added,
+      );
+      expect(find.text('En cours — Après'), findsOneWidget);
+      expect(find.text('Nouveau'), findsOneWidget);
+
+      // Fin du flux -> après 500 ms, tout converge proprement.
+      const part3 = '}}}';
+      streamCtrl.add(
+        const GeminiStreamEvent(
+          deltaText: part3,
+          accumulatedText: '$part1$part2$part3',
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await streamCtrl.close();
+      await tester.pumpAndSettle();
+
+      expect(VibeWorkHighlightController.instance.hasActiveHighlights, isFalse);
+      expect(find.text('Mise à jour live'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'live streaming switches SuperTab automatically to show new or updated tab content',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      addTearDown(VibeWorkHighlightController.instance.clearAll);
+
+      final initialAppearance = Appearance(
+        components: {
+          'main-tab': SuperTabConfig(
+            placements: {
+              SuperTabConfig.tabsZone: const ['tab_overview', 'tab_details'],
+              SuperTabConfig.contentZoneFor('tab_overview'): const [
+                'overview_val',
+              ],
+              SuperTabConfig.contentZoneFor('tab_details'): const [
+                'details_val',
+              ],
+            },
+            slotTypes: const {
+              'tab_overview': 'registry:Action',
+              'tab_details': 'registry:Action',
+              'overview_val': 'registry:Value',
+              'details_val': 'registry:Value',
+            },
+          ),
+          'tab_overview': const SuperActionConfig(label: 'Aperçu'),
+          'tab_details': const SuperActionConfig(label: 'Détails'),
+          'overview_val': const SuperValueConfig(label: 'Vue Aperçu'),
+          'details_val': const SuperValueConfig(label: 'Vue Détails'),
+        },
+      );
+      final store = _MemoryAppearanceStore(initialAppearance);
+      final registry = Registry()..bootstrap();
+      late ValueNotifier<Appearance> appAppearance;
+      late StreamController<GeminiStreamEvent> streamCtrl;
+      final tabController = registry.tabController('main-tab');
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperTabConfig>(
+                      valueListenable: tabController,
+                      builder: (_, cfg, _) =>
+                          SuperTab(id: 'main-tab', config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 380,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) {
+                              streamCtrl =
+                                  StreamController<GeminiStreamEvent>();
+                              return streamCtrl.stream;
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(router: router, appearanceStore: store, registry: registry),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Vue Aperçu'), findsOneWidget);
+      expect(find.text('Vue Détails'), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Ajoute une info dans l’onglet Détails.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pump();
+
+      // L'IA place un nouvel élément dans l'onglet Détails puis le streame.
+      const part1 =
+          '{"message":"Onglet Détails enrichi","vibe":{"components":{'
+          '"main-tab":{"type":"tab","placements":{'
+          '"tabs":[{"id":"tab_overview","type":"registry:Action"},{"id":"tab_details","type":"registry:Action"}],'
+          '"content:tab_overview":[{"id":"overview_val","type":"registry:Value"}],'
+          '"content:tab_details":[{"id":"details_val","type":"registry:Value"},{"id":"details_new","type":"registry:Value"}]'
+          '}},'
+          '"details_new":{"type":"value","text":"Nouveau Détail"}';
+      streamCtrl.add(
+        const GeminiStreamEvent(
+          deltaText: part1,
+          accumulatedText: part1,
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // SuperTab a basculé automatiquement sur l'onglet Détails pour montrer le nouvel élément.
+      expect(find.text('Vue Détails'), findsOneWidget);
+      expect(find.text('Nouveau Détail'), findsOneWidget);
+
+      const part2 = '}}}';
+      streamCtrl.add(
+        const GeminiStreamEvent(
+          deltaText: part2,
+          accumulatedText: '$part1$part2',
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await streamCtrl.close();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nouveau Détail'), findsOneWidget);
+      expect(VibeWorkHighlightController.instance.hasActiveHighlights, isFalse);
       expect(tester.takeException(), isNull);
     },
   );

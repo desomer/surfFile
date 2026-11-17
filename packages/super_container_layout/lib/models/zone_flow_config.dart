@@ -119,12 +119,17 @@ class ZoneFlowConfig {
     if (expandSlots is! bool) {
       throw const FormatException('Valeur invalide pour "expandSlots".');
     }
-    final rawMain = value['mainAxisAlignment'] ?? MainAxisAlignment.start.name;
+    final rawMain =
+        value['mainAxisAlignment'] ??
+        value['mainAxis'] ??
+        MainAxisAlignment.start.name;
     final mainAxisAlignment =
         MainAxisAlignment.values.where((m) => m.name == rawMain).firstOrNull ??
         (throw const FormatException('Alignement principal de zone invalide.'));
     final rawCross =
-        value['crossAxisAlignment'] ?? CrossAxisAlignment.stretch.name;
+        value['crossAxisAlignment'] ??
+        value['crossAxis'] ??
+        CrossAxisAlignment.stretch.name;
     final crossAxisAlignment =
         CrossAxisAlignment.values
             .where(

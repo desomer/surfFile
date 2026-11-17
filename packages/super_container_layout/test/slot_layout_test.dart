@@ -160,6 +160,19 @@ void main() {
       expect(rects[SuperLayoutZone.north]!.height, 80);
     });
 
+    test('ZoneFlowConfig.fromJson accepts mainAxis and crossAxis aliases', () {
+      final flow = ZoneFlowConfig.fromJson({
+        'mainAxis': 'center',
+        'crossAxis': 'end',
+        'expandSlots': false,
+        'spacing': 4.0,
+      });
+      expect(flow.mainAxisAlignment, MainAxisAlignment.center);
+      expect(flow.crossAxisAlignment, CrossAxisAlignment.end);
+      expect(flow.expandSlots, isFalse);
+      expect(flow.spacing, 4.0);
+    });
+
     test('visibleZones lists the zones whatever the size', () {
       expect(
         const SuperLayoutConfig(

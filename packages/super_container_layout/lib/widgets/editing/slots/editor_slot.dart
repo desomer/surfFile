@@ -44,6 +44,7 @@ import '../../components/super_tree_view.dart';
 import '../addition/contextual_add.dart';
 import '../addition/insertion_plan.dart';
 import '../ai/vibe_chat_dialog.dart';
+import '../ai/vibe_work_highlight.dart';
 import '../behaviors/component_behavior_editor.dart';
 import 'editable_surface.dart';
 import 'editor_context_menu.dart';
@@ -325,16 +326,30 @@ class EditorSlotState extends State<EditorSlot> {
           )
         : null;
 
-    if (composed != null) {
-      return EditorComposedComponentBadgePainter(
-        componentName: composed.componentName,
-        composable: composed.composable,
+    final CustomPainter? composedPainter = composed != null
+        ? EditorComposedComponentBadgePainter(
+            componentName: composed.componentName,
+            composable: composed.composable,
+            radius: widget.outlineRadius,
+            zoomScale: zoomScale,
+            innerPainter: basePainter,
+          )
+        : basePainter;
+
+    final vibeState = VibeWorkHighlightController.instance.stateFor(
+      effectiveComponentId,
+      zoneId: widget.zoneId,
+    );
+    if (vibeState != null) {
+      return VibeWorkHighlightPainter(
+        state: vibeState,
         radius: widget.outlineRadius,
         zoomScale: zoomScale,
-        innerPainter: basePainter,
+        animate: !(MediaQuery.maybeDisableAnimationsOf(context) ?? false),
+        innerPainter: composedPainter,
       );
     }
-    return basePainter;
+    return composedPainter;
   }
 
   /// Scope descriptor targeting this component or container zone for AI edits.
@@ -690,7 +705,35 @@ class EditorSlotState extends State<EditorSlot> {
     LayoutSelection.highlightedSlotId,
     LayoutSelection.focus,
     LayoutSelection.path,
+    VibeWorkHighlightController.instance,
   ]);
+
+  Widget _wrapWithStandaloneAiHighlight(
+    BuildContext context,
+    Widget child, {
+    required bool isSliver,
+  }) => ListenableBuilder(
+    listenable: VibeWorkHighlightController.instance,
+    child: child,
+    builder: (context, inner) {
+      final vibeState = VibeWorkHighlightController.instance.stateFor(
+        effectiveComponentId,
+        zoneId: widget.zoneId,
+      );
+      if (vibeState == null) return inner!;
+      final painter = VibeWorkHighlightPainter(
+        state: vibeState,
+        radius: widget.outlineRadius,
+        zoomScale:
+            context.dependOnInheritedWidgetOfExactType<EditorZoomScope>()?.scale ??
+            1.0,
+        animate: !(MediaQuery.maybeDisableAnimationsOf(context) ?? false),
+      );
+      return isSliver
+          ? SliverPointerRegion(foregroundPainter: painter, child: inner)
+          : CustomPaint(foregroundPainter: painter, child: inner);
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -756,7 +799,7 @@ class EditorSlotState extends State<EditorSlot> {
       final Widget child = KeyedSubtree(key: _childKey, child: runtimeChild);
       if (!interactive) {
         if (_hovered.contains(this)) _removeHoveredSafely();
-        return child;
+        return _wrapWithStandaloneAiHighlight(context, child, isSliver: true);
       }
       if (canEdit && editMode != null) {
         _cachedDepth = _depth;
@@ -862,7 +905,7 @@ class EditorSlotState extends State<EditorSlot> {
     Widget content = KeyedSubtree(key: _childKey, child: runtimeChild);
     if (!interactive) {
       if (_hovered.contains(this)) _removeHoveredSafely();
-      return content;
+      return _wrapWithStandaloneAiHighlight(context, content, isSliver: false);
     }
     final trackHover = canEdit && editMode != null;
     if (trackHover) {
@@ -906,8 +949,15 @@ class EditorSlotState extends State<EditorSlot> {
         },
         child: RepaintBoundary(child: content),
       );
-    } else if (_hovered.contains(this)) {
-      _removeHoveredSafely();
+    } else {
+      if (_hovered.contains(this)) {
+        _removeHoveredSafely();
+      }
+      content = _wrapWithStandaloneAiHighlight(
+        context,
+        content,
+        isSliver: false,
+      );
     }
 
     return MouseRegion(

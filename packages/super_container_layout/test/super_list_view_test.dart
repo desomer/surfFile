@@ -1680,4 +1680,120 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'updating list template via Appearance renders new row children',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      await mount(
+        tester,
+        const SuperListView(id: 'clients'),
+        registry: registry,
+      );
+      final context = tester.element(find.byType(SuperListView));
+      final appearance = AppearanceScope.controllerOf(context)!;
+
+      // Liste montée initialement avec un template vide (IterableContent a déjà
+      // été construit avec un SuperLayoutConfig vide).
+      appearance.value = appearance.value.copyWith(
+        components: {
+          ...appearance.value.components,
+          'clients': SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 64,
+          ),
+        },
+      );
+      await real(tester, () async {});
+      expect(find.text('Alice'), findsNothing);
+
+      // Mise à jour ultérieure du template (ex. patch Vibe IA / import) :
+      // les lignes doivent immédiatement afficher les nouveaux enfants.
+      appearance.value = AppearanceTransfer.applyVibeMap(appearance.value, {
+        'components': {
+          'clients': {
+            'type': 'list',
+            'template': {
+              'placements': {
+                'center': [
+                  {'type': 'registry:Value', 'id': 'client-name'},
+                ],
+              },
+            },
+          },
+          'client-name': {
+            'type': 'value',
+            'binding': {'repositoryId': repository, 'path': 'clients[?].name'},
+          },
+        },
+      });
+      await real(tester, () async {});
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'edit mode shows slot label or field preview for placeholder bound values',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      await mount(
+        tester,
+        const SuperListView(id: 'deals'),
+        registry: registry,
+      );
+      final context = tester.element(find.byType(SuperListView));
+      StyleEditScope.controllerOf(context)!.value = true;
+      final appearance = AppearanceScope.controllerOf(context)!;
+
+      appearance.value = AppearanceTransfer.applyVibeMap(appearance.value, {
+        'components': {
+          'deals': {
+            'type': 'list',
+            'binding': {
+              'repositoryId': repository,
+              'path': 'accounts[?].deals',
+            },
+            'itemExtent': 62,
+            'template': {
+              'slotLabels': {'deal-title': 'Titre du deal'},
+              'placements': {
+                'center': [
+                  {'type': 'registry:Value', 'id': 'deal-title'},
+                  {'type': 'registry:Value', 'id': 'deal-stage'},
+                ],
+              },
+            },
+          },
+          'deal-title': {
+            'type': 'value',
+            'binding': {
+              'repositoryId': repository,
+              'path': 'accounts[?].deals[?].title',
+            },
+          },
+          'deal-stage': {
+            'type': 'value',
+            'binding': {
+              'repositoryId': repository,
+              'path': 'accounts[?].deals[?].stage',
+            },
+          },
+        },
+      });
+      await real(tester, () async {});
+
+      expect(row('deals', 'template'), findsOneWidget);
+      expect(find.text('Titre du deal'), findsOneWidget);
+      expect(find.text('{stage}'), findsOneWidget);
+
+      // Hors mode édition, l'aperçu de gabarit ne s'affiche pas.
+      StyleEditScope.controllerOf(context)!.value = false;
+      await tester.pumpAndSettle();
+      expect(find.text('Titre du deal'), findsNothing);
+      expect(find.text('{stage}'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

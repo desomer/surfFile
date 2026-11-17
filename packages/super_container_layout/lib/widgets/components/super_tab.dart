@@ -25,7 +25,11 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
 import '../../super_app.dart';
+import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
+import '../appearance/appearance_scope.dart';
+import '../editing/ai/vibe_scope_helpers.dart';
+import '../editing/ai/vibe_work_highlight.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tab_editor.dart';
 import '../editing/slots/editor_slot.dart';
@@ -152,11 +156,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   bool _dynamicLoading = false;
   bool _dynamicBusy = false;
   int _dynamicGeneration = 0;
+  int _lastHandledHighlightRevision = -1;
+  SuperTabConfig? _lastObservedConfig;
+  int? _pendingAutoTabIndex;
+  bool _autoTabSwitchScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _lastValidIndex = _selectedIndex;
+    VibeWorkHighlightController.instance.addListener(_onVibeWorkHighlightChanged);
   }
 
   @override
@@ -166,6 +175,8 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       _localConfig.value = widget._initialConfig;
       _selectedIndex = widget._initialConfig.initialIndex;
       _lastValidIndex = _selectedIndex;
+      _lastObservedConfig = null;
+      _pendingAutoTabIndex = null;
       _disposeStaticBinding();
       _disposeDynamicBinding();
     }
@@ -173,6 +184,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    VibeWorkHighlightController.instance.removeListener(
+      _onVibeWorkHighlightChanged,
+    );
     _tabController?.removeListener(_handleTabControllerTick);
     _tabController?.dispose();
     _disposeStaticBinding();
@@ -180,6 +194,134 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     _staticBindingText.dispose();
     _localConfig.dispose();
     super.dispose();
+  }
+
+  bool _subtreeContainsTarget(
+    List<String> rootIds,
+    String targetId,
+    Appearance? appearance,
+  ) {
+    if (rootIds.contains(targetId)) return true;
+    if (appearance == null || rootIds.isEmpty) return false;
+    final visited = <String>{};
+    final pending = <String>[...rootIds];
+    while (pending.isNotEmpty) {
+      final id = pending.removeLast();
+      if (!visited.add(id)) continue;
+      if (id == targetId) return true;
+      final config = appearance.components[id];
+      if (config != null) {
+        pending.addAll(VibeScopeHelpers.childrenOfComponent(config));
+      }
+    }
+    return false;
+  }
+
+  int? _resolveTabIndexForTargets(
+    SuperTabConfig config,
+    Appearance? appearance,
+    List<String> orderedTargets,
+  ) {
+    if (config.mode != SuperTabMode.static || orderedTargets.isEmpty) {
+      return null;
+    }
+    final tabIds = config.tabSlotIds;
+    if (tabIds.isEmpty) return null;
+
+    for (final targetId in orderedTargets) {
+      for (var index = 0; index < tabIds.length; index++) {
+        final contentZone = SuperTabConfig.contentZoneFor(tabIds[index]);
+        if (_subtreeContainsTarget(
+          config.slotsOf(contentZone),
+          targetId,
+          appearance,
+        )) {
+          return index;
+        }
+      }
+    }
+    for (final targetId in orderedTargets) {
+      final tabIndex = tabIds.indexOf(targetId);
+      if (tabIndex >= 0) return tabIndex;
+    }
+    return null;
+  }
+
+  int? _resolveTabIndexFromConfigDiff(
+    SuperTabConfig previous,
+    SuperTabConfig next,
+  ) {
+    if (next.mode != SuperTabMode.static) return null;
+    final tabIds = next.tabSlotIds;
+    for (var index = 0; index < tabIds.length; index++) {
+      final zone = SuperTabConfig.contentZoneFor(tabIds[index]);
+      final prevSlots = previous.slotsOf(zone);
+      final nextSlots = next.slotsOf(zone);
+      if (nextSlots.any((id) => !prevSlots.contains(id))) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  void _selectTabIndexForAi(int targetIndex) {
+    if (!mounted || targetIndex < 0) return;
+    final controller = _tabController;
+    final maxLen = controller?.length ?? 0;
+    if (maxLen > 0 && targetIndex >= maxLen) return;
+    if (targetIndex == _selectedIndex &&
+        (controller == null || controller.index == targetIndex)) {
+      return;
+    }
+    setState(() {
+      _selectedIndex = targetIndex;
+      _lastValidIndex = targetIndex;
+      if (controller != null && controller.index != targetIndex) {
+        controller.animateTo(targetIndex);
+      }
+    });
+  }
+
+  void _scheduleAutoTabSwitch(int targetIndex) {
+    _pendingAutoTabIndex = targetIndex;
+    if (_autoTabSwitchScheduled) return;
+    _autoTabSwitchScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoTabSwitchScheduled = false;
+      final index = _pendingAutoTabIndex;
+      _pendingAutoTabIndex = null;
+      if (mounted && index != null) {
+        _selectTabIndexForAi(index);
+      }
+    });
+  }
+
+  void _onVibeWorkHighlightChanged() {
+    if (!mounted) return;
+    final highlights = VibeWorkHighlightController.instance;
+    if (highlights.focusRevision == _lastHandledHighlightRevision) return;
+    _lastHandledHighlightRevision = highlights.focusRevision;
+    final targets = highlights.orderedActiveTargets;
+    if (targets.isEmpty) return;
+
+    final registry = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app
+        .registry;
+    final config =
+        _previewConfig ??
+        registry
+            ?.tabController(widget.id, fallback: widget._initialConfig)
+            .value ??
+        _localConfig.value;
+    final appearance = context
+        .getInheritedWidgetOfExactType<AppearanceScope>()
+        ?.notifier
+        ?.value;
+    final targetIndex = _resolveTabIndexForTargets(config, appearance, targets);
+    if (targetIndex != null && targetIndex != _selectedIndex) {
+      _selectTabIndexForAi(targetIndex);
+    }
   }
 
   void _ensureTabController(int length, int targetIndex) {
@@ -1467,10 +1609,41 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     final listScope = JsonListScope.maybeOf(context);
     final repositoryStore = JsonRepositoryScope.maybeOf(context);
 
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+
     return ValueListenableBuilder<SuperTabConfig>(
       valueListenable: controller,
       builder: (context, savedConfig, _) {
         final config = _previewConfig ?? savedConfig;
+        final previousConfig = _lastObservedConfig;
+        _lastObservedConfig = config;
+
+        final highlights = VibeWorkHighlightController.instance;
+        int? autoSwitchIndex;
+        if (highlights.focusRevision != _lastHandledHighlightRevision) {
+          _lastHandledHighlightRevision = highlights.focusRevision;
+          if (highlights.orderedActiveTargets.isNotEmpty) {
+            autoSwitchIndex = _resolveTabIndexForTargets(
+              config,
+              appearance,
+              highlights.orderedActiveTargets,
+            );
+          }
+        } else if (previousConfig != null &&
+            previousConfig != config &&
+            highlights.hasActiveHighlights) {
+          autoSwitchIndex =
+              _resolveTabIndexForTargets(
+                config,
+                appearance,
+                highlights.orderedActiveTargets,
+              ) ??
+              _resolveTabIndexFromConfigDiff(previousConfig, config);
+        }
+        if (autoSwitchIndex != null && autoSwitchIndex != _selectedIndex) {
+          _scheduleAutoTabSwitch(autoSwitchIndex);
+        }
+
         _observeStaticBinding(config, listScope, repositoryStore);
         _observeDynamic(config, listScope, repositoryStore);
 

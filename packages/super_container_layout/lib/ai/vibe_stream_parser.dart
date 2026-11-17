@@ -29,6 +29,8 @@ class VibeStreamSnapshot {
     this.patchRevision = 0,
     this.partialRepositoriesPatch,
     this.repositoriesRevision = 0,
+    this.activeSection,
+    this.activeEntryKey,
   });
 
   /// Instantané initial vide avant réception de tout fragment.
@@ -78,6 +80,14 @@ class VibeStreamSnapshot {
   /// Compteur monotone incrémenté à chaque entrée directe de `"repositories"` nouvellement complétée.
   final int repositoriesRevision;
 
+  /// Section `"vibe"` dont une entrée est en cours de réception avant sa fermeture
+  /// (`"components"`, `"styles"`, `"behaviors"`, `"usages"`), ou `null` hors capture.
+  final String? activeSection;
+
+  /// Clé de l'entrée `"vibe"` en cours de réception avant la fermeture complète de son
+  /// bloc JSON (ex. identifiant d'un composant ou d'un style), ou `null`.
+  final String? activeEntryKey;
+
   /// Retourne une copie modifiée de cet instantané.
   VibeStreamSnapshot copyWith({
     String? message,
@@ -94,6 +104,10 @@ class VibeStreamSnapshot {
     Map<String, dynamic>? partialRepositoriesPatch,
     bool clearPartialRepositoriesPatch = false,
     int? repositoriesRevision,
+    String? activeSection,
+    bool clearActiveSection = false,
+    String? activeEntryKey,
+    bool clearActiveEntryKey = false,
   }) => VibeStreamSnapshot(
     message: clearMessage ? null : (message ?? this.message),
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
@@ -111,6 +125,12 @@ class VibeStreamSnapshot {
         ? null
         : (partialRepositoriesPatch ?? this.partialRepositoriesPatch),
     repositoriesRevision: repositoriesRevision ?? this.repositoriesRevision,
+    activeSection: clearActiveSection
+        ? null
+        : (activeSection ?? this.activeSection),
+    activeEntryKey: clearActiveEntryKey
+        ? null
+        : (activeEntryKey ?? this.activeEntryKey),
   );
 
   /// Compare deux instantanés par égalité de valeur.
@@ -127,6 +147,8 @@ class VibeStreamSnapshot {
           other.receivedChars == receivedChars &&
           other.patchRevision == patchRevision &&
           other.repositoriesRevision == repositoriesRevision &&
+          other.activeSection == activeSection &&
+          other.activeEntryKey == activeEntryKey &&
           (other.partialVibePatch == null) == (partialVibePatch == null) &&
           (other.partialRepositoriesPatch == null) ==
               (partialRepositoriesPatch == null);
@@ -143,6 +165,8 @@ class VibeStreamSnapshot {
     receivedChars,
     patchRevision,
     repositoriesRevision,
+    activeSection,
+    activeEntryKey,
     partialVibePatch != null,
     partialRepositoriesPatch != null,
   );
@@ -159,7 +183,9 @@ class VibeStreamSnapshot {
       'estimatedComponentCount: $estimatedComponentCount, '
       'receivedChars: $receivedChars, '
       'patchRevision: $patchRevision, '
-      'repositoriesRevision: $repositoriesRevision'
+      'repositoriesRevision: $repositoriesRevision, '
+      'activeSection: $activeSection, '
+      'activeEntryKey: $activeEntryKey'
       ')';
 }
 
@@ -330,6 +356,8 @@ class VibeIncrementalStreamParser {
       }
     }
 
+    final capture = _activeCapture;
+    final hasActiveVibeCapture = capture != null && !capture.isRepositoryEntry;
     _current = VibeStreamSnapshot(
       message: _hasMessageStarted
           ? (_cachedMessage ??= _messageBuffer.toString())
@@ -349,6 +377,8 @@ class VibeIncrementalStreamParser {
           : (_cachedPartialRepositoriesPatch ??=
               Map<String, dynamic>.unmodifiable(_repositoriesPatchEntries)),
       repositoriesRevision: _repositoriesRevision,
+      activeSection: hasActiveVibeCapture ? capture.section : null,
+      activeEntryKey: hasActiveVibeCapture ? capture.entryKey : null,
     );
     return _current;
   }

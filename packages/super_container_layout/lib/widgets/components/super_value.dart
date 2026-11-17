@@ -531,7 +531,31 @@ class _SuperValueState extends State<SuperValue>
     child: Builder(builder: _buildValueContent),
   );
 
+  static String? _templatePreviewText(
+    String? slotLabel,
+    SuperValueConfig config,
+    JsonListScope? listScope,
+    bool editing, {
+    required bool unselected,
+  }) {
+    if (!editing || config.binding == null) return null;
+    if (!(listScope?.placeholder ?? false) && !unselected) return null;
+    final trimmedSlot = slotLabel?.trim();
+    if (trimmedSlot != null &&
+        trimmedSlot.isNotEmpty &&
+        trimmedSlot != 'Valeur' &&
+        trimmedSlot != 'Value') {
+      return trimmedSlot;
+    }
+    if (config.label.trim().isNotEmpty) return config.label.trim();
+    final rawPath = config.binding!.path.trim();
+    if (rawPath.isEmpty) return null;
+    final lastSegment = rawPath.split('.').last.replaceAll('[?]', '').trim();
+    return lastSegment.isEmpty ? rawPath : '{$lastSegment}';
+  }
+
   Widget _buildValueContent(BuildContext context) {
+    final slotLabel = editorComponentLabelOf(context)?.label;
     final registry = SuperApp.maybeOf(context)?.registry;
     final repositories = JsonRepositoryScope.maybeOf(context);
     final listScope = JsonListScope.maybeOf(context);
@@ -823,14 +847,34 @@ class _SuperValueState extends State<SuperValue>
                     ),
                   );
                 } else {
+                  final previewText = text.isEmpty && config.placeholder.isEmpty
+                      ? _templatePreviewText(
+                          slotLabel,
+                          config,
+                          listScope,
+                          editing,
+                          unselected: _unselected,
+                        )
+                      : null;
+                  final effectiveColor =
+                      style.color ?? Theme.of(context).colorScheme.onSurface;
                   final display = Text(
                     text.isEmpty
-                        ? config.placeholder
+                        ? (config.placeholder.isNotEmpty
+                              ? config.placeholder
+                              : (previewText ?? ''))
                         : config.obscureText
                         ? List.filled(text.runes.length, '\u2022').join()
                         : text,
                     key: ValueKey('super-value-display-${widget.id}'),
-                    style: style,
+                    style: previewText != null
+                        ? style.copyWith(
+                            color: effectiveColor.withValues(
+                              alpha: effectiveColor.a * 0.55,
+                            ),
+                            fontStyle: FontStyle.italic,
+                          )
+                        : style,
                     textAlign: config.textAlign,
                     maxLines: config.maxLines,
                     overflow: TextOverflow.ellipsis,
