@@ -396,6 +396,10 @@ class JsonRepositoryStore extends ChangeNotifier {
     return persistence;
   }
 
+  /// Indique si [repositoryId] est un repository applicatif enregistré (mémoire pure ou persistant).
+  bool isRegisteredRepository(String repositoryId) =>
+      _memoryRepositories.containsKey(repositoryId);
+
   /// Indique si un repository applicatif est associé à un fichier persistant.
   bool isPersistentRepository(String repositoryId) =>
       _persistentRepositoryState?.containsKey(repositoryId) ?? false;
@@ -1474,6 +1478,144 @@ class JsonRepositoryStore extends ChangeNotifier {
     _invalidateCalculated(id, '');
     _changed();
   });
+
+  static Map<String, dynamic> _normalizeObjectDocument(
+    Map<String, Object?> document,
+  ) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(jsonEncode(document));
+    } on JsonUnsupportedObjectError {
+      throw const FormatException(
+        'Le repository contient une valeur JSON non supportée.',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Le repository doit être un objet JSON.');
+    }
+    return decoded;
+  }
+
+  /// Crée un nouveau repository fichier [name] avec un identifiant technique 32 hex explicite [id] et le contenu objet [initialDocument].
+  Future<String> createWithId(
+    String name, {
+    required String id,
+    Map<String, Object?> initialDocument = const {},
+  }) {
+    final validatedName = validateName(name);
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(id)) {
+      throw FormatException(
+        'Identifiant technique de repository invalide : $id',
+      );
+    }
+    final copy = _normalizeObjectDocument(initialDocument);
+    return _exclusive(() async {
+      await _checkAvailable(validatedName);
+      final existingCatalog = await _catalog();
+      if (_memoryRepositories.containsKey(id) ||
+          existingCatalog.any((entry) => entry.id == id)) {
+        throw const FormatException(
+          'Un repository utilise déjà cet identifiant technique.',
+        );
+      }
+      await directory.create(recursive: true);
+      final idFile = _idFile(validatedName);
+      final jsonFile = _file(validatedName);
+      await idFile.create(exclusive: true);
+      try {
+        await idFile.writeAsString(id, flush: true);
+        await jsonFile.create(exclusive: true);
+        await jsonFile.writeAsString(_encode(copy), flush: true);
+      } catch (_) {
+        if (await FileSystemEntity.type(jsonFile.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          await jsonFile.delete();
+        }
+        if (await FileSystemEntity.type(idFile.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          await idFile.delete();
+        }
+        rethrow;
+      }
+      _documentCache[id] = copy;
+      _idToNameCache = null;
+      _invalidateCalculated(id, '');
+      _changed();
+      return id;
+    });
+  }
+
+  /// Remplace intégralement le document JSON racine du repository [repositoryId] par l'objet [document].
+  Future<void> replaceDocumentById(
+    String repositoryId,
+    Map<String, Object?> document,
+  ) {
+    JsonTextBinding(repositoryId: repositoryId, path: '_').validate();
+    final decoded = _normalizeObjectDocument(document);
+    return _exclusive(() async {
+      if (_memoryRepositories.containsKey(repositoryId)) {
+        final previous = _memoryRepositories[repositoryId];
+        if (jsonEquals(previous, decoded)) return;
+        await _saveRegisteredAutomatically(repositoryId, decoded);
+        _memoryRepositories[repositoryId] = decoded;
+        _documentCache[repositoryId] = decoded;
+        _invalidateCalculated(repositoryId, '');
+        _changed();
+        _notifyMemoryRepositoryChanged(
+          repositoryId: repositoryId,
+          path: '',
+          oldValue: previous,
+          newValue: decoded,
+        );
+        return;
+      }
+      final name = await _nameOf(repositoryId);
+      final original = await read(name);
+      if (jsonEquals(_decode(original), decoded)) return;
+      await _file(name).writeAsString(_encode(decoded), flush: true);
+      _documentCache[repositoryId] = decoded;
+      _idToNameCache?[repositoryId] = validateName(name);
+      _invalidateCalculated(repositoryId, '');
+      _changed();
+    });
+  }
+
+  /// Supprime un repository fichier par son [repositoryId] sans vérifier les liaisons d'Appearance (utilisé pour le rollback transactionnel et l'Undo d'une création IA).
+  Future<void> deleteCreatedFileRepositoryById(String repositoryId) =>
+      _exclusive(() async {
+        if (_memoryRepositories.containsKey(repositoryId)) {
+          throw FormatException(
+            'Impossible de supprimer le repository applicatif enregistré « $repositoryId ».',
+          );
+        }
+        final entries = await _catalog();
+        final match = entries
+            .where((entry) => entry.id == repositoryId)
+            .firstOrNull;
+        if (match == null) return;
+        final name = match.name;
+        _checkUnusedByProviders(name, repositoryId);
+        final file = _file(name);
+        if (await FileSystemEntity.type(file.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          await file.delete();
+        }
+        final idFile = _idFile(name);
+        if (await FileSystemEntity.type(idFile.path, followLinks: false) ==
+            FileSystemEntityType.file) {
+          await idFile.delete();
+        }
+        _documentCache.remove(repositoryId);
+        _invalidateCalculated(repositoryId, '');
+        _idToNameCache = null;
+        final binding = _bindings[repositoryId];
+        if (binding != null) {
+          for (final array in binding.arrays) {
+            array.clear();
+          }
+        }
+        _changed();
+      });
 
   /// Enregistre un document entier après contrôle de sa version précédente.
   ///

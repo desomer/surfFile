@@ -324,6 +324,13 @@ void main() {
       prompt,
       contains('guide de test disponible uniquement via le chemin de package'),
     );
+    expect(prompt, contains('GUIDE DE MODÉLISATION DES REPOSITORIES :'));
+    expect(
+      prompt,
+      contains(
+        'guide repositories disponible uniquement via le chemin de package',
+      ),
+    );
     expect(
       prompt,
       contains('guide design disponible uniquement via le chemin de package'),
@@ -331,6 +338,8 @@ void main() {
     expect(assetBundle.loads, [
       'SCREEN_JSON_AI_GUIDE.md',
       'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
+      'REPOSITORY_JSON_AI_GUIDE.md',
+      'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
       'SCREEN_DESIGN_AI_GUIDE.md',
       'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
     ]);
@@ -980,6 +989,15 @@ class _FallbackGuideBundle extends CachingAssetBundle {
         Uint8List.fromList(
           utf8.encode(
             'guide de test disponible uniquement via le chemin de package',
+          ),
+        ),
+      );
+    }
+    if (key == 'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md') {
+      return ByteData.sublistView(
+        Uint8List.fromList(
+          utf8.encode(
+            'guide repositories disponible uniquement via le chemin de package',
           ),
         ),
       );

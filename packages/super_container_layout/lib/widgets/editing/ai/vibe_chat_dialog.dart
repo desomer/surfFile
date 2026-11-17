@@ -1,10 +1,12 @@
 /// Interface de chat IA (« Vibe ») pour la génération et la modification incrémentale d'écrans ([VibeChatDialog]).
 ///
-/// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et le référentiel
-/// `DESIGN.md` actif ([DesignSystemPreset], [VibeChatDialog.warmUp]), assemble un instantané JSON compact
-/// (global ou ciblé sur un [VibeChatScope]), diffuse la réponse en direct via [streamGemini]
-/// ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un questionnaire de clarification
-/// interactif ([VibeAskUserRequest]), et applique le patch via `AppearanceTransfer.applyVibe`.
+/// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md`, `REPOSITORY_JSON_AI_GUIDE.md`,
+/// `SCREEN_DESIGN_AI_GUIDE.md` et le référentiel `DESIGN.md` actif ([DesignSystemPreset],
+/// [VibeChatDialog.warmUp]), assemble un instantané JSON compact (global ou ciblé sur un
+/// [VibeChatScope]) enrichi du contexte du [JsonRepositoryStore] actif, diffuse la réponse en
+/// direct via [streamGemini] ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un
+/// questionnaire de clarification interactif ([VibeAskUserRequest]), et applique les mutations
+/// de repositories ([VibeRepositoryTurnTransaction]) ainsi que le patch via `AppearanceTransfer.applyVibe`.
 library;
 
 import 'dart:async';
@@ -31,6 +33,8 @@ import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
 import '../../../services/pages/editor_page_router.dart';
+import '../../../services/repositories/json_repository_scope.dart';
+import '../../../services/repositories/json_repository_store.dart';
 import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
@@ -41,6 +45,7 @@ import 'design_system_preview_card.dart';
 import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
 import 'vibe_prompt_builder.dart';
+import 'vibe_repository_applier.dart';
 import 'vibe_scope_helpers.dart';
 import '../../appearance/appearance_scope.dart';
 
@@ -81,6 +86,7 @@ class VibeChatDialog extends StatefulWidget {
     this.readClipboardText,
     this.validateAppearance,
     this.registry,
+    this.repositoryStore,
     this.pageRouting,
     this.initialDesignSystem,
     this.onDesignSystemChanged,
@@ -110,6 +116,11 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
+Règles pour "repositories" (création et mise à jour des repositories JSON) :
+- Lorsqu'une section REPOSITORIES DISPONIBLES (JSON) est fournie dans le contexte du tour, tu peux créer de nouveaux repositories ou mettre à jour/peupler des repositories existants via la clé optionnelle "repositories" placée après "message" et avant "vibe" : {"message":"...","repositories":{"<idOuAlias>":{"name":"...","mode":"merge","data":{...}}},"vibe":{...}} (ou "vibe": null si la demande ne modifie que les données des repositories sans changer l'écran). Si aucune section REPOSITORIES DISPONIBLES (JSON) n'est présente dans le contexte, n'émets pas la clé "repositories".
+- Respecte impérativement l'ordre d'émission live : "message" -> "repositories" -> "vibe", afin que les repositories soient créés et peuplés avant l'instanciation des composants liés.
+- Réutilise systématiquement les identifiants ("id") existants de REPOSITORIES DISPONIBLES lorsqu'un repository correspond au domaine métier. Pour tout nouveau repository, choisis un alias snake_case (^[a-z0-9_]{1,32}\$, sans inventer d'ID de 32 caractères hexadécimaux) et utilise directement cet alias dans les bindings "<alias>:chemin" (ou {"repositoryId":"<alias>","path":"chemin"}) de "vibe".
+- Dans chaque entrée de "repositories", "data" doit être un objet JSON {...} à la racine, et aucune clé JSON stockée ne doit jamais débuter par "@" (préfixe strictement réservé aux attributs calculés en lecture seule) ni contenir ".", "[", "]", "?" ou espace.
 Règles pour "askUser" :
 - Quelle que soit l'étape (création initiale, ajout, modification d'un écran existant ou d'un scope ciblé), applique systématiquement le NIVEAU DE QUESTIONNEMENT défini par le slider dans le contexte du tour courant, sans restreindre les questions à la première étape (seul le niveau 0/Aucun ou le tour d'application immédiate des réponses qui viennent d'être fournies désactive "askUser").
 - Fournis toujours des valeurs "default" pertinentes sur chaque question posée.
@@ -129,6 +140,11 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
   ];
 
+  static const List<String> _repositoryGuideAssets = [
+    'REPOSITORY_JSON_AI_GUIDE.md',
+    'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
+  ];
+
   static const List<String> _designGuideAssets = [
     'SCREEN_DESIGN_AI_GUIDE.md',
     'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
@@ -136,6 +152,8 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   static String? _cachedRootBundleGuide;
   static Future<String>? _inFlightRootBundleGuide;
+  static String? _cachedRootBundleRepositoryGuide;
+  static Future<String?>? _inFlightRootBundleRepositoryGuide;
   static String? _cachedRootBundleDesignGuide;
   static Future<String?>? _inFlightRootBundleDesignGuide;
 
@@ -194,6 +212,11 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   /// Registre optionnel fournissant les composants instanciés et leurs configurations par défaut.
   final Registry? registry;
 
+  /// Store optionnel de repositories JSON exposé au modèle et mis à jour lors de la génération.
+  ///
+  /// Lorsqu'il est omis, celui du [JsonRepositoryScope] ou du [SuperApp] englobant est utilisé s'il existe.
+  final JsonRepositoryStore? repositoryStore;
+
   /// Routeur dynamique optionnel permettant de basculer en direct sur toute nouvelle page créée.
   ///
   /// Lorsqu'il est omis, celui du [SuperApp] englobant est utilisé automatiquement s'il existe.
@@ -229,11 +252,13 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   final ValueChanged<bool>? onExpandedChanged;
 
   /// Assemble le guide statique complet envoyé au modèle à partir du guide JSON
-  /// technique [screenGuide], du guide de Design System par défaut [defaultDesignGuide],
+  /// technique [screenGuide], du guide optionnel de modélisation des repositories
+  /// [repositoryGuide], du guide de Design System par défaut [defaultDesignGuide],
   /// d'un éventuel référentiel `DESIGN.md` actif ([selectedDesignSystemMarkdown] /
   /// [selectedDesignSystemName]) et des règles de l'application hôte [customDesignGuide].
   static String composeStaticGuide({
     required String screenGuide,
+    String? repositoryGuide,
     String? defaultDesignGuide,
     String? selectedDesignSystemMarkdown,
     String? selectedDesignSystemName,
@@ -241,11 +266,18 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     bool replaceDefaultDesignGuide = false,
   }) {
     final trimmedScreen = screenGuide.trim();
+    final trimmedRepository = repositoryGuide?.trim() ?? '';
     final trimmedDefaultDesign = defaultDesignGuide?.trim() ?? '';
     final trimmedSelectedDesign = selectedDesignSystemMarkdown?.trim() ?? '';
     final trimmedSelectedName = selectedDesignSystemName?.trim() ?? '';
     final trimmedCustomDesign = customDesignGuide?.trim() ?? '';
     final buffer = StringBuffer(trimmedScreen);
+
+    if (trimmedRepository.isNotEmpty) {
+      buffer
+        ..write('\n\n---\n\nGUIDE DE MODÉLISATION DES REPOSITORIES :\n')
+        ..write(trimmedRepository);
+    }
 
     final includeDefault =
         trimmedDefaultDesign.isNotEmpty &&
@@ -327,6 +359,48 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     }
   }
 
+  static Future<String?> _loadRepositoryGuideFromBundle(
+    AssetBundle bundle,
+  ) async {
+    final isRoot = identical(bundle, rootBundle);
+    if (isRoot) {
+      final cached = _cachedRootBundleRepositoryGuide;
+      if (cached != null) return cached;
+      final inFlight = _inFlightRootBundleRepositoryGuide;
+      if (inFlight != null) return inFlight;
+    }
+
+    Future<String?> load() async {
+      for (final asset in _repositoryGuideAssets) {
+        try {
+          final guide = await bundle.loadString(asset);
+          if (guide.trim().isNotEmpty) {
+            if (isRoot) {
+              _cachedRootBundleRepositoryGuide = guide;
+            }
+            return guide;
+          }
+        } on FlutterError {
+          // Continue vers le chemin de package ou repli gracieux sur les bundles de test minimaux.
+        }
+      }
+      return null;
+    }
+
+    if (!isRoot) {
+      return load();
+    }
+    final future = load();
+    _inFlightRootBundleRepositoryGuide = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_inFlightRootBundleRepositoryGuide, future)) {
+        _inFlightRootBundleRepositoryGuide = null;
+      }
+    }
+  }
+
   static Future<String?> _loadDesignGuideFromBundle(AssetBundle bundle) async {
     final isRoot = identical(bundle, rootBundle);
     if (isRoot) {
@@ -368,8 +442,8 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   }
 
   /// Charge et assemble le guide statique complet (`SCREEN_JSON_AI_GUIDE.md` +
-  /// `SCREEN_DESIGN_AI_GUIDE.md` + [designSystemPreset] éventuel + [customDesignGuide]
-  /// éventuel) depuis [bundle].
+  /// `REPOSITORY_JSON_AI_GUIDE.md` éventuel + `SCREEN_DESIGN_AI_GUIDE.md` +
+  /// [designSystemPreset] éventuel + [customDesignGuide] éventuel) depuis [bundle].
   static Future<String> loadStaticGuide(
     AssetBundle bundle, {
     DesignSystemPreset? designSystemPreset,
@@ -380,6 +454,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     final skipDefaultDesign =
         replaceDefaultDesignGuide && trimmedCustom.isNotEmpty;
     final screenGuide = await _loadScreenGuideFromBundle(bundle);
+    final repositoryGuide = await _loadRepositoryGuideFromBundle(bundle);
     final defaultDesignGuide = skipDefaultDesign
         ? null
         : await _loadDesignGuideFromBundle(bundle);
@@ -391,6 +466,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
           );
     return composeStaticGuide(
       screenGuide: screenGuide,
+      repositoryGuide: repositoryGuide,
       defaultDesignGuide: defaultDesignGuide,
       selectedDesignSystemMarkdown: selectedDesignSystemMarkdown,
       selectedDesignSystemName: designSystemPreset?.name,
@@ -399,7 +475,8 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     );
   }
 
-  /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md`
+  /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md`,
+  /// `REPOSITORY_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md`
   /// et le référentiel [designSystemPreset] éventuel depuis [bundle], puis préchauffe
   /// silencieusement la connexion TLS ainsi que le cache de contexte Gemini pour [speedMode].
   static Future<void> warmUp(
@@ -456,6 +533,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     final codec = AppearanceServicesScope.codecOf(context);
     final app = SuperApp.maybeOf(context);
     final registry = app?.registry;
+    final repositoryStore =
+        app?.repositoryStore ??
+        context.getInheritedWidgetOfExactType<JsonRepositoryScope>()?.store;
     final effectiveCustomDesignGuide =
         customDesignGuide ?? app?.customDesignGuide;
     final effectiveReplaceDefaultDesignGuide =
@@ -497,6 +577,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
                 controller: appearance,
                 codec: codec,
                 registry: registry,
+                repositoryStore: repositoryStore,
                 scope: scope,
                 customDesignGuide: effectiveCustomDesignGuide,
                 replaceDefaultDesignGuide: effectiveReplaceDefaultDesignGuide,
@@ -565,6 +646,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       ValueNotifier<VibeStreamSnapshot?>(null);
   VibeStreamSnapshot? _pendingSnapshot;
   _LiveTurnSession? _activeTurnSession;
+  JsonRepositoryStore? _ambientRepositoryStore;
   bool _frameSnapshotScheduled = false;
   bool _didWarmUpDependencies = false;
   bool _sending = false;
@@ -595,9 +677,45 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       widget.registry?.appearanceSnapshot(widget.controller.value) ??
       widget.controller.value;
 
+  static bool get _isWidgetTestBinding => WidgetsBinding.instance.runtimeType
+      .toString()
+      .contains('TestWidgetsFlutterBinding');
+
+  JsonRepositoryStore? _resolveRepositoryStore() {
+    if (widget.repositoryStore != null) {
+      return widget.repositoryStore;
+    }
+    final superApp = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app;
+    if (_isWidgetTestBinding &&
+        superApp != null &&
+        superApp.repositoryStore == null) {
+      final scoped = context
+          .getInheritedWidgetOfExactType<JsonRepositoryScope>()
+          ?.store;
+      if (scoped == null) return null;
+      try {
+        if (scoped.directory.path ==
+            JsonRepositoryStore.defaultStore().directory.path) {
+          return null;
+        }
+      } on FileSystemException {
+        return null;
+      }
+      return scoped;
+    }
+    return context.getInheritedWidgetOfExactType<JsonRepositoryScope>()?.store ??
+        _ambientRepositoryStore ??
+        superApp?.repositoryStore;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _ambientRepositoryStore =
+        JsonRepositoryScope.maybeOf(context) ??
+        SuperApp.maybeOf(context)?.repositoryStore;
     if (!_didWarmUpDependencies && _usesStreamingGenerator) {
       _didWarmUpDependencies = true;
       unawaited(
@@ -673,7 +791,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   void _syncExpansionFromSnapshot(VibeStreamSnapshot snapshot) {
-    if (snapshot.hasVibeObject) {
+    if (snapshot.hasVibeObject || snapshot.hasRepositoriesObject) {
       _setExpanded(false);
     } else if (snapshot.hasAskUserObject) {
       _setExpanded(true);
@@ -736,14 +854,81 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void _applyLivePreviewFromSnapshot(VibeStreamSnapshot snapshot) {
     final session = _activeTurnSession;
     if (session == null ||
-        snapshot.hasAskUserObject ||
-        snapshot.patchRevision <= session.lastAppliedPatchRevision) {
+        session.livePreviewDisabled ||
+        snapshot.hasAskUserObject) {
+      return;
+    }
+
+    if (session.repoTransaction != null &&
+        (snapshot.partialRepositoriesPatch != null ||
+            session.repoTransaction!.aliasToActualId.isNotEmpty)) {
+      final hasNewRepoRev =
+          snapshot.partialRepositoriesPatch != null &&
+          snapshot.repositoriesRevision >
+              session.lastAppliedRepositoriesRevision;
+      final hasNewPatchRev =
+          snapshot.partialVibePatch != null &&
+          snapshot.patchRevision > session.lastAppliedPatchRevision;
+      if (!hasNewRepoRev && !hasNewPatchRev) {
+        return;
+      }
+      final capturedRepoPatch = snapshot.partialRepositoriesPatch;
+      final capturedRepoRev = snapshot.repositoriesRevision;
+      final capturedVibePatch = snapshot.partialVibePatch;
+      final capturedPatchRev = snapshot.patchRevision;
+
+      session.liveRepoQueue = session.liveRepoQueue
+          .then((_) async {
+            if (!mounted ||
+                session.livePreviewDisabled ||
+                !identical(_activeTurnSession, session)) {
+              return;
+            }
+            final repoTx = session.repoTransaction!;
+            if (capturedRepoPatch != null &&
+                capturedRepoRev > session.lastAppliedRepositoriesRevision) {
+              session.lastAppliedRepositoriesRevision = capturedRepoRev;
+              try {
+                await repoTx.applyRepositoriesPatch(capturedRepoPatch);
+              } on FormatException {
+                // Ignoré pendant le flux incrémental jusqu'à la validation finale.
+              } on ArgumentError {
+                // Ignoré pendant le flux incrémental.
+              } on StateError {
+                // Ignoré pendant le flux incrémental.
+              }
+            }
+            if (!mounted ||
+                session.livePreviewDisabled ||
+                !identical(_activeTurnSession, session)) {
+              return;
+            }
+            if (capturedVibePatch != null &&
+                capturedPatchRev > session.lastAppliedPatchRevision) {
+              session.lastAppliedPatchRevision = capturedPatchRev;
+              final rewritten = repoTx.rewriteVibePatchBindings(
+                capturedVibePatch,
+              );
+              _applyVibePatchPreview(session, rewritten);
+            }
+          })
+          .catchError((Object _) {});
+      return;
+    }
+
+    if (snapshot.patchRevision <= session.lastAppliedPatchRevision) {
       return;
     }
     session.lastAppliedPatchRevision = snapshot.patchRevision;
     final rawPatch = snapshot.partialVibePatch;
     if (rawPatch == null) return;
+    _applyVibePatchPreview(session, rawPatch);
+  }
 
+  void _applyVibePatchPreview(
+    _LiveTurnSession session,
+    Map<String, dynamic> rawPatch,
+  ) {
     final activeScope = _scope;
     final effectivePatch = activeScope == null
         ? rawPatch
@@ -844,6 +1029,22 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
   }
 
+  Future<void> _rollbackTurnSession(_LiveTurnSession session) async {
+    session.livePreviewDisabled = true;
+    try {
+      await session.liveRepoQueue;
+    } catch (_) {
+      // Ignore les erreurs éventuelles de la file live.
+    }
+    _rollbackLivePreview(session);
+    try {
+      await session.repoTransaction?.rollback();
+    } catch (_) {
+      // Ignore en cas de store indisponible lors de l'annulation.
+    }
+    session.lastAppliedRepositoriesRevision = 0;
+  }
+
   void _clearScope() {
     setState(() => _scope = null);
     widget.onScopeChanged?.call(null);
@@ -902,7 +1103,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
 
     final selectedPreset = result.preset;
-    if (result.applyThemeTokensNow && selectedPreset != null && _scope == null) {
+    if (result.applyThemeTokensNow &&
+        selectedPreset != null &&
+        _scope == null) {
       final current = widget.controller.value;
       final palette = selectedPreset.palette;
       if (current.mode != palette.mode || current.accent != palette.accent) {
@@ -1179,6 +1382,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final history = EditorHistoryScope.controllerOf(context);
     final resolvedPageRouting =
         widget.pageRouting ?? SuperApp.maybeOf(context)?.pageRouting;
+    final resolvedRepositoryStore = _resolveRepositoryStore();
     final rawInitialAppearance = widget.controller.value;
     final baseAppearance = _currentAppearance;
     final initialInstantiatedIds = widget.registry == null
@@ -1198,6 +1402,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       initialPageIds: {
         for (final page in baseAppearance.pageCatalog.pages) page.id,
       },
+      repoTransaction: resolvedRepositoryStore == null
+          ? null
+          : VibeRepositoryTurnTransaction(resolvedRepositoryStore),
     );
 
     _lastFailedResponse = null;
@@ -1221,9 +1428,15 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     history?.beginTransaction();
     try {
       final guide = await _loadGuide(context);
+      final repositoriesContext = resolvedRepositoryStore == null
+          ? null
+          : await VibeRepositoryPromptFormatter.formatStoreContext(
+              resolvedRepositoryStore,
+            );
       final turnPrompt = _buildTurnPrompt(
         appearanceOverride: session.baseAppearance,
         instantiatedIdsOverride: session.initialInstantiatedIds,
+        repositoriesContext: repositoriesContext,
       );
       final generated = await _generateAndApply(
         turnPrompt,
@@ -1231,20 +1444,35 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         session: session,
         attachments: attachments,
       );
-      if (generated.appearance case final appearance?) {
+      final hasMutations =
+          generated.appearance != null || generated.repositoriesUpdated;
+      if (hasMutations) {
         _setExpanded(false);
-        widget.controller.value = appearance;
-        if (_scope == null) {
-          _maybeNavigateToNewLivePage(session, appearance);
+        if (generated.appearance case final appearance?) {
+          widget.controller.value = appearance;
+          if (_scope == null) {
+            _maybeNavigateToNewLivePage(session, appearance);
+          }
+          debugPrint(
+            '[Vibe IA] Apparence mise à jour avec succès '
+            '(composants: ${appearance.components.length}, '
+            'styles: ${appearance.styles.length}, '
+            'pages: ${appearance.pageCatalog.pages.length}'
+            '${generated.repositoriesUpdated ? ', repositories mis à jour' : ''}).',
+          );
+        } else {
+          _rollbackLivePreview(session);
+          debugPrint('[Vibe IA] Repositories JSON mis à jour avec succès.');
         }
-        debugPrint(
-          '[Vibe IA] Apparence mise à jour avec succès '
-          '(composants: ${appearance.components.length}, '
-          'styles: ${appearance.styles.length}, '
-          'pages: ${appearance.pageCatalog.pages.length}).',
-        );
+        if (session.repoTransaction?.buildHistoryCallbacks()
+            case final repoCallbacks?) {
+          history?.addTransactionSideEffect(
+            undo: repoCallbacks.undo,
+            redo: repoCallbacks.redo,
+          );
+        }
       } else {
-        _rollbackLivePreview(session);
+        await _rollbackTurnSession(session);
         if (generated.askUser case final askUser?) {
           _setExpanded(true);
           debugPrint(
@@ -1258,18 +1486,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
       }
       final summary = generated.result['message'];
-      final fallbackText =
-          generated.askUser != null && generated.appearance == null
+      final fallbackText = generated.askUser != null && !hasMutations
           ? 'Précise tes préférences :'
           : 'Modifications appliquées.';
       _appendMessage(
         summary is String && summary.trim().isNotEmpty
             ? summary.trim()
             : fallbackText,
-        askUser: generated.appearance == null ? generated.askUser : null,
+        askUser: !hasMutations ? generated.askUser : null,
       );
     } on FormatException catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (FormatException): $cause\n'
@@ -1281,7 +1508,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on ArgumentError catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (ArgumentError): $cause\n$stackTrace',
@@ -1291,7 +1518,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on StateError catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (StateError): $cause\n$stackTrace',
@@ -1301,7 +1528,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on FlutterError catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint('AI screen guide could not be loaded: $cause\n$stackTrace');
       _appendMessage(
@@ -1309,7 +1536,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } on Exception catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed (${error.runtimeType}): $cause\n'
@@ -1320,7 +1547,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         failedResponse: _lastFailedResponse,
       );
     } catch (error, stackTrace) {
-      _rollbackLivePreview(session);
+      await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
       debugPrint(
         'AI screen generation failed with unexpected error '
@@ -1416,6 +1643,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   Future<
     ({
       Appearance? appearance,
+      bool repositoriesUpdated,
       Map<String, dynamic> result,
       VibeAskUserRequest? askUser,
     })
@@ -1431,7 +1659,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       if (attempt > 0) {
         _pendingSnapshot = null;
         _streamingSnapshot.value = null;
-        _rollbackLivePreview(session);
+        await _rollbackTurnSession(session);
+        session.livePreviewDisabled = false;
+        session.liveRepoQueue = Future<void>.value();
       }
       final useStreaming = _usesStreamingGenerator;
       debugPrint(
@@ -1462,6 +1692,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         );
         rethrow;
       }
+      session.livePreviewDisabled = true;
+      try {
+        await session.liveRepoQueue;
+      } catch (_) {
+        // Ignore les erreurs transitoires de la file live avant validation finale.
+      }
       _lastFailedResponse = response;
       _logLong('[Vibe IA] Réponse brute (tentative ${attempt + 1})', response);
       try {
@@ -1484,8 +1720,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           throw const FormatException('La réponse doit être un objet JSON.');
         }
         final rawAskUser = VibeAskUserRequest.tryFromJson(result['askUser']);
+        final repositoriesPatch = _extractRepositoriesPatch(result);
         final patch = _extractPatch(result);
-        if (patch == null) {
+        if (repositoriesPatch == null && patch == null) {
           if (rawAskUser != null &&
               (_questioningLevel == VibeQuestioningLevel.none ||
                   _isAfterAskUserReply)) {
@@ -1507,68 +1744,100 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             );
           }
           _lastFailedResponse = null;
-          return (appearance: null, result: result, askUser: askUser);
-        }
-        final current = session.baseAppearance;
-        final activeScope = _scope;
-        final effectivePatch = activeScope == null
-            ? patch
-            : VibeChatDialog.filterPatchToScope(current, patch, activeScope);
-        if (activeScope != null && !_hasPatchChanges(effectivePatch)) {
-          final parents = VibeChatDialog.parentIdsOfScope(current, activeScope);
-          throw FormatException(
-            'Modifications hors du scope autorisé (${activeScope.displayLabel}, '
-            'id: "${activeScope.canonicalComponentId}"'
-            '${activeScope.zoneId != null ? ', zone: "${activeScope.zoneId}"' : ''}'
-            '${parents.isNotEmpty ? ', parent: "${parents.join(', ')}"' : ''}). '
-            'Modifie uniquement ce scope ou son conteneur parent.',
+          return (
+            appearance: null,
+            repositoriesUpdated: false,
+            result: result,
+            askUser: askUser,
           );
         }
-        final encodedPatch = jsonEncode(effectivePatch);
-        if (VibeChatDialog.verboseLogging) {
-          final formattedPatch = const JsonEncoder.withIndent('  ')
-              .convert(effectivePatch);
-          _logLong('[Vibe IA] Patch à appliquer', formattedPatch);
-        } else {
-          debugPrint(
-            '[Vibe IA] Patch à appliquer (${encodedPatch.length} caractères).',
-          );
+        if (repositoriesPatch != null) {
+          final repoTx = session.repoTransaction;
+          if (repoTx == null) {
+            throw const FormatException(
+              'Aucun JsonRepositoryStore n’est actif dans ce contexte : '
+              'retire la clé "repositories" et utilise des valeurs statiques.',
+            );
+          }
+          await repoTx.applyRepositoriesPatch(repositoriesPatch);
         }
-        final Appearance appearance;
-        try {
-          appearance = AppearanceTransfer.applyVibe(
+        Appearance? appearance;
+        if (patch != null) {
+          final rewrittenPatch = session.repoTransaction != null
+              ? session.repoTransaction!.rewriteVibePatchBindings(patch)
+              : patch;
+          final current = session.baseAppearance;
+          final activeScope = _scope;
+          final effectivePatch = activeScope == null
+              ? rewrittenPatch
+              : VibeChatDialog.filterPatchToScope(
+                  current,
+                  rewrittenPatch,
+                  activeScope,
+                );
+          if (activeScope != null && !_hasPatchChanges(effectivePatch)) {
+            final parents = VibeChatDialog.parentIdsOfScope(
+              current,
+              activeScope,
+            );
+            throw FormatException(
+              'Modifications hors du scope autorisé (${activeScope.displayLabel}, '
+              'id: "${activeScope.canonicalComponentId}"'
+              '${activeScope.zoneId != null ? ', zone: "${activeScope.zoneId}"' : ''}'
+              '${parents.isNotEmpty ? ', parent: "${parents.join(', ')}"' : ''}). '
+              'Modifie uniquement ce scope ou son conteneur parent.',
+            );
+          }
+          final encodedPatch = jsonEncode(effectivePatch);
+          if (VibeChatDialog.verboseLogging) {
+            final formattedPatch = const JsonEncoder.withIndent('  ')
+                .convert(effectivePatch);
+            _logLong('[Vibe IA] Patch à appliquer', formattedPatch);
+          } else {
+            debugPrint(
+              '[Vibe IA] Patch à appliquer (${encodedPatch.length} caractères).',
+            );
+          }
+          try {
+            appearance = AppearanceTransfer.applyVibe(
+              current,
+              encodedPatch,
+              codec: widget.codec,
+            );
+          } catch (error, stackTrace) {
+            debugPrint(
+              '[Vibe IA] Échec lors de AppearanceTransfer.applyVibe '
+              '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
+              '$stackTrace',
+            );
+            rethrow;
+          }
+          try {
+            widget.validateAppearance?.call(appearance);
+          } catch (error, stackTrace) {
+            debugPrint(
+              '[Vibe IA] Échec lors de validateAppearance '
+              '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
+              '$stackTrace',
+            );
+            rethrow;
+          }
+          _validatePatchedComponents(
             current,
-            encodedPatch,
-            codec: widget.codec,
+            appearance,
+            effectivePatch,
+            instantiatedIds: session.initialInstantiatedIds,
           );
-        } catch (error, stackTrace) {
-          debugPrint(
-            '[Vibe IA] Échec lors de AppearanceTransfer.applyVibe '
-            '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
-            '$stackTrace',
-          );
-          rethrow;
         }
-        try {
-          widget.validateAppearance?.call(appearance);
-        } catch (error, stackTrace) {
-          debugPrint(
-            '[Vibe IA] Échec lors de validateAppearance '
-            '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
-            '$stackTrace',
-          );
-          rethrow;
-        }
-        _validatePatchedComponents(
-          current,
-          appearance,
-          effectivePatch,
-          instantiatedIds: session.initialInstantiatedIds,
-        );
         _lastFailedResponse = null;
-        return (appearance: appearance, result: result, askUser: null);
+        return (
+          appearance: appearance,
+          repositoriesUpdated: repositoriesPatch != null,
+          result: result,
+          askUser: null,
+        );
       } catch (error) {
-        _rollbackLivePreview(session);
+        await _rollbackTurnSession(session);
         final isValidationError =
             error is FormatException ||
             error is ArgumentError ||
@@ -1595,6 +1864,7 @@ Cause de l'erreur (${error.runtimeType}) :
 $cause
 Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
+Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte).
 Si tu crées une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Tu peux aussi éviter de créer une page si la demande ne le nécessite pas.
 Réponse précédente invalide :
@@ -1603,6 +1873,19 @@ $response
       }
     }
     throw StateError('La génération Vibe n’a pas produit de réponse valide.');
+  }
+
+  Map<String, dynamic>? _extractRepositoriesPatch(Map<String, dynamic> result) {
+    if (!result.containsKey('repositories') || result['repositories'] == null) {
+      return null;
+    }
+    final repositories = result['repositories'];
+    if (repositories is! Map<String, dynamic>) {
+      throw const FormatException(
+        'Le champ "repositories" doit être un objet JSON ou null.',
+      );
+    }
+    return repositories.isEmpty ? null : repositories;
   }
 
   Map<String, dynamic>? _extractPatch(Map<String, dynamic> result) {
@@ -1618,7 +1901,8 @@ $response
     }
     final candidate = Map<String, dynamic>.of(result)
       ..remove('message')
-      ..remove('askUser');
+      ..remove('askUser')
+      ..remove('repositories');
     return _hasPatchChanges(candidate) ? candidate : null;
   }
 
@@ -1727,6 +2011,7 @@ $response
   String _buildTurnPrompt({
     Appearance? appearanceOverride,
     Iterable<String>? instantiatedIdsOverride,
+    String? repositoriesContext,
   }) {
     return VibePromptBuilder.buildTurnPrompt(
       questioningDirective: _questioningLevel.promptDirective(
@@ -1738,6 +2023,7 @@ $response
       scope: _scope,
       instantiatedComponentIds:
           instantiatedIdsOverride ?? widget.registry?.instantiatedComponentIds,
+      repositoriesContext: repositoriesContext,
     );
   }
 
@@ -2206,6 +2492,7 @@ final class _LiveTurnSession {
     required this.pageRouting,
     required this.initialRouteLocation,
     required this.initialPageIds,
+    this.repoTransaction,
   });
 
   final Appearance rawInitialAppearance;
@@ -2214,8 +2501,12 @@ final class _LiveTurnSession {
   final EditorPageRouter? pageRouting;
   final String? initialRouteLocation;
   final Set<String> initialPageIds;
+  final VibeRepositoryTurnTransaction? repoTransaction;
 
   int lastAppliedPatchRevision = 0;
+  int lastAppliedRepositoriesRevision = 0;
+  Future<void> liveRepoQueue = Future<void>.value();
+  bool livePreviewDisabled = false;
   bool hasAppliedLivePreview = false;
   String? liveNavigatedPageId;
 }

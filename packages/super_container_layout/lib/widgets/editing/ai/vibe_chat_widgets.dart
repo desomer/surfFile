@@ -146,134 +146,136 @@ class VibeMessageBubble extends StatelessWidget {
           child: Container(
             constraints: BoxConstraints(maxWidth: maxBubbleWidth),
             margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: message.isUser
-              ? scheme.primaryContainer
-              : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (message.attachments.isNotEmpty) ...[
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final attachment in message.attachments)
-                    if (attachment.isImage)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: 220,
-                                maxHeight: 120,
-                              ),
-                              child: Image.memory(
-                                attachment.bytes,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  padding: const EdgeInsets.all(8),
-                                  color: scheme.surface.withValues(alpha: 0.4),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.image_outlined,
-                                        size: 16,
-                                        color: foreground,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: message.isUser
+                  ? scheme.primaryContainer
+                  : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (message.attachments.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final attachment in message.attachments)
+                        if (attachment.isImage)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 220,
+                                    maxHeight: 120,
+                                  ),
+                                  child: Image.memory(
+                                    attachment.bytes,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Container(
+                                      padding: const EdgeInsets.all(8),
+                                      color: scheme.surface.withValues(
+                                        alpha: 0.4,
                                       ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          attachment.name,
-                                          style: TextStyle(
-                                            fontSize: 12,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.image_outlined,
+                                            size: 16,
                                             color: foreground,
                                           ),
-                                        ),
+                                          const SizedBox(width: 6),
+                                          Flexible(
+                                            child: Text(
+                                              attachment.name,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: foreground,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            attachment.name,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: foreground.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surface.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.description_outlined,
-                              size: 15,
-                              color: foreground,
-                            ),
-                            const SizedBox(width: 5),
-                            Flexible(
-                              child: Text(
+                              const SizedBox(height: 2),
+                              Text(
                                 attachment.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: foreground,
-                                  fontWeight: FontWeight.w500,
+                                  fontSize: 11,
+                                  color: foreground.withValues(alpha: 0.8),
                                 ),
                               ),
+                            ],
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
-                          ],
-                        ),
-                      ),
+                            decoration: BoxDecoration(
+                              color: scheme.surface.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.description_outlined,
+                                  size: 15,
+                                  color: foreground,
+                                ),
+                                const SizedBox(width: 5),
+                                Flexible(
+                                  child: Text(
+                                    attachment.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: foreground,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                    ],
+                  ),
+                  if (message.text.isNotEmpty) const SizedBox(height: 6),
                 ],
-              ),
-              if (message.text.isNotEmpty) const SizedBox(height: 6),
-            ],
-            if (message.text.isNotEmpty) SelectableText(message.text),
-            if (askUser != null) ...[
-              if (message.text.isNotEmpty) const SizedBox(height: 8),
-              if (isResolvedAskUser)
-                VibeResolvedAskUserBadge(
-                  dismissed: message.askUserDismissed,
-                  usedDefaults: message.askUserUsedDefaults,
-                )
-              else
-                VibeAskUserCard(
-                  key: const ValueKey('vibe-ask-user-card'),
-                  request: askUser,
-                  sending: sending,
-                  onSubmit: onSubmitAskUser ?? (_) {},
-                  onSkip: onSkipAskUser ?? () {},
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
+                if (message.text.isNotEmpty) SelectableText(message.text),
+                if (askUser != null) ...[
+                  if (message.text.isNotEmpty) const SizedBox(height: 8),
+                  if (isResolvedAskUser)
+                    VibeResolvedAskUserBadge(
+                      dismissed: message.askUserDismissed,
+                      usedDefaults: message.askUserUsedDefaults,
+                    )
+                  else
+                    VibeAskUserCard(
+                      key: const ValueKey('vibe-ask-user-card'),
+                      request: askUser,
+                      sending: sending,
+                      onSubmit: onSubmitAskUser ?? (_) {},
+                      onSkip: onSkipAskUser ?? () {},
+                    ),
+                ],
+              ],
+            ),
+          ),
+        );
       },
     );
   }
@@ -484,70 +486,98 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
               final patchLabel = count > 0
                   ? 'Construction du patch UI ($count composant${count > 1 ? 's' : ''})…'
                   : 'Construction du patch UI…';
+              final repoCount = current.partialRepositoriesPatch?.length ?? 0;
+              final repoLabel = repoCount > 0
+                  ? 'Préparation des repositories ($repoCount)…'
+                  : 'Préparation des repositories…';
 
               return Container(
                 constraints: BoxConstraints(maxWidth: maxBubbleWidth),
                 margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(streamedMessage),
-                if (current.hasVibeObject) ...[
-                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          patchLabel,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SelectableText(streamedMessage),
+                    if (current.hasVibeObject) ...[
+                      if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              patchLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (current.hasRepositoriesObject) ...[
+                      if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              repoLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (current.isMessageComplete &&
+                        current.hasAskUserObject) ...[
+                      if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Préparation des questions…',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ] else if (current.isMessageComplete &&
-                    current.hasAskUserObject) ...[
-                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          'Préparation des questions…',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
-      ),
-    );
+                  ],
+                ),
+              );
+            },
+          ),
+        );
       },
     );
   }

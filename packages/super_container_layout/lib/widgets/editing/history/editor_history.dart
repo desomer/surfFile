@@ -1,6 +1,8 @@
 /// Contrôleur, portée et raccourcis clavier de l'historique Undo / Redo ([EditorHistoryController]).
 library;
 
+import 'dart:async' show FutureOr, unawaited;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -9,8 +11,27 @@ import '../../../theme/appearance.dart';
 import '../../../models/json_numbers.dart';
 import '../components/shared/editor_number_field.dart';
 
+/// Couple d'actions d'annulation et de rétablissement associé à une entrée d'historique.
+typedef EditorHistorySideEffect = ({
+  FutureOr<void> Function() undo,
+  FutureOr<void> Function() redo,
+});
+
+final class _HistoryEntry {
+  _HistoryEntry({
+    required this.appearance,
+    List<EditorHistorySideEffect> sideEffects = const [],
+  }) : sideEffects = sideEffects.isEmpty
+           ? const <EditorHistorySideEffect>[]
+           : List<EditorHistorySideEffect>.unmodifiable(sideEffects);
+
+  final Appearance appearance;
+  final List<EditorHistorySideEffect> sideEffects;
+}
+
 /// Contrôleur gérant la pile d'historique Undo/Redo des modifications d'[Appearance] et des repositories JSON.
 class EditorHistoryController extends ChangeNotifier {
+  /// Crée un contrôleur d'historique lié à [appearance] et actif lorsque [_editMode] vaut `true`.
   EditorHistoryController({
     required ValueNotifier<Appearance> appearance,
     required this._editMode,
@@ -24,65 +45,190 @@ class EditorHistoryController extends ChangeNotifier {
 
   final ValueNotifier<Appearance> _appearance;
   final ValueListenable<bool> _editMode;
+
+  /// Nombre maximal d'entrées conservées dans la pile d'annulation.
   final int maxEntries;
-  final List<Appearance> _undo = [];
-  final List<Appearance> _redo = [];
+  final List<_HistoryEntry> _undo = <_HistoryEntry>[];
+  final List<_HistoryEntry> _redo = <_HistoryEntry>[];
+  final List<EditorHistorySideEffect> _pendingSideEffects =
+      <EditorHistorySideEffect>[];
   Appearance _current;
   Appearance? _transactionStart;
   int _transactionDepth = 0;
   bool _applying = false;
+  bool _disposed = false;
 
+  /// Indique si au moins une action peut être annulée.
   bool get canUndo => _undo.isNotEmpty;
+
+  /// Indique si au moins une action annulée peut être rétablie.
   bool get canRedo => _redo.isNotEmpty;
 
+  /// Ouvre une transaction regroupant les modifications suivantes en une seule entrée d'historique.
   void beginTransaction() {
     if (!_editMode.value) return;
-    if (_transactionDepth++ == 0) _transactionStart = _current;
+    if (_transactionDepth++ == 0) {
+      _transactionStart = _current;
+      _pendingSideEffects.clear();
+    }
   }
 
+  /// Associe un effet compagnon ([undo] / [redo]) à la transaction en cours,
+  /// ou empile directement une entrée dédiée si aucune transaction n'est ouverte.
+  void addTransactionSideEffect({
+    required FutureOr<void> Function() undo,
+    required FutureOr<void> Function() redo,
+  }) {
+    if (!_editMode.value) return;
+    final effect = (undo: undo, redo: redo);
+    if (_transactionDepth > 0) {
+      _pendingSideEffects.add(effect);
+      return;
+    }
+    _pushUndo(
+      _HistoryEntry(
+        appearance: _current,
+        sideEffects: <EditorHistorySideEffect>[effect],
+      ),
+    );
+    _redo.clear();
+    notifyListeners();
+  }
+
+  /// Valide la transaction en cours et empile une entrée si l'[Appearance] a changé
+  /// ou si des effets compagnons ont été enregistrés.
   void commitTransaction() {
     if (_transactionDepth == 0) return;
     if (--_transactionDepth != 0) return;
     final before = _transactionStart;
     _transactionStart = null;
-    if (before != null && !identical(before, _current)) {
-      _pushUndo(before);
+    final effects = _pendingSideEffects.isEmpty
+        ? const <EditorHistorySideEffect>[]
+        : List<EditorHistorySideEffect>.unmodifiable(_pendingSideEffects);
+    _pendingSideEffects.clear();
+    if (before != null && (!identical(before, _current) || effects.isNotEmpty)) {
+      _pushUndo(_HistoryEntry(appearance: before, sideEffects: effects));
       _redo.clear();
       notifyListeners();
     }
   }
 
-  /// Ends a transaction after its caller has restored the pre-edit value.
+  /// Termine la transaction en cours après restauration par l'appelant de l'état initial.
   void cancelTransaction() {
     _transactionDepth = 0;
     _transactionStart = null;
+    _pendingSideEffects.clear();
   }
 
+  /// Annule la dernière entrée d'historique de façon synchrone (et lance en tâche de fond
+  /// les éventuels effets compagnons asynchrones).
   void undo() {
     if (!_editMode.value || !canUndo) return;
     while (_transactionDepth > 0) {
       commitTransaction();
     }
     if (!canUndo) return;
-    _redo.add(_current);
     final target = _undo.removeLast();
-    _apply(target);
+    _redo.add(
+      _HistoryEntry(
+        appearance: _current,
+        sideEffects: target.sideEffects,
+      ),
+    );
+    _applyAppearance(target.appearance);
+    if (target.sideEffects.isNotEmpty) {
+      _runSideEffectsSyncOrUnawaited(
+        <FutureOr<void> Function()>[
+          for (final effect in target.sideEffects.reversed) effect.undo,
+        ],
+      );
+    }
+    notifyListeners();
   }
 
+  /// Annule la dernière entrée d'historique et attend séquentiellement tous ses effets compagnons.
+  Future<void> undoAsync() async {
+    if (!_editMode.value || !canUndo) return;
+    while (_transactionDepth > 0) {
+      commitTransaction();
+    }
+    if (!canUndo) return;
+    final target = _undo.removeLast();
+    _redo.add(
+      _HistoryEntry(
+        appearance: _current,
+        sideEffects: target.sideEffects,
+      ),
+    );
+    _applyAppearance(target.appearance);
+    for (final effect in target.sideEffects.reversed) {
+      final res = effect.undo();
+      if (res is Future<void>) {
+        await res;
+      }
+    }
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  /// Rétablit la dernière entrée annulée de façon synchrone (et lance en tâche de fond
+  /// les éventuels effets compagnons asynchrones).
   void redo() {
     if (!_editMode.value || !canRedo) return;
     while (_transactionDepth > 0) {
       commitTransaction();
     }
     if (!canRedo) return;
-    _pushUndo(_current);
     final target = _redo.removeLast();
-    _apply(target);
+    _pushUndo(
+      _HistoryEntry(
+        appearance: _current,
+        sideEffects: target.sideEffects,
+      ),
+    );
+    _applyAppearance(target.appearance);
+    if (target.sideEffects.isNotEmpty) {
+      _runSideEffectsSyncOrUnawaited(
+        <FutureOr<void> Function()>[
+          for (final effect in target.sideEffects) effect.redo,
+        ],
+      );
+    }
+    notifyListeners();
   }
 
+  /// Rétablit la dernière entrée annulée et attend séquentiellement tous ses effets compagnons.
+  Future<void> redoAsync() async {
+    if (!_editMode.value || !canRedo) return;
+    while (_transactionDepth > 0) {
+      commitTransaction();
+    }
+    if (!canRedo) return;
+    final target = _redo.removeLast();
+    _pushUndo(
+      _HistoryEntry(
+        appearance: _current,
+        sideEffects: target.sideEffects,
+      ),
+    );
+    _applyAppearance(target.appearance);
+    for (final effect in target.sideEffects) {
+      final res = effect.redo();
+      if (res is Future<void>) {
+        await res;
+      }
+    }
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  /// Vide intégralement les piles Undo / Redo et réinitialise toute transaction ouverte.
   void clear() {
     _undo.clear();
     _redo.clear();
+    _pendingSideEffects.clear();
     _transactionDepth = 0;
     _transactionStart = null;
     notifyListeners();
@@ -105,32 +251,66 @@ class EditorHistoryController extends ChangeNotifier {
     if (!_editMode.value) {
       _undo.clear();
       _redo.clear();
+      _pendingSideEffects.clear();
       _transactionDepth = 0;
       _transactionStart = null;
     } else if (_transactionDepth == 0) {
-      _pushUndo(before);
+      _pushUndo(_HistoryEntry(appearance: before));
       _redo.clear();
     }
     notifyListeners();
   }
 
-  void _apply(Appearance value) {
+  void _applyAppearance(Appearance value) {
+    if (identical(_appearance.value, value)) {
+      _current = value;
+      return;
+    }
     _applying = true;
     try {
       _appearance.value = value;
     } finally {
       _applying = false;
     }
-    notifyListeners();
   }
 
-  void _pushUndo(Appearance value) {
-    _undo.add(value);
+  void _runSideEffectsSyncOrUnawaited(
+    List<FutureOr<void> Function()> callbacks,
+  ) {
+    for (var i = 0; i < callbacks.length; i++) {
+      final res = callbacks[i]();
+      if (res is Future<void>) {
+        unawaited(_continueAsyncSideEffects(res, callbacks, i + 1));
+        return;
+      }
+    }
+  }
+
+  Future<void> _continueAsyncSideEffects(
+    Future<void> pending,
+    List<FutureOr<void> Function()> callbacks,
+    int nextIndex,
+  ) async {
+    await pending;
+    for (var i = nextIndex; i < callbacks.length; i++) {
+      final res = callbacks[i]();
+      if (res is Future<void>) {
+        await res;
+      }
+    }
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
+  void _pushUndo(_HistoryEntry entry) {
+    _undo.add(entry);
     if (_undo.length > maxEntries) _undo.removeAt(0);
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _appearance.removeListener(_appearanceChanged);
     _editMode.removeListener(_editModeChanged);
     super.dispose();

@@ -443,7 +443,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   Widget _buildApp() => SuperApp(
     router: _router,
     pageRouting: _pageRouting,
-    title: 'Card Layout demo 2',
+    title: 'SURF UI by Desomer Gauthier',
     registry: _registry,
     repositoryStore: _repositoryStore,
     eventBus: _eventBus,

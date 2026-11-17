@@ -4,6 +4,8 @@
 /// utilisateur déclenche le comportement associé.
 library;
 
+import 'dart:async';
+
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -40,14 +42,17 @@ class GoToPageAction extends BehaviorAction {
 
     final app = SuperApp.maybeOf(context);
     if (app?.pageRouting != null) {
-      app!.pageRouting!.router.go(path);
+      unawaited(app!.pageRouting!.router.push<Object?>(path));
       return;
     }
     if (app != null) {
-      app.router.go(path);
+      unawaited(app.router.push<Object?>(path));
       return;
     }
-    GoRouter.maybeOf(context)?.go(path);
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      unawaited(router.push<Object?>(path));
+    }
   }
 
   @override

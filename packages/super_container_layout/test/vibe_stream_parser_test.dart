@@ -405,5 +405,161 @@ void main() {
         expect(parser.current.patchRevision, 0);
       },
     );
+
+    test(
+      'capture caractère par caractère "message" puis "repositories" (plusieurs entrées) puis "vibe" avec révisions indépendantes',
+      () {
+        const rawJson =
+            '{"message":"Création CRM",'
+            '"repositories":{'
+            '"crm_clients":{"name":"CRM Clients","mode":"merge","data":{"clients":[{"id":"C1","nom":"Alice"}]}},'
+            '"app_settings":{"ui":{"westWidth":320}}'
+            '},'
+            '"vibe":{'
+            '"mode":"dark",'
+            '"styles":{"card-1":{"color":"#1E293B","radius":12}},'
+            '"components":{"kpi":{"type":"value","binding":"crm_clients:clients[?].nom","repositories":{"ignored":true}}}'
+            '}}';
+
+        final parser = VibeIncrementalStreamParser();
+
+        final repoBraceIndex = rawJson.indexOf('"repositories":{') +
+            '"repositories":'.length;
+        final firstRepoEndIndex = rawJson.indexOf(',"app_settings"') - 1;
+        final secondRepoEndIndex = rawJson.indexOf('},"vibe"') - 1;
+        final vibeBraceIndex = rawJson.indexOf('"vibe":{') + '"vibe":'.length;
+
+        for (var i = 0; i < rawJson.length; i++) {
+          final snap = parser.addChunk(rawJson[i]);
+
+          if (i < repoBraceIndex) {
+            expect(snap.hasRepositoriesObject, isFalse);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 0);
+            expect(snap.partialRepositoriesPatch, isNull);
+            expect(snap.patchRevision, 0);
+            expect(snap.partialVibePatch, isNull);
+          } else if (i == repoBraceIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 0);
+            expect(snap.partialRepositoriesPatch, isNull);
+            expect(snap.patchRevision, 0);
+          } else if (i < firstRepoEndIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 0);
+            expect(snap.partialRepositoriesPatch, isNull);
+            expect(snap.patchRevision, 0);
+          } else if (i == firstRepoEndIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 1);
+            expect(snap.partialRepositoriesPatch!.keys, ['crm_clients']);
+            expect(
+              (snap.partialRepositoriesPatch!['crm_clients'] as Map)['name'],
+              'CRM Clients',
+            );
+            expect(snap.patchRevision, 0);
+            expect(snap.partialVibePatch, isNull);
+          } else if (i < secondRepoEndIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 1);
+            expect(snap.patchRevision, 0);
+          } else if (i == secondRepoEndIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 2);
+            expect(
+              snap.partialRepositoriesPatch!.keys,
+              ['crm_clients', 'app_settings'],
+            );
+            expect(
+              ((snap.partialRepositoriesPatch!['app_settings'] as Map)['ui']
+                  as Map)['westWidth'],
+              320,
+            );
+            expect(snap.patchRevision, 0);
+            expect(snap.partialVibePatch, isNull);
+          } else if (i < vibeBraceIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isFalse);
+            expect(snap.repositoriesRevision, 2);
+            expect(snap.patchRevision, 0);
+          } else if (i == vibeBraceIndex) {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isTrue);
+            expect(snap.repositoriesRevision, 2);
+            expect(snap.patchRevision, 0);
+            expect(snap.partialVibePatch, isNull);
+          } else {
+            expect(snap.hasRepositoriesObject, isTrue);
+            expect(snap.hasVibeObject, isTrue);
+            expect(snap.repositoriesRevision, 2);
+          }
+        }
+
+        final finalSnap = parser.current;
+        expect(finalSnap.message, 'Création CRM');
+        expect(finalSnap.isMessageComplete, isTrue);
+        expect(finalSnap.hasRepositoriesObject, isTrue);
+        expect(finalSnap.repositoriesRevision, 2);
+        expect(
+          finalSnap.partialRepositoriesPatch!.keys,
+          ['crm_clients', 'app_settings'],
+        );
+        expect(finalSnap.hasVibeObject, isTrue);
+        expect(finalSnap.patchRevision, 3);
+        expect(finalSnap.estimatedComponentCount, 1);
+        expect(finalSnap.partialVibePatch!['mode'], 'dark');
+        expect(
+          ((finalSnap.partialVibePatch!['components'] as Map)['kpi']
+              as Map)['binding'],
+          'crm_clients:clients[?].nom',
+        );
+      },
+    );
+
+    test(
+      'maintient hasRepositoriesObject à false et partialRepositoriesPatch à null pour "repositories": null, et remet tout à zéro sur reset()',
+      () {
+        final parser = VibeIncrementalStreamParser();
+
+        const nullReposJson =
+            '{"message":"Aucune donnée modifiée","repositories":null,"vibe":null}';
+        for (var i = 0; i < nullReposJson.length; i++) {
+          final snap = parser.addChunk(nullReposJson[i]);
+          expect(snap.hasRepositoriesObject, isFalse);
+          expect(snap.partialRepositoriesPatch, isNull);
+          expect(snap.repositoriesRevision, 0);
+        }
+        expect(parser.current.message, 'Aucune donnée modifiée');
+        expect(parser.current.isMessageComplete, isTrue);
+        expect(parser.current.hasRepositoriesObject, isFalse);
+        expect(parser.current.partialRepositoriesPatch, isNull);
+        expect(parser.current.repositoriesRevision, 0);
+
+        parser.reset();
+        parser.addChunk(
+          '{"message":"Avec repo","repositories":{"demo":{"items":[1,2]}},"vibe":{"mode":"light"}}',
+        );
+        expect(parser.current.hasRepositoriesObject, isTrue);
+        expect(parser.current.repositoriesRevision, 1);
+        expect(parser.current.partialRepositoriesPatch, isNotNull);
+        expect(parser.current.hasVibeObject, isTrue);
+        expect(parser.current.patchRevision, 1);
+
+        parser.reset();
+        expect(parser.current, VibeStreamSnapshot.empty);
+        expect(parser.current.hasRepositoriesObject, isFalse);
+        expect(parser.current.partialRepositoriesPatch, isNull);
+        expect(parser.current.repositoriesRevision, 0);
+        expect(parser.current.hasVibeObject, isFalse);
+        expect(parser.current.partialVibePatch, isNull);
+        expect(parser.current.patchRevision, 0);
+        expect(parser.rawBuffer, isEmpty);
+      },
+    );
   });
 }

@@ -922,8 +922,9 @@ void main() {
           ),
           GoRoute(
             path: '/about',
-            builder: (context, _) => const Scaffold(
-              body: Center(child: Text('Arrived on About Page!')),
+            builder: (context, _) => Scaffold(
+              appBar: const SuperAppBar(id: 'about-app-bar'),
+              body: const Center(child: Text('Arrived on About Page!')),
             ),
           ),
         ],
@@ -948,8 +949,16 @@ void main() {
       await tester.tap(find.text('Clickable Card'));
       await tester.pumpAndSettle();
 
-      // Navigation should have executed!
+      // Navigation should have pushed the page and displayed the AppBar back button
       expect(find.text('Arrived on About Page!'), findsOneWidget);
+      expect(find.byType(BackButton), findsOneWidget);
+
+      // Tap on the AppBar back button to return to the previous page
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Clickable Card'), findsOneWidget);
+      expect(find.text('Arrived on About Page!'), findsNothing);
     });
 
     testWidgets(

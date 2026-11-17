@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
@@ -14,6 +15,8 @@ import 'package:super_container_layout/services/appearance/appearance_codec.dart
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
+import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
+import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
@@ -893,6 +896,7 @@ void main() {
                             staticGuide,
                             VibeChatDialog.composeStaticGuide(
                               screenGuide: 'Guide de test.',
+                              repositoryGuide: 'Repositories de test.',
                               defaultDesignGuide: 'Design de test.',
                             ),
                           );
@@ -2378,7 +2382,9 @@ void main() {
     expect(content, contains('NIVEAU DE QUESTIONNEMENT'));
     expect(
       content,
-      contains('aucune contrainte interdisant de poser des questions selon l\'étape'),
+      contains(
+        'aucune contrainte interdisant de poser des questions selon l\'étape',
+      ),
     );
 
     final jsonBlockMatch = RegExp(r'```json\s*([\s\S]*?)\s*```')
@@ -2443,6 +2449,19 @@ void main() {
   });
 
   test('loadStaticGuide combines JSON guide, default Design System guide, and optional host overrides', () async {
+    final fullBundle = _NamedGuideBundle({
+      'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
+      'REPOSITORY_JSON_AI_GUIDE.md': 'Modélisation des repositories JSON.',
+      'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
+    });
+    final withRepoGuide = await VibeChatDialog.loadStaticGuide(fullBundle);
+    expect(withRepoGuide, contains('Grammaire JSON de base.'));
+    expect(withRepoGuide, contains('GUIDE DE MODÉLISATION DES REPOSITORIES :'));
+    expect(withRepoGuide, contains('Modélisation des repositories JSON.'));
+    expect(withRepoGuide, contains('GUIDE DE DESIGN SYSTEM :'));
+    expect(withRepoGuide, contains('Design System moderne par défaut.'));
+
+    // Repli gracieux lorsque REPOSITORY_JSON_AI_GUIDE.md est absent d'un bundle minimal
     final bundle = _NamedGuideBundle({
       'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
       'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
@@ -2450,6 +2469,10 @@ void main() {
 
     final combined = await VibeChatDialog.loadStaticGuide(bundle);
     expect(combined, contains('Grammaire JSON de base.'));
+    expect(
+      combined,
+      isNot(contains('GUIDE DE MODÉLISATION DES REPOSITORIES :')),
+    );
     expect(combined, contains('GUIDE DE DESIGN SYSTEM :'));
     expect(combined, contains('Design System moderne par défaut.'));
 
@@ -2474,8 +2497,617 @@ void main() {
     expect(replaced, isNot(contains('Design System moderne par défaut.')));
     expect(replaced, contains('GUIDE DE DESIGN SYSTEM DE L’APPLICATION :'));
     expect(replaced, contains('Charte SurfFile exclusive.'));
-    expect(replaceBundle.loads, ['SCREEN_JSON_AI_GUIDE.md']);
+    expect(replaceBundle.loads, [
+      'SCREEN_JSON_AI_GUIDE.md',
+      'REPOSITORY_JSON_AI_GUIDE.md',
+      'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
+    ]);
   });
+
+  Future<void> pumpRealAsync(
+    WidgetTester tester, {
+    bool Function()? until,
+    int maxTicks = 120,
+  }) async {
+    await tester.runAsync(() async {
+      for (var i = 0; i < maxTicks; i++) {
+        await tester.pump();
+        if (until != null && until()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await tester.pump();
+    });
+  }
+
+  testWidgets(
+    'live SSE streaming creates repository and bound SuperListView together, rewrites alias to 32-hex ID, and supports async Undo/Redo',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('vibe_repo_stream_'),
+      ))!;
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        repoStore.dispose();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+
+      final registry = Registry()..bootstrap();
+      final store = _CountingAppearanceStore(Appearance());
+      final mainLayout = registry.layoutController('mainLayout');
+      addTearDown(registry.unbindAppearance);
+
+      String? capturedTurnPrompt;
+      StreamController<GeminiStreamEvent>? activeStreamController;
+      late ValueNotifier<Appearance> appAppearance;
+      late EditorHistoryController appHistory;
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              appHistory = EditorHistoryScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        repositoryStore: repoStore,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) {
+                              capturedTurnPrompt = prompt;
+                              final controller =
+                                  StreamController<GeminiStreamEvent>();
+                              activeStreamController = controller;
+                              return controller.stream;
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+          repositoryStore: repoStore,
+        ),
+      );
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            find.byKey(const ValueKey('vibe-chat-input')).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      // Active le mode édition pour que EditorHistoryController enregistre l'historique Undo/Redo
+      final editScopeContext = tester.element(
+        find.byKey(const ValueKey('vibe-chat-input')),
+      );
+      StyleEditScope.controllerOf(editScopeContext)!.value = true;
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Crée un annuaire CRM Clients avec Alice Martin et Bruno Leroy.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealAsync(tester, until: () => activeStreamController != null);
+      expect(activeStreamController, isNotNull);
+      final streamController = activeStreamController!;
+
+      var accumulated = '';
+      void emitDelta(String delta, {bool isDone = false}) {
+        accumulated += delta;
+        streamController.add(
+          GeminiStreamEvent(
+            deltaText: delta,
+            accumulatedText: accumulated,
+            isDone: isDone,
+            usedContextCache: true,
+          ),
+        );
+      }
+
+      // Fragment 1 : message
+      emitDelta('{"message":"Annuaire CRM prêt.",');
+      await tester.pump();
+
+      // Fragment 2 : repositories (création de crm_clients)
+      emitDelta(
+        '"repositories":{"crm_clients":{"name":"CRM Clients","mode":"merge",'
+        '"data":{"clients":[{"nom":"Alice Martin"},{"nom":"Bruno Leroy"}]}}},',
+      );
+      await pumpRealAsync(tester, maxTicks: 25);
+
+      // Fragment 3 : vibe (mainLayout + SuperListView liée à crm_clients:clients + SuperValue liée à clients[?].nom)
+      emitDelta(
+        '"vibe":{"components":{'
+        '"mainLayout":{"type":"layout","zoneFlows":{"center":{"padding":16,"spacing":8,"expandSlots":true}},'
+        '"placements":{"center":[{"id":"list-clients","type":"registry:ListView"}]}},'
+        '"list-clients":{"type":"list","binding":"crm_clients:clients","itemExtent":56,"spacing":8,'
+        '"template":{"placements":{"center":[{"id":"client-nom","type":"registry:Value"}]}}},'
+        '"client-nom":{"type":"value","binding":"clients[?].nom"}'
+        '}}}',
+        isDone: true,
+      );
+      unawaited(streamController.close());
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            find.text('Annuaire CRM prêt.').evaluate().isNotEmpty &&
+            find.text('Alice Martin').evaluate().isNotEmpty &&
+            find.text('Bruno Leroy').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      expect(capturedTurnPrompt, isNotNull);
+      expect(capturedTurnPrompt, contains('REPOSITORIES DISPONIBLES (JSON)'));
+      expect(find.text('Annuaire CRM prêt.'), findsOneWidget);
+      expect(find.text('Alice Martin'), findsOneWidget);
+      expect(find.text('Bruno Leroy'), findsOneWidget);
+
+      var catalogDone = false;
+      List<JsonRepositoryEntry> catalog = const [];
+      unawaited(
+        repoStore.catalog().then((entries) {
+          catalog = entries;
+          catalogDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => catalogDone);
+      expect(catalog, hasLength(1));
+      expect(catalog.single.name, 'CRM Clients');
+      final actualHexId = catalog.single.id;
+      expect(actualHexId, matches(RegExp(r'^[0-9a-f]{32}$')));
+
+      final listBinding = appAppearance.value
+          .listComponent('list-clients')
+          .binding;
+      expect(listBinding, isNotNull);
+      expect(listBinding!.repositoryId, matches(RegExp(r'^[0-9a-f]{32}$')));
+      expect(listBinding.repositoryId, actualHexId);
+      expect(listBinding.path, 'clients');
+      expect(appHistory.canUndo, isTrue);
+
+      // Undo : supprime à la fois les composants UI et le repository créé
+      var undoDone = false;
+      unawaited(appHistory.undoAsync().whenComplete(() => undoDone = true));
+      await pumpRealAsync(tester, until: () => undoDone);
+      await tester.pumpAndSettle();
+
+      expect(mainLayout.value.placedSlotIds, isEmpty);
+      expect(appAppearance.value.components, isEmpty);
+      expect(find.text('Alice Martin'), findsNothing);
+      expect(find.text('Bruno Leroy'), findsNothing);
+
+      var afterUndoCatalogDone = false;
+      List<JsonRepositoryEntry> afterUndoCatalog = const [];
+      unawaited(
+        repoStore.catalog().then((entries) {
+          afterUndoCatalog = entries;
+          afterUndoCatalogDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => afterUndoCatalogDone);
+      expect(afterUndoCatalog, isEmpty);
+      expect(appHistory.canRedo, isTrue);
+
+      // Redo : restaure l'UI et le repository avec ses données visibles
+      var redoDone = false;
+      unawaited(appHistory.redoAsync().whenComplete(() => redoDone = true));
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            redoDone &&
+            find.text('Alice Martin').evaluate().isNotEmpty &&
+            find.text('Bruno Leroy').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      var restoredCatalogDone = false;
+      List<JsonRepositoryEntry> restoredCatalog = const [];
+      unawaited(
+        repoStore.catalog().then((entries) {
+          restoredCatalog = entries;
+          restoredCatalogDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => restoredCatalogDone);
+      expect(restoredCatalog, hasLength(1));
+      expect(restoredCatalog.single.id, actualHexId);
+      expect(find.text('Alice Martin'), findsOneWidget);
+      expect(find.text('Bruno Leroy'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'data-only response ("vibe": null) merges into existing RepositoryImpl and updates calculated attributes',
+    (tester) async {
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('vibe_repo_data_only_'),
+      ))!;
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        repoStore.dispose();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+
+      final appState = RepositoryImpl(
+        id: 'app_state',
+        json: {'compteur': 1, 'titre': 'Initial'},
+      );
+      appState.addCalculatedAttribute('doubleCompteur', (ctx) async {
+        final count = await ctx.getNum('compteur') ?? 0;
+        return count * 2;
+      });
+      repoStore.registerRepository(appState);
+
+      var initialCalcDone = false;
+      JsonAttributeValue? initialCalc;
+      unawaited(
+        repoStore
+            .readAttribute(
+              const JsonTextBinding(
+                repositoryId: 'app_state',
+                path: '@doubleCompteur',
+              ),
+            )
+            .then((val) {
+              initialCalc = val;
+              initialCalcDone = true;
+            }),
+      );
+      await pumpRealAsync(tester, until: () => initialCalcDone);
+      expect(initialCalc?.value, 2);
+
+      final appearance = ValueNotifier(Appearance());
+      final editMode = ValueNotifier(true);
+      final history = EditorHistoryController(
+        appearance: appearance,
+        editMode: editMode,
+      );
+      final registry = Registry()..bootstrap();
+      registry.bindAppearance(appearance);
+      addTearDown(registry.unbindAppearance);
+      addTearDown(history.dispose);
+      addTearDown(editMode.dispose);
+      addTearDown(appearance.dispose);
+
+      String? receivedPrompt;
+
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: editMode,
+          child: EditorHistoryScope(
+            controller: history,
+            child: JsonRepositoryScope(
+              store: repoStore,
+              child: AppearanceScope(
+                controller: appearance,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (prompt) async {
+                          receivedPrompt = prompt;
+                          return jsonEncode({
+                            'message': 'Compteur mis à jour.',
+                            'repositories': {
+                              'app_state': {
+                                'mode': 'merge',
+                                'data': {'compteur': 5},
+                              },
+                            },
+                            'vibe': null,
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Passe le compteur à 5.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealAsync(
+        tester,
+        until: () => find.text('Compteur mis à jour.').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      expect(receivedPrompt, isNotNull);
+      expect(receivedPrompt, contains('REPOSITORIES DISPONIBLES (JSON)'));
+      expect(receivedPrompt, contains('app_state'));
+      expect(receivedPrompt, contains('@doubleCompteur'));
+      expect(find.text('Compteur mis à jour.'), findsOneWidget);
+      expect(appearance.value.components, isEmpty);
+
+      var updatedDocDone = false;
+      Object? updatedDoc;
+      unawaited(
+        repoStore.readDocument('app_state').then((doc) {
+          updatedDoc = doc;
+          updatedDocDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => updatedDocDone);
+      expect(updatedDoc, {'compteur': 5, 'titre': 'Initial'});
+
+      var updatedCalcDone = false;
+      JsonAttributeValue? updatedCalc;
+      unawaited(
+        repoStore
+            .readAttribute(
+              const JsonTextBinding(
+                repositoryId: 'app_state',
+                path: '@doubleCompteur',
+              ),
+            )
+            .then((val) {
+              updatedCalc = val;
+              updatedCalcDone = true;
+            }),
+      );
+      await pumpRealAsync(tester, until: () => updatedCalcDone);
+      expect(updatedCalc?.value, 10);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'auto-correction rolls back newly created repository on error and keeps only corrected repository',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('vibe_repo_rollback_'),
+      ))!;
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        repoStore.dispose();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+
+      final registry = Registry()..bootstrap();
+      final store = _CountingAppearanceStore(Appearance());
+      final mainLayout = registry.layoutController('mainLayout');
+      addTearDown(registry.unbindAppearance);
+
+      var attempt = 0;
+      final prompts = <String>[];
+      late ValueNotifier<Appearance> appAppearance;
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        repositoryStore: repoStore,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (prompt) async {
+                          attempt++;
+                          prompts.add(prompt);
+                          if (attempt == 1) {
+                            // Tentative 1 : crée "temp_repo" sur disque mais échoue sur un composant détaché dans "vibe"
+                            return jsonEncode({
+                              'message': 'Essai initial invalide.',
+                              'repositories': {
+                                'temp_repo': {
+                                  'name': 'Temp Repo',
+                                  'mode': 'merge',
+                                  'data': {'statut': 'Brouillon temporaire'},
+                                },
+                              },
+                              'vibe': {
+                                'components': {
+                                  'orphan-status': {
+                                    'type': 'value',
+                                    'binding': 'temp_repo:statut',
+                                  },
+                                },
+                              },
+                            });
+                          }
+                          // Tentative 2 : réponse corrigée valide créant "clean_repo" et rattachant le composant à mainLayout
+                          return jsonEncode({
+                            'message': 'Écran corrigé et prêt.',
+                            'repositories': {
+                              'clean_repo': {
+                                'name': 'Clean Repo',
+                                'mode': 'merge',
+                                'data': {'statut': 'Donnée validée'},
+                              },
+                            },
+                            'vibe': {
+                              'components': {
+                                'mainLayout': {
+                                  'type': 'layout',
+                                  'placements': {
+                                    'center': [
+                                      {
+                                        'id': 'clean-status',
+                                        'type': 'registry:Value',
+                                      },
+                                    ],
+                                  },
+                                },
+                                'clean-status': {
+                                  'type': 'value',
+                                  'binding': 'clean_repo:statut',
+                                },
+                              },
+                            },
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+          repositoryStore: repoStore,
+        ),
+      );
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            find.byKey(const ValueKey('vibe-chat-input')).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Affiche le statut depuis un nouveau repository.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            find.text('Écran corrigé et prêt.').evaluate().isNotEmpty &&
+            find.text('Donnée validée').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      expect(attempt, 2);
+      expect(prompts, hasLength(2));
+      expect(prompts[1], contains('CORRECTION REQUISE'));
+      expect(prompts[1], contains('orphan-status'));
+
+      // "temp_repo" ("Temp Repo") a été intégralement annulé ; seul "clean_repo" ("Clean Repo") subsiste
+      var catalogDone = false;
+      List<JsonRepositoryEntry> catalog = const [];
+      unawaited(
+        repoStore.catalog().then((entries) {
+          catalog = entries;
+          catalogDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => catalogDone);
+      expect(catalog, hasLength(1));
+      expect(catalog.single.name, 'Clean Repo');
+      expect(catalog.single.id, matches(RegExp(r'^[0-9a-f]{32}$')));
+
+      final jsonFiles = (await tester.runAsync(() async {
+        return tempDir
+            .listSync()
+            .whereType<File>()
+            .map((f) => f.uri.pathSegments.last)
+            .where(
+              (name) => name.endsWith('.json') || name.endsWith('.json.id'),
+            )
+            .toList();
+      }))!;
+      expect(
+        jsonFiles,
+        unorderedEquals(['Clean Repo.json', 'Clean Repo.json.id']),
+      );
+
+      expect(find.text('Écran corrigé et prêt.'), findsOneWidget);
+      expect(find.text('Donnée validée'), findsOneWidget);
+      expect(find.text('Brouillon temporaire'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _NamedGuideBundle extends CachingAssetBundle {
@@ -2498,7 +3130,11 @@ class _NamedGuideBundle extends CachingAssetBundle {
 class _GuideBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
-    final text = key.contains('DESIGN') ? 'Design de test.' : 'Guide de test.';
+    final text = key.contains('DESIGN')
+        ? 'Design de test.'
+        : key.contains('REPOSITORY')
+        ? 'Repositories de test.'
+        : 'Guide de test.';
     return ByteData.sublistView(Uint8List.fromList(utf8.encode(text)));
   }
 }

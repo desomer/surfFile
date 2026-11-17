@@ -599,6 +599,57 @@ class AppearanceCodec {
       pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
     }
 
+    final behaviors = Map<String, List<ComponentBehavior>>.of(current.behaviors)
+      ..removeWhere(
+        (id, _) =>
+            removedIds.contains(id) ||
+            (id.endsWith(':item') &&
+                removedIds.contains(id.substring(0, id.length - 5))),
+      );
+    if (patch.containsKey('behaviors') && patch['behaviors'] != null) {
+      final rawBehaviors = patch['behaviors'];
+      if (rawBehaviors is! Map) {
+        throw const FormatException('Invalid "behaviors" map.');
+      }
+      for (final entry in rawBehaviors.entries) {
+        final id = entry.key;
+        if (id is! String || id.trim().isEmpty) {
+          throw const FormatException('Invalid "behaviors" map.');
+        }
+        final value = entry.value;
+        if (value == null) {
+          behaviors.remove(id);
+        } else if (value is List) {
+          final parsed = <ComponentBehavior>[];
+          for (final item in value) {
+            if (item is! Map) {
+              throw FormatException(
+                'Comportement "$id" : chaque entrée doit être un objet JSON.',
+              );
+            }
+            try {
+              parsed.add(
+                ComponentBehavior.fromJson(Map<String, dynamic>.from(item)),
+              );
+            } on FormatException catch (error) {
+              throw FormatException(
+                'Comportement "$id" : ${error.message}',
+                error.source,
+                error.offset,
+              );
+            }
+          }
+          if (parsed.isEmpty) {
+            behaviors.remove(id);
+          } else {
+            behaviors[id] = List<ComponentBehavior>.unmodifiable(parsed);
+          }
+        } else {
+          throw const FormatException('Invalid "behaviors" map.');
+        }
+      }
+    }
+
     final usages = Map<String, ComponentUsage>.of(current.usages)
       ..removeWhere((id, _) => removedIds.contains(id));
     if (patch.containsKey('usages') && patch['usages'] != null) {
@@ -635,6 +686,7 @@ class AppearanceCodec {
       windowEffect: windowEffect,
       styles: styles,
       components: components,
+      behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
     );

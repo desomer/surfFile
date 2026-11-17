@@ -15,6 +15,7 @@ export 'ai/vibe_stream_parser.dart';
 export 'widgets/editing/ai/design_system_catalog_dialog.dart';
 export 'widgets/editing/ai/design_system_preview_card.dart';
 export 'widgets/editing/ai/vibe_chat_dialog.dart';
+export 'widgets/editing/ai/vibe_repository_applier.dart';
 export 'models/registry.dart';
 export 'models/component_config.dart';
 export 'models/component_extension.dart';

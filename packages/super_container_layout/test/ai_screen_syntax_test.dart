@@ -426,6 +426,93 @@ void main() {
       expect(current.components.containsKey('card-profile'), isFalse);
     });
 
+    test(
+      'patches, updates and removes behaviors via applyVibe and applyVibeMap',
+      () {
+        var current = Appearance(
+          components: {
+            'btn-edit-comp': const SuperActionConfig(label: 'Modifier'),
+            'btn-cancel-edit-comp': const SuperActionConfig(label: 'Annuler'),
+          },
+        );
+
+        final vibePatch = {
+          'behaviors': {
+            'btn-edit-comp': [
+              {
+                'id': 'behavior-edit-company',
+                'trigger': 'click',
+                'enabled': true,
+                'action': {
+                  'type': 'goToPage',
+                  'pagePath': '/edit-company',
+                  'pageId': 'page-edit-company',
+                  'pageName': 'Édition du Compte',
+                },
+              },
+            ],
+            'btn-cancel-edit-comp': [
+              {
+                'id': 'behavior-cancel-edit-comp',
+                'trigger': 'click',
+                'enabled': true,
+                'action': {
+                  'type': 'goToPage',
+                  'pagePath': '/',
+                  'pageName': 'Cockpit Commercial B2B',
+                },
+              },
+            ],
+          },
+        };
+
+        final preview = AppearanceTransfer.applyVibeMap(
+          current,
+          vibePatch,
+          normalizeRoundTrip: false,
+        );
+        expect(preview.behaviorsFor('btn-edit-comp'), hasLength(1));
+        expect(preview.behaviorsFor('btn-cancel-edit-comp'), hasLength(1));
+
+        current = AppearanceTransfer.applyVibe(current, jsonEncode(vibePatch));
+        final editBehavior = current.behaviorsFor('btn-edit-comp').single;
+        expect(editBehavior.id, 'behavior-edit-company');
+        expect(editBehavior.trigger, BehaviorTrigger.click);
+        expect(editBehavior.enabled, isTrue);
+        expect(
+          editBehavior.action,
+          const GoToPageAction(
+            pagePath: '/edit-company',
+            pageId: 'page-edit-company',
+            pageName: 'Édition du Compte',
+          ),
+        );
+
+        final cancelBehavior = current
+            .behaviorsFor('btn-cancel-edit-comp')
+            .single;
+        expect(cancelBehavior.id, 'behavior-cancel-edit-comp');
+        expect(
+          cancelBehavior.action,
+          const GoToPageAction(
+            pagePath: '/',
+            pageName: 'Cockpit Commercial B2B',
+          ),
+        );
+
+        // Suppression d'un comportement par null et suppression d'un composant
+        current = AppearanceTransfer.applyVibe(
+          current,
+          jsonEncode({
+            'behaviors': {'btn-cancel-edit-comp': null},
+            'components': {'btn-edit-comp': null},
+          }),
+        );
+        expect(current.behaviorsFor('btn-cancel-edit-comp'), isEmpty);
+        expect(current.behaviorsFor('btn-edit-comp'), isEmpty);
+      },
+    );
+
     test('attaches direct slotSizeConstraints on a child component to its parent container', () {
       final updated = AppearanceTransfer.applyVibe(
         Appearance(),

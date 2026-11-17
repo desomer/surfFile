@@ -43,7 +43,8 @@ abstract final class VibePromptBuilder {
     return windowed.map((m) => m.toConversationEntry()).join('\n');
   }
 
-  /// Assemble le prompt à partir d'un instantané compact et de la portée choisie.
+  /// Assemble le prompt à partir d'un instantané compact, du contexte optionnel
+  /// des repositories JSON ([repositoriesContext]) et de la portée choisie ([scope]).
   static String buildTurnPrompt({
     required String questioningDirective,
     required String conversation,
@@ -51,28 +52,33 @@ abstract final class VibePromptBuilder {
     required AppearanceCodec codec,
     required VibeChatScope? scope,
     Iterable<String>? instantiatedComponentIds,
+    String? repositoriesContext,
   }) {
+    final trimmedRepositories = repositoriesContext?.trim() ?? '';
+    final repositoriesSection = trimmedRepositories.isEmpty
+        ? null
+        : (trimmedRepositories.startsWith('REPOSITORIES DISPONIBLES')
+              ? trimmedRepositories
+              : 'REPOSITORIES DISPONIBLES (JSON) :\n$trimmedRepositories');
+
     if (scope != null) {
       final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
       final parentList = parentIds.map((id) => '"$id"').join(', ');
       final effectiveParent = parentIds.isNotEmpty
           ? parentList
           : '"${scope.canonicalComponentId}"';
-      return '''
-$questioningDirective
-
-RESTRICTION STRICTE DE SCOPE :
+      return [
+        questioningDirective,
+        '''RESTRICTION STRICTE DE SCOPE :
 L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayLabel}" (composant id: "${scope.canonicalComponentId}"${scope.zoneId != null ? ', zone/région: "${scope.zoneId}"' : ''}${parentIds.isNotEmpty ? ', conteneur parent: $parentList' : ''}).
 - Le périmètre modifiable autorisé couvre l'élément sélectionné ("${scope.canonicalComponentId}") ainsi que son conteneur parent ($effectiveParent) et tout le sous-arbre de ce parent.
 - Ne modifie AUCUN composant situé au-dessus ou en dehors du conteneur parent ($effectiveParent).
 - Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
-- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.
-
-ÉTAT DU SCOPE CIBLÉ (JSON) :
-${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}
-
-CONVERSATION :
-$conversation''';
+- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.''',
+        ?repositoriesSection,
+        'ÉTAT DU SCOPE CIBLÉ (JSON) :\n${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
+        'CONVERSATION :\n$conversation',
+      ].join('\n\n');
     }
 
     final current = AppearanceTransfer.exportCompactAi(
@@ -85,6 +91,7 @@ $conversation''';
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les modifications à ces composants ou aux pages déclarées ; '
             'une configuration sauvegardée mais isolée ne suffit pas.',
+      ?repositoriesSection,
       'ÉTAT ACTUEL (JSON) :\n$current',
       'CONVERSATION :\n$conversation',
     ].join('\n\n');

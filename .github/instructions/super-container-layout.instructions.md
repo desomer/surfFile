@@ -5,7 +5,7 @@ applyTo: "packages/super_container_layout/**"
 
 # Instructions spécifiques au package `super_container_layout`
 
-Consultez [`packages/super_container_layout/ARCHITECTURE.md`](../../packages/super_container_layout/ARCHITECTURE.md) pour l'index complet des fichiers, [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) pour la grammaire JSON GenUI et [`packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md) pour le Design System moderne transmis à l'IA.
+Consultez [`packages/super_container_layout/ARCHITECTURE.md`](../../packages/super_container_layout/ARCHITECTURE.md) pour l'index complet des fichiers, [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) pour la grammaire JSON GenUI, [`packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md`](../../packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md) pour la conception des Repositories JSON et le protocole Vibe `"repositories"`, et [`packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md`](../../packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md) pour le Design System moderne transmis à l'IA.
 
 ## 1. Convention de documentation Dartdoc
 - Chaque fichier sous `packages/super_container_layout/lib/` doit débuter par un commentaire `///` en français expliquant le rôle du fichier et ses interactions avec les classes voisines, suivi de la directive `library;`.
@@ -33,7 +33,7 @@ Lors de l'ajout d'un nouveau type de composant ou d'une nouvelle propriété per
    - Créer le widget runtime dans `lib/widgets/components/`, le configurateur d'ajout dans `lib/widgets/editing/addition/` (et son formulaire dans `addition/forms/`), et l'éditeur de propriétés dans `lib/widgets/editing/components/`.
    - Exporter les nouveaux fichiers publics dans `lib/super_container_layout.dart`.
 7. **Guide IA & Tests** :
-   - Documenter le format JSON dans `packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`.
+   - Documenter le format JSON dans `packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md` et, pour toute liaison ou structure de données JSON associée, mettre à jour [`packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md`](../../packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md).
    - Ajouter les tests unitaires et widgets dans `packages/super_container_layout/test/`.
 
 ## 3. Règles pour les liaisons JSON (`JsonTextBinding` & `JsonListScope`)
@@ -41,6 +41,7 @@ Lors de l'ajout d'un nouveau type de composant ou d'une nouvelle propriété per
   - l'indice de ligne fourni par un parent itératif (`SuperListView`, `SuperTable`, `SuperTreeView`, `SuperTab` dynamique) ;
   - le repository hérité (`binding.inheritsRepository`, c'est-à-dire `repositoryId.isEmpty`) ;
   - la ligne sélectionnée (Maître / Détail) stockée dans `JsonArrayBinding` lorsque le composant est placé en dehors de la collection.
+- Respecter les invariants des documents et liaisons définis dans [`packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md`](../../packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md) : racine obligatoirement Objet JSON, clés compatibles `JsonAttributePath` (sans `.`, `[`, `]`, `?` ni espaces), réserve stricte du préfixe `@` aux attributs calculés en lecture seule (`RepositoryImpl.addCalculatedAttribute`), et cohérence avec le protocole Vibe `"repositories"` (`VibeRepositoryApplier` / `VibeRepositoryTurnTransaction`).
 
 ## 4. Règles pour les styles de surface et états (`ContainerStyle` & `SurfaceStyleStates`)
 - Les surcharges d'états (`hover`, `selected`, `automatic.contentHover`, `automatic.focused`, `automatic.disabled`, `automatic.readOnly`, et états métier `named`) n'écrasent que les groupes explicitement listés dans `properties`.
