@@ -259,7 +259,7 @@ class SuperChoiceSettingsState extends State<SuperChoiceSettings> {
     children: [
       styleColorTile(
         label,
-        color ?? Theme.of(context).colorScheme.primary,
+        color,
         (next) {
           onColorChanged(next);
           _emitChange();

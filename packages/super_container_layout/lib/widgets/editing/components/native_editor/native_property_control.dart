@@ -58,7 +58,7 @@ Widget buildNativePropertyControl({
             config.colorProperty(descriptor.id) ??
                 (descriptor.defaultValue != null
                     ? JsonColor.parse(descriptor.defaultValue, descriptor.id)
-                    : Theme.of(context).colorScheme.primary),
+                    : null),
             (color) => onChanged(config.withProperty(descriptor.id, color)),
             key: propKey,
             dense: true,

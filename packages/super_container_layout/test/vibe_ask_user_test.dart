@@ -476,6 +476,21 @@ void main() {
           VibeQuestioningLevel.none.promptDirective(afterAskUserReply: false),
           contains('0/3 (Aucun)'),
         );
+        for (final level in [
+          VibeQuestioningLevel.light,
+          VibeQuestioningLevel.balanced,
+          VibeQuestioningLevel.thorough,
+        ]) {
+          final directive = level.promptDirective(afterAskUserReply: false);
+          expect(
+            directive,
+            contains(
+              'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider',
+            ),
+          );
+          expect(directive, isNot(contains('uniquement sur les créations')));
+          expect(directive, isNot(contains('QUE si la demande est très vague')));
+        }
         expect(
           VibeQuestioningLevel.light.promptDirective(afterAskUserReply: false),
           contains('1/3 (Léger, max 2 questions)'),

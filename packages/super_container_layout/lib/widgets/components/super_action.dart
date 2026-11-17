@@ -298,10 +298,15 @@ class _SuperActionState extends State<SuperAction>
           );
 
           if (navScope?.part == SuperActionNavigationPart.label) {
+            final navLabelColor =
+                config.color.resolveTheme(context) ??
+                ((navScope?.selected ?? false)
+                    ? Theme.of(context).colorScheme.onSurface
+                    : Theme.of(context).colorScheme.onSurfaceVariant);
             return Text(
               config.label,
               key: ValueKey('super-action-label-${widget.id}'),
-              style: textStyle,
+              style: textStyle.copyWith(color: navLabelColor),
               textAlign: config.textAlign,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -338,12 +343,18 @@ class _SuperActionState extends State<SuperAction>
 
           if (navScope?.part == SuperActionNavigationPart.icon) {
             final hasIcon = config.icon.trim().isNotEmpty;
+            final navIconColor =
+                config.iconColor.resolveTheme(context) ??
+                config.color.resolveTheme(context) ??
+                ((navScope?.selected ?? false)
+                    ? Theme.of(context).colorScheme.onSecondaryContainer
+                    : Theme.of(context).colorScheme.onSurfaceVariant);
             Widget iconVisual = hasIcon
                 ? Icon(
                     SuperActionIcons.resolve(config.icon),
                     key: ValueKey('super-action-icon-${widget.id}'),
                     size: config.iconSize,
-                    color: config.iconColor.resolveTheme(context) ?? config.color.resolveTheme(context),
+                    color: navIconColor,
                   )
                 : SizedBox(
                     key: ValueKey('super-action-icon-${widget.id}'),
@@ -391,6 +402,7 @@ class _SuperActionState extends State<SuperAction>
                 componentId: widget.id,
                 config: config,
                 textStyle: textStyle,
+                isSelected: navScope?.selected ?? false,
               ),
             );
           }

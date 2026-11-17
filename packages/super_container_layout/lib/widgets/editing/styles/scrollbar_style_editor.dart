@@ -251,8 +251,7 @@ class ScrollbarStyleEditor extends StatelessWidget {
           tileKey: ValueKey('$keyPrefix-thumb-color'),
           resetKey: ValueKey('$keyPrefix-thumb-color-reset'),
           label: 'Couleur du curseur',
-          color:
-              style.thumbColor ?? colors.onSurfaceVariant.withValues(alpha: .45),
+          color: style.thumbColor,
           hasCustomColor: style.thumbColor != null,
           onChanged: (color) => onChanged(style.copyWith(thumbColor: color)),
           onReset: () => onChanged(style.copyWith(clearThumbColor: true)),
@@ -261,9 +260,7 @@ class ScrollbarStyleEditor extends StatelessWidget {
           tileKey: ValueKey('$keyPrefix-track-color'),
           resetKey: ValueKey('$keyPrefix-track-color-reset'),
           label: 'Couleur de la piste',
-          color:
-              style.trackColor ??
-              colors.surfaceContainerHighest.withValues(alpha: .35),
+          color: style.trackColor,
           hasCustomColor: style.trackColor != null,
           onChanged: (color) => onChanged(style.copyWith(trackColor: color)),
           onReset: () => onChanged(style.copyWith(clearTrackColor: true)),
@@ -272,9 +269,7 @@ class ScrollbarStyleEditor extends StatelessWidget {
           tileKey: ValueKey('$keyPrefix-track-border-color'),
           resetKey: ValueKey('$keyPrefix-track-border-color-reset'),
           label: 'Bordure de la piste',
-          color:
-              style.trackBorderColor ??
-              colors.outlineVariant.withValues(alpha: .5),
+          color: style.trackBorderColor,
           hasCustomColor: style.trackBorderColor != null,
           onChanged: (color) =>
               onChanged(style.copyWith(trackBorderColor: color)),
@@ -392,7 +387,7 @@ class _ColorControlRow extends StatelessWidget {
   final Key tileKey;
   final Key resetKey;
   final String label;
-  final Color color;
+  final Color? color;
   final bool hasCustomColor;
   final ValueChanged<Color> onChanged;
   final VoidCallback onReset;

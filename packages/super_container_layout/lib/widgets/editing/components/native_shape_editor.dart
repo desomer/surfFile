@@ -237,7 +237,7 @@ Future<void> showNativeShapeEditor({
                             Expanded(
                               child: styleColorTile(
                                 'Couleur de la bordure',
-                                shape.borderColor ?? colors.outline,
+                                shape.borderColor,
                                 (color) =>
                                     update(shape.copyWith(borderColor: color)),
                                 key: ValueKey('$keyPrefix-border-color'),

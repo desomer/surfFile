@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
+import '../../../models/registry.dart';
 import '../../../models/super_separator_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -35,30 +36,31 @@ final _separatorStateAdapter =
       getAutomatic: (s) => s.automatic,
       getOrder: (s) => s.order,
       getBinding: (s) => s.binding,
-      copyStates: (
-        s, {
-        named,
-        namedProperties,
-        hover,
-        clearHover = false,
-        selected,
-        clearSelected = false,
-        automatic,
-        order,
-        binding,
-        clearBinding = false,
-      }) => s.copyWith(
-        named: named,
-        namedProperties: namedProperties,
-        hover: hover,
-        clearHover: clearHover,
-        selected: selected,
-        clearSelected: clearSelected,
-        automatic: automatic,
-        order: order,
-        binding: binding,
-        clearBinding: clearBinding,
-      ),
+      copyStates:
+          (
+            s, {
+            named,
+            namedProperties,
+            hover,
+            clearHover = false,
+            selected,
+            clearSelected = false,
+            automatic,
+            order,
+            binding,
+            clearBinding = false,
+          }) => s.copyWith(
+            named: named,
+            namedProperties: namedProperties,
+            hover: hover,
+            clearHover: clearHover,
+            selected: selected,
+            clearSelected: clearSelected,
+            automatic: automatic,
+            order: order,
+            binding: binding,
+            clearBinding: clearBinding,
+          ),
       createOverride: (config, [properties]) => SeparatorConfigOverride(
         config: config,
         properties: properties ?? const {},
@@ -66,20 +68,21 @@ final _separatorStateAdapter =
       getOverrideConfig: (override) => override.config,
       getOverrideProperties: (override) => override.properties,
       editOverride: (previous, nextLeaf) => previous.edited(nextLeaf),
-      resolvePreview: (
-        states,
-        root, {
-        name,
-        required isHovered,
-        required isSelected,
-        required activeStates,
-      }) => states.resolve(
-        root,
-        name: name,
-        isHovered: isHovered,
-        isSelected: isSelected,
-        activeStates: activeStates,
-      ),
+      resolvePreview:
+          (
+            states,
+            root, {
+            name,
+            required isHovered,
+            required isSelected,
+            required activeStates,
+          }) => states.resolve(
+            root,
+            name: name,
+            isHovered: isHovered,
+            isSelected: isSelected,
+            activeStates: activeStates,
+          ),
       validateName: (name) {
         try {
           SeparatorConfigStates(named: {name: const SuperSeparatorConfig()});
@@ -94,18 +97,19 @@ final _separatorStateAdapter =
       },
       validateRoot: (root, _) => root.validate(),
       allowSelectedWhenAlreadyConfigured: true,
-      availableStatesBuilder: ({
-        required leaf,
-        required states,
-        required allowSelected,
-        required allowContentHover,
-      }) => {
-        AutomaticState.hover,
-        if (allowSelected) AutomaticState.selected,
-        if (allowContentHover ||
-            states.automatic.containsKey(AutomaticState.contentHover))
-          AutomaticState.contentHover,
-      },
+      availableStatesBuilder:
+          ({
+            required leaf,
+            required states,
+            required allowSelected,
+            required allowContentHover,
+          }) => {
+            AutomaticState.hover,
+            if (allowSelected) AutomaticState.selected,
+            if (allowContentHover ||
+                states.automatic.containsKey(AutomaticState.contentHover))
+              AutomaticState.contentHover,
+          },
     );
 
 /// Ouvre la boîte de dialogue d'édition d'un [SuperSeparatorConfig] avec gestion
@@ -135,33 +139,34 @@ Future<SuperSeparatorConfig?> showSuperSeparatorEditor({
   isSelected: isSelected,
   allowContentHover: allowContentHover,
   activeAutomatic: activeAutomatic,
-  leafBuilder: ({
-    required key,
-    required initialTab,
-    required dimensionDelegate,
-    required config,
-    required onWidthChanged,
-    required repositories,
-    required listScope,
-    required textStyle,
-    required onPreviewChanged,
-    required onSave,
-    required header,
-  }) => _SuperSeparatorEditor(
-    key: key,
-    initialTab: initialTab,
-    dimensionDelegate: dimensionDelegate,
-    config: config,
-    availableFontFamilies: availableFontFamilies,
-    textStyle: textStyle,
-    onWidthChanged: onWidthChanged,
-    repositories: repositories,
-    listScope: listScope,
-    allowBinding: allowBinding,
-    onPreviewChanged: onPreviewChanged,
-    onSave: onSave,
-    header: header,
-  ),
+  leafBuilder:
+      ({
+        required key,
+        required initialTab,
+        required dimensionDelegate,
+        required config,
+        required onWidthChanged,
+        required repositories,
+        required listScope,
+        required textStyle,
+        required onPreviewChanged,
+        required onSave,
+        required header,
+      }) => _SuperSeparatorEditor(
+        key: key,
+        initialTab: initialTab,
+        dimensionDelegate: dimensionDelegate,
+        config: config,
+        availableFontFamilies: availableFontFamilies,
+        textStyle: textStyle,
+        onWidthChanged: onWidthChanged,
+        repositories: repositories,
+        listScope: listScope,
+        allowBinding: allowBinding,
+        onPreviewChanged: onPreviewChanged,
+        onSave: onSave,
+        header: header,
+      ),
 );
 
 class _SuperSeparatorEditor extends StatefulWidget {
@@ -289,8 +294,9 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
         repositories: widget.repositories,
         listScope: widget.listScope,
         bindings: _draft.propertyBindings,
-        onBindingsChanged: (bindings) =>
-            setState(() => _draft = _draft.copyWith(propertyBindings: bindings)),
+        onBindingsChanged: (bindings) => setState(
+          () => _draft = _draft.copyWith(propertyBindings: bindings),
+        ),
       );
 
   Widget _withBinding(
@@ -323,7 +329,9 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
       previewConfig = _draft.copyWith(label: fields['label']!.text);
     }
     final style = widget.textStyle.copyWith(
-      fontFamily: unavailable ? null : previewConfig.fontFamily,
+      fontFamily: unavailable
+          ? null
+          : Registry.resolveEffectiveFontFamily(previewConfig.fontFamily),
       fontSize: previewConfig.fontSize,
       fontWeight: previewConfig.fontWeight,
       fontStyle: previewConfig.italic == null

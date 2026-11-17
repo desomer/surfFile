@@ -13,6 +13,7 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:highlight/highlight_core.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/registry.dart';
 import '../../../models/super_code_style.dart';
 import 'treeview/tree_view.dart';
 import 'widget_error_banner.dart';
@@ -109,7 +110,7 @@ class CodeEditorState extends State<CodeEditor> {
     final style = widget.config.style;
     return TextStyle(
       height: style.lineHeight,
-      fontFamily: style.fontFamily,
+      fontFamily: Registry.resolveEffectiveFontFamily(style.fontFamily),
       fontSize: style.fontSize,
     );
   }

@@ -214,7 +214,7 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
       children: [
         styleColorTile(
           label,
-          color ?? Theme.of(context).colorScheme.primary,
+          color,
           (color) => _update(key, JsonColor.toJson(color)),
           dense: true,
           key: ValueKey('text-field-setting-$key'),

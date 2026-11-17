@@ -752,6 +752,14 @@ void main() {
                     ),
                   ),
                   SuperAction(
+                    id: 'btn-text-only',
+                    config: SuperActionConfig(
+                      kind: SuperActionKind.text,
+                      variant: SuperActionVariant.text,
+                      label: 'Annuler',
+                    ),
+                  ),
+                  SuperAction(
                     id: 'btn-icon-only',
                     config: SuperActionConfig(
                       kind: SuperActionKind.icon,
@@ -791,7 +799,25 @@ void main() {
               find.byKey(const ValueKey('super-action-icon-btn-outlined')),
             )
             .color,
-        scheme.primary,
+        scheme.onSurface,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-action-label-btn-outlined')),
+            )
+            .style
+            ?.color,
+        scheme.onSurface,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-action-label-btn-text-only')),
+            )
+            .style
+            ?.color,
+        scheme.onSurface,
       );
       expect(
         tester

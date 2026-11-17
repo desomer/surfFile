@@ -43,3 +43,40 @@ flutter:
   assets:
     - SCREEN_JSON_AI_GUIDE.md
     - SCREEN_DESIGN_AI_GUIDE.md
+    - assets/design_systems/
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf
+        - asset: assets/fonts/Inter-Italic-Variable.ttf
+          style: italic
+    - family: Plus Jakarta Sans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Variable.ttf
+        - asset: assets/fonts/PlusJakartaSans-Italic-Variable.ttf
+          style: italic
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist-Variable.ttf
+        - asset: assets/fonts/Geist-Italic-Variable.ttf
+          style: italic
+    - family: Geist Mono
+      fonts:
+        - asset: assets/fonts/GeistMono-Variable.ttf
+        - asset: assets/fonts/GeistMono-Italic-Variable.ttf
+          style: italic
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
+        - asset: assets/fonts/JetBrainsMono-Italic-Variable.ttf
+          style: italic
+    - family: Rubik
+      fonts:
+        - asset: assets/fonts/Rubik-Variable.ttf
+        - asset: assets/fonts/Rubik-Italic-Variable.ttf
+          style: italic
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Variable.ttf
+        - asset: assets/fonts/Nunito-Italic-Variable.ttf
+          style: italic

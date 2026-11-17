@@ -366,7 +366,7 @@ class ContainerStyleEditor extends StatelessWidget {
       if (hoverTint == HoverTint.custom && onHoverColorChanged != null)
         _color(
           'Couleur du voile',
-          hoverColor ?? accent,
+          style != null ? style!.hoverColor : hoverColor,
           onHoverColorChanged!,
           key: ValueKey('hover-color-$label'),
           dense: _panel,
@@ -424,7 +424,7 @@ class ContainerStyleEditor extends StatelessWidget {
     if (value.type == FillType.solid && onSolidColorChanged != null)
       _color(
         'Couleur unie',
-        solidColor,
+        style != null ? style!.color : solidColor,
         onSolidColorChanged!,
         key: ValueKey('solid-color-$label'),
         dense: _panel,
@@ -576,7 +576,7 @@ class ContainerStyleEditor extends StatelessWidget {
     if (onBorderColorChanged != null)
       _color(
         'Couleur de la bordure',
-        borderColor ?? Theme.of(context).colorScheme.outlineVariant,
+        style != null ? style!.borderColor : borderColor,
         onBorderColorChanged!,
         key: ValueKey('border-color-$label'),
         dense: _panel,
@@ -965,7 +965,7 @@ class NeonStyleEditor extends StatelessWidget {
       if (value.enabled) ...[
         _color(
           'Couleur du néon',
-          value.color ?? accent,
+          value.color,
           (color) => onChanged(value.copyWith(color: color)),
           key: ValueKey('neon-color-$label'),
           onClear: () => onChanged(value.copyWith(resetColor: true)),
@@ -993,7 +993,7 @@ class NeonStyleEditor extends StatelessWidget {
 
 Widget _color(
   String label,
-  Color color,
+  Color? color,
   ValueChanged<Color> onChanged, {
   Key? key,
   bool dense = false,
@@ -1010,7 +1010,7 @@ Widget _color(
 /// Sélecteur repliable partagé : couleur personnalisée ou rôle Material 3.
 Widget styleColorTile(
   String label,
-  Color color,
+  Color? color,
   ValueChanged<Color> onChanged, {
   Key? key,
   bool dense = false,

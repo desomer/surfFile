@@ -3,6 +3,9 @@
 Ce document définit le **Design System par défaut** que tu dois appliquer lors de la création ou de l'amélioration d'écrans dans `super_container_layout`, sauf consigne esthétique explicite contraire de l'utilisateur.
 Il complète la grammaire technique décrite dans `SCREEN_JSON_AI_GUIDE.md` : **le guide JSON définit ce qui est syntaxiquement valide ; ce guide de design définit comment composer une interface moderne, lisible, équilibrée et productive.**
 
+> **Questionnement interactif (`askUser`) piloté par le slider à toute étape** :
+> Il n'existe **aucune contrainte interdisant de poser des questions selon l'étape**. Quelle que soit l'étape de la conversation (création initiale d'un écran, ajout d'une section, modification d'un écran existant ou édition ciblée sur un `scope`), **réfère-toi systématiquement au niveau du slider de questionnement (`NIVEAU DE QUESTIONNEMENT`) transmis dans le tour courant** (`0/3 Aucun`, `1/3 Léger` : 1 à 2 questions, `2/3 Équilibré` : 2 à 4 questions, `3/3 Approfondi` : 4 à 6 questions) pour poser tes questions de clarification avec des valeurs `"default"` pertinentes avant de générer le patch `"vibe"`.
+
 ---
 
 ## 1. Philosophie visuelle : SaaS Moderne, Material 3 & Densité Desktop
@@ -119,7 +122,7 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
 - **Actions secondaires** : utilise `"tonal"` ou `"outlined"` (ex: `"Exporter"`, `"Filtrer"`, `"Dupliquer"`).
 - **Actions tertiaires / Annulation** : utilise `"text"` (ex: `"Annuler"`, `"Réinitialiser"`).
 - **Actions compactes de barre d'outils ou de ligne** : utilise `kind: "icon"`, `variant: "icon"` (ou `"surface"`), avec `"iconColor": "theme:onSurfaceVariant"` au repos (ou `"theme:primary"` / `"theme:error"` selon l'intention) et toujours un **`tooltip` explicite**.
-- **Couleurs d'icônes Material 3 (`iconColor`) sur toutes les variantes** : utilise toujours des tokens `theme:*` pour `iconColor` (`"theme:onPrimary"` sur `"filled"`, `"theme:onSecondaryContainer"` sur `"tonal"`, `"theme:primary"` sur `"outlined"` / `"text"`, `"theme:onSurfaceVariant"` sur `"icon"`), sans laisser une couleur hexadécimale fixe casser le thème sombre.
+- **Couleurs d'icônes Material 3 (`iconColor`) sur toutes les variantes** : utilise toujours des tokens `theme:*` pour `iconColor` (`"theme:onPrimary"` sur `"filled"`, `"theme:onSecondaryContainer"` sur `"tonal"`, `"theme:onSurface"` ou `"theme:primary"` sur `"outlined"` / `"text"`, `"theme:onSurfaceVariant"` sur `"icon"`), sans laisser une couleur hexadécimale fixe casser le thème sombre.
 - **Pas de bouton géant pleine largeur sur Desktop** : dans une zone verticale en `crossAxisAlignment: "stretch"`, place les boutons d'action dans une barre horizontale dédiée (`zoneAxes: {"south": "row"}` ou sous-layout horizontal avec `mainAxisAlignment: "end"`, `spacing: 8`), ou applique `fitContent: true` / un alignement adapté.
 - Associe une icône Material pertinente (`kind: "textAndIcon"`) sur l'action primaire et les entrées de navigation.
 

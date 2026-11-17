@@ -18,25 +18,25 @@ enum VibeQuestioningLevel {
     maxQuestions: 0,
   ),
 
-  /// Questionnement léger : 1 à 2 questions uniquement si la demande est très floue.
+  /// Questionnement léger : 1 à 2 questions quelle que soit l'étape.
   light(
     label: 'Léger',
-    tooltip: '1 à 2 questions uniquement si la demande est très floue',
+    tooltip: '1 à 2 questions à toute étape',
     maxQuestions: 2,
   ),
 
-  /// Questionnement équilibré par défaut : 2 à 4 questions sur les demandes larges ou ambiguës.
+  /// Questionnement équilibré par défaut : 2 à 4 questions quelle que soit l'étape.
   balanced(
     label: 'Équilibré',
-    tooltip: '2 à 4 questions sur les demandes larges ou ambiguës (par défaut)',
+    tooltip: '2 à 4 questions à toute étape (par défaut)',
     maxQuestions: 4,
   ),
 
-  /// Questionnement approfondi : 4 à 6 questions pour cadrer disposition, champs, style et actions.
+  /// Questionnement approfondi : 4 à 6 questions quelle que soit l'étape pour cadrer disposition, champs, style et actions.
   thorough(
     label: 'Approfondi',
     tooltip:
-        '4 à 6 questions pour cadrer disposition, champs, style et interactions',
+        '4 à 6 questions à toute étape pour cadrer disposition, champs, style et interactions',
     maxQuestions: 6,
   );
 
@@ -77,19 +77,20 @@ enum VibeQuestioningLevel {
             '(ou réponds par "message" si c’est une pure question).',
       VibeQuestioningLevel.light =>
         'NIVEAU DE QUESTIONNEMENT : 1/3 (Léger, max 2 questions) — '
-            'N’utilise "askUser" (1 à 2 questions courtes maximum avec "default") '
-            'QUE si la demande est très vague et impossible à réaliser sans précision majeure ; '
-            'sinon génère directement "vibe".',
+            'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
+            'pose 1 à 2 questions courtes avec "default" via "askUser" pour clarifier la demande '
+            'avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.balanced =>
         'NIVEAU DE QUESTIONNEMENT : 2/3 (Équilibré, max 4 questions) — '
-            'Utilise "askUser" (2 à 4 questions courtes avec "default") uniquement sur les '
-            'créations d’écran ou refontes larges/ambiguës ; génère directement "vibe" sur '
-            'toute modification ciblée ou explicite.',
+            'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
+            'pose 2 à 4 questions courtes avec "default" via "askUser" pour clarifier les choix '
+            'fonctionnels, de disposition ou de style avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.thorough =>
         'NIVEAU DE QUESTIONNEMENT : 3/3 (Approfondi, 4 à 6 questions) — '
-            'Sauf retouche triviale d’une seule propriété ou pure question d’information, '
-            'utilise "askUser" (4 à 6 questions structurées avec "default" couvrant disposition, '
-            'données/champs, style visuel et interactions) pour cadrer le besoin avant de générer "vibe".',
+            'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
+            'pose 4 à 6 questions structurées avec "default" via "askUser" (couvrant disposition, '
+            'données/champs, style visuel et interactions) pour cadrer le besoin avant de générer "vibe" '
+            '(ou réponds par "message" si c’est une pure question d’information).',
     };
   }
 }

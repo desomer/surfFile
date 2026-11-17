@@ -9,6 +9,7 @@ import '../../../theme/theme_color.dart';
 
 import '../../../models/automatic_state.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../models/registry.dart';
 import '../../../models/super_choice_config.dart';
 import '../../../models/super_text_field_config.dart';
 import '../../../models/super_value_config.dart';
@@ -690,7 +691,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         ? parseEditorColorHex(color).resolveTheme(context)
         : null;
     final style = widget.textStyle.copyWith(
-      fontFamily: unavailable ? null : _draft.fontFamily,
+      fontFamily: unavailable
+          ? null
+          : Registry.resolveEffectiveFontFamily(_draft.fontFamily),
       fontSize: number('fontSize'),
       fontWeight: _draft.fontWeight,
       fontStyle: _draft.italic == null
@@ -1199,9 +1202,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                     styleColorTile(
                       'Couleur de la valeur',
                       isEditorColorValue(_fields['color']!.text.trim())
-                          ? parseEditorColorHex(_fields['color']!.text.trim())!
-                          : widget.textStyle.color ??
-                                Theme.of(context).colorScheme.onSurface,
+                          ? parseEditorColorHex(_fields['color']!.text.trim())
+                          : null,
                       (color) => setState(() {
                         _fields['color']!.text = formatEditorColorHex(color);
                       }),

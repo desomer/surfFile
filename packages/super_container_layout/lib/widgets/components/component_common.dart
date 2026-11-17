@@ -12,6 +12,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../models/automatic_state.dart';
 import '../../models/json_syntax.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/registry.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/states/surface_state_binding.dart';
@@ -244,7 +245,9 @@ TextStyle buildComponentTextStyle(
 }) {
   final base = DefaultTextStyle.of(context).style;
   return base.copyWith(
-    fontFamily: missingFont ? null : fontFamily,
+    fontFamily: missingFont
+        ? null
+        : Registry.resolveEffectiveFontFamily(fontFamily),
     fontSize: fontSize,
     fontWeight: fontWeight,
     fontStyle: italic == null

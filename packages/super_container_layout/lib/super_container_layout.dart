@@ -7,9 +7,13 @@
 library;
 
 export 'ai/call_gemini.dart';
+export 'ai/design_md_parser.dart';
+export 'ai/design_system_catalog.dart';
 export 'ai/vibe_ask_user.dart';
 export 'ai/vibe_chat_attachment.dart';
 export 'ai/vibe_stream_parser.dart';
+export 'widgets/editing/ai/design_system_catalog_dialog.dart';
+export 'widgets/editing/ai/design_system_preview_card.dart';
 export 'widgets/editing/ai/vibe_chat_dialog.dart';
 export 'models/registry.dart';
 export 'models/component_config.dart';

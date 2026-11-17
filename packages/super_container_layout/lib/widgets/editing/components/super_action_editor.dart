@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
+import '../../../models/registry.dart';
 import '../../../models/super_action_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -349,7 +350,9 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
       );
     }
     final style = widget.textStyle.copyWith(
-      fontFamily: unavailable ? null : previewConfig.fontFamily,
+      fontFamily: unavailable
+          ? null
+          : Registry.resolveEffectiveFontFamily(previewConfig.fontFamily),
       fontSize: previewConfig.fontSize,
       fontWeight: previewConfig.fontWeight,
       fontStyle: previewConfig.italic == null

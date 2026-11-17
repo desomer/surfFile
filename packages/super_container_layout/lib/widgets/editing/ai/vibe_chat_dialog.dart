@@ -1,20 +1,23 @@
 /// Interface de chat IA (« Vibe ») pour la génération et la modification incrémentale d'écrans ([VibeChatDialog]).
 ///
-/// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md` et `SCREEN_DESIGN_AI_GUIDE.md` ([VibeChatDialog.warmUp]),
-/// assemble un instantané JSON compact (global ou ciblé sur un [VibeChatScope]), diffuse la réponse en direct via
-/// [streamGemini] ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un questionnaire
-/// de clarification interactif ([VibeAskUserRequest]), et applique le patch via `AppearanceTransfer.applyVibe`.
+/// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et le référentiel
+/// `DESIGN.md` actif ([DesignSystemPreset], [VibeChatDialog.warmUp]), assemble un instantané JSON compact
+/// (global ou ciblé sur un [VibeChatScope]), diffuse la réponse en direct via [streamGemini]
+/// ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un questionnaire de clarification
+/// interactif ([VibeAskUserRequest]), et applique le patch via `AppearanceTransfer.applyVibe`.
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/call_gemini.dart';
+import '../../../ai/design_system_catalog.dart';
 import '../../../ai/vibe_ask_user.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import '../../../models/native_component_config.dart';
@@ -33,6 +36,8 @@ import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../history/editor_history.dart';
 import '../slots/editor_context_menu.dart';
+import 'design_system_catalog_dialog.dart';
+import 'design_system_preview_card.dart';
 import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
 import 'vibe_prompt_builder.dart';
@@ -40,6 +45,8 @@ import 'vibe_scope_helpers.dart';
 import '../../appearance/appearance_scope.dart';
 
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
+export '../../../ai/design_md_parser.dart';
+export '../../../ai/design_system_catalog.dart';
 export '../../../ai/vibe_ask_user.dart'
     show
         VibeAskUserFieldType,
@@ -48,6 +55,8 @@ export '../../../ai/vibe_ask_user.dart'
         VibeQuestioningLevel;
 export '../../../ai/vibe_chat_attachment.dart';
 export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
+export 'design_system_catalog_dialog.dart';
+export 'design_system_preview_card.dart';
 export 'vibe_ask_user_card.dart' show VibeAskUserCard;
 export 'vibe_chat_message.dart' show VibeChatMessage;
 export '../slots/editor_context_menu.dart' show VibeChatScope;
@@ -69,9 +78,14 @@ class VibeChatDialog extends StatefulWidget {
     this.onScopeChanged,
     this.pickAttachments,
     this.pasteAttachments,
+    this.readClipboardText,
     this.validateAppearance,
     this.registry,
     this.pageRouting,
+    this.initialDesignSystem,
+    this.onDesignSystemChanged,
+    this.customDesignSystems = const [],
+    this.onCustomDesignSystemsChanged,
     this.customDesignGuide,
     this.replaceDefaultDesignGuide = false,
     this.expanded,
@@ -97,7 +111,7 @@ Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en strea
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
 Règles pour "askUser" :
-- Respecte strictement le NIVEAU DE QUESTIONNEMENT du tour courant (si le niveau vaut 0/Aucun ou si les réponses viennent d'être fournies, n'utilise jamais "askUser" et génère directement {"message":"...","vibe":{...}}).
+- Quelle que soit l'étape (création initiale, ajout, modification d'un écran existant ou d'un scope ciblé), applique systématiquement le NIVEAU DE QUESTIONNEMENT défini par le slider dans le contexte du tour courant, sans restreindre les questions à la première étape (seul le niveau 0/Aucun ou le tour d'application immédiate des réponses qui viennent d'être fournies désactive "askUser").
 - Fournis toujours des valeurs "default" pertinentes sur chaque question posée.
 Priorité absolue — Respect strict de la règle d'atomicité lors de chaque génération de layout, fiche ou formulaire :
 - Ne concatène jamais un libellé et une donnée dans le "text" d'un même SuperValue (ex: jamais "Statut : En cours"), ni plusieurs attributs métier dans un seul composant.
@@ -108,7 +122,7 @@ Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux don
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Si la conversation mentionne une erreur sur une réponse précédente, identifie la cause indiquée et corrige-la sans reproduire la même erreur.
-Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manque sans justifier un questionnaire, fais une hypothèse raisonnable et indique-la dans "message".''';
+Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le niveau du slider de questionnement ("NIVEAU DE QUESTIONNEMENT") à chaque étape pour déterminer le recours à "askUser".''';
 
   static const List<String> _guideAssets = [
     'SCREEN_JSON_AI_GUIDE.md',
@@ -171,6 +185,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   /// Lecteur personnalisé optionnel du presse-papiers pour les pièces jointes.
   final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
 
+  /// Lecteur personnalisé optionnel du texte du presse-papiers pour l'import de chartes `DESIGN.md`.
+  final Future<String?> Function()? readClipboardText;
+
   /// Validation supplémentaire optionnelle de l'[Appearance] générée (ex. routes de pages).
   final void Function(Appearance appearance)? validateAppearance;
 
@@ -181,6 +198,18 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   ///
   /// Lorsqu'il est omis, celui du [SuperApp] englobant est utilisé automatiquement s'il existe.
   final EditorPageRouter? pageRouting;
+
+  /// Système de design `DESIGN.md` initialement actif à l'ouverture (`null` pour Material 3 par défaut).
+  final DesignSystemPreset? initialDesignSystem;
+
+  /// Callback optionnel notifié lorsque l'utilisateur sélectionne ou réinitialise le système `DESIGN.md` actif.
+  final ValueChanged<DesignSystemPreset?>? onDesignSystemChanged;
+
+  /// Préréglages `DESIGN.md` personnalisés déjà importés dans la session courante.
+  final List<DesignSystemPreset> customDesignSystems;
+
+  /// Callback optionnel notifié lorsque la liste des préréglages `DESIGN.md` personnalisés est mise à jour.
+  final ValueChanged<List<DesignSystemPreset>>? onCustomDesignSystemsChanged;
 
   /// Directives de design personnalisées fournies par l'application hôte.
   ///
@@ -200,16 +229,21 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   final ValueChanged<bool>? onExpandedChanged;
 
   /// Assemble le guide statique complet envoyé au modèle à partir du guide JSON
-  /// technique [screenGuide], du guide de Design System par défaut [defaultDesignGuide]
-  /// et d'éventuelles règles spécifiques à l'application hôte [customDesignGuide].
+  /// technique [screenGuide], du guide de Design System par défaut [defaultDesignGuide],
+  /// d'un éventuel référentiel `DESIGN.md` actif ([selectedDesignSystemMarkdown] /
+  /// [selectedDesignSystemName]) et des règles de l'application hôte [customDesignGuide].
   static String composeStaticGuide({
     required String screenGuide,
     String? defaultDesignGuide,
+    String? selectedDesignSystemMarkdown,
+    String? selectedDesignSystemName,
     String? customDesignGuide,
     bool replaceDefaultDesignGuide = false,
   }) {
     final trimmedScreen = screenGuide.trim();
     final trimmedDefaultDesign = defaultDesignGuide?.trim() ?? '';
+    final trimmedSelectedDesign = selectedDesignSystemMarkdown?.trim() ?? '';
+    final trimmedSelectedName = selectedDesignSystemName?.trim() ?? '';
     final trimmedCustomDesign = customDesignGuide?.trim() ?? '';
     final buffer = StringBuffer(trimmedScreen);
 
@@ -220,6 +254,21 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
       buffer
         ..write('\n\n---\n\nGUIDE DE DESIGN SYSTEM :\n')
         ..write(trimmedDefaultDesign);
+    }
+    if (trimmedSelectedDesign.isNotEmpty) {
+      final activeName = trimmedSelectedName.isNotEmpty
+          ? trimmedSelectedName
+          : 'DESIGN.md';
+      buffer
+        ..write(
+          '\n\n---\n\nSYSTÈME DE DESIGN ACTIF ($activeName — PRIORITÉ ESTHÉTIQUE ABSOLUE) :\n'
+          'L’utilisateur a sélectionné le référentiel DESIGN.md ci-dessous. Applique impérativement son identité visuelle complète :\n'
+          '- Mode lumineux ("mode": "light" | "dark"), couleur graine ("accent") et couleurs hexadécimales #RRGGBB exactes des surfaces ("background", cartes, panneaux, lignes de collection, états "hover" et "selected"), textes et boutons : ces couleurs et tokens prévalent sur les couleurs "theme:*" génériques du guide par défaut.\n'
+          '- Géométrie des surfaces : rayons d’arrondi ("radius"), bordures ("borderWidth", "borderColor"), élévations ("elevation", "shadowOpacity") et système de rendu ("designSystem": "material" | "liquidGlass" | "neumorphism").\n'
+          '- Hiérarchie typographique ("fontSize", "fontWeight", "fontFamily") et style des actions ("SuperAction" avec contraste AA garanti).\n'
+          '- Conserve en revanche strictement toutes les règles structurelles du moteur super_container_layout (atomicité obligatoire 1 SuperValue étiquette "explanation" + 1 SuperValue valeur "dynamicData"/binding, interdiction des textarea fourre-tout, règles d’or autoSides et rattachement placements).\n\n',
+        )
+        ..write(trimmedSelectedDesign);
     }
     if (trimmedCustomDesign.isNotEmpty) {
       final heading = includeDefault
@@ -319,9 +368,11 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
   }
 
   /// Charge et assemble le guide statique complet (`SCREEN_JSON_AI_GUIDE.md` +
-  /// `SCREEN_DESIGN_AI_GUIDE.md` + [customDesignGuide] éventuel) depuis [bundle].
+  /// `SCREEN_DESIGN_AI_GUIDE.md` + [designSystemPreset] éventuel + [customDesignGuide]
+  /// éventuel) depuis [bundle].
   static Future<String> loadStaticGuide(
     AssetBundle bundle, {
+    DesignSystemPreset? designSystemPreset,
     String? customDesignGuide,
     bool replaceDefaultDesignGuide = false,
   }) async {
@@ -332,20 +383,29 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
     final defaultDesignGuide = skipDefaultDesign
         ? null
         : await _loadDesignGuideFromBundle(bundle);
+    final selectedDesignSystemMarkdown = designSystemPreset == null
+        ? null
+        : await DesignSystemCatalog.loadMarkdown(
+            designSystemPreset,
+            bundle: bundle,
+          );
     return composeStaticGuide(
       screenGuide: screenGuide,
       defaultDesignGuide: defaultDesignGuide,
+      selectedDesignSystemMarkdown: selectedDesignSystemMarkdown,
+      selectedDesignSystemName: designSystemPreset?.name,
       customDesignGuide: customDesignGuide,
       replaceDefaultDesignGuide: replaceDefaultDesignGuide,
     );
   }
 
-  /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md` et `SCREEN_DESIGN_AI_GUIDE.md`
-  /// depuis [bundle] et préchauffe silencieusement la connexion TLS ainsi que le cache de
-  /// contexte Gemini pour [speedMode].
+  /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md`
+  /// et le référentiel [designSystemPreset] éventuel depuis [bundle], puis préchauffe
+  /// silencieusement la connexion TLS ainsi que le cache de contexte Gemini pour [speedMode].
   static Future<void> warmUp(
     AssetBundle bundle, {
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    DesignSystemPreset? designSystemPreset,
     String? customDesignGuide,
     bool replaceDefaultDesignGuide = false,
   }) async {
@@ -363,6 +423,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
       }
       final guide = await loadStaticGuide(
         bundle,
+        designSystemPreset: designSystemPreset,
         customDesignGuide: customDesignGuide,
         replaceDefaultDesignGuide: replaceDefaultDesignGuide,
       );
@@ -512,6 +573,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   late VibeChatScope? _scope = widget.scope;
   late VibeAiSpeedMode _speedMode = widget.initialSpeedMode;
   late VibeQuestioningLevel _questioningLevel = widget.initialQuestioningLevel;
+  late DesignSystemPreset? _selectedDesignSystem = widget.initialDesignSystem;
+  late List<DesignSystemPreset> _customDesignSystems =
+      List<DesignSystemPreset>.of(widget.customDesignSystems);
   late bool _expanded = widget.expanded ?? true;
 
   bool get _isAfterAskUserReply {
@@ -540,6 +604,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         VibeChatDialog.warmUp(
           DefaultAssetBundle.of(context),
           speedMode: _speedMode,
+          designSystemPreset: _selectedDesignSystem,
           customDesignGuide: widget.customDesignGuide,
           replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
         ),
@@ -553,7 +618,21 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     if (oldWidget.scope != widget.scope) {
       _scope = widget.scope;
     }
+    final presetChanged =
+        oldWidget.initialDesignSystem != widget.initialDesignSystem;
+    if (presetChanged) {
+      _selectedDesignSystem = widget.initialDesignSystem;
+    }
+    if (!listEquals(
+      oldWidget.customDesignSystems,
+      widget.customDesignSystems,
+    )) {
+      _customDesignSystems = List<DesignSystemPreset>.of(
+        widget.customDesignSystems,
+      );
+    }
     final designChanged =
+        presetChanged ||
         oldWidget.customDesignGuide != widget.customDesignGuide ||
         oldWidget.replaceDefaultDesignGuide != widget.replaceDefaultDesignGuide;
     if (oldWidget.initialSpeedMode != widget.initialSpeedMode ||
@@ -566,6 +645,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           VibeChatDialog.warmUp(
             DefaultAssetBundle.of(context),
             speedMode: _speedMode,
+            designSystemPreset: _selectedDesignSystem,
             customDesignGuide: widget.customDesignGuide,
             replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
           ),
@@ -608,6 +688,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         VibeChatDialog.warmUp(
           DefaultAssetBundle.of(context),
           speedMode: mode,
+          designSystemPreset: _selectedDesignSystem,
           customDesignGuide: widget.customDesignGuide,
           replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
         ),
@@ -766,6 +847,152 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void _clearScope() {
     setState(() => _scope = null);
     widget.onScopeChanged?.call(null);
+  }
+
+  Future<void> _openDesignSystemCatalog() async {
+    if (_sending) return;
+    final bundle = DefaultAssetBundle.of(context);
+    final result = await DesignSystemCatalogDialog.show(
+      context,
+      initialPreset: _selectedDesignSystem,
+      customPresets: _customDesignSystems,
+      isScoped: _scope != null,
+      pickMarkdownFiles: widget.pickAttachments,
+      readClipboardText: widget.readClipboardText,
+      assetBundle: bundle,
+    );
+    if (!mounted || result == null) return;
+
+    final customsChanged = !listEquals(
+      _customDesignSystems,
+      result.updatedCustomPresets,
+    );
+    final presetChanged = _selectedDesignSystem != result.preset;
+
+    if (customsChanged || presetChanged) {
+      setState(() {
+        if (customsChanged) {
+          _customDesignSystems = List<DesignSystemPreset>.of(
+            result.updatedCustomPresets,
+          );
+        }
+        if (presetChanged) {
+          _selectedDesignSystem = result.preset;
+        }
+      });
+      if (customsChanged) {
+        widget.onCustomDesignSystemsChanged?.call(
+          List<DesignSystemPreset>.unmodifiable(_customDesignSystems),
+        );
+      }
+      if (presetChanged) {
+        widget.onDesignSystemChanged?.call(result.preset);
+        if (_usesStreamingGenerator) {
+          unawaited(
+            VibeChatDialog.warmUp(
+              bundle,
+              speedMode: _speedMode,
+              designSystemPreset: result.preset,
+              customDesignGuide: widget.customDesignGuide,
+              replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+            ),
+          );
+        }
+      }
+    }
+
+    final selectedPreset = result.preset;
+    if (result.applyThemeTokensNow && selectedPreset != null && _scope == null) {
+      final current = widget.controller.value;
+      final palette = selectedPreset.palette;
+      if (current.mode != palette.mode || current.accent != palette.accent) {
+        final history = EditorHistoryScope.controllerOf(context);
+        history?.beginTransaction();
+        try {
+          widget.controller.value = current.copyWith(
+            mode: palette.mode,
+            accent: palette.accent,
+          );
+        } finally {
+          history?.commitTransaction();
+        }
+      }
+    }
+
+    if (result.triggerImmediateRestyle && selectedPreset != null) {
+      await _restyleWithSelectedDesignSystem();
+    }
+  }
+
+  void _clearDesignSystem() {
+    if (_sending || _selectedDesignSystem == null) return;
+    setState(() => _selectedDesignSystem = null);
+    widget.onDesignSystemChanged?.call(null);
+    if (_usesStreamingGenerator) {
+      unawaited(
+        VibeChatDialog.warmUp(
+          DefaultAssetBundle.of(context),
+          speedMode: _speedMode,
+          customDesignGuide: widget.customDesignGuide,
+          replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+        ),
+      );
+    }
+  }
+
+  Future<void> _restyleWithSelectedDesignSystem() async {
+    final preset = _selectedDesignSystem;
+    if (preset == null || _sending) return;
+
+    _setExpanded(false);
+    setState(() {
+      _attachmentError = null;
+      for (var i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg.askUser != null &&
+            msg.askUserAnswers == null &&
+            !msg.askUserDismissed) {
+          _messages[i] = msg.copyWith(askUserDismissed: true);
+        }
+      }
+    });
+
+    final activeScope = _scope;
+    final palette = preset.palette;
+    final modeName = palette.isDark ? 'dark' : 'light';
+    final accentHex = DesignSystemPalettePreview.colorToHex(palette.accent);
+    final canvasHex = DesignSystemPalettePreview.colorToHex(palette.canvas);
+    final surfaceHex = DesignSystemPalettePreview.colorToHex(palette.surface);
+    final textHex = DesignSystemPalettePreview.colorToHex(palette.textPrimary);
+    final mutedHex = DesignSystemPalettePreview.colorToHex(palette.textMuted);
+    final borderHex = DesignSystemPalettePreview.colorToHex(palette.border);
+    final radiusValue = palette.cardRadius;
+    final surfaceSystemName = palette.surfaceSystem.name;
+
+    final displayUserText = activeScope == null
+        ? 'Restyler l’écran selon le Design System ${preset.name}.'
+        : 'Restyler ${activeScope.displayLabel} selon le Design System ${preset.name}.';
+
+    final promptOverride = activeScope == null
+        ? 'RESTYLAGE COMPLET SELON LE SYSTÈME DE DESIGN "${preset.name}" :\n'
+              'Ne pose pas de questionnaire "askUser" : génère directement le patch "vibe".\n'
+              'Restyle intégralement l’écran actuel conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
+              '- Mets à jour "mode": "$modeName" et "accent": "$accentHex".\n'
+              '- Mets à jour "styles" : "background" ("color": "$canvasHex") ainsi que toutes les surfaces de cartes, panneaux, en-têtes et lignes de collection ("color": "$surfaceHex", états "hover" et "selected" cohérents, "radius": $radiusValue, "borderWidth" et "borderColor": "$borderHex", "elevation", "shadowOpacity" et "designSystem": "$surfaceSystemName").\n'
+              '- Harmonise la typographie ("fontFamily", "fontSize", "fontWeight") et les couleurs des composants existants SuperValue (texte primaire "$textHex", secondaire "$mutedHex"), SuperAction (variantes, rayons et contraste AA sur "$accentHex") et SuperIndicator.\n'
+              '- Préserve à 100 % la structure métier existante : conserve tous les identifiants de composants, placements, liaisons de données (bindings), usages, comportements (behaviors) et pages (pageCatalog).'
+        : 'RESTYLAGE DU PÉRIMÈTRE "${activeScope.displayLabel}" SELON LE SYSTÈME DE DESIGN "${preset.name}" :\n'
+              'Ne pose pas de questionnaire "askUser" : génère directement le patch "vibe".\n'
+              'Restyle uniquement le périmètre ciblé "${activeScope.displayLabel}" (id: "${activeScope.canonicalComponentId}") et son sous-arbre autorisé conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
+              '- Mets à jour uniquement les styles de conteneurs du périmètre (couleurs de surface "$surfaceHex", états "hover" et "selected", "radius": $radiusValue, "borderWidth", "borderColor": "$borderHex", "elevation" et "designSystem": "$surfaceSystemName").\n'
+              '- Harmonise la typographie et les couleurs des composants SuperValue (texte primaire "$textHex", secondaire "$mutedHex"), SuperAction et SuperIndicator appartenant à ce périmètre.\n'
+              '- Ne modifie aucune propriété globale de thème ("mode", "accent", styles["background"]) ni "pageCatalog".\n'
+              '- Préserve à 100 % les identifiants de composants, placements, liaisons de données (bindings), usages et comportements (behaviors) existants.';
+
+    await _runGenerationTurn(
+      displayUserText: displayUserText,
+      promptOverride: promptOverride,
+    );
   }
 
   @override
@@ -1484,6 +1711,7 @@ $response
   Future<String> _loadGuide(BuildContext context) =>
       VibeChatDialog.loadStaticGuide(
         DefaultAssetBundle.of(context),
+        designSystemPreset: _selectedDesignSystem,
         customDesignGuide: widget.customDesignGuide,
         replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
       );
@@ -1619,186 +1847,235 @@ $response
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-            child: Text(
-              'Votre demande et la configuration de l’écran sont envoyées à Gemini.',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final (index, mode)
-                        in VibeAiSpeedMode.values.indexed) ...[
-                      if (index > 0) const SizedBox(width: 6),
-                      VibeSpeedModeChip(
-                        mode: mode,
-                        icon: _iconForSpeedMode(mode),
-                        selected: _speedMode == mode,
-                        enabled: !_sending,
-                        onSelected: () => _setSpeedMode(mode),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            key: const ValueKey('vibe-chat-questioning-row'),
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-            child: Row(
-              children: [
-                Icon(
-                  _iconForQuestioningLevel(_questioningLevel),
-                  size: 15,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  'Questions',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 6.5,
-                      ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 12,
-                      ),
-                    ),
-                    child: Slider(
-                      key: const ValueKey('vibe-chat-questioning-slider'),
-                      value: _questioningLevel.index.toDouble(),
-                      min: 0,
-                      max: 3,
-                      divisions: 3,
-                      label: _questioningLevel.label,
-                      onChanged: _sending
-                          ? null
-                          : (value) => _setQuestioningLevel(
-                              VibeQuestioningLevel.fromSliderValue(value),
-                            ),
-                    ),
-                  ),
-                ),
-                Tooltip(
-                  message: _questioningLevel.tooltip,
-                  child: Container(
-                    key: const ValueKey('vibe-chat-questioning-label'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _questioningLevel == VibeQuestioningLevel.none
-                          ? scheme.surfaceContainerHighest
-                          : scheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _questioningLevel.label,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: _questioningLevel == VibeQuestioningLevel.none
-                            ? scheme.onSurfaceVariant
-                            : scheme.onSecondaryContainer,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (_scope case final activeScope?)
-            Container(
-              key: const ValueKey('vibe-chat-scope-banner'),
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, middleConstraints) => Column(
                 children: [
-                  Icon(
-                    Icons.filter_center_focus_outlined,
-                    size: 16,
-                    color: scheme.onSecondaryContainer,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Scope : ${activeScope.displayLabel}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSecondaryContainer,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: middleConstraints.maxHeight,
+                    ),
+                    child: SingleChildScrollView(
+                      primary: false,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+                            child: Text(
+                              'Votre demande et la configuration de l’écran sont envoyées à Gemini.',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (final (index, mode)
+                                        in VibeAiSpeedMode.values.indexed) ...[
+                                      if (index > 0) const SizedBox(width: 6),
+                                      VibeSpeedModeChip(
+                                        mode: mode,
+                                        icon: _iconForSpeedMode(mode),
+                                        selected: _speedMode == mode,
+                                        enabled: !_sending,
+                                        onSelected: () => _setSpeedMode(mode),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            key: const ValueKey('vibe-chat-questioning-row'),
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _iconForQuestioningLevel(_questioningLevel),
+                                  size: 15,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Questions',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      trackHeight: 3,
+                                      thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 6.5,
+                                      ),
+                                      overlayShape:
+                                          const RoundSliderOverlayShape(
+                                            overlayRadius: 12,
+                                          ),
+                                    ),
+                                    child: Slider(
+                                      key: const ValueKey(
+                                        'vibe-chat-questioning-slider',
+                                      ),
+                                      value: _questioningLevel.index.toDouble(),
+                                      min: 0,
+                                      max: 3,
+                                      divisions: 3,
+                                      label: _questioningLevel.label,
+                                      onChanged: _sending
+                                          ? null
+                                          : (value) => _setQuestioningLevel(
+                                              VibeQuestioningLevel.fromSliderValue(
+                                                value,
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
+                                Tooltip(
+                                  message: _questioningLevel.tooltip,
+                                  child: Container(
+                                    key: const ValueKey(
+                                      'vibe-chat-questioning-label',
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          _questioningLevel ==
+                                              VibeQuestioningLevel.none
+                                          ? scheme.surfaceContainerHighest
+                                          : scheme.secondaryContainer,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      _questioningLevel.label,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color:
+                                            _questioningLevel ==
+                                                VibeQuestioningLevel.none
+                                            ? scheme.onSurfaceVariant
+                                            : scheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                            child: VibeDesignSystemBar(
+                              selectedPreset: _selectedDesignSystem,
+                              sending: _sending,
+                              onOpenCatalog: _openDesignSystemCatalog,
+                              onClear: _clearDesignSystem,
+                              onRestyle: _restyleWithSelectedDesignSystem,
+                            ),
+                          ),
+                          if (_scope case final activeScope?)
+                            Container(
+                              key: const ValueKey('vibe-chat-scope-banner'),
+                              width: double.infinity,
+                              margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: scheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.filter_center_focus_outlined,
+                                    size: 16,
+                                    color: scheme.onSecondaryContainer,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Scope : ${activeScope.displayLabel}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: scheme.onSecondaryContainer,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    key: const ValueKey(
+                                      'vibe-chat-clear-scope',
+                                    ),
+                                    tooltip: 'Retirer la restriction de scope',
+                                    visualDensity: VisualDensity.compact,
+                                    iconSize: 16,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 24,
+                                      height: 24,
+                                    ),
+                                    color: scheme.onSecondaryContainer,
+                                    onPressed: _sending ? null : _clearScope,
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
-                  IconButton(
-                    key: const ValueKey('vibe-chat-clear-scope'),
-                    tooltip: 'Retirer la restriction de scope',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 16,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 24,
-                      height: 24,
+                  Expanded(
+                    child: ListView(
+                      reverse: true,
+                      padding: const EdgeInsets.all(12),
+                      children: [
+                        if (_sending)
+                          VibeStreamingAssistantBubble(
+                            snapshot: _streamingSnapshot,
+                          ),
+                        for (var i = _messages.length - 1; i >= 0; i--)
+                          VibeMessageBubble(
+                            message: _messages[i],
+                            sending: _sending,
+                            onSubmitAskUser: (answers) =>
+                                _submitAskUser(i, answers, usedDefaults: false),
+                            onSkipAskUser: () {
+                              final askUser = _messages[i].askUser;
+                              if (askUser == null) return;
+                              _submitAskUser(
+                                i,
+                                askUser.defaultAnswers(),
+                                usedDefaults: true,
+                              );
+                            },
+                          ),
+                      ],
                     ),
-                    color: scheme.onSecondaryContainer,
-                    onPressed: _sending ? null : _clearScope,
-                    icon: const Icon(Icons.close),
                   ),
                 ],
               ),
-            ),
-          Expanded(
-            child: ListView(
-              reverse: true,
-              padding: const EdgeInsets.all(12),
-              children: [
-                if (_sending)
-                  VibeStreamingAssistantBubble(snapshot: _streamingSnapshot),
-                for (var i = _messages.length - 1; i >= 0; i--)
-                  VibeMessageBubble(
-                    message: _messages[i],
-                    sending: _sending,
-                    onSubmitAskUser: (answers) =>
-                        _submitAskUser(i, answers, usedDefaults: false),
-                    onSkipAskUser: () {
-                      final askUser = _messages[i].askUser;
-                      if (askUser == null) return;
-                      _submitAskUser(
-                        i,
-                        askUser.defaultAnswers(),
-                        usedDefaults: true,
-                      );
-                    },
-                  ),
-              ],
             ),
           ),
           const Divider(height: 1),

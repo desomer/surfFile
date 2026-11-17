@@ -66,6 +66,8 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   Offset? _expandedChatPosition;
   Offset? _compactChatPosition;
   VibeChatScope? _chatScope;
+  DesignSystemPreset? _selectedDesignSystem;
+  List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
   ({
     int chevronIndex,
@@ -142,7 +144,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       if (!mounted || widget.aiResponseGenerator != null) return;
       if (dotenv.isInitialized &&
           (dotenv.env['GEMINI_API_KEY'] ?? '').trim().isNotEmpty) {
-        unawaited(VibeChatDialog.warmUp(DefaultAssetBundle.of(context)));
+        unawaited(
+          VibeChatDialog.warmUp(
+            DefaultAssetBundle.of(context),
+            designSystemPreset: _selectedDesignSystem,
+          ),
+        );
       }
     });
   }
@@ -586,6 +593,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     controller: appearance,
                     codec: codec,
                     scope: _chatScope,
+                    initialDesignSystem: _selectedDesignSystem,
+                    onDesignSystemChanged: (preset) =>
+                        setState(() => _selectedDesignSystem = preset),
+                    customDesignSystems: _customDesignSystems,
+                    onCustomDesignSystemsChanged: (list) =>
+                        setState(() => _customDesignSystems = list),
                     customDesignGuide:
                         widget.customDesignGuide ??
                         SuperApp.maybeOf(context)?.customDesignGuide,

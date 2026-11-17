@@ -18,14 +18,16 @@ class EditorColorTile extends StatefulWidget {
     this.tileKey,
     this.dense = false,
     this.onClear,
+    this.emptySubtitle = 'Non renseignée (auto)',
     super.key,
   });
 
   /// Libellé de la propriété.
   final String label;
 
-  /// Valeur persistée, éventuellement une référence [ThemeColor].
-  final Color color;
+  /// Valeur persistée (`null` lorsque non renseignée / héritée du thème),
+  /// éventuellement une référence [ThemeColor].
+  final Color? color;
 
   /// Reçoit la valeur fixe ou la référence, jamais un instantané implicite.
   final ValueChanged<Color> onChanged;
@@ -39,12 +41,15 @@ class EditorColorTile extends StatefulWidget {
   /// Restaure l'héritage du thème ou du parent.
   final VoidCallback? onClear;
 
+  /// Texte affiché en sous-titre lorsque [color] vaut `null`.
+  final String emptySubtitle;
+
   @override
   State<EditorColorTile> createState() => _EditorColorTileState();
 }
 
 class _EditorColorTileState extends State<EditorColorTile> {
-  late bool _themeMode = widget.color is ThemeColor;
+  late bool _themeMode = widget.color == null || widget.color is ThemeColor;
   final _search = TextEditingController();
   bool _expanded = false;
 
@@ -57,7 +62,7 @@ class _EditorColorTileState extends State<EditorColorTile> {
   @override
   void didUpdateWidget(EditorColorTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.color != oldWidget.color) {
+    if (widget.color != oldWidget.color && widget.color != null) {
       _themeMode = widget.color is ThemeColor;
     }
   }
@@ -69,7 +74,9 @@ class _EditorColorTileState extends State<EditorColorTile> {
     final reference = widget.color;
     final tileKey = widget.tileKey;
     final role = reference is ThemeColor ? reference.role : null;
-    final resolved = resolveThemeColor(reference, scheme);
+    final resolved = reference == null
+        ? null
+        : resolveThemeColor(reference, scheme);
     final radius = BorderRadius.circular(12);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: widget.dense ? 3 : 6),
@@ -82,7 +89,8 @@ class _EditorColorTileState extends State<EditorColorTile> {
         clipBehavior: Clip.antiAlias,
         child: ExpansionTile(
           key: widget.tileKey,
-          onExpansionChanged: (expanded) => setState(() => _expanded = expanded),
+          onExpansionChanged: (expanded) =>
+              setState(() => _expanded = expanded),
           shape: const Border(),
           collapsedShape: const Border(),
           dense: widget.dense,
@@ -99,9 +107,14 @@ class _EditorColorTileState extends State<EditorColorTile> {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            role == null ? JsonColor.toHex(resolved) : 'ColorScheme.${role.name}',
+            resolved == null
+                ? widget.emptySubtitle
+                : role == null
+                ? JsonColor.toHex(resolved)
+                : 'ColorScheme.${role.name}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: role == null ? scheme.onSurfaceVariant : scheme.primary,
+              fontStyle: resolved == null ? FontStyle.italic : null,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -109,7 +122,7 @@ class _EditorColorTileState extends State<EditorColorTile> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.onClear != null)
+              if (widget.onClear != null && reference != null)
                 IconButton(
                   key: tileKey is ValueKey
                       ? ValueKey('${tileKey.value}-clear')
@@ -150,7 +163,9 @@ class _EditorColorTileState extends State<EditorColorTile> {
                 onSelectionChanged: (selection) {
                   final themeMode = selection.single;
                   setState(() => _themeMode = themeMode);
-                  if (!themeMode && role != null) widget.onChanged(resolved);
+                  if (!themeMode && role != null && resolved != null) {
+                    widget.onChanged(resolved);
+                  }
                 },
               ),
             ),
@@ -159,7 +174,7 @@ class _EditorColorTileState extends State<EditorColorTile> {
               _buildThemeRoles(context, role)
             else
               ColorPicker(
-                color: resolved,
+                color: resolved ?? scheme.primary,
                 onColorChanged: widget.onChanged,
                 enableOpacity: true,
                 showColorCode: true,
@@ -271,17 +286,36 @@ class _EditorColorTileState extends State<EditorColorTile> {
 class _ColorSwatch extends StatelessWidget {
   const _ColorSwatch({required this.color, required this.size});
 
-  final Color color;
+  final Color? color;
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (color == null) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.format_color_reset_outlined,
+          size: size * 0.52,
+          color: scheme.onSurfaceVariant,
+        ),
+      );
+    }
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+    );
+  }
 }

@@ -68,12 +68,11 @@ Widget buildSuperActionVisual({
       (config.style.transform != null && !config.style.transform!.isIdentity);
 
   final defaultSurfaceFg = switch (variant) {
-    SuperActionVariant.filled ||
-    SuperActionVariant.surface => scheme.onPrimary,
+    SuperActionVariant.filled || SuperActionVariant.surface => scheme.onPrimary,
     SuperActionVariant.tonal => scheme.onSecondaryContainer,
     SuperActionVariant.elevated ||
     SuperActionVariant.outlined ||
-    SuperActionVariant.text => scheme.primary,
+    SuperActionVariant.text => scheme.onSurface,
     SuperActionVariant.icon => scheme.onSurfaceVariant,
   };
   final rawBg = config.backgroundColor ?? config.style.color;
@@ -82,9 +81,7 @@ Widget buildSuperActionVisual({
 
   final Color? resolvedChildTextColor = hasCustomSurface
       ? (explicitColor ?? contrastingBgFg)
-      : variant == SuperActionVariant.filled || rawBg != null
-      ? (explicitColor ?? (config.enabled ? contrastingBgFg : null))
-      : explicitColor;
+      : (explicitColor ?? (config.enabled ? contrastingBgFg : null));
   final Color? resolvedChildIconColor = hasCustomSurface
       ? (explicitIconColor ?? explicitColor ?? contrastingBgFg)
       : (explicitIconColor ??
@@ -212,11 +209,9 @@ Widget buildSuperActionVisual({
     final bg =
         config.backgroundColor.resolveTheme(context) ??
         config.style.color.resolveTheme(context);
-    final fg = explicitColor ?? (rawBg != null ? contrastingBgFg : null);
+    final fg = explicitColor ?? contrastingBgFg;
     final effectiveIconColor =
-        explicitIconColor ??
-        explicitColor ??
-        (rawBg != null ? contrastingBgFg : null);
+        explicitIconColor ?? explicitColor ?? contrastingBgFg;
     final bColor =
         config.borderColor.resolveTheme(context) ??
         config.style.borderColor.resolveTheme(context);
@@ -252,8 +247,8 @@ Widget buildSuperActionVisual({
 
     final filledStyle = FilledButton.styleFrom(
       backgroundColor: bg,
-      foregroundColor: fg ?? contrastingBgFg,
-      iconColor: effectiveIconColor ?? contrastingBgFg,
+      foregroundColor: fg,
+      iconColor: effectiveIconColor,
       iconSize: config.iconSize,
       textStyle: typographyOnlyStyle,
       elevation: elev,
@@ -264,8 +259,8 @@ Widget buildSuperActionVisual({
 
     final buttonStyle = ButtonStyle(
       backgroundColor: bg != null ? WidgetStatePropertyAll(bg) : null,
-      foregroundColor: fg != null ? WidgetStatePropertyAll(fg) : null,
-      iconColor: effectiveIconColor != null
+      foregroundColor: config.enabled ? WidgetStatePropertyAll(fg) : null,
+      iconColor: config.enabled
           ? WidgetStatePropertyAll(effectiveIconColor)
           : null,
       iconSize: config.iconSize != null
@@ -355,9 +350,25 @@ Widget buildSuperActionTabVisual({
   required String componentId,
   required SuperActionConfig config,
   required TextStyle textStyle,
+  bool isSelected = false,
 }) {
   final variant = config.effectiveVariant(inTab: true);
   final scheme = Theme.of(context).colorScheme;
+  final typographyOnlyStyle = TextStyle(
+    inherit: textStyle.inherit,
+    fontFamily: textStyle.fontFamily,
+    fontFamilyFallback: textStyle.fontFamilyFallback,
+    fontSize: textStyle.fontSize,
+    fontWeight: textStyle.fontWeight,
+    fontStyle: textStyle.fontStyle,
+    letterSpacing: textStyle.letterSpacing,
+    wordSpacing: textStyle.wordSpacing,
+    textBaseline: textStyle.textBaseline,
+    height: textStyle.height,
+    leadingDistribution: textStyle.leadingDistribution,
+    locale: textStyle.locale,
+    decoration: textStyle.decoration,
+  );
   final defaultBg = switch (variant) {
     SuperActionVariant.filled || SuperActionVariant.surface => scheme.primary,
     SuperActionVariant.tonal => scheme.secondaryContainer,
@@ -370,20 +381,16 @@ Widget buildSuperActionTabVisual({
     SuperActionVariant.filled || SuperActionVariant.surface => scheme.onPrimary,
     SuperActionVariant.tonal => scheme.onSecondaryContainer,
     SuperActionVariant.elevated ||
-    SuperActionVariant.outlined ||
-    SuperActionVariant.text => scheme.primary,
+    SuperActionVariant.outlined => scheme.onSurface,
+    SuperActionVariant.text =>
+      isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
     SuperActionVariant.icon => scheme.onSurfaceVariant,
   };
-  final fg =
-      config.color.resolveTheme(context) ??
-      ((variant == SuperActionVariant.filled ||
-              variant == SuperActionVariant.surface)
-          ? defaultFg
-          : null);
-  final effectiveIconColor =
-      config.iconColor.resolveTheme(context) ??
-      fg ??
-      config.color.resolveTheme(context);
+  final rawBg = config.backgroundColor ?? config.style.color;
+  final contrastingBgFg =
+      resolveContrastingForeground(rawBg, scheme) ?? defaultFg;
+  final fg = config.color.resolveTheme(context) ?? contrastingBgFg;
+  final effectiveIconColor = config.iconColor.resolveTheme(context) ?? fg;
 
   final surfaceStyle = config.style.copyWith(
     color:
@@ -417,7 +424,7 @@ Widget buildSuperActionTabVisual({
   final textWidget = Text(
     config.label,
     key: ValueKey('super-action-label-$componentId'),
-    style: fg != null ? textStyle.copyWith(color: fg) : textStyle,
+    style: typographyOnlyStyle.copyWith(color: fg),
     textAlign: config.textAlign,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,

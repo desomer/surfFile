@@ -36,8 +36,28 @@ export 'component_registration.dart';
 
 /// Registre central associant les types de composants et synchronisant leurs `ValueNotifier` par ID avec [Appearance].
 class Registry {
+  /// Nom du package Flutter déclarant les polices libres embarquées ([bundledPackageFontFamilies]).
+  static const String fontPackageName = 'super_container_layout';
+
+  /// Familles de polices libres (SIL OFL) embarquées dans les assets du package `super_container_layout`.
+  static const Set<String> bundledPackageFontFamilies = {
+    'Inter',
+    'Plus Jakarta Sans',
+    'Geist',
+    'Geist Mono',
+    'JetBrains Mono',
+    'Rubik',
+    'Nunito',
+  };
+
+  /// Liste par défaut des familles de polices proposées dans l'éditeur et reconnues au rendu.
   static const List<String> defaultAvailableFontFamilies = [
     'Segoe UI',
+    'Inter',
+    'Plus Jakarta Sans',
+    'Geist',
+    'Rubik',
+    'Nunito',
     'Roboto',
     'Arial',
     'Verdana',
@@ -45,10 +65,25 @@ class Registry {
     'Trebuchet MS',
     'Georgia',
     'Times New Roman',
+    'Cascadia Mono',
+    'JetBrains Mono',
+    'Geist Mono',
     'Consolas',
     'Courier New',
     'monospace',
   ];
+
+  /// Résout le nom effectif de [fontFamily] attendu par [TextStyle] :
+  /// préfixe automatiquement `'packages/super_container_layout/<famille>'` pour
+  /// les polices embarquées ([bundledPackageFontFamilies]) afin qu'elles s'affichent
+  /// dans toute application hôte sans re-déclaration dans son `pubspec.yaml`.
+  static String? resolveEffectiveFontFamily(String? fontFamily) {
+    if (fontFamily == null || fontFamily.isEmpty) return fontFamily;
+    if (bundledPackageFontFamilies.contains(fontFamily)) {
+      return 'packages/$fontPackageName/$fontFamily';
+    }
+    return fontFamily;
+  }
 
   final Map<String, ComponentBuilder> registry = {};
   final Map<String, RegisteredComponent> components = {};

@@ -10,6 +10,7 @@ import '../super_component.dart';
 
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
+import '../../../models/registry.dart';
 import '../../../models/super_action_config.dart';
 import '../../../super_app.dart';
 import '../../editing/components/native_component_editor.dart';
@@ -220,7 +221,9 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontFamily: actionConfig.fontFamily,
+                          fontFamily: Registry.resolveEffectiveFontFamily(
+                            actionConfig.fontFamily,
+                          ),
                           fontSize: actionConfig.fontSize,
                           fontWeight: actionConfig.fontWeight,
                           fontStyle: actionConfig.italic == null

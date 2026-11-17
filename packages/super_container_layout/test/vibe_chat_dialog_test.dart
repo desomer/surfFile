@@ -2375,6 +2375,11 @@ void main() {
     expect(content, contains('60 / 30 / 10'));
     expect(content, contains('autoSides'));
     expect(content, contains('expandSlots'));
+    expect(content, contains('NIVEAU DE QUESTIONNEMENT'));
+    expect(
+      content,
+      contains('aucune contrainte interdisant de poser des questions selon l\'étape'),
+    );
 
     final jsonBlockMatch = RegExp(r'```json\s*([\s\S]*?)\s*```')
         .firstMatch(content);

@@ -47,7 +47,7 @@ class ContainerAddForm extends StatelessWidget {
     children: [
       styleColorTile(
         'Couleur de fond',
-        draft.color ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+        draft.color,
         (color) => onChanged(draft.copyWith(color: color)),
         key: const ValueKey('add-container-color'),
         dense: true,

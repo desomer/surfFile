@@ -3,12 +3,14 @@
 /// Positionne la boîte de dialogue à côté du composant cible sans le masquer.
 library;
 
+import 'dart:async' show Completer;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
+import '../../../super_app.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../addition/insertion_plan.dart';
 import '../overlay/editor_zoom.dart';
@@ -99,7 +101,7 @@ Future<T?> _showEditorDialog<T>({
           ? EditorZoomScope.controllerOf(requestedFocus)
           : null);
   if (controller == null || !controller.enabled) {
-    return await showDialog<T>(
+    return await _presentEditorDialog<T>(
       context: context,
       builder: (context) => _DialogDisposeGuard(
         onDispose: onDispose,
@@ -138,7 +140,7 @@ Future<T?> _showEditorDialog<T>({
   }
 
   try {
-    return await showDialog<T>(
+    return await _presentEditorDialog<T>(
       context: context,
       barrierDismissible: barrierDismissible,
       barrierColor: barrierColor ?? Colors.transparent,
@@ -163,6 +165,147 @@ Future<T?> _showEditorDialog<T>({
   } finally {
     releaseFocus();
   }
+}
+
+/// Presents [builder] via [showDialog] when [context] has a [Navigator]
+/// ancestor, or mounts a local [Navigator] inside the enclosing [Overlay] when
+/// invoked above the app [Navigator] (e.g. from `StyleEditBanner` / `VibeChatDialog`).
+Future<T?> _presentEditorDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  required bool barrierDismissible,
+  required Color? barrierColor,
+}) {
+  if (Navigator.maybeOf(context) != null) {
+    return showDialog<T>(
+      context: context,
+      builder: builder,
+      barrierDismissible: barrierDismissible,
+      barrierColor: barrierColor,
+    );
+  }
+
+  final overlay = Overlay.maybeOf(context);
+  if (overlay != null) {
+    final completer = Completer<T?>();
+    late final OverlayEntry entry;
+    var finished = false;
+    void finish(T? result, {required bool fromDispose}) {
+      if (finished) return;
+      finished = true;
+      if (!fromDispose && entry.mounted) {
+        entry.remove();
+      }
+      if (!completer.isCompleted) {
+        completer.complete(result);
+      }
+    }
+
+    void fail(Object error, StackTrace stackTrace) {
+      if (finished) return;
+      finished = true;
+      if (entry.mounted) {
+        entry.remove();
+      }
+      if (!completer.isCompleted) {
+        completer.completeError(error, stackTrace);
+      }
+    }
+
+    entry = OverlayEntry(
+      builder: (_) => _OverlayDialogHost<T>(
+        builder: builder,
+        barrierDismissible: barrierDismissible,
+        barrierColor: barrierColor,
+        onComplete: (result) => finish(result, fromDispose: false),
+        onError: fail,
+        onHostDisposed: () => finish(null, fromDispose: true),
+      ),
+    );
+    overlay.insert(entry);
+    return completer.future;
+  }
+
+  final appNavContext =
+      SuperApp.maybeOf(context)?.router.routerDelegate.navigatorKey.currentContext;
+  return showDialog<T>(
+    context: appNavContext ?? context,
+    builder: builder,
+    barrierDismissible: barrierDismissible,
+    barrierColor: barrierColor,
+  );
+}
+
+class _OverlayDialogHost<T> extends StatefulWidget {
+  const _OverlayDialogHost({
+    required this.builder,
+    required this.barrierDismissible,
+    required this.barrierColor,
+    required this.onComplete,
+    required this.onError,
+    required this.onHostDisposed,
+  });
+
+  final WidgetBuilder builder;
+  final bool barrierDismissible;
+  final Color? barrierColor;
+  final ValueChanged<T?> onComplete;
+  final void Function(Object error, StackTrace stackTrace) onError;
+  final VoidCallback onHostDisposed;
+
+  @override
+  State<_OverlayDialogHost<T>> createState() => _OverlayDialogHostState<T>();
+}
+
+class _OverlayDialogHostState<T> extends State<_OverlayDialogHost<T>> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  bool _launched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openDialog());
+  }
+
+  Future<void> _openDialog() async {
+    if (_launched || !mounted) return;
+    _launched = true;
+    final navContext = _navigatorKey.currentContext;
+    if (navContext == null) {
+      widget.onComplete(null);
+      return;
+    }
+    try {
+      final result = await showDialog<T>(
+        context: navContext,
+        barrierDismissible: widget.barrierDismissible,
+        barrierColor: widget.barrierColor,
+        builder: widget.builder,
+      );
+      if (mounted) {
+        widget.onComplete(result);
+      }
+    } catch (error, stackTrace) {
+      widget.onError(error, stackTrace);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.onHostDisposed();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => HeroControllerScope.none(
+    child: Navigator(
+      key: _navigatorKey,
+      onGenerateRoute: (_) => PageRouteBuilder<void>(
+        opaque: false,
+        pageBuilder: (_, _, _) => const SizedBox.expand(),
+      ),
+    ),
+  );
 }
 
 class _DialogDisposeGuard extends StatefulWidget {

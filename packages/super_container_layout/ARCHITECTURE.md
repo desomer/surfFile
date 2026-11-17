@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **314 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **321 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -145,9 +145,14 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
   contient `data.previousValue`, `data.value` et `custom` separe ; les collections
   sont copiees et protegees recursivement. Un double-clic conserve les deux clics.
 
+### 2.8. Assistant IA Vibe et catalogue `DESIGN.md` (`VibeChatDialog` & `DesignSystemCatalog`)
+
+- `VibeChatDialog` compose dynamiquement le guide statique transmis à Gemini en assemblant `SCREEN_JSON_AI_GUIDE.md` (grammaire JSON GenUI), `SCREEN_DESIGN_AI_GUIDE.md` (règles générales de Design System) et, lorsqu'un système est actif, la charte `DESIGN.md` issue de `DesignSystemCatalog` (24 préréglages embarqués dans `assets/design_systems/`) ou d'un fichier `.md` importé/collé analysé par `DesignMdParser` (complétée le cas échéant par `customDesignGuide` de l'hôte).
+- La sélection et le restylage visuel passent par la barre compacte `VibeDesignSystemBar` et la galerie modale `DesignSystemCatalogDialog` (`DesignSystemPreviewCard` / `DesignSystemMiniPreview`), tandis que les tours de conversation diffusent le flux SSE Gemini (`streamGemini`, `VibeIncrementalStreamParser`), proposent au besoin un questionnaire `"askUser"` (`VibeAskUserRequest`) et fusionnent le patch JSON via `AppearanceTransfer.applyVibe`.
+
 ---
 
-## 3. Index complet des 314 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 321 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -157,10 +162,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `super_page.dart` | `SuperPage` : page standard combinant un `ScaffoldPageLayout` (`root`), un `SuperLayout` principal (`mainLayout`), le fond `background` et la barre flottante d'édition. |
 | `main.dart` | Application autonome de démonstration du package `super_container_layout`. |
 
-### 3.2. Intelligence Artificielle (`lib/ai/` — 5 fichiers)
+### 3.2. Intelligence Artificielle (`lib/ai/` — 7 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `ai/call_gemini.dart` | `resolveGeminiApiKey`, `resetGeminiApiKeyCache`, `warmUpGemini`, `streamGemini`, `callGemini` : points d'entrée d'appel Gemini (résolution mise en cache de `GEMINI_API_KEY`, préchauffage réseau/cache, flux SSE incrémental et génération complète rétrocompatible). |
+| `ai/design_md_parser.dart` | `DesignMdParser` : analyseur de chartes `DESIGN.md` externes (frontmatter YAML et inférence heuristique de palette/mode compatible Google Stitch et `getdesign.md`). |
+| `ai/design_system_catalog.dart` | `DesignSystemCatalog`, `DesignSystemPreset`, `DesignSystemPalettePreview`, `DesignSystemCategory` : catalogue immuable des 24 systèmes `DESIGN.md` embarqués et chargement mis en cache depuis `assets/design_systems/`. |
 | `ai/gemini_rest_client.dart` | `GeminiRestClient`, `GeminiHttpTransport`, `DartIoGeminiHttpTransport`, `GeminiStreamEvent`, `VibeAiSpeedMode`, `GeminiApiException` : client REST `v1beta` haute performance (Keep-Alive TLS, modes de vitesse et `thinkingBudget`, cache de contexte explicite `cachedContents` avec repli automatique sur `systemInstruction`, et streaming SSE). |
 | `ai/vibe_ask_user.dart` | `VibeAskUserRequest`, `VibeAskUserQuestion`, `VibeAskUserFieldType`, `VibeQuestioningLevel` : modèles immuables du questionnaire de clarification interactif (`"askUser"`), niveaux de questionnement (`0..3` : Aucun, Léger, Équilibré, Approfondi), désérialisation tolérante, plafonnement `truncate` et formatage anti-boucle. |
 | `ai/vibe_chat_attachment.dart` | `VibeChatAttachment` : représentation immuable d'une pièce jointe (image binaire ou fichier texte/JSON) envoyée dans le chat Vibe IA. |
@@ -247,7 +254,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
 
-### 3.5. Services (`lib/services/` — 41 fichiers)
+### 3.5. Services (`lib/services/` — 42 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
@@ -295,7 +302,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/surfaces/surface_image_providers.dart` | `ContainerFillImage` (extension `imageProvider()` / `decorationImage()` sur `ContainerFill`), `SurfaceNetworkImage`, `SurfaceMemoryImage`, `SvgMemoryImage` : résolution et chargement des images de fond (URL réseau, Data URI, Base64, SVG inline). |
 | `widgets/surfaces/surface_painters.dart` | `DashedBorderPainter`, `InnerShadowPainter`, `SurfacePatternPainter` : `CustomPainter` pour bordures tiretées/pointillées, ombres intérieures et motifs (`grain`, `lines`, `dots`). |
 
-### 3.7. Widgets de composants (`lib/widgets/components/` — 68 fichiers)
+### 3.7. Widgets de composants (`lib/widgets/components/` — 69 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `widgets/components/component_common.dart` | Utilitaires et mixins partagés entre composants (résolution de styles de ligne, `ComponentStateResolutionMixin`, `runComponentEditorTransaction`, `buildComponentTextStyle`, erreurs de diagnostic et helpers `JsonExtractableState`). |
@@ -359,7 +366,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/zone_interactions.dart` | Cibles de glisser-déposer (`DragTarget`) et retour visuel lors du déplacement de slots ou de zones. |
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
-### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 114 fichiers)
+### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 117 fichiers)
 
 Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
 expose `EditorNumberField` : badge cliquable et popup numérique ancré.
@@ -388,7 +395,9 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/addition/forms/tab_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTab`. |
 | `widgets/editing/addition/forms/table_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTable`. |
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
-| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant `SCREEN_JSON_AI_GUIDE.md` et `SCREEN_DESIGN_AI_GUIDE.md` (`warmUp`, `loadStaticGuide`, surchargeable via `customDesignGuide`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre), diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`) et appliquant le patch via `AppearanceTransfer.applyVibe`. |
+| `widgets/editing/ai/design_system_catalog_dialog.dart` | `DesignSystemCatalogDialog` : galerie modale interactive de sélection, d'inspection Markdown et d'import/collage de fichiers `DESIGN.md`. |
+| `widgets/editing/ai/design_system_preview_card.dart` | `DesignSystemMiniPreview`, `DesignSystemPreviewCard`, `VibeDesignSystemBar`, `DesignSystemSelectionResult` : miniatures d'interface, cartes d'aperçu à pastilles hexadécimales et barre compacte de sélection/restylage. |
+| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») composant `SCREEN_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et un préréglage `DESIGN.md` actif optionnel issu de `DesignSystemCatalog` ou d'un `.md` importé (`warmUp`, `loadStaticGuide`, surchargeable via `customDesignGuide`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre), diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`) et appliquant le patch via `AppearanceTransfer.applyVibe`. |
 | `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle, recherche de provider et commande de datasource. |
 | `widgets/editing/behaviors/datasource_action_settings.dart` | `DatasourceActionSettings`, `DatasourceActionDraft` : sélection de la datasource, de la commande et du tri pour l'action `datasource`, avec accès au gestionnaire. |
 | `widgets/editing/behaviors/search_provider_settings.dart` | `SearchProviderSettings` : sélection d'un provider pour l'action `searchProvider`, avec accès au gestionnaire. |
@@ -483,5 +492,5 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | **Modifier la résolution des liaisons JSON ou `[?]`** | `lib/models/json_text_binding.dart` → `lib/services/repositories/json_list_scope.dart` → `lib/services/repositories/json_repository_binding.dart` |
 | **Ajouter ou modifier un provider / une recherche d'API** | `lib/models/providers/` → `lib/services/providers/` → `lib/models/behaviours/search_provider_action.dart` → `lib/widgets/editing/providers/` & `lib/widgets/editing/behaviors/search_provider_settings.dart` |
 | **Ajouter ou modifier une datasource Search / CRUD** | `lib/models/datasources/` → `lib/services/datasources/datasource_registry.dart` → `lib/models/behaviours/datasource_action.dart` → `lib/widgets/editing/datasources/` & `lib/widgets/editing/behaviors/datasource_action_settings.dart` |
-| **Modifier l'import/export JSON, le client Gemini ou l'application d'un patch Vibe IA** | `lib/ai/gemini_rest_client.dart` → `lib/ai/call_gemini.dart` → `lib/ai/vibe_ask_user.dart` → `lib/ai/vibe_stream_parser.dart` → `lib/services/appearance/appearance_codec.dart` & `default_appearance_codec.dart` → `lib/services/appearance/appearance_transfer.dart` → `lib/widgets/editing/ai/vibe_chat_dialog.dart` |
+| **Modifier l'import/export JSON, le client Gemini, le catalogue `DESIGN.md` ou l'application d'un patch Vibe IA** | `lib/ai/gemini_rest_client.dart` → `lib/ai/call_gemini.dart` → `lib/ai/design_system_catalog.dart` & `lib/ai/design_md_parser.dart` → `lib/ai/vibe_ask_user.dart` → `lib/ai/vibe_stream_parser.dart` → `lib/services/appearance/appearance_codec.dart` & `default_appearance_codec.dart` → `lib/services/appearance/appearance_transfer.dart` → `lib/widgets/editing/ai/design_system_catalog_dialog.dart`, `design_system_preview_card.dart` & `vibe_chat_dialog.dart` |
 | **Modifier la sélection, le glisser-déposer ou le redimensionnement en édition** | `lib/widgets/components/super_layout/layout_selection.dart` → `lib/widgets/components/super_layout/layout_view.dart` → `lib/widgets/editing/slots/editor_slot.dart` → `lib/widgets/editing/overlay/editor_resize_handle.dart` |

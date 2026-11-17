@@ -143,34 +143,44 @@ void main() {
     );
   });
 
-  test('appearance persistence and Vibe patches preserve semantic references', () {
-    final appearance = Appearance(
-      styles: const {'card': ContainerStyle(color: primary)},
-      components: const {
-        'value': SuperValueConfig(color: onPrimary),
-      },
-    );
-    const codec = AppearanceCodec();
-    final restored = codec.decode(codec.encode(appearance));
-    expect(restored.styles['card']!.color, primary);
-    expect(restored.valueComponent('value').color, onPrimary);
-    final exported = AppearanceTransfer.exportAi(restored);
-    final imported = AppearanceTransfer.import(
-      Appearance(),
-      exported,
-      {TransferGroup.styles, TransferGroup.layouts},
-    );
-    expect(imported.styles['card']!.color, primary);
-    expect(imported.valueComponent('value').color, onPrimary);
-    final patched = AppearanceTransfer.applyVibe(imported, jsonEncode({
-      'styles': {'card': {'borderColor': 'theme:outline'}},
-    }));
-    expect(patched.styles['card']!.color, primary);
-    expect(patched.styles['card']!.borderColor,
-        const ThemeColor(ThemeColorRole.outline));
-    expect(() => Appearance(accent: primary), throwsArgumentError);
-    expect(() => codec.decode('{"accent":"theme:primary"}'), throwsFormatException);
-  });
+  test(
+    'appearance persistence and Vibe patches preserve semantic references',
+    () {
+      final appearance = Appearance(
+        styles: const {'card': ContainerStyle(color: primary)},
+        components: const {'value': SuperValueConfig(color: onPrimary)},
+      );
+      const codec = AppearanceCodec();
+      final restored = codec.decode(codec.encode(appearance));
+      expect(restored.styles['card']!.color, primary);
+      expect(restored.valueComponent('value').color, onPrimary);
+      final exported = AppearanceTransfer.exportAi(restored);
+      final imported = AppearanceTransfer.import(Appearance(), exported, {
+        TransferGroup.styles,
+        TransferGroup.layouts,
+      });
+      expect(imported.styles['card']!.color, primary);
+      expect(imported.valueComponent('value').color, onPrimary);
+      final patched = AppearanceTransfer.applyVibe(
+        imported,
+        jsonEncode({
+          'styles': {
+            'card': {'borderColor': 'theme:outline'},
+          },
+        }),
+      );
+      expect(patched.styles['card']!.color, primary);
+      expect(
+        patched.styles['card']!.borderColor,
+        const ThemeColor(ThemeColorRole.outline),
+      );
+      expect(() => Appearance(accent: primary), throwsArgumentError);
+      expect(
+        () => codec.decode('{"accent":"theme:primary"}'),
+        throwsFormatException,
+      );
+    },
+  );
 
   test(
     'background roles use requested brightness without a theme feedback loop',
@@ -230,8 +240,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('test-color')));
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        'surfaceContainerHigh');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'surfaceContainerHigh',
+    );
     await tester.tap(find.byKey(const ValueKey('test-color-clear')));
     expect(cleared, isTrue);
     expect(tester.takeException(), isNull);
@@ -267,43 +279,56 @@ void main() {
   });
 
   for (final dense in [false, true]) {
-    testWidgets('expanded color editor fits 240 px (dense: $dense)', (tester) async {
-      await tester.pumpWidget(host(
-        light,
-        styleColorTile(
-          'Une propriété de couleur avec un libellé long',
-          primary,
-          (_) {},
-          key: const ValueKey('narrow-color'),
-          dense: dense,
-          onClear: () {},
+    testWidgets('expanded color editor fits 240 px (dense: $dense)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          light,
+          styleColorTile(
+            'Une propriété de couleur avec un libellé long',
+            primary,
+            (_) {},
+            key: const ValueKey('narrow-color'),
+            dense: dense,
+            onClear: () {},
+          ),
+          width: 240,
         ),
-        width: 240,
-      ));
+      );
       await tester.tap(find.byKey(const ValueKey('narrow-color')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('bound hex fields validate a selected theme role', (tester) async {
+  testWidgets('bound hex fields validate a selected theme role', (
+    tester,
+  ) async {
     final controller = TextEditingController();
     addTearDown(controller.dispose);
     final form = GlobalKey<FormState>();
-    await tester.pumpWidget(host(light, StatefulBuilder(
-      builder: (context, setState) => Form(
-        key: form,
-        child: BoundHexColorField(
-          controller: controller,
-          label: 'Couleur liée',
-          fallbackColor: light.primary,
-          pickerKey: const ValueKey('bound-color'),
-          fieldKey: const ValueKey('bound-hex'),
-          inheritButtonKey: const ValueKey('inherit-color'),
-          onChanged: () => setState(() {}),
+    await tester.pumpWidget(
+      host(
+        light,
+        StatefulBuilder(
+          builder: (context, setState) => Form(
+            key: form,
+            child: BoundHexColorField(
+              controller: controller,
+              label: 'Couleur liée',
+              fallbackColor: light.primary,
+              pickerKey: const ValueKey('bound-color'),
+              fieldKey: const ValueKey('bound-hex'),
+              inheritButtonKey: const ValueKey('inherit-color'),
+              onChanged: () => setState(() {}),
+            ),
+          ),
         ),
       ),
-    )));
+    );
+    expect(find.text('Non renseignée (auto)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('bound-color-clear')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('bound-color')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Thème'));
@@ -311,15 +336,21 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('theme-color-onPrimary')));
     await tester.pumpAndSettle();
     expect(controller.text, 'theme:onPrimary');
+    expect(find.text('ColorScheme.onPrimary'), findsOneWidget);
+    expect(find.byKey(const ValueKey('bound-color-clear')), findsOneWidget);
     expect(form.currentState!.validate(), isTrue);
     expect(parseEditorColorHex(controller.text), onPrimary);
     await tester.tap(find.byKey(const ValueKey('bound-color-clear')));
     await tester.pumpAndSettle();
     expect(controller.text, isEmpty);
+    expect(find.text('Non renseignée (auto)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('bound-color-clear')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('input state colors resolve before Material paints them', (tester) async {
+  testWidgets('input state colors resolve before Material paints them', (
+    tester,
+  ) async {
     const config = SuperValueConfig(
       mode: SuperValueMode.input,
       initialText: 'Input',
@@ -331,16 +362,17 @@ void main() {
       ),
     );
     for (final scheme in [light, dark]) {
-      await tester.pumpWidget(host(
-        scheme,
-        const SuperValue(id: 'semantic-input', config: config),
-      ));
+      await tester.pumpWidget(
+        host(scheme, const SuperValue(id: 'semantic-input', config: config)),
+      );
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(find.byType(TextField));
       final fill = field.decoration!.fillColor!;
       expect(WidgetStateProperty.resolveAs<Color>(fill, {}), scheme.primary);
-      expect(WidgetStateProperty.resolveAs<Color>(fill, {WidgetState.focused}),
-          scheme.onPrimary);
+      expect(
+        WidgetStateProperty.resolveAs<Color>(fill, {WidgetState.focused}),
+        scheme.onPrimary,
+      );
       expect(field.decoration!.enabledBorder!.borderSide.color, scheme.primary);
       expect(tester.takeException(), isNull);
     }

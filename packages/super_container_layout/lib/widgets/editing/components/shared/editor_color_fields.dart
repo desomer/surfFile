@@ -228,7 +228,7 @@ class BoundHexColorField extends StatelessWidget {
   const BoundHexColorField({
     required this.controller,
     required this.label,
-    required this.fallbackColor,
+    this.fallbackColor,
     required this.pickerKey,
     required this.fieldKey,
     required this.inheritButtonKey,
@@ -243,7 +243,7 @@ class BoundHexColorField extends StatelessWidget {
 
   final TextEditingController controller;
   final String label;
-  final Color fallbackColor;
+  final Color? fallbackColor;
   final Key pickerKey;
   final Key fieldKey;
   final Key inheritButtonKey;
@@ -257,9 +257,7 @@ class BoundHexColorField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final raw = controller.text.trim();
-    final current = isEditorColorValue(raw)
-        ? parseEditorColorHex(raw)!
-        : fallbackColor;
+    final current = isEditorColorValue(raw) ? parseEditorColorHex(raw) : null;
     final textField = buildEditorSettingTextField(
       fieldKey: fieldKey,
       controller: controller,
@@ -318,7 +316,7 @@ class ThemeResetColorTile extends StatelessWidget {
   });
 
   final String label;
-  final Color effectiveColor;
+  final Color? effectiveColor;
   final bool isOverridden;
   final ValueChanged<Color> onChanged;
   final VoidCallback onClear;
@@ -332,7 +330,7 @@ class ThemeResetColorTile extends StatelessWidget {
     children: [
       styleColorTile(
         label,
-        effectiveColor,
+        isOverridden ? effectiveColor : null,
         onChanged,
         key: tileKey,
         onClear: onClear,
