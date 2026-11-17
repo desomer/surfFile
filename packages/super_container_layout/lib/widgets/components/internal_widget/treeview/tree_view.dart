@@ -439,7 +439,6 @@ class TreeViewState<T> extends State<TreeView<T>> {
             return Stack(
               clipBehavior: Clip.none,
               children: [
-                listView,
                 Positioned.fill(
                   child: IgnorePointer(
                     child: ListenableBuilder(
@@ -457,6 +456,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
                     ),
                   ),
                 ),
+                listView,
               ],
             );
           },

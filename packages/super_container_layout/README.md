@@ -669,6 +669,12 @@ Les indices JSON, la selection maitre/detail et les controles de retrait restent
 propres a chaque ligne. `itemExtent` et `spacing` ne changent pas : les marges et
 le padding de IterableContent utilisent l'espace deja attribue a la ligne.
 
+Lorsque l'animation de sélection/survol est activée, le fond d'état lui-même
+glisse entre les lignes de liste, de tableau et d'arbre, derrière leur contenu.
+Il conserve son remplissage et son opacité configurés ; ce n'est pas un voile
+translucide ajouté au-dessus des textes et contrôles. Sans animation, les
+états sont appliqués directement à la surface de chaque ligne.
+
 ### Mode Wrap de ListView
 
 Les reglages « Liste JSON » proposent Verticale, Horizontale et Wrap.

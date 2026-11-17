@@ -78,6 +78,7 @@ import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import 'component_common.dart';
 import 'json_collection_common.dart';
+import 'sliding_row_indicator.dart';
 import '../editing/components/super_list_view_editor.dart';
 import 'super_layout/slot_implementation.dart';
 import 'super_layout/super_layout.dart';
@@ -140,13 +141,23 @@ class SuperListView extends SuperStatefulComponent<SuperListViewConfig>
   State<SuperListView> createState() => _SuperListViewState();
 }
 
-class _SuperListViewState extends State<SuperListView> {
+class _SuperListViewState extends State<SuperListView>
+    with TickerProviderStateMixin {
   String get effectiveItemId =>
       widget.itemId ?? widget.config.itemId ?? '${widget.id}:item';
 
   late final ValueNotifier<SuperListViewConfig> _localConfig;
   late final ValueNotifier<SuperLayoutConfig> _localLayout;
   late final ValueNotifier<ContainerStyle> _localStyle;
+  late final SlidingIndicatorMotion _hoverMotion = SlidingIndicatorMotion(
+    vsync: this,
+    slideDuration: const Duration(milliseconds: 300),
+    hideDelay: const Duration(milliseconds: 100),
+  );
+  late final SlidingIndicatorMotion _selectionMotion = SlidingIndicatorMotion(
+    vsync: this,
+    slideDuration: const Duration(milliseconds: 500),
+  );
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<int?> _hoveredRowNotifier = ValueNotifier<int?>(null);
   final Map<int, GlobalKey<_RowMeasureSubtreeState>> _rowBoxKeys = {};
@@ -195,6 +206,8 @@ class _SuperListViewState extends State<SuperListView> {
     _store?.removeListener(_reload);
     _listen(const []);
     _hoveredRowNotifier.dispose();
+    _hoverMotion.dispose();
+    _selectionMotion.dispose();
     _scrollController.dispose();
     _localConfig.dispose();
     _localLayout.dispose();
@@ -280,8 +293,6 @@ class _SuperListViewState extends State<SuperListView> {
   ScrollPosition? get _primaryScrollPosition =>
       _scrollController.positions.lastOrNull;
 
-  double get _currentScrollOffset => _primaryScrollPosition?.pixels ?? 0.0;
-
   void _handleHorizontalPointerSignal(PointerSignalEvent event) {
     final position = _primaryScrollPosition;
     if (event is! PointerScrollEvent ||
@@ -331,37 +342,41 @@ class _SuperListViewState extends State<SuperListView> {
     return scrollView;
   }
 
+  /// Converts an offset relative to the viewport stack into content
+  /// coordinates, which do not change while scrolling.
+  Offset _toContentOffset(Offset viewportOffset) {
+    final position = _primaryScrollPosition;
+    if (position == null || !position.hasPixels) return viewportOffset;
+    return position.axis == Axis.vertical
+        ? viewportOffset.translate(0, position.pixels)
+        : viewportOffset.translate(position.pixels, 0);
+  }
+
+  Offset? _contentOffsetOf(RenderBox box) {
+    final local = SlidingIndicatorScope.offsetWithin(
+      box,
+      _viewportStackKey.currentState?.activeRenderBox,
+    );
+    return local == null ? null : _toContentOffset(local);
+  }
+
+  /// Rectangle de la ligne [index] dans le repère du contenu, si elle est
+  /// mise en page.
+  Rect? _measuredItemRect(int index) {
+    final rowBox = _rowBoxKeys[index]?.currentState?.activeRenderBox;
+    if (rowBox == null) return null;
+    final contentOffset = _contentOffsetOf(rowBox);
+    return contentOffset == null ? null : contentOffset & rowBox.size;
+  }
+
   Rect? _computeItemRect(
     int? targetIndex,
     SuperListViewConfig config,
     Size viewport,
   ) {
     if (targetIndex == null || targetIndex < 0) return null;
-    final rowBox = _rowBoxKeys[targetIndex]?.currentState?.activeRenderBox;
-    final stackBox = _viewportStackKey.currentState?.activeRenderBox;
-    if (rowBox != null && stackBox != null) {
-      RenderObject? current = rowBox;
-      var canTransform = true;
-      while (current != null && !identical(current, stackBox)) {
-        if (current is! RenderBox || !current.attached || !current.hasSize) {
-          canTransform = false;
-          break;
-        }
-        current = current.parent;
-      }
-      if (canTransform && identical(current, stackBox)) {
-        final localOffset = rowBox.localToGlobal(
-          Offset.zero,
-          ancestor: stackBox,
-        );
-        final scrollOffset = _currentScrollOffset;
-        final scrollAxis = config.wrap ? Axis.vertical : config.axis;
-        final contentOffset = scrollAxis == Axis.vertical
-            ? localOffset.translate(0, scrollOffset)
-            : localOffset.translate(scrollOffset, 0);
-        return contentOffset & rowBox.size;
-      }
-    }
+    final measured = _measuredItemRect(targetIndex);
+    if (measured != null) return measured;
     if (config.wrap) {
       return Rect.fromLTWH(0, 0, config.itemWidth, config.itemExtent);
     }
@@ -385,6 +400,7 @@ class _SuperListViewState extends State<SuperListView> {
   Widget _buildSelectionIndicator(
     BuildContext context,
     ContainerStyle currentRowStyle,
+    int index,
   ) {
     final styles = resolveRowIndicatorStyle(
       context,
@@ -396,7 +412,7 @@ class _SuperListViewState extends State<SuperListView> {
     return Padding(
       padding: styles.resolved.outerMargin,
       child: SuperContainer(
-        key: ValueKey('super-list-selection-indicator-${widget.id}'),
+        key: ValueKey('super-list-selection-indicator-${widget.id}-$index'),
         style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
@@ -408,6 +424,7 @@ class _SuperListViewState extends State<SuperListView> {
   Widget _buildHoverIndicator(
     BuildContext context,
     ContainerStyle currentRowStyle,
+    int index,
   ) {
     final styles = resolveRowIndicatorStyle(
       context,
@@ -418,7 +435,7 @@ class _SuperListViewState extends State<SuperListView> {
     return Padding(
       padding: styles.resolved.outerMargin,
       child: SuperContainer(
-        key: ValueKey('super-list-hover-indicator-${widget.id}'),
+        key: ValueKey('super-list-hover-indicator-${widget.id}-$index'),
         style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
@@ -673,8 +690,9 @@ class _SuperListViewState extends State<SuperListView> {
     SuperListViewConfig config,
     JsonListScope? scope,
     int? index,
-    Size viewport,
-  ) {
+    Size viewport, {
+    required bool animateIndicators,
+  }) {
     final natural =
         config.itemSize != null ||
         (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
@@ -689,8 +707,24 @@ class _SuperListViewState extends State<SuperListView> {
           slots: widget.slots,
           config: value,
           style: rowStyle,
+          resolveSelectionAndHover:
+              !animateIndicators ||
+              (rowStyle.states?.selected?.properties.contains(
+                    SurfaceStyleProperty.background,
+                  ) !=
+                  true &&
+                  rowStyle.states?.hover?.properties.contains(
+                    SurfaceStyleProperty.background,
+                  ) !=
+                  true),
           shrinkWrap: natural,
           sizeConstraints: dimensions,
+          underlay: animateIndicators && index != null
+              ? SlidingIndicatorUnderlay(
+                  hover: _buildHoverIndicator(context, rowStyle, index),
+                  selection: _buildSelectionIndicator(context, rowStyle, index),
+                )
+              : null,
           onEditSize: () => _editItemSize(context, configuration, viewport),
           dimensionDelegateBuilder: () =>
               _buildItemSizeDelegate(context, configuration, viewport),
@@ -767,7 +801,7 @@ class _SuperListViewState extends State<SuperListView> {
               Positioned.fill(
                 key: ValueKey('super-list-selected-${widget.id}-$index'),
                 child: IgnorePointer(
-                  child: config.animateSelectionAndHover
+                  child: animateIndicators
                       ? const SizedBox.shrink()
                       : DecoratedBox(
                           decoration: BoxDecoration(
@@ -972,6 +1006,10 @@ class _SuperListViewState extends State<SuperListView> {
                       scope,
                       template ? null : index,
                       viewport,
+                      animateIndicators:
+                          config.animateSelectionAndHover &&
+                          !isSliver &&
+                          !template,
                     ),
             );
 
@@ -1176,61 +1214,48 @@ class _SuperListViewState extends State<SuperListView> {
                             itemCount: count + (add ? 1 : 0),
                             itemBuilder: item,
                           );
-                    final scrollAxis = config.wrap
-                        ? Axis.vertical
-                        : config.axis;
                     final scrollableList = KeyedSubtree(
                       key: _scrollableHostKey,
                       child: _wrapWithScrollbar(context, config, rawList),
                     );
-                    final Widget list = _RowMeasureSubtree(
-                      key: _viewportStackKey,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        fit: StackFit.passthrough,
-                        children: [
-                          scrollableList,
-                          if (config.animateSelectionAndHover && !template)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: ListenableBuilder(
-                                  listenable: Listenable.merge([
-                                    _scrollController,
-                                    style,
-                                  ]),
-                                  builder: (context, _) {
-                                    final scrollOffset = _currentScrollOffset;
-                                    return Transform.translate(
-                                      offset: scrollAxis == Axis.vertical
-                                          ? Offset(0, -scrollOffset)
-                                          : Offset(-scrollOffset, 0),
-                                      child: _ListSlidingIndicatorsLayer(
-                                        listId: widget.id,
-                                        hoveredRowNotifier: _hoveredRowNotifier,
-                                        selectedRow: _selectedRowIndex,
-                                        computeRect: (rowIdx) =>
-                                            _computeItemRect(
-                                              rowIdx,
-                                              config,
-                                              viewport,
-                                            ),
-                                        hoverBuilder: (ctx) =>
-                                            _buildHoverIndicator(
-                                              ctx,
-                                              style.value,
-                                            ),
-                                        selectionBuilder: (ctx) =>
-                                            _buildSelectionIndicator(
-                                              ctx,
-                                              style.value,
-                                            ),
-                                      ),
-                                    );
-                                  },
+                    final Widget list = SlidingIndicatorScope(
+                      hover: _hoverMotion,
+                      selection: _selectionMotion,
+                      contentOffsetOf: _contentOffsetOf,
+                      child: _RowMeasureSubtree(
+                        key: _viewportStackKey,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          fit: StackFit.passthrough,
+                          children: [
+                            if (config.animateSelectionAndHover && !template)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: ListenableBuilder(
+                                    listenable: _scrollController,
+                                    builder: (context, _) =>
+                                        _ListIndicatorDriver(
+                                          hoverMotion: _hoverMotion,
+                                          selectionMotion: _selectionMotion,
+                                          hoveredRowNotifier:
+                                              _hoveredRowNotifier,
+                                          selectedRow: _selectedRowIndex,
+                                          currentSelectedRow: () =>
+                                              mounted ? _selectedRowIndex : null,
+                                          measuredRect: _measuredItemRect,
+                                          estimatedRect: (rowIdx) =>
+                                              _computeItemRect(
+                                                rowIdx,
+                                                config,
+                                                viewport,
+                                              ),
+                                        ),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                            scrollableList,
+                          ],
+                        ),
                       ),
                     );
                     final column = Column(
@@ -1306,158 +1331,57 @@ class _RowMeasureSubtreeState extends State<_RowMeasureSubtree> {
   Widget build(BuildContext context) => widget.child;
 }
 
-class _ListSlidingIndicatorsLayer extends StatefulWidget {
-  const _ListSlidingIndicatorsLayer({
-    required this.listId,
+/// Pilote les indicateurs glissants de la liste : positionne les animations
+/// sur la ligne sélectionnée et sur la ligne survolée. Les lignes peignent
+/// ensuite l'indicateur dans leur propre surface.
+class _ListIndicatorDriver extends StatelessWidget {
+  const _ListIndicatorDriver({
+    required this.hoverMotion,
+    required this.selectionMotion,
     required this.hoveredRowNotifier,
     required this.selectedRow,
-    required this.computeRect,
-    required this.hoverBuilder,
-    required this.selectionBuilder,
+    required this.currentSelectedRow,
+    required this.measuredRect,
+    required this.estimatedRect,
   });
 
-  final String listId;
+  final SlidingIndicatorMotion hoverMotion;
+  final SlidingIndicatorMotion selectionMotion;
   final ValueNotifier<int?> hoveredRowNotifier;
   final int? selectedRow;
-  final Rect? Function(int? index) computeRect;
-  final WidgetBuilder hoverBuilder;
-  final WidgetBuilder selectionBuilder;
+  final int? Function() currentSelectedRow;
+  final Rect? Function(int index) measuredRect;
+  final Rect? Function(int index) estimatedRect;
 
-  @override
-  State<_ListSlidingIndicatorsLayer> createState() =>
-      _ListSlidingIndicatorsLayerState();
-}
-
-class _ListSlidingIndicatorsLayerState
-    extends State<_ListSlidingIndicatorsLayer> {
-  int? _lastHoveredRow;
-  Rect _lastHoveredRect = Rect.zero;
-  bool _wasHoverVisible = false;
-  bool _shouldAnimateHoverSlide = false;
-
-  int? _lastSelectedRow;
-  Rect _lastSelectedRect = Rect.zero;
-  bool _wasSelectionVisible = false;
-  bool _shouldAnimateSelectionSlide = false;
-
-  static bool _rectMoved(Rect a, Rect b) =>
-      (a.left - b.left).abs() > 0.5 ||
-      (a.top - b.top).abs() > 0.5 ||
-      (a.width - b.width).abs() > 0.5 ||
-      (a.height - b.height).abs() > 0.5;
+  void _track(
+    SlidingIndicatorMotion motion,
+    int? row,
+    int? Function() currentRow,
+  ) {
+    if (row == null) {
+      motion.show(null);
+      return;
+    }
+    final measured = measuredRect(row);
+    motion.show(measured ?? estimatedRect(row));
+    if (measured != null) return;
+    // A row built in this frame is measured once laid out.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (currentRow() != row) return;
+      final rect = measuredRect(row);
+      if (rect != null) motion.show(rect);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final selectedRow = widget.selectedRow;
-    final selectedRect = widget.computeRect(selectedRow);
-    final isSelectionVisible = selectedRow != null && selectedRect != null;
-    if (isSelectionVisible != _wasSelectionVisible ||
-        (selectedRect != null && _rectMoved(selectedRect, _lastSelectedRect))) {
-      _shouldAnimateSelectionSlide =
-          _wasSelectionVisible &&
-          isSelectionVisible &&
-          _rectMoved(selectedRect, _lastSelectedRect);
-      if (selectedRect != null) {
-        _lastSelectedRect = selectedRect;
-      }
-      _wasSelectionVisible = isSelectionVisible;
-    }
-    if (selectedRow != null) {
-      _lastSelectedRow = selectedRow;
-    }
-    final effectiveSelectedRow = selectedRow ?? _lastSelectedRow;
-
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Positioned.fill(
-          child: ValueListenableBuilder<int?>(
-            valueListenable: widget.hoveredRowNotifier,
-            builder: (context, hoveredRow, _) {
-              final hoveredRect = widget.computeRect(hoveredRow);
-              final isHoverVisible = hoveredRow != null && hoveredRect != null;
-              if (isHoverVisible != _wasHoverVisible ||
-                  (hoveredRect != null &&
-                      _rectMoved(hoveredRect, _lastHoveredRect))) {
-                _shouldAnimateHoverSlide =
-                    _wasHoverVisible &&
-                    isHoverVisible &&
-                    _rectMoved(hoveredRect, _lastHoveredRect);
-                if (hoveredRect != null) {
-                  _lastHoveredRect = hoveredRect;
-                }
-                _wasHoverVisible = isHoverVisible;
-              }
-              if (hoveredRow != null) {
-                _lastHoveredRow = hoveredRow;
-              }
-              final effectiveHoverRow = hoveredRow ?? _lastHoveredRow;
-              final hoverChild = effectiveHoverRow == null
-                  ? const SizedBox.shrink()
-                  : widget.hoverBuilder(context);
-
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  AnimatedPositioned(
-                    key: ValueKey(
-                      'super-list-hover-positioned-${widget.listId}',
-                    ),
-                    duration: _shouldAnimateHoverSlide
-                        ? const Duration(milliseconds: 180)
-                        : Duration.zero,
-                    curve: Curves.easeOutCubic,
-                    top: _lastHoveredRect.top,
-                    left: _lastHoveredRect.left,
-                    width: _lastHoveredRect.width,
-                    height: _lastHoveredRect.height,
-                    child: AnimatedOpacity(
-                      key: ValueKey(
-                        'super-list-hover-opacity-${widget.listId}',
-                      ),
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOut,
-                      opacity: isHoverVisible ? 1.0 : 0.0,
-                      child: hoverChild,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        Positioned.fill(
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              AnimatedPositioned(
-                key: ValueKey(
-                  'super-list-selection-positioned-${widget.listId}',
-                ),
-                duration: _shouldAnimateSelectionSlide
-                    ? const Duration(milliseconds: 200)
-                    : Duration.zero,
-                curve: Curves.easeOutCubic,
-                top: _lastSelectedRect.top,
-                left: _lastSelectedRect.left,
-                width: _lastSelectedRect.width,
-                height: _lastSelectedRect.height,
-                child: AnimatedOpacity(
-                  key: ValueKey(
-                    'super-list-selection-opacity-${widget.listId}',
-                  ),
-                  duration: const Duration(milliseconds: 150),
-                  curve: Curves.easeOut,
-                  opacity: isSelectionVisible ? 1.0 : 0.0,
-                  child: effectiveSelectedRow == null
-                      ? const SizedBox.shrink()
-                      : widget.selectionBuilder(context),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    _track(selectionMotion, selectedRow, currentSelectedRow);
+    return ValueListenableBuilder<int?>(
+      valueListenable: hoveredRowNotifier,
+      builder: (context, hoveredRow, _) {
+        _track(hoverMotion, hoveredRow, () => hoveredRowNotifier.value);
+        return const SizedBox.shrink();
+      },
     );
   }
 }

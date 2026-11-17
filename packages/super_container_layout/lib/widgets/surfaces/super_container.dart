@@ -28,6 +28,7 @@ class SuperContainer extends StatefulWidget {
     this.horizontalBorder = false,
     this.decorate = true,
     this.applyPadding,
+    this.underlay,
     super.key,
   });
 
@@ -47,6 +48,10 @@ class SuperContainer extends StatefulWidget {
 
   /// Applies the style's content padding. By default this follows [decorate].
   final bool? applyPadding;
+
+  /// Couche peinte dans la surface, au-dessus de son fond et sous le contenu
+  /// (padding compris), sans recevoir les pointeurs.
+  final Widget? underlay;
 
   @override
   State<SuperContainer> createState() => _SuperContainerState();
@@ -74,6 +79,16 @@ class _SuperContainerState extends State<SuperContainer> {
       current = Padding(
         padding: resolvedStyle.contentPadding,
         child: current,
+      );
+    }
+    final underlay = widget.underlay;
+    if (underlay != null) {
+      current = Stack(
+        fit: StackFit.passthrough,
+        children: [
+          Positioned.fill(child: IgnorePointer(child: underlay)),
+          current,
+        ],
       );
     }
     if (widget.decorate) {

@@ -36,6 +36,7 @@ class IterableContent extends SuperStatefulComponent<SuperLayoutConfig> {
     this.dimensionDelegateBuilder,
     this.sizeConstraints,
     this.child,
+    this.underlay,
     super.behaviours,
     super.key,
   });
@@ -59,6 +60,10 @@ class IterableContent extends SuperStatefulComponent<SuperLayoutConfig> {
   final EditorDimensionDelegate Function()? dimensionDelegateBuilder;
   final SlotSizeConstraints? sizeConstraints;
   final Widget? child;
+
+  /// Fond animé de la ligne, peint entre le fond de la surface et son contenu
+  /// (voir `SuperContainer.underlay`).
+  final Widget? underlay;
 
   @override
   State<IterableContent> createState() => _IterableContentState();
@@ -107,6 +112,7 @@ class _IterableContentState extends State<IterableContent> {
         applyMargin: widget.applyMargin,
         resolveSelectionAndHover: widget.resolveSelectionAndHover,
         fallbackColor: Colors.transparent,
+        underlay: widget.underlay,
         style: value,
         onStyleChanged: (next) {
           style.value = next;

@@ -490,7 +490,7 @@ void main() {
       await tester.pump();
       expect(tester.widget<AnimatedOpacity>(selOpacityRight).opacity, 1.0);
 
-      // Verify selection/hover indicator overlays are painted above the row/cell ListView
+      // The moving backgrounds are painted before the row/cell ListView.
       for (final indicatorFinder in [selIndicatorLeft, selIndicatorRight]) {
         final stackFinder = find.ancestor(
           of: indicatorFinder,
@@ -498,13 +498,13 @@ void main() {
             (w) =>
                 w is Stack &&
                 w.children.length == 2 &&
-                (w.children.first is ListView ||
-                    w.children.first is ValueListenableBuilder<double>),
+                (w.children.last is ListView ||
+                    w.children.last is ValueListenableBuilder<double>),
           ),
         );
         expect(stackFinder, findsOneWidget);
         final stack = tester.widget<Stack>(stackFinder);
-        expect(stack.children.last, isA<Positioned>());
+        expect(stack.children.first, isA<Positioned>());
       }
       expect(
         tester
@@ -601,8 +601,14 @@ void main() {
               SuperTableColumnConfig(id: 'col_1', title: 'Ville', width: 180),
             ],
             zoneStyles: const {
-              'header:col_1': ContainerStyle(color: Colors.deepPurple, radius: 6),
-              'bottom:col_0': ContainerStyle(color: Colors.orange, borderWidth: 2),
+              'header:col_1': ContainerStyle(
+                color: Colors.deepPurple,
+                radius: 6,
+              ),
+              'bottom:col_0': ContainerStyle(
+                color: Colors.orange,
+                borderWidth: 2,
+              ),
             },
             placements: const {
               'cell:col_0': ['cell:col_0'],
@@ -632,21 +638,27 @@ void main() {
       );
 
       final headerCol0 = tester.widget<EditableSurface>(
-        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_0')),
+        find.byKey(
+          const ValueKey('super-table-header-cell-clients-table-col_0'),
+        ),
       );
       expect(headerCol0.style, const ContainerStyle());
       expect(headerCol0.fallbackColor, Colors.transparent);
       expect(headerCol0.borderColor, Colors.transparent);
 
       final bottomCol1 = tester.widget<EditableSurface>(
-        find.byKey(const ValueKey('super-table-bottom-cell-clients-table-col_1')),
+        find.byKey(
+          const ValueKey('super-table-bottom-cell-clients-table-col_1'),
+        ),
       );
       expect(bottomCol1.style, const ContainerStyle());
       expect(bottomCol1.fallbackColor, Colors.transparent);
       expect(bottomCol1.borderColor, Colors.transparent);
 
       final headerCol1 = tester.widget<EditableSurface>(
-        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_1')),
+        find.byKey(
+          const ValueKey('super-table-header-cell-clients-table-col_1'),
+        ),
       );
       expect(
         headerCol1.style,
@@ -654,7 +666,9 @@ void main() {
       );
 
       final bottomCol0 = tester.widget<EditableSurface>(
-        find.byKey(const ValueKey('super-table-bottom-cell-clients-table-col_0')),
+        find.byKey(
+          const ValueKey('super-table-bottom-cell-clients-table-col_0'),
+        ),
       );
       expect(
         bottomCol0.style,
@@ -672,7 +686,9 @@ void main() {
         const ContainerStyle(color: Colors.cyan, borderWidth: 1),
       );
       final updatedHeaderCol0 = tester.widget<EditableSurface>(
-        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_0')),
+        find.byKey(
+          const ValueKey('super-table-header-cell-clients-table-col_0'),
+        ),
       );
       expect(
         updatedHeaderCol0.style,

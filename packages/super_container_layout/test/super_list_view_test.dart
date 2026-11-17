@@ -10,15 +10,18 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/components/sliding_row_indicator.dart';
 
 void main() {
   late Directory directory;
@@ -490,6 +493,165 @@ void main() {
     expect(clients[0]['name'], 'Alice');
   });
 
+  testWidgets(
+    'selected background slides between the opaque row background and content',
+    (tester) async {
+      final boundaryKey = GlobalKey();
+      await mount(
+        tester,
+        RepaintBoundary(
+          key: boundaryKey,
+          child: SuperListView(
+            id: 'clients',
+            config: SuperListViewConfig(
+              binding: JsonTextBinding(
+                repositoryId: repository,
+                path: 'clients',
+              ),
+              itemExtent: 100,
+              spacing: 10,
+            ),
+            templateStyle: ContainerStyle(
+              color: Colors.green,
+              states: SurfaceStyleStates(
+                selected: SelectedSurfaceStyle(
+                  style: const ContainerStyle(color: Colors.red),
+                  properties: const {SurfaceStyleProperty.background},
+                ),
+              ),
+            ),
+            template: center(['name']),
+            slots: [
+              BuilderSlot(
+                id: 'name',
+                label: 'name',
+                showLabel: false,
+                builder: (_) => const Center(
+                  child: SizedBox(
+                    width: 100,
+                    height: 30,
+                    child: ColoredBox(
+                      color: Colors.blue,
+                      child: SuperValue(
+                        id: 'name',
+                        config: SuperValueConfig(
+                          binding: JsonTextBinding(path: 'clients[?].name'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+      Future<List<int>> pixels(List<Offset> points) async {
+        return (await tester.runAsync(() async {
+          final image = await boundary.toImage();
+          try {
+            final bytes = (await image.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            ))!;
+            return points.map((point) {
+              final offset =
+                  (point.dy.floor() * image.width + point.dx.floor()) * 4;
+              return Color.fromARGB(
+                bytes.getUint8(offset + 3),
+                bytes.getUint8(offset),
+                bytes.getUint8(offset + 1),
+                bytes.getUint8(offset + 2),
+              ).toARGB32();
+            }).toList();
+          } finally {
+            image.dispose();
+          }
+        }))!;
+      }
+
+      Offset contentPoint(int index) => boundary.globalToLocal(
+        tester.getTopLeft(
+              find
+                  .descendant(
+                    of: row('clients', index),
+                    matching: find.byType(ColoredBox),
+                  )
+                  .last,
+            ) +
+            const Offset(3, 3),
+      );
+      SlidingIndicatorMotion selection() => tester
+          .widget<SlidingIndicatorScope>(find.byType(SlidingIndicatorScope))
+          .selection;
+      final green = Colors.green.toARGB32();
+      final red = Colors.red.toARGB32();
+      final blue = Colors.blue.toARGB32();
+
+      expect(await pixels([const Offset(10, 10), const Offset(10, 190)]), [
+        green,
+        green,
+      ]);
+      await tester.tap(find.text('Alice'));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<SuperContainer>(
+              find.byKey(
+                const ValueKey('super-list-selection-indicator-clients-0'),
+              ),
+            )
+            .style
+            .color
+            ?.toARGB32(),
+        red,
+      );
+      expect(selection().rect.top, closeTo(0, 0.5));
+      expect(selection().rect.height, closeTo(100, 0.5));
+      expect(
+        await pixels([
+          const Offset(10, 10),
+          contentPoint(0),
+          const Offset(10, 190),
+        ]),
+        [red, blue, green],
+      );
+
+      await tester.tap(find.text('Bob'));
+      await tester.pump();
+      await tester.pump(selection().slideDuration * 0.4);
+      final movingTop = selection().rect.top;
+      expect(movingTop, greaterThan(20));
+      expect(movingTop, lessThan(95));
+      expect(
+        await pixels([
+          const Offset(10, 5),
+          Offset(10, movingTop + 2),
+          contentPoint(0),
+          const Offset(10, 150),
+          contentPoint(1),
+          const Offset(10, 208),
+        ]),
+        [green, red, blue, red, blue, green],
+      );
+
+      await tester.pumpAndSettle();
+      expect(selection().rect.top, closeTo(110, 0.5));
+      expect(
+        await pixels([
+          const Offset(10, 10),
+          const Offset(10, 190),
+          contentPoint(1),
+        ]),
+        [green, red, blue],
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'row states follow JSON and selection without overwriting shared style',
     (tester) async {
@@ -1439,33 +1601,35 @@ void main() {
       expect(rawScrollbar.thumbColor, const Color(0xFF112233));
       expect(rawScrollbar.scrollbarOrientation, ScrollbarOrientation.left);
 
-      // Verify sliding selection indicator starts hidden and animates between rows
-      final selPositionedFinder = find.byKey(
-        const ValueKey('super-list-selection-positioned-clients'),
+      // The sliding selection indicator starts hidden and slides between rows.
+      final scope = tester.widget<SlidingIndicatorScope>(
+        find.byType(SlidingIndicatorScope),
       );
-      final selOpacityFinder = find.byKey(
-        const ValueKey('super-list-selection-opacity-clients'),
-      );
-      expect(selPositionedFinder, findsOneWidget);
-      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 0.0);
+      final selection = scope.selection;
+      final hover = scope.hover;
+      expect(selection.visible, isFalse);
+      expect(selection.opacity, 0.0);
 
       // Click first row ('Alice') -> appears at top: 0 without slide animation
       await tester.tap(find.text('Alice'));
       await tester.pump();
-      var selPos = tester.widget<AnimatedPositioned>(selPositionedFinder);
-      expect(selPos.top, 0.0);
-      expect(selPos.height, 80.0);
-      expect(selPos.duration, Duration.zero);
-      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 1.0);
+      expect(selection.visible, isTrue);
+      expect(selection.rect.top, 0.0);
+      expect(selection.rect.height, 80.0);
       await tester.pumpAndSettle();
+      expect(selection.opacity, 1.0);
 
-      // Click second row ('Bob') -> slides from top: 0 to top: 90 (80 + 10 spacing) with 200ms duration
+      // Click second row ('Bob') -> slides from top: 0 to top: 90 (80 + 10 spacing)
+      final selectionHalf = selection.slideDuration ~/ 2;
       await tester.tap(find.text('Bob'));
       await tester.pump();
-      selPos = tester.widget<AnimatedPositioned>(selPositionedFinder);
-      expect(selPos.top, 90.0);
-      expect(selPos.height, 80.0);
-      expect(selPos.duration, const Duration(milliseconds: 200));
+      expect(selection.target.top, 90.0);
+      expect(selection.rect.top, 0.0);
+      await tester.pump(selectionHalf);
+      expect(selection.rect.top, inExclusiveRange(0.0, 90.0));
+      await tester.pump(selectionHalf);
+      expect(selection.rect.top, 90.0);
+      expect(selection.rect.height, 80.0);
       await tester.pumpAndSettle();
 
       // Hover over first row ('Alice') -> hover indicator appears
@@ -1475,24 +1639,44 @@ void main() {
       await tester.pump();
       await gesture.moveTo(tester.getCenter(find.text('Alice')));
       await tester.pump();
+      expect(hover.visible, isTrue);
+      expect(hover.rect.top, 0.0);
+      await tester.pumpAndSettle();
+      expect(hover.opacity, 1.0);
 
-      final hoverPositionedFinder = find.byKey(
-        const ValueKey('super-list-hover-positioned-clients'),
-      );
-      final hoverOpacityFinder = find.byKey(
-        const ValueKey('super-list-hover-opacity-clients'),
-      );
-      var hoverPos = tester.widget<AnimatedPositioned>(hoverPositionedFinder);
-      expect(hoverPos.top, 0.0);
-      expect(tester.widget<AnimatedOpacity>(hoverOpacityFinder).opacity, 1.0);
-
-      // Move pointer to second row ('Bob') -> hover indicator slides with 180ms duration
+      // Move pointer to second row ('Bob') -> hover indicator slides
+      final hoverHalf = hover.slideDuration ~/ 2;
       await gesture.moveTo(tester.getCenter(find.text('Bob')));
       await tester.pump();
-      hoverPos = tester.widget<AnimatedPositioned>(hoverPositionedFinder);
-      expect(hoverPos.top, 90.0);
-      expect(hoverPos.duration, const Duration(milliseconds: 180));
+      expect(hover.target.top, 90.0);
+      await tester.pump(hoverHalf);
+      expect(hover.rect.top, inExclusiveRange(0.0, 90.0));
+      await tester.pump(hoverHalf);
+      expect(hover.rect.top, 90.0);
       await tester.pumpAndSettle();
+
+      // Crossing the spacing between rows keeps the indicator and slides it.
+      final aliceRow = row('clients', 0);
+      await gesture.moveTo(
+        Offset(
+          tester.getCenter(aliceRow).dx,
+          tester.getBottomLeft(aliceRow).dy - 5,
+        ),
+      );
+      await tester.pump();
+      expect(hover.visible, isFalse);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(hover.opacity, 1.0);
+      await gesture.moveTo(tester.getCenter(find.text('Alice')));
+      await tester.pump();
+      expect(hover.visible, isTrue);
+      expect(hover.target.top, 0.0);
+      await tester.pump(hoverHalf);
+      expect(hover.rect.top, inExclusiveRange(0.0, 90.0));
+      expect(hover.opacity, greaterThan(0.9));
+      await tester.pumpAndSettle();
+      expect(hover.rect.top, 0.0);
+      expect(hover.opacity, 1.0);
       expect(tester.takeException(), isNull);
     },
   );

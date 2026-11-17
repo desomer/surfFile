@@ -61,6 +61,7 @@ class EditableSurface extends StatefulWidget {
     this.fixedWidth = false,
     this.singleChild = true,
     this.behaviours,
+    this.underlay,
     super.key,
   }) : assert(id == null || id != '');
 
@@ -107,6 +108,10 @@ class EditableSurface extends StatefulWidget {
   final bool scrollable;
   final bool fixedHeight;
   final bool fixedWidth;
+
+  /// Couche peinte dans la surface, entre son fond et son contenu (voir
+  /// [SuperContainer.underlay]).
+  final Widget? underlay;
 
   @override
   EditableSurfaceState createState() => EditableSurfaceState();
@@ -416,6 +421,7 @@ class EditableSurfaceState extends State<EditableSurface>
                     horizontalBorder: widget.horizontalBorder,
                     decorate: widget.decorate,
                     applyPadding: widget.applyPadding,
+                    underlay: widget.underlay,
                     child: child,
                   ),
                 ),

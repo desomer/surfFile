@@ -62,7 +62,7 @@ ValueNotifier<ContainerStyle> resolveRowStyleController(
 }
 
 /// Resolves both the state-resolved style (preserving outer margin) and the
-/// margin-free effective indicator style for hover/selection row overlays.
+/// margin-free effective indicator style for animated row backgrounds.
 ({ContainerStyle resolved, ContainerStyle effective}) resolveRowIndicatorStyle(
   BuildContext context,
   ContainerStyle currentRowStyle, {
