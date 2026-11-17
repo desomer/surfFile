@@ -9,6 +9,15 @@ import 'dart:convert';
 import '../../models/component_config.dart';
 import '../../models/component_usage.dart';
 import '../../models/json_numbers.dart';
+import '../../models/json_syntax.dart';
+import '../../models/native_component_config.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../models/super_conditional_config.dart';
+import '../../models/super_layout_config.dart';
+import '../../models/super_list_view_config.dart';
+import '../../models/super_tab_config.dart';
+import '../../models/super_table_config.dart';
+import '../../models/super_tree_view_config.dart';
 
 import 'appearance_codec.dart';
 import '../../theme/appearance.dart';
@@ -151,6 +160,7 @@ class AppearanceTransfer {
       final patched = codec.patchFromJson(current, filtered);
       final encoded = codec.encode(patched);
       final result = codec.decode(encoded);
+      validateComponentRegions(result, previous: current);
       codec.restoreAdditional(encoded);
       return result;
     }
@@ -179,8 +189,222 @@ class AppearanceTransfer {
     }
     final documentText = jsonEncode(JsonNumbers.normalizeMap(merged));
     final result = codec.decode(documentText);
+    validateComponentRegions(result, previous: current);
     codec.restoreAdditional(documentText);
     return result;
+  }
+
+  /// Valide les contraintes de régions des composants natifs (`Card`,
+  /// `ApplicationBar`, `BottomAppBar`, `BottomNavigationBar`, `NavigationRail`,
+  /// `Expansible`, `Menu`, `Scaffold`) et de `SuperTab` dynamique dans [next].
+  ///
+  /// Lorsque [previous] est fourni, seuls les composants ajoutés, modifiés ou
+  /// nouvellement typés par rapport à [previous] sont vérifiés. Lève une
+  /// [FormatException] explicite en cas de région inconnue, obligatoire
+  /// désactivée ou monoenfant surchargée (`single: true`).
+  static void validateComponentRegions(
+    Appearance next, {
+    Appearance? previous,
+  }) {
+    final nextTypes = _collectPlacedSlotTypes(next);
+    final previousTypes = previous == null
+        ? const <String, String>{}
+        : _collectPlacedSlotTypes(previous);
+    final nextPageIds = {for (final page in next.pageCatalog.pages) page.id};
+    final previousPageIds = previous == null
+        ? const <String>{}
+        : {for (final page in previous.pageCatalog.pages) page.id};
+
+    for (final entry in next.components.entries) {
+      final id = entry.key;
+      final config = entry.value;
+      final changed =
+          previous == null ||
+          previous.components[id] != config ||
+          nextTypes[id] != previousTypes[id] ||
+          (nextPageIds.contains(id) && !previousPageIds.contains(id));
+      if (!changed) continue;
+
+      if (config is SuperTabConfig) {
+        if (config.mode == SuperTabMode.dynamic &&
+            config.tabSlotIds.length > 1) {
+          throw FormatException(
+            'Composant "$id" (SuperTab dynamique) : la région "tabs" '
+            'n’accepte qu’un seul onglet gabarit maximum '
+            '(${config.tabSlotIds.length} fournis : '
+            '${config.tabSlotIds.join(', ')}).',
+          );
+        }
+        continue;
+      }
+
+      final NativeComponentConfig native;
+      final String? kind;
+      if (config is ScaffoldPageConfig) {
+        native = config.native;
+        kind = 'Scaffold';
+      } else if (config is NativeComponentConfig) {
+        native = config;
+        kind = _resolveNativeKind(
+          id: id,
+          config: config,
+          placedType: nextTypes[id] ?? previousTypes[id],
+          previousConfig: previous?.components[id],
+          pageIds: nextPageIds,
+        );
+      } else {
+        continue;
+      }
+
+      if (kind == null) continue;
+      final contract = _nativeRegionContracts[kind];
+      if (contract == null) continue;
+
+      final referencedRegions = <String>{
+        ...native.placements.keys,
+        ...native.regions.keys,
+        ...native.regionAxes.keys,
+        ...native.regionFlows.keys,
+        ...native.regionSizes.keys,
+      };
+      for (final region in referencedRegions) {
+        if (!contract.regions.contains(region)) {
+          final allowed = contract.regions.map((r) => '"$r"').join(', ');
+          throw FormatException(
+            'Composant "$id" ($kind) : région inconnue "$region" '
+            '(régions autorisées : $allowed).',
+          );
+        }
+      }
+      for (final requiredRegion in contract.requiredRegions) {
+        if (native.regions[requiredRegion] == false) {
+          throw FormatException(
+            'Composant "$id" ($kind) : la région obligatoire '
+            '"$requiredRegion" ne peut pas être désactivée.',
+          );
+        }
+      }
+      for (final singleRegion in contract.singleRegions) {
+        final slots = native.slotsOf(singleRegion);
+        if (slots.length > 1) {
+          final hint = contract.singleHints[singleRegion];
+          throw FormatException(
+            'Composant "$id" ($kind) : la région "$singleRegion" n’accepte '
+            'qu’un seul enfant maximum (${slots.length} fournis : '
+            '${slots.join(', ')}).${hint == null ? '' : ' $hint'}',
+          );
+        }
+      }
+    }
+  }
+
+  static const Map<String, _NativeRegionContract> _nativeRegionContracts = {
+    'Card': _NativeRegionContract(
+      regions: {'child'},
+      requiredRegions: {'child'},
+      singleRegions: {'child'},
+      singleHints: {
+        'child':
+            'Place un seul enfant dans "child" (par exemple un '
+            '"registry:Layout" contenant ces composants) ou utilise '
+            '"registry:IterableContent".',
+      },
+    ),
+    'ApplicationBar': _NativeRegionContract(
+      regions: {'leading', 'title', 'actions', 'bottom', 'flexibleSpace'},
+      singleRegions: {'leading', 'bottom', 'flexibleSpace'},
+    ),
+    'BottomAppBar': _NativeRegionContract(regions: {'left', 'center', 'right'}),
+    'BottomNavigationBar': _NativeRegionContract(regions: {'destinations'}),
+    'NavigationRail': _NativeRegionContract(regions: {'destinations'}),
+    'Expansible': _NativeRegionContract(
+      regions: {'header', 'body'},
+      requiredRegions: {'header', 'body'},
+    ),
+    'Menu': _NativeRegionContract(
+      regions: {'header', 'body'},
+      requiredRegions: {'header', 'body'},
+    ),
+    'Scaffold': _NativeRegionContract(
+      regions: {
+        'appBar',
+        'body',
+        'drawer',
+        'endDrawer',
+        'bottomNavigationBar',
+        'floatingActionButton',
+        'bottomSheet',
+      },
+      requiredRegions: {'body'},
+    ),
+  };
+
+  static Map<String, String> _collectPlacedSlotTypes(Appearance appearance) {
+    final types = <String, String>{};
+    for (final config in appearance.components.values) {
+      final Map<String, String> slotTypes = switch (config) {
+        final SuperLayoutConfig layout => layout.slotTypes,
+        final SuperListViewConfig list => list.template.slotTypes,
+        final SuperTabConfig tab => tab.slotTypes,
+        final SuperConditionalConfig cond => cond.slotTypes,
+        final SuperTreeViewConfig tree => tree.slotTypes,
+        final SuperTableConfig table => table.slotTypes,
+        final NativeComponentConfig native => native.slotTypes,
+        final ScaffoldPageConfig scaffold => scaffold.native.slotTypes,
+        _ => const <String, String>{},
+      };
+      for (final entry in slotTypes.entries) {
+        types.putIfAbsent(entry.key, () => entry.value);
+      }
+    }
+    return types;
+  }
+
+  static bool _hasNativeRegionKey(
+    NativeComponentConfig config,
+    String region,
+  ) =>
+      config.placements.containsKey(region) ||
+      config.regions.containsKey(region) ||
+      config.regionAxes.containsKey(region) ||
+      config.regionFlows.containsKey(region) ||
+      config.regionSizes.containsKey(region);
+
+  static String? _canonicalNativeKind(String rawType) {
+    var trimmed = rawType.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('component:')) {
+      trimmed = 'registry:${trimmed.substring('component:'.length)}';
+    } else if (trimmed.startsWith('factory:')) {
+      trimmed = 'registry:${trimmed.substring('factory:'.length)}';
+    }
+    final normalized = JsonComponentType.normalize(trimmed);
+    final short = JsonComponentType.shortName(normalized);
+    return _nativeRegionContracts.containsKey(short) ? short : null;
+  }
+
+  static String? _resolveNativeKind({
+    required String id,
+    required NativeComponentConfig config,
+    required String? placedType,
+    required ComponentConfig? previousConfig,
+    required Set<String> pageIds,
+  }) {
+    if (placedType != null) {
+      return _canonicalNativeKind(placedType);
+    }
+    if (pageIds.contains(id)) {
+      return 'Scaffold';
+    }
+    if (_hasNativeRegionKey(config, 'child') ||
+        (previousConfig is NativeComponentConfig &&
+            _hasNativeRegionKey(previousConfig, 'child'))) {
+      return 'Card';
+    }
+    if (id == 'root') {
+      return 'Scaffold';
+    }
+    return null;
   }
 
   /// Applies an incremental GenUI-style surface update onto [current].
@@ -237,7 +461,9 @@ class AppearanceTransfer {
             entry.key: entry.value,
       };
       final patched = codec.patchFromJson(current, filtered);
-      return _keepBoundUsages(current, patched);
+      final result = _keepBoundUsages(current, patched);
+      validateComponentRegions(result, previous: current);
+      return result;
     }
     final next = import(current, jsonEncode(payload), const {
       TransferGroup.styles,
@@ -300,4 +526,18 @@ class AppearanceTransfer {
       }),
     );
   }
+}
+
+class _NativeRegionContract {
+  const _NativeRegionContract({
+    required this.regions,
+    this.requiredRegions = const <String>{},
+    this.singleRegions = const <String>{},
+    this.singleHints = const <String, String>{},
+  });
+
+  final Set<String> regions;
+  final Set<String> requiredRegions;
+  final Set<String> singleRegions;
+  final Map<String, String> singleHints;
 }

@@ -783,5 +783,131 @@ void main() {
         'Navigation Ouest',
       );
     });
+
+    test(
+      'applyVibe and import reject invalid native region cardinality and unknown regions',
+      () {
+        expect(
+          () => AppearanceTransfer.applyVibe(
+            Appearance(),
+            jsonEncode({
+              'components': {
+                'mainLayout': {
+                  'type': 'layout',
+                  'placements': {
+                    'center': [
+                      {'id': 'card-1', 'type': 'registry:Card'},
+                    ],
+                  },
+                },
+                'card-1': {
+                  'type': 'native',
+                  'placements': {
+                    'child': [
+                      {'id': 'v1', 'type': 'registry:Value'},
+                      {'id': 'v2', 'type': 'registry:Value'},
+                    ],
+                  },
+                },
+                'v1': {'type': 'value', 'text': 'A'},
+                'v2': {'type': 'value', 'text': 'B'},
+              },
+            }),
+          ),
+          throwsFormatException,
+        );
+
+        expect(
+          () => AppearanceTransfer.applyVibe(
+            Appearance(),
+            jsonEncode({
+              'components': {
+                'mainLayout': {
+                  'type': 'layout',
+                  'placements': {
+                    'center': [
+                      {'id': 'card-1', 'type': 'registry:Card'},
+                    ],
+                  },
+                },
+                'card-1': {
+                  'type': 'native',
+                  'placements': {
+                    'center': [
+                      {'id': 'v1', 'type': 'registry:Value'},
+                    ],
+                  },
+                },
+              },
+            }),
+          ),
+          throwsFormatException,
+        );
+
+        expect(
+          () => AppearanceTransfer.applyVibe(
+            Appearance(),
+            jsonEncode({
+              'components': {
+                'root': {
+                  'type': 'native',
+                  'regions': {'body': false},
+                  'placements': {
+                    'appBar': [
+                      {'id': 'bar-1', 'type': 'registry:ApplicationBar'},
+                    ],
+                  },
+                },
+              },
+            }),
+          ),
+          throwsFormatException,
+        );
+
+        expect(
+          () => AppearanceTransfer.applyVibe(
+            Appearance(),
+            jsonEncode({
+              'components': {
+                'tab-1': {
+                  'type': 'tab',
+                  'mode': 'dynamic',
+                  'binding': 'items',
+                  'placements': {
+                    'tabs': [
+                      {'id': 't1', 'type': 'registry:Action'},
+                      {'id': 't2', 'type': 'registry:Action'},
+                    ],
+                  },
+                },
+              },
+            }),
+          ),
+          throwsFormatException,
+        );
+
+        expect(
+          () => AppearanceTransfer.import(
+            Appearance(),
+            jsonEncode({
+              'version': 1,
+              'components': {
+                'card-1': {
+                  'type': 'native',
+                  'placements': {
+                    'child': [
+                      {'id': 'v1', 'type': 'registry:Value'},
+                      {'id': 'v2', 'type': 'registry:Value'},
+                    ],
+                  },
+                },
+              },
+            }),
+            const {TransferGroup.layouts},
+          ),
+          throwsFormatException,
+        );
+      },
+    );
   });
 }

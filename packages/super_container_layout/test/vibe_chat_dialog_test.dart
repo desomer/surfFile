@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -3430,6 +3431,369 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'streaming a Card with multiple children in child region does not crash preview and retries with CORRECTION REQUISE',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final initialAppearance = Appearance(
+        components: {
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['card-1'],
+            },
+            slotTypes: {'card-1': 'registry:Card'},
+          ),
+        },
+      );
+      final store = _MemoryAppearanceStore(initialAppearance);
+      final registry = Registry()..bootstrap();
+      final mainLayoutController = registry.layoutController('mainLayout');
+      late ValueNotifier<Appearance> appAppearance;
+
+      final prompts = <String>[];
+      var attempt = 0;
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayoutController,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 420,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) async* {
+                              prompts.add(prompt);
+                              attempt++;
+                              if (attempt == 1) {
+                                const part1 =
+                                    '{"message":"Carte créée","vibe":{"components":{'
+                                    '"card-1":{"type":"native","placements":{"child":['
+                                    '{"id":"val-1","type":"registry:Value"},'
+                                    '{"id":"val-2","type":"registry:Value"}'
+                                    ']}},'
+                                    '"val-1":{"type":"value","text":"Premier"},'
+                                    '"val-2":{"type":"value","text":"Second"}';
+                                yield const GeminiStreamEvent(
+                                  deltaText: part1,
+                                  accumulatedText: part1,
+                                  isDone: false,
+                                  usedContextCache: true,
+                                );
+                                const part2 = '}}}';
+                                yield const GeminiStreamEvent(
+                                  deltaText: part2,
+                                  accumulatedText: '$part1$part2',
+                                  isDone: true,
+                                  usedContextCache: true,
+                                );
+                              } else {
+                                final fixed = jsonEncode({
+                                  'message': 'Carte corrigée.',
+                                  'vibe': {
+                                    'components': {
+                                      'card-1': {
+                                        'type': 'native',
+                                        'placements': {
+                                          'child': [
+                                            {
+                                              'id': 'card-layout',
+                                              'type': 'registry:Layout',
+                                            },
+                                          ],
+                                        },
+                                      },
+                                      'card-layout': {
+                                        'type': 'layout',
+                                        'placements': {
+                                          'center': [
+                                            {
+                                              'id': 'val-1',
+                                              'type': 'registry:Value',
+                                            },
+                                            {
+                                              'id': 'val-2',
+                                              'type': 'registry:Value',
+                                            },
+                                          ],
+                                        },
+                                      },
+                                      'val-1': {
+                                        'type': 'value',
+                                        'text': 'Premier',
+                                      },
+                                      'val-2': {
+                                        'type': 'value',
+                                        'text': 'Second',
+                                      },
+                                    },
+                                  },
+                                });
+                                yield GeminiStreamEvent(
+                                  deltaText: fixed,
+                                  accumulatedText: fixed,
+                                  isDone: true,
+                                  usedContextCache: true,
+                                );
+                              }
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Mets deux textes dans card-1.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(attempt, 2);
+      expect(prompts, hasLength(2));
+      expect(prompts[1], contains('CORRECTION REQUISE'));
+      expect(prompts[1], contains('card-1'));
+      expect(prompts[1], contains('"child"'));
+      expect(find.text('Carte corrigée.'), findsOneWidget);
+      expect(find.text('Premier'), findsOneWidget);
+      expect(find.text('Second'), findsOneWidget);
+      expect(
+        appAppearance.value.nativeComponent('card-1').slotsOf('child'),
+        ['card-layout'],
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test(
+    'VibeAudioWavEncoder and VibeSpeechTextInsertion encode WAV, compute RMS, and insert transcripts cleanly',
+    () {
+      final pcm = Uint8List(8);
+      final bd = ByteData.sublistView(pcm);
+      bd.setInt16(0, 16384, Endian.little);
+      bd.setInt16(2, -16384, Endian.little);
+      bd.setInt16(4, 16384, Endian.little);
+      bd.setInt16(6, -16384, Endian.little);
+
+      final rms = VibeAudioWavEncoder.computeNormalizedRms(pcm);
+      expect(rms, closeTo(0.5, 0.01));
+
+      final wav = VibeAudioWavEncoder.encodePcm16MonoToWav(
+        pcm,
+        sampleRate: 16000,
+      );
+      expect(wav.length, 44 + 8);
+      expect(ascii.decode(wav.sublist(0, 4)), 'RIFF');
+      expect(ascii.decode(wav.sublist(8, 12)), 'WAVE');
+      expect(ascii.decode(wav.sublist(12, 16)), 'fmt ');
+      expect(ascii.decode(wav.sublist(36, 40)), 'data');
+
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      VibeSpeechTextInsertion.insertTranscript(
+        controller,
+        'Ajoute un graphique',
+      );
+      expect(controller.text, 'Ajoute un graphique');
+
+      VibeSpeechTextInsertion.insertTranscript(controller, 'des ventes');
+      expect(controller.text, 'Ajoute un graphique des ventes');
+
+      controller.selection = const TextSelection.collapsed(offset: 6);
+      VibeSpeechTextInsertion.insertTranscript(controller, 'vite');
+      expect(controller.text, 'Ajoute vite un graphique des ventes');
+    },
+  );
+
+  testWidgets(
+    'microphone button in VibeChatDialog input bar and VibeAskUserCard text fields supports auto-stop on silence and second-click stop',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final transcriber = _FakeVibeSpeechTranscriber();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                speechTranscriber: transcriber,
+                onClose: () {},
+                onDrag: (_) {},
+                generate: (_) async => jsonEncode({
+                  'message': 'Précise ta demande :',
+                  'askUser': {
+                    'questions': [
+                      {
+                        'id': 'style',
+                        'title': 'Style visuel',
+                        'type': 'single',
+                        'options': ['Moderne', ' Compact'],
+                        'default': 'Moderne',
+                      },
+                      {
+                        'id': 'subtitle',
+                        'title': 'Sous-titre de la page',
+                        'type': 'text',
+                        'default': '',
+                      },
+                    ],
+                  },
+                  'vibe': null,
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final micButton = find.byKey(const ValueKey('vibe-chat-mic'));
+      expect(micButton, findsOneWidget);
+      expect(find.byIcon(Icons.mic_none_outlined), findsOneWidget);
+
+      // 1) Clic 1 sur le micro : démarre l'écoute, puis s'arrête automatiquement après un silence.
+      await tester.tap(micButton);
+      await tester.pump();
+      expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+
+      transcriber.activeSession!.completeWithTranscript(
+        'Crée un écran commercial',
+      );
+      await tester.pumpAndSettle();
+
+      final inputField = tester.widget<TextField>(
+        find.byKey(const ValueKey('vibe-chat-input')),
+      );
+      expect(inputField.controller!.text, 'Crée un écran commercial');
+
+      // 2) Clic 1 puis 2e clic manuel sur le micro : arrête l'écoute et concatène la suite.
+      transcriber.nextManualStopTranscript = 'avec indicateurs mensuels.';
+      await tester.tap(micButton);
+      await tester.pump();
+      expect(find.byIcon(Icons.stop_circle_outlined), findsOneWidget);
+
+      await tester.tap(micButton);
+      await tester.pumpAndSettle();
+      expect(
+        inputField.controller!.text,
+        'Crée un écran commercial avec indicateurs mensuels.',
+      );
+
+      // Envoie le message pour afficher la carte askUser.
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('vibe-ask-user-card')), findsOneWidget);
+
+      // 3) Dictée vocale dans le champ texte d'une question askUser.
+      final textMic = find.byKey(const ValueKey('vibe-ask-text-mic-subtitle'));
+      expect(textMic, findsOneWidget);
+      await tester.tap(textMic);
+      await tester.pump();
+      transcriber.activeSession!.completeWithTranscript(
+        'Suivi trimestriel B2B',
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('vibe-ask-text-subtitle')),
+            )
+            .controller!
+            .text,
+        'Suivi trimestriel B2B',
+      );
+
+      // 4) Dictée vocale dans le champ « Autre… » d'une question à choix.
+      await tester.tap(find.byKey(const ValueKey('vibe-ask-other-chip-style')));
+      await tester.pump();
+      final otherMic = find.byKey(const ValueKey('vibe-ask-other-mic-style'));
+      expect(otherMic, findsOneWidget);
+      await tester.tap(otherMic);
+      await tester.pump();
+      transcriber.activeSession!.completeWithTranscript('Style néomorphique');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('vibe-ask-other-input-style')),
+            )
+            .controller!
+            .text,
+        'Style néomorphique',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+class _FakeVibeSpeechTranscriber extends VibeSpeechTranscriber {
+  ControllableVibeSpeechSession? activeSession;
+  String nextManualStopTranscript = '';
+
+  @override
+  Future<VibeSpeechSession> startListening() async {
+    final session = ControllableVibeSpeechSession(
+      onStopAndTranscribe: () async => nextManualStopTranscript,
+    );
+    activeSession = session;
+    return session;
+  }
 }
 
 class _NamedGuideBundle extends CachingAssetBundle {

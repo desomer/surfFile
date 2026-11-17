@@ -185,3 +185,14 @@ Future<String> callGemini(
   staticGuide: staticGuide,
   speedMode: speedMode,
 );
+
+/// Transcrit un enregistrement audio WAV en texte via Gemini.
+Future<String> transcribeSpeechWithGemini(
+  List<int> audioBytes, {
+  String mimeType = 'audio/wav',
+  VibeAiSpeedMode speedMode = VibeAiSpeedMode.ultraFast,
+}) => GeminiRestClient.instance.transcribeAudio(
+  audioBytes,
+  mimeType: mimeType,
+  speedMode: speedMode,
+);

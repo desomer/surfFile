@@ -21,6 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../ai/call_gemini.dart';
 import '../../../ai/design_system_catalog.dart';
 import '../../../ai/vibe_ask_user.dart';
+import '../../../ai/vibe_speech_to_text.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
@@ -60,6 +61,7 @@ export '../../../ai/vibe_ask_user.dart'
         VibeAskUserRequest,
         VibeQuestioningLevel;
 export '../../../ai/vibe_chat_attachment.dart';
+export '../../../ai/vibe_speech_to_text.dart';
 export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
 export 'design_system_catalog_dialog.dart';
 export 'design_system_preview_card.dart';
@@ -85,6 +87,7 @@ class VibeChatDialog extends StatefulWidget {
     this.pickAttachments,
     this.pasteAttachments,
     this.readClipboardText,
+    this.speechTranscriber,
     this.validateAppearance,
     this.registry,
     this.repositoryStore,
@@ -208,6 +211,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Lecteur personnalisé optionnel du texte du presse-papiers pour l'import de chartes `DESIGN.md`.
   final Future<String?> Function()? readClipboardText;
+
+  /// Service optionnel de dictée vocale (Speech-to-Text) pour la barre de saisie et les questions.
+  final VibeSpeechTranscriber? speechTranscriber;
 
   /// Validation supplémentaire optionnelle de l'[Appearance] générée (ex. routes de pages).
   final void Function(Appearance appearance)? validateAppearance;
@@ -655,6 +661,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   bool _sending = false;
   String? _lastFailedResponse;
   String? _attachmentError;
+  VibeSpeechSession? _speechSession;
+  VibeSpeechState? _speechState;
+  VoidCallback? _speechStateListener;
   late VibeChatScope? _scope = widget.scope;
   late VibeAiSpeedMode _speedMode = widget.initialSpeedMode;
   late VibeQuestioningLevel _questioningLevel = widget.initialQuestioningLevel;
@@ -1258,6 +1267,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   @override
   void dispose() {
+    _cancelSpeechDictation();
     if (_activeTurnSession != null) {
       VibeWorkHighlightController.instance.clearStreamingTargets();
     }
@@ -1265,6 +1275,87 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     _streamingSnapshot.dispose();
     _input.dispose();
     super.dispose();
+  }
+
+  void _detachSpeechStateListener() {
+    final session = _speechSession;
+    final listener = _speechStateListener;
+    if (session != null && listener != null) {
+      session.state.removeListener(listener);
+    }
+    _speechStateListener = null;
+  }
+
+  void _cancelSpeechDictation() {
+    _detachSpeechStateListener();
+    final session = _speechSession;
+    _speechSession = null;
+    _speechState = null;
+    if (session != null) {
+      unawaited(session.cancel());
+    }
+  }
+
+  Future<void> _toggleSpeechDictation() async {
+    if (_sending) return;
+    final existing = _speechSession;
+    if (existing != null) {
+      if (_speechState == VibeSpeechState.listening) {
+        await existing.stop();
+      }
+      return;
+    }
+
+    setState(() => _attachmentError = null);
+    try {
+      final transcriber =
+          widget.speechTranscriber ?? VibeSpeechTranscriber.instance;
+      final session = await transcriber.startListening();
+      if (!mounted) {
+        await session.cancel();
+        return;
+      }
+
+      void onStateChanged() {
+        if (!mounted || !identical(_speechSession, session)) return;
+        setState(() => _speechState = session.state.value);
+      }
+
+      _speechStateListener = onStateChanged;
+      session.state.addListener(onStateChanged);
+      setState(() {
+        _speechSession = session;
+        _speechState = session.state.value;
+      });
+
+      final transcript = await session.result;
+      if (!mounted || !identical(_speechSession, session)) return;
+      _detachSpeechStateListener();
+      setState(() {
+        _speechSession = null;
+        _speechState = null;
+      });
+      if (transcript.trim().isNotEmpty) {
+        VibeSpeechTextInsertion.insertTranscript(_input, transcript);
+      }
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      _detachSpeechStateListener();
+      setState(() {
+        _speechSession = null;
+        _speechState = null;
+        _attachmentError = error.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      _detachSpeechStateListener();
+      setState(() {
+        _speechSession = null;
+        _speechState = null;
+        _attachmentError =
+            'Dictée vocale impossible : ${_describeErrorCause(error)}';
+      });
+    }
   }
 
   Future<void> _attachFromPicker() async {
@@ -1369,6 +1460,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   Future<void> _send() async {
+    _cancelSpeechDictation();
     final request = _input.text.trim();
     final attachments = List<VibeChatAttachment>.unmodifiable(
       _pendingAttachments,
@@ -2408,6 +2500,12 @@ $response
                           VibeMessageBubble(
                             message: _messages[i],
                             sending: _sending,
+                            speechTranscriber: widget.speechTranscriber,
+                            onSpeechError: (message) {
+                              if (mounted) {
+                                setState(() => _attachmentError = message);
+                              }
+                            },
                             onSubmitAskUser: (answers) =>
                                 _submitAskUser(i, answers, usedDefaults: false),
                             onSkipAskUser: () {
@@ -2519,14 +2617,49 @@ $response
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                      hintText: 'Décris l’écran souhaité…',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: _speechState == VibeSpeechState.listening
+                          ? 'Écoute en cours… (parlez puis faites une pause)'
+                          : _speechState == VibeSpeechState.transcribing
+                          ? 'Transcription en cours…'
+                          : 'Décris l’écran souhaité…',
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                IconButton(
+                  key: const ValueKey('vibe-chat-mic'),
+                  isSelected: _speechSession != null,
+                  tooltip: _speechState == VibeSpeechState.listening
+                      ? 'Arrêter la dictée (arrêt auto après silence)'
+                      : _speechState == VibeSpeechState.transcribing
+                      ? 'Transcription vocale en cours…'
+                      : 'Dicter au microphone',
+                  visualDensity: VisualDensity.compact,
+                  style: _speechState == VibeSpeechState.listening
+                      ? IconButton.styleFrom(
+                          backgroundColor: scheme.errorContainer,
+                          foregroundColor: scheme.onErrorContainer,
+                        )
+                      : null,
+                  onPressed:
+                      _sending || _speechState == VibeSpeechState.transcribing
+                      ? null
+                      : _toggleSpeechDictation,
+                  icon: _speechState == VibeSpeechState.transcribing
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _speechState == VibeSpeechState.listening
+                              ? Icons.stop_circle_outlined
+                              : Icons.mic_none_outlined,
+                        ),
+                ),
+                const SizedBox(width: 4),
                 IconButton.filled(
                   key: const ValueKey('vibe-chat-send'),
                   tooltip: 'Générer et appliquer',

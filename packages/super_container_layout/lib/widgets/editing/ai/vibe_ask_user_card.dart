@@ -1,9 +1,12 @@
 /// Carte interactive de clarification et collecte des réponses pour le chat Vibe.
 library;
 
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/vibe_ask_user.dart';
+import '../../../ai/vibe_speech_to_text.dart';
 
 /// Carte interactive affichée quand Vibe demande des précisions.
 class VibeAskUserCard extends StatefulWidget {
@@ -13,6 +16,8 @@ class VibeAskUserCard extends StatefulWidget {
     required this.sending,
     required this.onSubmit,
     required this.onSkip,
+    this.speechTranscriber,
+    this.onSpeechError,
     super.key,
   });
 
@@ -28,6 +33,12 @@ class VibeAskUserCard extends StatefulWidget {
   /// Transmet la demande de poursuivre avec les valeurs par défaut.
   final VoidCallback onSkip;
 
+  /// Service optionnel de dictée vocale (Speech-to-Text) pour les champs texte.
+  final VibeSpeechTranscriber? speechTranscriber;
+
+  /// Callback optionnel notifié lorsqu'une erreur de microphone/transcription survient.
+  final ValueChanged<String>? onSpeechError;
+
   @override
   State<VibeAskUserCard> createState() => _VibeAskUserCardState();
 }
@@ -41,6 +52,10 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
       <String, TextEditingController>{};
   final Map<String, TextEditingController> _textControllers =
       <String, TextEditingController>{};
+  String? _activeSpeechFieldKey;
+  VibeSpeechSession? _activeSpeechSession;
+  VibeSpeechState? _activeSpeechState;
+  VoidCallback? _activeSpeechListener;
 
   @override
   void initState() {
@@ -126,8 +141,140 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
 
   @override
   void dispose() {
+    _cancelActiveSpeech();
     _disposeControllers();
     super.dispose();
+  }
+
+  void _detachActiveSpeechListener() {
+    final session = _activeSpeechSession;
+    final listener = _activeSpeechListener;
+    if (session != null && listener != null) {
+      session.state.removeListener(listener);
+    }
+    _activeSpeechListener = null;
+  }
+
+  void _cancelActiveSpeech() {
+    _detachActiveSpeechListener();
+    final session = _activeSpeechSession;
+    _activeSpeechSession = null;
+    _activeSpeechFieldKey = null;
+    _activeSpeechState = null;
+    if (session != null) {
+      unawaited(session.cancel());
+    }
+  }
+
+  Future<void> _toggleFieldSpeech(
+    String fieldKey,
+    TextEditingController? controller,
+  ) async {
+    if (widget.sending || controller == null) return;
+    final existing = _activeSpeechSession;
+    if (existing != null) {
+      if (_activeSpeechFieldKey == fieldKey) {
+        if (_activeSpeechState == VibeSpeechState.listening) {
+          await existing.stop();
+        }
+        return;
+      }
+      _cancelActiveSpeech();
+    }
+
+    try {
+      final transcriber =
+          widget.speechTranscriber ?? VibeSpeechTranscriber.instance;
+      final session = await transcriber.startListening();
+      if (!mounted) {
+        await session.cancel();
+        return;
+      }
+      void onStateChanged() {
+        if (!mounted || !identical(_activeSpeechSession, session)) return;
+        setState(() => _activeSpeechState = session.state.value);
+      }
+
+      _activeSpeechListener = onStateChanged;
+      session.state.addListener(onStateChanged);
+      setState(() {
+        _activeSpeechFieldKey = fieldKey;
+        _activeSpeechSession = session;
+        _activeSpeechState = session.state.value;
+      });
+
+      final transcript = await session.result;
+      if (!mounted || !identical(_activeSpeechSession, session)) return;
+      _detachActiveSpeechListener();
+      setState(() {
+        _activeSpeechSession = null;
+        _activeSpeechFieldKey = null;
+        _activeSpeechState = null;
+      });
+      if (transcript.trim().isNotEmpty) {
+        VibeSpeechTextInsertion.insertTranscript(controller, transcript);
+      }
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      _detachActiveSpeechListener();
+      setState(() {
+        _activeSpeechSession = null;
+        _activeSpeechFieldKey = null;
+        _activeSpeechState = null;
+      });
+      widget.onSpeechError?.call(error.message);
+    } catch (error) {
+      if (!mounted) return;
+      _detachActiveSpeechListener();
+      setState(() {
+        _activeSpeechSession = null;
+        _activeSpeechFieldKey = null;
+        _activeSpeechState = null;
+      });
+      widget.onSpeechError?.call('Dictée vocale impossible : $error');
+    }
+  }
+
+  Widget _buildFieldMicSuffix({
+    required BuildContext context,
+    required Key buttonKey,
+    required String fieldKey,
+    required TextEditingController? controller,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final isActive =
+        _activeSpeechSession != null && _activeSpeechFieldKey == fieldKey;
+    final state = isActive ? _activeSpeechState : null;
+    final isListening = state == VibeSpeechState.listening;
+    final isTranscribing = state == VibeSpeechState.transcribing;
+
+    return IconButton(
+      key: buttonKey,
+      visualDensity: VisualDensity.compact,
+      iconSize: 17,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      tooltip: isListening
+          ? 'Arrêter la dictée (arrêt auto après silence)'
+          : isTranscribing
+          ? 'Transcription vocale en cours…'
+          : 'Dicter au microphone',
+      onPressed: widget.sending || isTranscribing
+          ? null
+          : () => _toggleFieldSpeech(fieldKey, controller),
+      icon: isTranscribing
+          ? const SizedBox.square(
+              dimension: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              isListening
+                  ? Icons.stop_circle_outlined
+                  : Icons.mic_none_outlined,
+              size: 17,
+              color: isListening ? scheme.error : scheme.onSurfaceVariant,
+            ),
+    );
   }
 
   Map<String, Object?> _collectAnswers() {
@@ -229,13 +376,19 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
                 controller: _otherControllers[q.id],
                 enabled: !widget.sending,
                 style: const TextStyle(fontSize: 12.5),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   hintText: 'Préciser…',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 8,
+                  ),
+                  suffixIcon: _buildFieldMicSuffix(
+                    context: context,
+                    buttonKey: ValueKey('vibe-ask-other-mic-${q.id}'),
+                    fieldKey: 'other:${q.id}',
+                    controller: _otherControllers[q.id],
                   ),
                 ),
               ),
@@ -297,13 +450,19 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
                 controller: _otherControllers[q.id],
                 enabled: !widget.sending,
                 style: const TextStyle(fontSize: 12.5),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   hintText: 'Autre choix…',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 8,
+                  ),
+                  suffixIcon: _buildFieldMicSuffix(
+                    context: context,
+                    buttonKey: ValueKey('vibe-ask-other-mic-${q.id}'),
+                    fieldKey: 'other:${q.id}',
+                    controller: _otherControllers[q.id],
                   ),
                 ),
               ),
@@ -335,10 +494,19 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
           controller: _textControllers[q.id],
           enabled: !widget.sending,
           style: const TextStyle(fontSize: 12.5),
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             isDense: true,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
+            suffixIcon: _buildFieldMicSuffix(
+              context: context,
+              buttonKey: ValueKey('vibe-ask-text-mic-${q.id}'),
+              fieldKey: 'text:${q.id}',
+              controller: _textControllers[q.id],
+            ),
           ),
         );
     }

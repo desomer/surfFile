@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/call_gemini.dart';
+import '../../../ai/vibe_speech_to_text.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import 'vibe_ask_user_card.dart';
 import 'vibe_chat_message.dart';
@@ -106,6 +107,8 @@ class VibeMessageBubble extends StatelessWidget {
     this.sending = false,
     this.onSubmitAskUser,
     this.onSkipAskUser,
+    this.speechTranscriber,
+    this.onSpeechError,
     super.key,
   });
 
@@ -120,6 +123,12 @@ class VibeMessageBubble extends StatelessWidget {
 
   /// Demande de répondre avec les valeurs par défaut.
   final VoidCallback? onSkipAskUser;
+
+  /// Service optionnel de dictée vocale (Speech-to-Text) pour les champs texte du questionnaire.
+  final VibeSpeechTranscriber? speechTranscriber;
+
+  /// Callback optionnel notifié lorsqu'une erreur de dictée survient sur le questionnaire.
+  final ValueChanged<String>? onSpeechError;
 
   @override
   Widget build(BuildContext context) {
@@ -270,6 +279,8 @@ class VibeMessageBubble extends StatelessWidget {
                       sending: sending,
                       onSubmit: onSubmitAskUser ?? (_) {},
                       onSkip: onSkipAskUser ?? () {},
+                      speechTranscriber: speechTranscriber,
+                      onSpeechError: onSpeechError,
                     ),
                 ],
               ],
