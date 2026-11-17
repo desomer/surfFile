@@ -145,6 +145,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   String? _selected;
   String? _selectedSlot;
   bool _active = false;
+  bool _elementActive = true;
+  bool _hasParentSelectionScope = false;
   final _hoveredRegionScopes = ValueNotifier<Set<Object>>({});
   List<String> _path = const [];
   Size _layoutSize = Size.zero;
@@ -152,6 +154,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       _NativeConfigNotifier(widget.config);
 
   void _setEditorState(VoidCallback fn) => setState(fn);
+
+  void _handleEditingChanged() => _editingChanged();
+
+  List<EditorAddZone> _getAddZones() => _addZones();
 
   /// Indique si le mode édition visuelle est actif.
   bool get editing => _editMode?.value ?? false;
@@ -261,9 +267,22 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }
 
   @override
+  void activate() {
+    super.activate();
+    _elementActive = true;
+  }
+
+  @override
+  void deactivate() {
+    _elementActive = false;
+    super.deactivate();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final scope = LayoutSelectionScope.of(context);
+    _hasParentSelectionScope = scope != null;
     final label = _componentLabel;
     _path = !widget.showRegionInPath && (scope?.isSlotScope ?? false)
         ? scope!.path
@@ -271,9 +290,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     final mode = StyleEditScope.controllerOf(context);
     final modeChanged = mode != _editMode;
     if (modeChanged) {
-      _editMode?.removeListener(_editingChanged);
+      _editMode?.removeListener(_handleEditingChanged);
       _editMode = mode;
-      _editMode?.addListener(_editingChanged);
+      _editMode?.addListener(_handleEditingChanged);
     }
     _registerLayoutSelection(scope);
     if (modeChanged &&
@@ -385,7 +404,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       child: EditorAddZones(
         label: widget.label,
         enabled: editing,
-        zones: _addZones,
+        zones: _getAddZones,
         child: ListenableBuilder(
           // Selection paths only affect edit overlays.
           listenable: editing
@@ -427,7 +446,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
 
   @override
   void dispose() {
-    _editMode?.removeListener(_editingChanged);
+    _editMode?.removeListener(_handleEditingChanged);
     LayoutSelection.unregister(this);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => LayoutSelection.report(this, const []),

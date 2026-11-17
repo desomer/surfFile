@@ -173,9 +173,8 @@ extension NativeComponentEditorSelection on NativeComponentEditorState {
   }
 
   void _editingChanged() {
-    if (editing &&
-        widget.showRegionInPath &&
-        LayoutSelectionScope.of(context) == null) {
+    if (!mounted || !_elementActive) return;
+    if (editing && widget.showRegionInPath && !_hasParentSelectionScope) {
       select(null);
     } else {
       _clear();
@@ -184,18 +183,25 @@ extension NativeComponentEditorSelection on NativeComponentEditorState {
 
   void _clear() {
     if (!mounted) return;
-    _setEditorState(() {
+    if (_elementActive) {
+      _setEditorState(() {
+        _active = false;
+        _selected = null;
+        _selectedSlot = null;
+        _hoveredRegionScopes.value = {};
+      });
+    } else {
       _active = false;
       _selected = null;
       _selectedSlot = null;
       _hoveredRegionScopes.value = {};
-    });
+    }
     LayoutSelection.report(this, const []);
   }
 
   /// Sélectionne la région [id] (ou la surface complète si [id] est `null`).
   void select(String? id, [BuildContext? target]) {
-    if (!mounted) return;
+    if (!mounted || !_elementActive) return;
     LayoutSelection.activate(this);
     _setEditorState(() {
       _active = true;
@@ -318,7 +324,7 @@ extension NativeComponentEditorSelection on NativeComponentEditorState {
     SlotImplementation slot, [
     BuildContext? target,
   ]) {
-    if (!mounted) return;
+    if (!mounted || !_elementActive) return;
     if (!_canSelectSlot(slot)) {
       if (widget.showRegionInPath) select(region, target);
       return;

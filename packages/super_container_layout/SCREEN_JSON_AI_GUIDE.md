@@ -259,7 +259,9 @@ Règles :
 
 Les racines `root` et `mainLayout`, ainsi que le slot `scaffold:body`, sont
 fournis par l'hôte. Les autres instances ci-dessous sont nommées dans leur
-parent ; chacune reçoit un usage sauf celles qui possèdent une liaison.
+parent ; chacune reçoit un usage sauf celles qui possèdent une liaison. Par
+défaut, `styles["background"]` ne reçoit aucun `padding` (`0` par défaut, inutile
+avec les composants Flutter).
 
 ```json
 {
@@ -766,7 +768,7 @@ Affiche un bouton interactif :
 ### 4.4bis. `"indicator"` (`SuperIndicatorConfig`)
 Affiche une icône Material (accompagnée optionnellement d'un libellé et d'un badge/surface) dont l'icône et le style changent selon les états standards (`hover`, `selected`, `contentHover`, `disabled`) ou les états métier nommés (`states.binding` + `states.named`) :
 - `icon` : identifiant d'icône du catalogue `MaterialIconCatalog` (défaut `"info"`, ex. `"check_circle"`, `"warning"`, `"error"`, `"verified"`, `"bolt"`, `"folder"`, etc.).
-- `iconSize` (`number > 0`, défaut `24`), `iconColor` (couleur de l'icône).
+- `iconSize` (`number > 0`, défaut `24`), `iconColor` (couleur de l'icône : privilégier `"theme:<rôle>"` pour la compatibilité Material 3, ex. `"theme:primary"`, `"theme:onSurfaceVariant"`, ou le rôle `"theme:on*"` correspondant lorsque `backgroundColor` est défini sur un badge).
 - `label` (ou `text`) : libellé optionnel (`string`, défaut `""`), `iconPosition` (`"leading"` ou `"trailing"`), `iconSpacing` (`number >= 0`, défaut `6`).
 - `tooltip` : infobulle (`string`), `enabled` (`bool`, défaut `true`).
 - Typographie & Badge : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`, `style` (`ContainerStyle`).
@@ -1153,8 +1155,9 @@ L'habillage de l'arrière-plan combine les **propriétés racines** du document 
      - `borderWidth` (minimum `0`, slider `0` à `4`) et `borderColor` (`"#RRGGBB"`) : dessine une bordure autour de toute la zone de l'application, sans plafond JSON.
      - `neon` (`true` ou `{"enabled": true, "color": "#00FFFF", "intensity": 1.2}`) : ajoute un halo néon autour de l'écran (intensité positive ou nulle, sans plafond JSON).
    - **Marges globales de l'écran (`padding` / `paddingInsets`, `margin` / `marginInsets`)** :
-     - `padding` ou `paddingInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles) : espace intérieur global autour de la page principale ; slider `0` à `48`, sans plafond JSON.
-     - `margin` ou `marginInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles) : slider `0` à `48`, sans plafond JSON.
+     - **Règle par défaut : pas de `padding` sur `styles["background"]` (laisser à `0`)** — par défaut, ne définis **pas** de `padding` ni de `paddingInsets` non nul sur `styles["background"]` (laisse à `0` par défaut ou omets la propriété, sauf demande explicite de l'utilisateur). Avec les composants Flutter (`Scaffold`, `ApplicationBar`, `NavigationRail`, `BottomAppBar`, `BottomNavigationBar`, `SuperLayout`), ce n'est pas nécessaire : les composants structurels gèrent déjà leur propre géométrie au bord de la fenêtre, et l'espacement du contenu se règle dans les zones des layouts (`zoneFlows.<zone>.padding`) ou les cartes (`Card`).
+     - `padding` ou `paddingInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles, `0` par défaut) : espace intérieur global autour de la page principale ; slider `0` à `48`, sans plafond JSON.
+     - `margin` ou `marginInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles, `0` par défaut) : slider `0` à `48`, sans plafond JSON.
 
 ---
 
@@ -1256,7 +1259,7 @@ acceptent aussi les valeurs négatives hors plage. Les opacités restent limité
         "end": "#1E1B4B",
         "angle": 135
       },
-      "padding": 16
+      "padding": 0
     },
     "card-glass": {
       "designSystem": "liquidGlass",

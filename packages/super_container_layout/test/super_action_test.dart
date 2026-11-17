@@ -716,4 +716,108 @@ void main() {
       expect(surfaceIcon.color, expectedOnPrimary);
     },
   );
+
+  testWidgets(
+    'SuperAction resolves Material 3 iconColor across non-filled variants and semantic backgroundColor overrides',
+    (tester) async {
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
+      );
+      final scheme = theme.colorScheme;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: IconTheme(
+              data: const IconThemeData(color: Color(0xFF123456)),
+              child: const Column(
+                children: [
+                  SuperAction(
+                    id: 'btn-tonal',
+                    config: SuperActionConfig(
+                      kind: SuperActionKind.textAndIcon,
+                      variant: SuperActionVariant.tonal,
+                      label: 'Filtrer',
+                      icon: 'filter_list',
+                    ),
+                  ),
+                  SuperAction(
+                    id: 'btn-outlined',
+                    config: SuperActionConfig(
+                      kind: SuperActionKind.textAndIcon,
+                      variant: SuperActionVariant.outlined,
+                      label: 'Exporter',
+                      icon: 'download',
+                    ),
+                  ),
+                  SuperAction(
+                    id: 'btn-icon-only',
+                    config: SuperActionConfig(
+                      kind: SuperActionKind.icon,
+                      variant: SuperActionVariant.icon,
+                      icon: 'more_vert',
+                    ),
+                  ),
+                  SuperAction(
+                    id: 'btn-error-bg',
+                    config: SuperActionConfig(
+                      kind: SuperActionKind.textAndIcon,
+                      variant: SuperActionVariant.filled,
+                      label: 'Supprimer',
+                      icon: 'delete',
+                      backgroundColor: ThemeColor(
+                        ThemeColorRole.errorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Icon>(find.byKey(const ValueKey('super-action-icon-btn-tonal')))
+            .color,
+        scheme.onSecondaryContainer,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(const ValueKey('super-action-icon-btn-outlined')),
+            )
+            .color,
+        scheme.primary,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(const ValueKey('super-action-icon-btn-icon-only')),
+            )
+            .color,
+        scheme.onSurfaceVariant,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(const ValueKey('super-action-icon-btn-error-bg')),
+            )
+            .color,
+        scheme.onErrorContainer,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-action-label-btn-error-bg')),
+            )
+            .style
+            ?.color,
+        scheme.onErrorContainer,
+      );
+    },
+  );
 }

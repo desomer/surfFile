@@ -2392,4 +2392,37 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'toggling StyleEditModeButton after unmounting NativeComponentEditor does not notify defunct state',
+    (tester) async {
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const SuperPage(child: Text('Initial Page')),
+          ),
+          GoRoute(
+            path: '/other',
+            builder: (_, _) => const Scaffold(body: StyleEditModeButton()),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: Registry()));
+      await tester.pumpAndSettle();
+
+      router.go('/other');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -29,7 +29,13 @@ Widget buildSuperIndicatorVisual({
   final hasIcon = config.icon.trim().isNotEmpty;
   final hasLabel = config.label.trim().isNotEmpty;
   final iconData = hasIcon ? SuperIndicatorIcons.resolve(config.icon) : null;
-  final effectiveIconColor = config.iconColor.resolveTheme(context) ?? config.color.resolveTheme(context) ?? scheme.primary;
+  final rawBg = config.backgroundColor ?? config.style.color;
+  final contrastingBgFg = resolveContrastingForeground(rawBg, scheme);
+  final effectiveIconColor =
+      config.iconColor.resolveTheme(context) ??
+      config.color.resolveTheme(context) ??
+      contrastingBgFg ??
+      scheme.primary;
   final effectiveIconSize = config.iconSize ?? 24.0;
 
   final iconWidget = hasIcon
@@ -45,7 +51,10 @@ Widget buildSuperIndicatorVisual({
           height: effectiveIconSize,
         );
 
-  final fg = config.color.resolveTheme(context) ?? scheme.onSurface;
+  final fg =
+      config.color.resolveTheme(context) ??
+      contrastingBgFg ??
+      scheme.onSurface;
   final textWidget = hasLabel
       ? Text(
           config.label,

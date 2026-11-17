@@ -76,19 +76,20 @@ Widget buildSuperActionVisual({
     SuperActionVariant.text => scheme.primary,
     SuperActionVariant.icon => scheme.onSurfaceVariant,
   };
+  final rawBg = config.backgroundColor ?? config.style.color;
+  final contrastingBgFg =
+      resolveContrastingForeground(rawBg, scheme) ?? defaultSurfaceFg;
 
   final Color? resolvedChildTextColor = hasCustomSurface
-      ? (explicitColor ?? defaultSurfaceFg)
-      : variant == SuperActionVariant.filled
-      ? (explicitColor ?? (config.enabled ? scheme.onPrimary : null))
+      ? (explicitColor ?? contrastingBgFg)
+      : variant == SuperActionVariant.filled || rawBg != null
+      ? (explicitColor ?? (config.enabled ? contrastingBgFg : null))
       : explicitColor;
   final Color? resolvedChildIconColor = hasCustomSurface
-      ? (explicitIconColor ?? explicitColor ?? defaultSurfaceFg)
-      : variant == SuperActionVariant.filled
-      ? (explicitIconColor ??
+      ? (explicitIconColor ?? explicitColor ?? contrastingBgFg)
+      : (explicitIconColor ??
             explicitColor ??
-            (config.enabled ? scheme.onPrimary : null))
-      : (explicitIconColor ?? explicitColor);
+            (config.enabled ? contrastingBgFg : null));
 
   final hasIcon = config.kind.hasIcon && config.icon.trim().isNotEmpty;
   final iconData = hasIcon ? SuperActionIcons.resolve(config.icon) : null;
@@ -176,7 +177,7 @@ Widget buildSuperActionVisual({
             horizontal: config.kind == SuperActionKind.icon ? 10 : 16,
             vertical: 10,
           );
-    final fg = explicitColor ?? defaultSurfaceFg;
+    final fg = explicitColor ?? contrastingBgFg;
     button = Padding(
       padding: surfaceStyle.outerMargin,
       child: StyledSurface(
@@ -211,8 +212,11 @@ Widget buildSuperActionVisual({
     final bg =
         config.backgroundColor.resolveTheme(context) ??
         config.style.color.resolveTheme(context);
-    final fg = explicitColor;
-    final effectiveIconColor = explicitIconColor ?? explicitColor;
+    final fg = explicitColor ?? (rawBg != null ? contrastingBgFg : null);
+    final effectiveIconColor =
+        explicitIconColor ??
+        explicitColor ??
+        (rawBg != null ? contrastingBgFg : null);
     final bColor =
         config.borderColor.resolveTheme(context) ??
         config.style.borderColor.resolveTheme(context);
@@ -248,8 +252,8 @@ Widget buildSuperActionVisual({
 
     final filledStyle = FilledButton.styleFrom(
       backgroundColor: bg,
-      foregroundColor: fg ?? scheme.onPrimary,
-      iconColor: effectiveIconColor ?? scheme.onPrimary,
+      foregroundColor: fg ?? contrastingBgFg,
+      iconColor: effectiveIconColor ?? contrastingBgFg,
       iconSize: config.iconSize,
       textStyle: typographyOnlyStyle,
       elevation: elev,

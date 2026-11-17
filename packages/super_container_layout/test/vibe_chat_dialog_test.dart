@@ -2384,6 +2384,7 @@ void main() {
     expect(updated.layout('mainLayout').west, isTrue);
     expect(updated.layout('mainLayout').westSize, 320);
     expect(updated.layout('mainLayout').autoSides, isEmpty);
+    expect(updated.style('background').padding, 0);
     expect(updated.style('card-detail').borderWidth, 1);
     expect(updated.style('list-items:item').states?.hasSelected, isTrue);
   });

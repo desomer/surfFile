@@ -32,8 +32,9 @@ Pour garantir une **compatibilité Material 3 intégrale** (adaptation automatiq
 | **Ligne de liste sélectionnée (`states.selected`)** | `"theme:secondaryContainer"` (ou `"theme:primaryContainer"`) | `borderWidth: 1`, `borderColor: "theme:primary"` |
 | **Texte principal / Valeur clé** | `"theme:onSurface"` | — |
 | **Texte secondaire / Légende / Métadonnée** | `"theme:onSurfaceVariant"` | — |
-| **Action primaire / Indicateur actif** | `"theme:primary"` | Texte/icône `"theme:onPrimary"` |
-| **Alerte / Action destructrice / Statut erreur** | `"theme:error"` ou `"theme:errorContainer"` | Texte `"theme:onError"` ou `"theme:onErrorContainer"` |
+| **Action primaire / Indicateur actif** | `"theme:primary"` | Texte et `iconColor` `"theme:onPrimary"` |
+| **Icône neutre / Bouton icône discret (`variant: "icon"`)** | — (transparent) | `iconColor: "theme:onSurfaceVariant"` |
+| **Alerte / Action destructrice / Statut erreur** | `"theme:error"` ou `"theme:errorContainer"` | Texte et `iconColor` `"theme:onError"` ou `"theme:onErrorContainer"` |
 
 ### 2.2. Équilibre chromatique 60 / 30 / 10
 - **60 % Surfaces neutres calmes** : canevas global (`surfaceContainerLowest` / `surface`) laissant respirer le contenu.
@@ -67,9 +68,9 @@ Limite chaque écran à **4 niveaux typographiques nets** et **au plus 3 tailles
 ## 4. Grille d'espacement (4 / 8 px), Densité & Rayons concentriques
 
 ### 4.1. Échelle d'espacement stricte
-Utilise exclusivement les valeurs de l'échelle **`4, 8, 12, 16, 20, 24, 32`** pour `padding`, `spacing` et `margin` :
-- **Marge globale du canevas (`styles["background"].padding`)** : `12` ou `16`.
-- **Espacement entre zones/cartes sœurs (`zoneFlows.*.spacing`)** : `12` ou `16`.
+Utilise exclusivement les valeurs de l'échelle **`4, 8, 12, 16, 20, 24, 32`** pour `padding`, `spacing` et `margin` des conteneurs de contenu :
+- **Fond global (`styles["background"].padding`)** : **`0` par défaut** — ne mets **pas** de `padding` (ni `paddingInsets`) sur `styles["background"]` par défaut (sauf demande explicite). Avec les composants Flutter (`Scaffold`, `ApplicationBar`, `NavigationRail`, `BottomAppBar`, `SuperLayout`), aucun padding sur le fond n'est nécessaire ; applique plutôt les marges dans `zoneFlows.<zone>.padding` du `layout` (`12` ou `16`) ou sur les `Card`.
+- **Espacement entre zones/cartes sœurs (`zoneFlows.*.spacing` / `zoneFlows.*.padding`)** : `12` ou `16`.
 - **Padding intérieur d'une `Card` principale (`styles[cardId].padding`)** : `16` ou `20` (`24` pour un formulaire pleine page aéré).
 - **Espacement interne entre champs ou lignes d'un groupe (`spacing`)** : `8` à `12`.
 - **Loi de proximité obligatoire** : le `padding` intérieur d'un conteneur doit toujours être **supérieur ou égal** au `spacing` entre ses éléments enfants (`padding >= spacing`), afin que le groupe visuel reste cohérent.
@@ -117,7 +118,8 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
 - **Contraste AA/AAA verrouillé sur `variant: "filled"`** : pour tout bouton en `variant: "filled"`, déclare **systématiquement** `"color": "theme:onPrimary"` et `"iconColor": "theme:onPrimary"` (ou la paire sémantique équivalente lorsque `backgroundColor` est personnalisé : `"theme:secondary"` $\rightarrow$ `"theme:onSecondary"`, `"theme:error"` $\rightarrow$ `"theme:onError"`, `"theme:errorContainer"` $\rightarrow$ `"theme:onErrorContainer"`).
 - **Actions secondaires** : utilise `"tonal"` ou `"outlined"` (ex: `"Exporter"`, `"Filtrer"`, `"Dupliquer"`).
 - **Actions tertiaires / Annulation** : utilise `"text"` (ex: `"Annuler"`, `"Réinitialiser"`).
-- **Actions compactes de barre d'outils ou de ligne** : utilise `kind: "icon"`, `variant: "icon"` (ou `"surface"`), toujours accompagnées d'un **`tooltip` explicite**.
+- **Actions compactes de barre d'outils ou de ligne** : utilise `kind: "icon"`, `variant: "icon"` (ou `"surface"`), avec `"iconColor": "theme:onSurfaceVariant"` au repos (ou `"theme:primary"` / `"theme:error"` selon l'intention) et toujours un **`tooltip` explicite**.
+- **Couleurs d'icônes Material 3 (`iconColor`) sur toutes les variantes** : utilise toujours des tokens `theme:*` pour `iconColor` (`"theme:onPrimary"` sur `"filled"`, `"theme:onSecondaryContainer"` sur `"tonal"`, `"theme:primary"` sur `"outlined"` / `"text"`, `"theme:onSurfaceVariant"` sur `"icon"`), sans laisser une couleur hexadécimale fixe casser le thème sombre.
 - **Pas de bouton géant pleine largeur sur Desktop** : dans une zone verticale en `crossAxisAlignment: "stretch"`, place les boutons d'action dans une barre horizontale dédiée (`zoneAxes: {"south": "row"}` ou sous-layout horizontal avec `mainAxisAlignment: "end"`, `spacing: 8`), ou applique `fitContent: true` / un alignement adapté.
 - Associe une icône Material pertinente (`kind: "textAndIcon"`) sur l'action primaire et les entrées de navigation.
 
@@ -141,11 +143,13 @@ Toute ligne interactive (`styles["<listId>:item"]` ou `IterableContent`) doit of
 
 ### 7.1. Soin des états vides et indicateurs
 - Renseigne toujours un `emptyText` précis et naturel en français sur les collections (`"Aucun client enregistré"`, `"Aucune commande sur cette période"`, plutôt que le texte générique par défaut).
-- Utilise `SuperIndicator` (`type: "indicator"`) avec `states.binding` + `states.named` pour représenter les statuts métier (ex: badge pastille doux `backgroundColor: "theme:primaryContainer"`, `radius: 99`, `horizontalPadding: 10`, `verticalPadding: 4`) plutôt que du texte brut sans mise en forme.
+- Utilise `SuperIndicator` (`type: "indicator"`) avec `states.binding` + `states.named` pour représenter les statuts métier :
+  - **Icône isolée (sans badge)** : configure `iconColor` avec un rôle Material 3 (`"theme:primary"`, `"theme:onSurfaceVariant"` ou `"theme:error"`).
+  - **Badge pastille coloré (`backgroundColor`)** : apparie **toujours** `iconColor` ET `color` au rôle `on*` du fond (`backgroundColor: "theme:primaryContainer"` $\rightarrow$ `iconColor: "theme:onPrimaryContainer"`, `color: "theme:onPrimaryContainer"` ; `"theme:errorContainer"` $\rightarrow$ `"theme:onErrorContainer"`, `radius: 99`, `horizontalPadding: 10`, `verticalPadding: 4`).
 
 ### 7.2. Anti-patterns formellement interdits
 - **Arc-en-ciel de couleurs hex saturées** : ne colorie pas chaque carte ou chaque bouton d'une couleur vive différente (`#FF0000`, `#00FF00`, `#0000FF`).
-- **Texte collé aux bordures** : ne crée jamais une `Card` ou surface visible contenant du texte avec `padding: 0` (ni dans son style, ni dans son layout enfant).
+- **Texte collé aux bordures** : ne crée jamais une `Card` ou surface de contenu visible contenant du texte avec `padding: 0` (ni dans son style, ni dans son layout enfant ; cette règle ne s'applique pas à `styles["background"]`, dont le `padding` doit rester à `0` par défaut).
 - **Double boîte dans `ListView`** : n'ajoute jamais de `"registry:Card"` ni `"registry:IterableContent"` dans `list.template.placements` (chaque ligne possède déjà sa propre surface `<listId>:item`).
 - **Concurrence d'actions primaires** : ne place jamais 2 ou 3 boutons `variant: "filled"` côte à côte dans la même barre d'actions.
 - **`SuperValue` fourre-tout multi-notions ou bloc `textarea` de récapitulatif** : ne concatène jamais plusieurs données ou un couple « libellé + valeur » dans un seul `SuperValue` (ex: `"CA : 128 k€ • +12 %"`), et ne remplace jamais une liste ou synthèse métier (affaires, contrats, interlocuteurs, « résumé », « notes ») par un placeholder texte libre multiligne (`maxLines > 1`) au lieu de cartes, champs unitaires atomiques ou `SuperTable`.
@@ -162,7 +166,7 @@ Extrait illustrant la combinaison canonique des tokens `theme:*`, de la hiérarc
   "styles": {
     "background": {
       "color": "theme:surfaceContainerLowest",
-      "padding": 12
+      "padding": 0
     },
     "panel-master": {
       "color": "theme:surface",
@@ -206,8 +210,8 @@ Extrait illustrant la combinaison canonique des tokens `theme:*`, de la hiérarc
       "resizeSides": true,
       "autoSides": [],
       "zoneFlows": {
-        "west": { "expandSlots": true },
-        "center": { "expandSlots": true, "paddingInsets": [0, 0, 0, 12] }
+        "west": { "expandSlots": true, "paddingInsets": [12, 0, 12, 12] },
+        "center": { "expandSlots": true, "padding": 12 }
       },
       "slotLabels": {
         "panel-master": "Panneau de navigation",

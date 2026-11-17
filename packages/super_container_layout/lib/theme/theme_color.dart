@@ -110,6 +110,31 @@ enum ThemeColorRole {
     onTertiaryFixed => scheme.onTertiaryFixed,
     onTertiaryFixedVariant => scheme.onTertiaryFixedVariant,
   };
+
+  /// Rôle Material 3 de premier plan (texte et icône) garantissant le contraste sur ce fond.
+  ThemeColorRole? get matchingForegroundRole => switch (this) {
+    primary => onPrimary,
+    primaryContainer => onPrimaryContainer,
+    secondary => onSecondary,
+    secondaryContainer => onSecondaryContainer,
+    tertiary => onTertiary,
+    tertiaryContainer => onTertiaryContainer,
+    error => onError,
+    errorContainer => onErrorContainer,
+    inverseSurface => onInverseSurface,
+    primaryFixed || primaryFixedDim => onPrimaryFixed,
+    secondaryFixed || secondaryFixedDim => onSecondaryFixed,
+    tertiaryFixed || tertiaryFixedDim => onTertiaryFixed,
+    surface ||
+    surfaceDim ||
+    surfaceBright ||
+    surfaceContainerLowest ||
+    surfaceContainerLow ||
+    surfaceContainer ||
+    surfaceContainerHigh ||
+    surfaceContainerHighest => onSurface,
+    _ => null,
+  };
 }
 
 /// Couleur sémantique persistée sous la forme `theme:primary`.
@@ -166,6 +191,21 @@ Color resolveThemeColor(Color color, ColorScheme scheme) =>
 /// Résolution nullable des propriétés de couleur optionnelles.
 Color? resolveOptionalThemeColor(Color? color, ColorScheme scheme) =>
     color == null ? null : resolveThemeColor(color, scheme);
+
+/// Résout la couleur de premier plan (texte / icône) contrastant avec un fond [rawBackground].
+///
+/// Utilise la paire Material 3 `on*` exacte lorsque [rawBackground] est une [ThemeColor],
+/// ou estime la luminosité lorsqu'une couleur opaque fixe est fournie.
+Color? resolveContrastingForeground(Color? rawBackground, ColorScheme scheme) {
+  if (rawBackground == null) return null;
+  if (rawBackground is ThemeColor) {
+    return rawBackground.role.matchingForegroundRole?.resolve(scheme);
+  }
+  if (rawBackground.a < 0.5) return null;
+  return ThemeData.estimateBrightnessForColor(rawBackground) == Brightness.dark
+      ? Colors.white
+      : scheme.onSurface;
+}
 
 /// Résolution locale des propriétés de couleur optionnelles des composants.
 extension ThemeColorResolution on Color? {

@@ -579,4 +579,100 @@ void main() {
       expect(saved!.propertyBindings, isEmpty);
     },
   );
+
+  testWidgets(
+    'SuperIndicator resolves contrasting Material 3 iconColor and label color on semantic badge backgrounds',
+    (tester) async {
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
+      );
+      final scheme = theme.colorScheme;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            body: Column(
+              children: [
+                SuperIndicator(
+                  id: 'ind-standalone',
+                  config: SuperIndicatorConfig(icon: 'info'),
+                ),
+                SuperIndicator(
+                  id: 'ind-primary-badge',
+                  config: SuperIndicatorConfig(
+                    icon: 'verified',
+                    label: 'Certifié',
+                    backgroundColor: ThemeColor(ThemeColorRole.primary),
+                    radius: 99,
+                  ),
+                ),
+                SuperIndicator(
+                  id: 'ind-error-badge',
+                  config: SuperIndicatorConfig(
+                    icon: 'warning',
+                    label: 'Critique',
+                    backgroundColor: ThemeColor(ThemeColorRole.errorContainer),
+                    radius: 99,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(const ValueKey('super-indicator-icon-ind-standalone')),
+            )
+            .color,
+        scheme.primary,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(
+                const ValueKey('super-indicator-icon-ind-primary-badge'),
+              ),
+            )
+            .color,
+        scheme.onPrimary,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey('super-indicator-label-ind-primary-badge'),
+              ),
+            )
+            .style
+            ?.color,
+        scheme.onPrimary,
+      );
+      expect(
+        tester
+            .widget<Icon>(
+              find.byKey(
+                const ValueKey('super-indicator-icon-ind-error-badge'),
+              ),
+            )
+            .color,
+        scheme.onErrorContainer,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(
+                const ValueKey('super-indicator-label-ind-error-badge'),
+              ),
+            )
+            .style
+            ?.color,
+        scheme.onErrorContainer,
+      );
+    },
+  );
 }
