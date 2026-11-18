@@ -24,8 +24,10 @@ import 'package:super_container_layout/services/repositories/json_repository_sco
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_delta_recovery.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_work_highlight.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
@@ -4776,6 +4778,428 @@ void main() {
           find.text('Reproduction terminée : 1/2 lots appliqués (1 ignoré(s)).'),
           findsOneWidget,
         );
+      },
+    );
+  });
+
+  group('Layout styles rejection and delta recovery', () {
+    test(
+      'findIneffectiveLayoutStyleViolations flags styles targeting registry:Layout or mainLayout, and allows IterableContent, Card, list items and deletions',
+      () {
+        final base = Appearance(
+          components: {
+            'mainLayout': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['footer-container', 'card-1'],
+              },
+              slotTypes: {
+                'footer-container': 'registry:Layout',
+                'card-1': 'registry:Card',
+              },
+            ),
+            'footer-container': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['footer-bottom-row'],
+              },
+              slotTypes: {
+                'footer-bottom-row': 'registry:IterableContent',
+              },
+            ),
+            'footer-bottom-row': const SuperLayoutConfig(),
+          },
+        );
+
+        final withLayoutStyle = base.copyWith(
+          styles: {
+            'background': const ContainerStyle(color: Color(0xFFFFFFFF)),
+            'mainLayout': const ContainerStyle(color: Color(0xFF000000)),
+            'footer-container': const ContainerStyle(color: Color(0xFF1A365D)),
+            'footer-bottom-row': const ContainerStyle(color: Color(0xFF152B4B)),
+            'card-1': const ContainerStyle(color: Color(0xFFEEEEEE)),
+            'list-1:item': const ContainerStyle(color: Color(0xFFDDDDDD)),
+          },
+        );
+
+        final violations =
+            AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+              withLayoutStyle,
+              previous: base,
+            );
+        expect(violations.keys.toSet(), {'mainLayout', 'footer-container'});
+        expect(violations['footer-container'], contains('registry:IterableContent'));
+        expect(violations['mainLayout'], contains('background'));
+        expect(violations.containsKey('footer-bottom-row'), isFalse);
+        expect(violations.containsKey('card-1'), isFalse);
+        expect(violations.containsKey('list-1:item'), isFalse);
+        expect(violations.containsKey('background'), isFalse);
+
+        // Supprimer un style existant via null reste toujours autorisé.
+        final afterDeletion = withLayoutStyle.copyWith(
+          styles: Map<String, ContainerStyle>.of(withLayoutStyle.styles)
+            ..remove('footer-container')
+            ..remove('mainLayout'),
+        );
+        expect(
+          AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+            afterDeletion,
+            previous: withLayoutStyle,
+            patchedStyleIds: const {'footer-container', 'mainLayout'},
+          ),
+          isEmpty,
+        );
+      },
+    );
+
+    test(
+      'VibeDeltaRecovery.salvageFailedAttempt rejects styles targeting registry:Layout while preserving valid components',
+      () {
+        final base = Appearance(
+          components: {
+            'mainLayout': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['footer-container'],
+              },
+              slotTypes: {'footer-container': 'registry:Layout'},
+            ),
+            'footer-container': const SuperLayoutConfig(),
+          },
+        );
+
+        final outcome = VibeDeltaRecovery.salvageFailedAttempt(
+          initialAppearance: base,
+          workingAppearance: base,
+          initialPageIds: const {},
+          instantiatedIds: const {'mainLayout'},
+          hasRegistry: true,
+          scope: null,
+          codec: const AppearanceCodec(),
+          validateAppearance: null,
+          effectiveVibePatch: {
+            'styles': {
+              'footer-container': {'color': '#1A365D'},
+            },
+            'components': {
+              'footer-note': {'type': 'value', 'text': 'Mentions légales'},
+              'footer-container': {
+                'type': 'layout',
+                'slotLabels': {'footer-note': 'Mentions'},
+                'placements': {
+                  'center': [
+                    {'id': 'footer-note', 'type': 'registry:Value'},
+                  ],
+                },
+              },
+            },
+          },
+          rejectedRepoEntries: const [],
+          appliedRepoKeys: const {},
+          wasTruncated: false,
+        );
+
+        expect(outcome.hasCheckpoint, isTrue);
+        expect(
+          outcome.checkpointAppearance.styles.containsKey('footer-container'),
+          isFalse,
+        );
+        expect(
+          outcome.checkpointAppearance.valueComponent('footer-note').initialText,
+          'Mentions légales',
+        );
+        expect(outcome.rejectedEntries, hasLength(1));
+        expect(outcome.rejectedEntries.single.section, 'styles');
+        expect(outcome.rejectedEntries.single.key, 'footer-container');
+
+        final retryPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
+          refreshedTurnPrompt: 'ÉTAT ACTUEL',
+          priorCauses: const ['Style "footer-container" ignoré au rendu'],
+          salvage: outcome,
+          pendingRequiredComponentIds: outcome.pendingRequiredComponentIds,
+        );
+        expect(retryPrompt, contains('styles["footer-container"]'));
+        expect(retryPrompt, contains('registry:IterableContent'));
+      },
+    );
+
+    testWidgets(
+      'VibeChatDialog rejects styles targeting registry:Layout, retries with guidance, and applies once promoted to registry:IterableContent',
+      (tester) async {
+        final initialAppearance = Appearance(
+          components: {
+            'mainLayout': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['footer-container'],
+              },
+              slotTypes: {'footer-container': 'registry:Layout'},
+            ),
+            'footer-container': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['footer-bottom-row'],
+              },
+              slotTypes: {'footer-bottom-row': 'registry:Layout'},
+            ),
+            'footer-bottom-row': const SuperLayoutConfig(),
+          },
+        );
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(initialAppearance);
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final prompts = <String>[];
+        var attempt = 0;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      prompts.add(prompt);
+                      attempt++;
+                      if (attempt == 1) {
+                        return jsonEncode({
+                          'message': 'Couleurs appliquées.',
+                          'vibe': {
+                            'styles': {
+                              'footer-container': {
+                                'color': '#1A365D',
+                                'radii': [0.0, 0.0, 0.0, 0.0],
+                                'paddingInsets': [56.0, 0.0, 0.0, 0.0],
+                              },
+                              'footer-bottom-row': {
+                                'color': '#152B4B',
+                                'borderColor': '#2D4A77',
+                                'borderWidths': [1.0, 0.0, 0.0, 0.0],
+                                'paddingInsets': [20.0, 0.0, 20.0, 0.0],
+                              },
+                            },
+                          },
+                        });
+                      }
+                      return jsonEncode({
+                        'message': 'Footer converti en IterableContent et coloré.',
+                        'vibe': {
+                          'styles': {
+                            'footer-container': {
+                              'color': '#1A365D',
+                              'radii': [0.0, 0.0, 0.0, 0.0],
+                              'paddingInsets': [56.0, 0.0, 0.0, 0.0],
+                            },
+                            'footer-bottom-row': {
+                              'color': '#152B4B',
+                              'borderColor': '#2D4A77',
+                              'borderWidths': [1.0, 0.0, 0.0, 0.0],
+                              'paddingInsets': [20.0, 0.0, 20.0, 0.0],
+                            },
+                          },
+                          'components': {
+                            'mainLayout': {
+                              'type': 'layout',
+                              'placements': {
+                                'center': [
+                                  {
+                                    'id': 'footer-container',
+                                    'type': 'registry:IterableContent',
+                                  },
+                                ],
+                              },
+                            },
+                            'footer-container': {
+                              'type': 'layout',
+                              'placements': {
+                                'center': [
+                                  {
+                                    'id': 'footer-bottom-row',
+                                    'type': 'registry:IterableContent',
+                                  },
+                                ],
+                              },
+                            },
+                          },
+                        },
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Colore le pied de page.',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(attempt, 2);
+        expect(prompts, hasLength(2));
+        expect(prompts[1], contains('CORRECTION REQUISE'));
+        expect(prompts[1], contains('footer-container'));
+        expect(prompts[1], contains('registry:IterableContent'));
+        expect(
+          appearance.value.layout('mainLayout').slotTypeOf('footer-container'),
+          'registry:IterableContent',
+        );
+        expect(
+          appearance.value
+              .layout('footer-container')
+              .slotTypeOf('footer-bottom-row'),
+          'registry:IterableContent',
+        );
+        expect(
+          appearance.value.styles['footer-container']?.color,
+          const Color(0xFF1A365D),
+        );
+        expect(
+          appearance.value.styles['footer-bottom-row']?.color,
+          const Color(0xFF152B4B),
+        );
+        expect(
+          find.text('Footer converti en IterableContent et coloré.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'streaming styles before components succeeds when the same turn promotes placement to registry:IterableContent',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final registry = Registry()..bootstrap();
+        final store = _MemoryAppearanceStore(
+          Appearance(
+            components: {
+              'mainLayout': const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: ['footer-container'],
+                },
+                slotTypes: {'footer-container': 'registry:Layout'},
+              ),
+              'footer-container': const SuperLayoutConfig(),
+            },
+          ),
+        );
+        final mainLayout = registry.layoutController('mainLayout');
+        late ValueNotifier<Appearance> appAppearance;
+        var streamCalls = 0;
+
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (routeContext, _) {
+                appAppearance = AppearanceScope.controllerOf(routeContext)!;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: ValueListenableBuilder<SuperLayoutConfig>(
+                        valueListenable: mainLayout,
+                        builder: (_, cfg, _) => SuperLayout(config: cfg),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 420,
+                      height: 600,
+                      child: DefaultAssetBundle(
+                        bundle: _GuideBundle(),
+                        child: VibeChatDialog(
+                          controller: appAppearance,
+                          registry: registry,
+                          codec: const AppearanceCodec(),
+                          initialQuestioningLevel: VibeQuestioningLevel.none,
+                          onClose: () {},
+                          onDrag: (_) {},
+                          generate: (_) =>
+                              Future.error('Should use streamGenerate'),
+                          streamGenerate: (
+                            prompt, {
+                            systemInstruction,
+                            staticGuide,
+                            attachments = const [],
+                            speedMode = VibeAiSpeedMode.fast,
+                          }) {
+                            streamCalls++;
+                            final ctrl = StreamController<GeminiStreamEvent>();
+                            const part1 =
+                                '{"message":"Footer stylisé.","vibe":{"styles":{"footer-container":{"color":"#1A365D"}},';
+                            const part2 =
+                                '"components":{"mainLayout":{"type":"layout","placements":{"center":[{"id":"footer-container","type":"registry:IterableContent"}]}}}}}';
+                            Future<void>(() async {
+                              ctrl.add(
+                                const GeminiStreamEvent(
+                                  deltaText: part1,
+                                  accumulatedText: part1,
+                                  isDone: false,
+                                  usedContextCache: true,
+                                ),
+                              );
+                              await Future<void>.delayed(Duration.zero);
+                              ctrl.add(
+                                const GeminiStreamEvent(
+                                  deltaText: part2,
+                                  accumulatedText: '$part1$part2',
+                                  isDone: true,
+                                  usedContextCache: true,
+                                ),
+                              );
+                              await ctrl.close();
+                            });
+                            return ctrl.stream;
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(
+          SuperApp(
+            router: router,
+            appearanceStore: store,
+            registry: registry,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Mets un fond bleu au footer.',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(streamCalls, 1);
+        expect(
+          appAppearance.value.layout('mainLayout').slotTypeOf('footer-container'),
+          'registry:IterableContent',
+        );
+        expect(
+          appAppearance.value.styles['footer-container']?.color,
+          const Color(0xFF1A365D),
+        );
+        expect(find.text('Footer stylisé.'), findsOneWidget);
+        expect(tester.takeException(), isNull);
       },
     );
   });

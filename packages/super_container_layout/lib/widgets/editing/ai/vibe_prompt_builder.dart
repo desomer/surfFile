@@ -37,7 +37,7 @@ Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la 
 - N’invente JAMAIS la propriété "colTracks" ni de CSS brut :
   - Pour des colonnes de largeurs inégales ou fixes (ex: 585px ou 45%/55%), utilise un "layout" en "zoneAxes": { "center": "row" } avec "slotSizeConstraints.<slotId>" ("preferredWidth" en "px" ou "%", "percentBasis": "zone", "fitContent": true/false).
   - Pour une grille multi-colonnes uniforme (ex: mosaïque de logos, cartes produits, footer 4 colonnes), utilise soit "positioning": "grid" avec "grid": { "columns": 12..48, "rowHeight": ..., "gap": ..., "items": { ... } }, soit des lignes "row" imbriquées.
-- Lorsque data-ui vaut "iterableContent(card+layout)" ou qu’une surface stylisée contient plusieurs enfants, privilégie "registry:IterableContent" (même ID dans "styles" et dans "components" avec "type": "layout") pour éviter d’empiler Card + Layout inutilement.
+- Lorsque data-ui vaut "iterableContent(card+layout)" ou qu’une surface stylisée contient plusieurs enfants, ou dès qu’un conteneur de zones (`type: "layout"`) doit recevoir une couleur de fond, une bordure, un arrondi ou un `paddingInsets` dans `styles[id]`, utilise `"registry:IterableContent"` dans les `placements` du parent (même ID dans `styles` et dans `components` avec `"type": "layout"`) — ou enveloppe dans `"registry:Card"`. Un `"registry:Layout"` pur est purement structurel et ignore `styles[id]`.
 
 4. IMAGES, LOGOS & SVGs (SECTION 2) — STRICTEMENT FIDÈLES :
 - Pour CHAQUE image (img, background-image) ou <svg> listé en Section 2 et visible dans la structure de la page :

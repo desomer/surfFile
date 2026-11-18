@@ -121,7 +121,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"chart"` (`SuperChartConfig`, graphique `fl_chart` lié à un tableau JSON)
    - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
-2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`).
+2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
 5. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
@@ -561,6 +561,7 @@ Si la zone contient déjà des composants à conserver, inclus aussi leurs place
 8. **Usages obligatoires** : chaque nouveau composant sans liaison de données possède une entrée non nulle dans `usages` dans ce patch. Chaque `"explanation"` porte une `translationKey` lowerCamelCase. N'émets aucun usage pour les composants liés, même si la liaison est ajoutée dans le même patch (voir « Usages des composants »).
 9. **Atomicité clé/valeur, propriété `label` native & zéro bloc texte libre fourre-tout** : vérifie qu'aucun `SuperValue` ne concatène une étiquette et une donnée dans `text` (`"Clé : Valeur"`), et qu'aucun récapitulatif ou liste métier (affaires, contrats, interlocuteurs, même demandé sous les termes « résumé » ou « notes ») n'est rendu par un bloc texte libre multiligne / `textarea`. En visualisation (`mode: "display"`), **privilégie 1 seul `SuperValue` utilisant `label` + `text`/`binding`** ; ne crée 2 `SuperValue` séparés (`"explanation"` + `"dynamicData"`/`binding`) que si le label requiert un style ou une mise en page fortement personnalisés. Structure les listes/synthèses en cartes, champs unitaires, `SuperListView` ou `SuperTable`.
 10. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
+11. **Aucune entrée `styles[id]` sur un `registry:Layout`** : vérifie qu'aucune clé de `styles` ne cible un composant placé avec `"type": "registry:Layout"` (ni `mainLayout`). Si un conteneur de mise en page doit recevoir un fond, une bordure ou un `paddingInsets`, place-le avec `"type": "registry:IterableContent"` dans son parent (tout en gardant `components[id]` en `"type": "layout"`) ou enveloppe-le dans un `"registry:Card"`.
 
 Ces vérifications préviennent les erreurs de génération les plus courantes ; elles ne remplacent pas le décodage, la validation des modèles ni la vérification du rendu.
 
@@ -569,6 +570,8 @@ Ces vérifications préviennent les erreurs de génération les plus courantes ;
 ## 4. Référence des composants du `ComponentConfigCatalog`
 
 ### 4.1. `"layout"` (`SuperLayoutConfig`)
+> **Règle de style importante** : un composant placé en `"registry:Layout"` (`SuperLayout`) est **purement structurel** et ne possède **aucune surface visuelle** (`styles[id]` n'est jamais rendu sur un `registry:Layout`, ni sur `mainLayout`). Pour appliquer une couleur de fond, une bordure, un arrondi ou un padding de surface à un conteneur de zones, place-le avec `"type": "registry:IterableContent"` dans son parent (ce qui combine automatiquement la surface `styles[id]` et la grille `components[id]` de `"type": "layout"`), ou enveloppe le `"registry:Layout"` dans une `"registry:Card"`.
+
 Dispose ses enfants selon 2 modes (`"positioning"`) :
 - **`"zones"` (par défaut)** : Grille 3×3 (`nw`, `north`, `ne`, `west`, `center`, `east`, `sw`, `south`, `se`).
   - `north`, `south`, `west`, `east` (`bool`) : activation des côtés.
@@ -1148,6 +1151,7 @@ Le dictionnaire `styles` (`Map<String, ContainerStyle>`) contrôle l'apparence v
 - **`styles["<cardId>"]`** : chaque composant `"registry:Card"` ou `"registry:IterableContent"`.
 - **`styles["<listId>:item"]`** (ou `styles["<listId>"]`) : la carte de chaque ligne d'une `ListView`.
 - **`components["<tabId>"].tabBarStyle`** et **`components["<actionId>"].style`** : utilisent exactement le même objet `ContainerStyle`.
+- **Interdit sur `"registry:Layout"`** : n'ajoute jamais d'entrée dans `styles` pour un composant placé en `"registry:Layout"` (ou `mainLayout`) : `SuperLayout` n'a pas de surface propre. Passe son placement parent en `"registry:IterableContent"` (en conservant `components[id]` en `"type": "layout"`) ou utilise `"registry:Card"`.
 
 ---
 

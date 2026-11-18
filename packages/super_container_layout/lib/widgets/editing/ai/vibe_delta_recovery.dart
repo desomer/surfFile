@@ -285,6 +285,55 @@ abstract final class VibeDeltaRecovery {
       }
     }
 
+    final rawStylesInPatch = effectiveVibePatch == null
+        ? null
+        : (effectiveVibePatch['data'] is Map
+              ? (effectiveVibePatch['data'] as Map)['styles']
+              : effectiveVibePatch['styles']);
+    final patchedStyleIds = rawStylesInPatch is Map
+        ? rawStylesInPatch.keys.whereType<String>().toSet()
+        : const <String>{};
+    final layoutStyleViolations =
+        AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+          candidate,
+          previous: workingAppearance,
+          patchedStyleIds: patchedStyleIds.isEmpty ? null : patchedStyleIds,
+        );
+    if (layoutStyleViolations.isNotEmpty) {
+      final adjustedStyles = Map<String, ContainerStyle>.of(candidate.styles);
+      final appliedStyles = appliedPatch['styles'] is Map<String, Object?>
+          ? Map<String, Object?>.of(
+              appliedPatch['styles'] as Map<String, Object?>,
+            )
+          : null;
+      for (final entry in layoutStyleViolations.entries) {
+        final styleId = entry.key;
+        final previousStyle = workingAppearance.styles[styleId];
+        if (previousStyle != null) {
+          adjustedStyles[styleId] = previousStyle;
+        } else {
+          adjustedStyles.remove(styleId);
+        }
+        appliedStyles?.remove(styleId);
+        allRejected.add(
+          PatchRejectedEntry(
+            section: 'styles',
+            key: styleId,
+            message: entry.value,
+            rawValue: rawStylesInPatch is Map ? rawStylesInPatch[styleId] : null,
+          ),
+        );
+      }
+      candidate = candidate.copyWith(styles: adjustedStyles);
+      if (appliedStyles != null) {
+        if (appliedStyles.isEmpty) {
+          appliedPatch.remove('styles');
+        } else {
+          appliedPatch['styles'] = appliedStyles;
+        }
+      }
+    }
+
     final reachableIds = computeReachableIds(
       baseForScope: workingAppearance,
       next: candidate,

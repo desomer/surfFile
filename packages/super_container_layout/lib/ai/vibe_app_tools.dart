@@ -385,6 +385,7 @@ class VibeAppToolRegistry {
       '(4) un tableau de repository est tronqué ("truncatedArrays") et tu as besoin des éléments complets, ou '
       '(5) une vérification visuelle ("capture_screenshot") est demandée ou utile.\n'
       '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples dont le JSON courant contient déjà toute l’information.\n'
+      '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
       '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'
       'Catalogue des outils disponibles :\n',
     );

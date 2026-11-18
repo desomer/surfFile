@@ -127,7 +127,7 @@ class VibeChatDialog extends StatefulWidget {
   static bool verboseLogging = false;
 
   /// Nombre maximal de tours d'appels d'outils d'introspection autorisés par génération.
-  static const int maxToolRounds = 5;
+  static const int maxToolRounds = 8;
 
   /// Instructions système invariantes transmises au modèle GenUI pour le chat Vibe IA.
   static const String defaultSystemInstruction = '''
@@ -158,6 +158,7 @@ Priorité absolue — Respect strict de la règle d'atomicité lors de chaque g�
 - En mode visualisation ("mode": "display"), un SuperValue possède nativement "label" et une valeur ("text" ou "binding") : préfère systématiquement 1 seul SuperValue avec "label" + "text" (usage "dynamicData") ou "binding" plutôt que 2 SuperValue séparés, SAUF si le label requiert un style ou une disposition fortement personnalisés (auquel cas décompose en 1 SuperValue étiquette fixe avec usage "explanation" + "translationKey", et 1 SuperValue distinct pour la valeur avec usage "dynamicData" ou "binding").
 - Évite tout placeholder de texte libre multiligne (textarea / maxLines > 1) pour représenter des listes ou récapitulatifs métier (affaires, contrats, interlocuteurs, etc., même si la demande mentionne « résumé », « récapitulatif » ou « notes ») : utilise systématiquement des cartes, des champs unitaires SuperValue atomiques, une SuperListView ou un tableau SuperTable.
 Par défaut, ne mets pas de padding (ni paddingInsets) sur styles["background"] (laisse padding à 0 par défaut, sauf demande explicite) : avec les composants Flutter (Scaffold, ApplicationBar, NavigationRail, BottomAppBar, SuperLayout), ce n'est pas nécessaire ; règle l'espacement éventuel dans les zones des layouts (zoneFlows) ou les cartes.
+Ne mets JAMAIS d'entrée dans "styles" pour un composant placé en "registry:Layout" (ni pour "mainLayout") : SuperLayout est purement structurel et n'a pas de surface (styles[id] est sans effet). Pour styliser un conteneur de zones (couleur, bordure, arrondi, paddingInsets), passe son placement parent en "registry:IterableContent" (en gardant components[id] en "type": "layout") ou enveloppe-le dans une "registry:Card".
 Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
@@ -1385,13 +1386,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               'Ne pose pas de questionnaire "askUser" : génère directement le patch "vibe".\n'
               'Restyle intégralement l’écran actuel conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
               '- Mets à jour "mode": "$modeName" et "accent": "$accentHex".\n'
-              '- Mets à jour "styles" : "background" ("color": "$canvasHex") ainsi que toutes les surfaces de cartes, panneaux, en-têtes et lignes de collection ("color": "$surfaceHex", états "hover" et "selected" cohérents, "radius": $radiusValue, "borderWidth" et "borderColor": "$borderHex", "elevation", "shadowOpacity" et "designSystem": "$surfaceSystemName").\n'
+              '- Mets à jour "styles" : "background" ("color": "$canvasHex") ainsi que toutes les surfaces de cartes (Card), conteneurs stylisés (IterableContent), en-têtes et lignes de collection ("color": "$surfaceHex", états "hover" et "selected" cohérents, "radius": $radiusValue, "borderWidth" et "borderColor": "$borderHex", "elevation", "shadowOpacity" et "designSystem": "$surfaceSystemName"). Ne mets jamais d’entrée "styles" sur un "registry:Layout" pur (passe son placement en "registry:IterableContent" si une surface est requise).\n'
               '- Harmonise la typographie ("fontFamily", "fontSize", "fontWeight") et les couleurs des composants existants SuperValue (texte primaire "$textHex", secondaire "$mutedHex"), SuperAction (variantes, rayons et contraste AA sur "$accentHex") et SuperIndicator.\n'
               '- Préserve à 100 % la structure métier existante : conserve tous les identifiants de composants, placements, liaisons de données (bindings), usages, comportements (behaviors) et pages (pageCatalog).'
         : 'RESTYLAGE DU PÉRIMÈTRE "${activeScope.displayLabel}" SELON LE SYSTÈME DE DESIGN "${preset.name}" :\n'
               'Ne pose pas de questionnaire "askUser" : génère directement le patch "vibe".\n'
               'Restyle uniquement le périmètre ciblé "${activeScope.displayLabel}" (id: "${activeScope.canonicalComponentId}") et son sous-arbre autorisé conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
-              '- Mets à jour uniquement les styles de conteneurs du périmètre (couleurs de surface "$surfaceHex", états "hover" et "selected", "radius": $radiusValue, "borderWidth", "borderColor": "$borderHex", "elevation" et "designSystem": "$surfaceSystemName").\n'
+              '- Mets à jour uniquement les styles des surfaces du périmètre (Card, IterableContent, lignes de collection — couleurs de surface "$surfaceHex", états "hover" et "selected", "radius": $radiusValue, "borderWidth", "borderColor": "$borderHex", "elevation" et "designSystem": "$surfaceSystemName"). Ne mets jamais d’entrée "styles" sur un "registry:Layout" pur (passe son placement parent en "registry:IterableContent" si une surface est requise).\n'
               '- Harmonise la typographie et les couleurs des composants SuperValue (texte primaire "$textHex", secondaire "$mutedHex"), SuperAction et SuperIndicator appartenant à ce périmètre.\n'
               '- Ne modifie aucune propriété globale de thème ("mode", "accent", styles["background"]) ni "pageCatalog".\n'
               '- Préserve à 100 % les identifiants de composants, placements, liaisons de données (bindings), usages et comportements (behaviors) existants.';
@@ -2742,6 +2743,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }) async {
     const maxAttempts = 4;
     var currentTurnPrompt = turnPrompt;
+    var attemptAttachments = List<VibeChatAttachment>.of(attachments);
+    var disableToolsForAttempt = false;
     final priorCauses = <String>[];
     final toolRegistry = _resolveToolRegistry(session);
     VibeSalvageOutcome? lastCheckpointSalvage;
@@ -2761,19 +2764,21 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         '[Vibe IA] Tentative ${attempt + 1}/$maxAttempts — envoi du prompt '
         '(${currentTurnPrompt.length} caractères dynamiques, '
         'mode: ${useStreaming ? _speedMode.name : "custom"}, '
-        'fichiers joints: ${attachments.length}'
+        'fichiers joints: ${attemptAttachments.length}'
         '${session.hasCheckpoint ? ", mode: delta sur checkpoint" : ""})...',
       );
 
       var roundPrompt = currentTurnPrompt;
-      var roundAttachments = List<VibeChatAttachment>.of(attachments);
+      var roundAttachments = List<VibeChatAttachment>.of(attemptAttachments);
+      final collectedToolResults = <Map<String, Object?>>[];
+      final collectedToolAttachments = <VibeChatAttachment>[];
       final conversationContents = isDirectGemini
           ? <Map<String, Object?>>[
               <String, Object?>{
                 'role': 'user',
                 'parts': GeminiRestClient.buildUserParts(
                   currentTurnPrompt,
-                  attachments,
+                  attemptAttachments,
                 ),
               },
             ]
@@ -2782,10 +2787,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       late String response;
       late VibeStreamSnapshot finalSnapshot;
       Map<String, dynamic>? preDecodedMap;
+      var exceededNativeToolRounds = false;
 
       for (var toolRound = 0; toolRound <= VibeChatDialog.maxToolRounds; toolRound++) {
         final allowTools =
-            toolRegistry.isNotEmpty && toolRound < VibeChatDialog.maxToolRounds;
+            !disableToolsForAttempt &&
+            toolRegistry.isNotEmpty &&
+            toolRound < VibeChatDialog.maxToolRounds;
         var nativeCalls = const <VibeToolCall>[];
         var rawModelParts = const <Map<String, Object?>>[];
         try {
@@ -2824,9 +2832,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
         if (nativeCalls.isNotEmpty) {
           if (!allowTools) {
-            throw const FormatException(
-              'Nombre maximal d’appels d’outils atteint : génère la réponse finale.',
-            );
+            exceededNativeToolRounds = true;
+            break;
           }
           debugPrint(
             '[Vibe IA] Exécution de ${nativeCalls.length} outil(s) natif(s) : '
@@ -2835,12 +2842,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(activeToolStatus: _formatToolStatusLabel(nativeCalls));
           final results = await toolRegistry.executeAll(nativeCalls);
+          collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
           ];
           if (generatedAttachments.isNotEmpty) {
             roundAttachments = [...roundAttachments, ...generatedAttachments];
+            collectedToolAttachments.addAll(generatedAttachments);
           }
+          final isLastToolRound =
+              toolRound + 1 >= VibeChatDialog.maxToolRounds;
           if (conversationContents != null) {
             conversationContents.add(<String, Object?>{
               'role': 'model',
@@ -2863,6 +2874,15 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                       'response': r.toGeminiFunctionResponsePayload(),
                     },
                   },
+                if (isLastToolRound)
+                  const <String, Object?>{
+                    'text':
+                        'ATTENTION : limite maximale d’appels d’outils atteinte. '
+                        'Tu disposes maintenant de toutes les mesures nécessaires : '
+                        'n’appelle PLUS aucun outil (ni functionCall ni toolCalls) et '
+                        'renvoie immédiatement ta réponse JSON finale '
+                        '{"message":"...","vibe":...} (ou "vibe":null).',
+                  },
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
                     <String, Object?>{
@@ -2881,7 +2901,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             roundPrompt =
                 '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
                 '${jsonEncode([for (final r in results) r.toJson()])}\n'
-                'Utilise ces mesures réelles pour poursuivre ou produire ta réponse JSON finale.';
+                '${isLastToolRound ? 'ATTENTION : limite maximale d’appels d’outils atteinte. N’appelle PLUS aucun outil et génère immédiatement ta réponse JSON finale {"message":"...","vibe":...} (ou "vibe":null).' : 'Utilise ces mesures réelles pour poursuivre ou produire ta réponse JSON finale.'}';
           }
           continue;
         }
@@ -2923,15 +2943,24 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(activeToolStatus: _formatToolStatusLabel(jsonToolCalls));
           final results = await toolRegistry.executeAll(jsonToolCalls);
+          collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
           ];
           if (generatedAttachments.isNotEmpty) {
             roundAttachments = [...roundAttachments, ...generatedAttachments];
+            collectedToolAttachments.addAll(generatedAttachments);
           }
           final encodedResults = jsonEncode([
             for (final r in results) r.toJson(),
           ]);
+          final isLastToolRound =
+              toolRound + 1 >= VibeChatDialog.maxToolRounds;
+          final nextToolDirective = isLastToolRound
+              ? 'ATTENTION : limite maximale d’appels d’outils atteinte. '
+                    'N’appelle PLUS aucun outil et renvoie immédiatement ta réponse JSON finale '
+                    '(sans "toolCalls").'
+              : 'Utilise ces mesures réelles pour appeler un autre outil ou renvoyer ta réponse JSON finale (sans "toolCalls").';
           if (conversationContents != null) {
             conversationContents.add(<String, Object?>{
               'role': 'model',
@@ -2946,7 +2975,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                   'text':
                       'RÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
                       '$encodedResults\n'
-                      'Utilise ces mesures réelles pour appeler un autre outil ou renvoyer ta réponse JSON finale (sans "toolCalls").',
+                      '$nextToolDirective',
                 },
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
@@ -2966,7 +2995,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             roundPrompt =
                 '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
                 '$encodedResults\n'
-                'Utilise ces mesures réelles pour appeler un autre outil ou renvoyer ta réponse JSON finale (sans "toolCalls").';
+                '$nextToolDirective';
           }
           continue;
         }
@@ -2984,6 +3013,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       _logLong('[Vibe IA] Réponse brute (tentative ${attempt + 1})', response);
       Map<String, dynamic>? decodedMap;
       try {
+        if (exceededNativeToolRounds) {
+          disableToolsForAttempt = true;
+          throw const FormatException(
+            'Nombre maximal d’appels d’outils atteint : génère maintenant la réponse finale sans appeler d’outil.',
+          );
+        }
         final Object? result;
         if (preDecodedMap != null) {
           result = preDecodedMap;
@@ -3013,6 +3048,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             result['repositories'] == null &&
             result['askUser'] == null &&
             result['plan'] == null) {
+          disableToolsForAttempt = true;
           throw const FormatException(
             'Nombre maximal d’appels d’outils atteint : génère maintenant la réponse finale sans "toolCalls".',
           );
@@ -3406,6 +3442,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             salvage: salvage,
             pendingRequiredComponentIds: session.pendingComponentFixes,
           );
+          if (collectedToolResults.isNotEmpty) {
+            currentTurnPrompt =
+                '$currentTurnPrompt\n\nMESURES D’OUTILS DÉJÀ COLLECTÉES (n’appelle plus d’outils) :\n'
+                '${jsonEncode(collectedToolResults)}';
+          }
+          if (collectedToolAttachments.isNotEmpty) {
+            attemptAttachments = [
+              ...attemptAttachments,
+              ...collectedToolAttachments,
+            ];
+          }
           debugPrint(
             '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
             'Checkpoint partiel conservé (composants: '
@@ -3450,6 +3497,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             salvage: lastCheckpointSalvage,
             pendingRequiredComponentIds: session.pendingComponentFixes,
           );
+          if (collectedToolResults.isNotEmpty) {
+            currentTurnPrompt =
+                '$currentTurnPrompt\n\nMESURES D’OUTILS DÉJÀ COLLECTÉES (n’appelle plus d’outils) :\n'
+                '${jsonEncode(collectedToolResults)}';
+          }
+          if (collectedToolAttachments.isNotEmpty) {
+            attemptAttachments = [
+              ...attemptAttachments,
+              ...collectedToolAttachments,
+            ];
+          }
           debugPrint(
             '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
             'Maintien du checkpoint précédent et relance en mode delta...',
@@ -3462,6 +3520,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
           'Relance avec prompt de correction...',
         );
+        if (collectedToolAttachments.isNotEmpty) {
+          attemptAttachments = [
+            ...attemptAttachments,
+            ...collectedToolAttachments,
+          ];
+        }
+        final toolResultsSection = collectedToolResults.isEmpty
+            ? ''
+            : '\nMESURES D’OUTILS DÉJÀ COLLECTÉES (n’appelle plus d’outils) :\n'
+                  '${jsonEncode(collectedToolResults)}\n';
         final causesSummary = priorCauses.length == 1
             ? cause
             : priorCauses.join('\n- ');
@@ -3473,6 +3541,7 @@ CORRECTION REQUISE :
 La réponse précédente a été refusée.
 Cause de l'erreur (${error.runtimeType}) :
 ${priorCauses.length == 1 ? causesSummary : '- $causesSummary'}
+$toolResultsSection
 Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
 Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte).
@@ -3603,6 +3672,24 @@ $response
         'Composants non rattachés à l’écran : ${detached.join(', ')}. '
         'Modifie les placements d’un conteneur existant ou déclare une page.',
       );
+    }
+
+    final rawStyles = payload['styles'];
+    final patchedStyleIds = rawStyles is Map
+        ? rawStyles.keys.whereType<String>().toSet()
+        : null;
+    final layoutStyleViolations =
+        AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+          next,
+          previous: current,
+          patchedStyleIds: patchedStyleIds,
+        );
+    if (layoutStyleViolations.isNotEmpty) {
+      debugPrint(
+        '[Vibe IA] Styles inopérants détectés sur des Layout : '
+        '${layoutStyleViolations.keys.toList()}.',
+      );
+      throw FormatException(layoutStyleViolations.values.join(' '));
     }
   }
 

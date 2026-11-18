@@ -621,12 +621,125 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
         await tester.pumpAndSettle();
 
-        // 4 tentatives max * (maxToolRounds + 1) appels = 24, jamais infini
+        // 4 tentatives max * (maxToolRounds + 1) appels = 36, jamais infini
         expect(totalCalls, lessThanOrEqualTo(4 * (VibeChatDialog.maxToolRounds + 1)));
         expect(
           find.textContaining('Nombre maximal d’appels d’outils atteint'),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'récupère proprement lorsque des functionCalls natifs dépassent maxToolRounds et réessaie avec les mesures collectées',
+      (tester) async {
+        var streamRound = 0;
+        final receivedPrompts = <String>[];
+
+        final appearance = ValueNotifier(
+          Appearance(
+            components: {
+              'card_1': SuperValueConfig(label: 'Titre', initialText: 'Initial'),
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  const SizedBox(
+                    width: 240,
+                    height: 120,
+                    child: EditorSlot(
+                      id: 'card_1',
+                      label: 'Card 1',
+                      editable: false,
+                      child: Text('Card'),
+                    ),
+                  ),
+                  Expanded(
+                    child: DefaultAssetBundle(
+                      bundle: _TestGuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appearance,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) async => '',
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) async* {
+                              streamRound++;
+                              receivedPrompts.add(prompt);
+                              if (streamRound <= VibeChatDialog.maxToolRounds + 1) {
+                                yield GeminiStreamEvent(
+                                  deltaText: '',
+                                  accumulatedText: '',
+                                  isDone: true,
+                                  usedContextCache: true,
+                                  functionCalls: [
+                                    VibeToolCall(
+                                      id: 'fc-$streamRound',
+                                      name: 'get_component_geometry',
+                                      arguments: const {
+                                        'ids': ['card_1'],
+                                      },
+                                    ),
+                                  ],
+                                );
+                                return;
+                              }
+                              const finalJson =
+                                  '{"message":"Mesure récupérée: 240x120","vibe":{"components":{"card_1":{"type":"value","label":"Titre","text":"240x120"}}}}';
+                              yield const GeminiStreamEvent(
+                                deltaText: finalJson,
+                                accumulatedText: finalJson,
+                                isDone: true,
+                                usedContextCache: true,
+                              );
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Mesure card_1',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        // Tentative 1 : maxToolRounds + 1 tours -> relance Tentative 2 avec les résultats déjà collectés.
+        expect(streamRound, VibeChatDialog.maxToolRounds + 2);
+        expect(
+          receivedPrompts[VibeChatDialog.maxToolRounds],
+          contains('limite maximale d’appels d’outils atteinte'),
+        );
+        expect(
+          receivedPrompts.last,
+          contains('MESURES D’OUTILS DÉJÀ COLLECTÉES'),
+        );
+        expect(receivedPrompts.last, contains('240.0'));
+        expect(
+          (appearance.value.components['card_1'] as SuperValueConfig).initialText,
+          '240x120',
+        );
+        expect(find.text('Mesure récupérée: 240x120'), findsOneWidget);
       },
     );
 

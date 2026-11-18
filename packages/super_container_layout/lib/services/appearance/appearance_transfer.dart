@@ -21,6 +21,7 @@ import '../../models/super_tree_view_config.dart';
 
 import 'appearance_codec.dart';
 import '../../theme/appearance.dart';
+import '../../theme/container_style.dart';
 
 /// Catégorie de données sélectionnable lors d'un import ou d'un export JSON (Styles ou Dispositions).
 enum TransferGroup {
@@ -315,6 +316,149 @@ class AppearanceTransfer {
       }
     }
     return violations;
+  }
+
+  /// Identifie les entrées de `styles` dans [next] qui ciblent un composant
+  /// `Layout` (`SuperLayout`, type `"registry:Layout"`) dépourvu de surface visuelle.
+  ///
+  /// Lorsque [previous] est fourni, ne signale que les entrées ajoutées ou
+  /// modifiées par rapport à [previous] (ou les composants dont le placement est
+  /// devenu `registry:Layout` alors qu'un style non défaut existe déjà pour eux),
+  /// ainsi que les identifiants explicitement listés dans [patchedStyleIds].
+  /// Retourne une map `styleId -> message d'erreur` actionnable.
+  static Map<String, String> findIneffectiveLayoutStyleViolations(
+    Appearance next, {
+    Appearance? previous,
+    Set<String>? patchedStyleIds,
+  }) {
+    final placedInfo = _collectPlacedSlotInfo(next);
+    final previousPlacedInfo = previous == null
+        ? null
+        : _collectPlacedSlotInfo(previous);
+    final treeOrTableItemIds = <String>{
+      for (final config in next.components.values)
+        if (config is SuperTreeViewConfig && config.itemId != null)
+          config.itemId!
+        else if (config is SuperTableConfig && config.itemId != null)
+          config.itemId!,
+    };
+
+    const surfaceTypes = <String>{
+      'IterableContent',
+      'Card',
+      'ListView',
+      'TreeView',
+      'Table',
+    };
+
+    final candidateIds = <String>{
+      ...?patchedStyleIds,
+      for (final entry in next.styles.entries)
+        if (previous == null ||
+            previous.styles[entry.key] != entry.value ||
+            placedInfo.shortTypes[entry.key] !=
+                previousPlacedInfo?.shortTypes[entry.key])
+          entry.key,
+    };
+
+    final violations = <String, String>{};
+    for (final id in candidateIds) {
+      if (id == 'background' || id.endsWith(':item')) continue;
+      if (treeOrTableItemIds.contains(id)) continue;
+
+      final style = next.styles[id];
+      if (style == null || style == const ContainerStyle()) continue;
+
+      final shortTypes = placedInfo.shortTypes[id] ?? const <String>{};
+      if (shortTypes.any(surfaceTypes.contains)) continue;
+
+      final isPlacedLayout = shortTypes.contains('Layout');
+      final isUnplacedRootLayout =
+          shortTypes.isEmpty && next.components[id] is SuperLayoutConfig;
+      if (!isPlacedLayout && !isUnplacedRootLayout) continue;
+
+      if (isUnplacedRootLayout && id == 'mainLayout') {
+        violations[id] =
+            'Style "$id" ignoré au rendu : "mainLayout" est un SuperLayout '
+            'structurel sans surface visuelle. Utilise styles["background"] '
+            'pour le fond global ou place une "registry:Card" / '
+            '"registry:IterableContent" dans "mainLayout".';
+      } else {
+        final parents = placedInfo.parentIds[id] ?? const <String>[];
+        final parentHint = parents.isEmpty
+            ? 'son conteneur parent'
+            : parents.map((p) => '"$p"').join(', ');
+        violations[id] =
+            'Style "$id" ignoré au rendu : "$id" est un composant '
+            '"registry:Layout" purement structurel sans surface visuelle. '
+            'Pour appliquer ce style (couleur, bordure, arrondi, paddingInsets), '
+            'remplace son type de placement dans $parentHint par '
+            '"registry:IterableContent" (en réémettant tous les placements de ce parent '
+            'et en conservant "$id" en "type": "layout" dans "components"), '
+            'ou enveloppe "$id" dans une "registry:Card".';
+      }
+    }
+    return violations;
+  }
+
+  static ({
+    Map<String, Set<String>> shortTypes,
+    Map<String, List<String>> parentIds,
+  })
+  _collectPlacedSlotInfo(Appearance appearance) {
+    final shortTypes = <String, Set<String>>{};
+    final parentIds = <String, List<String>>{};
+
+    void record(String parentId, Map<String, String> slotTypes) {
+      for (final entry in slotTypes.entries) {
+        final short = _canonicalSlotShortType(entry.value);
+        if (short != null) {
+          shortTypes.putIfAbsent(entry.key, () => <String>{}).add(short);
+        }
+        final parents = parentIds.putIfAbsent(entry.key, () => <String>[]);
+        if (!parents.contains(parentId)) {
+          parents.add(parentId);
+        }
+      }
+    }
+
+    for (final entry in appearance.components.entries) {
+      final parentId = entry.key;
+      final config = entry.value;
+      switch (config) {
+        case final SuperLayoutConfig layout:
+          record(parentId, layout.slotTypes);
+        case final SuperListViewConfig list:
+          record(parentId, list.template.slotTypes);
+        case final SuperTabConfig tab:
+          record(parentId, tab.slotTypes);
+        case final SuperConditionalConfig cond:
+          record(parentId, cond.slotTypes);
+        case final SuperTreeViewConfig tree:
+          record(parentId, tree.slotTypes);
+        case final SuperTableConfig table:
+          record(parentId, table.slotTypes);
+        case final NativeComponentConfig native:
+          record(parentId, native.slotTypes);
+        case final ScaffoldPageConfig scaffold:
+          record(parentId, scaffold.native.slotTypes);
+        default:
+          break;
+      }
+    }
+    return (shortTypes: shortTypes, parentIds: parentIds);
+  }
+
+  static String? _canonicalSlotShortType(String rawType) {
+    var trimmed = rawType.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('component:')) {
+      trimmed = 'registry:${trimmed.substring('component:'.length)}';
+    } else if (trimmed.startsWith('factory:')) {
+      trimmed = 'registry:${trimmed.substring('factory:'.length)}';
+    }
+    final normalized = JsonComponentType.normalize(trimmed);
+    return JsonComponentType.shortName(normalized);
   }
 
   static const Map<String, _NativeRegionContract> _nativeRegionContracts = {
