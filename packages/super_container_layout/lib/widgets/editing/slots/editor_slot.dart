@@ -4,15 +4,18 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart'
     show
         DragStartBehavior,
         PointerEnterEvent,
         PointerExitEvent,
         PointerHoverEvent,
+        PointerSignalEvent,
         kPrimaryButton,
         kSecondaryMouseButton,
         kTouchSlop;
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:flutter/semantics.dart' show SemanticsRole;
 import 'package:material_ui/material_ui.dart';
 
@@ -504,15 +507,24 @@ class EditorSlotState extends State<EditorSlot> {
 
   static bool _menuOpen = false;
   static bool _openingMenuThisTurn = false;
+  static bool _pinnedUpdatedThisTurn = false;
   static Offset? _menuInitialPointerPosition;
   static int _menuGeneration = 0;
   static Route<dynamic>? _activeMenuRoute;
   static VoidCallback? _dismissActiveMenu;
   bool _ownsOpenMenu = false;
 
-  /// Closes the currently open editor context menu, if any.
+  /// Closes the currently open unpinned editor context menu, if any.
   static void closeActiveMenu() {
     _dismissActiveMenu?.call();
+  }
+
+  /// Indique si un menu contextuel du mode édition est actuellement épinglé.
+  static bool get isMenuPinned => _PinnedContextMenuHost.hasActivePinnedMenu;
+
+  /// Ferme explicitement tout menu contextuel épinglé actif.
+  static void closePinnedMenu() {
+    _PinnedContextMenuHost.closeAll();
   }
 
   PointerDownEvent? _sliverDown;

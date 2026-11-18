@@ -1,4 +1,4 @@
-/// Route popup, boîte de dialogue déplaçable et délégué de positionnement du menu contextuel de [EditorSlot].
+/// Route popup, hôte flottant épinglé, carte déplaçable et délégué de positionnement du menu contextuel de [EditorSlot].
 part of 'editor_slot.dart';
 
 Future<T?> _showEditorContextMenuDialog<T>({
@@ -13,9 +13,12 @@ Future<T?> _showEditorContextMenuDialog<T>({
   required EdgeInsetsGeometry menuPadding,
   required Clip clipBehavior,
   required List<PopupMenuEntry<T>> items,
+  bool initiallyDragged = false,
+  bool instantOpen = false,
   Rect? bannerLocal,
   Rect? Function()? avoidRectResolver,
   ValueChanged<Route<T>>? onRouteCreated,
+  ValueChanged<Offset>? onPinRequested,
 }) async {
   final navigator = Navigator.of(context);
   final themes = InheritedTheme.capture(from: context, to: navigator.context);
@@ -24,6 +27,8 @@ Future<T?> _showEditorContextMenuDialog<T>({
     themes: themes,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     initialPosition: initialPosition,
+    initiallyDragged: initiallyDragged,
+    instantOpen: instantOpen,
     bannerLocal: bannerLocal,
     avoidRectResolver: avoidRectResolver,
     constraints: constraints,
@@ -35,6 +40,7 @@ Future<T?> _showEditorContextMenuDialog<T>({
     menuPadding: menuPadding,
     clipBehavior: clipBehavior,
     zoomController: zoomController,
+    onPinRequested: onPinRequested,
     items: items,
   );
   onRouteCreated?.call(route);
@@ -62,6 +68,8 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
     required this.themes,
     required this.barrierLabel,
     required this.initialPosition,
+    required this.initiallyDragged,
+    required this.instantOpen,
     required this.bannerLocal,
     required this.avoidRectResolver,
     required this.constraints,
@@ -73,6 +81,7 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
     required this.menuPadding,
     required this.clipBehavior,
     required this.zoomController,
+    required this.onPinRequested,
     required this.items,
   });
 
@@ -80,6 +89,8 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
   @override
   final String barrierLabel;
   final Offset initialPosition;
+  final bool initiallyDragged;
+  final bool instantOpen;
   final Rect? bannerLocal;
   final Rect? Function()? avoidRectResolver;
   final BoxConstraints constraints;
@@ -91,7 +102,14 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
   final EdgeInsetsGeometry menuPadding;
   final Clip clipBehavior;
   final EditorZoomController? zoomController;
+  final ValueChanged<Offset>? onPinRequested;
   final List<PopupMenuEntry<T>> items;
+  bool _instantClose = false;
+
+  void markInstantClose() {
+    _instantClose = true;
+    controller?.reverseDuration = Duration.zero;
+  }
 
   @override
   Color? get barrierColor => null;
@@ -100,37 +118,229 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
   bool get barrierDismissible => true;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 120);
+  Duration get transitionDuration =>
+      instantOpen ? Duration.zero : const Duration(milliseconds: 120);
+
+  @override
+  Duration get reverseTransitionDuration =>
+      _instantClose ? Duration.zero : transitionDuration;
 
   @override
   Widget buildPage(
     BuildContext context,
     Animation<double> animation,
     Animation<double> secondaryAnimation,
-  ) => themes.wrap(
-    _EditorContextMenuDialog<T>(
-      animation: animation,
-      initialPosition: initialPosition,
-      bannerLocal: bannerLocal,
-      avoidRectResolver: avoidRectResolver,
-      constraints: constraints,
-      color: color,
-      surfaceTintColor: surfaceTintColor,
-      shadowColor: shadowColor,
-      elevation: elevation,
-      shape: shape,
-      menuPadding: menuPadding,
-      clipBehavior: clipBehavior,
-      zoomController: zoomController,
-      items: items,
-    ),
-  );
+  ) {
+    if (_instantClose) return const SizedBox.shrink();
+    return themes.wrap(
+      _EditorContextMenuDialog<T>(
+        animation: animation,
+        initialPosition: initialPosition,
+        initiallyDragged: initiallyDragged,
+        bannerLocal: bannerLocal,
+        avoidRectResolver: avoidRectResolver,
+        constraints: constraints,
+        color: color,
+        surfaceTintColor: surfaceTintColor,
+        shadowColor: shadowColor,
+        elevation: elevation,
+        shape: shape,
+        menuPadding: menuPadding,
+        clipBehavior: clipBehavior,
+        zoomController: zoomController,
+        onPinRequested: onPinRequested == null
+            ? null
+            : (resolvedPosition) {
+                markInstantClose();
+                onPinRequested!(resolvedPosition);
+              },
+        items: items,
+      ),
+    );
+  }
+}
+
+class _EditorContextMenuCard extends StatelessWidget {
+  const _EditorContextMenuCard({
+    required this.color,
+    required this.surfaceTintColor,
+    required this.shadowColor,
+    required this.elevation,
+    required this.shape,
+    required this.menuPadding,
+    required this.clipBehavior,
+    required this.pinned,
+    required this.onDragDelta,
+    required this.onTogglePin,
+    required this.onClose,
+    required this.items,
+    this.onDragStart,
+    this.onPointerSignal,
+  });
+
+  final Color color;
+  final Color surfaceTintColor;
+  final Color shadowColor;
+  final double elevation;
+  final ShapeBorder shape;
+  final EdgeInsetsGeometry menuPadding;
+  final Clip clipBehavior;
+  final bool pinned;
+  final VoidCallback? onDragStart;
+  final ValueChanged<Offset> onDragDelta;
+  final VoidCallback? onTogglePin;
+  final VoidCallback onClose;
+  final List<Widget> items;
+  final ValueChanged<PointerSignalEvent>? onPointerSignal;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return MouseRegion(
+      onExit: (_) => EditorSlotState.clearHighlightedTarget(),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerSignal: onPointerSignal,
+        child: Material(
+          key: const ValueKey('editor-context-menu-dialog'),
+          color: color,
+          surfaceTintColor: surfaceTintColor,
+          shadowColor: shadowColor,
+          elevation: elevation,
+          shape: shape,
+          clipBehavior: clipBehavior,
+          child: IntrinsicWidth(
+            stepWidth: 56.0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: GestureDetector(
+                    key: const ValueKey('editor-context-menu-drag'),
+                    behavior: HitTestBehavior.opaque,
+                    dragStartBehavior: DragStartBehavior.down,
+                    onPanStart: (_) => onDragStart?.call(),
+                    onPanUpdate: (details) => onDragDelta(details.delta),
+                    child: ColoredBox(
+                      color: colors.surfaceContainerHighest.withValues(
+                        alpha: .45,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.drag_indicator,
+                              size: 16,
+                              color: colors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Center(
+                                child: Container(
+                                  width: 32,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: colors.onSurfaceVariant.withValues(
+                                      alpha: .35,
+                                    ),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            if (onTogglePin != null) ...[
+                              IconButton(
+                                key: const ValueKey('editor-context-menu-pin'),
+                                tooltip: pinned
+                                    ? 'Désépingler le menu'
+                                    : 'Épingler le menu',
+                                visualDensity: VisualDensity.compact,
+                                iconSize: 16,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 24,
+                                  height: 24,
+                                ),
+                                style: pinned
+                                    ? IconButton.styleFrom(
+                                        backgroundColor: colors.primary
+                                            .withValues(alpha: .14),
+                                        foregroundColor: colors.primary,
+                                      )
+                                    : null,
+                                color: pinned
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                                icon: Icon(
+                                  pinned
+                                      ? Icons.push_pin
+                                      : Icons.push_pin_outlined,
+                                ),
+                                onPressed: onTogglePin,
+                              ),
+                              const SizedBox(width: 2),
+                            ],
+                            IconButton(
+                              key: const ValueKey('editor-context-menu-close'),
+                              tooltip: 'Fermer',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 16,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              color: colors.onSurfaceVariant,
+                              icon: const Icon(Icons.close),
+                              onPressed: onClose,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 1,
+                  child: ColoredBox(
+                    color: colors.outlineVariant.withValues(alpha: .4),
+                  ),
+                ),
+                Flexible(
+                  child: Semantics(
+                    scopesRoute: !pinned,
+                    namesRoute: !pinned,
+                    explicitChildNodes: true,
+                    role: SemanticsRole.menu,
+                    child: SingleChildScrollView(
+                      padding: menuPadding,
+                      child: ListBody(
+                        children: [
+                          for (final item in items)
+                            Builder(builder: (_) => item),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EditorContextMenuDialog<T> extends StatefulWidget {
   const _EditorContextMenuDialog({
     required this.animation,
     required this.initialPosition,
+    required this.initiallyDragged,
     required this.bannerLocal,
     required this.avoidRectResolver,
     required this.constraints,
@@ -142,11 +352,13 @@ class _EditorContextMenuDialog<T> extends StatefulWidget {
     required this.menuPadding,
     required this.clipBehavior,
     required this.zoomController,
+    required this.onPinRequested,
     required this.items,
   });
 
   final Animation<double> animation;
   final Offset initialPosition;
+  final bool initiallyDragged;
   final Rect? bannerLocal;
   final Rect? Function()? avoidRectResolver;
   final BoxConstraints constraints;
@@ -158,6 +370,7 @@ class _EditorContextMenuDialog<T> extends StatefulWidget {
   final EdgeInsetsGeometry menuPadding;
   final Clip clipBehavior;
   final EditorZoomController? zoomController;
+  final ValueChanged<Offset>? onPinRequested;
   final List<PopupMenuEntry<T>> items;
 
   @override
@@ -169,7 +382,7 @@ class _EditorContextMenuDialogState<T>
     extends State<_EditorContextMenuDialog<T>> {
   final _viewportKey = GlobalKey();
   late Offset _position = widget.initialPosition;
-  bool _dragged = false;
+  late bool _dragged = widget.initiallyDragged;
   late final Rect? _initialAvoidRect = widget.avoidRectResolver?.call();
   late _ContextMenuDialogLayout _layout = _ContextMenuDialogLayout(
     position: _position,
@@ -221,7 +434,6 @@ class _EditorContextMenuDialogState<T>
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final zoom = widget.zoomController;
     final showZoomToolbar =
         zoom != null &&
@@ -240,121 +452,37 @@ class _EditorContextMenuDialogState<T>
     _syncZoomAvailable();
     final dialogCard = FadeTransition(
       opacity: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
-      child: MouseRegion(
-        onExit: (_) => EditorSlotState.clearHighlightedTarget(),
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerSignal: (event) => zoom?.handlePointerSignal(event),
-          child: Material(
-            key: const ValueKey('editor-context-menu-dialog'),
-            color: widget.color,
-            surfaceTintColor: widget.surfaceTintColor,
-            shadowColor: widget.shadowColor,
-            elevation: widget.elevation,
-            shape: widget.shape,
-            clipBehavior: widget.clipBehavior,
-            child: IntrinsicWidth(
-              stepWidth: 56.0,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  MouseRegion(
-                    cursor: SystemMouseCursors.move,
-                    child: GestureDetector(
-                      key: const ValueKey('editor-context-menu-drag'),
-                      behavior: HitTestBehavior.opaque,
-                      dragStartBehavior: DragStartBehavior.down,
-                      onPanUpdate: (details) => setState(() {
-                        _dragged = true;
-                        _position = _layout.resolvedPosition + details.delta;
-                        _layout = _ContextMenuDialogLayout(
-                          position: _position,
-                          dragged: _dragged,
-                          bannerLocal: widget.bannerLocal,
-                          avoidRect: null,
-                          menuConstraints: widget.constraints,
-                        );
-                      }),
-                      child: ColoredBox(
-                        color: colors.surfaceContainerHighest.withValues(
-                          alpha: .45,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.drag_indicator,
-                                size: 16,
-                                color: colors.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Center(
-                                  child: Container(
-                                    width: 32,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: colors.onSurfaceVariant.withValues(
-                                        alpha: .35,
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              IconButton(
-                                key: const ValueKey(
-                                  'editor-context-menu-close',
-                                ),
-                                tooltip: 'Fermer',
-                                visualDensity: VisualDensity.compact,
-                                iconSize: 16,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 24,
-                                  height: 24,
-                                ),
-                                color: colors.onSurfaceVariant,
-                                icon: const Icon(Icons.close),
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 1,
-                    child: ColoredBox(
-                      color: colors.outlineVariant.withValues(alpha: .4),
-                    ),
-                  ),
-                  Flexible(
-                    child: Semantics(
-                      scopesRoute: true,
-                      namesRoute: true,
-                      explicitChildNodes: true,
-                      role: SemanticsRole.menu,
-                      child: SingleChildScrollView(
-                        padding: widget.menuPadding,
-                        child: ListBody(
-                          children: [
-                            for (final item in widget.items)
-                              Builder(builder: (_) => item),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      child: _EditorContextMenuCard(
+        color: widget.color,
+        surfaceTintColor: widget.surfaceTintColor,
+        shadowColor: widget.shadowColor,
+        elevation: widget.elevation,
+        shape: widget.shape,
+        menuPadding: widget.menuPadding,
+        clipBehavior: widget.clipBehavior,
+        pinned: false,
+        onPointerSignal: (event) => zoom?.handlePointerSignal(event),
+        onDragStart: () => _position = _layout.resolvedPosition,
+        onDragDelta: (delta) => setState(() {
+          _dragged = true;
+          _position += delta;
+          _layout = _ContextMenuDialogLayout(
+            position: _position,
+            dragged: _dragged,
+            bannerLocal: widget.bannerLocal,
+            avoidRect: null,
+            menuConstraints: widget.constraints,
+          );
+        }),
+        onTogglePin: widget.onPinRequested == null
+            ? null
+            : () {
+                final resolvedPos = _layout.resolvedPosition;
+                widget.onPinRequested!(resolvedPos);
+                Navigator.of(context).pop();
+              },
+        onClose: () => Navigator.of(context).pop(),
+        items: widget.items,
       ),
     );
     return Stack(
@@ -620,4 +748,441 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
       bannerLocal != oldDelegate.bannerLocal ||
       avoidRect != oldDelegate.avoidRect ||
       menuConstraints != oldDelegate.menuConstraints;
+}
+
+class _PinnedContextMenuHost {
+  _PinnedContextMenuHost(this.overlay);
+
+  static final Expando<_PinnedContextMenuHost> _hosts =
+      Expando<_PinnedContextMenuHost>();
+  static final Set<_PinnedContextMenuHost> _activeHosts =
+      <_PinnedContextMenuHost>{};
+
+  static _PinnedContextMenuHost of(OverlayState overlay) =>
+      _hosts[overlay] ??= _PinnedContextMenuHost(overlay);
+
+  static _PinnedContextMenuHost? maybeOf(OverlayState overlay) =>
+      _hosts[overlay];
+
+  static bool get hasActivePinnedMenu =>
+      _activeHosts.any((host) => host.isPinned);
+
+  static void closeAll() {
+    for (final host in _activeHosts.toList()) {
+      host.close();
+    }
+  }
+
+  final OverlayState overlay;
+  OverlayEntry? _entry;
+  EditorSlotState? _target;
+  List<EditorSlotAction>? _actions;
+  BuildContext? _targetContext;
+  List<EditorSlotState> _fallbackChain = const [];
+  List<PopupMenuEntry<Object>> _cachedItems = const [];
+  Offset _position = Offset.zero;
+  late _ContextMenuDialogLayout _layout = _ContextMenuDialogLayout(
+    position: Offset.zero,
+    dragged: true,
+    bannerLocal: null,
+    avoidRect: null,
+    menuConstraints: const BoxConstraints(minWidth: 420, maxWidth: 620),
+  );
+  BoxConstraints _constraints = const BoxConstraints(
+    minWidth: 420,
+    maxWidth: 620,
+  );
+  CapturedThemes? _themes;
+  BuildContext? _lastTrackedFocusContext;
+  List<String> _lastTrackedPath = const [];
+  bool _listeningGlobals = false;
+  bool _rebuildScheduled = false;
+  bool _refreshScheduled = false;
+  bool _pendingSelectionSync = false;
+  ValueNotifier<bool>? _editModeNotifier;
+  ValueNotifier<Appearance>? _appearanceNotifier;
+
+  bool get isPinned => _entry != null;
+
+  void pin({
+    required EditorSlotState target,
+    required Offset position,
+    required BoxConstraints constraints,
+    required CapturedThemes themes,
+    List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
+  }) {
+    if (!overlay.mounted) return;
+    _position = position;
+    _constraints = constraints;
+    _themes = themes;
+    _layout = _ContextMenuDialogLayout(
+      position: _position,
+      dragged: true,
+      bannerLocal: null,
+      avoidRect: null,
+      menuConstraints: _constraints,
+    );
+    _pendingSelectionSync = false;
+    _lastTrackedFocusContext = LayoutSelection.focus.value?.context;
+    _lastTrackedPath = List<String>.of(LayoutSelection.path.value);
+    _attachGlobalListeners();
+    _setTargetInternal(
+      target: target,
+      actions: actions,
+      targetContext: targetContext,
+    );
+    _rebuildCachedItemsFromCurrentTarget();
+    if (_cachedItems.isEmpty) {
+      close();
+      return;
+    }
+    if (_entry == null) {
+      _activeHosts.add(this);
+      _entry = OverlayEntry(maintainState: true, builder: _buildOverlay);
+      overlay.insert(_entry!);
+    } else {
+      _markNeedsBuild();
+    }
+  }
+
+  void updateTarget({
+    required EditorSlotState target,
+    List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
+  }) {
+    if (!isPinned || !overlay.mounted) return;
+    _pendingSelectionSync = false;
+    _lastTrackedFocusContext = LayoutSelection.focus.value?.context;
+    _lastTrackedPath = List<String>.of(LayoutSelection.path.value);
+    if (target.mounted) {
+      _themes = InheritedTheme.capture(
+        from: target.context,
+        to: overlay.context,
+      );
+    }
+    _setTargetInternal(
+      target: target,
+      actions: actions,
+      targetContext: targetContext,
+    );
+    _rebuildCachedItemsFromCurrentTarget();
+    _markNeedsBuild();
+  }
+
+  void unpin() {
+    final resolvedPosition = _layout.resolvedPosition;
+    final target = _ensureValidTargetOrFallback();
+    final actions = _actions;
+    final targetContext = _targetContext;
+    final constraints = _constraints;
+    close();
+    if (target != null && target.mounted && target.canEdit) {
+      unawaited(
+        target._openUnpinnedFromPin(
+          position: resolvedPosition,
+          constraints: constraints,
+          actions: actions,
+          targetContext: targetContext,
+        ),
+      );
+    }
+  }
+
+  void close() {
+    EditorSlotState.clearHighlightedTarget();
+    _detachAllListeners();
+    _activeHosts.remove(this);
+    _target = null;
+    _actions = null;
+    _targetContext = null;
+    _fallbackChain = const [];
+    _cachedItems = const [];
+    _themes = null;
+    _lastTrackedFocusContext = null;
+    _lastTrackedPath = const [];
+    _pendingSelectionSync = false;
+    final oldEntry = _entry;
+    _entry = null;
+    oldEntry?.remove();
+    oldEntry?.dispose();
+  }
+
+  void _attachGlobalListeners() {
+    if (_listeningGlobals) return;
+    _listeningGlobals = true;
+    LayoutSelection.focus.addListener(_onSelectionChanged);
+    LayoutSelection.path.addListener(_onSelectionChanged);
+    EditorOverlayVisibility.openDialogs.addListener(_onOpenDialogsChanged);
+  }
+
+  void _detachAllListeners() {
+    if (_listeningGlobals) {
+      _listeningGlobals = false;
+      LayoutSelection.focus.removeListener(_onSelectionChanged);
+      LayoutSelection.path.removeListener(_onSelectionChanged);
+      EditorOverlayVisibility.openDialogs.removeListener(_onOpenDialogsChanged);
+    }
+    _editModeNotifier?.removeListener(_onEditModeChanged);
+    _editModeNotifier = null;
+    _appearanceNotifier?.removeListener(_onAppearanceChanged);
+    _appearanceNotifier = null;
+  }
+
+  void _bindContextNotifiers(BuildContext slotContext) {
+    final nextEditMode = StyleEditScope.maybeReadOf(slotContext);
+    if (!identical(nextEditMode, _editModeNotifier)) {
+      _editModeNotifier?.removeListener(_onEditModeChanged);
+      _editModeNotifier = nextEditMode;
+      nextEditMode?.addListener(_onEditModeChanged);
+    }
+    final nextAppearance = AppearanceScope.controllerOf(slotContext);
+    if (!identical(nextAppearance, _appearanceNotifier)) {
+      _appearanceNotifier?.removeListener(_onAppearanceChanged);
+      _appearanceNotifier = nextAppearance;
+      nextAppearance?.addListener(_onAppearanceChanged);
+    }
+  }
+
+  void _setTargetInternal({
+    required EditorSlotState target,
+    required List<EditorSlotAction>? actions,
+    required BuildContext? targetContext,
+  }) {
+    _target = target;
+    _actions = actions;
+    _targetContext = targetContext;
+    if (target.mounted) {
+      _fallbackChain = target.editableChain;
+      _bindContextNotifiers(target.context);
+    }
+  }
+
+  void _rebuildCachedItemsFromCurrentTarget() {
+    final target = _target;
+    if (target == null || !target.mounted || !target.canEdit) {
+      _cachedItems = const [];
+      return;
+    }
+    _cachedItems = target._buildSlotMenuItems(
+      hostContext: target.context,
+      onSelect: _handleActionSelected,
+      interceptItemTap: true,
+      actions: _actions,
+    );
+  }
+
+  void _scheduleItemsRefresh() {
+    if (!isPinned || !overlay.mounted) return;
+    if (_refreshScheduled) return;
+    _refreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshScheduled = false;
+      if (!isPinned || !overlay.mounted) return;
+      if (_pendingSelectionSync) {
+        _pendingSelectionSync = false;
+        _applySelectionSync();
+      } else {
+        final valid = _ensureValidTargetOrFallback();
+        if (valid == null) {
+          close();
+          return;
+        }
+      }
+      _rebuildCachedItemsFromCurrentTarget();
+      if (_cachedItems.isEmpty) {
+        close();
+        return;
+      }
+      _entry?.markNeedsBuild();
+      WidgetsBinding.instance.ensureVisualUpdate();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _applySelectionSync() {
+    final focusCtx = LayoutSelection.focus.value?.context;
+    if (focusCtx != null && focusCtx.mounted) {
+      final resolved = EditorSlotState.resolveFromContext(
+        focusCtx,
+        preferredId: LayoutSelection.activeLeafId,
+      );
+      if (resolved != null && resolved.mounted && resolved.canEdit) {
+        if (overlay.mounted) {
+          _themes = InheritedTheme.capture(
+            from: resolved.context,
+            to: overlay.context,
+          );
+        }
+        _setTargetInternal(
+          target: resolved,
+          actions: null,
+          targetContext: null,
+        );
+        return;
+      }
+    }
+    _ensureValidTargetOrFallback();
+  }
+
+  void _onEditModeChanged() {
+    if (!isPinned) return;
+    if (!(_editModeNotifier?.value ?? true)) {
+      close();
+    }
+  }
+
+  void _onAppearanceChanged() {
+    if (!isPinned) return;
+    _scheduleItemsRefresh();
+  }
+
+  void _onOpenDialogsChanged() {
+    if (!isPinned) return;
+    if (EditorOverlayVisibility.openDialogs.value > 0) {
+      EditorSlotState.clearHighlightedTarget();
+      _markNeedsBuild();
+    } else {
+      _markNeedsBuild();
+      _scheduleItemsRefresh();
+    }
+  }
+
+  void _onSelectionChanged() {
+    if (!isPinned) return;
+    final focusCtx = LayoutSelection.focus.value?.context;
+    final currentPath = LayoutSelection.path.value;
+    if (identical(focusCtx, _lastTrackedFocusContext) &&
+        listEquals(currentPath, _lastTrackedPath)) {
+      return;
+    }
+    _lastTrackedFocusContext = focusCtx;
+    _lastTrackedPath = List<String>.of(currentPath);
+    _pendingSelectionSync = true;
+    _scheduleItemsRefresh();
+  }
+
+  EditorSlotState? _ensureValidTargetOrFallback() {
+    final current = _target;
+    if (current != null && current.mounted && current.canEdit) {
+      _fallbackChain = current.editableChain;
+      return current;
+    }
+    final focusCtx = LayoutSelection.focus.value?.context;
+    if (focusCtx != null && focusCtx.mounted) {
+      final resolved = EditorSlotState.resolveFromContext(
+        focusCtx,
+        preferredId: LayoutSelection.activeLeafId,
+      );
+      if (resolved != null && resolved.mounted && resolved.canEdit) {
+        if (overlay.mounted) {
+          _themes = InheritedTheme.capture(
+            from: resolved.context,
+            to: overlay.context,
+          );
+        }
+        _setTargetInternal(
+          target: resolved,
+          actions: null,
+          targetContext: null,
+        );
+        return resolved;
+      }
+    }
+    for (final ancestor in _fallbackChain) {
+      if (ancestor.mounted && ancestor.canEdit) {
+        if (overlay.mounted) {
+          _themes = InheritedTheme.capture(
+            from: ancestor.context,
+            to: overlay.context,
+          );
+        }
+        _setTargetInternal(
+          target: ancestor,
+          actions: null,
+          targetContext: null,
+        );
+        return ancestor;
+      }
+    }
+    _target = null;
+    return null;
+  }
+
+  void _markNeedsBuild() {
+    if (!isPinned || !overlay.mounted) return;
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (_rebuildScheduled) return;
+      _rebuildScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _rebuildScheduled = false;
+        if (isPinned && overlay.mounted) {
+          _entry?.markNeedsBuild();
+        }
+      });
+      return;
+    }
+    _entry?.markNeedsBuild();
+  }
+
+  void _handleActionSelected(Object selection) {
+    EditorSlotState.clearHighlightedTarget();
+    unawaited(() async {
+      await _executeSlotMenuSelection(selection);
+      if (!isPinned) return;
+      _scheduleItemsRefresh();
+    }());
+  }
+
+  Widget _buildOverlay(BuildContext overlayContext) {
+    if (!isPinned || !overlay.mounted || _cachedItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final hiddenByDialog = EditorOverlayVisibility.openDialogs.value > 0;
+    Widget content = Builder(
+      builder: (themedContext) {
+        final colors = Theme.of(themedContext).colorScheme;
+        _layout = _ContextMenuDialogLayout(
+          position: _position,
+          dragged: true,
+          bannerLocal: null,
+          avoidRect: null,
+          menuConstraints: _constraints,
+        );
+        final card = _EditorContextMenuCard(
+          color: colors.surfaceContainerHigh.withAlpha(240),
+          surfaceTintColor: Colors.transparent,
+          shadowColor: colors.shadow.withValues(alpha: .18),
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: colors.outlineVariant.withValues(alpha: .55),
+            ),
+          ),
+          menuPadding: const EdgeInsets.symmetric(vertical: 4),
+          clipBehavior: Clip.antiAlias,
+          pinned: true,
+          onDragStart: () => _position = _layout.resolvedPosition,
+          onDragDelta: (delta) {
+            _position += delta;
+            _markNeedsBuild();
+          },
+          onTogglePin: unpin,
+          onClose: close,
+          items: _cachedItems,
+        );
+        return Visibility(
+          visible: !hiddenByDialog,
+          maintainState: true,
+          child: CustomSingleChildLayout(delegate: _layout, child: card),
+        );
+      },
+    );
+    if (_themes case final captured?) {
+      content = captured.wrap(content);
+    }
+    return content;
+  }
 }

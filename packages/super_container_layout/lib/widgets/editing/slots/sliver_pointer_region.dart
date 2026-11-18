@@ -126,18 +126,18 @@ class BoxPointerRegion extends SingleChildRenderObjectWidget {
   @override
   RenderObject createRenderObject(BuildContext context) =>
       _RenderBoxPointerRegion(
-        enabled: enabled,
-        opaque: opaque,
-        onEnter: onEnter,
-        onHover: onHover,
-        onExit: onExit,
-        cursor: cursor,
-        onPointerDown: onPointerDown,
-        onPointerMove: onPointerMove,
-        onPointerUp: onPointerUp,
-        onPointerCancel: onPointerCancel,
-        onTap: onTap,
-        onSecondaryTapUp: onSecondaryTapUp,
+        enabled,
+        opaque,
+        onEnter,
+        onHover,
+        onExit,
+        cursor,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        onTap,
+        onSecondaryTapUp,
       );
 
   @override
@@ -163,27 +163,20 @@ class BoxPointerRegion extends SingleChildRenderObjectWidget {
 
 class _RenderBoxPointerRegion extends RenderProxyBox
     implements MouseTrackerAnnotation {
-  _RenderBoxPointerRegion({
-    required bool enabled,
-    required bool opaque,
-    PointerEnterEventListener? onEnter,
-    PointerHoverEventListener? onHover,
-    PointerExitEventListener? onExit,
-    MouseCursor cursor = MouseCursor.defer,
+  _RenderBoxPointerRegion(
+    this._enabled,
+    this._opaque,
+    this._onEnter,
+    this._onHover,
+    this._onExit,
+    this._cursor,
     this.onPointerDown,
     this.onPointerMove,
     this.onPointerUp,
     this.onPointerCancel,
-    GestureTapCallback? onTap,
-    GestureTapUpCallback? onSecondaryTapUp,
-  }) : _enabled = enabled,
-       _opaque = opaque,
-       _onEnter = onEnter,
-       _onHover = onHover,
-       _onExit = onExit,
-       _cursor = cursor,
-       _onTap = onTap,
-       _onSecondaryTapUp = onSecondaryTapUp;
+    this._onTap,
+    this._onSecondaryTapUp,
+  );
 
   bool _enabled;
   bool get enabled => _enabled;
@@ -373,17 +366,17 @@ class SliverPointerRegion extends SingleChildRenderObjectWidget {
   @override
   RenderObject createRenderObject(BuildContext context) =>
       _RenderSliverPointerRegion(
-        enabled: enabled,
-        onEnter: onEnter,
-        onHover: onHover,
-        onExit: onExit,
-        cursor: cursor,
-        onPointerDown: onPointerDown,
-        onPointerMove: onPointerMove,
-        onPointerUp: onPointerUp,
-        onPointerCancel: onPointerCancel,
-        foregroundPainter: foregroundPainter,
-        painterListenable: painterListenable,
+        enabled,
+        onEnter,
+        onHover,
+        onExit,
+        cursor,
+        onPointerDown,
+        onPointerMove,
+        onPointerUp,
+        onPointerCancel,
+        foregroundPainter,
+        painterListenable,
       );
 
   @override
@@ -408,25 +401,19 @@ class SliverPointerRegion extends SingleChildRenderObjectWidget {
 
 class _RenderSliverPointerRegion extends RenderProxySliver
     implements MouseTrackerAnnotation {
-  _RenderSliverPointerRegion({
-    bool enabled = true,
-    PointerEnterEventListener? onEnter,
-    PointerHoverEventListener? onHover,
-    PointerExitEventListener? onExit,
-    MouseCursor cursor = MouseCursor.defer,
+  _RenderSliverPointerRegion(
+    this._enabled,
+    this._onEnter,
+    this._onHover,
+    this._onExit,
+    this._cursor,
     this.onPointerDown,
     this.onPointerMove,
     this.onPointerUp,
     this.onPointerCancel,
-    CustomPainter? foregroundPainter,
-    ValueListenable<CustomPainter?>? painterListenable,
-  }) : _enabled = enabled,
-       _onEnter = onEnter,
-       _onHover = onHover,
-       _onExit = onExit,
-       _cursor = cursor,
-       _foregroundPainter = foregroundPainter,
-       _painterListenable = painterListenable;
+    this._foregroundPainter,
+    this._painterListenable,
+  );
 
   bool _enabled;
   bool get enabled => _enabled;

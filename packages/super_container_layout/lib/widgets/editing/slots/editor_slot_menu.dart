@@ -1,6 +1,16 @@
 /// Construction et ouverture du menu contextuel hiérarchique pour [EditorSlotState].
 part of 'editor_slot.dart';
 
+Future<void> _executeSlotMenuSelection(Object? selected) async {
+  if (selected is EditorSlotState) {
+    if (selected.mounted) {
+      await selected.openEditor();
+    }
+  } else if (selected is Future<void> Function()) {
+    await selected();
+  }
+}
+
 EditorSlotAction? _findDirectInlineAction(BuildContext context) {
   if (context is! Element || !context.mounted) return null;
   EditorSlotAction? found;
@@ -253,59 +263,737 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     EditorSlotState target,
     Widget child, {
     double minHeight = 40,
-  }) => Builder(
-    builder: (menuContext) {
-      EditorSlotState._activeMenuRoute ??= ModalRoute.of(menuContext);
-      return MouseRegion(
-        onEnter: (event) {
-          if (!target.mounted ||
-              !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
-            return;
-          }
-          final initialPos = EditorSlotState._menuInitialPointerPosition;
-          if (initialPos != null &&
-              (event.position - initialPos).distance <= 1.0) {
+    VoidCallback? onTap,
+  }) {
+    Widget content = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: child,
+      ),
+    );
+    if (onTap != null) {
+      content = InkWell(onTap: onTap, child: content);
+    }
+    return MouseRegion(
+      onEnter: (event) {
+        if (!target.mounted ||
+            !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+          return;
+        }
+        final initialPos = EditorSlotState._menuInitialPointerPosition;
+        if (initialPos != null &&
+            (event.position - initialPos).distance <= 1.0) {
+          return;
+        }
+        EditorSlotState._menuInitialPointerPosition = null;
+        EditorSlotState._menuHoveredTarget = target;
+        EditorSlotState._refreshHoveredTarget();
+      },
+      onHover: (event) {
+        if (!target.mounted ||
+            !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+          return;
+        }
+        final initialPos = EditorSlotState._menuInitialPointerPosition;
+        if (initialPos != null) {
+          if ((event.position - initialPos).distance <= 1.0) {
             return;
           }
           EditorSlotState._menuInitialPointerPosition = null;
+        }
+        if (!identical(EditorSlotState._menuHoveredTarget, target)) {
           EditorSlotState._menuHoveredTarget = target;
           EditorSlotState._refreshHoveredTarget();
-        },
-        onHover: (event) {
-          if (!target.mounted ||
-              !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
-            return;
-          }
-          final initialPos = EditorSlotState._menuInitialPointerPosition;
-          if (initialPos != null) {
-            if ((event.position - initialPos).distance <= 1.0) {
-              return;
-            }
-            EditorSlotState._menuInitialPointerPosition = null;
-          }
-          if (!identical(EditorSlotState._menuHoveredTarget, target)) {
-            EditorSlotState._menuHoveredTarget = target;
-            EditorSlotState._refreshHoveredTarget();
-          }
-        },
-        onExit: (_) {
-          EditorSlotState._menuInitialPointerPosition = null;
-          if (!EditorSlotState._menuOpen &&
-              identical(EditorSlotState._menuHoveredTarget, target)) {
-            EditorSlotState._menuHoveredTarget = null;
-            EditorSlotState._refreshHoveredTarget();
-          }
-        },
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: minHeight),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: child,
+        }
+      },
+      onExit: (_) {
+        EditorSlotState._menuInitialPointerPosition = null;
+        if (!EditorSlotState._menuOpen &&
+            identical(EditorSlotState._menuHoveredTarget, target)) {
+          EditorSlotState._menuHoveredTarget = null;
+          EditorSlotState._refreshHoveredTarget();
+        }
+      },
+      child: content,
+    );
+  }
+
+  List<PopupMenuEntry<Object>> _buildSlotMenuItems({
+    required BuildContext hostContext,
+    required void Function(Object selection) onSelect,
+    required bool interceptItemTap,
+    List<EditorSlotAction>? actions,
+  }) {
+    if (!mounted) return const [];
+    final chain = editableChain;
+    final extraActions = [
+      for (final action in actions ?? EditorSlotAction.of(context))
+        if (action.enabled) action,
+    ];
+    final inlineActions = _inlineActionsByState(chain, extraActions);
+    final entries = <(int, Object)>[
+      if (chain.contains(this)) (chain.indexOf(this), this),
+    ];
+    context.visitAncestorElements((element) {
+      final inherited = element.widget;
+      if (inherited is EditorContextMenuEntry && inherited.enabled) {
+        entries.add((entries.length, inherited));
+      } else if (element is StatefulElement) {
+        final state = element.state;
+        if (state is EditorSlotState && chain.contains(state)) {
+          entries.add((entries.length, state));
+        }
+      }
+      return true;
+    });
+    final hasMenuActions = extraActions.any((action) => !action.inline);
+    final insertions = _insertionLevels(actions);
+    final behaviorTargets = _behaviorTargets(entries);
+    final dataTargets = _dataTargets(entries);
+    // Inline actions only render inside an editable entry, never on their own.
+    if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) {
+      return const [];
+    }
+    final theme = Theme.of(hostContext);
+    final colors = theme.colorScheme;
+    Future<void> openContextualAdd() async {
+      if (!mounted) return;
+      final latest = _insertionLevels(actions);
+      if (latest.isEmpty) return;
+      await showContextualAddWizard(context, latest, target: context);
+    }
+
+    Future<void> openBehaviorWizard() async {
+      if (!mounted) return;
+      await showComponentBehaviorWizard(
+        context: context,
+        targets: behaviorTargets,
+        target: context,
+      );
+    }
+
+    Future<void> openDataWizard() async {
+      if (!mounted) return;
+      await showComponentDataWizard(
+        context: context,
+        targets: dataTargets,
+        target: context,
+      );
+    }
+
+    final defaultInsertAction = insertions.isNotEmpty
+        ? openContextualAdd
+        : openBehaviorWizard;
+    return [
+      if (insertions.isNotEmpty || canEdit) ...[
+        PopupMenuItem<Future<void> Function()>(
+          height: 28,
+          key: const ValueKey('style-menu-insert'),
+          value: defaultInsertAction,
+          padding: EdgeInsets.zero,
+          child: _menuHover(
+            this,
+            minHeight: 28,
+            onTap: interceptItemTap
+                ? () => onSelect(defaultInsertAction)
+                : null,
+            Row(
+              children: [
+                if (insertions.isNotEmpty) ...[
+                  Expanded(
+                    flex: 5,
+                    child: Tooltip(
+                      message: 'Ajouter un composant',
+                      child: InkWell(
+                        key: const ValueKey('style-menu-insert-component'),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => onSelect(openContextualAdd),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 3,
+                            horizontal: 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 22,
+                                height: 22,
+                                decoration: BoxDecoration(
+                                  color: colors.primary,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  Icons.add,
+                                  size: 14,
+                                  color: colors.onPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: _menuTitle(
+                                  'Composant…',
+                                  destination: null,
+                                  style: theme.textTheme.labelLarge,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  flex: 5,
+                  child: Tooltip(
+                    message: 'Ajouter un comportement',
+                    child: InkWell(
+                      key: const ValueKey('style-menu-behavior'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => onSelect(openBehaviorWizard),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 3,
+                          horizontal: 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: colors.tertiary,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.bolt,
+                                size: 14,
+                                color: colors.onTertiary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: _menuTitle(
+                                'Comportement…',
+                                destination: null,
+                                style: theme.textTheme.labelLarge,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  flex: 5,
+                  child: Tooltip(
+                    message: 'Extraire ou gérer les données JSON',
+                    child: InkWell(
+                      key: const ValueKey('style-menu-data'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => onSelect(openDataWizard),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 3,
+                          horizontal: 2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: colors.secondary,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                Icons.data_object,
+                                size: 14,
+                                color: colors.onSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: _menuTitle(
+                                'Donnée…',
+                                destination: null,
+                                style: theme.textTheme.labelLarge,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      );
-    },
-  );
+        if (hasMenuActions || entries.isNotEmpty)
+          const PopupMenuDivider(height: 8),
+      ],
+      for (final (actionIndex, action)
+          in extraActions.where((action) => !action.inline).indexed) ...[
+        if (actionIndex > 0) const PopupMenuDivider(height: 4),
+        PopupMenuItem<Future<void> Function()>(
+          height: 40,
+          value: action.onEdit,
+          padding: EdgeInsets.zero,
+          child: _menuHover(
+            this,
+            onTap: interceptItemTap ? () => onSelect(action.onEdit) : null,
+            Row(
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                _menuIconBadge(
+                  Icons.tune_rounded,
+                  background: colors.tertiaryContainer,
+                  foreground: colors.onTertiaryContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _menuTitle(
+                    action.label,
+                    destination: action.destination,
+                    tooltip: action.tooltip,
+                    tooltipKey: ValueKey(
+                      'style-menu-action-tooltip-${action.label}',
+                    ),
+                    scrollable: action.scrollable,
+                    fixedHeight: action.fixedHeight,
+                    fixedWidth: action.fixedWidth,
+                  ),
+                ),
+                if (action.onRemove case final remove?)
+                  IconButton(
+                    key: ValueKey('style-menu-remove-${action.label}'),
+                    tooltip: 'Supprimer le slot',
+                    icon: const Icon(Icons.delete_outline),
+                    style: _menuIconButtonStyle(hostContext, destructive: true),
+                    onPressed: () => onSelect(remove),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      if (hasMenuActions && entries.isNotEmpty)
+        const PopupMenuDivider(height: 4),
+      for (final (entryIndex, (index, entry)) in entries.indexed) ...[
+        if (entryIndex > 0) const PopupMenuDivider(height: 4),
+        if (entry is EditorContextMenuEntry)
+          PopupMenuItem<Future<void> Function()>(
+            height: 40,
+            key: ValueKey('style-menu-entry-${entry.label}'),
+            value: entry.onSelected,
+            padding: EdgeInsets.zero,
+            child: _menuHover(
+              this,
+              onTap: interceptItemTap ? () => onSelect(entry.onSelected) : null,
+              Padding(
+                padding: EdgeInsets.only(left: _defaultIndent * index),
+                child: Row(
+                  children: [
+                    _menuIconBadge(
+                      Icons.subdirectory_arrow_left,
+                      background: colors.secondaryContainer,
+                      foreground: colors.onSecondaryContainer,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _menuTitle(
+                        entry.label,
+                        destination: entry.destination,
+                        tooltip: entry.tooltip,
+                        tooltipKey: ValueKey(
+                          'style-menu-entry-tooltip-${entry.label}',
+                        ),
+                        scrollable: entry.scrollable,
+                        fixedHeight: entry.fixedHeight,
+                        fixedWidth: entry.fixedWidth,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else if (entry case final EditorSlotState state when state.mounted)
+          () {
+            final rowEnabled =
+                state.widget.onEdit != null ||
+                (inlineActions[state]?.isNotEmpty ?? false);
+            return PopupMenuItem<EditorSlotState>(
+              height: 40,
+              key: ValueKey('style-menu-${state.label}'),
+              enabled: rowEnabled,
+              value: state,
+              padding: EdgeInsets.zero,
+              child: _menuHover(
+                state,
+                onTap: interceptItemTap && rowEnabled
+                    ? () => onSelect(state)
+                    : null,
+                Padding(
+                  padding: EdgeInsets.only(left: _defaultIndent * index),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      _menuIconBadge(
+                        state.widget.menuIcon ??
+                            state.componentLabel?.menuIcon ??
+                            (index == 0
+                                ? Icons.brush_outlined
+                                : Icons.subdirectory_arrow_left),
+                        background: colors.primaryContainer,
+                        foreground: colors.onPrimaryContainer,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            () {
+                              final indicators = _resolveSlotIndicators(
+                                state,
+                                inlineActions[state] ??
+                                    const <EditorSlotAction>[],
+                              );
+                              return _menuTitle(
+                                state.titleLabel,
+                                destination: state.widget.onEdit == null
+                                    ? null
+                                    : state.widget.menuDestination,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                tooltip:
+                                    state.widget.menuTooltip?.call() ??
+                                    state.widget.axisAction?.call().flowTooltip,
+                                tooltipKey: ValueKey(
+                                  'style-menu-tooltip-${state.label}',
+                                ),
+                                scrollable: indicators.scrollable,
+                                fixedHeight: indicators.fixedHeight,
+                                fixedWidth: indicators.fixedWidth,
+                                composedComponent: state.composedComponentInfo,
+                                indicatorKeySuffix: state.label,
+                              );
+                            }(),
+                            if ((state.widget.menuSubtitle?.call() ??
+                                    ((StyleEditScope.controllerOf(state.context)
+                                                    ?.value ??
+                                                false) &&
+                                            state.widget.axisAction != null
+                                        ? state.widget.axisAction!().zoneLabel
+                                        : state.widget.menuType ??
+                                              (state.widget.menuTitle == null
+                                                  ? null
+                                                  : state.widget.label)))
+                                case final subtitle?
+                                when subtitle != state.titleLabel &&
+                                    !(state.widget.menuSubtitle == null &&
+                                        state.widget.menuType != null &&
+                                        state.widget.menuTitle != null &&
+                                        subtitle == state.widget.label))
+                              Text(
+                                subtitle,
+                                key:
+                                    state.widget.menuSubtitle != null ||
+                                        (state.widget.menuType == null &&
+                                            state.widget.menuTitle == null)
+                                    ? ValueKey('style-menu-zone-${state.label}')
+                                    : null,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            if (state.widget.menuSubtitle == null &&
+                                state.widget.menuType != null &&
+                                state.widget.menuTitle != null &&
+                                state.widget.label != null &&
+                                state.widget.label != state.titleLabel)
+                              Text(
+                                state.widget.label!,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                          ],
+                        ),
+                      ),
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.axisAction != null) ...[
+                        ZoneAxisButton(
+                          key: ValueKey('style-menu-axis-${state.label}'),
+                          action: LayoutAxisAction(
+                            zoneLabel: state.widget.axisAction!().zoneLabel,
+                            axis: state.widget.axisAction!().axis,
+                            onToggle: () => onSelect(() async {
+                              if (state.mounted) {
+                                state.widget.axisAction!().onToggle();
+                              }
+                            }),
+                          ),
+                        ),
+                        if (state.widget.axisAction!().onEditFlow
+                            case final editFlow?)
+                          IconButton(
+                            key: ValueKey(
+                              'style-menu-zone-flow-${state.label}',
+                            ),
+                            tooltip:
+                                state.widget.axisAction!().flowTooltip ??
+                                'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
+                            icon: const Icon(Icons.straighten),
+                            style: _menuIconButtonStyle(hostContext),
+                            onPressed: () => onSelect(() async {
+                              if (state.mounted) {
+                                await EditorWizardNavigation.openWithTab(
+                                  EditorWizardTab.dimensions,
+                                  editFlow,
+                                );
+                              }
+                            }),
+                          ),
+                      ],
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state._canRename)
+                        IconButton(
+                          key: ValueKey('style-menu-rename-${state.label}'),
+                          tooltip: 'Renommer',
+                          icon: const Icon(Icons.drive_file_rename_outline),
+                          style: _menuIconButtonStyle(hostContext),
+                          onPressed: () => onSelect(() async {
+                            if (state.mounted) {
+                              await state._promptRename();
+                            }
+                          }),
+                        ),
+                      for (final action
+                          in inlineActions[state] ??
+                              const <EditorSlotAction>[]) ...[
+                        if (action.showEdit)
+                          IconButton(
+                            key: ValueKey('style-menu-size-${action.label}'),
+                            tooltip: action.tooltip ?? action.label,
+                            icon: const Icon(Icons.straighten),
+                            style: _menuIconButtonStyle(hostContext),
+                            onPressed: () => onSelect(() async {
+                              if (state.mounted &&
+                                  state.widget.onEdit != null &&
+                                  action.dimensionDelegateBuilder != null &&
+                                  EditorWizardNavigation.findDirectSlotSizeAction(
+                                        state.context,
+                                      )?.label ==
+                                      action.label) {
+                                await state.openEditor(
+                                  initialTab: EditorWizardTab.dimensions,
+                                  dimensionDelegate: action
+                                      .dimensionDelegateBuilder
+                                      ?.call(),
+                                );
+                              } else {
+                                await EditorWizardNavigation.openWithTab(
+                                  EditorWizardTab.dimensions,
+                                  action.onEdit,
+                                  delegate: action.dimensionDelegateBuilder
+                                      ?.call(),
+                                );
+                              }
+                            }),
+                          ),
+                        if (action.onRemove case final remove?)
+                          IconButton(
+                            key: ValueKey('style-menu-remove-${action.label}'),
+                            tooltip: 'Supprimer le slot',
+                            icon: const Icon(Icons.delete_outline),
+                            style: _menuIconButtonStyle(
+                              hostContext,
+                              destructive: true,
+                            ),
+                            onPressed: () => onSelect(remove),
+                          ),
+                      ],
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.onRemoveChild != null &&
+                          !state._hasNestedEditableTarget)
+                        IconButton(
+                          key: ValueKey(
+                            'style-menu-remove-child-${state.label}',
+                          ),
+                          tooltip: 'Supprimer le composant enfant',
+                          icon: const Icon(Icons.delete_outline),
+                          style: _menuIconButtonStyle(
+                            hostContext,
+                            destructive: true,
+                          ),
+                          onPressed: () =>
+                              onSelect(state.widget.onRemoveChild!),
+                        ),
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.onAdd != null)
+                        IconButton(
+                          key: ValueKey('style-menu-add-${state.label}'),
+                          tooltip: 'Ajouter un slot',
+                          icon: const Icon(Icons.add),
+                          style: _menuIconButtonStyle(hostContext),
+                          onPressed: () => onSelect(state.widget.onAdd!),
+                        ),
+                      if ((
+                            [
+                              for (final action
+                                  in inlineActions[state] ??
+                                      const <EditorSlotAction>[])
+                                ...action.wrapActions,
+                            ],
+                            (StyleEditScope.controllerOf(state.context)
+                                        ?.value ??
+                                    false)
+                                ? state.widget.wrapChildrenActions
+                                : const <EditorSlotWrapAction>[],
+                            state.canEdit
+                                ? collectExtractableTargetsFromSlot(state)
+                                : const <ExtractableComponentTarget>[],
+                            state._canEditWithAi,
+                          )
+                          case (
+                            final wrapActions,
+                            final wrapChildrenActions,
+                            final extractableTargets,
+                            final canEditWithAi,
+                          )
+                          when wrapActions.isNotEmpty ||
+                              wrapChildrenActions.isNotEmpty ||
+                              extractableTargets.isNotEmpty ||
+                              canEditWithAi ||
+                              state._canExportContent ||
+                              state._canConfigureAsComponent)
+                        MenuAnchor(
+                          consumeOutsideTap: true,
+                          menuChildren: [
+                            if (state._canConfigureAsComponent)
+                              MenuItemButton(
+                                key: ValueKey(
+                                  'style-menu-configure-as-${state.label}',
+                                ),
+                                leadingIcon: const Icon(
+                                  Icons.settings_suggest_outlined,
+                                ),
+                                onPressed: () =>
+                                    onSelect(state._openConfigureAsDialog),
+                                child: const Text('Configure as...'),
+                              ),
+                            if (state._canExportContent)
+                              MenuItemButton(
+                                key: ValueKey(
+                                  'style-menu-export-${state.label}',
+                                ),
+                                leadingIcon: const Icon(Icons.upload),
+                                onPressed: () => onSelect(state._exportContent),
+                                child: const Text('Exporter le contenu...'),
+                              ),
+                            if (wrapActions.isNotEmpty)
+                              SubmenuButton(
+                                leadingIcon: const Icon(Icons.wrap_text),
+                                menuChildren: [
+                                  for (final action in wrapActions)
+                                    MenuItemButton(
+                                      leadingIcon: Icon(action.icon),
+                                      onPressed: () =>
+                                          onSelect(action.onSelected),
+                                      child: Text(action.label),
+                                    ),
+                                ],
+                                child: const Text('Envelopper dans…'),
+                              ),
+                            if (wrapChildrenActions.isNotEmpty)
+                              SubmenuButton(
+                                leadingIcon: const Icon(Icons.wrap_text),
+                                menuChildren: [
+                                  for (final action in wrapChildrenActions)
+                                    MenuItemButton(
+                                      leadingIcon: Icon(action.icon),
+                                      onPressed: () =>
+                                          onSelect(action.onSelected),
+                                      child: Text(action.label),
+                                    ),
+                                ],
+                                child: const Text(
+                                  'Envelopper les enfants dans…',
+                                ),
+                              ),
+                            if (extractableTargets.isNotEmpty)
+                              MenuItemButton(
+                                key: ValueKey(
+                                  'style-menu-extract-super-values-${state.label}',
+                                ),
+                                leadingIcon: const Icon(Icons.data_object),
+                                onPressed: () => onSelect(() async {
+                                  if (!state.mounted) return;
+                                  final latest =
+                                      collectExtractableTargetsFromSlot(state);
+                                  if (latest.isEmpty) return;
+                                  await SuperValueJsonExtractDialog.show(
+                                    state.context,
+                                    targets: latest,
+                                    sourceLabel: state.titleLabel,
+                                    target: state.context,
+                                    rootSlot: state,
+                                  );
+                                }),
+                                child: const Text('Extraire & lier en JSON…'),
+                              ),
+                            if (canEditWithAi)
+                              MenuItemButton(
+                                key: ValueKey('style-menu-ai-${state.label}'),
+                                leadingIcon: const Icon(
+                                  Icons.auto_awesome_outlined,
+                                ),
+                                onPressed: () =>
+                                    onSelect(state._openAiWithScope),
+                                child: const Text('Modifier avec l’IA…'),
+                              ),
+                          ],
+                          builder: (context, controller, child) => IconButton(
+                            key: ValueKey('style-menu-more-${state.label}'),
+                            tooltip: 'Autres options',
+                            icon: const Icon(Icons.more_vert),
+                            style: _menuIconButtonStyle(hostContext),
+                            onPressed: () => controller.isOpen
+                                ? controller.close()
+                                : controller.open(),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }(),
+      ],
+    ];
+  }
 
   Future<void> _openSlotMenu(
     Offset globalPosition, {
@@ -317,6 +1005,11 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         !(StyleEditScope.controllerOf(context)?.value ?? true) ||
         EditorZoom.suppressContextMenu ||
         (EditorZoomScope.controllerOf(context)?.suppressContextMenu ?? false)) {
+      return;
+    }
+    if (selectTarget &&
+        ((EditorSlotState._menuOpen && EditorSlotState._openingMenuThisTurn) ||
+            EditorSlotState._pinnedUpdatedThisTurn)) {
       return;
     }
     final chain = editableChain;
@@ -453,34 +1146,34 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         zoomController?.endRightClickSelection();
       }
     }
-    final extraActions = [
-      for (final action in actions ?? EditorSlotAction.of(context))
-        if (action.enabled) action,
-    ];
-    final inlineActions = _inlineActionsByState(chain, extraActions);
-    final entries = <(int, Object)>[
-      if (chain.contains(this)) (chain.indexOf(this), this),
-    ];
-    context.visitAncestorElements((element) {
-      final inherited = element.widget;
-      if (inherited is EditorContextMenuEntry && inherited.enabled) {
-        entries.add((entries.length, inherited));
-      } else if (element is StatefulElement) {
-        final state = element.state;
-        if (state is EditorSlotState && chain.contains(state)) {
-          entries.add((entries.length, state));
+    if (!mounted) return;
+    final overlayState = Overlay.of(context);
+    final pinnedHost = _PinnedContextMenuHost.maybeOf(overlayState);
+    if (pinnedHost != null && pinnedHost.isPinned) {
+      EditorSlotState._pinnedUpdatedThisTurn = true;
+      scheduleMicrotask(() {
+        EditorSlotState._pinnedUpdatedThisTurn = false;
+      });
+      pinnedHost.updateTarget(
+        target: this,
+        actions: actions,
+        targetContext: targetContext,
+      );
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final items = _buildSlotMenuItems(
+      hostContext: context,
+      onSelect: (selection) {
+        if (navigator.mounted) {
+          navigator.pop<Object>(selection);
         }
-      }
-      return true;
-    });
-    final hasMenuActions = extraActions.any((action) => !action.inline);
-    final insertions = _insertionLevels(actions);
-    final behaviorTargets = _behaviorTargets(entries);
-    final dataTargets = _dataTargets(entries);
-    // Inline actions only render inside an editable entry, never on their own.
-    if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) return;
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
+      },
+      interceptItemTap: false,
+      actions: actions,
+    );
+    if (items.isEmpty) return;
+    final overlay = overlayState.context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
     final bannerGlobalRect = LayoutSelection.bannerBounds?.call();
     final bannerLocal = bannerGlobalRect == null
@@ -566,18 +1259,92 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         );
       }
     }
+    await _presentUnpinnedSlotMenu(
+      overlayState: overlayState,
+      navigator: navigator,
+      position: position,
+      menuConstraints: menuConstraints,
+      bannerLocal: bannerLocal,
+      avoidRectResolver: selectTarget ? resolveAvoidRect : null,
+      globalPointerPosition: globalPosition,
+      initiallyDragged: false,
+      instantOpen: false,
+      selectTarget: selectTarget,
+      items: items,
+      actions: actions,
+      targetContext: targetContext,
+    );
+  }
+
+  Future<void> _openUnpinnedFromPin({
+    required Offset position,
+    required BoxConstraints constraints,
+    List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
+  }) async {
+    if (!mounted || !(StyleEditScope.controllerOf(context)?.value ?? true)) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final overlayState = Overlay.of(context);
+    final items = _buildSlotMenuItems(
+      hostContext: context,
+      onSelect: (selection) {
+        if (navigator.mounted) {
+          navigator.pop<Object>(selection);
+        }
+      },
+      interceptItemTap: false,
+      actions: actions,
+    );
+    if (items.isEmpty) return;
+    await _presentUnpinnedSlotMenu(
+      overlayState: overlayState,
+      navigator: navigator,
+      position: position,
+      menuConstraints: constraints,
+      bannerLocal: null,
+      avoidRectResolver: null,
+      globalPointerPosition: null,
+      initiallyDragged: true,
+      instantOpen: true,
+      selectTarget: false,
+      items: items,
+      actions: actions,
+      targetContext: targetContext,
+    );
+  }
+
+  Future<void> _presentUnpinnedSlotMenu({
+    required OverlayState overlayState,
+    required NavigatorState navigator,
+    required Offset position,
+    required BoxConstraints menuConstraints,
+    required Rect? bannerLocal,
+    required Rect? Function()? avoidRectResolver,
+    required Offset? globalPointerPosition,
+    required bool initiallyDragged,
+    required bool instantOpen,
+    required bool selectTarget,
+    required List<PopupMenuEntry<Object>> items,
+    required List<EditorSlotAction>? actions,
+    required BuildContext? targetContext,
+  }) async {
     final colors = Theme.of(context).colorScheme;
+    final overlayThemes = InheritedTheme.capture(
+      from: context,
+      to: overlayState.context,
+    );
     if (EditorSlotState._menuOpen) {
       if (EditorSlotState._openingMenuThisTurn && selectTarget) return;
       EditorSlotState.closeActiveMenu();
       if (!mounted) return;
     }
-    final navigator = Navigator.of(context);
     final hostRoute = ModalRoute.of(context);
     final generation = ++EditorSlotState._menuGeneration;
     EditorSlotState._menuOpen = true;
     EditorSlotState._openingMenuThisTurn = true;
-    EditorSlotState._menuInitialPointerPosition = globalPosition;
+    EditorSlotState._menuInitialPointerPosition = globalPointerPosition;
     EditorSlotState._activeMenuRoute = null;
     _ownsOpenMenu = true;
     scheduleMicrotask(() {
@@ -608,13 +1375,16 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         navigator.pop();
       }
     };
+    Offset? pinnedAt;
     Object? selected;
     try {
       selected = await _showEditorContextMenuDialog<Object>(
         context: context,
         initialPosition: position,
+        initiallyDragged: initiallyDragged,
+        instantOpen: instantOpen,
         bannerLocal: bannerLocal,
-        avoidRectResolver: selectTarget ? resolveAvoidRect : null,
+        avoidRectResolver: avoidRectResolver,
         constraints: menuConstraints,
         color: colors.surfaceContainerHigh.withAlpha(240),
         surfaceTintColor: Colors.transparent,
@@ -627,680 +1397,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         menuPadding: const EdgeInsets.symmetric(vertical: 4),
         clipBehavior: Clip.antiAlias,
         onRouteCreated: (route) => EditorSlotState._activeMenuRoute = route,
-        items: [
-          if (insertions.isNotEmpty || canEdit) ...[
-            PopupMenuItem<Future<void> Function()>(
-              height: 28,
-              key: const ValueKey('style-menu-insert'),
-              value: insertions.isNotEmpty
-                  ? () => showContextualAddWizard(
-                      context,
-                      insertions,
-                      target: context,
-                    )
-                  : () => showComponentBehaviorWizard(
-                      context: context,
-                      targets: behaviorTargets,
-                      target: context,
-                    ),
-              padding: EdgeInsets.zero,
-              child: _menuHover(
-                this,
-                minHeight: 28,
-                Row(
-                  children: [
-                    if (insertions.isNotEmpty) ...[
-                      Expanded(
-                        flex: 5,
-                        child: Tooltip(
-                          message: 'Ajouter un composant',
-                          child: InkWell(
-                            key: const ValueKey('style-menu-insert-component'),
-                            borderRadius: BorderRadius.circular(6),
-                            onTap: () => Navigator.of(context)
-                                .pop<Future<void> Function()>(
-                                  () => showContextualAddWizard(
-                                    context,
-                                    insertions,
-                                    target: context,
-                                  ),
-                                ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 3,
-                                horizontal: 2,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 22,
-                                    height: 22,
-                                    decoration: BoxDecoration(
-                                      color: colors.primary,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Icon(
-                                      Icons.add,
-                                      size: 14,
-                                      color: colors.onPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: _menuTitle(
-                                      'Composant…',
-                                      destination: null,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Expanded(
-                      flex: 5,
-                      child: Tooltip(
-                        message: 'Ajouter un comportement',
-                        child: InkWell(
-                          key: const ValueKey('style-menu-behavior'),
-                          borderRadius: BorderRadius.circular(6),
-                          onTap: () =>
-                              Navigator.of(context)
-                                  .pop<Future<void> Function()>(
-                                    () => showComponentBehaviorWizard(
-                                      context: context,
-                                      targets: behaviorTargets,
-                                      target: context,
-                                    ),
-                                  ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 3,
-                              horizontal: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 22,
-                                  height: 22,
-                                  decoration: BoxDecoration(
-                                    color: colors.tertiary,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(
-                                    Icons.bolt,
-                                    size: 14,
-                                    color: colors.onTertiary,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: _menuTitle(
-                                    'Comportement…',
-                                    destination: null,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 5,
-                      child: Tooltip(
-                        message: 'Extraire ou gérer les données JSON',
-                        child: InkWell(
-                          key: const ValueKey('style-menu-data'),
-                          borderRadius: BorderRadius.circular(6),
-                          onTap: () => Navigator.of(context)
-                              .pop<Future<void> Function()>(
-                                () => showComponentDataWizard(
-                                  context: context,
-                                  targets: dataTargets,
-                                  target: context,
-                                ),
-                              ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 3,
-                              horizontal: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 22,
-                                  height: 22,
-                                  decoration: BoxDecoration(
-                                    color: colors.secondary,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(
-                                    Icons.data_object,
-                                    size: 14,
-                                    color: colors.onSecondary,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: _menuTitle(
-                                    'Donnée…',
-                                    destination: null,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelLarge,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (hasMenuActions || entries.isNotEmpty)
-              const PopupMenuDivider(height: 8),
-          ],
-          for (final (actionIndex, action)
-              in extraActions.where((action) => !action.inline).indexed) ...[
-            if (actionIndex > 0) const PopupMenuDivider(height: 4),
-            PopupMenuItem<Future<void> Function()>(
-              height: 40,
-              value: action.onEdit,
-              padding: EdgeInsets.zero,
-              child: _menuHover(
-                this,
-                Row(
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    _menuIconBadge(
-                      Icons.tune_rounded,
-                      background: colors.tertiaryContainer,
-                      foreground: colors.onTertiaryContainer,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _menuTitle(
-                        action.label,
-                        destination: action.destination,
-                        tooltip: action.tooltip,
-                        tooltipKey: ValueKey(
-                          'style-menu-action-tooltip-${action.label}',
-                        ),
-                        scrollable: action.scrollable,
-                        fixedHeight: action.fixedHeight,
-                        fixedWidth: action.fixedWidth,
-                      ),
-                    ),
-                    if (action.onRemove case final remove?)
-                      IconButton(
-                        key: ValueKey('style-menu-remove-${action.label}'),
-                        tooltip: 'Supprimer le slot',
-                        icon: const Icon(Icons.delete_outline),
-                        style: _menuIconButtonStyle(context, destructive: true),
-                        onPressed: () => Navigator.of(context).pop(remove),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (hasMenuActions && entries.isNotEmpty)
-            const PopupMenuDivider(height: 4),
-          for (final (entryIndex, (index, entry)) in entries.indexed) ...[
-            if (entryIndex > 0) const PopupMenuDivider(height: 4),
-            if (entry is EditorContextMenuEntry)
-              PopupMenuItem<Future<void> Function()>(
-                height: 40,
-                key: ValueKey('style-menu-entry-${entry.label}'),
-                value: entry.onSelected,
-                padding: EdgeInsets.zero,
-                child: _menuHover(
-                  this,
-                  Padding(
-                    padding: EdgeInsets.only(left: _defaultIndent * index),
-                    child: Row(
-                      children: [
-                        _menuIconBadge(
-                          Icons.subdirectory_arrow_left,
-                          background: colors.secondaryContainer,
-                          foreground: colors.onSecondaryContainer,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _menuTitle(
-                            entry.label,
-                            destination: entry.destination,
-                            tooltip: entry.tooltip,
-                            tooltipKey: ValueKey(
-                              'style-menu-entry-tooltip-${entry.label}',
-                            ),
-                            scrollable: entry.scrollable,
-                            fixedHeight: entry.fixedHeight,
-                            fixedWidth: entry.fixedWidth,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else if (entry case final EditorSlotState state when state.mounted)
-              PopupMenuItem<EditorSlotState>(
-                height: 40,
-                key: ValueKey('style-menu-${state.label}'),
-                enabled:
-                    state.widget.onEdit != null ||
-                    (inlineActions[state]?.isNotEmpty ?? false),
-                value: state,
-                padding: EdgeInsets.zero,
-                child: _menuHover(
-                  state,
-                  Padding(
-                    padding: EdgeInsets.only(left: _defaultIndent * index),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        _menuIconBadge(
-                          state.widget.menuIcon ??
-                              state.componentLabel?.menuIcon ??
-                              (index == 0
-                                  ? Icons.brush_outlined
-                                  : Icons.subdirectory_arrow_left),
-                          background: colors.primaryContainer,
-                          foreground: colors.onPrimaryContainer,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              () {
-                                final indicators = _resolveSlotIndicators(
-                                  state,
-                                  inlineActions[state] ??
-                                      const <EditorSlotAction>[],
-                                );
-                                return _menuTitle(
-                                  state.titleLabel,
-                                  destination: state.widget.onEdit == null
-                                      ? null
-                                      : state.widget.menuDestination,
-                                  style: Theme.of(context).textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                  tooltip:
-                                      state.widget.menuTooltip?.call() ??
-                                      state.widget.axisAction
-                                          ?.call()
-                                          .flowTooltip,
-                                  tooltipKey: ValueKey(
-                                    'style-menu-tooltip-${state.label}',
-                                  ),
-                                  scrollable: indicators.scrollable,
-                                  fixedHeight: indicators.fixedHeight,
-                                  fixedWidth: indicators.fixedWidth,
-                                  composedComponent:
-                                      state.composedComponentInfo,
-                                  indicatorKeySuffix: state.label,
-                                );
-                              }(),
-                              if ((state.widget.menuSubtitle?.call() ??
-                                      ((StyleEditScope.controllerOf(
-                                                    state.context,
-                                                  )?.value ??
-                                                  false) &&
-                                              state.widget.axisAction != null
-                                          ? state.widget.axisAction!().zoneLabel
-                                          : state.widget.menuType ??
-                                                (state.widget.menuTitle == null
-                                                    ? null
-                                                    : state.widget.label)))
-                                  case final subtitle?
-                                  when subtitle != state.titleLabel &&
-                                      !(state.widget.menuSubtitle == null &&
-                                          state.widget.menuType != null &&
-                                          state.widget.menuTitle != null &&
-                                          subtitle == state.widget.label))
-                                Text(
-                                  subtitle,
-                                  key:
-                                      state.widget.menuSubtitle != null ||
-                                          (state.widget.menuType == null &&
-                                              state.widget.menuTitle == null)
-                                      ? ValueKey(
-                                          'style-menu-zone-${state.label}',
-                                        )
-                                      : null,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                              if (state.widget.menuSubtitle == null &&
-                                  state.widget.menuType != null &&
-                                  state.widget.menuTitle != null &&
-                                  state.widget.label != null &&
-                                  state.widget.label != state.titleLabel)
-                                Text(
-                                  state.widget.label!,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: colors.onSurfaceVariant,
-                                      ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
-                            ],
-                          ),
-                        ),
-                        if ((StyleEditScope.controllerOf(state.context)
-                                    ?.value ??
-                                false) &&
-                            state.widget.axisAction != null) ...[
-                          ZoneAxisButton(
-                            key: ValueKey('style-menu-axis-${state.label}'),
-                            action: LayoutAxisAction(
-                              zoneLabel: state.widget.axisAction!().zoneLabel,
-                              axis: state.widget.axisAction!().axis,
-                              onToggle: () =>
-                                  Navigator.of(context)
-                                      .pop<Future<void> Function()>(() async {
-                                        if (state.mounted) {
-                                          state.widget.axisAction!().onToggle();
-                                        }
-                                      }),
-                            ),
-                          ),
-                          if (state.widget.axisAction!().onEditFlow
-                              case final editFlow?)
-                            IconButton(
-                              key: ValueKey(
-                                'style-menu-zone-flow-${state.label}',
-                              ),
-                              tooltip:
-                                  state.widget.axisAction!().flowTooltip ??
-                                  'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
-                              icon: const Icon(Icons.straighten),
-                              style: _menuIconButtonStyle(context),
-                              onPressed: () => Navigator.of(context)
-                                  .pop<Future<void> Function()>(() async {
-                                    if (state.mounted) {
-                                      await EditorWizardNavigation.openWithTab(
-                                        EditorWizardTab.dimensions,
-                                        editFlow,
-                                      );
-                                    }
-                                  }),
-                            ),
-                        ],
-                        if ((StyleEditScope.controllerOf(state.context)
-                                    ?.value ??
-                                false) &&
-                            state._canRename)
-                          IconButton(
-                            key: ValueKey('style-menu-rename-${state.label}'),
-                            tooltip: 'Renommer',
-                            icon: const Icon(Icons.drive_file_rename_outline),
-                            style: _menuIconButtonStyle(context),
-                            onPressed: () =>
-                                Navigator.of(context)
-                                    .pop<Future<void> Function()>(() async {
-                                      if (state.mounted) {
-                                        await state._promptRename();
-                                      }
-                                    }),
-                          ),
-                        for (final action
-                            in inlineActions[state] ??
-                                const <EditorSlotAction>[]) ...[
-                          if (action.showEdit)
-                            IconButton(
-                              key: ValueKey('style-menu-size-${action.label}'),
-                              tooltip: action.tooltip ?? action.label,
-                              icon: const Icon(Icons.straighten),
-                              style: _menuIconButtonStyle(context),
-                              onPressed: () => Navigator.of(context)
-                                  .pop<Future<void> Function()>(() async {
-                                    if (state.mounted &&
-                                        state.widget.onEdit != null &&
-                                        action.dimensionDelegateBuilder !=
-                                            null &&
-                                        EditorWizardNavigation.findDirectSlotSizeAction(
-                                              state.context,
-                                            )?.label ==
-                                            action.label) {
-                                      await state.openEditor(
-                                        initialTab: EditorWizardTab.dimensions,
-                                        dimensionDelegate: action
-                                            .dimensionDelegateBuilder
-                                            ?.call(),
-                                      );
-                                    } else {
-                                      await EditorWizardNavigation.openWithTab(
-                                        EditorWizardTab.dimensions,
-                                        action.onEdit,
-                                        delegate: action
-                                            .dimensionDelegateBuilder
-                                            ?.call(),
-                                      );
-                                    }
-                                  }),
-                            ),
-                          if (action.onRemove case final remove?)
-                            IconButton(
-                              key: ValueKey(
-                                'style-menu-remove-${action.label}',
-                              ),
-                              tooltip: 'Supprimer le slot',
-                              icon: const Icon(Icons.delete_outline),
-                              style: _menuIconButtonStyle(
-                                context,
-                                destructive: true,
-                              ),
-                              onPressed: () =>
-                                  Navigator.of(context).pop(remove),
-                            ),
-                        ],
-                        if ((StyleEditScope.controllerOf(state.context)
-                                    ?.value ??
-                                false) &&
-                            state.widget.onRemoveChild != null &&
-                            !state._hasNestedEditableTarget)
-                          IconButton(
-                            key: ValueKey(
-                              'style-menu-remove-child-${state.label}',
-                            ),
-                            tooltip: 'Supprimer le composant enfant',
-                            icon: const Icon(Icons.delete_outline),
-                            style: _menuIconButtonStyle(
-                              context,
-                              destructive: true,
-                            ),
-                            onPressed: () => Navigator.of(context)
-                                .pop<Future<void> Function()>(
-                                  state.widget.onRemoveChild,
-                                ),
-                          ),
-                        if ((StyleEditScope.controllerOf(state.context)
-                                    ?.value ??
-                                false) &&
-                            state.widget.onAdd != null)
-                          IconButton(
-                            key: ValueKey('style-menu-add-${state.label}'),
-                            tooltip: 'Ajouter un slot',
-                            icon: const Icon(Icons.add),
-                            style: _menuIconButtonStyle(context),
-                            onPressed: () =>
-                                Navigator.of(context).pop(state.widget.onAdd),
-                          ),
-                        if ((
-                              [
-                                for (final action
-                                    in inlineActions[state] ??
-                                        const <EditorSlotAction>[])
-                                  ...action.wrapActions,
-                              ],
-                              (StyleEditScope.controllerOf(state.context)
-                                          ?.value ??
-                                      false)
-                                  ? state.widget.wrapChildrenActions
-                                  : const <EditorSlotWrapAction>[],
-                              state.canEdit
-                                  ? collectExtractableTargetsFromSlot(state)
-                                  : const <ExtractableComponentTarget>[],
-                              state._canEditWithAi,
-                            )
-                            case (
-                              final wrapActions,
-                              final wrapChildrenActions,
-                              final extractableTargets,
-                              final canEditWithAi,
-                            )
-                            when wrapActions.isNotEmpty ||
-                                wrapChildrenActions.isNotEmpty ||
-                                extractableTargets.isNotEmpty ||
-                                canEditWithAi ||
-                                state._canExportContent ||
-                                state._canConfigureAsComponent)
-                          MenuAnchor(
-                            consumeOutsideTap: true,
-                            menuChildren: [
-                              if (state._canConfigureAsComponent)
-                                MenuItemButton(
-                                  key: ValueKey(
-                                    'style-menu-configure-as-${state.label}',
-                                  ),
-                                  leadingIcon: const Icon(
-                                    Icons.settings_suggest_outlined,
-                                  ),
-                                  onPressed: () => Navigator.of(context)
-                                      .pop<Future<void> Function()>(
-                                        state._openConfigureAsDialog,
-                                      ),
-                                  child: const Text('Configure as...'),
-                                ),
-                              if (state._canExportContent)
-                                MenuItemButton(
-                                  key: ValueKey(
-                                    'style-menu-export-${state.label}',
-                                  ),
-                                  leadingIcon: const Icon(Icons.upload),
-                                  onPressed: () => Navigator.of(context)
-                                      .pop<Future<void> Function()>(
-                                        state._exportContent,
-                                      ),
-                                  child: const Text('Exporter le contenu...'),
-                                ),
-                              if (wrapActions.isNotEmpty)
-                                SubmenuButton(
-                                  leadingIcon: const Icon(Icons.wrap_text),
-                                  menuChildren: [
-                                    for (final action in wrapActions)
-                                      MenuItemButton(
-                                        leadingIcon: Icon(action.icon),
-                                        onPressed: () => Navigator.of(context)
-                                            .pop<Future<void> Function()>(
-                                              action.onSelected,
-                                            ),
-                                        child: Text(action.label),
-                                      ),
-                                  ],
-                                  child: const Text('Envelopper dans…'),
-                                ),
-                              if (wrapChildrenActions.isNotEmpty)
-                                SubmenuButton(
-                                  leadingIcon: const Icon(Icons.wrap_text),
-                                  menuChildren: [
-                                    for (final action in wrapChildrenActions)
-                                      MenuItemButton(
-                                        leadingIcon: Icon(action.icon),
-                                        onPressed: () => Navigator.of(context)
-                                            .pop<Future<void> Function()>(
-                                              action.onSelected,
-                                            ),
-                                        child: Text(action.label),
-                                      ),
-                                  ],
-                                  child: const Text(
-                                    'Envelopper les enfants dans…',
-                                  ),
-                                ),
-                              if (extractableTargets.isNotEmpty)
-                                MenuItemButton(
-                                  key: ValueKey(
-                                    'style-menu-extract-super-values-${state.label}',
-                                  ),
-                                  leadingIcon: const Icon(Icons.data_object),
-                                  onPressed: () => Navigator.of(context)
-                                      .pop<Future<void> Function()>(() async {
-                                        if (!state.mounted) return;
-                                        final latest =
-                                            collectExtractableTargetsFromSlot(
-                                              state,
-                                            );
-                                        if (latest.isEmpty) return;
-                                        await SuperValueJsonExtractDialog.show(
-                                          state.context,
-                                          targets: latest,
-                                          sourceLabel: state.titleLabel,
-                                          target: state.context,
-                                          rootSlot: state,
-                                        );
-                                      }),
-                                  child: const Text('Extraire & lier en JSON…'),
-                                ),
-                              if (canEditWithAi)
-                                MenuItemButton(
-                                  key: ValueKey('style-menu-ai-${state.label}'),
-                                  leadingIcon: const Icon(
-                                    Icons.auto_awesome_outlined,
-                                  ),
-                                  onPressed: () => Navigator.of(context)
-                                      .pop<Future<void> Function()>(
-                                        state._openAiWithScope,
-                                      ),
-                                  child: const Text('Modifier avec l’IA…'),
-                                ),
-                            ],
-                            builder: (context, controller, child) => IconButton(
-                              key: ValueKey('style-menu-more-${state.label}'),
-                              tooltip: 'Autres options',
-                              icon: const Icon(Icons.more_vert),
-                              style: _menuIconButtonStyle(context),
-                              onPressed: () => controller.isOpen
-                                  ? controller.close()
-                                  : controller.open(),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ],
+        onPinRequested: (resolvedPosition) => pinnedAt = resolvedPosition,
+        items: items,
       );
     } finally {
       if (EditorSlotState._menuGeneration == generation) {
@@ -1317,10 +1415,20 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       }
     }
     if (!mounted) return;
-    if (selected is EditorSlotState && selected.mounted) {
-      await selected.openEditor();
-    } else if (selected is Future<void> Function()) {
-      await selected();
+    if (pinnedAt case final resolvedPos?) {
+      if (!overlayState.mounted) return;
+      _PinnedContextMenuHost.of(overlayState).pin(
+        target: this,
+        position: resolvedPos,
+        constraints: menuConstraints,
+        themes: overlayThemes,
+        actions: actions,
+        targetContext: targetContext != null && targetContext.mounted
+            ? targetContext
+            : null,
+      );
+      return;
     }
+    await _executeSlotMenuSelection(selected);
   }
 }

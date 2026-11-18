@@ -279,10 +279,10 @@ class SlotDropTargetStack extends Stack {
   @override
   void updateRenderObject(
     BuildContext context,
-    covariant _RenderSlotDropTargetStack renderObject,
+    covariant RenderStack renderObject,
   ) {
     super.updateRenderObject(context, renderObject);
-    renderObject.hasDropTarget = hasDropTarget;
+    (renderObject as _RenderSlotDropTargetStack).hasDropTarget = hasDropTarget;
   }
 }
 

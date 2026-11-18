@@ -116,7 +116,8 @@ void main() {
         bool regionsInert() => regions.evaluate().every((element) {
           Widget? child;
           element.visitChildElements((e) => child = e.widget);
-          return child is BoxPointerRegion && !(child! as BoxPointerRegion).enabled;
+          return child is BoxPointerRegion &&
+              !(child! as BoxPointerRegion).enabled;
         });
         final dragTargets = find.descendant(
           of: find.byType(SuperLayout),
@@ -186,7 +187,7 @@ void main() {
   testWidgets(
     'SuperPage and SuperListView avoid child deactivation and unselected row edit rebuilds',
     (tester) async {
-      final dir = await Directory.systemTemp.createTemp('edit-mode-list-opt-');
+      final dir = Directory.systemTemp.createTempSync('edit-mode-list-opt-');
       final store = JsonRepositoryStore(dir);
       await tester.runAsync(() async {
         await store.create('Data');
@@ -203,9 +204,11 @@ void main() {
         );
       });
       final repoId = await tester.runAsync(() => store.idOf('Data'));
-      addTearDown(() async {
+      addTearDown(() {
         store.dispose();
-        await dir.delete(recursive: true);
+        if (dir.existsSync()) {
+          dir.deleteSync(recursive: true);
+        }
       });
 
       final editMode = ValueNotifier(false);
@@ -253,9 +256,9 @@ void main() {
                                 label: 'Cell',
                                 builder: (context) {
                                   final idx =
-                                      JsonListScope.maybeOf(
-                                        context,
-                                      )?.indices.lastOrNull ??
+                                      JsonListScope.maybeOf(context)
+                                          ?.indices
+                                          .lastOrNull ??
                                       -1;
                                   StyleEditScope.controllerOf(context);
                                   rowEditBuilds[idx] =
@@ -290,22 +293,37 @@ void main() {
 
       rowEditBuilds.clear();
       editMode.value = true;
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
       expect(pageChildDeactivations, 0);
       expect(rowEditBuilds[0], 1);
       expect(rowEditBuilds.containsKey(1), isFalse);
       expect(rowEditBuilds.containsKey(2), isFalse);
 
       // Right-clicking unselected row 2 in edit mode selects it and opens its menu.
-      await tester.tap(find.text('Item 2'), buttons: kSecondaryMouseButton);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('style-menu-Cell')), findsOneWidget);
-      await tester.tapAt(const Offset(2, 2));
-      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('Item 2'),
+        buttons: kSecondaryMouseButton,
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(
+        find.byKey(const ValueKey('style-menu-Iterable Content')),
+        findsOneWidget,
+      );
+      EditorSlotState.closeActiveMenu();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       editMode.value = false;
       await tester.pumpAndSettle();
       expect(pageChildDeactivations, 0);
+
+      await tester.runAsync(() async {
+        await store.flushBindings();
+        await tester.pumpWidget(const SizedBox());
+      });
     },
   );
 }

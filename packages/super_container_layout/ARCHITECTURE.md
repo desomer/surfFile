@@ -362,7 +362,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/slot_stack.dart` | Assemblage des slots visibles, de leurs actions et des wrappers de contenu ajusté. |
 | `widgets/components/super_layout/slot_render_layout.dart` | Layout flex des slots, calcul de leurs contraintes et mesures internes de redimensionnement. |
 | `widgets/components/super_layout/zone_scrollable_viewport.dart` | Défilement des zones, barre de défilement et mesure du viewport associée au layout. |
-| `widgets/components/super_layout/slot_drag.dart` | Étiquettes, curseurs, indications de position et cibles de glisser-déposer des slots. |
+| `widgets/components/super_layout/slot_drag.dart` | Étiquettes, curseurs, indications de position, `SlotDropTargetStack` (pile à profondeur constante testant le `DragTarget` après le contenu) et `SlotZoneTarget`. |
 | `widgets/components/super_layout/labeled_slot.dart` | Sélection, survol, overlay, glissement et redimensionnement d'un slot en mode édition. |
 | `widgets/components/super_layout/slot_size_editor.dart` | Éditeur de taille préférée et de contraintes (`SlotSizeConstraints`) d'un slot dans un `SuperLayout`. |
 | `widgets/components/super_layout/zone_axis_button.dart` | Bouton rapide de bascule d'axe (`horizontal` / `vertical`) et de paramètres de flux sur une zone en mode édition. |
@@ -466,7 +466,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/slots/editable_single_child.dart` | Conteneur éditable monoenfant (utilisé notamment pour la région `child` d'une `Card`). |
 | `widgets/editing/slots/editable_surface.dart` | `EditableSurface` : surface interactive en mode édition permettant d'éditer son `ContainerStyle`, son contenu et ses états. |
 | `widgets/editing/slots/editor_context_menu.dart` | `EditorContextMenu`, `VibeChatScope` : modèles et `InheritedWidget` du menu contextuel riche du mode édition (`EditorSlotAction`, `EditorContextMenuEntry`, pastille de couleur). |
-| `widgets/editing/slots/editor_context_menu_dialog.dart` | `part of 'editor_slot.dart'` : route popup, boîte de dialogue flottante/déplaçable et délégué de positionnement du menu contextuel. |
+| `widgets/editing/slots/editor_context_menu_dialog.dart` | `part of 'editor_slot.dart'` : route popup, hôte flottant non-modal épinglable (`editor-context-menu-pin`), carte déplaçable et délégué de positionnement du menu contextuel. |
 | `widgets/editing/slots/editor_selection_outline.dart` | `part of 'editor_selection_region.dart'` : animation et peintre `EditorSelectionOutline` du cadre de sélection et de survol. |
 | `widgets/editing/slots/editor_selection_region.dart` | `EditorSelectionRegion` : détection des clics/doubles-clics et sélection hiérarchique progressive d'un composant ou d'une zone. |
 | `widgets/editing/slots/editor_slot.dart` | `EditorSlot`, `EditorSlotState`, `StyleEditScope` : wrapper d'édition universel autour d'un slot de composant (cycle de vie, survol/highlight, rendu Box/Sliver). |
@@ -474,7 +474,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/slots/editor_slot_menu.dart` | `part of 'editor_slot.dart'` (`EditorSlotMenuExtension`) : construction et ouverture du menu contextuel hiérarchique (`openMenu`, badges, indicateurs, actions rapides). |
 | `widgets/editing/slots/editor_slot_targets.dart` | `part of 'editor_slot.dart'` (`EditorSlotTargetsExtension`) : renommage et usage (transaction undo unique), résolution contextuelle et collecte des cibles (`editableChain`, insertions, comportements, données). |
 | `widgets/editing/slots/provided_slot_scope.dart` | `ProvidedSlotScope` : portée transmettant les métadonnées et actions du slot parent aux sous-composants. |
-| `widgets/editing/slots/sliver_pointer_region.dart` | `part of 'editor_selection_region.dart'` : `SliverSlotScope`, `SliverPointerRegion` et son `RenderProxySliver` pour le survol et la peinture d'enfants Sliver. |
+| `widgets/editing/slots/sliver_pointer_region.dart` | `part of 'editor_selection_region.dart'` : `BoxPointerRegion` (`RenderProxyBox` à profondeur constante), `SliverSlotScope` et `SliverPointerRegion` (`RenderProxySliver`). |
 | `widgets/editing/slots/slot_removal.dart` | Logique de suppression sécurisée d'un slot et nettoyage de ses configurations via `EditorPageGraph`. |
 | `widgets/editing/slots/slot_size_editor.dart` | `SlotSizeDimensionDelegate`, `showSlotSizeEditor` : dialogue et contrôles d'édition fine des contraintes `SlotSizeConstraints` d'un slot. |
 | `widgets/editing/slots/slot_size_preview.dart` | `part of 'slot_size_editor.dart'` : aperçu géométrique interactif (Layout / Zone / Slot) dans l'éditeur de taille de slot. |
