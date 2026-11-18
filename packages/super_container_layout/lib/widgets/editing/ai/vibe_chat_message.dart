@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show immutable;
 
 import '../../../ai/vibe_ask_user.dart';
 import '../../../ai/vibe_chat_attachment.dart';
+import '../../../ai/vibe_plan.dart';
 
 /// Message de conversation temporaire affiché par le dialogue Vibe.
 @immutable
@@ -22,6 +23,9 @@ class VibeChatMessage {
     this.askUserAnswers,
     this.askUserUsedDefaults = false,
     this.askUserDismissed = false,
+    this.plan,
+    this.planSourcePrompt,
+    this.planSourceAttachments = const [],
   });
 
   /// Texte affiché dans la bulle.
@@ -51,6 +55,15 @@ class VibeChatMessage {
   /// Indique si le questionnaire a été ignoré.
   final bool askUserDismissed;
 
+  /// Plan d'exécution par lots associé à la réponse.
+  final VibeExecutionPlan? plan;
+
+  /// Demande textuelle d'origine ayant déclenché ce plan.
+  final String? planSourcePrompt;
+
+  /// Pièces jointes sources conservées pour être réinjectées dans chaque lot du plan.
+  final List<VibeChatAttachment> planSourceAttachments;
+
   /// Copie ce message en conservant les valeurs non spécifiées.
   VibeChatMessage copyWith({
     String? text,
@@ -62,6 +75,9 @@ class VibeChatMessage {
     Map<String, Object?>? askUserAnswers,
     bool? askUserUsedDefaults,
     bool? askUserDismissed,
+    VibeExecutionPlan? plan,
+    String? planSourcePrompt,
+    List<VibeChatAttachment>? planSourceAttachments,
   }) => VibeChatMessage(
     text: text ?? this.text,
     isUser: isUser ?? this.isUser,
@@ -72,6 +88,10 @@ class VibeChatMessage {
     askUserAnswers: askUserAnswers ?? this.askUserAnswers,
     askUserUsedDefaults: askUserUsedDefaults ?? this.askUserUsedDefaults,
     askUserDismissed: askUserDismissed ?? this.askUserDismissed,
+    plan: plan ?? this.plan,
+    planSourcePrompt: planSourcePrompt ?? this.planSourcePrompt,
+    planSourceAttachments:
+        planSourceAttachments ?? this.planSourceAttachments,
   );
 
   /// Formate le message à inclure dans l'historique transmis à l'IA.
@@ -104,6 +124,10 @@ class VibeChatMessage {
       if (askUser != null) {
         return 'Assistant : $text\n'
             'Questions posées : ${jsonEncode(askUser!.toJson())}';
+      }
+      if (plan != null) {
+        return 'Assistant : $text\n'
+            'Plan proposé : ${jsonEncode(plan!.toJson())}';
       }
       return 'Assistant : $text';
     }

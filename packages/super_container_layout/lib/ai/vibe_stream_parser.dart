@@ -22,6 +22,7 @@ class VibeStreamSnapshot {
     this.isMessageComplete = false,
     this.hasVibeObject = false,
     this.hasAskUserObject = false,
+    this.hasPlanObject = false,
     this.hasRepositoriesObject = false,
     this.estimatedComponentCount = 0,
     this.receivedChars = 0,
@@ -52,6 +53,11 @@ class VibeStreamSnapshot {
   ///
   /// Reste `false` lorsque `"askUser"` vaut `null`, un primitif ou est absent.
   final bool hasAskUserObject;
+
+  /// Indique si un champ `"plan"` de premier niveau débutant par `{` a été détecté.
+  ///
+  /// Reste `false` lorsque `"plan"` vaut `null` ou est absent.
+  final bool hasPlanObject;
 
   /// Indique si un champ `"repositories"` de premier niveau débutant par `{` a été détecté.
   ///
@@ -95,6 +101,7 @@ class VibeStreamSnapshot {
     bool? isMessageComplete,
     bool? hasVibeObject,
     bool? hasAskUserObject,
+    bool? hasPlanObject,
     bool? hasRepositoriesObject,
     int? estimatedComponentCount,
     int? receivedChars,
@@ -113,6 +120,7 @@ class VibeStreamSnapshot {
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
     hasVibeObject: hasVibeObject ?? this.hasVibeObject,
     hasAskUserObject: hasAskUserObject ?? this.hasAskUserObject,
+    hasPlanObject: hasPlanObject ?? this.hasPlanObject,
     hasRepositoriesObject: hasRepositoriesObject ?? this.hasRepositoriesObject,
     estimatedComponentCount:
         estimatedComponentCount ?? this.estimatedComponentCount,
@@ -142,6 +150,7 @@ class VibeStreamSnapshot {
           other.isMessageComplete == isMessageComplete &&
           other.hasVibeObject == hasVibeObject &&
           other.hasAskUserObject == hasAskUserObject &&
+          other.hasPlanObject == hasPlanObject &&
           other.hasRepositoriesObject == hasRepositoriesObject &&
           other.estimatedComponentCount == estimatedComponentCount &&
           other.receivedChars == receivedChars &&
@@ -160,6 +169,7 @@ class VibeStreamSnapshot {
     isMessageComplete,
     hasVibeObject,
     hasAskUserObject,
+    hasPlanObject,
     hasRepositoriesObject,
     estimatedComponentCount,
     receivedChars,
@@ -179,6 +189,7 @@ class VibeStreamSnapshot {
       'isMessageComplete: $isMessageComplete, '
       'hasVibeObject: $hasVibeObject, '
       'hasAskUserObject: $hasAskUserObject, '
+      'hasPlanObject: $hasPlanObject, '
       'hasRepositoriesObject: $hasRepositoriesObject, '
       'estimatedComponentCount: $estimatedComponentCount, '
       'receivedChars: $receivedChars, '
@@ -251,6 +262,7 @@ class VibeIncrementalStreamParser {
 
   bool _hasVibeObject = false;
   bool _hasAskUserObject = false;
+  bool _hasPlanObject = false;
   bool _hasRepositoriesObject = false;
   final Set<String> _seenComponentIds = <String>{};
   int _estimatedComponentCount = 0;
@@ -296,6 +308,7 @@ class VibeIncrementalStreamParser {
     _isMessageComplete = false;
     _hasVibeObject = false;
     _hasAskUserObject = false;
+    _hasPlanObject = false;
     _hasRepositoriesObject = false;
     _seenComponentIds.clear();
     _estimatedComponentCount = 0;
@@ -365,6 +378,7 @@ class VibeIncrementalStreamParser {
       isMessageComplete: _isMessageComplete,
       hasVibeObject: _hasVibeObject,
       hasAskUserObject: _hasAskUserObject,
+      hasPlanObject: _hasPlanObject,
       hasRepositoriesObject: _hasRepositoriesObject,
       estimatedComponentCount: _estimatedComponentCount,
       receivedChars: _receivedChars,
@@ -629,6 +643,8 @@ class VibeIncrementalStreamParser {
         childKind = _FrameKind.repositoriesObject;
       } else if (parent.kind == _FrameKind.rootObject && key == 'askUser') {
         _hasAskUserObject = true;
+      } else if (parent.kind == _FrameKind.rootObject && key == 'plan') {
+        _hasPlanObject = true;
       } else if ((_isPatchContainerFrame(parent.kind) ||
               parent.kind == _FrameKind.rootObject) &&
           key != null &&

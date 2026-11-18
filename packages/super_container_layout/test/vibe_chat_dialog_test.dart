@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/ai/vibe_stream_parser.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/registry.dart';
@@ -4173,6 +4174,611 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('Mode Reproduire à l’identique — Plan & Lots automatiques', () {
+    test('VibeExecutionPlan analyse le JSON et déduplique les IDs de lots', () {
+      final plan = VibeExecutionPlan.tryFromJson({
+        'title': 'Landing page test',
+        'lots': [
+          {'id': 'lot-1', 'title': 'Header', 'description': 'Logo et menu'},
+          {'id': 'lot-1', 'title': 'Hero', 'description': 'Titre et CTA'},
+        ],
+      });
+      expect(plan, isNotNull);
+      expect(plan!.title, 'Landing page test');
+      expect(plan.lots.map((l) => l.id).toList(), ['lot-1', 'lot-1_2']);
+      expect(plan.status, VibePlanStatus.awaitingConfirmation);
+      expect(plan.formatLotContextPrompt(1), contains('>>> À EXÉCUTER MAINTENANT'));
+    });
+
+    test('VibeIncrementalStreamParser détecte hasPlanObject en streaming', () {
+      final parser = VibeIncrementalStreamParser();
+      final snap = parser.addChunk(
+        '{"message":"Plan prêt.","plan":{"title":"P","lots":[]},"vibe":null}',
+      );
+      expect(snap.isMessageComplete, isTrue);
+      expect(snap.hasPlanObject, isTrue);
+      expect(snap.hasVibeObject, isFalse);
+      expect(snap.hasAskUserObject, isFalse);
+    });
+
+    testWidgets(
+      'activer À l’identique verrouille Questions sur Aucun, masque Design System et injecte les directives exactes',
+      (tester) async {
+        final appearance = ValueNotifier(Appearance());
+        addTearDown(appearance.dispose);
+        final prompts = <String>[];
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.balanced,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      prompts.add(prompt);
+                      return jsonEncode({
+                        'message': 'Plan généré.',
+                        'plan': {
+                          'title': 'Page test',
+                          'lots': [
+                            {'id': 'lot-1', 'title': 'Header'},
+                          ],
+                        },
+                        'vibe': null,
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsOneWidget);
+        expect(find.text('Équilibré'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-reproduce-exact')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('vibe-chat-exact-design-notice')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsNothing);
+        expect(find.text('Aucun'), findsOneWidget);
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Reproduis cette page',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(prompts, hasLength(1));
+        expect(prompts.single, contains('MODE « REPRODUIRE À L’IDENTIQUE »'));
+        expect(prompts.single, contains('PHASE 1 — PLANIFICATION EN LOTS'));
+        expect(find.byKey(const ValueKey('vibe-plan-card')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
+
+        // Désactiver le mode restaure le niveau de questionnement précédent.
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-reproduce-exact')));
+        await tester.pumpAndSettle();
+        expect(find.text('Équilibré'), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'confirme le plan, exécute automatiquement tous les lots avec pièces jointes et regroupe en 1 Undo',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        final editMode = ValueNotifier(true);
+        final history = EditorHistoryController(
+          appearance: appearance,
+          editMode: editMode,
+        );
+        addTearDown(history.dispose);
+        addTearDown(editMode.dispose);
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final capturedPrompts = <String>[];
+        final capturedAttachments = <List<VibeChatAttachment>>[];
+        var callCount = 0;
+
+        final mdAttachment = VibeChatAttachment.text(
+          name: 'blueprint.md',
+          content: '# Blueprint\nhttps://example.com/logo.svg',
+        );
+
+        await tester.pumpWidget(
+          StyleEditScope(
+            controller: editMode,
+            child: EditorHistoryScope(
+              controller: history,
+              child: AppearanceScope(
+                controller: appearance,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialReproduceExactMode: true,
+                        pickAttachments: () async => [mdAttachment],
+                        onClose: () {},
+                        onDrag: (_) {},
+                        streamGenerate: (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) async* {
+                          callCount++;
+                          capturedPrompts.add(prompt);
+                          capturedAttachments.add(attachments);
+                          late final String payload;
+                          if (callCount == 1) {
+                            payload = jsonEncode({
+                              'message': 'Voici le plan en 2 lots.',
+                              'plan': {
+                                'title': 'Reproduction Blueprint',
+                                'lots': [
+                                  {
+                                    'id': 'lot-1',
+                                    'title': 'Lot Header',
+                                    'description': 'Logo et titre',
+                                  },
+                                  {
+                                    'id': 'lot-2',
+                                    'title': 'Lot Hero',
+                                    'description': 'Sous-titre',
+                                  },
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                          } else if (callCount == 2) {
+                            payload = jsonEncode({
+                              'message': 'Lot 1 appliqué.',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'slotLabels': {'hero-title': 'Titre'},
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'hero-title',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'hero-title': {
+                                    'type': 'value',
+                                    'text': 'Bienvenue',
+                                  },
+                                },
+                                'usages': {
+                                  'hero-title': {
+                                    'kind': 'explanation',
+                                    'translationKey': 'heroTitle',
+                                  },
+                                },
+                              },
+                            });
+                          } else {
+                            payload = jsonEncode({
+                              'message': 'Lot 2 appliqué.',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'slotLabels': {
+                                      'hero-title': 'Titre',
+                                      'hero-sub': 'Sous-titre',
+                                    },
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'hero-title',
+                                          'type': 'registry:Value',
+                                        },
+                                        {
+                                          'id': 'hero-sub',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'hero-sub': {
+                                    'type': 'value',
+                                    'text': 'Description exacte',
+                                  },
+                                },
+                                'usages': {
+                                  'hero-sub': {
+                                    'kind': 'explanation',
+                                    'translationKey': 'heroSub',
+                                  },
+                                },
+                              },
+                            });
+                          }
+                          yield GeminiStreamEvent(
+                            deltaText: payload,
+                            accumulatedText: payload,
+                            isDone: true,
+                            usedContextCache: true,
+                          );
+                        },
+                        generate: (_) async => '',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-attach')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Reproduis la page',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        // Phase 1 : le plan est affiché sans modifier l'écran.
+        expect(callCount, 1);
+        expect(appearance.value.components.containsKey('hero-title'), isFalse);
+        expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
+
+        // Phase 2 : clic sur « Exécuter les 2 lots » -> enchaînement automatique.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        expect(callCount, 3);
+        expect(capturedPrompts[1], contains('PHASE 2 — EXÉCUTION DU LOT 1/2'));
+        expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 2/2'));
+        expect(capturedAttachments[1].single.name, 'blueprint.md');
+        expect(capturedAttachments[2].single.name, 'blueprint.md');
+
+        expect(appearance.value.valueComponent('hero-title').initialText, 'Bienvenue');
+        expect(
+          appearance.value.valueComponent('hero-sub').initialText,
+          'Description exacte',
+        );
+        expect(find.text('Reproduction terminée : 2/2 lots appliqués.'), findsOneWidget);
+
+        // 1 seul Undo annule tout le plan.
+        expect(history.canUndo, isTrue);
+        history.undo();
+        expect(appearance.value.components.containsKey('hero-title'), isFalse);
+        expect(appearance.value.components.containsKey('hero-sub'), isFalse);
+        expect(history.canUndo, isFalse);
+      },
+    );
+
+    testWidgets(
+      'met le plan en pause sur erreur d’un lot en conservant les lots précédents et permet Réessayer / Ignorer',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        final editMode = ValueNotifier(true);
+        final history = EditorHistoryController(
+          appearance: appearance,
+          editMode: editMode,
+        );
+        addTearDown(history.dispose);
+        addTearDown(editMode.dispose);
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var lot2ShouldFail = true;
+        var lot2Attempts = 0;
+        var lot3Called = false;
+
+        await tester.pumpWidget(
+          StyleEditScope(
+            controller: editMode,
+            child: EditorHistoryScope(
+              controller: history,
+              child: AppearanceScope(
+                controller: appearance,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialReproduceExactMode: true,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (prompt) async {
+                          if (prompt.contains('PHASE 1 — PLANIFICATION')) {
+                            return jsonEncode({
+                              'message': 'Plan prêt.',
+                              'plan': {
+                                'title': 'Plan résilient',
+                                'lots': [
+                                  {'id': 'lot-1', 'title': 'Lot 1'},
+                                  {'id': 'lot-2', 'title': 'Lot 2'},
+                                  {'id': 'lot-3', 'title': 'Lot 3'},
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                          }
+                          if (prompt.contains('LOT 1/3')) {
+                            return jsonEncode({
+                              'message': 'Lot 1 ok',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'slotLabels': {'lot1-val': 'Val 1'},
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'lot1-val',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'lot1-val': {'type': 'value', 'text': 'Un'},
+                                },
+                                'usages': {
+                                  'lot1-val': {
+                                    'kind': 'explanation',
+                                    'translationKey': 'valOne',
+                                  },
+                                },
+                              },
+                            });
+                          }
+                          if (prompt.contains('LOT 2/3')) {
+                            lot2Attempts++;
+                            if (lot2ShouldFail) {
+                              // JSON invalide non récupérable -> épuise les tentatives delta.
+                              return 'not-json-at-all';
+                            }
+                            return jsonEncode({
+                              'message': 'Lot 2 ok',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'slotLabels': {
+                                      'lot1-val': 'Val 1',
+                                      'lot2-val': 'Val 2',
+                                    },
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'lot1-val',
+                                          'type': 'registry:Value',
+                                        },
+                                        {
+                                          'id': 'lot2-val',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'lot2-val': {'type': 'value', 'text': 'Deux'},
+                                },
+                                'usages': {
+                                  'lot2-val': {
+                                    'kind': 'explanation',
+                                    'translationKey': 'valTwo',
+                                  },
+                                },
+                              },
+                            });
+                          }
+                          lot3Called = true;
+                          return jsonEncode({
+                            'message': 'Lot 3 ok',
+                            'vibe': {
+                              'components': {
+                                'mainLayout': {
+                                  'type': 'layout',
+                                  'slotLabels': {
+                                    'lot1-val': 'Val 1',
+                                    'lot2-val': 'Val 2',
+                                    'lot3-val': 'Val 3',
+                                  },
+                                  'placements': {
+                                    'center': [
+                                      {
+                                        'id': 'lot1-val',
+                                        'type': 'registry:Value',
+                                      },
+                                      {
+                                        'id': 'lot2-val',
+                                        'type': 'registry:Value',
+                                      },
+                                      {
+                                        'id': 'lot3-val',
+                                        'type': 'registry:Value',
+                                      },
+                                    ],
+                                  },
+                                },
+                                'lot3-val': {'type': 'value', 'text': 'Trois'},
+                              },
+                              'usages': {
+                                'lot3-val': {
+                                  'kind': 'explanation',
+                                  'translationKey': 'valThree',
+                                },
+                              },
+                            },
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Go',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        // Pause sur erreur du Lot 2, mais Lot 1 reste appliqué.
+        expect(lot2Attempts, 4);
+        expect(lot3Called, isFalse);
+        expect(appearance.value.valueComponent('lot1-val').initialText, 'Un');
+        expect(find.byKey(const ValueKey('vibe-plan-retry-lot')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-plan-skip-lot')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-plan-stop')), findsOneWidget);
+
+        // On corrige le générateur et on clique sur « Réessayer ce lot ».
+        lot2ShouldFail = false;
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-retry-lot')));
+        await tester.pumpAndSettle();
+
+        expect(lot3Called, isTrue);
+        expect(appearance.value.valueComponent('lot2-val').initialText, 'Deux');
+        expect(appearance.value.valueComponent('lot3-val').initialText, 'Trois');
+        expect(find.text('Reproduction terminée : 3/3 lots appliqués.'), findsOneWidget);
+
+        // 1 seul Undo global annule tout le plan même après pause/reprise.
+        history.undo();
+        expect(appearance.value.components.containsKey('lot1-val'), isFalse);
+        expect(appearance.value.components.containsKey('lot2-val'), isFalse);
+        expect(appearance.value.components.containsKey('lot3-val'), isFalse);
+      },
+    );
+
+    testWidgets(
+      'permet d’ignorer un lot en échec puis de terminer ou d’arrêter le plan',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialReproduceExactMode: true,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      if (prompt.contains('PHASE 1 — PLANIFICATION')) {
+                        return jsonEncode({
+                          'message': 'Plan prêt.',
+                          'plan': {
+                            'title': 'Plan skip',
+                            'lots': [
+                              {'id': 'lot-1', 'title': 'Lot 1'},
+                              {'id': 'lot-2', 'title': 'Lot 2'},
+                            ],
+                          },
+                          'vibe': null,
+                        });
+                      }
+                      if (prompt.contains('LOT 1/2')) {
+                        return 'invalid-json';
+                      }
+                      return jsonEncode({
+                        'message': 'Lot 2 ok',
+                        'vibe': {
+                          'components': {
+                            'mainLayout': {
+                              'type': 'layout',
+                              'slotLabels': {'lot2-val': 'Val 2'},
+                              'placements': {
+                                'center': [
+                                  {'id': 'lot2-val', 'type': 'registry:Value'},
+                                ],
+                              },
+                            },
+                            'lot2-val': {'type': 'value', 'text': 'Deux'},
+                          },
+                          'usages': {
+                            'lot2-val': {
+                              'kind': 'explanation',
+                              'translationKey': 'valTwo',
+                            },
+                          },
+                        },
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Go',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('vibe-plan-skip-lot')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-skip-lot')));
+        await tester.pumpAndSettle();
+
+        expect(appearance.value.valueComponent('lot2-val').initialText, 'Deux');
+        expect(
+          find.text('Reproduction terminée : 1/2 lots appliqués (1 ignoré(s)).'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 }
 
 class _FakeVibeSpeechTranscriber extends VibeSpeechTranscriber {

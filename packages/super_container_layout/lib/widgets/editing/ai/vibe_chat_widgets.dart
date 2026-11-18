@@ -11,6 +11,7 @@ import '../../../ai/vibe_speech_to_text.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import 'vibe_ask_user_card.dart';
 import 'vibe_chat_message.dart';
+import 'vibe_plan_card.dart';
 
 /// Puce représentant une pièce jointe en attente d'envoi.
 class VibePendingAttachmentChip extends StatelessWidget {
@@ -105,8 +106,14 @@ class VibeMessageBubble extends StatelessWidget {
   const VibeMessageBubble({
     required this.message,
     this.sending = false,
+    this.isActivePlan = false,
     this.onSubmitAskUser,
     this.onSkipAskUser,
+    this.onStartPlan,
+    this.onCancelPlan,
+    this.onStopPlan,
+    this.onRetryPlanLot,
+    this.onSkipPlanLot,
     this.speechTranscriber,
     this.onSpeechError,
     super.key,
@@ -118,11 +125,29 @@ class VibeMessageBubble extends StatelessWidget {
   /// Désactive les questions pendant la génération.
   final bool sending;
 
+  /// Indique si le plan porté par ce message est le plan interactif courant.
+  final bool isActivePlan;
+
   /// Reçoit les réponses à un questionnaire.
   final ValueChanged<Map<String, Object?>>? onSubmitAskUser;
 
   /// Demande de répondre avec les valeurs par défaut.
   final VoidCallback? onSkipAskUser;
+
+  /// Déclenche l'exécution automatique du plan.
+  final VoidCallback? onStartPlan;
+
+  /// Annule le plan avant démarrage.
+  final VoidCallback? onCancelPlan;
+
+  /// Arrête l'exécution du plan en cours ou en pause.
+  final VoidCallback? onStopPlan;
+
+  /// Relance le lot en échec.
+  final VoidCallback? onRetryPlanLot;
+
+  /// Ignore le lot en échec et poursuit avec le suivant.
+  final VoidCallback? onSkipPlanLot;
 
   /// Service optionnel de dictée vocale (Speech-to-Text) pour les champs texte du questionnaire.
   final VibeSpeechTranscriber? speechTranscriber;
@@ -137,6 +162,7 @@ class VibeMessageBubble extends StatelessWidget {
         ? scheme.onPrimaryContainer
         : scheme.onSurface;
     final askUser = message.askUser;
+    final plan = message.plan;
     final isResolvedAskUser =
         message.askUserAnswers != null || message.askUserDismissed;
 
@@ -145,7 +171,8 @@ class VibeMessageBubble extends StatelessWidget {
         final availableWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : 340.0;
-        final maxBubbleWidth = askUser != null && !isResolvedAskUser
+        final maxBubbleWidth =
+            (askUser != null && !isResolvedAskUser) || plan != null
             ? math.max(340.0, math.min(960.0, availableWidth - 16.0))
             : math.max(340.0, math.min(820.0, availableWidth * 0.80));
         return Align(
@@ -282,6 +309,20 @@ class VibeMessageBubble extends StatelessWidget {
                       speechTranscriber: speechTranscriber,
                       onSpeechError: onSpeechError,
                     ),
+                ],
+                if (plan != null) ...[
+                  if (message.text.isNotEmpty || askUser != null)
+                    const SizedBox(height: 8),
+                  VibePlanCard(
+                    plan: plan,
+                    busy: sending,
+                    isActivePlan: isActivePlan,
+                    onStart: onStartPlan,
+                    onCancel: onCancelPlan,
+                    onStop: onStopPlan,
+                    onRetryLot: onRetryPlanLot,
+                    onSkipLot: onSkipPlanLot,
+                  ),
                 ],
               ],
             ),
@@ -432,6 +473,87 @@ class VibeSpeedModeChip extends StatelessWidget {
   }
 }
 
+/// Sélecteur activant ou désactivant le mode « Reproduire à l'identique » (plan & lots automatiques).
+class VibeReproduceExactChip extends StatelessWidget {
+  /// Crée une puce bascule pour le mode « Reproduire à l'identique ».
+  const VibeReproduceExactChip({
+    required this.selected,
+    required this.enabled,
+    required this.onToggle,
+    super.key,
+  });
+
+  /// Indique si le mode est actif.
+  final bool selected;
+
+  /// Indique si le basculement est autorisé (désactivé pendant la génération).
+  final bool enabled;
+
+  /// Callback appelé au clic.
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.tertiaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onTertiaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.tertiary : scheme.outlineVariant;
+    return Tooltip(
+      message:
+          'Mode pixel-perfect : ignore le Design System générique et les questions, '
+          'découpe la source en un plan par lots puis exécute les lots en automatique',
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: 'Reproduire à l’identique',
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-reproduce-exact'),
+            onTap: enabled ? onToggle : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.content_copy_outlined,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'À l’identique',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bulle présentant progressivement le texte et l'état du patch généré.
 class VibeStreamingAssistantBubble extends StatelessWidget {
   /// Crée la bulle liée aux snapshots de [snapshot].
@@ -552,6 +674,28 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                           Flexible(
                             child: Text(
                               repoLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (current.isMessageComplete &&
+                        current.hasPlanObject) ...[
+                      if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'Découpage du plan en lots…',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: scheme.onSurfaceVariant,

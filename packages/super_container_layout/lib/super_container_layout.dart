@@ -11,6 +11,7 @@ export 'ai/design_md_parser.dart';
 export 'ai/design_system_catalog.dart';
 export 'ai/vibe_ask_user.dart';
 export 'ai/vibe_chat_attachment.dart';
+export 'ai/vibe_plan.dart';
 export 'ai/vibe_speech_to_text.dart';
 export 'ai/vibe_stream_parser.dart';
 export 'widgets/editing/ai/design_system_catalog_dialog.dart';

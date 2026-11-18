@@ -21,6 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../ai/call_gemini.dart';
 import '../../../ai/design_system_catalog.dart';
 import '../../../ai/vibe_ask_user.dart';
+import '../../../ai/vibe_plan.dart';
 import '../../../ai/vibe_speech_to_text.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import '../../../models/native_component_config.dart';
@@ -62,12 +63,15 @@ export '../../../ai/vibe_ask_user.dart'
         VibeAskUserRequest,
         VibeQuestioningLevel;
 export '../../../ai/vibe_chat_attachment.dart';
+export '../../../ai/vibe_plan.dart'
+    show VibeExecutionPlan, VibeLotStatus, VibePlanLot, VibePlanStatus;
 export '../../../ai/vibe_speech_to_text.dart';
 export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
 export 'design_system_catalog_dialog.dart';
 export 'design_system_preview_card.dart';
 export 'vibe_ask_user_card.dart' show VibeAskUserCard;
 export 'vibe_chat_message.dart' show VibeChatMessage;
+export 'vibe_plan_card.dart' show VibePlanCard;
 export '../slots/editor_context_menu.dart' show VibeChatScope;
 
 /// Panneau et boîte de dialogue de chat avec l'IA Vibe pour créer ou modifier l'interface en langage naturel.
@@ -83,6 +87,8 @@ class VibeChatDialog extends StatefulWidget {
     this.initialSpeedMode = VibeAiSpeedMode.fast,
     this.initialQuestioningLevel = VibeQuestioningLevel.balanced,
     this.onQuestioningLevelChanged,
+    this.initialReproduceExactMode = false,
+    this.onReproduceExactModeChanged,
     this.scope,
     this.onScopeChanged,
     this.pickAttachments,
@@ -118,6 +124,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 1. Création ou modification directe de l'écran : renvoie {"message":"résumé bref en français","vibe":{...}}. Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "behaviors", "usages", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
+4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -197,6 +204,12 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Callback optionnel notifié lorsque l'utilisateur ajuste le niveau de questionnement via le slider.
   final ValueChanged<VibeQuestioningLevel>? onQuestioningLevelChanged;
+
+  /// Active par défaut le mode « Reproduire à l'identique » (planification et exécution par lots automatiques).
+  final bool initialReproduceExactMode;
+
+  /// Callback optionnel notifié lorsque le mode « Reproduire à l'identique » change.
+  final ValueChanged<bool>? onReproduceExactModeChanged;
 
   /// Périmètre restreint optionnel limitant les modifications de l'IA à un sous-arbre.
   final VibeChatScope? scope;
@@ -667,11 +680,22 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   VoidCallback? _speechStateListener;
   late VibeChatScope? _scope = widget.scope;
   late VibeAiSpeedMode _speedMode = widget.initialSpeedMode;
-  late VibeQuestioningLevel _questioningLevel = widget.initialQuestioningLevel;
+  late VibeQuestioningLevel _questioningLevel = widget.initialReproduceExactMode
+      ? VibeQuestioningLevel.none
+      : widget.initialQuestioningLevel;
+  late bool _reproduceExactMode = widget.initialReproduceExactMode;
+  late VibeQuestioningLevel? _questioningLevelBeforeExactMode =
+      widget.initialReproduceExactMode ? widget.initialQuestioningLevel : null;
+  int? _activePlanMessageIndex;
+  bool _executingPlan = false;
+  bool _planStopRequested = false;
+  EditorHistoryController? _openPlanHistory;
   late DesignSystemPreset? _selectedDesignSystem = widget.initialDesignSystem;
   late List<DesignSystemPreset> _customDesignSystems =
       List<DesignSystemPreset>.of(widget.customDesignSystems);
   late bool _expanded = widget.expanded ?? true;
+
+  bool get _isBusy => _sending || _executingPlan;
 
   bool get _isAfterAskUserReply {
     for (var i = _messages.length - 1; i >= 0; i--) {
@@ -783,8 +807,15 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         );
       }
     }
-    if (oldWidget.initialQuestioningLevel != widget.initialQuestioningLevel) {
+    if (oldWidget.initialQuestioningLevel != widget.initialQuestioningLevel &&
+        !_reproduceExactMode) {
       _questioningLevel = widget.initialQuestioningLevel;
+    }
+    if (oldWidget.initialReproduceExactMode != widget.initialReproduceExactMode) {
+      _setReproduceExactMode(
+        widget.initialReproduceExactMode,
+        notifyCallback: false,
+      );
     }
     if (widget.expanded != null &&
         widget.expanded != oldWidget.expanded &&
@@ -806,13 +837,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void _syncExpansionFromSnapshot(VibeStreamSnapshot snapshot) {
     if (snapshot.hasVibeObject || snapshot.hasRepositoriesObject) {
       _setExpanded(false);
-    } else if (snapshot.hasAskUserObject) {
+    } else if (snapshot.hasAskUserObject || snapshot.hasPlanObject) {
       _setExpanded(true);
     }
   }
 
   void _setSpeedMode(VibeAiSpeedMode mode) {
-    if (_speedMode == mode || _sending) return;
+    if (_speedMode == mode || _isBusy) return;
     setState(() => _speedMode = mode);
     if (_usesStreamingGenerator) {
       unawaited(
@@ -828,9 +859,27 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   void _setQuestioningLevel(VibeQuestioningLevel level) {
-    if (_questioningLevel == level || _sending) return;
+    if (_reproduceExactMode || _questioningLevel == level || _isBusy) return;
     setState(() => _questioningLevel = level);
     widget.onQuestioningLevelChanged?.call(level);
+  }
+
+  void _setReproduceExactMode(bool enabled, {bool notifyCallback = true}) {
+    if (_reproduceExactMode == enabled || _isBusy) return;
+    setState(() {
+      _reproduceExactMode = enabled;
+      if (enabled) {
+        _questioningLevelBeforeExactMode = _questioningLevel;
+        _questioningLevel = VibeQuestioningLevel.none;
+      } else {
+        _questioningLevel =
+            _questioningLevelBeforeExactMode ?? widget.initialQuestioningLevel;
+        _questioningLevelBeforeExactMode = null;
+      }
+    });
+    if (notifyCallback) {
+      widget.onReproduceExactModeChanged?.call(enabled);
+    }
   }
 
   void _publishStreamSnapshot(VibeStreamSnapshot snapshot) {
@@ -1177,7 +1226,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   Future<void> _openDesignSystemCatalog() async {
-    if (_sending) return;
+    if (_isBusy) return;
     final bundle = DefaultAssetBundle.of(context);
     final result = await DesignSystemCatalogDialog.show(
       context,
@@ -1254,7 +1303,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   void _clearDesignSystem() {
-    if (_sending || _selectedDesignSystem == null) return;
+    if (_isBusy || _selectedDesignSystem == null) return;
     setState(() => _selectedDesignSystem = null);
     widget.onDesignSystemChanged?.call(null);
     if (_usesStreamingGenerator) {
@@ -1271,7 +1320,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   Future<void> _restyleWithSelectedDesignSystem() async {
     final preset = _selectedDesignSystem;
-    if (preset == null || _sending) return;
+    if (preset == null || _isBusy) return;
 
     _setExpanded(false);
     setState(() {
@@ -1326,6 +1375,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   @override
   void dispose() {
+    _planStopRequested = true;
+    _commitOuterPlanTransaction();
     _cancelSpeechDictation();
     if (_activeTurnSession != null) {
       VibeWorkHighlightController.instance.clearStreamingTargets();
@@ -1418,7 +1469,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   Future<void> _attachFromPicker() async {
-    if (_sending) return;
+    if (_isBusy) return;
     setState(() => _attachmentError = null);
     try {
       final picker = widget.pickAttachments ?? VibeChatAttachment.pickFiles;
@@ -1447,7 +1498,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   Future<void> _attachFromClipboard() async {
-    if (_sending) return;
+    if (_isBusy) return;
     setState(() => _attachmentError = null);
     try {
       final paster =
@@ -1485,7 +1536,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   void _removePendingAttachment(int index) {
-    if (_sending || index < 0 || index >= _pendingAttachments.length) return;
+    if (_isBusy || index < 0 || index >= _pendingAttachments.length) return;
     setState(() {
       _pendingAttachments.removeAt(index);
       _attachmentError = null;
@@ -1524,11 +1575,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final attachments = List<VibeChatAttachment>.unmodifiable(
       _pendingAttachments,
     );
-    if ((request.isEmpty && attachments.isEmpty) || _sending) return;
+    if ((request.isEmpty && attachments.isEmpty) || _isBusy) return;
     _input.clear();
-    if (_questioningLevel == VibeQuestioningLevel.none) {
+    if (_questioningLevel == VibeQuestioningLevel.none &&
+        !_reproduceExactMode) {
       _setExpanded(false);
     }
+    _stopStaleActivePlan();
     setState(() {
       _pendingAttachments.clear();
       _attachmentError = null;
@@ -1552,7 +1605,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     Map<String, Object?> answers, {
     required bool usedDefaults,
   }) async {
-    if (_sending || messageIndex < 0 || messageIndex >= _messages.length) {
+    if (_isBusy || messageIndex < 0 || messageIndex >= _messages.length) {
       return;
     }
     final target = _messages[messageIndex];
@@ -1686,7 +1739,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
       } else {
         await _rollbackTurnSession(session);
-        if (generated.askUser case final askUser?) {
+        if (generated.plan case final plan?) {
+          _setExpanded(true);
+          debugPrint(
+            '[Vibe IA] Plan de reproduction reçu '
+            '(${plan.lots.length} lot(s)).',
+          );
+        } else if (generated.askUser case final askUser?) {
           _setExpanded(true);
           debugPrint(
             '[Vibe IA] Questionnaire de clarification reçu '
@@ -1699,15 +1758,31 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
       }
       final summary = generated.result['message'];
-      final fallbackText = generated.askUser != null && !hasMutations
+      final fallbackText = generated.plan != null && !hasMutations
+          ? 'Plan prêt — clique sur « Exécuter les lots » pour démarrer :'
+          : generated.askUser != null && !hasMutations
           ? 'Précise tes préférences :'
           : 'Modifications appliquées.';
       _appendMessage(
         summary is String && summary.trim().isNotEmpty
             ? summary.trim()
             : fallbackText,
-        askUser: !hasMutations ? generated.askUser : null,
+        askUser: !hasMutations && generated.plan == null
+            ? generated.askUser
+            : null,
+        plan: !hasMutations ? generated.plan : null,
+        planSourcePrompt: !hasMutations && generated.plan != null
+            ? (promptOverride ?? displayUserText)
+            : null,
+        planSourceAttachments: !hasMutations && generated.plan != null
+            ? attachments
+            : const [],
       );
+      if (!hasMutations && generated.plan != null && mounted) {
+        setState(() {
+          _activePlanMessageIndex = _messages.length - 1;
+        });
+      }
     } on FormatException catch (error, stackTrace) {
       await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
@@ -1770,6 +1845,440 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'Génération impossible (${error.runtimeType}) : $cause',
         failedResponse: _lastFailedResponse,
       );
+    } finally {
+      VibeWorkHighlightController.instance.clearStreamingTargets();
+      _activeTurnSession = null;
+      _pendingSnapshot = null;
+      _streamingSnapshot.value = null;
+      history?.commitTransaction();
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _beginOuterPlanTransaction(EditorHistoryController? history) {
+    if (history == null || _openPlanHistory != null) return;
+    history.beginTransaction();
+    _openPlanHistory = history;
+  }
+
+  void _commitOuterPlanTransaction() {
+    final openHistory = _openPlanHistory;
+    if (openHistory == null) return;
+    _openPlanHistory = null;
+    openHistory.commitTransaction();
+  }
+
+  void _updatePlanAt(
+    int messageIndex,
+    VibeExecutionPlan Function(VibeExecutionPlan plan) transform,
+  ) {
+    if (messageIndex < 0 || messageIndex >= _messages.length) return;
+    final currentPlan = _messages[messageIndex].plan;
+    if (currentPlan == null) return;
+    final nextPlan = transform(currentPlan);
+    if (mounted) {
+      setState(() {
+        _messages[messageIndex] = _messages[messageIndex].copyWith(
+          plan: nextPlan,
+        );
+      });
+    } else {
+      _messages[messageIndex] = _messages[messageIndex].copyWith(
+        plan: nextPlan,
+      );
+    }
+  }
+
+  void _stopStaleActivePlan() {
+    final idx = _activePlanMessageIndex;
+    if (idx == null || idx < 0 || idx >= _messages.length) {
+      _activePlanMessageIndex = null;
+      _commitOuterPlanTransaction();
+      return;
+    }
+    final plan = _messages[idx].plan;
+    if (plan != null &&
+        (plan.status == VibePlanStatus.awaitingConfirmation ||
+            plan.status == VibePlanStatus.pausedOnError)) {
+      _updatePlanAt(idx, (p) => p.copyWith(status: VibePlanStatus.stopped));
+    }
+    _activePlanMessageIndex = null;
+    _commitOuterPlanTransaction();
+  }
+
+  void _cancelPlan(int messageIndex) {
+    if (_isBusy || messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null || plan.status != VibePlanStatus.awaitingConfirmation) {
+      return;
+    }
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.copyWith(status: VibePlanStatus.stopped),
+    );
+    setState(() => _activePlanMessageIndex = null);
+    _commitOuterPlanTransaction();
+  }
+
+  void _stopPlan(int messageIndex) {
+    if (messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null) return;
+    if (_executingPlan) {
+      setState(() => _planStopRequested = true);
+      return;
+    }
+    if (plan.status == VibePlanStatus.pausedOnError ||
+        plan.status == VibePlanStatus.awaitingConfirmation) {
+      _updatePlanAt(
+        messageIndex,
+        (p) => p.copyWith(status: VibePlanStatus.stopped),
+      );
+      setState(() => _activePlanMessageIndex = null);
+      _commitOuterPlanTransaction();
+      _appendMessage(
+        'Exécution du plan arrêtée (${plan.doneCount}/${plan.lots.length} lots appliqués).',
+      );
+    }
+  }
+
+  Future<void> _startPlanExecution(int messageIndex) async {
+    if (_isBusy || messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null || plan.status != VibePlanStatus.awaitingConfirmation) {
+      return;
+    }
+    final startIdx = plan.nextActionableIndex;
+    if (startIdx < 0) return;
+    _beginOuterPlanTransaction(EditorHistoryScope.controllerOf(context));
+    await _runPlanLoop(messageIndex, startIdx);
+  }
+
+  Future<void> _retryPlanLot(int messageIndex) async {
+    if (_isBusy || messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null || plan.status != VibePlanStatus.pausedOnError) return;
+    final failedIdx = plan.lots.indexWhere(
+      (lot) => lot.status == VibeLotStatus.failed,
+    );
+    if (failedIdx < 0) return;
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.withLotAt(
+        failedIdx,
+        (lot) => lot.copyWith(
+          status: VibeLotStatus.pending,
+          clearErrorMessage: true,
+        ),
+      ),
+    );
+    _beginOuterPlanTransaction(EditorHistoryScope.controllerOf(context));
+    await _runPlanLoop(messageIndex, failedIdx);
+  }
+
+  Future<void> _skipPlanLot(int messageIndex) async {
+    if (_isBusy || messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null || plan.status != VibePlanStatus.pausedOnError) return;
+    final failedIdx = plan.lots.indexWhere(
+      (lot) => lot.status == VibeLotStatus.failed,
+    );
+    if (failedIdx < 0) return;
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.withLotAt(
+        failedIdx,
+        (lot) => lot.copyWith(
+          status: VibeLotStatus.skipped,
+          clearErrorMessage: true,
+        ),
+      ),
+    );
+    final updated = _messages[messageIndex].plan!;
+    final nextIdx = updated.nextActionableIndex;
+    if (nextIdx < 0) {
+      _updatePlanAt(
+        messageIndex,
+        (p) => p.copyWith(status: VibePlanStatus.completed),
+      );
+      if (mounted) {
+        setState(() => _activePlanMessageIndex = null);
+      }
+      _commitOuterPlanTransaction();
+      _appendMessage(
+        'Plan terminé (${updated.doneCount}/${updated.lots.length} lots appliqués, '
+        '${updated.lots.where((l) => l.status == VibeLotStatus.skipped).length} ignoré(s)).',
+      );
+      return;
+    }
+    _beginOuterPlanTransaction(EditorHistoryScope.controllerOf(context));
+    await _runPlanLoop(messageIndex, nextIdx);
+  }
+
+  Future<void> _runPlanLoop(int messageIndex, int startLotIndex) async {
+    if (!mounted) return;
+    setState(() {
+      _executingPlan = true;
+      _planStopRequested = false;
+    });
+    _setExpanded(false);
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.copyWith(status: VibePlanStatus.running),
+    );
+
+    try {
+      final totalLots = _messages[messageIndex].plan?.lots.length ?? 0;
+      for (var i = startLotIndex; i < totalLots; i++) {
+        if (!mounted || _planStopRequested) {
+          _updatePlanAt(
+            messageIndex,
+            (p) => p.copyWith(status: VibePlanStatus.stopped),
+          );
+          final stoppedPlan = _messages[messageIndex].plan;
+          if (mounted) {
+            setState(() => _activePlanMessageIndex = null);
+          }
+          _commitOuterPlanTransaction();
+          if (stoppedPlan != null) {
+            _appendMessage(
+              'Exécution du plan arrêtée (${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués).',
+            );
+          }
+          return;
+        }
+
+        final currentPlan = _messages[messageIndex].plan;
+        if (currentPlan == null) return;
+        final lot = currentPlan.lots[i];
+        if (lot.status == VibeLotStatus.done ||
+            lot.status == VibeLotStatus.skipped) {
+          continue;
+        }
+
+        _updatePlanAt(
+          messageIndex,
+          (p) => p
+              .copyWith(status: VibePlanStatus.running)
+              .withLotAt(
+                i,
+                (l) => l.copyWith(
+                  status: VibeLotStatus.running,
+                  clearErrorMessage: true,
+                ),
+              ),
+        );
+
+        final errorCause = await _executeSingleLot(messageIndex, i);
+        if (!mounted) return;
+
+        if (errorCause == null) {
+          _updatePlanAt(
+            messageIndex,
+            (p) => p.withLotAt(
+              i,
+              (l) => l.copyWith(
+                status: VibeLotStatus.done,
+                clearErrorMessage: true,
+              ),
+            ),
+          );
+          continue;
+        }
+
+        if (_planStopRequested) {
+          _updatePlanAt(
+            messageIndex,
+            (p) => p
+                .copyWith(status: VibePlanStatus.stopped)
+                .withLotAt(
+                  i,
+                  (l) => l.copyWith(
+                    status: VibeLotStatus.failed,
+                    errorMessage: errorCause,
+                  ),
+                ),
+          );
+          final stoppedPlan = _messages[messageIndex].plan;
+          setState(() => _activePlanMessageIndex = null);
+          _commitOuterPlanTransaction();
+          if (stoppedPlan != null) {
+            _appendMessage(
+              'Exécution du plan arrêtée (${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués).',
+            );
+          }
+          return;
+        }
+
+        _updatePlanAt(
+          messageIndex,
+          (p) => p
+              .copyWith(status: VibePlanStatus.pausedOnError)
+              .withLotAt(
+                i,
+                (l) => l.copyWith(
+                  status: VibeLotStatus.failed,
+                  errorMessage: errorCause,
+                ),
+              ),
+        );
+        _setExpanded(true);
+        return;
+      }
+
+      if (!mounted) return;
+      final completedPlan = _messages[messageIndex].plan;
+      _updatePlanAt(
+        messageIndex,
+        (p) => p.copyWith(status: VibePlanStatus.completed),
+      );
+      setState(() => _activePlanMessageIndex = null);
+      _commitOuterPlanTransaction();
+      if (completedPlan != null) {
+        final skipped = completedPlan.lots
+            .where((l) => l.status == VibeLotStatus.skipped)
+            .length;
+        _appendMessage(
+          skipped == 0
+              ? 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
+              : 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _executingPlan = false;
+          _planStopRequested = false;
+        });
+      } else {
+        _executingPlan = false;
+        _planStopRequested = false;
+      }
+    }
+  }
+
+  Future<String?> _executeSingleLot(int messageIndex, int lotIndex) async {
+    final planMessage = _messages[messageIndex];
+    final plan = planMessage.plan;
+    if (plan == null) return 'Plan introuvable.';
+
+    final history = EditorHistoryScope.controllerOf(context);
+    final resolvedPageRouting =
+        widget.pageRouting ?? SuperApp.maybeOf(context)?.pageRouting;
+    final resolvedRepositoryStore = _resolveRepositoryStore();
+    final rawInitialAppearance = widget.controller.value;
+    final baseAppearance = _currentAppearance;
+    final initialInstantiatedIds = widget.registry == null
+        ? null
+        : Set<String>.unmodifiable(widget.registry!.instantiatedComponentIds);
+    final session = _LiveTurnSession(
+      rawInitialAppearance: rawInitialAppearance,
+      baseAppearance: baseAppearance,
+      initialInstantiatedIds: initialInstantiatedIds,
+      pageRouting: resolvedPageRouting,
+      initialRouteLocation: resolvedPageRouting
+          ?.router
+          .routeInformationProvider
+          .value
+          .uri
+          .toString(),
+      initialPageIds: {
+        for (final page in baseAppearance.pageCatalog.pages) page.id,
+      },
+      repoTransaction: resolvedRepositoryStore == null
+          ? null
+          : VibeRepositoryTurnTransaction(resolvedRepositoryStore),
+    );
+
+    _lastFailedResponse = null;
+    _activeTurnSession = session;
+    setState(() => _sending = true);
+
+    final sourcePrompt = planMessage.planSourcePrompt ?? '';
+    final sourceAttachments = planMessage.planSourceAttachments;
+    debugPrint(
+      '[Vibe IA][Plan] Exécution lot ${lotIndex + 1}/${plan.lots.length} : '
+      '"${plan.lots[lotIndex].title}"',
+    );
+    history?.beginTransaction();
+    try {
+      final guide = await _loadGuide(context);
+      final repositoriesContext = resolvedRepositoryStore == null
+          ? null
+          : await VibeRepositoryPromptFormatter.formatStoreContext(
+              resolvedRepositoryStore,
+            );
+      String buildLotPrompt({
+        Appearance? appearanceOverride,
+        Iterable<String>? instantiatedIdsOverride,
+        String? repositoriesContext,
+      }) => VibePromptBuilder.buildLotTurnPrompt(
+        plan: plan,
+        lotIndex: lotIndex,
+        sourcePrompt: sourcePrompt,
+        sourceAttachments: sourceAttachments,
+        appearance: appearanceOverride ?? session.baseAppearance,
+        codec: widget.codec,
+        scope: _scope,
+        instantiatedComponentIds:
+            instantiatedIdsOverride ?? session.initialInstantiatedIds,
+        repositoriesContext: repositoriesContext,
+      );
+
+      final turnPrompt = buildLotPrompt(
+        appearanceOverride: session.baseAppearance,
+        instantiatedIdsOverride: session.initialInstantiatedIds,
+        repositoriesContext: repositoriesContext,
+      );
+      final generated = await _generateAndApply(
+        turnPrompt,
+        systemGuide: guide,
+        session: session,
+        attachments: sourceAttachments,
+        allowPlan: false,
+        promptBuilder: buildLotPrompt,
+      );
+      final hasMutations =
+          generated.appearance != null || generated.repositoriesUpdated;
+      if (!hasMutations) {
+        await _rollbackTurnSession(session);
+        return 'Le lot n’a produit aucune modification d’écran ("vibe" vide).';
+      }
+      if (generated.appearance case final appearance?) {
+        widget.controller.value = appearance;
+        _pulseAppearanceDiff(session, appearance);
+        if (_scope == null) {
+          _maybeNavigateToNewLivePage(session, appearance);
+        }
+      } else {
+        _rollbackLivePreview(session);
+      }
+      if (session.repoTransaction?.buildHistoryCallbacks()
+          case final repoCallbacks?) {
+        history?.addTransactionSideEffect(
+          undo: repoCallbacks.undo,
+          redo: repoCallbacks.redo,
+        );
+      }
+      return null;
+    } on FormatException catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
+    } on ArgumentError catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
+    } on StateError catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
+    } on FlutterError catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
+    } on Exception catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
+    } catch (error) {
+      await _rollbackTurnSession(session);
+      return _describeErrorCause(error);
     } finally {
       VibeWorkHighlightController.instance.clearStreamingTargets();
       _activeTurnSession = null;
@@ -1864,6 +2373,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       bool repositoriesUpdated,
       Map<String, dynamic> result,
       VibeAskUserRequest? askUser,
+      VibeExecutionPlan? plan,
     })
   >
   _generateAndApply(
@@ -1871,6 +2381,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     required String systemGuide,
     required _LiveTurnSession session,
     List<VibeChatAttachment> attachments = const [],
+    bool allowPlan = true,
+    String Function({
+      Appearance? appearanceOverride,
+      Iterable<String>? instantiatedIdsOverride,
+      String? repositoriesContext,
+    })?
+    promptBuilder,
   }) async {
     const maxAttempts = 4;
     var currentTurnPrompt = turnPrompt;
@@ -1948,17 +2465,31 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
         decodedMap = result;
         final rawAskUser = VibeAskUserRequest.tryFromJson(result['askUser']);
+        final rawPlan = allowPlan
+            ? VibeExecutionPlan.tryFromJson(result['plan'])
+            : null;
         final repositoriesPatch = _extractRepositoriesPatch(result);
         final patch = _extractPatch(result);
         if (repositoriesPatch == null &&
             patch == null &&
             !session.hasCheckpoint) {
+          if (rawPlan != null) {
+            _lastFailedResponse = null;
+            return (
+              appearance: null,
+              repositoriesUpdated: false,
+              result: result,
+              askUser: null,
+              plan: rawPlan,
+            );
+          }
           if (rawAskUser != null &&
               (_questioningLevel == VibeQuestioningLevel.none ||
+                  _reproduceExactMode ||
                   _isAfterAskUserReply)) {
             throw const FormatException(
               'Le questionnaire "askUser" est désactivé sur ce tour : '
-              'génère directement le patch "vibe" sans "askUser".',
+              'génère directement le patch "vibe" ou un "plan" sans "askUser".',
             );
           }
           final askUser = rawAskUser?.truncate(_questioningLevel.maxQuestions);
@@ -1979,6 +2510,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             repositoriesUpdated: false,
             result: result,
             askUser: askUser,
+            plan: null,
           );
         }
         if (session.hasCheckpoint &&
@@ -2149,6 +2681,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               repositoriesPatch != null,
           result: result,
           askUser: null,
+          plan: null,
         );
       } catch (error) {
         session.livePreviewDisabled = true;
@@ -2280,7 +2813,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               : await VibeRepositoryPromptFormatter.formatStoreContext(
                   resolvedStore,
                 );
-          final refreshedTurnPrompt = _buildTurnPrompt(
+          final buildPrompt = promptBuilder ?? _buildTurnPrompt;
+          final refreshedTurnPrompt = buildPrompt(
             appearanceOverride: session.checkpointAppearance,
             instantiatedIdsOverride: session.initialInstantiatedIds,
             repositoriesContext: refreshedReposContext,
@@ -2323,7 +2857,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               : await VibeRepositoryPromptFormatter.formatStoreContext(
                   resolvedStore,
                 );
-          final refreshedTurnPrompt = _buildTurnPrompt(
+          final buildPrompt = promptBuilder ?? _buildTurnPrompt;
+          final refreshedTurnPrompt = buildPrompt(
             appearanceOverride: session.checkpointAppearance,
             instantiatedIdsOverride: session.initialInstantiatedIds,
             repositoriesContext: refreshedReposContext,
@@ -2397,6 +2932,7 @@ $response
     final candidate = Map<String, dynamic>.of(result)
       ..remove('message')
       ..remove('askUser')
+      ..remove('plan')
       ..remove('repositories');
     return _hasPatchChanges(candidate) ? candidate : null;
   }
@@ -2519,6 +3055,7 @@ $response
       instantiatedComponentIds:
           instantiatedIdsOverride ?? widget.registry?.instantiatedComponentIds,
       repositoriesContext: repositoriesContext,
+      reproduceExactMode: _reproduceExactMode,
     );
   }
 
@@ -2563,6 +3100,7 @@ $response
             (decoded.containsKey('vibe') ||
                 decoded.containsKey('message') ||
                 decoded.containsKey('askUser') ||
+                decoded.containsKey('plan') ||
                 decoded.containsKey('repositories'))) {
           debugPrint(
             '[Vibe IA] JSON réparé automatiquement '
@@ -2648,6 +3186,9 @@ $response
     String text, {
     String? failedResponse,
     VibeAskUserRequest? askUser,
+    VibeExecutionPlan? plan,
+    String? planSourcePrompt,
+    List<VibeChatAttachment> planSourceAttachments = const [],
   }) {
     if (!mounted) return;
     setState(
@@ -2657,6 +3198,9 @@ $response
           isUser: false,
           failedResponse: failedResponse,
           askUser: askUser,
+          plan: plan,
+          planSourcePrompt: planSourcePrompt,
+          planSourceAttachments: planSourceAttachments,
         ),
       ),
     );
@@ -2759,10 +3303,18 @@ $response
                                         mode: mode,
                                         icon: _iconForSpeedMode(mode),
                                         selected: _speedMode == mode,
-                                        enabled: !_sending,
+                                        enabled: !_isBusy,
                                         onSelected: () => _setSpeedMode(mode),
                                       ),
                                     ],
+                                    const SizedBox(width: 6),
+                                    VibeReproduceExactChip(
+                                      selected: _reproduceExactMode,
+                                      enabled: !_isBusy,
+                                      onToggle: () => _setReproduceExactMode(
+                                        !_reproduceExactMode,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -2809,7 +3361,7 @@ $response
                                       max: 3,
                                       divisions: 3,
                                       label: _questioningLevel.label,
-                                      onChanged: _sending
+                                      onChanged: _isBusy || _reproduceExactMode
                                           ? null
                                           : (value) => _setQuestioningLevel(
                                               VibeQuestioningLevel.fromSliderValue(
@@ -2820,7 +3372,9 @@ $response
                                   ),
                                 ),
                                 Tooltip(
-                                  message: _questioningLevel.tooltip,
+                                  message: _reproduceExactMode
+                                      ? 'Désactivé en mode « Reproduire à l’identique »'
+                                      : _questioningLevel.tooltip,
                                   child: Container(
                                     key: const ValueKey(
                                       'vibe-chat-questioning-label',
@@ -2856,13 +3410,51 @@ $response
                           ),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                            child: VibeDesignSystemBar(
-                              selectedPreset: _selectedDesignSystem,
-                              sending: _sending,
-                              onOpenCatalog: _openDesignSystemCatalog,
-                              onClear: _clearDesignSystem,
-                              onRestyle: _restyleWithSelectedDesignSystem,
-                            ),
+                            child: _reproduceExactMode
+                                ? Container(
+                                    key: const ValueKey(
+                                      'vibe-chat-exact-design-notice',
+                                    ),
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: scheme.tertiaryContainer
+                                          .withValues(alpha: 0.65),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.straighten_outlined,
+                                          size: 15,
+                                          color: scheme.onTertiaryContainer,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Style fidèle à la source (Design System ignoré) • Plan & lots auto',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: scheme.onTertiaryContainer,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : VibeDesignSystemBar(
+                                    selectedPreset: _selectedDesignSystem,
+                                    sending: _isBusy,
+                                    onOpenCatalog: _openDesignSystemCatalog,
+                                    onClear: _clearDesignSystem,
+                                    onRestyle: _restyleWithSelectedDesignSystem,
+                                  ),
                           ),
                           if (_scope case final activeScope?)
                             Container(
@@ -2910,7 +3502,7 @@ $response
                                       height: 24,
                                     ),
                                     color: scheme.onSecondaryContainer,
-                                    onPressed: _sending ? null : _clearScope,
+                                    onPressed: _isBusy ? null : _clearScope,
                                     icon: const Icon(Icons.close),
                                   ),
                                 ],
@@ -2932,7 +3524,8 @@ $response
                         for (var i = _messages.length - 1; i >= 0; i--)
                           VibeMessageBubble(
                             message: _messages[i],
-                            sending: _sending,
+                            sending: _isBusy,
+                            isActivePlan: _activePlanMessageIndex == i,
                             speechTranscriber: widget.speechTranscriber,
                             onSpeechError: (message) {
                               if (mounted) {
@@ -2950,6 +3543,11 @@ $response
                                 usedDefaults: true,
                               );
                             },
+                            onStartPlan: () => _startPlanExecution(i),
+                            onCancelPlan: () => _cancelPlan(i),
+                            onStopPlan: () => _stopPlan(i),
+                            onRetryPlanLot: () => _retryPlanLot(i),
+                            onSkipPlanLot: () => _skipPlanLot(i),
                           ),
                       ],
                     ),
@@ -3013,7 +3611,7 @@ $response
                         child: VibePendingAttachmentChip(
                           index: index,
                           attachment: attachment,
-                          onRemove: _sending
+                          onRemove: _isBusy
                               ? null
                               : () => _removePendingAttachment(index),
                         ),
@@ -3031,14 +3629,14 @@ $response
                   key: const ValueKey('vibe-chat-attach'),
                   tooltip: 'Joindre un fichier (image ou texte)',
                   visualDensity: VisualDensity.compact,
-                  onPressed: _sending ? null : _attachFromPicker,
+                  onPressed: _isBusy ? null : _attachFromPicker,
                   icon: const Icon(Icons.attach_file),
                 ),
                 IconButton(
                   key: const ValueKey('vibe-chat-paste-attachment'),
                   tooltip: 'Coller un fichier ou texte du presse-papiers',
                   visualDensity: VisualDensity.compact,
-                  onPressed: _sending ? null : _attachFromClipboard,
+                  onPressed: _isBusy ? null : _attachFromClipboard,
                   icon: const Icon(Icons.content_paste),
                 ),
                 const SizedBox(width: 4),
@@ -3055,6 +3653,8 @@ $response
                           ? 'Écoute en cours… (parlez puis faites une pause)'
                           : _speechState == VibeSpeechState.transcribing
                           ? 'Transcription en cours…'
+                          : _reproduceExactMode
+                          ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
                           : 'Décris l’écran souhaité…',
                       border: const OutlineInputBorder(),
                       isDense: true,
@@ -3078,7 +3678,7 @@ $response
                         )
                       : null,
                   onPressed:
-                      _sending || _speechState == VibeSpeechState.transcribing
+                      _isBusy || _speechState == VibeSpeechState.transcribing
                       ? null
                       : _toggleSpeechDictation,
                   icon: _speechState == VibeSpeechState.transcribing
@@ -3095,9 +3695,11 @@ $response
                 const SizedBox(width: 4),
                 IconButton.filled(
                   key: const ValueKey('vibe-chat-send'),
-                  tooltip: 'Générer et appliquer',
-                  onPressed: _sending ? null : _send,
-                  icon: _sending
+                  tooltip: _reproduceExactMode
+                      ? 'Analyser et préparer le plan par lots'
+                      : 'Générer et appliquer',
+                  onPressed: _isBusy ? null : _send,
+                  icon: _isBusy
                       ? const SizedBox.square(
                           dimension: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
