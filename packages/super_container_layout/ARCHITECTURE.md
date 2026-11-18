@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **323 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **324 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -152,7 +152,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 323 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 324 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -399,7 +399,8 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
 | `widgets/editing/ai/design_system_catalog_dialog.dart` | `DesignSystemCatalogDialog` : galerie modale interactive de sélection, d'inspection Markdown et d'import/collage de fichiers `DESIGN.md`. |
 | `widgets/editing/ai/design_system_preview_card.dart` | `DesignSystemMiniPreview`, `DesignSystemPreviewCard`, `VibeDesignSystemBar`, `DesignSystemSelectionResult` : miniatures d'interface, cartes d'aperçu à pastilles hexadécimales et barre compacte de sélection/restylage. |
-| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant et composant `SCREEN_JSON_AI_GUIDE.md`, `REPOSITORY_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et un préréglage `DESIGN.md` actif optionnel issu de `DesignSystemCatalog` ou d'un `.md` importé (`warmUp`, `loadStaticGuide`, surchargeable via `customDesignGuide`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre) enrichi de `REPOSITORIES DISPONIBLES`, diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`), créant/fusionnant transactionnellement les repositories JSON avec réécriture d'alias vers 32 hex, rollback et Undo/Redo, puis appliquant le patch via `AppearanceTransfer.applyVibe`. |
+| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant et composant `SCREEN_JSON_AI_GUIDE.md`, `REPOSITORY_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et un préréglage `DESIGN.md` actif optionnel issu de `DesignSystemCatalog` ou d'un `.md` importé (`warmUp`, `loadStaticGuide`, surchargeable via `customDesignGuide`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre) enrichi de `REPOSITORIES DISPONIBLES`, diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), isolant les entrées invalides par checkpoint partiel et relance delta incrémentale (`VibeDeltaRecovery`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`), créant/fusionnant transactionnellement les repositories JSON avec réécriture d'alias vers 32 hex, savepoints/rollback et Undo/Redo, puis appliquant le patch via `AppearanceTransfer.applyVibe`. |
+| `widgets/editing/ai/vibe_delta_recovery.dart` | `VibeDeltaRecovery`, `VibeSalvageOutcome` : récupération incrémentale des composants, styles, comportements, usages et repositories valides déjà streamés lorsqu'une tentative échoue (erreur de schéma, contrat de région, troncature JSON ou composant détaché), construction du prompt de relance delta ciblé et nettoyage final des brouillons non rattachés. |
 | `widgets/editing/ai/vibe_repository_applier.dart` | `VibeRepositoryPromptFormatter`, `VibeRepositoryPatchValidator`, `VibeRepositoryApplier`, `VibeRepositoryTurnTransaction`, `VibeRepositoryPatchEntry`, `VibeRepositoryPatchMode`, `rewriteVibePatchRepositoryAliases` : formatage borné de `REPOSITORIES DISPONIBLES`, validation stricte des patches `"repositories"` (`merge`/`replace`, interdiction du préfixe `@` et des caractères réservés de `JsonAttributePath`), réécriture des alias `snake_case` vers leurs identifiants 32 hex dans `"vibe"` et transaction idempotente SSE/finale avec `rollback()` et callbacks Undo/Redo. |
 | `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle, recherche de provider et commande de datasource. |
 | `widgets/editing/behaviors/datasource_action_settings.dart` | `DatasourceActionSettings`, `DatasourceActionDraft` : sélection de la datasource, de la commande et du tri pour l'action `datasource`, avec accès au gestionnaire. |

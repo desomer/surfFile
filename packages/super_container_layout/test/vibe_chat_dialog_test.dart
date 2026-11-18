@@ -3883,6 +3883,296 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'live streaming keeps rendering valid components past a broken entry, preserves the checkpoint on screen, and applies a delta-only retry without regenerating the page',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final store = _CountingAppearanceStore(Appearance());
+      final registry = Registry()..bootstrap();
+      final mainLayout = registry.layoutController('mainLayout');
+      addTearDown(registry.unbindAppearance);
+      late ValueNotifier<Appearance> appAppearance;
+      late EditorHistoryController appHistory;
+
+      var attemptCount = 0;
+      final prompts = <String>[];
+      late StreamController<GeminiStreamEvent> attempt1Stream;
+      late StreamController<GeminiStreamEvent> attempt2Stream;
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              appHistory = EditorHistoryScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(config: cfg),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 420,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) =>
+                            Future.error('Should use streamGenerate'),
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) {
+                              prompts.add(prompt);
+                              attemptCount++;
+                              if (attemptCount == 1) {
+                                attempt1Stream =
+                                    StreamController<GeminiStreamEvent>();
+                                return attempt1Stream.stream;
+                              }
+                              attempt2Stream =
+                                  StreamController<GeminiStreamEvent>();
+                              return attempt2Stream.stream;
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final editScopeContext = tester.element(
+        find.byKey(const ValueKey('vibe-chat-input')),
+      );
+      StyleEditScope.controllerOf(editScopeContext)!.value = true;
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Construis la page avec en-tête, héro et pied de page.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pump();
+
+      // Palier 1 : mainLayout + header valide + hero-broken invalide (axe inconnu)
+      const chunk1 =
+          '{"message":"Construction","vibe":{"components":{'
+          '"mainLayout":{"type":"layout","north":true,"south":true,'
+          '"placements":{'
+          '"north":[{"id":"header-title","type":"registry:Value"}],'
+          '"center":[{"id":"hero-broken","type":"registry:Layout"}],'
+          '"south":[{"id":"footer-note","type":"registry:Value"}]'
+          '}},'
+          '"header-title":{"type":"value","text":"En-tête Live"},'
+          '"hero-broken":{"type":"layout","zoneAxes":{"center":"diagonal"}},';
+      attempt1Stream.add(
+        const GeminiStreamEvent(
+          deltaText: chunk1,
+          accumulatedText: chunk1,
+          isDone: false,
+          usedContextCache: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Malgré l'erreur dans hero-broken, header-title est déjà visible en live !
+      expect(find.text('En-tête Live'), findsOneWidget);
+
+      // Palier 2 : les composants suivants continuent de s'afficher en direct + styles + enfant de hero-broken !
+      const chunk2 =
+          '"hero-child":{"type":"value","text":"Contenu Héro Préservé"},'
+          '"footer-note":{"type":"value","text":"Pied Live"}'
+          '},"styles":{"header-title":{"radius":12}}}}';
+      attempt1Stream.add(
+        const GeminiStreamEvent(
+          deltaText: chunk2,
+          accumulatedText: '$chunk1$chunk2',
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await attempt1Stream.close();
+      await tester.pump();
+      await tester.pump();
+
+      // La tentative 2 démarre SANS effacer l'aperçu des composants valides à l'écran !
+      expect(attemptCount, 2);
+      expect(find.text('En-tête Live'), findsOneWidget);
+      expect(find.text('Pied Live'), findsOneWidget);
+      expect(store.saveCalls, 0);
+
+      // Le prompt de la tentative 2 est en mode delta et contient déjà header-title, footer-note et hero-child dans l'ÉTAT ACTUEL :
+      expect(prompts[1], contains('MODE DELTA INCRÉMENTAL'));
+      expect(prompts[1], contains('hero-broken'));
+      expect(prompts[1], contains('"header-title"'));
+      expect(prompts[1], contains('"hero-child"'));
+
+      // Tentative 2 : l'IA renvoie UNIQUEMENT le delta de hero-broken (sans réémettre mainLayout, header-title, footer-note ni hero-child !)
+      final deltaFix = jsonEncode({
+        'message': 'Page complète.',
+        'vibe': {
+          'components': {
+            'hero-broken': {
+              'type': 'layout',
+              'zoneAxes': {'center': 'row'},
+              'placements': {
+                'center': [
+                  {'id': 'hero-child', 'type': 'registry:Value'},
+                ],
+              },
+            },
+          },
+        },
+      });
+      attempt2Stream.add(
+        GeminiStreamEvent(
+          deltaText: deltaFix,
+          accumulatedText: deltaFix,
+          isDone: true,
+          usedContextCache: true,
+        ),
+      );
+      await attempt2Stream.close();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Page complète.'), findsOneWidget);
+      expect(find.text('En-tête Live'), findsOneWidget);
+      expect(find.text('Contenu Héro Préservé'), findsOneWidget);
+      expect(find.text('Pied Live'), findsOneWidget);
+      expect(appAppearance.value.style('header-title').radius, 12);
+      expect(store.saveCalls, 1);
+
+      // Un seul Undo restaure tout le tour d'un bloc :
+      expect(appHistory.canUndo, isTrue);
+      appHistory.undo();
+      await tester.pumpAndSettle();
+      expect(appAppearance.value.components, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'truncated SSE stream salvages already streamed components and completes via delta continuation without redoing the whole page',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final prompts = <String>[];
+      var attempt = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                initialQuestioningLevel: VibeQuestioningLevel.none,
+                onClose: () {},
+                onDrag: (_) {},
+                generate: (_) => Future.error('Should use streamGenerate'),
+                streamGenerate:
+                    (
+                      prompt, {
+                      systemInstruction,
+                      staticGuide,
+                      attachments = const [],
+                      speedMode = VibeAiSpeedMode.fast,
+                    }) async* {
+                      prompts.add(prompt);
+                      attempt++;
+                      if (attempt == 1) {
+                        // Flux coupé au milieu de kpi-2 après avoir déjà fermé mainLayout et kpi-1 !
+                        const truncated =
+                            '{"message":"Tableau","vibe":{"components":{'
+                            '"mainLayout":{"type":"layout","placements":{"center":['
+                            '{"id":"kpi-1","type":"registry:Value"},'
+                            '{"id":"kpi-2","type":"registry:Value"}'
+                            ']}},'
+                            '"kpi-1":{"type":"value","text":"CA : 240 k€"},'
+                            '"kpi-2":{"type":"value","text":"Marge : 32';
+                        yield const GeminiStreamEvent(
+                          deltaText: truncated,
+                          accumulatedText: truncated,
+                          isDone: true,
+                          usedContextCache: true,
+                        );
+                      } else {
+                        // Tentative 2 : n'émet QUE kpi-2 !
+                        final tailOnly = jsonEncode({
+                          'message': 'Tableau complété.',
+                          'vibe': {
+                            'components': {
+                              'kpi-2': {'type': 'value', 'text': 'Marge : 32 %'},
+                            },
+                          },
+                        });
+                        yield GeminiStreamEvent(
+                          deltaText: tailOnly,
+                          accumulatedText: tailOnly,
+                          isDone: true,
+                          usedContextCache: true,
+                        );
+                      }
+                    },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await send(tester);
+
+      expect(attempt, 2);
+      expect(prompts[1], contains('MODE DELTA INCRÉMENTAL'));
+      expect(prompts[1], contains('"kpi-1"'));
+      expect(prompts[1], contains('"kpi-2"'));
+      expect(appearance.value.valueComponent('kpi-1').initialText, 'CA : 240 k€');
+      expect(
+        appearance.value.valueComponent('kpi-2').initialText,
+        'Marge : 32 %',
+      );
+      expect(find.text('Tableau complété.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _FakeVibeSpeechTranscriber extends VibeSpeechTranscriber {

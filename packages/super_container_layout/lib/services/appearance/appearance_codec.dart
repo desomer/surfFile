@@ -27,6 +27,56 @@ import 'package:super_container_layout/theme/container_style.dart';
 
 import '../../models/json_numbers.dart';
 
+/// Entrée individuelle d'un patch d'apparence ou de repository rejetée lors d'une application partielle.
+@immutable
+class PatchRejectedEntry {
+  /// Construit une entrée rejetée.
+  const PatchRejectedEntry({
+    required this.section,
+    required this.key,
+    required this.message,
+    this.rawValue,
+  });
+
+  /// Section concernée (`'root'`, `'styles'`, `'components'`, `'behaviors'`, `'usages'`, `'pageCatalog'`, `'repositories'`).
+  final String section;
+
+  /// Clé ou identifiant de l'entrée rejetée.
+  final String key;
+
+  /// Cause détaillée du rejet.
+  final String message;
+
+  /// Valeur brute JSON associée à l'entrée rejetée, si disponible.
+  final Object? rawValue;
+}
+
+/// Résultat immuable d'une mise à jour partielle tolérante ([AppearanceCodec.patchFromJsonPartial]).
+@immutable
+class PartialPatchResult {
+  /// Construit le résultat d'une application partielle.
+  const PartialPatchResult({
+    required this.appearance,
+    required this.appliedPatch,
+    required this.rejectedEntries,
+  });
+
+  /// Apparence résultante intégrant uniquement les entrées valides du patch.
+  final Appearance appearance;
+
+  /// Sous-ensemble des clés et entrées du patch qui ont été acceptées et appliquées.
+  final Map<String, dynamic> appliedPatch;
+
+  /// Entrées invalides ignorées durant l'application partielle.
+  final List<PatchRejectedEntry> rejectedEntries;
+
+  /// Indique si au moins une entrée valide a été retenue dans [appliedPatch].
+  bool get hasAppliedEntries => appliedPatch.isNotEmpty;
+
+  /// Indique si au moins une entrée a été rejetée.
+  bool get hasRejections => rejectedEntries.isNotEmpty;
+}
+
 /// Unified GenUI-style codec for flat, polymorphic `Appearance` persistence
 /// and incremental surface updates (`patchFromJson`).
 class AppearanceCodec {
@@ -707,6 +757,478 @@ class AppearanceCodec {
       behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
+    );
+  }
+
+  /// Applique de manière tolérante chaque entrée valide de [patch] sur [current]
+  /// tout en isolant les entrées en erreur dans [PartialPatchResult.rejectedEntries].
+  PartialPatchResult patchFromJsonPartial(
+    Appearance current,
+    Map<String, dynamic> patch,
+  ) {
+    final known = {
+      'version',
+      'mode',
+      'accent',
+      'backgroundOpacity',
+      'windowOpacity',
+      'windowEffect',
+      'styles',
+      'components',
+      'behaviors',
+      'usages',
+      'pageCatalog',
+      'vibe',
+      'merge',
+      ...additionalKeys,
+    };
+    final rejected = <PatchRejectedEntry>[];
+    final applied = <String, dynamic>{};
+
+    for (final key in patch.keys) {
+      if (!known.contains(key)) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: key,
+            message: 'Unknown appearance preference: $key.',
+            rawValue: patch[key],
+          ),
+        );
+      }
+    }
+
+    var mode = current.mode;
+    if (patch.containsKey('mode') && patch['mode'] != 'vibe') {
+      final candidate = ThemeMode.values
+          .where((v) => v.name == patch['mode'])
+          .firstOrNull;
+      if (candidate == null) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: 'mode',
+            message: 'Valeur invalide pour "mode".',
+            rawValue: patch['mode'],
+          ),
+        );
+      } else {
+        mode = candidate;
+        applied['mode'] = patch['mode'];
+      }
+    }
+
+    var accent = current.accent;
+    if (patch.containsKey('accent') && patch['accent'] != null) {
+      try {
+        accent = JsonColor.parseLiteral(patch['accent'], 'accent');
+        applied['accent'] = patch['accent'];
+      } on FormatException catch (error) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: 'accent',
+            message: error.message,
+            rawValue: patch['accent'],
+          ),
+        );
+      }
+    }
+
+    double boundedScalar(String key, double fallback, double min, double max) {
+      if (!patch.containsKey(key) || patch[key] == null) return fallback;
+      final value = patch[key];
+      if (value is! num || !value.isFinite || value < min || value > max) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: key,
+            message: 'Invalid "$key".',
+            rawValue: value,
+          ),
+        );
+        return fallback;
+      }
+      applied[key] = value;
+      return value.toDouble();
+    }
+
+    final backgroundOpacity = boundedScalar(
+      'backgroundOpacity',
+      current.backgroundOpacity,
+      0,
+      1,
+    );
+    final windowOpacity = boundedScalar(
+      'windowOpacity',
+      current.windowOpacity,
+      .2,
+      1,
+    );
+
+    var windowEffect = current.windowEffect;
+    if (patch.containsKey('windowEffect') && patch['windowEffect'] != null) {
+      final candidate = WindowEffect.values
+          .where((v) => v.name == patch['windowEffect'])
+          .firstOrNull;
+      if (candidate == null) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: 'windowEffect',
+            message: 'Valeur invalide pour "windowEffect".',
+            rawValue: patch['windowEffect'],
+          ),
+        );
+      } else {
+        windowEffect = candidate;
+        applied['windowEffect'] = patch['windowEffect'];
+      }
+    }
+
+    final styles = Map<String, ContainerStyle>.of(current.styles);
+    if (patch.containsKey('styles') && patch['styles'] != null) {
+      final rawStyles = patch['styles'];
+      if (rawStyles is! Map) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'styles',
+            key: 'styles',
+            message: 'Invalid "styles" map.',
+            rawValue: rawStyles,
+          ),
+        );
+      } else {
+        final appliedStyles = <String, Object?>{};
+        for (final entry in rawStyles.entries) {
+          final id = entry.key;
+          if (id is! String || id.trim().isEmpty) continue;
+          if (entry.value == null) {
+            styles.remove(id);
+            appliedStyles[id] = null;
+          } else if (entry.value is Map) {
+            final existing = styles[id];
+            try {
+              styles[id] = existing != null
+                  ? existing.patchFromJson(entry.value as Map)
+                  : ContainerStyle.fromJson(entry.value);
+              appliedStyles[id] = entry.value;
+            } on FormatException catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'styles',
+                  key: id,
+                  message: 'Style "$id" : ${error.message}',
+                  rawValue: entry.value,
+                ),
+              );
+            } catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'styles',
+                  key: id,
+                  message: 'Style "$id" : $error',
+                  rawValue: entry.value,
+                ),
+              );
+            }
+          } else {
+            rejected.add(
+              PatchRejectedEntry(
+                section: 'styles',
+                key: id,
+                message: 'Style "$id" : objet JSON attendu.',
+                rawValue: entry.value,
+              ),
+            );
+          }
+        }
+        if (appliedStyles.isNotEmpty) {
+          applied['styles'] = appliedStyles;
+        }
+      }
+    }
+
+    final components = Map<String, ComponentConfig>.of(current.components);
+    final removedIds = <String>{};
+    final selfConstraints = <String, SlotSizeConstraints>{};
+    if (patch.containsKey('components') && patch['components'] != null) {
+      final rawComponents = patch['components'];
+      if (rawComponents is! Map) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'components',
+            key: 'components',
+            message: 'Invalid "components" map.',
+            rawValue: rawComponents,
+          ),
+        );
+      } else {
+        final appliedComponents = <String, Object?>{};
+        for (final entry in rawComponents.entries) {
+          final id = entry.key;
+          if (id is! String || id.trim().isEmpty) continue;
+          if (entry.value == null) {
+            components.remove(id);
+            styles.remove(id);
+            removedIds.add(id);
+            appliedComponents[id] = null;
+          } else if (entry.value is Map) {
+            final rawMap = entry.value as Map;
+            final rawType = rawMap['type'] ?? rawMap['componentType'];
+            final existing = components[id];
+            final resolvedType =
+                rawType ?? existing?.componentType ?? 'inconnu';
+            final entryConstraints = <String, SlotSizeConstraints>{};
+            try {
+              final map = _extractSelfSlotSizeConstraints(
+                id,
+                rawMap,
+                entryConstraints,
+              );
+              if (existing != null &&
+                  (rawType == null || existing.componentType == rawType)) {
+                final payload = <String, Object?>{
+                  for (final e in map.entries)
+                    if (e.key is String &&
+                        e.key != 'type' &&
+                        e.key != 'componentType')
+                      e.key as String: e.value,
+                };
+                components[id] = existing.patchFromJson(payload);
+              } else {
+                components[id] = ComponentConfig.fromJson(map);
+              }
+              selfConstraints.addAll(entryConstraints);
+              appliedComponents[id] = entry.value;
+            } on FormatException catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'components',
+                  key: id,
+                  message:
+                      'Composant "$id" (type: $resolvedType) : ${error.message}',
+                  rawValue: entry.value,
+                ),
+              );
+            } catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'components',
+                  key: id,
+                  message: 'Composant "$id" (type: $resolvedType) : $error',
+                  rawValue: entry.value,
+                ),
+              );
+            }
+          } else {
+            rejected.add(
+              PatchRejectedEntry(
+                section: 'components',
+                key: id,
+                message: 'Composant "$id" : objet JSON attendu.',
+                rawValue: entry.value,
+              ),
+            );
+          }
+        }
+        if (appliedComponents.isNotEmpty) {
+          applied['components'] = appliedComponents;
+        }
+      }
+    }
+
+    _applySelfSlotSizeConstraints(components, selfConstraints);
+
+    if (removedIds.isNotEmpty) {
+      for (final entry in components.entries.toList()) {
+        var comp = entry.value;
+        for (final removedId in removedIds) {
+          if (comp is SuperLayoutConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is NativeComponentConfig &&
+              comp.placements.values.any((ids) => ids.contains(removedId))) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is ScaffoldPageConfig &&
+              comp.native.placements.values.any(
+                (ids) => ids.contains(removedId),
+              )) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperListViewConfig &&
+              comp.template.placedSlotIds.contains(removedId)) {
+            comp = comp.copyWith(
+              template: comp.template.withoutSlot(removedId),
+            );
+          } else if (comp is SuperTabConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperConditionalConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperTreeViewConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperTableConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          }
+        }
+        components[entry.key] = comp;
+      }
+    }
+
+    var pageCatalog = current.pageCatalog;
+    if (patch.containsKey('pageCatalog') && patch['pageCatalog'] != null) {
+      try {
+        pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
+        applied['pageCatalog'] = patch['pageCatalog'];
+      } on FormatException catch (error) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'pageCatalog',
+            key: 'pageCatalog',
+            message: error.message,
+            rawValue: patch['pageCatalog'],
+          ),
+        );
+      }
+    }
+
+    final behaviors = Map<String, List<ComponentBehavior>>.of(current.behaviors)
+      ..removeWhere(
+        (id, _) =>
+            removedIds.contains(id) ||
+            (id.endsWith(':item') &&
+                removedIds.contains(id.substring(0, id.length - 5))),
+      );
+    if (patch.containsKey('behaviors') && patch['behaviors'] != null) {
+      final rawBehaviors = patch['behaviors'];
+      if (rawBehaviors is! Map) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'behaviors',
+            key: 'behaviors',
+            message: 'Invalid "behaviors" map.',
+            rawValue: rawBehaviors,
+          ),
+        );
+      } else {
+        final appliedBehaviors = <String, Object?>{};
+        for (final entry in rawBehaviors.entries) {
+          final id = entry.key;
+          if (id is! String || id.trim().isEmpty) continue;
+          final value = entry.value;
+          if (value == null) {
+            behaviors.remove(id);
+            appliedBehaviors[id] = null;
+          } else if (value is List) {
+            try {
+              final parsed = <ComponentBehavior>[];
+              for (final item in value) {
+                if (item is! Map) {
+                  throw FormatException(
+                    'Comportement "$id" : chaque entrée doit être un objet JSON.',
+                  );
+                }
+                parsed.add(
+                  ComponentBehavior.fromJson(Map<String, dynamic>.from(item)),
+                );
+              }
+              if (parsed.isEmpty) {
+                behaviors.remove(id);
+              } else {
+                behaviors[id] = List<ComponentBehavior>.unmodifiable(parsed);
+              }
+              appliedBehaviors[id] = value;
+            } on FormatException catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'behaviors',
+                  key: id,
+                  message: error.message.startsWith('Comportement ')
+                      ? error.message
+                      : 'Comportement "$id" : ${error.message}',
+                  rawValue: value,
+                ),
+              );
+            }
+          } else {
+            rejected.add(
+              PatchRejectedEntry(
+                section: 'behaviors',
+                key: id,
+                message: 'Comportement "$id" : liste JSON attendue.',
+                rawValue: value,
+              ),
+            );
+          }
+        }
+        if (appliedBehaviors.isNotEmpty) {
+          applied['behaviors'] = appliedBehaviors;
+        }
+      }
+    }
+
+    final usages = Map<String, ComponentUsage>.of(current.usages)
+      ..removeWhere((id, _) => removedIds.contains(id));
+    if (patch.containsKey('usages') && patch['usages'] != null) {
+      final rawUsages = patch['usages'];
+      if (rawUsages is! Map) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'usages',
+            key: 'usages',
+            message: 'Invalid "usages" map.',
+            rawValue: rawUsages,
+          ),
+        );
+      } else {
+        final appliedUsages = <String, Object?>{};
+        for (final entry in rawUsages.entries) {
+          final id = entry.key;
+          if (id is! String || id.trim().isEmpty) continue;
+          if (entry.value == null) {
+            usages.remove(id);
+            appliedUsages[id] = null;
+          } else {
+            try {
+              usages[id] = ComponentUsage.fromJson(entry.value);
+              appliedUsages[id] = entry.value;
+            } on FormatException catch (error) {
+              rejected.add(
+                PatchRejectedEntry(
+                  section: 'usages',
+                  key: id,
+                  message: 'Usage "$id" : ${error.message}',
+                  rawValue: entry.value,
+                ),
+              );
+            }
+          }
+        }
+        if (appliedUsages.isNotEmpty) {
+          applied['usages'] = appliedUsages;
+        }
+      }
+    }
+
+    final nextAppearance = current.copyWith(
+      mode: mode,
+      accent: accent,
+      backgroundOpacity: backgroundOpacity,
+      windowOpacity: windowOpacity,
+      windowEffect: windowEffect,
+      styles: styles,
+      components: components,
+      behaviors: behaviors,
+      usages: usages,
+      pageCatalog: pageCatalog,
+    );
+    return PartialPatchResult(
+      appearance: nextAppearance,
+      appliedPatch: applied,
+      rejectedEntries: List<PatchRejectedEntry>.unmodifiable(rejected),
     );
   }
 

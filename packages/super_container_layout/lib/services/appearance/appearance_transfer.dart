@@ -206,6 +206,20 @@ class AppearanceTransfer {
     Appearance next, {
     Appearance? previous,
   }) {
+    final violations = findComponentRegionViolations(next, previous: previous);
+    if (violations.isNotEmpty) {
+      throw FormatException(violations.values.first);
+    }
+  }
+
+  /// Identifie tous les composants de [next] dont le contrat de régions est violé.
+  ///
+  /// Retourne une map `componentId -> message d'erreur` (vide lorsque tout est valide).
+  static Map<String, String> findComponentRegionViolations(
+    Appearance next, {
+    Appearance? previous,
+  }) {
+    final violations = <String, String>{};
     final nextTypes = _collectPlacedSlotTypes(next);
     final previousTypes = previous == null
         ? const <String, String>{}
@@ -228,12 +242,11 @@ class AppearanceTransfer {
       if (config is SuperTabConfig) {
         if (config.mode == SuperTabMode.dynamic &&
             config.tabSlotIds.length > 1) {
-          throw FormatException(
-            'Composant "$id" (SuperTab dynamique) : la région "tabs" '
-            'n’accepte qu’un seul onglet gabarit maximum '
-            '(${config.tabSlotIds.length} fournis : '
-            '${config.tabSlotIds.join(', ')}).',
-          );
+          violations[id] =
+              'Composant "$id" (SuperTab dynamique) : la région "tabs" '
+              'n’accepte qu’un seul onglet gabarit maximum '
+              '(${config.tabSlotIds.length} fournis : '
+              '${config.tabSlotIds.join(', ')}).';
         }
         continue;
       }
@@ -267,35 +280,41 @@ class AppearanceTransfer {
         ...native.regionFlows.keys,
         ...native.regionSizes.keys,
       };
+      var reported = false;
       for (final region in referencedRegions) {
         if (!contract.regions.contains(region)) {
           final allowed = contract.regions.map((r) => '"$r"').join(', ');
-          throw FormatException(
-            'Composant "$id" ($kind) : région inconnue "$region" '
-            '(régions autorisées : $allowed).',
-          );
+          violations[id] =
+              'Composant "$id" ($kind) : région inconnue "$region" '
+              '(régions autorisées : $allowed).';
+          reported = true;
+          break;
         }
       }
+      if (reported) continue;
       for (final requiredRegion in contract.requiredRegions) {
         if (native.regions[requiredRegion] == false) {
-          throw FormatException(
-            'Composant "$id" ($kind) : la région obligatoire '
-            '"$requiredRegion" ne peut pas être désactivée.',
-          );
+          violations[id] =
+              'Composant "$id" ($kind) : la région obligatoire '
+              '"$requiredRegion" ne peut pas être désactivée.';
+          reported = true;
+          break;
         }
       }
+      if (reported) continue;
       for (final singleRegion in contract.singleRegions) {
         final slots = native.slotsOf(singleRegion);
         if (slots.length > 1) {
           final hint = contract.singleHints[singleRegion];
-          throw FormatException(
-            'Composant "$id" ($kind) : la région "$singleRegion" n’accepte '
-            'qu’un seul enfant maximum (${slots.length} fournis : '
-            '${slots.join(', ')}).${hint == null ? '' : ' $hint'}',
-          );
+          violations[id] =
+              'Composant "$id" ($kind) : la région "$singleRegion" n’accepte '
+              'qu’un seul enfant maximum (${slots.length} fournis : '
+              '${slots.join(', ')}).${hint == null ? '' : ' $hint'}';
+          break;
         }
       }
     }
+    return violations;
   }
 
   static const Map<String, _NativeRegionContract> _nativeRegionContracts = {
@@ -475,6 +494,126 @@ class AppearanceTransfer {
       TransferGroup.layouts,
     }, codec: codec);
     return _keepBoundUsages(current, next);
+  }
+
+  /// Applique de manière tolérante chaque entrée valide d'un patch GenUI [raw] sur [current].
+  ///
+  /// Isole individuellement les entrées invalides (décodage JSON ou violations de contrats
+  /// de régions Material) dans [PartialPatchResult.rejectedEntries] tout en conservant
+  /// tous les autres composants, styles, comportements et usages valides.
+  static PartialPatchResult applyVibeMapPartial(
+    Appearance current,
+    Map<String, dynamic> raw, {
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    final payload = raw['data'] is Map<String, dynamic>
+        ? <String, dynamic>{
+            ...(raw['data'] as Map<String, dynamic>),
+            'merge': true,
+          }
+        : <String, dynamic>{...raw, 'merge': true};
+
+    final filtered = <String, dynamic>{};
+    final preRejected = <PatchRejectedEntry>[];
+    final knownTransferKeys = {
+      ...codec.toJson(codec.defaults).keys,
+      'vibe',
+      'merge',
+    }..remove('version');
+
+    for (final entry in payload.entries) {
+      final key = entry.key;
+      if (key == 'version') continue;
+      if (!knownTransferKeys.contains(key)) {
+        preRejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: key,
+            message: 'Unknown export preference: $key.',
+            rawValue: entry.value,
+          ),
+        );
+        continue;
+      }
+      if (key == 'vibe' ||
+          key == 'merge' ||
+          _groupOf(key) == TransferGroup.styles ||
+          _groupOf(key) == TransferGroup.layouts) {
+        filtered[key] = entry.value;
+      }
+    }
+
+    final partial = codec.patchFromJsonPartial(current, filtered);
+    var appearance = partial.appearance;
+    final applied = Map<String, dynamic>.of(partial.appliedPatch);
+    final rejected = <PatchRejectedEntry>[
+      ...preRejected,
+      ...partial.rejectedEntries,
+    ];
+
+    final rawComponents = filtered['components'] is Map
+        ? filtered['components'] as Map
+        : null;
+    final violations = findComponentRegionViolations(
+      appearance,
+      previous: current,
+    );
+    if (violations.isNotEmpty) {
+      final adjustedComponents = Map<String, ComponentConfig>.of(
+        appearance.components,
+      );
+      final appliedComponents = applied['components'] is Map<String, Object?>
+          ? Map<String, Object?>.of(
+              applied['components'] as Map<String, Object?>,
+            )
+          : <String, Object?>{};
+
+      for (final entry in violations.entries) {
+        final id = entry.key;
+        final previousConfig = current.components[id];
+        if (previousConfig != null) {
+          adjustedComponents[id] = previousConfig;
+        } else {
+          adjustedComponents.remove(id);
+        }
+        appliedComponents.remove(id);
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'components',
+            key: id,
+            message: entry.value,
+            rawValue: rawComponents?[id],
+          ),
+        );
+      }
+
+      appearance = appearance.copyWith(components: adjustedComponents);
+      // Si le changement d'un parent (slotTypes) provoque encore une violation sur un enfant inchangé :
+      final residual = findComponentRegionViolations(
+        appearance,
+        previous: current,
+      );
+      if (residual.isNotEmpty) {
+        for (final id in residual.keys) {
+          adjustedComponents.remove(id);
+          appliedComponents.remove(id);
+        }
+        appearance = appearance.copyWith(components: adjustedComponents);
+      }
+
+      if (appliedComponents.isEmpty) {
+        applied.remove('components');
+      } else {
+        applied['components'] = appliedComponents;
+      }
+    }
+
+    appearance = _keepBoundUsages(current, appearance);
+    return PartialPatchResult(
+      appearance: appearance,
+      appliedPatch: applied,
+      rejectedEntries: List<PatchRejectedEntry>.unmodifiable(rejected),
+    );
   }
 
   /// Rétablit dans [next] l'usage de [current] de chaque composant lié à des

@@ -526,6 +526,11 @@ class _LocalCodec extends AppearanceCodec {
     bool logErrors = true,
   }) => delegate.patchFromJson(current, patch, logErrors: logErrors);
   @override
+  PartialPatchResult patchFromJsonPartial(
+    Appearance current,
+    Map<String, dynamic> patch,
+  ) => delegate.patchFromJsonPartial(current, patch);
+  @override
   Map<String, Object?> normalizeTransfer(
     Map<String, dynamic> data,
     int version,

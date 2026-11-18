@@ -12,6 +12,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../services/appearance/appearance_codec.dart'
+    show PatchRejectedEntry;
 import '../../../services/repositories/json_repository_store.dart';
 
 final RegExp _repoKeyOrIdPattern = RegExp(r'^[a-z0-9_]{1,32}$');
@@ -705,6 +707,111 @@ class VibeRepositoryTurnTransaction {
     return aliasToActualId;
   }
 
+  /// Valide chaque entrée de [rawRepositoriesPatch] individuellement, applique les entrées
+  /// valides de manière idempotente et retourne les entrées rejetées sans bloquer les autres.
+  Future<
+    ({
+      Map<String, String> aliasToActualId,
+      Map<String, dynamic> appliedEntries,
+      List<PatchRejectedEntry> rejectedEntries,
+    })
+  >
+  applyRepositoriesPatchPartial(
+    Map<String, dynamic> rawRepositoriesPatch,
+  ) async {
+    final validMap = <String, dynamic>{};
+    final rejected = <PatchRejectedEntry>[];
+
+    for (final entry in rawRepositoriesPatch.entries) {
+      final key = entry.key;
+      try {
+        VibeRepositoryPatchValidator.parseEntry(key, entry.value);
+        validMap[key] = entry.value;
+      } on FormatException catch (error) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'repositories',
+            key: key,
+            message: error.message,
+            rawValue: entry.value,
+          ),
+        );
+      }
+    }
+
+    if (validMap.isNotEmpty) {
+      await applyRepositoriesPatch(validMap);
+    }
+    return (
+      aliasToActualId: aliasToActualId,
+      appliedEntries: validMap,
+      rejectedEntries: List<PatchRejectedEntry>.unmodifiable(rejected),
+    );
+  }
+
+  /// Capture un point de sauvegarde immuable de l'état courant de la transaction.
+  VibeRepositorySavepoint createSavepoint() => VibeRepositorySavepoint._(
+    Map<String, String>.of(_assignedIdsByAlias),
+    Map<String, String>.of(_aliasToActualId),
+    Map<String, String>.of(_resolvedTargetByKey),
+    {
+      for (final entry in _baselineDocuments.entries)
+        entry.key: _deepCopyJsonMap(entry.value),
+    },
+    Map<String, ({String name, String id})>.of(_createdRepositories),
+    {
+      for (final entry in _finalDocuments.entries)
+        entry.key: _deepCopyJsonMap(entry.value),
+    },
+  );
+
+  /// Restaure le store et les tables internes exactement à l'état de [savepoint].
+  Future<void> restoreSavepoint(VibeRepositorySavepoint savepoint) async {
+    final extraCreated = [
+      for (final entry in _createdRepositories.entries)
+        if (!savepoint._createdRepositories.containsKey(entry.key)) entry.value,
+    ];
+    final restoreToBaseline = [
+      for (final entry in _baselineDocuments.entries)
+        if (!savepoint._finalDocuments.containsKey(entry.key)) entry,
+    ];
+
+    _assignedIdsByAlias
+      ..clear()
+      ..addAll(savepoint._assignedIdsByAlias);
+    _aliasToActualId
+      ..clear()
+      ..addAll(savepoint._aliasToActualId);
+    _resolvedTargetByKey
+      ..clear()
+      ..addAll(savepoint._resolvedTargetByKey);
+    _baselineDocuments
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._baselineDocuments.entries)
+          entry.key: _deepCopyJsonMap(entry.value),
+      });
+    _createdRepositories
+      ..clear()
+      ..addAll(savepoint._createdRepositories);
+    _finalDocuments
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._finalDocuments.entries)
+          entry.key: _deepCopyJsonMap(entry.value),
+      });
+
+    for (final entry in restoreToBaseline) {
+      await store.replaceDocumentById(entry.key, entry.value);
+    }
+    for (final entry in savepoint._finalDocuments.entries) {
+      await store.replaceDocumentById(entry.key, entry.value);
+    }
+    for (final repo in extraCreated) {
+      await store.deleteCreatedFileRepositoryById(repo.id);
+    }
+  }
+
   /// Annule intégralement toutes les créations et modifications de repositories de la tentative courante.
   Future<void> rollback() async {
     final baselines = List<MapEntry<String, Map<String, Object?>>>.of(
@@ -848,6 +955,26 @@ class VibeRepositoryTurnTransaction {
       suffix++;
     }
   }
+}
+
+/// Point de sauvegarde immuable d'une [VibeRepositoryTurnTransaction] entre deux tentatives.
+@immutable
+class VibeRepositorySavepoint {
+  const VibeRepositorySavepoint._(
+    this._assignedIdsByAlias,
+    this._aliasToActualId,
+    this._resolvedTargetByKey,
+    this._baselineDocuments,
+    this._createdRepositories,
+    this._finalDocuments,
+  );
+
+  final Map<String, String> _assignedIdsByAlias;
+  final Map<String, String> _aliasToActualId;
+  final Map<String, String> _resolvedTargetByKey;
+  final Map<String, Map<String, Object?>> _baselineDocuments;
+  final Map<String, ({String name, String id})> _createdRepositories;
+  final Map<String, Map<String, Object?>> _finalDocuments;
 }
 
 Map<String, Object?> _deepCopyJsonMap(Map<Object?, Object?> map) =>

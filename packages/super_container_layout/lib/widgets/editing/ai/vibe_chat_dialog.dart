@@ -45,6 +45,7 @@ import 'design_system_catalog_dialog.dart';
 import 'design_system_preview_card.dart';
 import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
+import 'vibe_delta_recovery.dart';
 import 'vibe_prompt_builder.dart';
 import 'vibe_repository_applier.dart';
 import 'vibe_scope_helpers.dart';
@@ -953,7 +954,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 capturedRepoRev > session.lastAppliedRepositoriesRevision) {
               session.lastAppliedRepositoriesRevision = capturedRepoRev;
               try {
-                await repoTx.applyRepositoriesPatch(capturedRepoPatch);
+                await repoTx.applyRepositoriesPatchPartial(capturedRepoPatch);
               } on FormatException {
                 // Ignoré pendant le flux incrémental jusqu'à la validation finale.
               } on ArgumentError {
@@ -993,25 +994,42 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     _LiveTurnSession session,
     Map<String, dynamic> rawPatch,
   ) {
+    final base = session.checkpointAppearance;
     final activeScope = _scope;
     final effectivePatch = activeScope == null
         ? rawPatch
         : VibeChatDialog.filterPatchToScope(
-            session.baseAppearance,
+            base,
             rawPatch,
             activeScope,
           );
     if (!_hasPatchChanges(effectivePatch)) return;
 
     try {
-      final previewAppearance = AppearanceTransfer.applyVibeMap(
-        session.baseAppearance,
+      final partial = AppearanceTransfer.applyVibeMapPartial(
+        base,
         effectivePatch,
         codec: widget.codec,
-        normalizeRoundTrip: false,
-        logErrors: false,
       );
-      widget.validateAppearance?.call(previewAppearance);
+      if (!partial.hasAppliedEntries &&
+          partial.appearance == session.lastPreviewAppearance) {
+        return;
+      }
+      var previewAppearance = partial.appearance;
+      if (widget.validateAppearance != null) {
+        try {
+          widget.validateAppearance!(previewAppearance);
+        } catch (_) {
+          if (previewAppearance.pageCatalog != base.pageCatalog) {
+            previewAppearance = previewAppearance.copyWith(
+              pageCatalog: base.pageCatalog,
+            );
+            widget.validateAppearance!(previewAppearance);
+          } else {
+            rethrow;
+          }
+        }
+      }
       _setPreviewAppearance(previewAppearance);
       _pulseAppearanceDiff(session, previewAppearance);
       session.hasAppliedLivePreview = true;
@@ -1079,6 +1097,46 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       if (routing != null) {
         try {
           routing.synchronize(session.rawInitialAppearance.pageCatalog);
+          final currentLocation = routing
+              .router
+              .routeInformationProvider
+              .value
+              .uri
+              .toString();
+          if (previousLocation != null &&
+              previousLocation.isNotEmpty &&
+              currentLocation != previousLocation) {
+            routing.router.go(previousLocation);
+          }
+        } catch (_) {
+          // Ignore lors de la restauration de route.
+        }
+      }
+    }
+  }
+
+  void _restoreCheckpointPreview(_LiveTurnSession session) {
+    session.lastAppliedPatchRevision = 0;
+    session.lastAppliedRepositoriesRevision = 0;
+    session.lastPreviewAppearance = session.checkpointAppearance;
+    VibeWorkHighlightController.instance.clearStreamingTargets();
+    try {
+      _setPreviewAppearance(session.checkpointAppearance);
+      session.hasAppliedLivePreview = true;
+    } catch (_) {
+      // Ignore en cas de contrôleur déjà disposé.
+    }
+    final navigatedPageId = session.liveNavigatedPageId;
+    if (navigatedPageId != null &&
+        !session.checkpointAppearance.pageCatalog.pages.any(
+          (p) => p.id == navigatedPageId,
+        )) {
+      final routing = session.pageRouting;
+      final previousLocation = session.initialRouteLocation;
+      session.liveNavigatedPageId = null;
+      if (routing != null) {
+        try {
+          routing.synchronize(session.checkpointAppearance.pageCatalog);
           final currentLocation = routing
               .router
               .routeInformationProvider
@@ -1756,7 +1814,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     return generator(prompt);
   }
 
-  Future<String> _consumeStreamingGenerate(
+  Future<({String rawResponse, VibeStreamSnapshot finalSnapshot})>
+  _consumeStreamingGenerate(
     String turnPrompt, {
     required String systemGuide,
     required List<VibeChatAttachment> attachments,
@@ -1793,7 +1852,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
     }
 
-    return parser.rawBuffer.isNotEmpty ? parser.rawBuffer : finalAccumulated;
+    final rawResponse = parser.rawBuffer.isNotEmpty
+        ? parser.rawBuffer
+        : finalAccumulated;
+    return (rawResponse: rawResponse, finalSnapshot: parser.current);
   }
 
   Future<
@@ -1813,11 +1875,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     const maxAttempts = 4;
     var currentTurnPrompt = turnPrompt;
     final priorCauses = <String>[];
+    VibeSalvageOutcome? lastCheckpointSalvage;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
         _pendingSnapshot = null;
         _streamingSnapshot.value = null;
-        await _rollbackTurnSession(session);
         session.livePreviewDisabled = false;
         session.liveRepoQueue = Future<void>.value();
       }
@@ -1826,22 +1888,28 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         '[Vibe IA] Tentative ${attempt + 1}/$maxAttempts — envoi du prompt '
         '(${currentTurnPrompt.length} caractères dynamiques, '
         'mode: ${useStreaming ? _speedMode.name : "custom"}, '
-        'fichiers joints: ${attachments.length})...',
+        'fichiers joints: ${attachments.length}'
+        '${session.hasCheckpoint ? ", mode: delta sur checkpoint" : ""})...',
       );
       final String response;
+      final VibeStreamSnapshot finalSnapshot;
       try {
         if (useStreaming) {
-          response = await _consumeStreamingGenerate(
+          final streamed = await _consumeStreamingGenerate(
             currentTurnPrompt,
             systemGuide: systemGuide,
             attachments: attachments,
           );
+          response = streamed.rawResponse;
+          finalSnapshot = streamed.finalSnapshot;
         } else {
           final combinedPrompt =
               '${VibeChatDialog.defaultSystemInstruction}\n\n'
               'GUIDE DE MODÉLISATION :\n$systemGuide\n\n'
               '$currentTurnPrompt';
           response = await _invokeGenerate(combinedPrompt, attachments);
+          final parser = VibeIncrementalStreamParser()..addChunk(response);
+          finalSnapshot = parser.current;
         }
       } catch (error, stackTrace) {
         debugPrint(
@@ -1858,6 +1926,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
       _lastFailedResponse = response;
       _logLong('[Vibe IA] Réponse brute (tentative ${attempt + 1})', response);
+      Map<String, dynamic>? decodedMap;
       try {
         final json = _extractJson(response);
         final Object? result;
@@ -1877,10 +1946,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           );
           throw const FormatException('La réponse doit être un objet JSON.');
         }
+        decodedMap = result;
         final rawAskUser = VibeAskUserRequest.tryFromJson(result['askUser']);
         final repositoriesPatch = _extractRepositoriesPatch(result);
         final patch = _extractPatch(result);
-        if (repositoriesPatch == null && patch == null) {
+        if (repositoriesPatch == null &&
+            patch == null &&
+            !session.hasCheckpoint) {
           if (rawAskUser != null &&
               (_questioningLevel == VibeQuestioningLevel.none ||
                   _isAfterAskUserReply)) {
@@ -1909,6 +1981,22 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             askUser: askUser,
           );
         }
+        if (session.hasCheckpoint &&
+            patch == null &&
+            repositoriesPatch == null) {
+          if (rawAskUser != null) {
+            throw const FormatException(
+              'Ne renvoie pas "askUser" lors d’une correction delta : '
+              'génère directement le patch "vibe" correctif.',
+            );
+          }
+          final message = result['message'];
+          if (message is! String || message.trim().isEmpty) {
+            throw const FormatException(
+              'La réponse corrective ne contient ni patch "vibe" ni message valide.',
+            );
+          }
+        }
         if (repositoriesPatch != null) {
           final repoTx = session.repoTransaction;
           if (repoTx == null) {
@@ -1920,13 +2008,14 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           await repoTx.applyRepositoriesPatch(repositoriesPatch);
         }
         Appearance? appearance;
+        Map<String, dynamic>? effectivePatch;
+        final current = session.checkpointAppearance;
+        final activeScope = _scope;
         if (patch != null) {
           final rewrittenPatch = session.repoTransaction != null
               ? session.repoTransaction!.rewriteVibePatchBindings(patch)
               : patch;
-          final current = session.baseAppearance;
-          final activeScope = _scope;
-          final effectivePatch = activeScope == null
+          effectivePatch = activeScope == null
               ? rewrittenPatch
               : VibeChatDialog.filterPatchToScope(
                   current,
@@ -1986,31 +2075,273 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             effectivePatch,
             instantiatedIds: session.initialInstantiatedIds,
           );
+        } else if (session.hasCheckpoint) {
+          appearance = AppearanceTransfer.applyVibeMap(
+            current,
+            const <String, dynamic>{},
+            codec: widget.codec,
+            normalizeRoundTrip: true,
+          );
+          widget.validateAppearance?.call(appearance);
         }
+
+        if (session.hasCheckpoint && appearance != null) {
+          final finalReachableIds = VibeDeltaRecovery.computeReachableIds(
+            baseForScope: session.baseAppearance,
+            next: appearance,
+            scope: activeScope,
+            instantiatedIds: session.initialInstantiatedIds,
+            initialPageIds: session.initialPageIds,
+            hasRegistry: widget.registry != null,
+            requireNewPageComponent: true,
+          );
+          final patchedComponentsRaw = effectivePatch == null
+              ? null
+              : (effectivePatch['data'] is Map
+                    ? (effectivePatch['data'] as Map)['components']
+                    : effectivePatch['components']);
+          final patchedCompKeys = patchedComponentsRaw is Map
+              ? patchedComponentsRaw.keys.whereType<String>().toSet()
+              : const <String>{};
+
+          final unresolvedFixes = <String>[
+            for (final id in session.pendingComponentFixes)
+              if (!patchedCompKeys.contains(id) &&
+                  (finalReachableIds.contains(id) ||
+                      session.baseAppearance.components.containsKey(id)))
+                id,
+          ];
+          if (unresolvedFixes.isNotEmpty) {
+            throw FormatException(
+              'Composant(s) en erreur ou manquants non corrigés dans le patch delta : '
+              '${unresolvedFixes.join(', ')}. Fournis leur configuration valide dans "components".',
+            );
+          }
+
+          if (session.requiresScreenAttachment) {
+            final hasAttachedChange =
+                appearance.pageCatalog != session.baseAppearance.pageCatalog ||
+                finalReachableIds.any(
+                  (id) =>
+                      session.baseAppearance.components[id] !=
+                      appearance!.components[id],
+                );
+            if (!hasAttachedChange) {
+              throw const FormatException(
+                'Les composants générés ne sont rattachés à aucun conteneur de l’écran : '
+                'mets à jour les "placements" d’un conteneur existant.',
+              );
+            }
+          }
+
+          appearance = VibeDeltaRecovery.pruneUnreachableTurnDrafts(
+            baseAppearance: session.baseAppearance,
+            nextAppearance: appearance,
+            reachableIds: finalReachableIds,
+          );
+        }
+
         _lastFailedResponse = null;
         return (
           appearance: appearance,
-          repositoriesUpdated: repositoriesPatch != null,
+          repositoriesUpdated:
+              (session.repoTransaction?.hasChanges ?? false) ||
+              repositoriesPatch != null,
           result: result,
           askUser: null,
         );
       } catch (error) {
-        await _rollbackTurnSession(session);
+        session.livePreviewDisabled = true;
+        try {
+          await session.liveRepoQueue;
+        } catch (_) {}
+
+        if (session.repoCheckpoint != null) {
+          try {
+            await session.repoTransaction?.restoreSavepoint(
+              session.repoCheckpoint!,
+            );
+          } catch (_) {}
+        } else {
+          try {
+            await session.repoTransaction?.rollback();
+          } catch (_) {}
+        }
+
         final isValidationError =
             error is FormatException ||
             error is ArgumentError ||
             error is StateError;
         if (attempt >= maxAttempts - 1 || !isValidationError) {
+          await _rollbackTurnSession(session);
           debugPrint(
             '[Vibe IA] Tentative ${attempt + 1} échouée sans relance '
             '(${error.runtimeType}) : ${_describeErrorCause(error)}',
           );
           rethrow;
         }
+
         final cause = _describeErrorCause(error);
         priorCauses.add(
           'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
         );
+
+        // Tentative de récupération incrémentale (checkpoint des entrées déjà valides) :
+        final wasTruncated = decodedMap == null;
+        Map<String, dynamic>? rawReposCandidate;
+        Map<String, dynamic>? rawVibeCandidate;
+        if (decodedMap != null) {
+          if (decodedMap['repositories'] is Map<String, dynamic>) {
+            final repos = decodedMap['repositories'] as Map<String, dynamic>;
+            if (repos.isNotEmpty) rawReposCandidate = repos;
+          }
+          try {
+            rawVibeCandidate = _extractPatch(decodedMap);
+          } on FormatException {
+            rawVibeCandidate = null;
+          }
+        } else {
+          rawReposCandidate = finalSnapshot.partialRepositoriesPatch;
+          rawVibeCandidate = finalSnapshot.partialVibePatch;
+        }
+
+        var appliedRepoKeys = const <String>{};
+        var rejectedRepoEntries = const <PatchRejectedEntry>[];
+        if (rawReposCandidate != null && session.repoTransaction != null) {
+          final repoPartial = await session.repoTransaction!
+              .applyRepositoriesPatchPartial(rawReposCandidate);
+          appliedRepoKeys = repoPartial.appliedEntries.keys.toSet();
+          rejectedRepoEntries = repoPartial.rejectedEntries;
+        }
+
+        Map<String, dynamic>? effectiveCandidatePatch;
+        if (rawVibeCandidate != null) {
+          final rewritten = session.repoTransaction != null
+              ? session.repoTransaction!.rewriteVibePatchBindings(
+                  rawVibeCandidate,
+                )
+              : rawVibeCandidate;
+          effectiveCandidatePatch = _scope == null
+              ? rewritten
+              : VibeChatDialog.filterPatchToScope(
+                  session.checkpointAppearance,
+                  rewritten,
+                  _scope!,
+                );
+        }
+
+        final salvage = VibeDeltaRecovery.salvageFailedAttempt(
+          initialAppearance: session.baseAppearance,
+          workingAppearance: session.checkpointAppearance,
+          initialPageIds: session.initialPageIds,
+          instantiatedIds: session.initialInstantiatedIds,
+          hasRegistry: widget.registry != null,
+          scope: _scope,
+          codec: widget.codec,
+          validateAppearance: widget.validateAppearance,
+          effectiveVibePatch: effectiveCandidatePatch,
+          rejectedRepoEntries: rejectedRepoEntries,
+          appliedRepoKeys: appliedRepoKeys,
+          wasTruncated: wasTruncated,
+          interruptedSection: wasTruncated ? finalSnapshot.activeSection : null,
+          interruptedKey: wasTruncated ? finalSnapshot.activeEntryKey : null,
+        );
+
+        if (salvage.hasCheckpoint) {
+          final candidateComps = effectiveCandidatePatch == null
+              ? null
+              : (effectiveCandidatePatch['data'] is Map
+                    ? (effectiveCandidatePatch['data'] as Map)['components']
+                    : effectiveCandidatePatch['components']);
+          final rejectedCompKeys = {
+            for (final entry in salvage.rejectedEntries)
+              if (entry.section == 'components') entry.key,
+          };
+          if (candidateComps is Map) {
+            for (final key in candidateComps.keys.whereType<String>()) {
+              if (!rejectedCompKeys.contains(key)) {
+                session.pendingComponentFixes.remove(key);
+              }
+            }
+          }
+          session.pendingComponentFixes.addAll(
+            salvage.pendingRequiredComponentIds,
+          );
+          session.checkpointAppearance = salvage.checkpointAppearance;
+          session.hasCheckpoint = true;
+          session.requiresScreenAttachment = salvage.requiresScreenAttachment;
+          session.repoCheckpoint = session.repoTransaction?.createSavepoint();
+          lastCheckpointSalvage = salvage;
+          _restoreCheckpointPreview(session);
+
+          final resolvedStore = session.repoTransaction?.store;
+          final refreshedReposContext = resolvedStore == null
+              ? null
+              : await VibeRepositoryPromptFormatter.formatStoreContext(
+                  resolvedStore,
+                );
+          final refreshedTurnPrompt = _buildTurnPrompt(
+            appearanceOverride: session.checkpointAppearance,
+            instantiatedIdsOverride: session.initialInstantiatedIds,
+            repositoriesContext: refreshedReposContext,
+          );
+          currentTurnPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
+            refreshedTurnPrompt: refreshedTurnPrompt,
+            priorCauses: priorCauses,
+            salvage: salvage,
+            pendingRequiredComponentIds: session.pendingComponentFixes,
+          );
+          debugPrint(
+            '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
+            'Checkpoint partiel conservé (composants: '
+            '${session.checkpointAppearance.components.length}, '
+            'styles: ${session.checkpointAppearance.styles.length}, '
+            'rejets isolés: ${salvage.rejectedEntries.length}). '
+            'Relance en mode delta incrémental...',
+          );
+          continue;
+        }
+
+        // Aucun nouveau progrès récupérable sur cette tentative :
+        if (session.repoCheckpoint != null) {
+          try {
+            await session.repoTransaction?.restoreSavepoint(
+              session.repoCheckpoint!,
+            );
+          } catch (_) {}
+        } else {
+          try {
+            await session.repoTransaction?.rollback();
+          } catch (_) {}
+        }
+
+        if (session.hasCheckpoint && lastCheckpointSalvage != null) {
+          _restoreCheckpointPreview(session);
+          final resolvedStore = session.repoTransaction?.store;
+          final refreshedReposContext = resolvedStore == null
+              ? null
+              : await VibeRepositoryPromptFormatter.formatStoreContext(
+                  resolvedStore,
+                );
+          final refreshedTurnPrompt = _buildTurnPrompt(
+            appearanceOverride: session.checkpointAppearance,
+            instantiatedIdsOverride: session.initialInstantiatedIds,
+            repositoriesContext: refreshedReposContext,
+          );
+          currentTurnPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
+            refreshedTurnPrompt: refreshedTurnPrompt,
+            priorCauses: priorCauses,
+            salvage: lastCheckpointSalvage,
+            pendingRequiredComponentIds: session.pendingComponentFixes,
+          );
+          debugPrint(
+            '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
+            'Maintien du checkpoint précédent et relance en mode delta...',
+          );
+          continue;
+        }
+
+        await _rollbackTurnSession(session);
         debugPrint(
           '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
           'Relance avec prompt de correction...',
@@ -2791,7 +3122,8 @@ final class _LiveTurnSession {
     required this.initialRouteLocation,
     required this.initialPageIds,
     this.repoTransaction,
-  }) : lastPreviewAppearance = baseAppearance;
+  }) : checkpointAppearance = baseAppearance,
+       lastPreviewAppearance = baseAppearance;
 
   final Appearance rawInitialAppearance;
   final Appearance baseAppearance;
@@ -2800,6 +3132,12 @@ final class _LiveTurnSession {
   final String? initialRouteLocation;
   final Set<String> initialPageIds;
   final VibeRepositoryTurnTransaction? repoTransaction;
+
+  Appearance checkpointAppearance;
+  bool hasCheckpoint = false;
+  bool requiresScreenAttachment = false;
+  final Set<String> pendingComponentFixes = <String>{};
+  VibeRepositorySavepoint? repoCheckpoint;
 
   Appearance lastPreviewAppearance;
   int lastAppliedPatchRevision = 0;
