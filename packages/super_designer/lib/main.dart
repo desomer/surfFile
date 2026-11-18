@@ -170,23 +170,36 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   void _queueValidation({bool restoreModel = false, bool updateNodes = true}) {
     _validationQueue = (_validationQueue ?? Future<void>.value())
         .then((_) async {
-          if (!mounted) return;
+          if (!mounted ||
+              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
+            return;
+          }
           if (restoreModel || _schemaModelReady != true) {
             final nodes = await _repositoryStore.readArray(
               _repositoryId,
               'nodes',
             );
-            if (!mounted) return;
+            if (!mounted ||
+                !_repositoryStore.isRegisteredRepository(_repositoryId)) {
+              return;
+            }
             _schemaModel.restore(nodes);
             _schemaModelReady = true;
           }
           final source = await _repositoryStore.readAttribute(_sourceBinding);
-          if (!mounted) return;
+          if (!mounted ||
+              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
+            return;
+          }
           await _validateYaml(source.value, updateNodes: updateNodes);
           _validationFailure = null;
           _validationFailureStack = null;
         })
         .catchError((Object error, StackTrace stack) {
+          if (!mounted ||
+              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
+            return;
+          }
           _validationFailure = error;
           _validationFailureStack = stack;
           _reportRepositoryFailure(error, stack);
@@ -224,10 +237,11 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       var message = '';
       List<Object?>? nodes;
       try {
-        nodes = _schemaModel.patch(source, previousNodes);
+        nodes = await _schemaModel.patchAsync(source, previousNodes);
       } on FormatException catch (error) {
         message = error.message;
       }
+      if (!mounted) return;
       final currentSource = await _repositoryStore.readAttribute(
         _sourceBinding,
       );
@@ -279,6 +293,9 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _eventSubscription = _eventBus
         .on('node.click')
         .asyncMap((event) async {
+          if (!_repositoryStore.isRegisteredRepository(_repositoryId)) {
+            return event;
+          }
           final current = await _repositoryStore.readAttribute(
             _eastSizeBinding,
           );
@@ -358,9 +375,15 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     try {
       while (true) {
         await _repositoryStore.flushBindings();
+        if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
+          return AppExitResponse.exit;
+        }
         final pending = _validationQueue;
         if (pending != null) await pending;
         if (!identical(pending, _validationQueue)) continue;
+        if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
+          return AppExitResponse.exit;
+        }
         final error = _validationFailure;
         if (error != null) {
           Error.throwWithStackTrace(
@@ -368,7 +391,16 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
             _validationFailureStack ?? StackTrace.current,
           );
         }
-        await _repositoryStore.saveRepository(_repositoryId);
+        if (_repositoryStore.isPersistentRepository(_repositoryId)) {
+          try {
+            await _repositoryStore.saveRepository(_repositoryId);
+          } catch (_) {
+            if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
+              return AppExitResponse.exit;
+            }
+            rethrow;
+          }
+        }
         if (identical(pending, _validationQueue)) {
           return AppExitResponse.exit;
         }

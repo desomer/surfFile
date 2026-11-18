@@ -580,6 +580,41 @@ void main() {
       );
     },
   );
+  test(
+    'AppearanceStore offloads large encode/decode/normalize passes to Isolate.run cleanly',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final store = AppearanceStore(
+        isolateThresholdBytes: 64,
+        isolateThresholdEntries: 2,
+      );
+      final value = Appearance(
+        styles: {
+          'card': const ContainerStyle(radius: 14.3456),
+          'badge': const ContainerStyle(borderWidth: 2.789),
+        },
+        components: {
+          'title': const SuperValueConfig(
+            fontSize: 18.1234,
+            initialText: 'Isolate',
+          ),
+        },
+      );
+
+      await store.save(value);
+      final restored = await store.load();
+      expect(restored.style('card').radius, 14.35);
+      expect(restored.style('badge').borderWidth, 2.79);
+      expect(restored.valueComponent('title').fontSize, 18.12);
+      expect(restored.valueComponent('title').initialText, 'Isolate');
+
+      await store.saveEncoded(
+        jsonEncode(store.codec.toJson(value.withStyle('extra', const ContainerStyle(radius: 9.876)))),
+      );
+      final reRestored = await store.load();
+      expect(reRestored.style('extra').radius, 9.88);
+    },
+  );
 }
 
 class _CountingSaveStore extends AppearanceStore {

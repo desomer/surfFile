@@ -6,6 +6,7 @@ library;
 
 import 'dart:async' show Timer, unawaited;
 import 'dart:convert';
+import 'dart:isolate' show Isolate;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,14 +16,45 @@ import '../../theme/appearance.dart';
 import 'appearance_codec.dart';
 
 
+Map<String, dynamic> _decodeJsonMapInIsolate(String text) {
+  final json = jsonDecode(text);
+  if (json is! Map<String, dynamic>) {
+    throw const FormatException('Invalid appearance document.');
+  }
+  return json;
+}
+
+String _normalizeAndEncodeJsonMapInIsolate(Map<String, Object?> rawJson) =>
+    jsonEncode(JsonNumbers.normalizeMap(rawJson));
+
+({Map<String, dynamic> raw, String normalized})
+_decodeAndNormalizeJsonMapInIsolate(String encoded) {
+  final decoded = _decodeJsonMapInIsolate(encoded);
+  final normalized = jsonEncode(JsonNumbers.normalize(decoded));
+  return (raw: decoded, normalized: normalized);
+}
+
 /// Service de lecture et d'écriture persistante du document d'apparence dans `SharedPreferences`.
 class AppearanceStore {
   AppearanceStore({
     this.key = 'super_container_layout.appearance',
     this.codec = const AppearanceCodec(),
+    this.isolateThresholdBytes = defaultIsolateThresholdBytes,
+    this.isolateThresholdEntries = defaultIsolateThresholdEntries,
   });
+
+  /// Taille minimale (en caractères UTF-16) à partir de laquelle `load` et
+  /// `saveEncoded` exécutent le parsing/normalisation JSON dans un `Isolate`.
+  static const int defaultIsolateThresholdBytes = 32 * 1024;
+
+  /// Nombre cumulé minimum d'entrées (`styles + components + behaviors`) à
+  /// partir duquel `save` déporte la normalisation et l'encodage en `Isolate`.
+  static const int defaultIsolateThresholdEntries = 40;
+
   final String key;
   final AppearanceCodec codec;
+  final int isolateThresholdBytes;
+  final int isolateThresholdEntries;
   static const version = 1;
   static String encode(Appearance appearance) =>
       const AppearanceCodec().encode(appearance);
@@ -37,20 +69,35 @@ class AppearanceStore {
     if (stored is! String) {
       throw const FormatException('Invalid stored appearance.');
     }
-    // print('Stored appearance: $stored');
 
-    // var rawJson = jsonDecode(stored);
-    // final prettyJson = JsonEncoder.withIndent('  ').convert(rawJson);
-    // print('Raw JSON: $prettyJson');
-
-    final result = codec.decode(stored);
+    final Appearance result;
+    if (stored.length >= isolateThresholdBytes) {
+      final decoded = await Isolate.run(
+        () => _decodeJsonMapInIsolate(stored),
+      );
+      result = codec.fromJson(decoded);
+    } else {
+      result = codec.decode(stored);
+    }
     codec.restoreAdditional(stored);
     if (codec.needsMigration(stored)) await save(result);
     return result;
   }
 
   Future<void> save(Appearance appearance) async {
-    final encoded = codec.encode(appearance);
+    final entryCount =
+        appearance.styles.length +
+        appearance.components.length +
+        appearance.behaviors.length;
+    final String encoded;
+    if (entryCount >= isolateThresholdEntries) {
+      final rawJson = codec.toJson(appearance);
+      encoded = await Isolate.run(
+        () => _normalizeAndEncodeJsonMapInIsolate(rawJson),
+      );
+    } else {
+      encoded = codec.encode(appearance);
+    }
     if (runtimeType == AppearanceStore) {
       await _writeEncoded(encoded);
       return;
@@ -59,12 +106,18 @@ class AppearanceStore {
   }
 
   Future<void> saveEncoded(String encoded) async {
-    final decoded = jsonDecode(encoded);
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Invalid appearance document.');
+    final String normalized;
+    if (encoded.length >= isolateThresholdBytes) {
+      final parsed = await Isolate.run(
+        () => _decodeAndNormalizeJsonMapInIsolate(encoded),
+      );
+      codec.fromJson(parsed.raw);
+      normalized = parsed.normalized;
+    } else {
+      final decoded = _decodeJsonMapInIsolate(encoded);
+      codec.fromJson(decoded);
+      normalized = jsonEncode(JsonNumbers.normalize(decoded));
     }
-    codec.fromJson(decoded);
-    final normalized = jsonEncode(JsonNumbers.normalize(decoded));
     await _writeEncoded(normalized);
   }
 

@@ -100,4 +100,38 @@ User:
       throwsFormatException,
     );
   });
+
+  test('patchAsync offloads YAML patching to Isolate.run above threshold', () async {
+    const source = '''
+User:
+  status: string(enum)
+  email: email
+''';
+    const updatedSource = '''
+User:
+  status: string(enum)
+  email: email
+  role: string
+''';
+    final parser = Yaml2JsonSchemasParser();
+    final initial = parser.model('source', source);
+    final savedRoot = initial.nodes.single.toJson()..['title'] = 'Utilisateur';
+    final saved = <Object?>[savedRoot];
+
+    final model = RepositorySchemaModel(parser)..restore(saved);
+    final patched = await model.patchAsync(
+      updatedSource,
+      saved,
+      isolateThresholdChars: 0,
+    );
+    final root = patched.single as Map<String, Object?>;
+    expect(root['id'], initial.nodes.single.id);
+    expect(root['title'], 'Utilisateur');
+    expect((root['children'] as List<Object?>), hasLength(3));
+
+    await expectLater(
+      model.patchAsync('User: [', patched, isolateThresholdChars: 0),
+      throwsFormatException,
+    );
+  });
 }

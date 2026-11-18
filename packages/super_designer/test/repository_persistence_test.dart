@@ -246,6 +246,26 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('exit succeeds when the persistent repository has been deleted', (
+    tester,
+  ) async {
+    final store = await mount(tester);
+    await real(tester, () async {
+      final scope = tester.element(find.byType(EditableSurface).first);
+      final appearance = AppearanceScope.controllerOf(scope)!;
+      appearance.value = Appearance();
+      await store.delete(repositoryId, appearance: appearance.value);
+    });
+    expect(store.isPersistentRepository(repositoryId), isFalse);
+    AppExitResponse? response;
+    await tester.runAsync(() async {
+      response = await tester.binding.handleRequestAppExit();
+    });
+    expect(tester.takeException(), isNull);
+    expect(response, AppExitResponse.exit);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('reports a corrupt saved repository without replacing it', (
     tester,
   ) async {

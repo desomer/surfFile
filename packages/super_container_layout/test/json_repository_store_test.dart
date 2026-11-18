@@ -404,9 +404,21 @@ void main() {
 
       final owner = Object();
       store.registerBindings(owner, [id]);
+      expect(await store.isRepositoryInUse(id), isTrue);
       await expectLater(store.delete(id), throwsFormatException);
       expect(await file.exists(), isTrue);
       store.unregisterBindings(owner);
+      final boundAppearance = Appearance().withValueComponent(
+        'v1',
+        const SuperValueConfig(
+          binding: JsonTextBinding(repositoryId: id, path: 'name'),
+        ),
+      );
+      expect(
+        await store.isRepositoryInUse(id, appearance: boundAppearance),
+        isTrue,
+      );
+      expect(await store.isRepositoryInUse(id), isFalse);
       final array = store.bindingOf(id).array('nodes')..select(const [], 0);
       await store.delete(id);
       expect(array.indexFor(const []), isNull);
@@ -821,6 +833,44 @@ void main() {
 
       await expectLater(cold.readDocument('INVALIDE'), throwsFormatException);
       await expectLater(cold.readDocument('0' * 32), throwsFormatException);
+    },
+  );
+
+  test(
+    'pure deep-clone isolates mutations and Isolate.run handles large JSON round-trips',
+    () async {
+      final largeStore = JsonRepositoryStore(
+        Directory(directory.path),
+        isolateThresholdBytes: 128,
+      );
+      addTearDown(largeStore.dispose);
+
+      await largeStore.create('LargeRepo');
+      final id = await largeStore.idOf('LargeRepo');
+      final items = [
+        for (var i = 0; i < 25; i++) {'id': i, 'label': 'Article numéro $i'},
+      ];
+      await largeStore.replaceArray(id, 'items', items);
+      // Mutating caller list after replaceArray must not affect cached store data.
+      (items.first['label'] = 'Mutated');
+
+      final loaded = await largeStore.readArray(id, 'items');
+      expect((loaded.first as Map)['label'], 'Article numéro 0');
+      expect(loaded, hasLength(25));
+
+      final coldLarge = JsonRepositoryStore(
+        Directory(directory.path),
+        isolateThresholdBytes: 128,
+      );
+      addTearDown(coldLarge.dispose);
+      final diskItems = await coldLarge.readArray(id, 'items');
+      expect(diskItems, hasLength(25));
+      expect((diskItems.last as Map)['label'], 'Article numéro 24');
+
+      expect(
+        () => largeStore.replaceValue(id, 'bad', double.nan),
+        throwsA(isA<JsonUnsupportedObjectError>()),
+      );
     },
   );
 }

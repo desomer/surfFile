@@ -1,12 +1,36 @@
 /// Restaure les nœuds du repository et conserve leurs données lors des patchs YAML.
 library;
 
+import 'dart:isolate' show Isolate;
+
 import 'json_browser.dart';
 import 'yaml2jsonschemas_parser.dart';
+
+/// Résultat sérialisable d'une passe de validation/patch YAML.
+typedef YamlPatchResult = ({List<Object?>? nodes, String errorMessage});
+
+/// Exécute la restauration et le patch YAML sur une instance isolée,
+/// directement utilisable dans [Isolate.run].
+YamlPatchResult patchYamlSchemaSnapshot({
+  required String source,
+  required List<Object?> previousNodes,
+}) {
+  final model = RepositorySchemaModel(Yaml2JsonSchemasParser());
+  model.restore(previousNodes);
+  try {
+    final nodes = model.patch(source, previousNodes);
+    return (nodes: nodes, errorMessage: '');
+  } on FormatException catch (error) {
+    return (nodes: null, errorMessage: error.message);
+  }
+}
 
 /// Synchronise le modèle du schéma avec les nœuds éditables du repository.
 class RepositorySchemaModel {
   RepositorySchemaModel(this._parser) : _model = _parser.model('source', '');
+
+  static const int defaultIsolateThresholdChars = 4096;
+  static const int defaultIsolateThresholdNodes = 30;
 
   final Yaml2JsonSchemasParser _parser;
   JsonModel _model;
@@ -103,6 +127,29 @@ class RepositorySchemaModel {
     }
     _storedNodes.removeWhere((id, _) => !retained.contains(id));
     return result;
+  }
+
+  /// Version asynchrone de [patch] qui déporte le parsing/patch YAML dans un
+  /// [Isolate.run] dès que [source] ou [nodes] dépasse le seuil configuré.
+  Future<List<Object?>> patchAsync(
+    String source,
+    List<Object?> nodes, {
+    int isolateThresholdChars = defaultIsolateThresholdChars,
+    int isolateThresholdNodes = defaultIsolateThresholdNodes,
+  }) async {
+    if (source.length < isolateThresholdChars &&
+        nodes.length < isolateThresholdNodes) {
+      return patch(source, nodes);
+    }
+    final snapshot = List<Object?>.of(nodes);
+    final result = await Isolate.run(
+      () => patchYamlSchemaSnapshot(source: source, previousNodes: snapshot),
+    );
+    if (result.nodes == null) {
+      throw FormatException(result.errorMessage);
+    }
+    restore(result.nodes!);
+    return result.nodes!;
   }
 
   static Map<String, Map<String, Object?>> _index(List<Object?> nodes) {

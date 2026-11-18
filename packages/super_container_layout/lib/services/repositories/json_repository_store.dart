@@ -7,6 +7,7 @@ library;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate' show Isolate;
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -62,6 +63,45 @@ class ChangeContext {
   };
 }
 
+Object? _deepCloneJson(Object? value) {
+  if (value == null || value is bool || value is String || value is int) {
+    return value;
+  }
+  if (value is double) {
+    if (!value.isFinite) {
+      throw JsonUnsupportedObjectError(value);
+    }
+    return value;
+  }
+  if (value is List) {
+    return <dynamic>[for (final item in value) _deepCloneJson(item)];
+  }
+  if (value is Map) {
+    final copy = <String, dynamic>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        throw JsonUnsupportedObjectError(value);
+      }
+      copy[key] = _deepCloneJson(entry.value);
+    }
+    return copy;
+  }
+  throw JsonUnsupportedObjectError(value);
+}
+
+Object? _decodeRepositoryJsonInIsolate(String text) {
+  try {
+    return jsonDecode(text);
+  } on FormatException {
+    // Parser diagnostics can contain repository data, including passwords.
+    throw const FormatException('Le repository contient un JSON invalide.');
+  }
+}
+
+String _encodeRepositoryJsonInIsolate(Object? document) =>
+    '${const JsonEncoder.withIndent('  ').convert(document)}\n';
+
 /// Repository JSON fourni par l'application et conservé en mémoire.
 class RepositoryImpl {
   factory RepositoryImpl({
@@ -72,7 +112,7 @@ class RepositoryImpl {
     if (!RegExp(r'^[a-z0-9_]{1,32}$').hasMatch(id)) {
       throw FormatException('ID de repository invalide. $id');
     }
-    final copy = jsonDecode(jsonEncode(json));
+    final copy = _deepCloneJson(json);
     if (copy is! Map<String, dynamic>) {
       throw const FormatException('Le repository doit être un objet JSON.');
     }
@@ -143,7 +183,14 @@ class _RegisteredRepositoryPersistence {
 
 /// One repository is one named JSON file, without an application envelope.
 class JsonRepositoryStore extends ChangeNotifier {
-  JsonRepositoryStore(this.directory);
+  JsonRepositoryStore(
+    this.directory, {
+    this.isolateThresholdBytes = defaultIsolateThresholdBytes,
+  });
+
+  /// Taille minimale (en caractères UTF-16) à partir de laquelle le store
+  /// déporte le décodage/encodage JSON asynchrone dans un `Isolate`.
+  static const int defaultIsolateThresholdBytes = 32 * 1024;
 
   factory JsonRepositoryStore.defaultStore() {
     final home =
@@ -160,6 +207,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   final Directory directory;
+  final int isolateThresholdBytes;
   final errors = ValueNotifier<String?>(null);
 
   DataProviderRegistry? _providers;
@@ -250,7 +298,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         'Repository déjà enregistré.',
       );
     }
-    final document = jsonDecode(jsonEncode(repository.json));
+    final document = _deepCloneJson(repository.json);
     _memoryRepositories[repository.id] = document;
     _memoryRepositoryCallbacks[repository.id] = repository.onChanged;
     _loadingDocuments.remove(repository.id);
@@ -301,7 +349,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     final text = await _readRegisteredText(persistence.file);
     final document = text == null
         ? repository.json
-        : _decodeRegisteredDocument(text);
+        : await _decodeRegisteredDocumentAsync(text);
     persistence.savedText = text;
     if (autoSave && text == null) {
       await _writeRegisteredDocument(persistence, document);
@@ -359,12 +407,15 @@ class JsonRepositoryStore extends ChangeNotifier {
           persistence.file.path,
         );
       }
-      final document = _decodeRegisteredDocument(text);
+      final document = await _decodeRegisteredDocumentAsync(text);
       final previous = _memoryRepositories[repositoryId];
       final savedText = persistence.savedText;
       if (!discardChanges &&
           (savedText == null ||
-              !jsonEquals(previous, _decodeRegisteredDocument(savedText)))) {
+              !jsonEquals(
+                previous,
+                await _decodeRegisteredDocumentAsync(savedText),
+              ))) {
         throw const FormatException(
           'Le repository contient des modifications non enregistrées.',
         );
@@ -432,8 +483,10 @@ class JsonRepositoryStore extends ChangeNotifier {
     return file.readAsString();
   }
 
-  Map<String, Object?> _decodeRegisteredDocument(String text) {
-    final document = _decode(text);
+  Future<Map<String, Object?>> _decodeRegisteredDocumentAsync(
+    String text,
+  ) async {
+    final document = await _decodeAsync(text);
     if (document is! Map<String, dynamic>) {
       throw const FormatException(
         'Le repository applicatif doit être un objet JSON.',
@@ -458,7 +511,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         'de réessayer.',
       );
     }
-    final text = _encode(document);
+    final text = await _encodeAsync(document);
     if (text == persistence.savedText) return;
     await file.parent.create(recursive: true);
     if (await _readRegisteredText(file) != persistence.savedText) {
@@ -551,13 +604,19 @@ class JsonRepositoryStore extends ChangeNotifier {
       _exclusive(() => _isRepositoryInUse(name, appearance: appearance));
 
   Future<bool> _isRepositoryInUse(String name, {Appearance? appearance}) async {
-    final idFile = _idFile(name);
-    if (await FileSystemEntity.type(idFile.path, followLinks: false) !=
-        FileSystemEntityType.file) {
-      return false;
+    final validated = validateName(name);
+    final String id;
+    if (_memoryRepositories.containsKey(validated)) {
+      id = validated;
+    } else {
+      final idFile = _idFile(validated);
+      if (await FileSystemEntity.type(idFile.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        return false;
+      }
+      id = (await idFile.readAsString()).trim();
+      if (id.isEmpty) return false;
     }
-    final id = (await idFile.readAsString()).trim();
-    if (id.isEmpty) return false;
     return isRepositoryBound(id) ||
         (appearance?.usesRepository(id) ?? false) ||
         (_providers?.usesRepository(id) ?? false) ||
@@ -822,6 +881,40 @@ class JsonRepositoryStore extends ChangeNotifier {
   static String _encode(Object? document) =>
       '${const JsonEncoder.withIndent('  ').convert(document)}\n';
 
+  static bool _exceedsNodeLimit(Object? root, int limit) {
+    var count = 0;
+    bool visit(Object? node) {
+      if (++count >= limit) return true;
+      if (node is Map) {
+        for (final value in node.values) {
+          if (visit(value)) return true;
+        }
+      } else if (node is List) {
+        for (final item in node) {
+          if (visit(item)) return true;
+        }
+      }
+      return false;
+    }
+
+    return visit(root);
+  }
+
+  Future<Object?> _decodeAsync(String text) =>
+      text.length >= isolateThresholdBytes
+      ? Isolate.run(() => _decodeRepositoryJsonInIsolate(text))
+      : Future<Object?>.value(_decode(text));
+
+  Future<String> _encodeAsync(Object? document) {
+    final nodeLimit = isolateThresholdBytes <= 0
+        ? 1
+        : (isolateThresholdBytes ~/ 128).clamp(16, 512);
+    if (_exceedsNodeLimit(document, nodeLimit)) {
+      return Isolate.run(() => _encodeRepositoryJsonInIsolate(document));
+    }
+    return Future<String>.value(_encode(document));
+  }
+
   Future<Object?> _getDocument(String repoId) async {
     if (_activeMutations > 0) {
       await _pending;
@@ -841,7 +934,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     future = () async {
       try {
         final name = await _resolveNameOf(repoId);
-        final root = _decode(await read(name));
+        final root = await _decodeAsync(await read(name));
         if (!identical(_loadingDocuments[repoId], future)) {
           return await _getDocument(repoId);
         }
@@ -1039,7 +1132,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   /// invalide ou si le repository est introuvable.
   Future<Object?> readDocument(String repositoryId) async {
     JsonTextBinding(repositoryId: repositoryId, path: '_').validate();
-    return jsonDecode(jsonEncode(await _getDocument(repositoryId)));
+    return _deepCloneJson(await _getDocument(repositoryId));
   }
 
   Future<JsonAttributeValue> readAttribute(
@@ -1111,7 +1204,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
     final name = await _nameOf(repoId);
     final original = await read(name);
-    final root = _decode(original);
+    final root = await _decodeAsync(original);
     final path = JsonAttributePath(binding.path);
     final current = path.read(root, allowStringList: asStringList);
     if (!jsonEquals(current, expectedValue)) {
@@ -1128,7 +1221,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     );
     await _save(
       name,
-      _encode(updated),
+      await _encodeAsync(updated),
       expectedText: original,
       changedPath: binding.path,
     );
@@ -1235,11 +1328,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     String? componentId,
     Map<String, Object?>? expectedValues,
   }) {
-    final copy = jsonDecode(jsonEncode(items)) as List<Object?>;
+    final copy = _deepCloneJson(items) as List<Object?>;
     final expectations = expectedValues == null
         ? null
         : Map<String, Object?>.from(
-            jsonDecode(jsonEncode(expectedValues)) as Map<String, dynamic>,
+            _deepCloneJson(expectedValues) as Map<String, dynamic>,
           );
     return _updateArray(
       repositoryId,
@@ -1295,11 +1388,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     String? componentId,
     Map<String, Object?>? expectedValues,
   }) {
-    final copy = jsonDecode(jsonEncode(value));
+    final copy = _deepCloneJson(value);
     final expectations = expectedValues == null
         ? null
         : Map<String, Object?>.from(
-            jsonDecode(jsonEncode(expectedValues)) as Map<String, dynamic>,
+            _deepCloneJson(expectedValues) as Map<String, dynamic>,
           );
     return _updateNode(
       repositoryId,
@@ -1326,11 +1419,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     final result = await _updateNode(
       repositoryId,
       path,
-      (node) => jsonDecode(jsonEncode(change(jsonDecode(jsonEncode(node))))),
+      (node) => _deepCloneJson(change(_deepCloneJson(node))),
       componentId: componentId,
       skipUnchanged: true,
     );
-    return jsonDecode(jsonEncode(result));
+    return _deepCloneJson(result);
   }
 
   /// Met à jour atomiquement le tableau à [path] (vide s'il est absent) :
@@ -1394,7 +1487,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
     final name = await _nameOf(repositoryId);
     final original = await read(name);
-    final root = _decode(original);
+    final root = await _decodeAsync(original);
     _checkExpectedValues(root, expectedValues);
     final attribute = JsonAttributePath(binding.path);
     final previous = attribute.readNode(root);
@@ -1403,7 +1496,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     final updated = attribute.replaceNode(root, next);
     await _save(
       name,
-      _encode(updated),
+      await _encodeAsync(updated),
       expectedText: original,
       changedPath: binding.path,
     );
@@ -1455,7 +1548,7 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<String> read(String name) async {
     if (_memoryRepositories.containsKey(name)) {
-      return _encode(_memoryRepositories[name]);
+      return _encodeAsync(_memoryRepositories[name]);
     }
     final file = _file(name);
     if (await FileSystemEntity.type(file.path, followLinks: false) !=
@@ -1484,7 +1577,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   ) {
     final Object? decoded;
     try {
-      decoded = jsonDecode(jsonEncode(document));
+      decoded = _deepCloneJson(document);
     } on JsonUnsupportedObjectError {
       throw const FormatException(
         'Le repository contient une valeur JSON non supportée.',
@@ -1525,7 +1618,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       try {
         await idFile.writeAsString(id, flush: true);
         await jsonFile.create(exclusive: true);
-        await jsonFile.writeAsString(_encode(copy), flush: true);
+        await jsonFile.writeAsString(await _encodeAsync(copy), flush: true);
       } catch (_) {
         if (await FileSystemEntity.type(jsonFile.path, followLinks: false) ==
             FileSystemEntityType.file) {
@@ -1571,8 +1664,8 @@ class JsonRepositoryStore extends ChangeNotifier {
       }
       final name = await _nameOf(repositoryId);
       final original = await read(name);
-      if (jsonEquals(_decode(original), decoded)) return;
-      await _file(name).writeAsString(_encode(decoded), flush: true);
+      if (jsonEquals(await _decodeAsync(original), decoded)) return;
+      await _file(name).writeAsString(await _encodeAsync(decoded), flush: true);
       _documentCache[repositoryId] = decoded;
       _idToNameCache?[repositoryId] = validateName(name);
       _invalidateCalculated(repositoryId, '');
@@ -1638,12 +1731,15 @@ class JsonRepositoryStore extends ChangeNotifier {
     required String expectedText,
     String changedPath = '',
   }) async {
-    final decoded = jsonDecode(text);
+    final decoded = await _decodeAsync(text);
     if (_memoryRepositories.containsKey(name)) {
       final persistence = _persistentRepositories[name];
       final matches = persistence == null
           ? await read(name) == expectedText
-          : jsonEquals(_memoryRepositories[name], _decode(expectedText));
+          : jsonEquals(
+              _memoryRepositories[name],
+              await _decodeAsync(expectedText),
+            );
       if (!matches) {
         throw const FormatException(
           'Le repository a été modifié. Copiez vos modifications puis rechargez-le.',
@@ -1682,7 +1778,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     await _file(name).writeAsString(text, flush: true);
     _documentCache[id] = decoded;
     _idToNameCache?[id] = validateName(name);
-    if (changedPath.isEmpty || !jsonEquals(_decode(expectedText), decoded)) {
+    if (changedPath.isEmpty ||
+        !jsonEquals(await _decodeAsync(expectedText), decoded)) {
       _invalidateCalculated(id, changedPath);
     }
     _changed();
