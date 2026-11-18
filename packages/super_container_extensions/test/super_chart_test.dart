@@ -515,5 +515,120 @@ void main() {
         expect(find.byType(ChartAddForm), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'SuperChart evaluates calculated @valuePath/@labelPath and SuperChartEditor suggests row calculations',
+      (tester) async {
+        final calcRepo = RepositoryImpl(
+          id: 'chart_calc_repo',
+          json: {
+            'ventes': [
+              {'mois': 'Jan', 'ca': 100, 'cout': 40},
+              {'mois': 'Fév', 'ca': 150, 'cout': 50},
+            ],
+          },
+        )
+          ..addCalculatedAttribute(
+            'marge',
+            scope: 'ventes[?]',
+            (ctx) =>
+                (ctx.sync.getNum('ca', defaultValue: 0)!) -
+                (ctx.sync.getNum('cout', defaultValue: 0)!),
+          )
+          ..addCalculatedAttribute(
+            'libelle',
+            scope: 'ventes[?]',
+            (ctx) => '${ctx.sync.getString('mois')}-calc',
+          );
+        store.registerRepository(calcRepo);
+
+        SuperChartConfig? saved;
+        await real(tester, () async {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: JsonRepositoryScope(
+                  store: store,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: SuperChart(
+                          id: 'calc-chart',
+                          config: const SuperChartConfig(
+                            binding: JsonTextBinding(
+                              repositoryId: 'chart_calc_repo',
+                              path: 'ventes',
+                            ),
+                            kind: SuperChartKind.bar,
+                            labelPath: '@libelle',
+                            series: [
+                              SuperChartSeries(
+                                id: 's1',
+                                label: 'Marge',
+                                valuePath: '@marge',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Builder(
+                        builder: (context) => ElevatedButton(
+                          onPressed: () async {
+                            saved = await showSuperChartEditor(
+                              context: context,
+                              config: const SuperChartConfig(
+                                binding: JsonTextBinding(
+                                  repositoryId: 'chart_calc_repo',
+                                  path: 'ventes',
+                                ),
+                                kind: SuperChartKind.bar,
+                                labelPath: 'mois',
+                              ),
+                            );
+                          },
+                          child: const Text('Configurer'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        });
+
+        expect(find.byType(BarChart), findsOneWidget);
+        expect(find.text('Jan-calc'), findsWidgets);
+        expect(find.text('Fév-calc'), findsWidgets);
+        final barData = tester.widget<BarChart>(find.byType(BarChart)).data;
+        expect(barData.barGroups[0].barRods.first.toY, 60.0);
+        expect(barData.barGroups[1].barRods.first.toY, 100.0);
+
+        await real(tester, () async {
+          await tester.tap(find.text('Configurer'));
+        });
+        expect(
+          find.byKey(const ValueKey('super-chart-label-calculated-suggestions')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey('super-chart-series-calculated-suggestions-0'),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.enterText(
+          find.byKey(const ValueKey('super-chart-series-path-0')),
+          '@marge',
+        );
+        await real(tester, () async {
+          await tester.tap(find.byKey(const ValueKey('super-chart-apply')));
+        });
+        expect(saved, isNotNull);
+        expect(saved!.series.first.valuePath, '@marge');
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }

@@ -4,7 +4,18 @@ library;
 
 import 'dart:async';
 
+import '../../models/calculated_attribute_definition.dart';
 import '../../models/json_text_binding.dart';
+import 'js_calculated_attribute_runtime.dart';
+
+/// Origine d'un attribut calculé déclaré sur un repository.
+enum CalculatedAttributeSource {
+  /// Fonction Dart enregistrée par code via `RepositoryImpl.addCalculatedAttribute`.
+  dart,
+
+  /// Formule JavaScript persistée ou déclarée via `CalculatedAttributeDefinition`.
+  js,
+}
 
 /// Fonction Dart synchrone ou asynchrone d'un attribut calculé.
 typedef CalculatedAttributeFunction = FutureOr<Object?> Function(
@@ -14,13 +25,27 @@ typedef CalculatedAttributeFunction = FutureOr<Object?> Function(
 /// Description d'un calcul disponible dans les formulaires de liaison.
 class CalculatedAttributeDescriptor {
   /// Décrit un calcul racine ou un calcul relatif à un modèle de ligne.
-  const CalculatedAttributeDescriptor({required this.name, this.scope});
+  const CalculatedAttributeDescriptor({
+    required this.name,
+    this.scope,
+    this.source = CalculatedAttributeSource.dart,
+    this.description,
+  });
 
   /// Nom sans le marqueur `@`.
   final String name;
 
   /// Modèle de ligne JSON, ou `null` pour un calcul racine.
   final String? scope;
+
+  /// Origine de l'attribut calculé (`dart` ou `js`).
+  final CalculatedAttributeSource source;
+
+  /// Description optionnelle fournie sur les définitions JavaScript.
+  final String? description;
+
+  /// Vrai lorsque ce calcul est défini en JavaScript.
+  bool get isJs => source == CalculatedAttributeSource.js;
 
   /// Chemin modèle utilisable dans une liaison, sans exécuter le calcul.
   String get path => scope == null ? '@$name' : '$scope.@$name';
@@ -313,7 +338,9 @@ class CalculatedAttributeEngine {
     Map<String, CalculatedAttributeFunction> functions, {
     required Object? Function() document,
     required this._onAsyncValue,
-  }) : _document = ((_) => document()) {
+    JsCalculatedEvaluator? jsEvaluator,
+  }) : _document = ((_) => document()),
+       _injectedJsEvaluator = jsEvaluator {
     registerRepository('', functions);
   }
 
@@ -321,13 +348,21 @@ class CalculatedAttributeEngine {
   CalculatedAttributeEngine.forStore({
     required this._document,
     required this._onAsyncValue,
-  });
+    JsCalculatedEvaluator? jsEvaluator,
+  }) : _injectedJsEvaluator = jsEvaluator;
 
   final FutureOr<Object?> Function(String) _document;
   final void Function() _onAsyncValue;
-  final _definitions = <String, Map<String, CalculatedAttributeFunction>>{};
+  final JsCalculatedEvaluator? _injectedJsEvaluator;
+  JsCalculatedEvaluator? _ownedJsEvaluator;
+  final _dartDefinitions = <String, Map<String, CalculatedAttributeFunction>>{};
+  final _jsDefinitions = <String, Map<String, CalculatedAttributeDefinition>>{};
   final _runs = <_Key, _Calculation>{};
   bool _disposed = false;
+
+  JsCalculatedEvaluator get _jsEvaluator =>
+      _injectedJsEvaluator ??
+      (_ownedJsEvaluator ??= QuickJsCalculatedEvaluator());
 
   /// Valide un nom de calcul, sans `@`.
   static String validateName(String name) {
@@ -352,33 +387,99 @@ class CalculatedAttributeEngine {
     return path.toString();
   }
 
-  /// Enregistre les fonctions sans les exécuter.
+  /// Enregistre les fonctions Dart sans les exécuter ni écraser les formules JS.
   void registerRepository(
     String repositoryId,
     Map<String, CalculatedAttributeFunction> functions,
   ) {
-    _definitions[repositoryId] = {
+    final normalized = <String, CalculatedAttributeFunction>{
       for (final entry in functions.entries)
         entry.key.contains('@') ? entry.key : '@${entry.key}': entry.value,
     };
+    final existingJs = _jsDefinitions[repositoryId];
+    if (existingJs != null) {
+      for (final key in normalized.keys) {
+        if (existingJs.containsKey(key)) {
+          throw FormatException(
+            'Collision entre l’attribut calculé Dart « $key » et une formule JS existante.',
+          );
+        }
+      }
+    }
+    _dartDefinitions[repositoryId] = normalized;
     invalidateForChange('', repositoryId: repositoryId);
   }
 
-  /// Retire les fonctions et invalide leurs lecteurs.
+  /// Enregistre ou remplace les attributs calculés JavaScript de [repositoryId].
+  ///
+  /// Préserve les fonctions Dart déjà déclarées et refuse toute collision de chemin.
+  void registerJsAttributes(
+    String repositoryId,
+    Iterable<CalculatedAttributeDefinition> definitions,
+  ) {
+    final next = <String, CalculatedAttributeDefinition>{};
+    final dartDefs = _dartDefinitions[repositoryId];
+    for (final def in definitions) {
+      def.validate();
+      final key = def.path;
+      if (next.containsKey(key)) {
+        throw FormatException(
+          'Attribut calculé JS en double dans « $repositoryId » : $key.',
+        );
+      }
+      if (dartDefs != null && dartDefs.containsKey(key)) {
+        throw FormatException(
+          'L’attribut calculé « $key » est déjà défini en Dart dans ce repository.',
+        );
+      }
+      next[key] = def;
+    }
+    if (next.isEmpty) {
+      _jsDefinitions.remove(repositoryId);
+    } else {
+      _jsDefinitions[repositoryId] = next;
+    }
+    invalidateForChange('', repositoryId: repositoryId);
+  }
+
+  /// Supprime uniquement les attributs calculés JavaScript de [repositoryId].
+  void clearJsAttributes(String repositoryId) {
+    if (_jsDefinitions.remove(repositoryId) != null) {
+      invalidateForChange('', repositoryId: repositoryId);
+    }
+  }
+
+  /// Retourne les définitions JavaScript enregistrées pour [repositoryId].
+  List<CalculatedAttributeDefinition> jsAttributesOf(String repositoryId) =>
+      List<CalculatedAttributeDefinition>.unmodifiable(
+        _jsDefinitions[repositoryId]?.values ?? const [],
+      );
+
+  /// Retire toutes les définitions (Dart et JS) et invalide leurs lecteurs.
   void unregisterRepository(String repositoryId) {
-    _definitions.remove(repositoryId);
+    _dartDefinitions.remove(repositoryId);
+    _jsDefinitions.remove(repositoryId);
     invalidateForChange('', repositoryId: repositoryId);
   }
 
   /// Catalogue immuable des définitions, sans calcul.
   List<CalculatedAttributeDescriptor> catalog(String repositoryId) =>
       List.unmodifiable([
-        for (final key in _definitions[repositoryId]?.keys ?? <String>[])
+        for (final key in _dartDefinitions[repositoryId]?.keys ?? <String>[])
           if (JsonAttributePath(key).calculated case final part?)
             CalculatedAttributeDescriptor(
               name: part.name,
               scope: part.scope.isEmpty ? null : part.scope,
+              source: CalculatedAttributeSource.dart,
             ),
+        for (final def in _jsDefinitions[repositoryId]?.values ??
+            <CalculatedAttributeDefinition>[])
+          CalculatedAttributeDescriptor(
+            name: def.name,
+            scope: def.scope,
+            source: CalculatedAttributeSource.js,
+            description: def.description,
+          ),
       ]);
 
   /// Indique si un chemin calculé correspond à une définition enregistrée.
@@ -388,15 +489,28 @@ class CalculatedAttributeEngine {
   String _normalize(String path) =>
       JsonTextBinding.isCalculatedPath(path) ? path : '@$path';
 
-  CalculatedAttributeFunction? _definition(String repositoryId, String path) {
+  ({
+    CalculatedAttributeFunction? dartFn,
+    CalculatedAttributeDefinition? jsDef,
+  })?
+  _definition(String repositoryId, String path) {
     final parsed = JsonAttributePath(path);
     final part = parsed.calculated;
     if (part == null) return null;
     final concrete = JsonAttributePath(part.path);
     for (final entry
-        in _definitions[repositoryId]?.entries ??
+        in _dartDefinitions[repositoryId]?.entries ??
             <MapEntry<String, CalculatedAttributeFunction>>[]) {
-      if (JsonAttributePath(entry.key).matches(concrete)) return entry.value;
+      if (JsonAttributePath(entry.key).matches(concrete)) {
+        return (dartFn: entry.value, jsDef: null);
+      }
+    }
+    for (final entry
+        in _jsDefinitions[repositoryId]?.entries ??
+            <MapEntry<String, CalculatedAttributeDefinition>>[]) {
+      if (JsonAttributePath(entry.key).matches(concrete)) {
+        return (dartFn: null, jsDef: entry.value);
+      }
     }
     return null;
   }
@@ -467,8 +581,8 @@ class CalculatedAttributeEngine {
   FutureOr<Object?> _compute(_Key key, String scope, String name) {
     final cached = _runs[key];
     if (cached != null) return _result(cached);
-    final function = _definition(key.repositoryId, key.path);
-    if (function == null) {
+    final definition = _definition(key.repositoryId, key.path);
+    if (definition == null) {
       throw FormatException('Attribut calculé « ${key.path} » introuvable.');
     }
     final run = _Calculation(key, scope);
@@ -479,7 +593,7 @@ class CalculatedAttributeEngine {
         final parent = scope.isEmpty
             ? root
             : JsonAttributePath(scope).readNode(root);
-        if (parent is! Map<String, dynamic>) {
+        if (parent is! Map<String, Object?>) {
           throw const FormatException(
             'Le scope calculé doit être un objet JSON.',
           );
@@ -489,7 +603,16 @@ class CalculatedAttributeEngine {
             'Collision entre la clé JSON et le calcul « @$name ».',
           );
         }
-        return function(CalculatedAttributeContext._(this, run));
+        final context = CalculatedAttributeContext._(this, run);
+        if (definition.dartFn case final dartFn?) {
+          return dartFn(context);
+        }
+        return _jsEvaluator.evaluate(
+          code: definition.jsDef!.code,
+          scopeData: parent,
+          rootData: root,
+          context: context,
+        );
       }
 
       final result = document is Future<Object?>
@@ -508,6 +631,49 @@ class CalculatedAttributeEngine {
       _fail(run, error, stack);
     }
     return _result(run);
+  }
+
+  /// Évalue ponctuellement une formule JS sans l'enregistrer ni la mettre en cache.
+  ///
+  /// Utile dans l'éditeur pour tester une expression avant sauvegarde.
+  Future<Object?> evaluateAdHocJs({
+    required String repositoryId,
+    required CalculatedAttributeDefinition definition,
+    List<int> indices = const [],
+  }) async {
+    if (_disposed) {
+      throw const FormatException('Le moteur de calcul est fermé.');
+    }
+    definition.validate();
+    final scope = definition.scope == null
+        ? ''
+        : JsonAttributePath(definition.scope!).resolve(indices).toString();
+    final concretePath = scope.isEmpty
+        ? '@${definition.name}'
+        : '$scope.@${definition.name}';
+    final run = _Calculation(
+      (repositoryId: repositoryId, path: concretePath),
+      scope,
+    );
+    final root = await _getDocument(run, repositoryId);
+    final parent = scope.isEmpty
+        ? root
+        : JsonAttributePath(scope).readNode(root);
+    if (parent is! Map<String, Object?>) {
+      throw const FormatException('Le scope calculé doit être un objet JSON.');
+    }
+    if (parent.containsKey('@${definition.name}')) {
+      throw FormatException(
+        'Collision entre la clé JSON et le calcul « @${definition.name} ».',
+      );
+    }
+    final result = await _jsEvaluator.evaluate(
+      code: definition.code,
+      scopeData: parent,
+      rootData: root,
+      context: CalculatedAttributeContext._(this, run),
+    );
+    return _freeze(result);
   }
 
   FutureOr<Object?> _result(_Calculation run) {
@@ -653,6 +819,9 @@ class CalculatedAttributeEngine {
       }
     }
     _runs.clear();
-    _definitions.clear();
+    _dartDefinitions.clear();
+    _jsDefinitions.clear();
+    _ownedJsEvaluator?.dispose();
+    _ownedJsEvaluator = null;
   }
 }

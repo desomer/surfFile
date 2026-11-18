@@ -15,6 +15,7 @@ import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
 import '../datasources/datasource_manager.dart';
 import '../providers/data_provider_manager.dart';
+import 'calculated_attributes_dialog.dart';
 import 'floating_repository_editor.dart';
 import '../../appearance/appearance_scope.dart';
 
@@ -368,6 +369,18 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   });
 
+  Future<void> _openCalculatedAttributes() async {
+    if (_selected == null || _selectedId == null || _store == null || _busy) {
+      return;
+    }
+    await CalculatedAttributesDialog.show(
+      context,
+      store: _store!,
+      repositoryId: _selectedId!,
+      repositoryName: _selected,
+    );
+  }
+
   Future<void> _openFloatingEditor() async {
     if (_selected == null || _selectedId == null || _store == null || _busy) {
       return;
@@ -496,6 +509,13 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
               onPressed: _busy ? null : _openFloatingEditor,
               icon: const Icon(Icons.open_in_new),
               label: const Text('Éditeur flottant'),
+            ),
+            IconButton(
+              key: const ValueKey('repository-calculated-attributes'),
+              tooltip: 'Champs calculés (JS)',
+              visualDensity: VisualDensity.compact,
+              onPressed: _busy ? null : _openCalculatedAttributes,
+              icon: const Icon(Icons.functions, size: 18),
             ),
             TextButton(
               onPressed: _busy ? null : _rename,

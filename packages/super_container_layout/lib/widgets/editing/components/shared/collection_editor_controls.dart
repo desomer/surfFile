@@ -8,8 +8,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/json_text_binding.dart';
 import '../../../../models/super_table_config.dart';
+import '../../../../services/repositories/calculated_attribute.dart';
 import '../../../../services/repositories/json_list_scope.dart';
 import '../../../../services/repositories/json_repository_store.dart';
+import '../../repositories/calculated_attributes_dialog.dart';
 import '../../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
 import 'editor_segmented_field.dart';
@@ -80,6 +82,7 @@ class CollectionRepositorySourceFields extends StatefulWidget {
     required this.busy,
     required this.onRepositoryChanged,
     required this.onLoadError,
+    this.onPathChanged,
     super.key,
   });
 
@@ -95,6 +98,7 @@ class CollectionRepositorySourceFields extends StatefulWidget {
   final bool busy;
   final ValueChanged<String> onRepositoryChanged;
   final ValueChanged<String> onLoadError;
+  final ValueChanged<String>? onPathChanged;
 
   @override
   State<CollectionRepositorySourceFields> createState() =>
@@ -104,11 +108,49 @@ class CollectionRepositorySourceFields extends StatefulWidget {
 class _CollectionRepositorySourceFieldsState
     extends State<CollectionRepositorySourceFields> {
   List<JsonRepositoryEntry> _entries = const [];
+  String _lastPathText = '';
 
   @override
   void initState() {
     super.initState();
+    _lastPathText = widget.pathController.text;
+    widget.pathController.addListener(_handlePathTextChanged);
+    widget.repositories?.addListener(_handleStoreChanged);
     _loadRepositories();
+  }
+
+  @override
+  void didUpdateWidget(covariant CollectionRepositorySourceFields oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.pathController, widget.pathController)) {
+      oldWidget.pathController.removeListener(_handlePathTextChanged);
+      _lastPathText = widget.pathController.text;
+      widget.pathController.addListener(_handlePathTextChanged);
+    }
+    if (!identical(oldWidget.repositories, widget.repositories)) {
+      oldWidget.repositories?.removeListener(_handleStoreChanged);
+      widget.repositories?.addListener(_handleStoreChanged);
+      _loadRepositories();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.pathController.removeListener(_handlePathTextChanged);
+    widget.repositories?.removeListener(_handleStoreChanged);
+    super.dispose();
+  }
+
+  void _handleStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _handlePathTextChanged() {
+    final text = widget.pathController.text;
+    if (text == _lastPathText) return;
+    _lastPathText = text;
+    if (mounted) setState(() {});
+    widget.onPathChanged?.call(text);
   }
 
   Future<void> _loadRepositories() async {
@@ -126,6 +168,60 @@ class _CollectionRepositorySourceFieldsState
     }
   }
 
+  String? get _effectiveRepositoryId =>
+      widget.repository == inheritedRepositoryValue
+      ? widget.scope?.repositoryId
+      : widget.repository.isEmpty
+      ? null
+      : widget.repository;
+
+  List<CalculatedAttributeDescriptor> _calculatedSuggestions(
+    String? repositoryId,
+  ) {
+    final store = widget.repositories;
+    if (repositoryId == null ||
+        store == null ||
+        !_entries.any((entry) => entry.id == repositoryId)) {
+      return const [];
+    }
+    final query = widget.pathController.text.trim().toLowerCase();
+    return store
+        .calculatedAttributeCatalog(repositoryId)
+        .where(
+          (descriptor) =>
+              query.isEmpty || descriptor.path.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+  }
+
+  String? _calculatedStatus(String? repositoryId) {
+    final path = widget.pathController.text.trim();
+    if (!JsonTextBinding.isCalculatedPath(path)) return null;
+    try {
+      JsonTextBinding(
+        repositoryId: widget.repository == inheritedRepositoryValue
+            ? null
+            : widget.repository,
+        path: path,
+      ).validate();
+    } on FormatException {
+      return null;
+    }
+    if (repositoryId == null) {
+      return 'Repository hérité indisponible : attribut calculé non vérifiable.';
+    }
+    if (!_entries.any((entry) => entry.id == repositoryId)) {
+      return 'Repository indisponible : attribut calculé non vérifiable.';
+    }
+    final store = widget.repositories;
+    if (store == null) {
+      return 'Service de repositories indisponible.';
+    }
+    return store.hasCalculatedAttribute(repositoryId, path)
+        ? 'Calculé — lecture seule'
+        : 'Attribut calculé inconnu dans ce repository.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final depth = widget.scope?.indices.length ?? 0;
@@ -135,44 +231,83 @@ class _CollectionRepositorySourceFieldsState
         widget.repository.isEmpty ||
         widget.repository == inheritedRepositoryValue ||
         _entries.any((entry) => entry.id == widget.repository);
+    final effectiveRepositoryId = _effectiveRepositoryId;
+    final calculated = JsonTextBinding.isCalculatedPath(
+      widget.pathController.text.trim(),
+    );
+    final calculatedStatus = widget.repository.isEmpty
+        ? null
+        : _calculatedStatus(effectiveRepositoryId);
+    final calculatedSuggestions = widget.repository.isEmpty
+        ? const <CalculatedAttributeDescriptor>[]
+        : _calculatedSuggestions(effectiveRepositoryId);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 12,
       children: [
-        DropdownButtonFormField<String>(
-          key: ValueKey('${widget.keyPrefix}-repository'),
-          initialValue: widget.repository,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Repository'),
-          items: [
-            const DropdownMenuItem(value: '', child: Text('Sans liaison')),
-            if (inheritable)
-              const DropdownMenuItem(
-                value: inheritedRepositoryValue,
-                child: Text('Hérité de la liste englobante'),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('${widget.keyPrefix}-repository'),
+                initialValue: widget.repository,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Repository'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('Sans liaison')),
+                  if (inheritable)
+                    const DropdownMenuItem(
+                      value: inheritedRepositoryValue,
+                      child: Text('Hérité de la liste englobante'),
+                    ),
+                  for (final entry in _entries)
+                    DropdownMenuItem(
+                      value: entry.id,
+                      child: Text(entry.name, overflow: TextOverflow.ellipsis),
+                    ),
+                  if (!known)
+                    DropdownMenuItem(
+                      value: widget.repository,
+                      child: const Text('Repository indisponible'),
+                    ),
+                ],
+                onChanged: widget.busy
+                    ? null
+                    : (value) => widget.onRepositoryChanged(value ?? ''),
               ),
-            for (final entry in _entries)
-              DropdownMenuItem(
-                value: entry.id,
-                child: Text(entry.name, overflow: TextOverflow.ellipsis),
-              ),
-            if (!known)
-              DropdownMenuItem(
-                value: widget.repository,
-                child: const Text('Repository indisponible'),
+            ),
+            if (effectiveRepositoryId != null &&
+                widget.repositories != null &&
+                _entries.any((e) => e.id == effectiveRepositoryId))
+              IconButton(
+                key: ValueKey('${widget.keyPrefix}-repository-calculated'),
+                tooltip: 'Gérer les champs calculés (JS)',
+                onPressed: widget.busy
+                    ? null
+                    : () {
+                        final entry = _entries
+                            .where((e) => e.id == effectiveRepositoryId)
+                            .firstOrNull;
+                        CalculatedAttributesDialog.show(
+                          context,
+                          store: widget.repositories!,
+                          repositoryId: effectiveRepositoryId,
+                          repositoryName: entry?.name,
+                        );
+                      },
+                icon: const Icon(Icons.functions),
               ),
           ],
-          onChanged: widget.busy
-              ? null
-              : (value) => widget.onRepositoryChanged(value ?? ''),
         ),
         TextFormField(
           key: ValueKey('${widget.keyPrefix}-path'),
           controller: widget.pathController,
           enabled: widget.repository.isNotEmpty && !widget.busy,
           decoration: InputDecoration(
-            labelText: widget.pathLabel,
+            labelText: calculated
+                ? '${widget.pathLabel} — Calculé — lecture seule'
+                : widget.pathLabel,
             hintText: depth == 0 ? widget.rootHint : widget.nestedHint,
             helperText: widget.helperText,
           ),
@@ -186,6 +321,45 @@ class _CollectionRepositorySourceFieldsState
             }
           },
         ),
+        if (calculatedStatus != null)
+          Text(
+            calculatedStatus,
+            key: ValueKey('${widget.keyPrefix}-calculated-status'),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: calculatedStatus == 'Calculé — lecture seule'
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.error,
+            ),
+          ),
+        if (calculatedSuggestions.isNotEmpty)
+          Wrap(
+            key: ValueKey('${widget.keyPrefix}-calculated-suggestions'),
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final (index, descriptor) in calculatedSuggestions.indexed)
+                ActionChip(
+                  key: ValueKey(
+                    '${widget.keyPrefix}-calculated-suggestion-$index',
+                  ),
+                  label: Text(descriptor.path),
+                  tooltip: descriptor.scope == null
+                      ? 'Attribut calculé ${descriptor.isJs ? 'JS' : 'Dart'}'
+                      : 'Attribut calculé ${descriptor.isJs ? 'JS' : 'Dart'}'
+                            ' — portée ${descriptor.scope}',
+                  onPressed: widget.busy
+                      ? null
+                      : () {
+                          widget.pathController.value = TextEditingValue(
+                            text: descriptor.path,
+                            selection: TextSelection.collapsed(
+                              offset: descriptor.path.length,
+                            ),
+                          );
+                        },
+                ),
+            ],
+          ),
       ],
     );
   }
@@ -199,6 +373,7 @@ List<Widget> buildCollectionMutationSwitches({
   required ValueChanged<bool> onAllowAddChanged,
   required bool allowRemove,
   required ValueChanged<bool> onAllowRemoveChanged,
+  bool readOnlySource = false,
   bool? animateSelectionAndHover,
   ValueChanged<bool>? onAnimateSelectionAndHoverChanged,
   String addTitle = 'Autoriser l’ajout d’éléments',
@@ -207,14 +382,20 @@ List<Widget> buildCollectionMutationSwitches({
   EditorSwitchTile(
     tileKey: ValueKey('$keyPrefix-allow-add'),
     title: addTitle,
-    value: allowAdd,
-    onChanged: onAllowAddChanged,
+    subtitle: readOnlySource
+        ? 'Source calculée : ajout désactivé (lecture seule).'
+        : null,
+    value: readOnlySource ? false : allowAdd,
+    onChanged: readOnlySource ? null : onAllowAddChanged,
   ),
   EditorSwitchTile(
     tileKey: ValueKey('$keyPrefix-allow-remove'),
     title: removeTitle,
-    value: allowRemove,
-    onChanged: onAllowRemoveChanged,
+    subtitle: readOnlySource
+        ? 'Source calculée : suppression désactivée (lecture seule).'
+        : null,
+    value: readOnlySource ? false : allowRemove,
+    onChanged: readOnlySource ? null : onAllowRemoveChanged,
   ),
   if (animateSelectionAndHover != null &&
       onAnimateSelectionAndHoverChanged != null)

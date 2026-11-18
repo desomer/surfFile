@@ -23,7 +23,14 @@ Lorsqu'une demande nécessite de créer un repository, d'enrichir son schéma ou
       "mode": "merge",
       "data": {
         "...": "..."
-      }
+      },
+      "calculatedAttributes": [
+        {
+          "name": "montantHt",
+          "scope": "articles[?]",
+          "code": "(row.quantite ?? 0) * (row.prixUnitaire ?? 0)"
+        }
+      ]
     }
   },
   "vibe": {
@@ -84,11 +91,16 @@ Toute violation de l'une des règles ci-dessous lève immédiatement une `Format
      - espace ou caractère blanc (`\s`, tabulation, retour à la ligne)
    - **Convention recommandée** : utilise exclusivement du **`camelCase` ASCII** sans accent ni ponctuation (`nomClient`, `montantHt`, `dateEcheance`, `facturationAuto`).
 3. **Réserve absolue du préfixe `@` (attributs calculés en lecture seule)** :
-   - **Aucune clé JSON stockée** dans `"repositories"` (à la racine comme dans un sous-objet ou un élément de tableau) ne peut commencer par `@`. Une clé `"@total"` dans le JSON provoque une erreur de collision avec `CalculatedAttributeEngine`.
-   - Le préfixe `@` (`"@totalHt"`, `"@stats.marge"`, `"articles[?].@montant"`) est **strictement réservé aux attributs calculés** enregistrés côté Dart via `RepositoryImpl.addCalculatedAttribute`.
+   - **Aucune clé JSON stockée** dans `"repositories.*.data"` (à la racine comme dans un sous-objet ou un élément de tableau) ne peut commencer par `@`. Une clé `"@total"` dans `"data"` provoque une erreur de collision avec `CalculatedAttributeEngine`.
+   - Le préfixe `@` (`"@totalHt"`, `"@stats.marge"`, `"articles[?].@montant"`) est **strictement réservé aux attributs calculés** :
+     - soit enregistrés côté Dart via `RepositoryImpl.addCalculatedAttribute` ;
+     - soit définis en JavaScript (QuickJS) via la clé optionnelle `"calculatedAttributes"` de l'enveloppe `"repositories"` (persistés dans `calculated/<id>.json`).
+   - **Format d'une définition JavaScript dans `"calculatedAttributes"`** :
+     - `{"name": "<nom>", "scope": "<tableau[?]>" (optionnel), "code": "<JS>", "description": "<texte>" (optionnel)}`.
+     - Le code JS reçoit `(row, ctx, doc)` : `row` désigne la ligne courante (ou le document racine sans `scope`), `doc` le document racine et `ctx.get(chemin, repoId?, defaut?)` / `ctx.getNum(...)` lit un autre chemin ou `@calcul` avec suivi automatique des dépendances.
    - **Contrat IA sur `@calcul`** :
-     - Tu peux lier un composant **en lecture seule** (`SuperValue` en `mode: "display"`, `SuperListView` sans `allowAdd`/`allowRemove`, `SuperTable` en consultation, `SuperChart`, `SuperConditional`, `states.binding`, `propertyBindings`, `onTooltip`) à un chemin `@...` **uniquement s'il est explicitement listé** dans les `calculatedAttributes` du repository dans `REPOSITORIES DISPONIBLES`.
-     - N'invente jamais un `@calcul` absent du contexte.
+     - Tu peux lier un composant **en lecture seule** (`SuperValue` en `mode: "display"`, `SuperListView` sans `allowAdd`/`allowRemove`, `SuperTable` en consultation, `SuperChart`, `SuperConditional`, `states.binding`, `propertyBindings`, `onTooltip`) à un chemin `@...` s'il figure déjà dans `calculatedAttributes` de `REPOSITORIES DISPONIBLES` **ou** s'il vient d'être déclaré dans `"calculatedAttributes"` du même tour.
+     - N'invente jamais un `@calcul` non déclaré.
      - Ne lie **jamais** un contrôle d'écriture (`SuperValue` en `mode: "input"`, `checkbox`/`switch` modifiable, `choice`, `Expansible.binding`, `Menu.binding`, `SuperTab` statique bidirectionnel, `allowAdd: true`, `allowRemove: true`) à un chemin contenant un segment `@...`.
 4. **Grammaire stricte des chemins (`JsonAttributePath` $\neq$ JSONPath)** :
    - Seuls les segments séparés par `.` et les indices entiers positifs `[0]`, `[1]` ou jokers `[?]` sont acceptés (regex : `(^|\.)([^.\[\]\s?]+)|\[([0-9]+|\?)\]`).

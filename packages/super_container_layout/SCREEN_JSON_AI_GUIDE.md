@@ -68,10 +68,8 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 
 ### Liaisons sur des attributs calculés
 
-Les calculs sont déclarés par l'application avec
-`RepositoryImpl.addCalculatedAttribute` avant l'enregistrement du repository.
-Le JSON contient uniquement leurs chemins, jamais du code, des fonctions ou
-les résultats du cache. Ne pas inventer un calcul non déclaré.
+Les calculs sont soit déclarés côté Dart (`RepositoryImpl.addCalculatedAttribute` / `addJsCalculatedAttribute`), soit définis en JavaScript (QuickJS) dans le gestionnaire de repositories ou via la clé `"calculatedAttributes"` de `"repositories"` (persistés dans `calculated/<id>.json`).
+Les données `"data"` et l'apparence contiennent uniquement leurs chemins, jamais de résultats de cache. Ne pas lier un `@calcul` non déclaré.
 
 - `@nom` lit un calcul racine ; `@stats.total` lit une propriété de son résultat.
 - `@actifs[?].nom` lit une ligne d'un tableau calculé, avec les mêmes jokers et
@@ -87,8 +85,8 @@ les résultats du cache. Ne pas inventer un calcul non déclaré.
 - Les scopes par ligne portent exclusivement sur des tableaux JSON sources,
   éventuellement imbriqués ; pas de calcul par ligne déclaré sur un tableau calculé.
 - Le cache et les dépendances, y compris entre repositories du même store,
-  sont gérés par le runtime. Les erreurs ne sont pas remplacées par une valeur
-  par défaut. Les fonctions ne sont pas sérialisables ni définissables par l'IA.
+  sont gérés par le runtime (`CalculatedAttributeEngine` + `QuickJsCalculatedEvaluator`). Les erreurs ne sont pas remplacées par une valeur
+  par défaut. Les formules JS sont définies via `"repositories.*.calculatedAttributes"` (ou l'éditeur JS), jamais dans `"data"` ni dans `"vibe"`.
 
 ### Couleurs du thème Material 3 (`theme:<rôle>` à privilégier)
 

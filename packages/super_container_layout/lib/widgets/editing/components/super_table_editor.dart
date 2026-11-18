@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/json_text_binding.dart';
 import '../../../models/super_table_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -296,6 +297,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
                 'Tableau JSON dont chaque élément devient une ligne.',
             busy: _busy,
             onRepositoryChanged: (value) => setState(() => _repository = value),
+            onPathChanged: (_) => setState(() {}),
             onLoadError: (msg) => setState(() => _error = msg),
           ),
           SuperTableColumnsEditor(
@@ -391,6 +393,9 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
           ),
           ...buildCollectionMutationSwitches(
             keyPrefix: 'super-table',
+            readOnlySource:
+                _repository.isNotEmpty &&
+                JsonTextBinding.isCalculatedPath(_path.text.trim()),
             allowAdd: _allowAdd,
             onAllowAddChanged: (value) => setState(() => _allowAdd = value),
             allowRemove: _allowRemove,

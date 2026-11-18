@@ -125,6 +125,36 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
   String? _error;
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.repositories?.addListener(_onStoreChanged);
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
+  List<String> get _rowCalculatedFields {
+    final store = widget.repositories;
+    final binding = _draft.binding;
+    if (store == null || binding == null) return const [];
+    final repoId = binding.repositoryId ?? widget.scope?.repositoryId;
+    if (repoId == null || repoId.isEmpty) return const [];
+    final path = binding.path.trim();
+    if (path.isEmpty) return const [];
+    try {
+      final expectedScope = '${JsonAttributePath(path)}[?]';
+      return store
+          .calculatedAttributeCatalog(repoId)
+          .where((d) => d.scope == expectedScope)
+          .map((d) => '@${d.name}')
+          .toList(growable: false);
+    } on FormatException {
+      return const [];
+    }
+  }
+
   static String _formatNumber(double value) =>
       value == value.roundToDouble() ? '${value.toInt()}' : '$value';
 
@@ -133,6 +163,7 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
 
   @override
   void dispose() {
+    widget.repositories?.removeListener(_onStoreChanged);
     _labelPath.dispose();
     _xAxisTitle.dispose();
     _yAxisTitle.dispose();
@@ -214,6 +245,25 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
         ).binding;
         if (resolved != null) {
           await store.readArray(resolved.repositoryId!, resolved.path);
+          final rowTemplate = '${JsonAttributePath(binding.path)}[0]';
+          for (final rel in [
+            config.labelPath.trim(),
+            for (final s in config.series) ...[
+              s.valuePath.trim(),
+              s.secondaryValuePath.trim(),
+            ],
+          ]) {
+            if (rel.isNotEmpty &&
+                JsonTextBinding.isCalculatedPath(rel) &&
+                !store.hasCalculatedAttribute(
+                  resolved.repositoryId!,
+                  '$rowTemplate.$rel',
+                )) {
+              throw FormatException(
+                'Attribut calculé inconnu pour la ligne : « $rel ».',
+              );
+            }
+          }
         }
       }
       if (mounted) Navigator.of(context).pop(config);
@@ -362,13 +412,34 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
               key: const ValueKey('super-chart-label-path'),
               controller: _labelPath,
               enabled: !_busy,
-              decoration: const InputDecoration(
-                labelText: 'Chemin du libellé / catégorie (axe X)',
-                hintText: 'mois, nom ou laisser vide pour l’index',
+              decoration: InputDecoration(
+                labelText: JsonTextBinding.isCalculatedPath(_labelPath.text)
+                    ? 'Chemin du libellé / catégorie (axe X) — Calculé'
+                    : 'Chemin du libellé / catégorie (axe X)',
+                hintText: 'mois, nom, @libelle ou vide pour l’index',
                 helperText:
-                    'Clé relative dans chaque élément du tableau pour le titre X ou la tranche.',
+                    'Clé relative dans chaque élément du tableau (ou @calcul).',
               ),
+              onChanged: (_) => setState(() {}),
             ),
+            if (_rowCalculatedFields.isNotEmpty)
+              Wrap(
+                key: const ValueKey('super-chart-label-calculated-suggestions'),
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final field in _rowCalculatedFields)
+                    ActionChip(
+                      label: Text(field),
+                      tooltip: 'Utiliser le champ calculé $field comme libellé',
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                              _labelPath.text = field;
+                            }),
+                    ),
+                ],
+              ),
 
             const Divider(height: 8),
 
@@ -395,6 +466,7 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
                 index: i,
                 series: _draft.series[i],
                 chartKind: kind,
+                calculatedFields: _rowCalculatedFields,
                 canRemove: _draft.series.length > 1 && !_busy,
                 enabled: !_busy,
                 onChanged: (updated) => _updateSeries(i, updated),
@@ -638,6 +710,7 @@ class _SeriesEditorCard extends StatefulWidget {
     required this.index,
     required this.series,
     required this.chartKind,
+    this.calculatedFields = const [],
     required this.canRemove,
     required this.enabled,
     required this.onChanged,
@@ -648,6 +721,7 @@ class _SeriesEditorCard extends StatefulWidget {
   final int index;
   final SuperChartSeries series;
   final SuperChartKind chartKind;
+  final List<String> calculatedFields;
   final bool canRemove;
   final bool enabled;
   final ValueChanged<SuperChartSeries> onChanged;
@@ -785,16 +859,43 @@ class _SeriesEditorCardState extends State<_SeriesEditorCard> {
                   key: ValueKey('super-chart-series-path-${widget.index}'),
                   controller: _valuePath,
                   enabled: widget.enabled,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    labelText: 'Chemin valeur Y',
-                    hintText: 'ex: montant (vide = nombre direct)',
+                    labelText: JsonTextBinding.isCalculatedPath(_valuePath.text)
+                        ? 'Chemin valeur Y — Calculé'
+                        : 'Chemin valeur Y',
+                    hintText: 'ex: montant, @montantHt (vide = nombre direct)',
                   ),
-                  onChanged: (_) => _emitNumbers(),
+                  onChanged: (_) {
+                    setState(() {});
+                    _emitNumbers();
+                  },
                 ),
               ),
             ],
           ),
+          if (widget.calculatedFields.isNotEmpty)
+            Wrap(
+              key: ValueKey(
+                'super-chart-series-calculated-suggestions-${widget.index}',
+              ),
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final field in widget.calculatedFields)
+                  ActionChip(
+                    label: Text(field),
+                    tooltip: 'Utiliser $field comme valeur Y',
+                    onPressed: widget.enabled
+                        ? () {
+                            _valuePath.text = field;
+                            setState(() {});
+                            _emitNumbers();
+                          }
+                        : null,
+                  ),
+              ],
+            ),
           if (showSecondary)
             TextFormField(
               key: ValueKey('super-chart-series-secondary-${widget.index}'),

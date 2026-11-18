@@ -12,6 +12,7 @@ import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import 'calculated_attributes_dialog.dart';
 
 const inheritedRepositoryValue = '*';
 
@@ -179,13 +180,20 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
   void _updateStore() {
     final store = widget.store ?? JsonRepositoryScope.maybeOf(context);
     if (!identical(store, _store)) {
+      _store?.removeListener(_onStoreChanged);
       _store = store;
+      _store?.addListener(_onStoreChanged);
       if (store != null) _load();
     }
   }
 
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _store?.removeListener(_onStoreChanged);
     _path.dispose();
     _pathFocus.dispose();
     super.dispose();
@@ -382,6 +390,25 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
               onPressed: available && !_loading ? _load : null,
               icon: const Icon(Icons.refresh),
             ),
+            if (effectiveRepositoryId != null &&
+                available &&
+                _repositories.any((e) => e.id == effectiveRepositoryId))
+              IconButton(
+                key: ValueKey('${widget.keyPrefix}-repository-calculated'),
+                tooltip: 'Gérer les champs calculés (JS)',
+                onPressed: () {
+                  final entry = _repositories
+                      .where((e) => e.id == effectiveRepositoryId)
+                      .firstOrNull;
+                  CalculatedAttributesDialog.show(
+                    context,
+                    store: _store!,
+                    repositoryId: effectiveRepositoryId,
+                    repositoryName: entry?.name,
+                  );
+                },
+                icon: const Icon(Icons.functions),
+              ),
           ],
         ),
         if (_repository.isNotEmpty)
@@ -435,8 +462,9 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
                   ),
                   label: Text(descriptor.path),
                   tooltip: descriptor.scope == null
-                      ? 'Attribut calculé'
-                      : 'Attribut calculé — portée ${descriptor.scope}',
+                      ? 'Attribut calculé ${descriptor.isJs ? 'JS' : 'Dart'}'
+                      : 'Attribut calculé ${descriptor.isJs ? 'JS' : 'Dart'}'
+                            ' — portée ${descriptor.scope}',
                   onPressed: () => _selectCalculatedPath(descriptor),
                 ),
             ],

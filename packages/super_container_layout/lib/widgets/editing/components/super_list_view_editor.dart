@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/json_text_binding.dart';
 import '../../../models/scrollbar_style_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
@@ -188,6 +189,7 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
                       'sélectionnée.',
             busy: _busy,
             onRepositoryChanged: (value) => setState(() => _repository = value),
+            onPathChanged: (_) => setState(() {}),
             onLoadError: (msg) => setState(() => _error = msg),
           ),
           SegmentedButton<String>(
@@ -240,6 +242,9 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
           ),
           ...buildCollectionMutationSwitches(
             keyPrefix: 'super-list',
+            readOnlySource:
+                _repository.isNotEmpty &&
+                JsonTextBinding.isCalculatedPath(_path.text.trim()),
             allowAdd: _allowAdd,
             onAllowAddChanged: (value) => setState(() => _allowAdd = value),
             allowRemove: _allowRemove,

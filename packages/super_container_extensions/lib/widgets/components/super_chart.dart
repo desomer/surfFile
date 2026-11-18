@@ -124,6 +124,9 @@ class _SuperChartState extends State<SuperChart> {
   JsonArrayBinding? _selection;
   List<JsonArrayBinding> _listened = const [];
   List<Object?>? _items;
+  SuperChartConfig? _observedConfig;
+  Map<String, Object?> _calculatedValues = const {};
+  Set<String> _lastCalculatedPaths = const {};
   String? _error;
   bool _loading = false;
   int _generation = 0;
@@ -192,10 +195,23 @@ class _SuperChartState extends State<SuperChart> {
     if (mounted) setState(() {});
   }
 
-  void _observe(_ChartSource source, JsonRepositoryStore? store) {
-    if (_source == source && identical(_store, store)) return;
+  void _observe(
+    SuperChartConfig config,
+    _ChartSource source,
+    JsonRepositoryStore? store,
+  ) {
+    _observedConfig = config;
+    final nextCalcPaths = _calculatedRelativePaths(config);
+    final calcPathsChanged = !_setEquals(_lastCalculatedPaths, nextCalcPaths);
+    if (_source == source &&
+        identical(_store, store) &&
+        !calcPathsChanged) {
+      return;
+    }
+    _lastCalculatedPaths = nextCalcPaths;
     if (_source != source) {
       _items = null;
+      _calculatedValues = const {};
       _error = null;
     }
     _source = source;
@@ -223,6 +239,28 @@ class _SuperChartState extends State<SuperChart> {
     });
   }
 
+  static bool _setEquals(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  static Set<String> _calculatedRelativePaths(SuperChartConfig config) {
+    final paths = <String>{};
+    final label = config.labelPath.trim();
+    if (label.isNotEmpty && JsonTextBinding.isCalculatedPath(label)) {
+      paths.add(label);
+    }
+    for (final series in config.series) {
+      final y = series.valuePath.trim();
+      if (y.isNotEmpty && JsonTextBinding.isCalculatedPath(y)) {
+        paths.add(y);
+      }
+      final x = series.secondaryValuePath.trim();
+      if (x.isNotEmpty && JsonTextBinding.isCalculatedPath(x)) {
+        paths.add(x);
+      }
+    }
+    return paths;
+  }
+
   Future<void> _reload() async {
     final generation = ++_generation;
     final binding = _source?.binding;
@@ -230,6 +268,7 @@ class _SuperChartState extends State<SuperChart> {
     if (binding == null || store == null) {
       setState(() {
         _items = null;
+        _calculatedValues = const {};
         _loading = false;
         _error =
             _source?.error ??
@@ -245,12 +284,40 @@ class _SuperChartState extends State<SuperChart> {
     try {
       final items = await store.readArray(binding.repositoryId!, binding.path);
       if (!mounted || generation != _generation) return;
+      final calcPaths = _calculatedRelativePaths(
+        _observedConfig ?? _localConfig.value,
+      );
+      _lastCalculatedPaths = calcPaths;
+      final nextCalculated = <String, Object?>{};
+      if (calcPaths.isNotEmpty && items.isNotEmpty) {
+        final futures = <Future<void>>[];
+        for (var i = 0; i < items.length; i++) {
+          for (final rel in calcPaths) {
+            final fullPath = '${binding.path}[$i].$rel';
+            futures.add(
+              store
+                  .readAttribute(
+                    JsonTextBinding(
+                      repositoryId: binding.repositoryId,
+                      path: fullPath,
+                    ),
+                  )
+                  .then((attr) {
+                    nextCalculated['$i:$rel'] = attr.value;
+                  }),
+            );
+          }
+        }
+        await Future.wait(futures);
+        if (!mounted || generation != _generation) return;
+      }
       final selected = _selection?.indexFor(_source!.parents);
       if (selected != null && selected >= items.length) {
         _selection!.clear();
       }
       setState(() {
         _items = items;
+        _calculatedValues = nextCalculated;
         _error = null;
       });
     } on FormatException catch (error) {
@@ -322,9 +389,28 @@ class _SuperChartState extends State<SuperChart> {
     return null;
   }
 
-  static Object? _readRelative(Object? item, String relativePath) {
+  Object? _readRelative(int index, Object? item, String relativePath) {
     final trimmed = relativePath.trim();
     if (trimmed.isEmpty) return item;
+    if (JsonTextBinding.isCalculatedPath(trimmed)) {
+      final cacheKey = '$index:$trimmed';
+      if (_calculatedValues.containsKey(cacheKey)) {
+        return _calculatedValues[cacheKey];
+      }
+      final binding = _source?.binding;
+      final store = _store;
+      if (binding != null && store != null) {
+        return store
+            .peekAttribute(
+              JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: '${binding.path}[$index].$trimmed',
+              ),
+            )
+            ?.value;
+      }
+      return null;
+    }
     try {
       return JsonAttributePath(trimmed).read(item);
     } on FormatException {
@@ -341,7 +427,7 @@ class _SuperChartState extends State<SuperChart> {
       final item = rawItems[i];
       String label = '${i + 1}';
       if (config.labelPath.trim().isNotEmpty) {
-        final rawLabel = _readRelative(item, config.labelPath);
+        final rawLabel = _readRelative(i, item, config.labelPath);
         if (rawLabel != null && rawLabel.toString().trim().isNotEmpty) {
           label = rawLabel.toString().trim();
         }
@@ -351,10 +437,10 @@ class _SuperChartState extends State<SuperChart> {
       final yValues = <double>[];
       final xValues = <double>[];
       for (final s in config.series) {
-        final rawY = _readRelative(item, s.valuePath);
+        final rawY = _readRelative(i, item, s.valuePath);
         yValues.add(_toDouble(rawY) ?? 0.0);
         if (s.secondaryValuePath.trim().isNotEmpty) {
-          final rawX = _readRelative(item, s.secondaryValuePath);
+          final rawX = _readRelative(i, item, s.secondaryValuePath);
           xValues.add(_toDouble(rawX) ?? i.toDouble());
         } else {
           xValues.add(i.toDouble());
@@ -1087,7 +1173,9 @@ class _SuperChartState extends State<SuperChart> {
       builder: (context, config, _) {
         final placeholder = scope?.placeholder ?? false;
         _configPath = config.binding?.path;
-        if (!placeholder) _observe(_resolve(config, scope, store), store);
+        if (!placeholder) {
+          _observe(config, _resolve(config, scope, store), store);
+        }
 
         // fl_chart's RenderBaseChart registers its own TapGestureRecognizer
         // (including onSecondaryTapDown/Up) and wins the GestureArena before

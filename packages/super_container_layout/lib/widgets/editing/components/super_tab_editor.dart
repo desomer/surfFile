@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/json_text_binding.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -178,6 +179,9 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
           if (isDynamic) ...[
             ...buildCollectionMutationSwitches(
               keyPrefix: 'super-tab',
+              readOnlySource:
+                  _draft.binding != null &&
+                  JsonTextBinding.isCalculatedPath(_draft.binding!.path),
               allowAdd: _draft.allowAdd,
               onAllowAddChanged: (value) =>
                   setState(() => _draft = _draft.copyWith(allowAdd: value)),

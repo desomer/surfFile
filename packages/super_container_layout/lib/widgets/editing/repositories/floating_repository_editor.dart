@@ -15,6 +15,7 @@ import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../components/internal_widget/code_editor.dart';
 import '../dialogs/editor_dialog.dart';
+import 'calculated_attributes_dialog.dart';
 import 'json_repository_manager.dart';
 
 OverlayState _resolveRootOverlay(BuildContext context) {
@@ -602,6 +603,19 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
                                   'Repository : $_name',
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                              ),
+                              IconButton(
+                                key: const ValueKey(
+                                  'floating-repository-calculated',
+                                ),
+                                tooltip: 'Champs calculés (JS)',
+                                onPressed: () => CalculatedAttributesDialog.show(
+                                  context,
+                                  store: widget.store,
+                                  repositoryId: widget.repositoryId,
+                                  repositoryName: _name,
+                                ),
+                                icon: const Icon(Icons.functions),
                               ),
                               IconButton(
                                 tooltip: 'Copier le JSON',

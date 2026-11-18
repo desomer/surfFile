@@ -12,13 +12,16 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../../models/calculated_attribute_definition.dart';
 import '../../models/json_text_binding.dart';
 import '../../theme/appearance.dart';
 import '../datasources/datasource_registry.dart';
 import '../datasources/super_backend_datasource_bridge.dart';
 import '../providers/data_provider_registry.dart';
+import '../providers/json_definition_folder.dart';
 import 'calculated_attribute.dart';
 import 'json_repository_binding.dart';
+import 'js_calculated_attribute_runtime.dart';
 
 /// Entrée immuable décrivant un repository JSON enregistré (identifiant, nom et contenu JSON).
 typedef JsonRepositoryEntry = ({String name, String id});
@@ -130,11 +133,16 @@ class RepositoryImpl {
   final ValueChanged<ChangeContext>? onChanged;
 
   final _calculatedAttributes = <String, CalculatedAttributeFunction>{};
+  final _jsCalculatedAttributes = <CalculatedAttributeDefinition>[];
   bool _registered = false;
 
-  /// Fonctions de calcul déclarées, indexées par nom (copie en lecture seule).
+  /// Fonctions de calcul Dart déclarées, indexées par nom (copie en lecture seule).
   Map<String, CalculatedAttributeFunction> get calculatedAttributes =>
       Map.unmodifiable(_calculatedAttributes);
+
+  /// Définitions d'attributs calculés JavaScript déclarées sur ce repository.
+  List<CalculatedAttributeDefinition> get jsCalculatedAttributes =>
+      List.unmodifiable(_jsCalculatedAttributes);
 
   /// Déclare l'attribut calculé [name], lu par les composants via le chemin
   /// de liaison `@name` (lecture seule).
@@ -163,10 +171,41 @@ class RepositoryImpl {
     final key = scope == null
         ? name
         : '${CalculatedAttributeEngine.validateScope(scope)}.@$name';
-    if (_calculatedAttributes.containsKey(key)) {
+    final normalizedPath = key.contains('@') ? key : '@$key';
+    if (_calculatedAttributes.containsKey(key) ||
+        _jsCalculatedAttributes.any((d) => d.path == normalizedPath)) {
       throw ArgumentError.value(name, 'name', 'Attribut calculé déjà déclaré.');
     }
     _calculatedAttributes[key] = function;
+  }
+
+  /// Déclare un attribut calculé JavaScript évalué dans le runtime JS du store.
+  ///
+  /// À appeler avant l'enregistrement du repository dans le store.
+  void addJsCalculatedAttribute(
+    String name,
+    String code, {
+    String? scope,
+    String? description,
+  }) {
+    if (_registered) {
+      throw StateError(
+        'Attributs calculés figés : déclarez-les avant registerRepository.',
+      );
+    }
+    final def = CalculatedAttributeDefinition(
+      name: name,
+      scope: scope,
+      code: code,
+      description: description,
+    );
+    final dartKey = def.scope == null ? def.name : def.path;
+    if (_calculatedAttributes.containsKey(dartKey) ||
+        _calculatedAttributes.containsKey(def.path) ||
+        _jsCalculatedAttributes.any((d) => d.path == def.path)) {
+      throw ArgumentError.value(name, 'name', 'Attribut calculé déjà déclaré.');
+    }
+    _jsCalculatedAttributes.add(def);
   }
 }
 
@@ -186,6 +225,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   JsonRepositoryStore(
     this.directory, {
     this.isolateThresholdBytes = defaultIsolateThresholdBytes,
+    this.jsEvaluator,
   });
 
   /// Taille minimale (en caractères UTF-16) à partir de laquelle le store
@@ -208,6 +248,7 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   final Directory directory;
   final int isolateThresholdBytes;
+  final JsCalculatedEvaluator? jsEvaluator;
   final errors = ValueNotifier<String?>(null);
 
   DataProviderRegistry? _providers;
@@ -280,7 +321,24 @@ class JsonRepositoryStore extends ChangeNotifier {
   late final _calculatedEngine = CalculatedAttributeEngine.forStore(
     document: _calculatedDocument,
     onAsyncValue: _changed,
+    jsEvaluator: jsEvaluator,
   );
+  late final _calculatedFolder =
+      JsonDefinitionFolder<RepositoryCalculatedAttributesDocument>(
+        directory: () => Directory(
+          '${directory.path}${Platform.pathSeparator}calculated',
+        ),
+        ofOne: 'd’attributs calculés',
+        plural: 'attributs calculés',
+        maxFiles: 500,
+        decode: RepositoryCalculatedAttributesDocument.fromJson,
+        encode: (doc) => doc.toJson(),
+        idOf: (doc) => doc.repositoryId,
+        isValidId: (id) => RegExp(r'^[a-z0-9_]{1,32}$').hasMatch(id),
+      );
+  bool _allCalculatedLoaded = false;
+  Future<void>? _loadingAllCalculated;
+  final _loadedCalculatedRepos = <String>{};
   Map<String, _RegisteredRepositoryPersistence>? _persistentRepositoryState;
   Map<String, _RegisteredRepositoryPersistence> get _persistentRepositories =>
       _persistentRepositoryState ??= {};
@@ -306,6 +364,13 @@ class JsonRepositoryStore extends ChangeNotifier {
       repository.id,
       repository._calculatedAttributes,
     );
+    if (repository._jsCalculatedAttributes.isNotEmpty) {
+      _calculatedEngine.registerJsAttributes(
+        repository.id,
+        repository._jsCalculatedAttributes,
+      );
+    }
+    _loadedCalculatedRepos.add(repository.id);
     repository._registered = true;
     _documentCache[repository.id] = document;
     _idToNameCache?[repository.id] = repository.id;
@@ -361,13 +426,31 @@ class JsonRepositoryStore extends ChangeNotifier {
         'Repository déjà enregistré.',
       );
     }
+    final persistedJs = _calculatedEngine.jsAttributesOf(repository.id);
+    final effectiveJs = persistedJs.isNotEmpty
+        ? persistedJs
+        : repository._jsCalculatedAttributes;
+    if (persistedJs.isEmpty &&
+        autoSave &&
+        repository._jsCalculatedAttributes.isNotEmpty) {
+      await _calculatedFolder.serial(
+        () => _calculatedFolder.write(
+          RepositoryCalculatedAttributesDocument(
+            repositoryId: repository.id,
+            attributes: repository._jsCalculatedAttributes,
+          ),
+        ),
+      );
+    }
     _persistentRepositories[repository.id] = persistence;
     registerRepository(
       RepositoryImpl(
         id: repository.id,
         json: document,
         onChanged: repository.onChanged,
-      ).._calculatedAttributes.addAll(repository._calculatedAttributes),
+      )
+        .._calculatedAttributes.addAll(repository._calculatedAttributes)
+        .._jsCalculatedAttributes.addAll(effectiveJs),
     );
     repository._registered = true;
     return text != null;
@@ -811,6 +894,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<List<JsonRepositoryEntry>> catalog() => _exclusive(_catalog);
 
   Future<List<JsonRepositoryEntry>> _catalog() async {
+    await ensureCalculatedAttributesLoaded();
     final names = await list();
     final entries = <JsonRepositoryEntry>[];
     final ids = <String>{};
@@ -954,6 +1038,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   /// existants afin de permettre un binding synchrone dès le premier frame.
   Future<void> preload() async {
     try {
+      await ensureCalculatedAttributesLoaded();
       if (await FileSystemEntity.type(directory.path, followLinks: false) !=
           FileSystemEntityType.directory) {
         return;
@@ -966,6 +1051,98 @@ class JsonRepositoryStore extends ChangeNotifier {
     } catch (_) {
       // Les erreurs de lecture ou de format sont gérées par les composants liés.
     }
+  }
+
+  /// Charge les définitions JavaScript persistées dans `calculated/<id>.json`.
+  Future<void> ensureCalculatedAttributesLoaded() {
+    if (_allCalculatedLoaded) return Future.value();
+    final inFlight = _loadingAllCalculated;
+    if (inFlight != null) return inFlight;
+    final future = _calculatedFolder.serial(() async {
+      if (_allCalculatedLoaded || _disposed) return;
+      final result = await _calculatedFolder.readAll(
+        describe: (error) => error.toString(),
+      );
+      if (_disposed) return;
+      for (final entry in result.loaded.entries) {
+        if (_loadedCalculatedRepos.contains(entry.key) &&
+            isMemoryOnlyRepository(entry.key)) {
+          continue;
+        }
+        try {
+          _calculatedEngine.registerJsAttributes(
+            entry.key,
+            entry.value.attributes,
+          );
+          _loadedCalculatedRepos.add(entry.key);
+        } on FormatException catch (error) {
+          reportBindingError(error.message);
+        }
+      }
+      _allCalculatedLoaded = true;
+    }).whenComplete(() => _loadingAllCalculated = null);
+    _loadingAllCalculated = future;
+    return future;
+  }
+
+  /// Définitions JavaScript actuellement enregistrées pour [repositoryId].
+  List<CalculatedAttributeDefinition> jsCalculatedAttributesOf(
+    String repositoryId,
+  ) => _calculatedEngine.jsAttributesOf(repositoryId);
+
+  /// Lit les définitions JavaScript de [repositoryId] après chargement disque.
+  Future<List<CalculatedAttributeDefinition>> readCalculatedAttributes(
+    String repositoryId,
+  ) async {
+    await ensureCalculatedAttributesLoaded();
+    return _calculatedEngine.jsAttributesOf(repositoryId);
+  }
+
+  /// Enregistre et persiste les définitions JavaScript de [repositoryId].
+  Future<void> saveCalculatedAttributes(
+    String repositoryId,
+    List<CalculatedAttributeDefinition> definitions,
+  ) => _exclusive(() async {
+    await ensureCalculatedAttributesLoaded();
+    final catalog = await _catalog();
+    final exists =
+        _memoryRepositories.containsKey(repositoryId) ||
+        catalog.any((entry) => entry.id == repositoryId);
+    if (!exists) {
+      throw const FormatException('Repository introuvable.');
+    }
+    final doc = RepositoryCalculatedAttributesDocument(
+      repositoryId: repositoryId,
+      attributes: definitions,
+    );
+    final previous = _calculatedEngine.jsAttributesOf(repositoryId);
+    _calculatedEngine.registerJsAttributes(repositoryId, doc.attributes);
+    try {
+      await _calculatedFolder.serial(
+        () => doc.attributes.isEmpty
+            ? _calculatedFolder.delete(repositoryId)
+            : _calculatedFolder.write(doc),
+      );
+    } catch (_) {
+      _calculatedEngine.registerJsAttributes(repositoryId, previous);
+      rethrow;
+    }
+    _loadedCalculatedRepos.add(repositoryId);
+    _changed();
+  });
+
+  /// Évalue ponctuellement une formule JS sans la persister ni la mettre en cache.
+  Future<Object?> testCalculatedAttribute(
+    String repositoryId,
+    CalculatedAttributeDefinition definition, {
+    List<int> indices = const [],
+  }) async {
+    await ensureCalculatedAttributesLoaded();
+    return _calculatedEngine.evaluateAdHocJs(
+      repositoryId: repositoryId,
+      definition: definition,
+      indices: indices,
+    );
   }
 
   static String _formatAttributeText(Object? value) {
@@ -1142,6 +1319,9 @@ class JsonRepositoryStore extends ChangeNotifier {
     binding.validateResolved();
     final repoId = binding.repositoryId!;
     if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      if (!_allCalculatedLoaded && !_loadedCalculatedRepos.contains(repoId)) {
+        await ensureCalculatedAttributesLoaded();
+      }
       final value = await _calculatedEngine.read(
         binding.path,
         repositoryId: repoId,
@@ -1235,6 +1415,10 @@ class JsonRepositoryStore extends ChangeNotifier {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
     if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      if (!_allCalculatedLoaded &&
+          !_loadedCalculatedRepos.contains(repositoryId)) {
+        await ensureCalculatedAttributesLoaded();
+      }
       final value = await _calculatedEngine.read(
         binding.path,
         repositoryId: repositoryId,
@@ -1265,6 +1449,11 @@ class JsonRepositoryStore extends ChangeNotifier {
   ) async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
+    if (JsonTextBinding.isCalculatedPath(binding.path) &&
+        !_allCalculatedLoaded &&
+        !_loadedCalculatedRepos.contains(repositoryId)) {
+      await ensureCalculatedAttributesLoaded();
+    }
     final node = JsonTextBinding.isCalculatedPath(binding.path)
         ? await _calculatedEngine.read(binding.path, repositoryId: repositoryId)
         : JsonAttributePath(binding.path)
@@ -1699,7 +1888,11 @@ class JsonRepositoryStore extends ChangeNotifier {
           await idFile.delete();
         }
         _documentCache.remove(repositoryId);
-        _invalidateCalculated(repositoryId, '');
+        _calculatedEngine.unregisterRepository(repositoryId);
+        _loadedCalculatedRepos.remove(repositoryId);
+        await _calculatedFolder.serial(
+          () => _calculatedFolder.delete(repositoryId),
+        );
         _idToNameCache = null;
         final binding = _bindings[repositoryId];
         if (binding != null) {
@@ -1864,6 +2057,10 @@ class JsonRepositoryStore extends ChangeNotifier {
       _idToNameCache?.remove(validated);
       _loadingDocuments.remove(validated);
       _calculatedEngine.unregisterRepository(validated);
+      _loadedCalculatedRepos.remove(validated);
+      await _calculatedFolder.serial(
+        () => _calculatedFolder.delete(validated),
+      );
       _changed();
       return;
     }
@@ -1898,9 +2095,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (idType == FileSystemEntityType.file) {
       await idFile.delete();
     }
-    if (id != null) {
-      _documentCache.remove(id);
-      _invalidateCalculated(id, '');
+    if (id case final deletedId?) {
+      _documentCache.remove(deletedId);
+      _calculatedEngine.unregisterRepository(deletedId);
+      _loadedCalculatedRepos.remove(deletedId);
+      await _calculatedFolder.serial(() => _calculatedFolder.delete(deletedId));
     }
     _idToNameCache = null;
     final binding = id == null ? null : _bindings[id];

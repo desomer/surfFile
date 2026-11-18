@@ -12,6 +12,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../models/calculated_attribute_definition.dart';
 import '../../../services/appearance/appearance_codec.dart'
     show PatchRejectedEntry;
 import '../../../services/repositories/json_repository_store.dart';
@@ -43,7 +44,13 @@ class VibeRepositoryPatchEntry {
     this.name,
     this.mode = VibeRepositoryPatchMode.merge,
     required Map<String, Object?> data,
-  }) : data = Map<String, Object?>.unmodifiable(data);
+    this.hasData = true,
+    List<CalculatedAttributeDefinition> calculatedAttributes = const [],
+    this.hasCalculatedAttributes = false,
+  }) : data = Map<String, Object?>.unmodifiable(data),
+       calculatedAttributes = List<CalculatedAttributeDefinition>.unmodifiable(
+         calculatedAttributes,
+       );
 
   /// Identifiant ou alias `<idOrAlias>` déclaré dans `"repositories"`.
   final String key;
@@ -56,6 +63,15 @@ class VibeRepositoryPatchEntry {
 
   /// Document JSON objet validé à fusionner ou appliquer.
   final Map<String, Object?> data;
+
+  /// Vrai lorsque le patch contient explicitement la clé `"data"`.
+  final bool hasData;
+
+  /// Définitions JavaScript des attributs calculés fournies dans le patch.
+  final List<CalculatedAttributeDefinition> calculatedAttributes;
+
+  /// Vrai lorsque le patch contient explicitement la clé `"calculatedAttributes"`.
+  final bool hasCalculatedAttributes;
 }
 
 /// Formateur produisant le résumé borné des repositories d'un [JsonRepositoryStore] pour le prompt Vibe IA.
@@ -138,6 +154,10 @@ abstract final class VibeRepositoryPromptFormatter {
       for (final descriptor in store.calculatedAttributeCatalog(entry.id))
         descriptor.path,
     ];
+    final jsCalculated = [
+      for (final def in store.jsCalculatedAttributesOf(entry.id))
+        def.toCompactJson(),
+    ];
     final truncatedArrays = <String, int>{};
     final sampledData = _sampleJsonValue(
       rawDocument,
@@ -150,6 +170,7 @@ abstract final class VibeRepositoryPromptFormatter {
       'name': entry.name,
       'kind': kind,
       if (calculated.isNotEmpty) 'calculatedAttributes': calculated,
+      if (jsCalculated.isNotEmpty) 'jsCalculatedAttributes': jsCalculated,
       if (truncatedArrays.isNotEmpty) 'truncatedArrays': truncatedArrays,
       'data': sampledData,
     };
@@ -196,7 +217,12 @@ abstract final class VibeRepositoryPromptFormatter {
 
 /// Validateur syntaxique et structurel des patches `"repositories"` produits par l'IA.
 abstract final class VibeRepositoryPatchValidator {
-  static const Set<String> _envelopeKeys = <String>{'name', 'mode', 'data'};
+  static const Set<String> _envelopeKeys = <String>{
+    'name',
+    'mode',
+    'data',
+    'calculatedAttributes',
+  };
   static const Set<String> _descriptorMetaKeys = <String>{
     'name',
     'mode',
@@ -204,6 +230,7 @@ abstract final class VibeRepositoryPatchValidator {
     'id',
     'kind',
     'calculatedAttributes',
+    'jsCalculatedAttributes',
     'truncatedArrays',
   };
 
@@ -251,7 +278,8 @@ abstract final class VibeRepositoryPatchValidator {
     }
     final map = Map<String, Object?>.from(rawValue);
 
-    if (map.containsKey('data') && map.keys.every(_envelopeKeys.contains)) {
+    if ((map.containsKey('data') || map.containsKey('calculatedAttributes')) &&
+        map.keys.every(_envelopeKeys.contains)) {
       return _parseEnvelope(repoKey, map);
     }
 
@@ -283,6 +311,10 @@ abstract final class VibeRepositoryPatchValidator {
       return false;
     }
     if (map.containsKey('mode') &&
+        map.keys.every(_descriptorMetaKeys.contains)) {
+      return true;
+    }
+    if (map.containsKey('calculatedAttributes') &&
         map.keys.every(_descriptorMetaKeys.contains)) {
       return true;
     }
@@ -323,32 +355,68 @@ abstract final class VibeRepositoryPatchValidator {
       }
     }
 
-    if (!map.containsKey('data')) {
+    final hasData = map.containsKey('data');
+    final hasCalculated = map.containsKey('calculatedAttributes');
+
+    if (!hasData && !hasCalculated) {
       throw FormatException(
         'Enveloppe du repository "$repoKey" incomplète : clé "data" manquante.',
       );
     }
-    final rawData = map['data'];
-    if (rawData is! Map) {
+    if (mode == VibeRepositoryPatchMode.replace && !hasData) {
       throw FormatException(
-        'Le champ "data" du repository "$repoKey" doit être un objet JSON {...}, '
-        'jamais un tableau ni un scalaire.',
+        'Enveloppe du repository "$repoKey" incomplète : clé "data" requise en mode "replace".',
       );
     }
+
+    Map<String, Object?> normalizedData = const <String, Object?>{};
+    if (hasData) {
+      final rawData = map['data'];
+      if (rawData is! Map) {
+        throw FormatException(
+          'Le champ "data" du repository "$repoKey" doit être un objet JSON {...}, '
+          'jamais un tableau ni un scalaire.',
+        );
+      }
+      normalizedData = validateDataObject(repoKey, rawData);
+    }
+
+    final parsedCalculated = <CalculatedAttributeDefinition>[];
+    if (hasCalculated) {
+      final rawCalculated = map['calculatedAttributes'];
+      if (rawCalculated is! List) {
+        throw FormatException(
+          'Le champ "calculatedAttributes" du repository "$repoKey" doit être un tableau JSON.',
+        );
+      }
+      final seenPaths = <String>{};
+      for (final item in rawCalculated) {
+        final def = CalculatedAttributeDefinition.fromJson(item);
+        if (!seenPaths.add(def.path)) {
+          throw FormatException(
+            'Attribut calculé en double "${def.path}" dans le repository "$repoKey".',
+          );
+        }
+        parsedCalculated.add(def);
+      }
+    }
+
     if (extraKeys.isNotEmpty) {
       throw FormatException(
         'Clé(s) non autorisée(s) ${extraKeys.map((k) => '"$k"').join(', ')} '
         'dans l’enveloppe du repository "$repoKey" '
-        '(attendu uniquement : "name", "mode", "data").',
+        '(attendu uniquement : "name", "mode", "data", "calculatedAttributes").',
       );
     }
 
-    final normalizedData = validateDataObject(repoKey, rawData);
     return VibeRepositoryPatchEntry(
       key: repoKey,
       name: validatedName,
       mode: mode,
       data: normalizedData,
+      hasData: hasData,
+      calculatedAttributes: parsedCalculated,
+      hasCalculatedAttributes: hasCalculated,
     );
   }
 
@@ -581,6 +649,11 @@ class VibeRepositoryTurnTransaction {
       <String, ({String name, String id})>{};
   final Map<String, Map<String, Object?>> _finalDocuments =
       <String, Map<String, Object?>>{};
+  final Map<String, List<CalculatedAttributeDefinition>>
+  _baselineCalculatedAttributes =
+      <String, List<CalculatedAttributeDefinition>>{};
+  final Map<String, List<CalculatedAttributeDefinition>>
+  _finalCalculatedAttributes = <String, List<CalculatedAttributeDefinition>>{};
 
   /// Table de correspondance immuable des alias résolus ou créés vers leur `repositoryId` réel.
   Map<String, String> get aliasToActualId => Map.unmodifiable(_aliasToActualId);
@@ -592,6 +665,12 @@ class VibeRepositoryTurnTransaction {
       final finalDoc = _finalDocuments[entry.key];
       if (finalDoc != null &&
           !JsonRepositoryStore.jsonEquals(entry.value, finalDoc)) {
+        return true;
+      }
+    }
+    for (final entry in _baselineCalculatedAttributes.entries) {
+      final finalCalc = _finalCalculatedAttributes[entry.key];
+      if (finalCalc != null && !listEquals(entry.value, finalCalc)) {
         return true;
       }
     }
@@ -623,6 +702,8 @@ class VibeRepositoryTurnTransaction {
 
     var catalog = await store.catalog();
     final inPatchDocuments = <String, Map<String, Object?>>{};
+    final inPatchCalculated =
+        <String, List<CalculatedAttributeDefinition>>{};
 
     for (final entry in parsedEntries.entries) {
       final repoKey = entry.key;
@@ -662,6 +743,17 @@ class VibeRepositoryTurnTransaction {
               id: actualId,
               initialDocument: initialDoc,
             );
+            if (parsed.hasCalculatedAttributes) {
+              await store.saveCalculatedAttributes(
+                actualId,
+                parsed.calculatedAttributes,
+              );
+              _finalCalculatedAttributes[actualId] =
+                  List<CalculatedAttributeDefinition>.of(
+                    parsed.calculatedAttributes,
+                  );
+              inPatchCalculated[actualId] = _finalCalculatedAttributes[actualId]!;
+            }
             _createdRepositories[actualId] = (name: chosenName, id: actualId);
             _aliasToActualId[repoKey] = actualId;
             _resolvedTargetByKey[repoKey] = actualId;
@@ -680,28 +772,72 @@ class VibeRepositoryTurnTransaction {
             ? _deepCopyJsonMap(rawBaseline)
             : <String, Object?>{};
       }
-
-      final Map<String, Object?> targetDoc;
-      if (inPatchDocuments.containsKey(actualId)) {
-        targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
-            ? deepMergeJsonObjects(inPatchDocuments[actualId]!, parsed.data)
-            : _deepCopyJsonMap(parsed.data);
-      } else if (!isCreatedInTurn) {
-        targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
-            ? deepMergeJsonObjects(_baselineDocuments[actualId]!, parsed.data)
-            : _deepCopyJsonMap(parsed.data);
-      } else {
-        targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
-            ? deepMergeJsonObjects(
-                _finalDocuments[actualId] ?? const <String, Object?>{},
-                parsed.data,
-              )
-            : _deepCopyJsonMap(parsed.data);
+      if (!isCreatedInTurn &&
+          !_baselineCalculatedAttributes.containsKey(actualId)) {
+        _baselineCalculatedAttributes[actualId] =
+            List<CalculatedAttributeDefinition>.of(
+              await store.readCalculatedAttributes(actualId),
+            );
       }
 
-      await store.replaceDocumentById(actualId, targetDoc);
-      inPatchDocuments[actualId] = targetDoc;
-      _finalDocuments[actualId] = targetDoc;
+      if (parsed.hasData) {
+        final Map<String, Object?> targetDoc;
+        if (inPatchDocuments.containsKey(actualId)) {
+          targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? deepMergeJsonObjects(inPatchDocuments[actualId]!, parsed.data)
+              : _deepCopyJsonMap(parsed.data);
+        } else if (!isCreatedInTurn) {
+          targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? deepMergeJsonObjects(_baselineDocuments[actualId]!, parsed.data)
+              : _deepCopyJsonMap(parsed.data);
+        } else {
+          targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? deepMergeJsonObjects(
+                  _finalDocuments[actualId] ?? const <String, Object?>{},
+                  parsed.data,
+                )
+              : _deepCopyJsonMap(parsed.data);
+        }
+
+        await store.replaceDocumentById(actualId, targetDoc);
+        inPatchDocuments[actualId] = targetDoc;
+        _finalDocuments[actualId] = targetDoc;
+      }
+
+      if (parsed.hasCalculatedAttributes) {
+        final List<CalculatedAttributeDefinition> targetCalc;
+        if (inPatchCalculated.containsKey(actualId)) {
+          targetCalc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? _mergeCalculatedAttributes(
+                  inPatchCalculated[actualId]!,
+                  parsed.calculatedAttributes,
+                )
+              : List<CalculatedAttributeDefinition>.of(
+                  parsed.calculatedAttributes,
+                );
+        } else if (!isCreatedInTurn) {
+          targetCalc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? _mergeCalculatedAttributes(
+                  _baselineCalculatedAttributes[actualId]!,
+                  parsed.calculatedAttributes,
+                )
+              : List<CalculatedAttributeDefinition>.of(
+                  parsed.calculatedAttributes,
+                );
+        } else {
+          targetCalc = parsed.mode == VibeRepositoryPatchMode.merge
+              ? _mergeCalculatedAttributes(
+                  _finalCalculatedAttributes[actualId] ?? const [],
+                  parsed.calculatedAttributes,
+                )
+              : List<CalculatedAttributeDefinition>.of(
+                  parsed.calculatedAttributes,
+                );
+        }
+        await store.saveCalculatedAttributes(actualId, targetCalc);
+        inPatchCalculated[actualId] = targetCalc;
+        _finalCalculatedAttributes[actualId] = targetCalc;
+      }
     }
 
     return aliasToActualId;
@@ -763,6 +899,14 @@ class VibeRepositoryTurnTransaction {
       for (final entry in _finalDocuments.entries)
         entry.key: _deepCopyJsonMap(entry.value),
     },
+    {
+      for (final entry in _baselineCalculatedAttributes.entries)
+        entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
+    },
+    {
+      for (final entry in _finalCalculatedAttributes.entries)
+        entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
+    },
   );
 
   /// Restaure le store et les tables internes exactement à l'état de [savepoint].
@@ -774,6 +918,10 @@ class VibeRepositoryTurnTransaction {
     final restoreToBaseline = [
       for (final entry in _baselineDocuments.entries)
         if (!savepoint._finalDocuments.containsKey(entry.key)) entry,
+    ];
+    final restoreCalcToBaseline = [
+      for (final entry in _baselineCalculatedAttributes.entries)
+        if (!savepoint._finalCalculatedAttributes.containsKey(entry.key)) entry,
     ];
 
     _assignedIdsByAlias
@@ -800,12 +948,30 @@ class VibeRepositoryTurnTransaction {
         for (final entry in savepoint._finalDocuments.entries)
           entry.key: _deepCopyJsonMap(entry.value),
       });
+    _baselineCalculatedAttributes
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._baselineCalculatedAttributes.entries)
+          entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
+      });
+    _finalCalculatedAttributes
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._finalCalculatedAttributes.entries)
+          entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
+      });
 
     for (final entry in restoreToBaseline) {
       await store.replaceDocumentById(entry.key, entry.value);
     }
     for (final entry in savepoint._finalDocuments.entries) {
       await store.replaceDocumentById(entry.key, entry.value);
+    }
+    for (final entry in restoreCalcToBaseline) {
+      await store.saveCalculatedAttributes(entry.key, entry.value);
+    }
+    for (final entry in savepoint._finalCalculatedAttributes.entries) {
+      await store.saveCalculatedAttributes(entry.key, entry.value);
     }
     for (final repo in extraCreated) {
       await store.deleteCreatedFileRepositoryById(repo.id);
@@ -817,6 +983,10 @@ class VibeRepositoryTurnTransaction {
     final baselines = List<MapEntry<String, Map<String, Object?>>>.of(
       _baselineDocuments.entries,
     );
+    final calcBaselines =
+        List<MapEntry<String, List<CalculatedAttributeDefinition>>>.of(
+          _baselineCalculatedAttributes.entries,
+        );
     final created = List<({String name, String id})>.of(
       _createdRepositories.values,
     );
@@ -824,12 +994,17 @@ class VibeRepositoryTurnTransaction {
     _baselineDocuments.clear();
     _createdRepositories.clear();
     _finalDocuments.clear();
+    _baselineCalculatedAttributes.clear();
+    _finalCalculatedAttributes.clear();
     _aliasToActualId.clear();
     _resolvedTargetByKey.clear();
     _assignedIdsByAlias.clear();
 
     for (final entry in baselines) {
       await store.replaceDocumentById(entry.key, entry.value);
+    }
+    for (final entry in calcBaselines) {
+      await store.saveCalculatedAttributes(entry.key, entry.value);
     }
     for (final repo in created) {
       await store.deleteCreatedFileRepositoryById(repo.id);
@@ -860,6 +1035,29 @@ class VibeRepositoryTurnTransaction {
       for (final id in baselineSnapshot.keys)
         id: _deepCopyJsonMap(_finalDocuments[id] ?? const <String, Object?>{}),
     };
+    final calcBaselineSnapshot =
+        <String, List<CalculatedAttributeDefinition>>{
+          for (final entry in _baselineCalculatedAttributes.entries)
+            if (_finalCalculatedAttributes.containsKey(entry.key) &&
+                !listEquals(
+                  entry.value,
+                  _finalCalculatedAttributes[entry.key],
+                ))
+              entry.key: List<CalculatedAttributeDefinition>.unmodifiable(
+                entry.value,
+              ),
+        };
+    final calcFinalSnapshot = <String, List<CalculatedAttributeDefinition>>{
+      for (final created in createdSnapshot)
+        if (_finalCalculatedAttributes.containsKey(created.id))
+          created.id: List<CalculatedAttributeDefinition>.unmodifiable(
+            _finalCalculatedAttributes[created.id]!,
+          ),
+      for (final id in calcBaselineSnapshot.keys)
+        id: List<CalculatedAttributeDefinition>.unmodifiable(
+          _finalCalculatedAttributes[id] ?? const [],
+        ),
+    };
 
     return (
       undo: () async {
@@ -868,6 +1066,9 @@ class VibeRepositoryTurnTransaction {
             entry.key,
             _deepCopyJsonMap(entry.value),
           );
+        }
+        for (final entry in calcBaselineSnapshot.entries) {
+          await store.saveCalculatedAttributes(entry.key, entry.value);
         }
         for (final created in createdSnapshot) {
           await store.deleteCreatedFileRepositoryById(created.id);
@@ -899,6 +1100,10 @@ class VibeRepositoryTurnTransaction {
             existingIds.add(created.id);
             currentCatalog.add((name: chosenName, id: created.id));
           }
+          final calcDefs = calcFinalSnapshot[created.id];
+          if (calcDefs != null) {
+            await store.saveCalculatedAttributes(created.id, calcDefs);
+          }
         }
         for (final id in baselineSnapshot.keys) {
           final doc = finalSnapshot[id];
@@ -906,8 +1111,30 @@ class VibeRepositoryTurnTransaction {
             await store.replaceDocumentById(id, _deepCopyJsonMap(doc));
           }
         }
+        for (final id in calcBaselineSnapshot.keys) {
+          final calcDefs = calcFinalSnapshot[id];
+          if (calcDefs != null) {
+            await store.saveCalculatedAttributes(id, calcDefs);
+          }
+        }
       },
     );
+  }
+
+  static List<CalculatedAttributeDefinition> _mergeCalculatedAttributes(
+    List<CalculatedAttributeDefinition> base,
+    List<CalculatedAttributeDefinition> patch,
+  ) {
+    final result = List<CalculatedAttributeDefinition>.of(base);
+    for (final incoming in patch) {
+      final idx = result.indexWhere((d) => d.path == incoming.path);
+      if (idx >= 0) {
+        result[idx] = incoming;
+      } else {
+        result.add(incoming);
+      }
+    }
+    return result;
   }
 
   String _allocateUniqueHexId(
@@ -967,6 +1194,8 @@ class VibeRepositorySavepoint {
     this._baselineDocuments,
     this._createdRepositories,
     this._finalDocuments,
+    this._baselineCalculatedAttributes,
+    this._finalCalculatedAttributes,
   );
 
   final Map<String, String> _assignedIdsByAlias;
@@ -975,6 +1204,10 @@ class VibeRepositorySavepoint {
   final Map<String, Map<String, Object?>> _baselineDocuments;
   final Map<String, ({String name, String id})> _createdRepositories;
   final Map<String, Map<String, Object?>> _finalDocuments;
+  final Map<String, List<CalculatedAttributeDefinition>>
+  _baselineCalculatedAttributes;
+  final Map<String, List<CalculatedAttributeDefinition>>
+  _finalCalculatedAttributes;
 }
 
 Map<String, Object?> _deepCopyJsonMap(Map<Object?, Object?> map) =>
