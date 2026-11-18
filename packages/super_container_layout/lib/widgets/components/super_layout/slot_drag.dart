@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart'
         defaultTargetPlatform,
         TargetPlatform,
         kIsWeb;
+import 'package:flutter/rendering.dart'
+    show BoxHitTestResult, RenderStack, StackParentData;
 import 'package:material_ui/material_ui.dart';
 
 import '../../editing/overlay/editor_overlay.dart';
@@ -245,6 +247,93 @@ class SlotMover {
   final void Function(String id, {String? beforeId, String? afterId}) onMove;
 }
 
+/// `Stack` dont la cible de dépôt optionnelle (dernier enfant lorsque
+/// [hasDropTarget] vaut `true`) est testée en collision **après** le contenu
+/// et les superpositions afin de préserver la priorité aux cibles imbriquées
+/// sans jamais reparenter l'enfant principal (indice `0`).
+class SlotDropTargetStack extends Stack {
+  /// Crée une pile de zone ou de slot à profondeur constante.
+  const SlotDropTargetStack({
+    super.key,
+    super.alignment,
+    super.textDirection,
+    super.fit,
+    super.clipBehavior,
+    this.hasDropTarget = false,
+    super.children,
+  });
+
+  /// Indique si le dernier enfant de [children] est la cible de dépôt de fond.
+  final bool hasDropTarget;
+
+  @override
+  RenderStack createRenderObject(BuildContext context) =>
+      _RenderSlotDropTargetStack(
+        alignment: alignment,
+        textDirection: textDirection ?? Directionality.maybeOf(context),
+        fit: fit,
+        clipBehavior: clipBehavior,
+        hasDropTarget: hasDropTarget,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderSlotDropTargetStack renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.hasDropTarget = hasDropTarget;
+  }
+}
+
+class _RenderSlotDropTargetStack extends RenderStack {
+  _RenderSlotDropTargetStack({
+    super.alignment,
+    super.textDirection,
+    super.fit,
+    super.clipBehavior,
+    required this.hasDropTarget,
+  });
+
+  bool hasDropTarget;
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    if (!hasDropTarget || lastChild == null) {
+      return super.hitTestChildren(result, position: position);
+    }
+    final dropChild = lastChild!;
+    var hit = false;
+    RenderBox? child = childBefore(dropChild);
+    while (child != null) {
+      final childParentData = child.parentData! as StackParentData;
+      final isHit = result.addWithPaintOffset(
+        offset: childParentData.offset,
+        position: position,
+        hitTest: (BoxHitTestResult result, Offset transformed) {
+          assert(transformed == position - childParentData.offset);
+          return child!.hitTest(result, position: transformed);
+        },
+      );
+      if (isHit) {
+        hit = true;
+        break;
+      }
+      child = childParentData.previousSibling;
+    }
+    final dropParentData = dropChild.parentData! as StackParentData;
+    result.addWithPaintOffset(
+      offset: dropParentData.offset,
+      position: position,
+      hitTest: (BoxHitTestResult result, Offset transformed) {
+        assert(transformed == position - dropParentData.offset);
+        return dropChild.hitTest(result, position: transformed);
+      },
+    );
+    return hit;
+  }
+}
+
 /// Cible de dépôt dans l'espace libre d'une zone, après ses slots.
 class SlotZoneTarget extends StatelessWidget {
   /// Crée une cible de dépôt pour une zone.
@@ -254,6 +343,7 @@ class SlotZoneTarget extends StatelessWidget {
     required this.ids,
     required this.onMove,
     required this.canMove,
+    this.enabled = true,
     this.alignment = AlignmentDirectional.topStart,
     this.child,
     this.overlays = const [],
@@ -275,6 +365,9 @@ class SlotZoneTarget extends StatelessWidget {
   /// Déplace le slot accepté dans la zone.
   final ValueChanged<String> onMove;
 
+  /// Active ou désactive la cible de dépôt sans modifier la profondeur de [child].
+  final bool enabled;
+
   /// Alignement du contenu et des superpositions.
   final AlignmentGeometry alignment;
 
@@ -284,49 +377,51 @@ class SlotZoneTarget extends StatelessWidget {
   /// Widgets affichés au-dessus du contenu de la zone.
   final List<Widget> overlays;
 
+  Widget _buildDropOverlay(ColorScheme colors) => DragTarget<SlotDragData>(
+    onWillAcceptWithDetails: (details) {
+      final accepts =
+          identical(details.data.owner, owner) && canMove(details.data.id);
+      if (accepts) {
+        details.data.hint.value = SlotDropHint.at(
+          zoneLabel: zoneLabel,
+          ids: ids,
+          movedId: details.data.id,
+        );
+      }
+      return accepts;
+    },
+    onLeave: (data) => data?.hint.value = null,
+    onAcceptWithDetails: (details) => onMove(details.data.id),
+    builder: (context, candidates, _) {
+      if (candidates.isEmpty) return const SizedBox.expand();
+      return EditorOverlay(
+        child: IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.tertiary.withValues(alpha: .15),
+              border: Border.all(color: colors.tertiary, width: 2),
+            ),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return DragTarget<SlotDragData>(
-      onWillAcceptWithDetails: (details) {
-        final accepts =
-            identical(details.data.owner, owner) && canMove(details.data.id);
-        if (accepts) {
-          details.data.hint.value = SlotDropHint.at(
-            zoneLabel: zoneLabel,
-            ids: ids,
-            movedId: details.data.id,
-          );
-        }
-        return accepts;
-      },
-      onLeave: (data) => data?.hint.value = null,
-      onAcceptWithDetails: (details) => onMove(details.data.id),
-      builder: (context, candidates, _) {
-        final highlight = candidates.isEmpty
-            ? null
-            : EditorOverlay(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.tertiary.withValues(alpha: .15),
-                      border: Border.all(color: colors.tertiary, width: 2),
-                    ),
-                  ),
-                ),
-              );
-        if (child == null && overlays.isEmpty) {
-          return highlight ?? const SizedBox.expand();
-        }
-        return Stack(
-          alignment: alignment,
-          children: [
-            ?child,
-            ...overlays,
-            if (highlight != null) Positioned.fill(child: highlight),
-          ],
-        );
-      },
+    if (child == null && overlays.isEmpty) {
+      return enabled ? _buildDropOverlay(colors) : const SizedBox.expand();
+    }
+    return SlotDropTargetStack(
+      alignment: alignment,
+      hasDropTarget: enabled,
+      children: [
+        ?child,
+        if (enabled) ...overlays,
+        if (enabled) Positioned.fill(child: _buildDropOverlay(colors)),
+      ],
     );
   }
 }

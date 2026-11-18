@@ -79,6 +79,16 @@ class VibeMountedSlotIndex {
   void register(VibeMountedSlotEntry entry) {
     final previous = _byToken[entry.token];
     if (previous != null) {
+      if (previous.componentId == entry.componentId &&
+          previous.zoneId == entry.zoneId &&
+          previous.label == entry.label &&
+          previous.componentType == entry.componentType &&
+          previous.scrollable == entry.scrollable &&
+          previous.fixedWidth == entry.fixedWidth &&
+          previous.fixedHeight == entry.fixedHeight &&
+          identical(previous.contentKey, entry.contentKey)) {
+        return;
+      }
       _removeFromLookup(previous);
     }
     _byToken[entry.token] = entry;

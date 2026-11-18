@@ -149,9 +149,6 @@ class _GridSurface extends StatefulWidget {
 class _GridSurfaceState extends State<_GridSurface> {
   final _canvas = GlobalKey();
   final _viewport = GlobalKey();
-
-  /// Keeps each cell's element when the edit wrappers are added or removed.
-  final _cellKeys = <String, GlobalKey>{};
   final _hoveredLabels = <String>{};
   String? _dragId;
   Offset? _startPoint;
@@ -329,27 +326,23 @@ class _GridSurfaceState extends State<_GridSurface> {
 
   Widget _cell(BuildContext context, SlotImplementation slot, Size layoutSize) {
     final styleEditMode = StyleEditScope.controllerOf(context)?.value ?? false;
-    final cell = KeyedSubtree(
-      key: _cellKeys.putIfAbsent(slot.id, GlobalKey.new),
-      child: EditorSelectionRegion(
-        selected: widget.editing && widget.owner._selectedSlot.value == slot.id,
-        enabled: styleEditMode,
-        onSelect: () => _select(slot.id),
-        child: SlotStack(
-          slots: [slot],
-          focusKeys: widget.owner._gridSlotSizeKeys,
-          preferredSizes: widget.owner.config.slotPreferredSizes,
-          sizeConstraints: widget.owner.config.slotSizeConstraints,
-          layoutSize: layoutSize,
-        ),
+    final cell = EditorSelectionRegion(
+      selected: widget.editing && widget.owner._selectedSlot.value == slot.id,
+      enabled: styleEditMode,
+      onSelect: () => _select(slot.id),
+      child: SlotStack(
+        slots: [slot],
+        focusKeys: widget.owner._gridSlotSizeKeys,
+        preferredSizes: widget.owner.config.slotPreferredSizes,
+        sizeConstraints: widget.owner.config.slotSizeConstraints,
+        layoutSize: layoutSize,
       ),
     );
-    // Cells receive tight constraints: outside edit mode no wrapper is needed.
-    if (!styleEditMode) return cell;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      excludeFromSemantics: true,
-      onSecondaryTapUp: widget.owner.widget.editable
+    final canOpenSecondaryMenu = styleEditMode && widget.owner.widget.editable;
+    return BoxPointerRegion(
+      enabled: canOpenSecondaryMenu,
+      opaque: false,
+      onSecondaryTapUp: canOpenSecondaryMenu
           ? (d) => context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
               d.globalPosition,
               actions: EditorSlotAction.of(context),
@@ -360,7 +353,7 @@ class _GridSurfaceState extends State<_GridSurface> {
         fit: StackFit.expand,
         children: [
           cell,
-          if (widget.editing)
+          if (styleEditMode && widget.editing)
             Positioned.fill(
               child: EditorOverlay(clipKey: _viewport, child: _controls(slot)),
             ),

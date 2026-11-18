@@ -300,8 +300,6 @@ class _LabeledSlotState extends State<LabeledSlot> {
     });
   }
 
-  /// Keeps the slot's element when the edit wrappers are added or removed.
-  final _contentKey = GlobalKey();
   bool _listening = false;
 
   void _listen(bool value) {
@@ -554,43 +552,27 @@ class _LabeledSlotState extends State<LabeledSlot> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final slot = widget.slot;
     final mover = widget.mover;
     final canEditSize =
         (StyleEditScope.controllerOf(context)?.value ?? true) &&
         EditorSlotAction.of(context).isNotEmpty;
-    final content = KeyedSubtree(
-      key: _contentKey,
-      child: widget.padding == EdgeInsets.zero
-          ? slot
-          : Padding(padding: widget.padding, child: slot),
-    );
+    final hasTapContent = widget.onTapContent != null;
     final inert =
         !canEditSize &&
         !widget.showLabel &&
         mover == null &&
         widget.onResize == null &&
-        widget.onTapContent == null &&
+        !hasTapContent &&
         widget.onSelectContent == null &&
         !_hover &&
         !_dragging &&
         _resizeStart == null;
     _listen(!inert);
-    // Outside edit mode only the slot itself is mounted.
-    if (inert) return content;
-    _lastSelectionVisualState = _selectionVisualState;
-    final selectionChild = EditorSelectionRegion(
-      enabled: widget.onSelectContent != null,
-      selected: widget.showLabel && widget.selected,
-      onSelect: () => widget.onSelectContent?.call(),
-      child: content,
-    );
-    final mountResizePortal =
-        _showResizeHandles || _resizeOverlay.isShowing || _resizeStart != null;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      excludeFromSemantics: true,
+
+    final baseChild = BoxPointerRegion(
+      enabled: canEditSize || hasTapContent,
+      opaque: false,
       onSecondaryTapUp: canEditSize
           ? (details) =>
                 context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
@@ -599,87 +581,86 @@ class _LabeledSlotState extends State<LabeledSlot> {
                   targetContext: context,
                 )
           : null,
-      child: DragTarget<SlotDragData>(
-        // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
-        // contient ne doit pas le ranger en dernier.
-        onWillAcceptWithDetails: (details) {
-          final accepts = _accepts(details.data);
-          if (accepts) {
-            _track(details.offset);
-            details.data.hint.value = _hintFor(details.data);
-          }
-          return accepts;
-        },
-        onMove: (details) {
-          if (!_accepts(details.data)) return;
-          _track(details.offset);
-          details.data.hint.value = _hintFor(details.data);
-        },
-        onLeave: (data) => data?.hint.value = null,
-        onAcceptWithDetails: (details) {
-          if (details.data.id == slot.id) return;
-          mover!.onMove(
-            details.data.id,
-            beforeId: _after ? null : slot.id,
-            afterId: _after ? slot.id : null,
-          );
-        },
-        builder: (context, candidates, _) => Stack(
-          fit: StackFit.passthrough,
-          clipBehavior: Clip.none,
-          children: [
-            if (widget.onTapContent == null)
-              selectionChild
-            else
-              Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: (event) {
-                  // Portal labels can hit-test alongside the content below.
-                  final label = _labelKey.currentContext?.findRenderObject();
-                  final onLabel =
-                      label is RenderBox &&
-                      label.hasSize &&
-                      (Offset.zero & label.size).contains(
-                        label.globalToLocal(event.position),
-                      );
-                  if (event.buttons != kPrimaryButton ||
-                      onLabel ||
-                      _tapPointer != null) {
-                    _tapAction = null;
-                    return;
-                  }
-                  _tapPointer = event.pointer;
-                  _tapStart = event.position;
-                  final callback = widget.onTapContent;
-                  _tapAction = callback == null ? null : () => callback(event);
-                },
-                onPointerMove: (event) {
-                  if (event.pointer == _tapPointer &&
-                      (event.position - _tapStart!).distance > kTouchSlop) {
-                    _tapAction = null;
-                  }
-                },
-                onPointerCancel: (event) {
-                  if (event.pointer == _tapPointer) {
-                    _tapPointer = null;
-                    _tapStart = null;
-                    _tapAction = null;
-                  }
-                },
-                onPointerUp: (event) {
-                  if (event.pointer != _tapPointer) return;
-                  final action =
-                      (event.position - _tapStart!).distance <= kTouchSlop
-                      ? _tapAction
-                      : null;
-                  _tapPointer = null;
-                  _tapStart = null;
-                  _tapAction = null;
-                  action?.call();
-                },
-                child: selectionChild,
-              ),
-            if (mountResizePortal)
+      onPointerDown: hasTapContent
+          ? (event) {
+              // Portal labels can hit-test alongside the content below.
+              final label = _labelKey.currentContext?.findRenderObject();
+              final onLabel =
+                  label is RenderBox &&
+                  label.hasSize &&
+                  (Offset.zero & label.size).contains(
+                    label.globalToLocal(event.position),
+                  );
+              if (event.buttons != kPrimaryButton ||
+                  onLabel ||
+                  _tapPointer != null) {
+                _tapAction = null;
+                return;
+              }
+              _tapPointer = event.pointer;
+              _tapStart = event.position;
+              final callback = widget.onTapContent;
+              _tapAction = callback == null ? null : () => callback(event);
+            }
+          : null,
+      onPointerMove: hasTapContent
+          ? (event) {
+              if (event.pointer == _tapPointer &&
+                  (event.position - _tapStart!).distance > kTouchSlop) {
+                _tapAction = null;
+              }
+            }
+          : null,
+      onPointerCancel: hasTapContent
+          ? (event) {
+              if (event.pointer == _tapPointer) {
+                _tapPointer = null;
+                _tapStart = null;
+                _tapAction = null;
+              }
+            }
+          : null,
+      onPointerUp: hasTapContent
+          ? (event) {
+              if (event.pointer != _tapPointer) return;
+              final action =
+                  (event.position - _tapStart!).distance <= kTouchSlop
+                  ? _tapAction
+                  : null;
+              _tapPointer = null;
+              _tapStart = null;
+              _tapAction = null;
+              action?.call();
+            }
+          : null,
+      child: EditorSelectionRegion(
+        enabled: !inert && widget.onSelectContent != null,
+        selected: !inert && widget.showLabel && widget.selected,
+        onSelect: () => widget.onSelectContent?.call(),
+        child: Padding(padding: widget.padding, child: slot),
+      ),
+    );
+
+    if (inert) {
+      return SlotDropTargetStack(
+        fit: StackFit.passthrough,
+        clipBehavior: Clip.none,
+        children: [baseChild],
+      );
+    }
+
+    final colors = Theme.of(context).colorScheme;
+    _lastSelectionVisualState = _selectionVisualState;
+    final mountResizePortal =
+        _showResizeHandles || _resizeOverlay.isShowing || _resizeStart != null;
+    final hasDropTarget = mover != null;
+    return SlotDropTargetStack(
+      fit: StackFit.passthrough,
+      clipBehavior: Clip.none,
+      hasDropTarget: hasDropTarget,
+      children: [
+        baseChild,
+        if (mountResizePortal)
               Positioned.fill(
                 child: IgnorePointer(
                   child: OverlayPortal.overlayChildLayoutBuilder(
@@ -774,35 +755,6 @@ class _LabeledSlotState extends State<LabeledSlot> {
                       : (_hover || _isHighlightedTarget)
                       ? const EditorSelectionBorder.hover()
                       : const EditorSelectionBorder.subtleParent(),
-                ),
-              ),
-            if (candidates.any((data) => data != null && data.id != slot.id))
-              Positioned.fill(
-                child: EditorOverlayVisibility(
-                  child: Align(
-                    alignment: widget.axis == Axis.horizontal
-                        ? (_after
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft)
-                        : (_after
-                              ? Alignment.bottomCenter
-                              : Alignment.topCenter),
-                    child: SizedBox(
-                      key: ValueKey('slot-drop-position-${slot.id}'),
-                      width: widget.axis == Axis.horizontal
-                          ? 3
-                          : double.infinity,
-                      height: widget.axis == Axis.vertical
-                          ? 3
-                          : double.infinity,
-                      child: IgnorePointer(
-                        child: ColoredBox(
-                          key: ValueKey('slot-drop-${slot.id}'),
-                          color: colors.tertiary,
-                        ),
-                      ),
-                    ),
-                  ),
                 ),
               ),
             if (widget.showLabel && slot.showLabel)
@@ -904,9 +856,67 @@ class _LabeledSlotState extends State<LabeledSlot> {
                   ),
                 ),
               ),
+            if (hasDropTarget)
+              Positioned.fill(
+                child: DragTarget<SlotDragData>(
+                  // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
+                  // contient ne doit pas le ranger en dernier.
+                  onWillAcceptWithDetails: (details) {
+                    final accepts = _accepts(details.data);
+                    if (accepts) {
+                      _track(details.offset);
+                      details.data.hint.value = _hintFor(details.data);
+                    }
+                    return accepts;
+                  },
+                  onMove: (details) {
+                    if (!_accepts(details.data)) return;
+                    _track(details.offset);
+                    details.data.hint.value = _hintFor(details.data);
+                  },
+                  onLeave: (data) => data?.hint.value = null,
+                  onAcceptWithDetails: (details) {
+                    if (details.data.id == slot.id) return;
+                    mover.onMove(
+                      details.data.id,
+                      beforeId: _after ? null : slot.id,
+                      afterId: _after ? slot.id : null,
+                    );
+                  },
+                  builder: (context, candidates, _) =>
+                      candidates.any(
+                        (data) => data != null && data.id != slot.id,
+                      )
+                      ? EditorOverlayVisibility(
+                          child: Align(
+                            alignment: widget.axis == Axis.horizontal
+                                ? (_after
+                                      ? Alignment.centerRight
+                                      : Alignment.centerLeft)
+                                : (_after
+                                      ? Alignment.bottomCenter
+                                      : Alignment.topCenter),
+                            child: SizedBox(
+                              key: ValueKey('slot-drop-position-${slot.id}'),
+                              width: widget.axis == Axis.horizontal
+                                  ? 3
+                                  : double.infinity,
+                              height: widget.axis == Axis.vertical
+                                  ? 3
+                                  : double.infinity,
+                              child: IgnorePointer(
+                                child: ColoredBox(
+                                  key: ValueKey('slot-drop-${slot.id}'),
+                                  color: colors.tertiary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.expand(),
+                ),
+              ),
           ],
-        ),
-      ),
     );
   }
 }

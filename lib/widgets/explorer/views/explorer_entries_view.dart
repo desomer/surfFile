@@ -91,6 +91,9 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
   List<int> _maxSizeList = const [0];
   late List<Widget?> _rowWidgets;
   late List<Object?> _rowKeys;
+  String? _activeEditPath;
+  final GlobalKey<EditableSurfaceState> _activeEditSurfaceKey =
+      GlobalKey<EditableSurfaceState>();
   ThemeData? _cachedParentTheme;
   ThemeData? _cachedNoHoverTheme;
 
@@ -122,6 +125,36 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
     _maxSizeRevision = null;
     _rowWidgets = List<Widget?>.filled(_paths.length, null);
     _rowKeys = List<Object?>.filled(_paths.length, null);
+    if (_activeEditPath != null && !_indexByPath.containsKey(_activeEditPath)) {
+      _activeEditPath = null;
+    }
+  }
+
+  int _firstMatchingIndex(Set<String> selection, {required bool selected}) {
+    for (var i = 0; i < _paths.length; i++) {
+      if (selection.contains(_paths[i]) == selected) return i;
+    }
+    return -1;
+  }
+
+  void _activateEntryEditMenu(String path, int index, Offset globalPosition) {
+    setState(() {
+      final prev = _activeEditPath;
+      if (prev != null) {
+        final prevIdx = _indexByPath[prev];
+        if (prevIdx != null && prevIdx < _rowKeys.length) {
+          _rowKeys[prevIdx] = null;
+        }
+      }
+      _activeEditPath = path;
+      if (index >= 0 && index < _rowKeys.length) {
+        _rowKeys[index] = null;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _activeEditSurfaceKey.currentState?.editor.openMenu(globalPosition);
+    });
   }
 
   void _tap(String path, bool selected) {
@@ -201,6 +234,8 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
 
   Widget _buildList(BuildContext context, ScrollController? controller) {
     final selection = _selection;
+    final firstUnselected = _firstMatchingIndex(selection, selected: false);
+    final firstSelected = _firstMatchingIndex(selection, selected: true);
     final dragMode = SurfFilePreferencesScope.of(context).fileDragMode;
     final compact = widget.compact;
     final entries = widget.entries;
@@ -216,10 +251,16 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
         final entry = entries[index];
         final path = _paths[index];
         final isSelected = selection.contains(path);
+        final isActiveEdit = path == _activeEditPath;
+        final editable =
+            isActiveEdit ||
+            index == (isSelected ? firstSelected : firstUnselected);
         final dragPaths = isSelected ? _selectedDragPaths : null;
         final rowKey = (
           entry,
           isSelected,
+          editable,
+          isActiveEdit,
           dragPaths,
           dragMode,
           compact,
@@ -243,6 +284,11 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
               compact: compact,
               entry: entry,
               selected: isSelected,
+              editable: editable,
+              surfaceKey: isActiveEdit ? _activeEditSurfaceKey : null,
+              onActivateEditMenu: editable
+                  ? null
+                  : (pos) => _activateEntryEditMenu(path, index, pos),
               onSelected: _onRowSelected,
               onToggle: widget.onToggle == null ? null : _onRowToggle,
               onTapped: _onRowTapped,
@@ -299,6 +345,8 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
   Widget _buildGrid(BuildContext context, ScrollController? controller) {
     final appearance = AppearanceScope.of(context);
     final selection = _selection;
+    final firstUnselected = _firstMatchingIndex(selection, selected: false);
+    final firstSelected = _firstMatchingIndex(selection, selected: true);
     final entries = widget.entries;
     final onSelected = widget.onSelected;
     final onOpen = widget.onOpen;
@@ -317,45 +365,41 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
       itemCount: entries.length,
       itemBuilder: (context, index) {
         final entry = entries[index];
-        final selected = selection.contains(entry.entity.path);
+        final path = entry.entity.path;
+        final selected = selection.contains(path);
+        final isActiveEdit = path == _activeEditPath;
+        final editable =
+            isActiveEdit ||
+            index == (selected ? firstSelected : firstUnselected);
         final dragMode = SurfFilePreferencesScope.of(context).fileDragMode;
         final cardStyle = appearance.style('card');
         final style = SurfFileAppearanceSlots.selectedCard.read(appearance);
+        final activeStyle = selected ? style : cardStyle;
         final color = cardColor(
           context,
-          selected ? style : cardStyle,
+          activeStyle,
           selected: selected,
         );
         final foreground = foregroundForCard(color);
-        final radius = selected ? style.radius : cardStyle.radius;
-        final borderWidth = selected
-            ? style.borderWidth
-            : cardStyle.borderWidth;
-        final gradient = selected
-            ? style.fill.gradient()
-            : cardStyle.fill.gradient();
-        final image = selected
-            ? style.fill.decorationImage()
-            : cardStyle.fill.decorationImage();
+        final radius = activeStyle.radius;
+        final borderWidth = activeStyle.borderWidth;
+        final gradient = activeStyle.fill.gradient();
+        final image = activeStyle.fill.decorationImage();
         return ExternalDropDestination(
-          path: entry.isDirectory ? entry.entity.path : null,
+          path: entry.isDirectory ? path : null,
           child: ExternalFileDragSource(
             paths: _pathsToDrag(entry),
             label: entry.name,
             mode: dragMode,
             selected: selected,
             child: _EntryBounds(
-              key: ValueKey(entry.entity.path),
-              builder: (cardKey, iconKey) => EditableSurface(
-                slot: selected
-                    ? SurfFileAppearanceSlots.selectedCard
-                    : SurfFileAppearanceSlots.card,
-                decorate: false,
-                child: InteractionEffectBox(
-                  effect: (selected ? style : cardStyle).interactionEffect,
+              key: ValueKey(path),
+              builder: (cardKey, iconKey) {
+                final innerCard = InteractionEffectBox(
+                  effect: activeStyle.interactionEffect,
                   ownsHover: true,
-                  hover: (selected ? style : cardStyle).hoverEffect,
-                  hoverColor: (selected ? style : cardStyle).hoverBase(
+                  hover: activeStyle.hoverEffect,
+                  hoverColor: activeStyle.hoverBase(
                     appearance.accent,
                   ).resolveTheme(context),
                   radius: radius,
@@ -368,13 +412,12 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                     radius: radius,
                     child: Material(
                       color: gradient != null ? Colors.transparent : color,
-                      elevation:
-                          ((selected ? style : cardStyle).elevation + boost)
-                              .clamp(0.0, double.infinity),
+                      elevation: (activeStyle.elevation + boost).clamp(
+                        0.0,
+                        double.infinity,
+                      ),
                       shadowColor: Colors.black.withValues(
-                        alpha: selected
-                            ? style.shadowOpacity
-                            : cardStyle.shadowOpacity,
+                        alpha: activeStyle.shadowOpacity,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(radius),
@@ -399,16 +442,14 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                           borderRadius: BorderRadius.circular(radius),
                         ),
                         child: PressFeedback(
-                          key: ValueKey(entry.entity.path),
-                          onMouseDown: () =>
-                              _mouseDown(onSelected, entry.entity.path),
-                          onPress: (event) =>
-                              _recordPress(entry.entity.path, event),
+                          key: ValueKey(path),
+                          onMouseDown: () => _mouseDown(onSelected, path),
+                          onPress: (event) => _recordPress(path, event),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(radius),
                             onTap: () {
-                              _tap(entry.entity.path, selected);
-                              if (_isDoubleClick(entry.entity.path)) {
+                              _tap(path, selected);
+                              if (_isDoubleClick(path)) {
                                 _openWithBounds(
                                   entry,
                                   cardKey,
@@ -418,21 +459,30 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                                 );
                               }
                             },
-                            onSecondaryTapDown:
-                                onContextMenu == null || _styleEditing(context)
+                            onSecondaryTapDown: onContextMenu == null
                                 ? null
-                                : (details) => onContextMenu(
-                                    entry,
-                                    details.globalPosition,
-                                  ),
+                                : (details) {
+                                    if (_styleEditing(context)) return;
+                                    onContextMenu(
+                                      entry,
+                                      details.globalPosition,
+                                    );
+                                  },
+                            onSecondaryTapUp: editable
+                                ? null
+                                : (details) {
+                                    if (_styleEditing(context)) {
+                                      _activateEntryEditMenu(
+                                        path,
+                                        index,
+                                        details.globalPosition,
+                                      );
+                                    }
+                                  },
                             child: Stack(
                               children: [
                                 Padding(
-                                  padding: EdgeInsets.all(
-                                    selected
-                                        ? style.padding
-                                        : cardStyle.padding,
-                                  ),
+                                  padding: EdgeInsets.all(activeStyle.padding),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -487,8 +537,7 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                                     left: 4,
                                     child: _SelectBox(
                                       checked: selected,
-                                      onChanged: () =>
-                                          onToggle(entry.entity.path),
+                                      onChanged: () => onToggle(path),
                                     ),
                                   ),
                               ],
@@ -498,8 +547,22 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+                if (!editable) {
+                  return Padding(
+                    padding: activeStyle.outerMargin,
+                    child: innerCard,
+                  );
+                }
+                return EditableSurface(
+                  key: isActiveEdit ? _activeEditSurfaceKey : null,
+                  slot: selected
+                      ? SurfFileAppearanceSlots.selectedCard
+                      : SurfFileAppearanceSlots.card,
+                  decorate: false,
+                  child: innerCard,
+                );
+              },
             ),
           ),
         );
@@ -515,6 +578,9 @@ class _EntryRow extends StatefulWidget {
     required this.onSelected,
     required this.onTapped,
     required this.onOpen,
+    this.editable = true,
+    this.surfaceKey,
+    this.onActivateEditMenu,
     this.onContextMenu,
     this.onOpenWithBounds,
     this.compact = false,
@@ -530,6 +596,9 @@ class _EntryRow extends StatefulWidget {
   final bool compact;
   final ExplorerEntry entry;
   final bool selected;
+  final bool editable;
+  final Key? surfaceKey;
+  final ValueChanged<Offset>? onActivateEditMenu;
   final ValueChanged<String> onSelected;
   final ValueChanged<String> onTapped;
   final ValueChanged<ExplorerEntry> onOpen;
@@ -563,48 +632,49 @@ class _EntryRowState extends State<_EntryRow> {
         : Theme.of(context).colorScheme.surface;
     final foreground = foregroundForCard(color);
     final radius = rowStyle.radius;
-    return Padding(
-      key: cardKey,
-      padding: EdgeInsets.only(bottom: appearance.spacing / 6),
-      child: EditableSurface(
-        slot: selected
-            ? SurfFileAppearanceSlots.selectedCard
-            : SurfFileAppearanceSlots.card,
-        decorate: false,
-        child: InteractionEffectBox(
-          effect: rowStyle.interactionEffect,
-          ownsHover: true,
-          hover: rowStyle.hoverEffect,
-          hoverColor: rowStyle.hoverBase(appearance.accent).resolveTheme(context),
-          radius: radius,
-          builder: (context, _) => Material(
-            type: MaterialType.transparency,
+    final rowContent = InteractionEffectBox(
+      effect: rowStyle.interactionEffect,
+      ownsHover: true,
+      hover: rowStyle.hoverEffect,
+      hoverColor: rowStyle.hoverBase(appearance.accent).resolveTheme(context),
+      radius: radius,
+      builder: (context, _) => Material(
+        type: MaterialType.transparency,
+        borderRadius: BorderRadius.circular(radius),
+        child: PressFeedback(
+          key: ValueKey(entry.entity.path),
+          onMouseDown: () => _mouseDown(onSelected, entry.entity.path),
+          onPress: (event) => _recordPress(entry.entity.path, event),
+          child: InkWell(
             borderRadius: BorderRadius.circular(radius),
-            child: PressFeedback(
-              key: ValueKey(entry.entity.path),
-              onMouseDown: () => _mouseDown(onSelected, entry.entity.path),
-              onPress: (event) => _recordPress(entry.entity.path, event),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(radius),
-                onTap: () {
-                  widget.onTapped(entry.entity.path);
-                  // En colonnes, un dossier s'ouvre dès le premier clic.
-                  if (_isDoubleClick(entry.entity.path) &&
-                      !(widget.compact && entry.isDirectory)) {
-                    _openWithBounds(
-                      entry,
-                      cardKey,
-                      iconKey,
-                      onOpen,
-                      onOpenWithBounds,
-                    );
-                  }
-                },
-                onSecondaryTapDown:
-                    onContextMenu == null || _styleEditing(context)
-                    ? null
-                    : (details) => onContextMenu(entry, details.globalPosition),
-                child: HoverPreview(
+            onTap: () {
+              widget.onTapped(entry.entity.path);
+              // En colonnes, un dossier s'ouvre dès le premier clic.
+              if (_isDoubleClick(entry.entity.path) &&
+                  !(widget.compact && entry.isDirectory)) {
+                _openWithBounds(
+                  entry,
+                  cardKey,
+                  iconKey,
+                  onOpen,
+                  onOpenWithBounds,
+                );
+              }
+            },
+            onSecondaryTapDown: onContextMenu == null
+                ? null
+                : (details) {
+                    if (_styleEditing(context)) return;
+                    onContextMenu(entry, details.globalPosition);
+                  },
+            onSecondaryTapUp: widget.editable
+                ? null
+                : (details) {
+                    if (_styleEditing(context)) {
+                      widget.onActivateEditMenu?.call(details.globalPosition);
+                    }
+                  },
+            child: HoverPreview(
                   entry: entry,
                   child: SizedBox(
                     height: appearance.rowHeight,
@@ -737,11 +807,23 @@ class _EntryRowState extends State<_EntryRow> {
                     ),
                   ),
                 ),
-              ),
-            ),
           ),
         ),
       ),
+    );
+    return Padding(
+      key: cardKey,
+      padding: EdgeInsets.only(bottom: appearance.spacing / 6),
+      child: widget.editable
+          ? EditableSurface(
+              key: widget.surfaceKey,
+              slot: selected
+                  ? SurfFileAppearanceSlots.selectedCard
+                  : SurfFileAppearanceSlots.card,
+              decorate: false,
+              child: rowContent,
+            )
+          : Padding(padding: rowStyle.outerMargin, child: rowContent),
     );
   }
 }
@@ -764,7 +846,7 @@ class _EntryBoundsState extends State<_EntryBounds> {
 }
 
 bool _styleEditing(BuildContext context) =>
-    StyleEditScope.controllerOf(context)?.value ?? false;
+    StyleEditScope.maybeReadOf(context)?.value ?? false;
 
 void _openWithBounds(
   ExplorerEntry entry,

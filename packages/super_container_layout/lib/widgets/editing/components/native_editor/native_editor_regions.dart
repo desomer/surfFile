@@ -285,10 +285,20 @@ extension NativeComponentEditorRegions on NativeComponentEditorState {
     required Widget child,
     Widget? editingChild,
   }) {
-    if (!editing) {
-      return Stack(key: dropKey, alignment: alignment, children: [child]);
-    }
     final spec = definition(id);
+    if (!editing) {
+      return SlotZoneTarget(
+        key: dropKey,
+        enabled: false,
+        owner: this,
+        zoneLabel: spec.label,
+        ids: _config.value.slotsOf(id),
+        canMove: (slotId) => _canMoveSlot(slotId, id),
+        onMove: (slotId) => _moveSlot(slotId, id),
+        alignment: alignment,
+        child: child,
+      );
+    }
     final overlay = _showOverlay();
     final selected = _selected == id;
     final emphasis = LabelEmphasis(
@@ -299,6 +309,7 @@ extension NativeComponentEditorRegions on NativeComponentEditorState {
     final colors = Theme.of(context).colorScheme;
     return SlotZoneTarget(
       key: dropKey,
+      enabled: true,
       owner: this,
       zoneLabel: spec.label,
       ids: _config.value.slotsOf(id),

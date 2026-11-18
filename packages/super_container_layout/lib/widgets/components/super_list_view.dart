@@ -62,7 +62,11 @@ library;
 import 'dart:io';
 
 import 'package:flutter/gestures.dart'
-    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
+    show
+        GestureBinding,
+        PointerScrollEvent,
+        PointerSignalEvent,
+        kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import 'super_component.dart';
@@ -143,6 +147,8 @@ class SuperListView extends SuperStatefulComponent<SuperListViewConfig>
 
 class _SuperListViewState extends State<SuperListView>
     with TickerProviderStateMixin {
+  static final ValueNotifier<bool> _inertEditMode = ValueNotifier<bool>(false);
+
   String get effectiveItemId =>
       widget.itemId ?? widget.config.itemId ?? '${widget.id}:item';
 
@@ -691,8 +697,11 @@ class _SuperListViewState extends State<SuperListView>
     JsonListScope? scope,
     int? index,
     Size viewport, {
+    required bool editing,
     required bool animateIndicators,
   }) {
+    final isSelectedRow = index != null && _isSelected(index);
+    final rowEditable = index == null || index == 0 || isSelectedRow;
     final natural =
         config.itemSize != null ||
         (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
@@ -707,6 +716,7 @@ class _SuperListViewState extends State<SuperListView>
           slots: widget.slots,
           config: value,
           style: rowStyle,
+          editable: rowEditable,
           bindLayoutToRegistry: false,
           resolveSelectionAndHover:
               !animateIndicators ||
@@ -726,15 +736,18 @@ class _SuperListViewState extends State<SuperListView>
                   selection: _buildSelectionIndicator(context, rowStyle, index),
                 )
               : null,
-          onEditSize: () => _editItemSize(context, configuration, viewport),
-          dimensionDelegateBuilder: () =>
-              _buildItemSizeDelegate(context, configuration, viewport),
+          onEditSize: rowEditable
+              ? () => _editItemSize(context, configuration, viewport)
+              : null,
+          dimensionDelegateBuilder: rowEditable
+              ? () => _buildItemSizeDelegate(context, configuration, viewport)
+              : null,
           onChanged: (next) => layout.value = next,
           onStyleChanged: (next) => style.value = next,
         ),
       ),
     );
-    final row = natural && config.allowRemove
+    final sizedRow = natural && config.allowRemove
         ? ConstrainedBox(
             constraints: const BoxConstraints(
               minWidth: kMinInteractiveDimension,
@@ -743,6 +756,9 @@ class _SuperListViewState extends State<SuperListView>
             child: content,
           )
         : content;
+    final row = rowEditable
+        ? sizedRow
+        : StyleEditScope(controller: _inertEditMode, child: sizedRow);
     final vertical = config.axis == Axis.vertical;
     final basis = dimensions.percentBasis == SlotPercentBasis.layout
         ? _parentLayoutSize(viewport)
@@ -836,7 +852,22 @@ class _SuperListViewState extends State<SuperListView>
                   ),
                   child: Listener(
                     behavior: HitTestBehavior.opaque,
-                    onPointerDown: (_) => _select(index),
+                    onPointerDown: (event) {
+                      final wasEditable = rowEditable;
+                      _select(index);
+                      if (editing &&
+                          !wasEditable &&
+                          event.buttons == kSecondaryMouseButton) {
+                        final pos = event.position;
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          final rowCtx = _rowBoxKeys[index]?.currentContext;
+                          if (rowCtx != null && rowCtx.mounted) {
+                            EditorSlotState.openMenuFromContext(rowCtx, pos);
+                          }
+                        });
+                      }
+                    },
                     child: row,
                   ),
                 ),
@@ -1007,6 +1038,7 @@ class _SuperListViewState extends State<SuperListView>
                       scope,
                       template ? null : index,
                       viewport,
+                      editing: editing,
                       animateIndicators:
                           config.animateSelectionAndHover &&
                           !isSliver &&

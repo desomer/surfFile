@@ -183,18 +183,31 @@ extension NativeComponentEditorSelection on NativeComponentEditorState {
 
   void _clear() {
     if (!mounted) return;
+    final hadState =
+        _active ||
+        _selected != null ||
+        _selectedSlot != null ||
+        _hoveredRegionScopes.value.isNotEmpty;
+    if (!hadState) {
+      LayoutSelection.report(this, const []);
+      return;
+    }
     if (_elementActive) {
       _setEditorState(() {
         _active = false;
         _selected = null;
         _selectedSlot = null;
-        _hoveredRegionScopes.value = {};
+        if (_hoveredRegionScopes.value.isNotEmpty) {
+          _hoveredRegionScopes.value = const {};
+        }
       });
     } else {
       _active = false;
       _selected = null;
       _selectedSlot = null;
-      _hoveredRegionScopes.value = {};
+      if (_hoveredRegionScopes.value.isNotEmpty) {
+        _hoveredRegionScopes.value = const {};
+      }
     }
     LayoutSelection.report(this, const []);
   }

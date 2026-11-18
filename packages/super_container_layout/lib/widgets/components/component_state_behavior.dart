@@ -8,7 +8,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show listEquals, setEquals;
+import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/automatic_state.dart';
@@ -110,18 +110,20 @@ class ComponentStateBehavior extends StatefulWidget {
     String componentId, {
     List<ComponentBehavior>? behaviors,
   }) {
-    if (StyleEditScope.controllerOf(context)?.value ?? false) {
-      return const [];
-    }
     final items =
         behaviors ?? AppearanceScope.of(context).behaviorsFor(componentId);
-    return [
+    final candidates = [
       for (final behavior in items)
         if (behavior.enabled &&
             behavior.trigger == BehaviorTrigger.binding &&
             behavior.action is StateBindingAction)
           behavior.action as StateBindingAction,
     ];
+    if (candidates.isEmpty) return const [];
+    if (StyleEditScope.controllerOf(context)?.value ?? false) {
+      return const [];
+    }
+    return candidates;
   }
 
   @override
@@ -138,7 +140,8 @@ class _StateBehaviorOwnerScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_StateBehaviorOwnerScope oldWidget) =>
-      owners != oldWidget.owners;
+      !identical(owners, oldWidget.owners) &&
+      !mapEquals(owners, oldWidget.owners);
 }
 
 typedef _StateBehaviorOverride = ({
@@ -151,6 +154,9 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
   final _childKey = GlobalKey();
   final _overrides = <Object, _StateBehaviorOverride>{};
   _ComponentStateBehaviorState? _overrideOwner;
+  Map<String, _ComponentStateBehaviorState>? _cachedParentOwners;
+  String? _cachedOwnerId;
+  Map<String, _ComponentStateBehaviorState>? _cachedOwners;
 
   List<StateBindingAction> _actions = const [];
   JsonRepositoryStore? _store;
@@ -478,8 +484,22 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
             );
     }
 
+    final parentOwners = parentOwnerScope?.owners;
+    var owners = _cachedOwners;
+    if (owners == null ||
+        !identical(parentOwners, _cachedParentOwners) ||
+        _cachedOwnerId != widget.componentId) {
+      _cachedParentOwners = parentOwners;
+      _cachedOwnerId = widget.componentId;
+      owners = Map<String, _ComponentStateBehaviorState>.unmodifiable({
+        ...?parentOwners,
+        widget.componentId: this,
+      });
+      _cachedOwners = owners;
+    }
+
     return _StateBehaviorOwnerScope(
-      owners: {...?parentOwnerScope?.owners, widget.componentId: this},
+      owners: owners,
       child: ComponentBehaviorStateScope(
         invisible: effectiveInvisible,
         maintainSize: effectiveMaintainSize,

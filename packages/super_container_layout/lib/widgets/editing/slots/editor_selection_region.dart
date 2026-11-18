@@ -67,6 +67,7 @@ class EditorSelectionRegion extends StatefulWidget {
 class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
   static final _hovered = <_EditorSelectionRegionState>{};
   static final _hoverTarget = ValueNotifier<_EditorSelectionRegionState?>(null);
+  static bool _refreshHoverScheduled = false;
   static _EditorSelectionRegionState? _selected;
   static _EditorSelectionRegionState? _lastBase;
   static PointerEvent? _claimed;
@@ -75,8 +76,22 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
   static Offset? _lastPosition;
   static _EditorSelectionRegionState? _lastLeaf;
 
+  static void _scheduleRefreshHover() {
+    if (_refreshHoverScheduled) return;
+    _refreshHoverScheduled = true;
+    scheduleMicrotask(() {
+      _refreshHoverScheduled = false;
+      _refreshHover();
+    });
+  }
+
   PointerDownEvent? _down;
   bool _moved = false;
+  final ValueNotifier<CustomPainter?> _painterNotifier =
+      ValueNotifier<CustomPainter?>(null);
+  bool _listeningPaint = false;
+  bool _showOutline = false;
+  Color _accent = const Color(0xFF000000);
 
   List<_EditorSelectionRegionState> get _ancestry {
     final chain = <_EditorSelectionRegionState>[this];
@@ -280,8 +295,10 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
   void didUpdateWidget(EditorSelectionRegion oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.enabled && oldWidget.enabled) {
+      final wasHoveredOrSelected =
+          _hovered.contains(this) || identical(_selected, this);
       _clear();
-      scheduleMicrotask(_refreshHover);
+      if (wasHoveredOrSelected) _scheduleRefreshHover();
     } else if (widget.enabled && widget.selected != oldWidget.selected) {
       if (widget.selected) {
         final current = _selected;
@@ -303,7 +320,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
             )
             .lastOrNull;
       }
-      scheduleMicrotask(_refreshHover);
+      _scheduleRefreshHover();
     }
   }
 
@@ -319,15 +336,75 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     _down = null;
   }
 
-  @override
-  void dispose() {
-    _clear();
-    scheduleMicrotask(_refreshHover);
-    super.dispose();
+  bool _computeShowOutline() =>
+      mounted &&
+      widget.enabled &&
+      identical(_hoverTarget.value, this) &&
+      EditorOverlayVisibility.openDialogs.value == 0 &&
+      EditorSlotState.highlightedTarget.value == null &&
+      EditorSlotState.canvasHoveredParent.value == null;
+
+  void _syncPainter({bool force = false}) {
+    final next = _computeShowOutline();
+    if (!force && next == _showOutline) return;
+    _showOutline = next;
+    _painterNotifier.value = next
+        ? EditorSelectionOutline(color: _accent, dashed: !widget.isZone)
+        : null;
   }
 
-  /// Keeps the child's element when the edit wrappers are added or removed.
-  final GlobalKey _childKey = GlobalKey();
+  void _onPaintChanged() {
+    if (!mounted) return;
+    _syncPainter();
+  }
+
+  void _setListeningPaint(bool listen) {
+    if (listen == _listeningPaint) return;
+    _listeningPaint = listen;
+    if (listen) {
+      _paintListenable.addListener(_onPaintChanged);
+    } else {
+      _paintListenable.removeListener(_onPaintChanged);
+    }
+  }
+
+  void _handleEnter(PointerEnterEvent _) {
+    if (widget.enabled) _hovered.add(this);
+    _refreshHover();
+  }
+
+  void _handleHover(PointerHoverEvent _) {
+    if (!widget.enabled || _hovered.contains(this)) return;
+    _hovered.add(this);
+    _refreshHover();
+  }
+
+  void _handleExit(PointerExitEvent _) {
+    _hovered.remove(this);
+    _refreshHover();
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    final down = _down;
+    if (down != null &&
+        event.pointer == down.pointer &&
+        (event.position - down.position).distance > kTouchSlop) {
+      _moved = true;
+    }
+  }
+
+  void _handlePointerCancel(PointerCancelEvent _) => _down = null;
+
+  @override
+  void dispose() {
+    final wasHoveredOrSelected =
+        _hovered.contains(this) || identical(_selected, this);
+    _setListeningPaint(false);
+    _painterNotifier.dispose();
+    _clear();
+    if (wasHoveredOrSelected) _scheduleRefreshHover();
+    super.dispose();
+  }
 
   static final Listenable _paintListenable = Listenable.merge([
     _hoverTarget,
@@ -338,161 +415,48 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
 
   @override
   Widget build(BuildContext context) {
-    final child = KeyedSubtree(key: _childKey, child: widget.child);
-    if (!widget.enabled) return child;
-    final accent = AppearanceScope.of(context).accent;
+    final enabled = widget.enabled;
+    var accentChanged = false;
+    if (enabled) {
+      final nextAccent = AppearanceScope.of(context).accent;
+      accentChanged = nextAccent != _accent;
+      _accent = nextAccent;
+    }
+    _setListeningPaint(enabled);
+    _syncPainter(force: accentChanged && _showOutline);
     final isSliver = SliverSlotScope.isSliver(context);
     if (isSliver) {
-      return _SelectionRegionPaintHost(
-        region: this,
-        accent: accent,
-        child: child,
-        builder: (context, painter, inner) => SliverPointerRegion(
-          onEnter: (_) {
-            if (widget.enabled) _hovered.add(this);
-            _refreshHover();
-          },
-          onHover: (_) {
-            if (!widget.enabled || _hovered.contains(this)) return;
-            _hovered.add(this);
-            _refreshHover();
-          },
-          onExit: (_) {
-            _hovered.remove(this);
-            _refreshHover();
-          },
-          onPointerDown: _pointerDown,
-          onPointerMove: (event) {
-            final down = _down;
-            if (down != null &&
-                event.pointer == down.pointer &&
-                (event.position - down.position).distance > kTouchSlop) {
-              _moved = true;
-            }
-          },
-          onPointerUp: _pointerUp,
-          onPointerCancel: (_) => _down = null,
+      return SliverPointerRegion(
+        enabled: enabled,
+        onEnter: enabled ? _handleEnter : null,
+        onHover: enabled ? _handleHover : null,
+        onExit: enabled ? _handleExit : null,
+        onPointerDown: enabled ? _pointerDown : null,
+        onPointerMove: enabled ? _handlePointerMove : null,
+        onPointerUp: enabled ? _pointerUp : null,
+        onPointerCancel: enabled ? _handlePointerCancel : null,
+        painterListenable: _painterNotifier,
+        child: widget.child,
+      );
+    }
+    return BoxPointerRegion(
+      enabled: enabled,
+      opaque: false,
+      onEnter: enabled ? _handleEnter : null,
+      onHover: enabled ? _handleHover : null,
+      onExit: enabled ? _handleExit : null,
+      onPointerDown: enabled ? _pointerDown : null,
+      onPointerMove: enabled ? _handlePointerMove : null,
+      onPointerUp: enabled ? _pointerUp : null,
+      onPointerCancel: enabled ? _handlePointerCancel : null,
+      child: ValueListenableBuilder<CustomPainter?>(
+        valueListenable: _painterNotifier,
+        child: widget.child,
+        builder: (context, painter, inner) => CustomPaint(
           foregroundPainter: painter,
           child: inner,
         ),
-      );
-    }
-    return MouseRegion(
-      opaque: false,
-      onEnter: (_) {
-        if (widget.enabled) _hovered.add(this);
-        _refreshHover();
-      },
-      onHover: (_) {
-        if (!widget.enabled || _hovered.contains(this)) return;
-        _hovered.add(this);
-        _refreshHover();
-      },
-      onExit: (_) {
-        _hovered.remove(this);
-        _refreshHover();
-      },
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: _pointerDown,
-        onPointerMove: (event) {
-          final down = _down;
-          if (down != null &&
-              event.pointer == down.pointer &&
-              (event.position - down.position).distance > kTouchSlop) {
-            _moved = true;
-          }
-        },
-        onPointerUp: _pointerUp,
-        onPointerCancel: (_) => _down = null,
-        child: RepaintBoundary(
-          child: _SelectionRegionPaintHost(
-            region: this,
-            accent: accent,
-            child: RepaintBoundary(child: child),
-            builder: (context, painter, inner) => CustomPaint(
-              foregroundPainter: painter,
-              child: inner,
-            ),
-          ),
-        ),
       ),
     );
-  }
-}
-
-class _SelectionRegionPaintHost extends StatefulWidget {
-  const _SelectionRegionPaintHost({
-    required this.region,
-    required this.accent,
-    required this.child,
-    required this.builder,
-  });
-
-  final _EditorSelectionRegionState region;
-  final Color accent;
-  final Widget child;
-  final Widget Function(
-    BuildContext context,
-    CustomPainter? painter,
-    Widget child,
-  )
-  builder;
-
-  @override
-  State<_SelectionRegionPaintHost> createState() =>
-      _SelectionRegionPaintHostState();
-}
-
-class _SelectionRegionPaintHostState extends State<_SelectionRegionPaintHost> {
-  late bool _showOutline;
-
-  bool _computeShowOutline() {
-    final region = widget.region;
-    return region.mounted &&
-        region.widget.enabled &&
-        identical(_EditorSelectionRegionState._hoverTarget.value, region) &&
-        EditorOverlayVisibility.openDialogs.value == 0 &&
-        EditorSlotState.highlightedTarget.value == null &&
-        EditorSlotState.canvasHoveredParent.value == null;
-  }
-
-  void _onPaintChanged() {
-    if (!mounted) return;
-    final next = _computeShowOutline();
-    if (next == _showOutline) return;
-    setState(() => _showOutline = next);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _showOutline = _computeShowOutline();
-    _EditorSelectionRegionState._paintListenable.addListener(_onPaintChanged);
-  }
-
-  @override
-  void didUpdateWidget(_SelectionRegionPaintHost oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _showOutline = _computeShowOutline();
-  }
-
-  @override
-  void dispose() {
-    _EditorSelectionRegionState._paintListenable.removeListener(
-      _onPaintChanged,
-    );
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final painter = _showOutline
-        ? EditorSelectionOutline(
-            color: widget.accent,
-            dashed: !widget.region.widget.isZone,
-          )
-        : null;
-    return widget.builder(context, painter, widget.child);
   }
 }

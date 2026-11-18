@@ -4,7 +4,7 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/component_behavior.dart';
@@ -44,17 +44,20 @@ class ComponentTooltip extends StatefulWidget {
     String componentId, {
     List<ComponentBehavior>? behaviors,
   }) {
-    if (StyleEditScope.controllerOf(context)?.value ?? false) return null;
     final items =
         behaviors ?? AppearanceScope.of(context).behaviorsFor(componentId);
+    TooltipAction? found;
     for (final behavior in items) {
       if (behavior.enabled &&
           behavior.trigger == BehaviorTrigger.hover &&
           behavior.action is TooltipAction) {
-        return behavior.action as TooltipAction;
+        found = behavior.action as TooltipAction;
+        break;
       }
     }
-    return null;
+    if (found == null) return null;
+    if (StyleEditScope.controllerOf(context)?.value ?? false) return null;
+    return found;
   }
 
   @override
@@ -73,8 +76,9 @@ class _TooltipScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_TooltipScope oldWidget) =>
-      owners != oldWidget.owners ||
-      suppressesNative != oldWidget.suppressesNative;
+      suppressesNative != oldWidget.suppressesNative ||
+      (!identical(owners, oldWidget.owners) &&
+          !mapEquals(owners, oldWidget.owners));
 }
 
 typedef _TooltipOverride = ({
@@ -87,6 +91,9 @@ class _ComponentTooltipState extends State<ComponentTooltip> {
   final _childKey = GlobalKey();
   final _overrides = <Object, _TooltipOverride>{};
   _ComponentTooltipState? _overrideOwner;
+  Map<String, _ComponentTooltipState>? _cachedParentOwners;
+  String? _cachedOwnerId;
+  Map<String, _ComponentTooltipState>? _cachedOwners;
   JsonStringBinding? _reader;
   JsonRepositoryStore? _store;
   String? _reportedError;
@@ -217,8 +224,21 @@ class _ComponentTooltipState extends State<ComponentTooltip> {
     if (parent?.suppressesNative ?? false) {
       content = TooltipVisibility(visible: true, child: content);
     }
+    final parentOwners = parent?.owners;
+    var owners = _cachedOwners;
+    if (owners == null ||
+        !identical(parentOwners, _cachedParentOwners) ||
+        _cachedOwnerId != widget.componentId) {
+      _cachedParentOwners = parentOwners;
+      _cachedOwnerId = widget.componentId;
+      owners = Map<String, _ComponentTooltipState>.unmodifiable({
+        ...?parentOwners,
+        widget.componentId: this,
+      });
+      _cachedOwners = owners;
+    }
     return _TooltipScope(
-      owners: {...?parent?.owners, widget.componentId: this},
+      owners: owners,
       suppressesNative: action != null,
       child: content,
     );

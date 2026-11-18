@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -21,8 +25,9 @@ void main() {
   Future<ValueNotifier<bool>> pumpLayout(
     WidgetTester tester,
     SuperLayoutConfig config,
-    VoidCallback onCreate,
-  ) async {
+    VoidCallback onCreate, {
+    VoidCallback? onDeactivate,
+  }) async {
     final editMode = ValueNotifier(false);
     final appearance = ValueNotifier(Appearance(layouts: {'page': config}));
     final history = EditorHistoryController(
@@ -53,7 +58,10 @@ void main() {
                       BuilderSlot(
                         id: 'a',
                         label: 'a',
-                        builder: (_) => _Probe(onCreate: onCreate),
+                        builder: (_) => _Probe(
+                          onCreate: onCreate,
+                          onDeactivate: onDeactivate,
+                        ),
                       ),
                       BuilderSlot(
                         id: 'b',
@@ -88,45 +96,57 @@ void main() {
     ('flow', flow),
     ('grid', flow.withPositioning(SuperLayoutPositioning.grid)),
   ]) {
-    testWidgets('$name layout mounts edit wrappers only in edit mode', (
-      tester,
-    ) async {
-      var created = 0;
-      final editMode = await pumpLayout(tester, config, () => created++);
-      final regions = find.descendant(
-        of: find.byType(SuperLayout),
-        matching: find.byType(EditorSelectionRegion),
-      );
-      // A disabled region renders its child directly, without hit-testing,
-      // hover or painting layers.
-      bool regionsInert() => regions.evaluate().every((element) {
-        Widget? child;
-        element.visitChildElements((e) => child = e.widget);
-        return child is KeyedSubtree;
-      });
-      final dragTargets = find.descendant(
-        of: find.byType(SuperLayout),
-        matching: find.byWidgetPredicate((widget) => widget is DragTarget),
-      );
-      expect(regionsInert(), isTrue);
-      expect(dragTargets, findsNothing);
-      final readOnlyCount = _elementCount(tester);
-      await tester.enterText(find.byKey(const ValueKey('probe-input')), 'kept');
+    testWidgets(
+      '$name layout switches edit mode in-place without reparenting children',
+      (tester) async {
+        var created = 0;
+        var deactivated = 0;
+        final editMode = await pumpLayout(
+          tester,
+          config,
+          () => created++,
+          onDeactivate: () => deactivated++,
+        );
+        final regions = find.descendant(
+          of: find.byType(SuperLayout),
+          matching: find.byType(EditorSelectionRegion),
+        );
+        // A disabled region keeps a constant-depth inert BoxPointerRegion
+        // without hit-testing, mouse tracking or GlobalKey reparenting.
+        bool regionsInert() => regions.evaluate().every((element) {
+          Widget? child;
+          element.visitChildElements((e) => child = e.widget);
+          return child is BoxPointerRegion && !(child! as BoxPointerRegion).enabled;
+        });
+        final dragTargets = find.descendant(
+          of: find.byType(SuperLayout),
+          matching: find.byWidgetPredicate((widget) => widget is DragTarget),
+        );
+        expect(regionsInert(), isTrue);
+        expect(dragTargets, findsNothing);
+        final readOnlyCount = _elementCount(tester);
+        await tester.enterText(
+          find.byKey(const ValueKey('probe-input')),
+          'kept',
+        );
 
-      editMode.value = true;
-      await tester.pumpAndSettle();
-      expect(regions, findsWidgets);
-      expect(regionsInert(), isFalse);
-      expect(_elementCount(tester), greaterThan(readOnlyCount));
+        editMode.value = true;
+        await tester.pumpAndSettle();
+        expect(regions, findsWidgets);
+        expect(regionsInert(), isFalse);
+        expect(deactivated, 0);
+        expect(_elementCount(tester), readOnlyCount);
 
-      editMode.value = false;
-      await tester.pumpAndSettle();
-      expect(regionsInert(), isTrue);
-      expect(dragTargets, findsNothing);
-      expect(_elementCount(tester), readOnlyCount);
-      expect(created, 1);
-      expect(find.text('kept'), findsOneWidget);
-    });
+        editMode.value = false;
+        await tester.pumpAndSettle();
+        expect(regionsInert(), isTrue);
+        expect(dragTargets, findsNothing);
+        expect(_elementCount(tester), readOnlyCount);
+        expect(created, 1);
+        expect(deactivated, 0);
+        expect(find.text('kept'), findsOneWidget);
+      },
+    );
   }
 
   testWidgets(
@@ -162,12 +182,139 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'SuperPage and SuperListView avoid child deactivation and unselected row edit rebuilds',
+    (tester) async {
+      final dir = await Directory.systemTemp.createTemp('edit-mode-list-opt-');
+      final store = JsonRepositoryStore(dir);
+      await tester.runAsync(() async {
+        await store.create('Data');
+        await store.save(
+          'Data',
+          jsonEncode({
+            'items': [
+              {'label': 'Row 0'},
+              {'label': 'Row 1'},
+              {'label': 'Row 2'},
+            ],
+          }),
+          expectedText: await store.read('Data'),
+        );
+      });
+      final repoId = await tester.runAsync(() => store.idOf('Data'));
+      addTearDown(() async {
+        store.dispose();
+        await dir.delete(recursive: true);
+      });
+
+      final editMode = ValueNotifier(false);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(editMode.dispose);
+      addTearDown(appearance.dispose);
+
+      var pageChildDeactivations = 0;
+      final rowEditBuilds = <int, int>{};
+
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          JsonRepositoryScope(
+            store: store,
+            child: AppearanceScope(
+              controller: appearance,
+              child: StyleEditScope(
+                controller: editMode,
+                child: MaterialApp(
+                  home: SuperPage(
+                    child: Column(
+                      children: [
+                        _Probe(
+                          onCreate: () {},
+                          onDeactivate: () => pageChildDeactivations++,
+                        ),
+                        Expanded(
+                          child: SuperListView(
+                            id: 'items-list',
+                            config: SuperListViewConfig(
+                              binding: JsonTextBinding(
+                                repositoryId: repoId,
+                                path: 'items',
+                              ),
+                              itemExtent: 70,
+                            ),
+                            template: const SuperLayoutConfig(
+                              placements: {
+                                SuperLayoutZone.center: ['cell'],
+                              },
+                            ),
+                            slots: [
+                              BuilderSlot(
+                                id: 'cell',
+                                label: 'Cell',
+                                builder: (context) {
+                                  final idx =
+                                      JsonListScope.maybeOf(
+                                        context,
+                                      )?.indices.lastOrNull ??
+                                      -1;
+                                  StyleEditScope.controllerOf(context);
+                                  rowEditBuilds[idx] =
+                                      (rowEditBuilds[idx] ?? 0) + 1;
+                                  return Text('Item $idx');
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await tester.pump();
+      });
+      await tester.pumpAndSettle();
+
+      final contents = tester
+          .widgetList<IterableContent>(find.byType(IterableContent))
+          .toList();
+      expect(contents, hasLength(3));
+      expect(contents[0].editable, isTrue);
+      expect(contents[1].editable, isFalse);
+      expect(contents[2].editable, isFalse);
+
+      rowEditBuilds.clear();
+      editMode.value = true;
+      await tester.pumpAndSettle();
+      expect(pageChildDeactivations, 0);
+      expect(rowEditBuilds[0], 1);
+      expect(rowEditBuilds.containsKey(1), isFalse);
+      expect(rowEditBuilds.containsKey(2), isFalse);
+
+      // Right-clicking unselected row 2 in edit mode selects it and opens its menu.
+      await tester.tap(find.text('Item 2'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Cell')), findsOneWidget);
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+
+      editMode.value = false;
+      await tester.pumpAndSettle();
+      expect(pageChildDeactivations, 0);
+    },
+  );
 }
 
 class _Probe extends StatefulWidget {
-  const _Probe({required this.onCreate});
+  const _Probe({required this.onCreate, this.onDeactivate});
 
   final VoidCallback onCreate;
+  final VoidCallback? onDeactivate;
 
   @override
   State<_Probe> createState() => _ProbeState();
@@ -178,6 +325,12 @@ class _ProbeState extends State<_Probe> {
   void initState() {
     super.initState();
     widget.onCreate();
+  }
+
+  @override
+  void deactivate() {
+    widget.onDeactivate?.call();
+    super.deactivate();
   }
 
   @override

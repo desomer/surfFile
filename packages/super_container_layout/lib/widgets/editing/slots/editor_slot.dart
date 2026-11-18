@@ -5,7 +5,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
-    show DragStartBehavior, kPrimaryButton, kSecondaryMouseButton, kTouchSlop;
+    show
+        DragStartBehavior,
+        PointerEnterEvent,
+        PointerExitEvent,
+        PointerHoverEvent,
+        kPrimaryButton,
+        kSecondaryMouseButton,
+        kTouchSlop;
 import 'package:flutter/semantics.dart' show SemanticsRole;
 import 'package:material_ui/material_ui.dart';
 
@@ -91,6 +98,26 @@ class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
 
   static ValueNotifier<bool>? controllerOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<StyleEditScope>()?.notifier;
+
+  /// Lit le contrôleur courant sans enregistrer de dépendance de reconstruction.
+  static ValueNotifier<bool>? maybeReadOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<StyleEditScope>()?.notifier;
+}
+
+class _EditorSlotDepthScope extends InheritedWidget {
+  const _EditorSlotDepthScope({required this.depth, required super.child});
+
+  final int depth;
+
+  static int depthOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_EditorSlotDepthScope>()
+          ?.depth ??
+      0;
+
+  @override
+  bool updateShouldNotify(_EditorSlotDepthScope oldWidget) =>
+      depth != oldWidget.depth;
 }
 
 const double _defaultIndent = 8.0;
@@ -209,8 +236,34 @@ class EditorSlot extends StatefulWidget {
 /// État interne de [EditorSlot] coordonnant le glisser-déposer, le menu contextuel et le redimensionnement.
 class EditorSlotState extends State<EditorSlot> {
   String? _localLabel;
+  EditorComponentLabel? _cachedInstance;
+  bool _instanceResolved = false;
 
-  EditorComponentLabel? get _instance => editorComponentLabelOf(context);
+  EditorComponentLabel? _resolveDirectInstance({required bool subscribe}) {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<EditorComponentLabel>();
+    final inherited = element?.widget;
+    if (inherited is! EditorComponentLabel) return null;
+
+    var direct = true;
+    context.visitAncestorElements((ancestor) {
+      if (identical(ancestor, element)) return false;
+      if (ancestor is StatefulElement && ancestor.state is EditorSlotState) {
+        direct = false;
+        return false;
+      }
+      return true;
+    });
+    if (!direct) return null;
+    if (subscribe) {
+      context.dependOnInheritedElement(element!);
+    }
+    return inherited;
+  }
+
+  EditorComponentLabel? get _instance => _instanceResolved
+      ? _cachedInstance
+      : (_cachedInstance = _resolveDirectInstance(subscribe: false));
 
   bool get _canRename => _instance != null || widget.onLabelChanged != null;
 
@@ -246,7 +299,7 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   bool get canEdit {
-    final editMode = StyleEditScope.controllerOf(context);
+    final editMode = StyleEditScope.maybeReadOf(context);
     return widget.editable && (editMode?.value ?? true);
   }
 
@@ -281,10 +334,7 @@ class EditorSlotState extends State<EditorSlot> {
           composable: !scopeOpts.forceComponentOnExport,
         );
       }
-      return (
-        componentName: scope.componentKey,
-        composable: scope.composable,
-      );
+      return (componentName: scope.componentKey, composable: scope.composable);
     }
     return null;
   }
@@ -472,17 +522,6 @@ class EditorSlotState extends State<EditorSlot> {
   int _cachedDepth = 0;
   bool _active = true;
 
-  int get _depth {
-    var depth = 0;
-    context.visitAncestorElements((element) {
-      if (element is StatefulElement && element.state is EditorSlotState) {
-        depth++;
-      }
-      return true;
-    });
-    return depth;
-  }
-
   void _setHovered(bool hovered, {Offset? pointerPosition}) {
     final realMove =
         pointerPosition == null || _recordRealPointerMove(pointerPosition);
@@ -524,7 +563,7 @@ class EditorSlotState extends State<EditorSlot> {
   static void setHighlightedTarget(EditorSlotState? target) {
     if (target != null &&
         (!target.mounted ||
-            !(StyleEditScope.controllerOf(target.context)?.value ?? false))) {
+            !(StyleEditScope.maybeReadOf(target.context)?.value ?? false))) {
       return;
     }
     if (identical(_menuHoveredTarget, target)) return;
@@ -640,6 +679,10 @@ class EditorSlotState extends State<EditorSlot> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _cachedInstance = _resolveDirectInstance(subscribe: true);
+    _instanceResolved = true;
+    _zoomScaleNotifier = EditorZoomScope.maybeAncestorControllerOf(context)
+        ?.scale;
     _syncMountedSlotRegistration();
   }
 
@@ -653,6 +696,8 @@ class EditorSlotState extends State<EditorSlot> {
   void activate() {
     super.activate();
     _active = true;
+    _cachedInstance = _resolveDirectInstance(subscribe: false);
+    _instanceResolved = true;
     _syncMountedSlotRegistration();
   }
 
@@ -666,6 +711,8 @@ class EditorSlotState extends State<EditorSlot> {
 
   @override
   void dispose() {
+    _detachAllPaintListeners();
+    _painterNotifier.dispose();
     VibeMountedSlotIndex.instance.unregister(this);
     if (_ownsOpenMenu) {
       _ownsOpenMenu = false;
@@ -723,8 +770,28 @@ class EditorSlotState extends State<EditorSlot> {
     }
   }
 
-  /// Keeps the child's element when the edit wrappers are added or removed.
+  /// Keeps a stable reference to the rendered slot content for [VibeMountedSlotIndex].
   final GlobalKey _childKey = GlobalKey();
+  final ValueNotifier<CustomPainter?> _painterNotifier =
+      ValueNotifier<CustomPainter?>(null);
+  _SlotPaintSnapshot _paintSnapshot = (
+    showOutline: false,
+    isSelectedLeaf: false,
+    isEmphasizedHighlight: false,
+    vibeState: null,
+    zoomScale: 1.0,
+  );
+  bool _painterInitialized = false;
+  bool _trackHover = false;
+  bool _listeningFullPaint = false;
+  bool _listeningVibeOnly = false;
+  ValueNotifier<double>? _zoomScaleNotifier;
+  bool _listeningZoomScale = false;
+  Color _rawAccent = const Color(0xFF000000);
+  ({String componentName, bool composable})? _composed;
+  bool _disableAnimations = false;
+  double _lastOutlineRadius = 0;
+  String _lastTitleLabel = '';
 
   static final Listenable _paintListenable = Listenable.merge([
     _hoveredTarget,
@@ -738,27 +805,205 @@ class EditorSlotState extends State<EditorSlot> {
     VibeWorkHighlightController.instance,
   ]);
 
-  Widget _wrapWithStandaloneAiHighlight(
-    BuildContext context,
-    Widget child, {
-    required bool isSliver,
-  }) => _StandaloneAiHighlightHost(
-    componentId: effectiveComponentId,
-    zoneId: widget.zoneId,
-    outlineRadius: widget.outlineRadius,
-    isSliver: isSliver,
-    child: child,
-  );
+  _SlotPaintSnapshot _computePaintSnapshot() {
+    final vibeState = VibeWorkHighlightController.instance.stateFor(
+      effectiveComponentId,
+      zoneId: widget.zoneId,
+    );
+    if (!_trackHover || !mounted) {
+      final zoomScale = vibeState != null
+          ? (_zoomScaleNotifier?.value ?? 1.0)
+          : 1.0;
+      return (
+        showOutline: false,
+        isSelectedLeaf: false,
+        isEmphasizedHighlight: false,
+        vibeState: vibeState,
+        zoomScale: zoomScale,
+      );
+    }
+    final target = _hoveredTarget.value;
+    final isEmphasizedHighlight =
+        identical(_menuHoveredTarget, this) ||
+        identical(_canvasHoveredParent.value, this);
+    final hasExternalHighlight =
+        _highlightedTarget.value != null ||
+        LayoutSelection.highlightedSlotId.value != null;
+    final isSelectedLeaf =
+        EditorOverlayVisibility.openDialogs.value == 0 &&
+        !hasExternalHighlight &&
+        LayoutSelection.isLeafFocus(context);
+    final showOutline =
+        (EditorOverlayVisibility.openDialogs.value == 0 ||
+            isEmphasizedHighlight) &&
+        identical(target, this) &&
+        (EditorSelectionRegion.hoverTarget.value == null ||
+            isEmphasizedHighlight);
+    final needsZoom =
+        (showOutline && isEmphasizedHighlight) ||
+        vibeState != null ||
+        _composed != null;
+    final zoomScale = needsZoom ? (_zoomScaleNotifier?.value ?? 1.0) : 1.0;
+    return (
+      showOutline: showOutline,
+      isSelectedLeaf: isSelectedLeaf,
+      isEmphasizedHighlight: isEmphasizedHighlight,
+      vibeState: vibeState,
+      zoomScale: zoomScale,
+    );
+  }
+
+  static bool _snapshotsEqual(_SlotPaintSnapshot a, _SlotPaintSnapshot b) =>
+      a.showOutline == b.showOutline &&
+      a.isSelectedLeaf == b.isSelectedLeaf &&
+      a.isEmphasizedHighlight == b.isEmphasizedHighlight &&
+      a.zoomScale == b.zoomScale &&
+      _vibeStatesEqual(a.vibeState, b.vibeState);
+
+  void _syncZoomScaleListener(
+    _SlotPaintSnapshot snapshot,
+    BuildContext? buildContext,
+  ) {
+    final needsZoom =
+        (_trackHover &&
+            ((snapshot.showOutline && snapshot.isEmphasizedHighlight) ||
+                _composed != null)) ||
+        snapshot.vibeState != null;
+    if (buildContext != null) {
+      final controllerScale = EditorZoomScope.maybeAncestorControllerOf(
+        buildContext,
+      )?.scale;
+      if (!identical(controllerScale, _zoomScaleNotifier)) {
+        if (_listeningZoomScale) {
+          _zoomScaleNotifier?.removeListener(_onPaintChanged);
+          _listeningZoomScale = false;
+        }
+        _zoomScaleNotifier = controllerScale;
+      }
+    }
+    if (needsZoom && _zoomScaleNotifier != null && !_listeningZoomScale) {
+      _zoomScaleNotifier!.addListener(_onPaintChanged);
+      _listeningZoomScale = true;
+    } else if (!needsZoom && _listeningZoomScale) {
+      _zoomScaleNotifier?.removeListener(_onPaintChanged);
+      _listeningZoomScale = false;
+    }
+  }
+
+  void _setPaintTrackingMode({required bool trackHover}) {
+    _trackHover = trackHover;
+    if (trackHover) {
+      if (_listeningVibeOnly) {
+        VibeWorkHighlightController.instance.removeListener(_onPaintChanged);
+        _listeningVibeOnly = false;
+      }
+      if (!_listeningFullPaint) {
+        _paintListenable.addListener(_onPaintChanged);
+        _listeningFullPaint = true;
+      }
+    } else {
+      if (_listeningFullPaint) {
+        _paintListenable.removeListener(_onPaintChanged);
+        _listeningFullPaint = false;
+      }
+      if (!_listeningVibeOnly) {
+        VibeWorkHighlightController.instance.addListener(_onPaintChanged);
+        _listeningVibeOnly = true;
+      }
+    }
+  }
+
+  void _detachAllPaintListeners() {
+    if (_listeningFullPaint) {
+      _paintListenable.removeListener(_onPaintChanged);
+      _listeningFullPaint = false;
+    }
+    if (_listeningVibeOnly) {
+      VibeWorkHighlightController.instance.removeListener(_onPaintChanged);
+      _listeningVibeOnly = false;
+    }
+    if (_listeningZoomScale) {
+      _zoomScaleNotifier?.removeListener(_onPaintChanged);
+      _listeningZoomScale = false;
+    }
+  }
+
+  CustomPainter? _computeCurrentPainter(_SlotPaintSnapshot snapshot) {
+    if (!_trackHover) {
+      final vibeState = snapshot.vibeState;
+      if (vibeState == null) return null;
+      return VibeWorkHighlightPainter(
+        state: vibeState,
+        radius: widget.outlineRadius,
+        zoomScale: snapshot.zoomScale,
+        animate: !_disableAnimations,
+      );
+    }
+    return _buildForegroundPainter(
+      showOutline: snapshot.showOutline,
+      isSelectedLeaf: snapshot.isSelectedLeaf,
+      isEmphasizedHighlight: snapshot.isEmphasizedHighlight,
+      accentColor: _rawAccent.withValues(alpha: .85),
+      rawAccentColor: _rawAccent,
+      zoomScale: snapshot.zoomScale,
+      composed: _composed,
+      vibeState: snapshot.vibeState,
+      disableAnimations: _disableAnimations,
+    );
+  }
+
+  void _syncPainter({BuildContext? buildContext, bool force = false}) {
+    if (buildContext != null) {
+      final controllerScale = EditorZoomScope.maybeAncestorControllerOf(
+        buildContext,
+      )?.scale;
+      if (!identical(controllerScale, _zoomScaleNotifier)) {
+        if (_listeningZoomScale) {
+          _zoomScaleNotifier?.removeListener(_onPaintChanged);
+          _listeningZoomScale = false;
+        }
+        _zoomScaleNotifier = controllerScale;
+      }
+    }
+    final next = _computePaintSnapshot();
+    _syncZoomScaleListener(next, null);
+    if (_painterInitialized &&
+        !force &&
+        _snapshotsEqual(next, _paintSnapshot)) {
+      return;
+    }
+    _painterInitialized = true;
+    _paintSnapshot = next;
+    _painterNotifier.value = _computeCurrentPainter(next);
+  }
+
+  void _onPaintChanged() {
+    if (!mounted) return;
+    _syncPainter();
+  }
+
+  void _handlePointerEnter(PointerEnterEvent event) =>
+      _setHovered(true, pointerPosition: event.position);
+
+  void _handlePointerHover(PointerHoverEvent event) =>
+      _setHovered(true, pointerPosition: event.position);
+
+  void _handlePointerExit(PointerExitEvent event) =>
+      _setHovered(false, pointerPosition: event.position);
 
   @override
   Widget build(BuildContext context) {
+    _cachedDepth = _EditorSlotDepthScope.depthOf(context);
     final isSliver = SliverSlotScope.isSliver(context);
-    return ComponentStateBehavior(
-      componentId: effectiveComponentId,
-      behaviors: widget.behaviors,
-      sliver: isSliver,
-      child: Builder(
-        builder: (context) => _buildSlotContent(context, isSliver: isSliver),
+    return _EditorSlotDepthScope(
+      depth: _cachedDepth + 1,
+      child: ComponentStateBehavior(
+        componentId: effectiveComponentId,
+        behaviors: widget.behaviors,
+        sliver: isSliver,
+        child: Builder(
+          builder: (context) => _buildSlotContent(context, isSliver: isSliver),
+        ),
       ),
     );
   }
@@ -766,6 +1011,7 @@ class EditorSlotState extends State<EditorSlot> {
   Widget _buildSlotContent(BuildContext context, {required bool isSliver}) {
     final editMode = StyleEditScope.controllerOf(context);
     final inEditMode = editMode?.value ?? false;
+    final canEditHere = widget.editable && (editMode?.value ?? true);
     final behaviorDisabled =
         !inEditMode &&
         (ComponentBehaviorStateScope.isDisabled(context) ||
@@ -791,7 +1037,46 @@ class EditorSlotState extends State<EditorSlot> {
               .where((b) => b.enabled && b.action is EmitEventAction)
               .toList();
     final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
-    final interactive = canEdit || hasClickBehaviors;
+    final interactive = canEditHere || hasClickBehaviors;
+    final trackHover = canEditHere && editMode != null;
+
+    if (!trackHover && _hovered.contains(this)) {
+      _removeHoveredSafely();
+    }
+
+    final prevTrackHover = _trackHover;
+    _setPaintTrackingMode(trackHover: trackHover);
+    var inputsChanged = prevTrackHover != trackHover;
+    if (trackHover) {
+      final nextAccent = AppearanceScope.of(context).accent;
+      final nextComposed = composedComponentInfo;
+      final nextDisableAnimations =
+          MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      final nextTitle = titleLabel;
+      if (nextAccent != _rawAccent ||
+          nextComposed != _composed ||
+          nextDisableAnimations != _disableAnimations ||
+          widget.outlineRadius != _lastOutlineRadius ||
+          nextTitle != _lastTitleLabel) {
+        _rawAccent = nextAccent;
+        _composed = nextComposed;
+        _disableAnimations = nextDisableAnimations;
+        _lastOutlineRadius = widget.outlineRadius;
+        _lastTitleLabel = nextTitle;
+        inputsChanged = true;
+      }
+    } else {
+      final nextDisableAnimations =
+          MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      if (nextDisableAnimations != _disableAnimations ||
+          widget.outlineRadius != _lastOutlineRadius) {
+        _disableAnimations = nextDisableAnimations;
+        _lastOutlineRadius = widget.outlineRadius;
+        inputsChanged = true;
+      }
+    }
+    _syncPainter(buildContext: context, force: inputsChanged);
+
     final runtimeChild = ComponentTooltip(
       componentId: effectiveComponentId,
       behaviors: widget.behaviors,
@@ -810,146 +1095,92 @@ class EditorSlotState extends State<EditorSlot> {
       ),
     );
 
+    final Widget child = KeyedSubtree(key: _childKey, child: runtimeChild);
     if (isSliver) {
-      final Widget child = KeyedSubtree(key: _childKey, child: runtimeChild);
-      if (!interactive) {
-        if (_hovered.contains(this)) _removeHoveredSafely();
-        return _wrapWithStandaloneAiHighlight(context, child, isSliver: true);
-      }
-      if (canEdit && editMode != null) {
-        _cachedDepth = _depth;
-      } else if (_hovered.contains(this)) {
-        _removeHoveredSafely();
-      }
-      final rawAccent = AppearanceScope.of(context).accent;
-      final accentColor = rawAccent.withValues(alpha: .85);
-      final composed = composedComponentInfo;
-      return _EditorSlotPaintHost(
-        slot: this,
-        trackHover: canEdit && editMode != null,
-        accentColor: accentColor,
-        rawAccentColor: rawAccent,
-        composed: composed,
+      return SliverPointerRegion(
+        enabled: interactive,
+        cursor: hasClickBehaviors
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
+        onEnter: trackHover ? _handlePointerEnter : null,
+        onHover: trackHover ? _handlePointerHover : null,
+        onExit: trackHover ? _handlePointerExit : null,
+        onPointerDown: interactive
+            ? (event) {
+                _sliverDown = event;
+                _sliverButtons = event.buttons;
+                _sliverMoved = false;
+              }
+            : null,
+        onPointerMove: interactive
+            ? (event) {
+                final down = _sliverDown;
+                if (down != null &&
+                    down.pointer == event.pointer &&
+                    (event.position - down.position).distance > kTouchSlop) {
+                  _sliverMoved = true;
+                }
+              }
+            : null,
+        onPointerUp: interactive
+            ? (event) async {
+                final down = _sliverDown;
+                final buttons = _sliverButtons;
+                final moved = _sliverMoved;
+                _sliverDown = null;
+                _sliverButtons = 0;
+                _sliverMoved = false;
+                if (down == null ||
+                    down.pointer != event.pointer ||
+                    moved ||
+                    (event.position - down.position).distance > kTouchSlop) {
+                  return;
+                }
+                if (buttons == kSecondaryMouseButton && canEditHere) {
+                  await openMenu(event.position);
+                } else if (buttons == kPrimaryButton && hasClickBehaviors) {
+                  for (final b in clickBehaviors) {
+                    await b.execute(context);
+                  }
+                }
+              }
+            : null,
+        onPointerCancel: interactive
+            ? (_) {
+                _sliverDown = null;
+                _sliverButtons = 0;
+                _sliverMoved = false;
+              }
+            : null,
+        painterListenable: _painterNotifier,
         child: child,
-        builder: (context, painter, inner) => SliverPointerRegion(
-          cursor: hasClickBehaviors
-              ? SystemMouseCursors.click
-              : MouseCursor.defer,
-          onEnter: canEdit && editMode != null
-              ? (event) => _setHovered(true, pointerPosition: event.position)
-              : null,
-          onHover: canEdit && editMode != null
-              ? (event) => _setHovered(true, pointerPosition: event.position)
-              : null,
-          onExit: canEdit && editMode != null
-              ? (event) => _setHovered(false, pointerPosition: event.position)
-              : null,
-          onPointerDown: (event) {
-            _sliverDown = event;
-            _sliverButtons = event.buttons;
-            _sliverMoved = false;
-          },
-          onPointerMove: (event) {
-            final down = _sliverDown;
-            if (down != null &&
-                down.pointer == event.pointer &&
-                (event.position - down.position).distance > kTouchSlop) {
-              _sliverMoved = true;
-            }
-          },
-          onPointerUp: (event) async {
-            final down = _sliverDown;
-            final buttons = _sliverButtons;
-            final moved = _sliverMoved;
-            _sliverDown = null;
-            _sliverButtons = 0;
-            _sliverMoved = false;
-            if (down == null ||
-                down.pointer != event.pointer ||
-                moved ||
-                (event.position - down.position).distance > kTouchSlop) {
-              return;
-            }
-            if (buttons == kSecondaryMouseButton && canEdit) {
-              await openMenu(event.position);
-            } else if (buttons == kPrimaryButton && hasClickBehaviors) {
+      );
+    }
+
+    return BoxPointerRegion(
+      enabled: interactive,
+      opaque: true,
+      cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: trackHover ? _handlePointerEnter : null,
+      onHover: trackHover ? _handlePointerHover : null,
+      onExit: trackHover ? _handlePointerExit : null,
+      onTap: hasClickBehaviors
+          ? () async {
               for (final b in clickBehaviors) {
                 await b.execute(context);
               }
             }
-          },
-          onPointerCancel: (_) {
-            _sliverDown = null;
-            _sliverButtons = 0;
-            _sliverMoved = false;
-          },
-          foregroundPainter: painter,
-          child: inner,
+          : null,
+      onSecondaryTapUp: canEditHere
+          ? (details) => openMenu(details.globalPosition)
+          : null,
+      child: RepaintBoundary(
+        child: ValueListenableBuilder<CustomPainter?>(
+          valueListenable: _painterNotifier,
+          child: RepaintBoundary(child: child),
+          builder: (context, painter, inner) =>
+              CustomPaint(foregroundPainter: painter, child: inner),
         ),
-      );
-    }
-
-    Widget content = KeyedSubtree(key: _childKey, child: runtimeChild);
-    if (!interactive) {
-      if (_hovered.contains(this)) _removeHoveredSafely();
-      return _wrapWithStandaloneAiHighlight(context, content, isSliver: false);
-    }
-    final trackHover = canEdit && editMode != null;
-    if (trackHover) {
-      _cachedDepth = _depth;
-      final rawAccent = AppearanceScope.of(context).accent;
-      final accentColor = rawAccent.withValues(alpha: .85);
-      final composed = composedComponentInfo;
-      content = RepaintBoundary(
-        child: _EditorSlotPaintHost(
-          slot: this,
-          trackHover: true,
-          accentColor: accentColor,
-          rawAccentColor: rawAccent,
-          composed: composed,
-          child: RepaintBoundary(child: content),
-          builder: (context, painter, inner) => CustomPaint(
-            foregroundPainter: painter,
-            child: inner,
-          ),
-        ),
-      );
-    } else {
-      if (_hovered.contains(this)) {
-        _removeHoveredSafely();
-      }
-      content = _wrapWithStandaloneAiHighlight(
-        context,
-        content,
-        isSliver: false,
-      );
-    }
-
-    return MouseRegion(
-      cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: trackHover
-          ? (event) => _setHovered(true, pointerPosition: event.position)
-          : null,
-      onHover: trackHover
-          ? (event) => _setHovered(true, pointerPosition: event.position)
-          : null,
-      onExit: trackHover
-          ? (event) => _setHovered(false, pointerPosition: event.position)
-          : null,
-      child: GestureDetector(
-        excludeFromSemantics: true,
-        behavior: HitTestBehavior.translucent,
-        onTap: hasClickBehaviors
-            ? () async {
-                for (final b in clickBehaviors) {
-                  await b.execute(context);
-                }
-              }
-            : null,
-        onSecondaryTapUp: canEdit
-            ? (details) => openMenu(details.globalPosition)
-            : null,
-        child: content,
       ),
     );
   }
@@ -971,309 +1202,3 @@ typedef _SlotPaintSnapshot = ({
   VibeWorkHighlightState? vibeState,
   double zoomScale,
 });
-
-class _EditorSlotPaintHost extends StatefulWidget {
-  const _EditorSlotPaintHost({
-    required this.slot,
-    required this.trackHover,
-    required this.accentColor,
-    required this.rawAccentColor,
-    required this.composed,
-    required this.child,
-    required this.builder,
-  });
-
-  final EditorSlotState slot;
-  final bool trackHover;
-  final Color accentColor;
-  final Color rawAccentColor;
-  final ({String componentName, bool composable})? composed;
-  final Widget child;
-  final Widget Function(BuildContext context, CustomPainter? painter, Widget child)
-  builder;
-
-  @override
-  State<_EditorSlotPaintHost> createState() => _EditorSlotPaintHostState();
-}
-
-class _EditorSlotPaintHostState extends State<_EditorSlotPaintHost> {
-  late _SlotPaintSnapshot _snapshot;
-  ValueNotifier<double>? _zoomScaleNotifier;
-  bool _listeningZoomScale = false;
-
-  _SlotPaintSnapshot _computeSnapshot() {
-    final slot = widget.slot;
-    final vibeState = VibeWorkHighlightController.instance.stateFor(
-      slot.effectiveComponentId,
-      zoneId: slot.widget.zoneId,
-    );
-    if (!widget.trackHover || !slot.mounted) {
-      final zoomScale = vibeState != null
-          ? (_zoomScaleNotifier?.value ?? 1.0)
-          : 1.0;
-      return (
-        showOutline: false,
-        isSelectedLeaf: false,
-        isEmphasizedHighlight: false,
-        vibeState: vibeState,
-        zoomScale: zoomScale,
-      );
-    }
-    final target = EditorSlotState._hoveredTarget.value;
-    final isEmphasizedHighlight =
-        identical(EditorSlotState._menuHoveredTarget, slot) ||
-        identical(EditorSlotState._canvasHoveredParent.value, slot);
-    final hasExternalHighlight =
-        EditorSlotState._highlightedTarget.value != null ||
-        LayoutSelection.highlightedSlotId.value != null;
-    final isSelectedLeaf =
-        EditorOverlayVisibility.openDialogs.value == 0 &&
-        !hasExternalHighlight &&
-        LayoutSelection.isLeafFocus(slot.context);
-    final showOutline =
-        (EditorOverlayVisibility.openDialogs.value == 0 ||
-            isEmphasizedHighlight) &&
-        identical(target, slot) &&
-        (EditorSelectionRegion.hoverTarget.value == null ||
-            isEmphasizedHighlight);
-    final needsZoom =
-        (showOutline && isEmphasizedHighlight) ||
-        vibeState != null ||
-        widget.composed != null;
-    final zoomScale = needsZoom ? (_zoomScaleNotifier?.value ?? 1.0) : 1.0;
-    return (
-      showOutline: showOutline,
-      isSelectedLeaf: isSelectedLeaf,
-      isEmphasizedHighlight: isEmphasizedHighlight,
-      vibeState: vibeState,
-      zoomScale: zoomScale,
-    );
-  }
-
-  static bool _snapshotsEqual(_SlotPaintSnapshot a, _SlotPaintSnapshot b) =>
-      a.showOutline == b.showOutline &&
-      a.isSelectedLeaf == b.isSelectedLeaf &&
-      a.isEmphasizedHighlight == b.isEmphasizedHighlight &&
-      a.zoomScale == b.zoomScale &&
-      _vibeStatesEqual(a.vibeState, b.vibeState);
-
-  void _syncZoomScaleListener(_SlotPaintSnapshot snapshot) {
-    final needsZoom =
-        (snapshot.showOutline && snapshot.isEmphasizedHighlight) ||
-        snapshot.vibeState != null ||
-        widget.composed != null;
-    final controllerScale = EditorZoomScope.maybeAncestorControllerOf(
-      context,
-    )?.scale;
-    if (!identical(controllerScale, _zoomScaleNotifier)) {
-      if (_listeningZoomScale) {
-        _zoomScaleNotifier?.removeListener(_onPaintChanged);
-        _listeningZoomScale = false;
-      }
-      _zoomScaleNotifier = controllerScale;
-    }
-    if (needsZoom && _zoomScaleNotifier != null && !_listeningZoomScale) {
-      _zoomScaleNotifier!.addListener(_onPaintChanged);
-      _listeningZoomScale = true;
-    } else if (!needsZoom && _listeningZoomScale) {
-      _zoomScaleNotifier?.removeListener(_onPaintChanged);
-      _listeningZoomScale = false;
-    }
-  }
-
-  void _onPaintChanged() {
-    if (!mounted) return;
-    final next = _computeSnapshot();
-    _syncZoomScaleListener(next);
-    if (_snapshotsEqual(next, _snapshot)) return;
-    setState(() => _snapshot = next);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _zoomScaleNotifier = EditorZoomScope.maybeAncestorControllerOf(
-      context,
-    )?.scale;
-    _snapshot = _computeSnapshot();
-    _syncZoomScaleListener(_snapshot);
-    EditorSlotState._paintListenable.addListener(_onPaintChanged);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final next = _computeSnapshot();
-    _syncZoomScaleListener(next);
-    _snapshot = next;
-  }
-
-  @override
-  void didUpdateWidget(_EditorSlotPaintHost oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final next = _computeSnapshot();
-    _syncZoomScaleListener(next);
-    _snapshot = next;
-  }
-
-  @override
-  void dispose() {
-    EditorSlotState._paintListenable.removeListener(_onPaintChanged);
-    if (_listeningZoomScale) {
-      _zoomScaleNotifier?.removeListener(_onPaintChanged);
-      _listeningZoomScale = false;
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final disableAnimations =
-        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
-    final painter = widget.slot._buildForegroundPainter(
-      showOutline: _snapshot.showOutline,
-      isSelectedLeaf: _snapshot.isSelectedLeaf,
-      isEmphasizedHighlight: _snapshot.isEmphasizedHighlight,
-      accentColor: widget.accentColor,
-      rawAccentColor: widget.rawAccentColor,
-      zoomScale: _snapshot.zoomScale,
-      composed: widget.composed,
-      vibeState: _snapshot.vibeState,
-      disableAnimations: disableAnimations,
-    );
-    return widget.builder(context, painter, widget.child);
-  }
-}
-
-class _StandaloneAiHighlightHost extends StatefulWidget {
-  const _StandaloneAiHighlightHost({
-    required this.componentId,
-    required this.zoneId,
-    required this.outlineRadius,
-    required this.isSliver,
-    required this.child,
-  });
-
-  final String componentId;
-  final String? zoneId;
-  final double outlineRadius;
-  final bool isSliver;
-  final Widget child;
-
-  @override
-  State<_StandaloneAiHighlightHost> createState() =>
-      _StandaloneAiHighlightHostState();
-}
-
-class _StandaloneAiHighlightHostState
-    extends State<_StandaloneAiHighlightHost> {
-  VibeWorkHighlightState? _vibeState;
-  ValueNotifier<double>? _zoomScaleNotifier;
-  double _zoomScale = 1.0;
-  bool _listeningZoom = false;
-
-  ({VibeWorkHighlightState? vibeState, double zoomScale}) _readNextState() {
-    final nextState = VibeWorkHighlightController.instance.stateFor(
-      widget.componentId,
-      zoneId: widget.zoneId,
-    );
-    final controllerScale = EditorZoomScope.maybeAncestorControllerOf(
-      context,
-    )?.scale;
-    if (!identical(controllerScale, _zoomScaleNotifier)) {
-      if (_listeningZoom) {
-        _zoomScaleNotifier?.removeListener(_onChanged);
-        _listeningZoom = false;
-      }
-      _zoomScaleNotifier = controllerScale;
-    }
-    if (nextState != null && _zoomScaleNotifier != null && !_listeningZoom) {
-      _zoomScaleNotifier!.addListener(_onChanged);
-      _listeningZoom = true;
-    } else if (nextState == null && _listeningZoom) {
-      _zoomScaleNotifier?.removeListener(_onChanged);
-      _listeningZoom = false;
-    }
-    final nextZoom =
-        nextState != null ? (_zoomScaleNotifier?.value ?? 1.0) : 1.0;
-    return (vibeState: nextState, zoomScale: nextZoom);
-  }
-
-  void _sync() {
-    final next = _readNextState();
-    if (_vibeStatesEqual(_vibeState, next.vibeState) &&
-        _zoomScale == next.zoomScale) {
-      return;
-    }
-    if (mounted) {
-      setState(() {
-        _vibeState = next.vibeState;
-        _zoomScale = next.zoomScale;
-      });
-    } else {
-      _vibeState = next.vibeState;
-      _zoomScale = next.zoomScale;
-    }
-  }
-
-  void _onChanged() => _sync();
-
-  @override
-  void initState() {
-    super.initState();
-    final initial = _readNextState();
-    _vibeState = initial.vibeState;
-    _zoomScale = initial.zoomScale;
-    VibeWorkHighlightController.instance.addListener(_onChanged);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final next = _readNextState();
-    _vibeState = next.vibeState;
-    _zoomScale = next.zoomScale;
-  }
-
-  @override
-  void didUpdateWidget(_StandaloneAiHighlightHost oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final next = _readNextState();
-    _vibeState = next.vibeState;
-    _zoomScale = next.zoomScale;
-  }
-
-  @override
-  void dispose() {
-    VibeWorkHighlightController.instance.removeListener(_onChanged);
-    if (_listeningZoom) {
-      _zoomScaleNotifier?.removeListener(_onChanged);
-      _listeningZoom = false;
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final vibeState = _vibeState;
-    if (vibeState == null) return widget.child;
-    final painter = VibeWorkHighlightPainter(
-      state: vibeState,
-      radius: widget.outlineRadius,
-      zoomScale: _zoomScale,
-      animate: !(MediaQuery.maybeDisableAnimationsOf(context) ?? false),
-    );
-    if (widget.isSliver) {
-      return SliverPointerRegion(
-        foregroundPainter: painter,
-        child: widget.child,
-      );
-    }
-    return RepaintBoundary(
-      child: CustomPaint(
-        foregroundPainter: painter,
-        child: RepaintBoundary(child: widget.child),
-      ),
-    );
-  }
-}

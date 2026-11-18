@@ -2,7 +2,7 @@
 library;
 
 export '../../editing/slots/editor_selection_region.dart'
-    show SliverPointerRegion, SliverSlotScope;
+    show BoxPointerRegion, SliverPointerRegion, SliverSlotScope;
 export 'slot_core.dart'
     show
         SliverCapableWidget,
@@ -21,6 +21,7 @@ export 'slot_drag.dart'
         LabelEmphasis,
         EmphasizedLabel,
         SlotMover,
+        SlotDropTargetStack,
         SlotZoneTarget;
 export 'slot_stack.dart' show SlotStack;
 export 'zone_scrollable_viewport.dart'
