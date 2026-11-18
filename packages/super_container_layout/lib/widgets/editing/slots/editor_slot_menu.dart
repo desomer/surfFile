@@ -33,6 +33,9 @@ bool _hasScrollableOverflow(BuildContext context) {
   var found = false;
   void visit(Element element) {
     if (found) return;
+    if (element is SliverMultiBoxAdaptorElement) {
+      return;
+    }
     if (element is StatefulElement) {
       final state = element.state;
       if (state is EditorSlotState && !identical(element, context)) {
@@ -52,6 +55,138 @@ bool _hasScrollableOverflow(BuildContext context) {
 
   context.visitChildElements(visit);
   return found;
+}
+
+class _LazySlotMoreMenuButton extends StatefulWidget {
+  const _LazySlotMoreMenuButton({
+    required this.slot,
+    required this.wrapActions,
+    required this.wrapChildrenActions,
+    required this.canEditWithAi,
+    required this.canExportContent,
+    required this.canConfigureAsComponent,
+    required this.buttonStyle,
+    required this.onSelect,
+  });
+
+  final EditorSlotState slot;
+  final List<EditorSlotWrapAction> wrapActions;
+  final List<EditorSlotWrapAction> wrapChildrenActions;
+  final bool canEditWithAi;
+  final bool canExportContent;
+  final bool canConfigureAsComponent;
+  final ButtonStyle buttonStyle;
+  final void Function(Object selection) onSelect;
+
+  @override
+  State<_LazySlotMoreMenuButton> createState() =>
+      _LazySlotMoreMenuButtonState();
+}
+
+class _LazySlotMoreMenuButtonState extends State<_LazySlotMoreMenuButton> {
+  final _controller = MenuController();
+  List<Widget>? _menuChildren;
+
+  List<Widget> _buildMenuChildren() {
+    final state = widget.slot;
+    final onSelect = widget.onSelect;
+    final extractableTargets = state.mounted && state.canEdit
+        ? collectExtractableTargetsFromSlot(state)
+        : const <ExtractableComponentTarget>[];
+    return [
+      if (widget.canConfigureAsComponent)
+        MenuItemButton(
+          key: ValueKey('style-menu-configure-as-${state.label}'),
+          leadingIcon: const Icon(Icons.settings_suggest_outlined),
+          onPressed: () => onSelect(state._openConfigureAsDialog),
+          child: const Text('Configure as...'),
+        ),
+      if (widget.canExportContent)
+        MenuItemButton(
+          key: ValueKey('style-menu-export-${state.label}'),
+          leadingIcon: const Icon(Icons.upload),
+          onPressed: () => onSelect(state._exportContent),
+          child: const Text('Exporter le contenu...'),
+        ),
+      if (widget.wrapActions.isNotEmpty)
+        SubmenuButton(
+          leadingIcon: const Icon(Icons.wrap_text),
+          menuChildren: [
+            for (final action in widget.wrapActions)
+              MenuItemButton(
+                leadingIcon: Icon(action.icon),
+                onPressed: () => onSelect(action.onSelected),
+                child: Text(action.label),
+              ),
+          ],
+          child: const Text('Envelopper dans…'),
+        ),
+      if (widget.wrapChildrenActions.isNotEmpty)
+        SubmenuButton(
+          leadingIcon: const Icon(Icons.wrap_text),
+          menuChildren: [
+            for (final action in widget.wrapChildrenActions)
+              MenuItemButton(
+                leadingIcon: Icon(action.icon),
+                onPressed: () => onSelect(action.onSelected),
+                child: Text(action.label),
+              ),
+          ],
+          child: const Text('Envelopper les enfants dans…'),
+        ),
+      if (extractableTargets.isNotEmpty)
+        MenuItemButton(
+          key: ValueKey('style-menu-extract-super-values-${state.label}'),
+          leadingIcon: const Icon(Icons.data_object),
+          onPressed: () => onSelect(() async {
+            if (!state.mounted) return;
+            final latest = collectExtractableTargetsFromSlot(state);
+            if (latest.isEmpty) return;
+            await SuperValueJsonExtractDialog.show(
+              state.context,
+              targets: latest,
+              sourceLabel: state.titleLabel,
+              target: state.context,
+              rootSlot: state,
+            );
+          }),
+          child: const Text('Extraire & lier en JSON…'),
+        ),
+      if (widget.canEditWithAi)
+        MenuItemButton(
+          key: ValueKey('style-menu-ai-${state.label}'),
+          leadingIcon: const Icon(Icons.auto_awesome_outlined),
+          onPressed: () => onSelect(state._openAiWithScope),
+          child: const Text('Modifier avec l’IA…'),
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final children = _menuChildren;
+    return MenuAnchor(
+      controller: _controller,
+      consumeOutsideTap: true,
+      menuChildren: children ?? const [SizedBox.shrink()],
+      builder: (context, controller, child) => IconButton(
+        key: ValueKey('style-menu-more-${widget.slot.label}'),
+        tooltip: 'Autres options',
+        icon: const Icon(Icons.more_vert),
+        style: widget.buttonStyle,
+        onPressed: () {
+          if (controller.isOpen) {
+            controller.close();
+            return;
+          }
+          if (_menuChildren == null) {
+            setState(() => _menuChildren = _buildMenuChildren());
+          }
+          controller.open();
+        },
+      ),
+    );
+  }
 }
 
 /// Méthodes de construction et d'ouverture du menu contextuel de [EditorSlotState].
@@ -91,9 +226,10 @@ extension _EditorSlotMenuExtension on EditorSlotState {
 
   ({bool scrollable, bool fixedHeight, bool fixedWidth}) _resolveSlotIndicators(
     EditorSlotState state,
-    List<EditorSlotAction> stateInlineActions,
-  ) {
-    final axis = state.widget.axisAction?.call();
+    List<EditorSlotAction> stateInlineActions, {
+    LayoutAxisAction? axis,
+  }) {
+    final resolvedAxis = axis ?? state.widget.axisAction?.call();
     final directInline = _findDirectInlineAction(state.context);
     final isZone =
         state.widget.zoneId != null || state.widget.axisAction != null;
@@ -104,16 +240,16 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     return (
       scrollable:
           state.widget.scrollable ||
-          (axis?.scrollable ?? false) ||
+          (resolvedAxis?.scrollable ?? false) ||
           actions.any((action) => action.scrollable) ||
           _hasScrollableOverflow(state.context),
       fixedHeight:
           state.widget.fixedHeight ||
-          (axis?.fixedHeight ?? false) ||
+          (resolvedAxis?.fixedHeight ?? false) ||
           actions.any((action) => action.fixedHeight),
       fixedWidth:
           state.widget.fixedWidth ||
-          (axis?.fixedWidth ?? false) ||
+          (resolvedAxis?.fixedWidth ?? false) ||
           actions.any((action) => action.fixedWidth),
     );
   }
@@ -278,7 +414,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     return MouseRegion(
       onEnter: (event) {
         if (!target.mounted ||
-            !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+            !(StyleEditScope.maybeReadOf(target.context)?.value ?? false)) {
           return;
         }
         final initialPos = EditorSlotState._menuInitialPointerPosition;
@@ -292,7 +428,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       },
       onHover: (event) {
         if (!target.mounted ||
-            !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+            !(StyleEditScope.maybeReadOf(target.context)?.value ?? false)) {
           return;
         }
         final initialPos = EditorSlotState._menuInitialPointerPosition;
@@ -324,35 +460,23 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     required void Function(Object selection) onSelect,
     required bool interceptItemTap,
     List<EditorSlotAction>? actions,
+    ({
+      List<EditorSlotState> chain,
+      List<EditorSlotAction> extraActions,
+      Map<EditorSlotState, List<EditorSlotAction>> inlineActions,
+      List<(int, Object)> entries,
+    })?
+    precomputedAncestry,
   }) {
     if (!mounted) return const [];
-    final chain = editableChain;
-    final extraActions = [
-      for (final action in actions ?? EditorSlotAction.of(context))
-        if (action.enabled) action,
-    ];
-    final inlineActions = _inlineActionsByState(chain, extraActions);
-    final entries = <(int, Object)>[
-      if (chain.contains(this)) (chain.indexOf(this), this),
-    ];
-    context.visitAncestorElements((element) {
-      final inherited = element.widget;
-      if (inherited is EditorContextMenuEntry && inherited.enabled) {
-        entries.add((entries.length, inherited));
-      } else if (element is StatefulElement) {
-        final state = element.state;
-        if (state is EditorSlotState && chain.contains(state)) {
-          entries.add((entries.length, state));
-        }
-      }
-      return true;
-    });
+    final ancestry = precomputedAncestry ?? _collectMenuAncestry(actions);
+    final extraActions = ancestry.extraActions;
+    final inlineActions = ancestry.inlineActions;
+    final entries = ancestry.entries;
     final hasMenuActions = extraActions.any((action) => !action.inline);
-    final insertions = _insertionLevels(actions);
-    final behaviorTargets = _behaviorTargets(entries);
-    final dataTargets = _dataTargets(entries);
+    final hasInsertions = _hasInsertionLevels(actions);
     // Inline actions only render inside an editable entry, never on their own.
-    if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) {
+    if (entries.isEmpty && !hasMenuActions && !hasInsertions) {
       return const [];
     }
     final theme = Theme.of(hostContext);
@@ -366,6 +490,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
 
     Future<void> openBehaviorWizard() async {
       if (!mounted) return;
+      final behaviorTargets = _behaviorTargets(entries);
       await showComponentBehaviorWizard(
         context: context,
         targets: behaviorTargets,
@@ -375,6 +500,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
 
     Future<void> openDataWizard() async {
       if (!mounted) return;
+      final dataTargets = _dataTargets(entries);
       await showComponentDataWizard(
         context: context,
         targets: dataTargets,
@@ -382,11 +508,11 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       );
     }
 
-    final defaultInsertAction = insertions.isNotEmpty
+    final defaultInsertAction = hasInsertions
         ? openContextualAdd
         : openBehaviorWizard;
     return [
-      if (insertions.isNotEmpty || canEdit) ...[
+      if (hasInsertions || canEdit) ...[
         PopupMenuItem<Future<void> Function()>(
           height: 28,
           key: const ValueKey('style-menu-insert'),
@@ -400,7 +526,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                 : null,
             Row(
               children: [
-                if (insertions.isNotEmpty) ...[
+                if (hasInsertions) ...[
                   Expanded(
                     flex: 5,
                     child: Tooltip(
@@ -631,9 +757,29 @@ extension _EditorSlotMenuExtension on EditorSlotState {
           )
         else if (entry case final EditorSlotState state when state.mounted)
           () {
+            final stateEditing =
+                StyleEditScope.maybeReadOf(state.context)?.value ?? false;
+            final axisAction = state.widget.axisAction?.call();
+            final stateInlineActions =
+                inlineActions[state] ?? const <EditorSlotAction>[];
             final rowEnabled =
-                state.widget.onEdit != null ||
-                (inlineActions[state]?.isNotEmpty ?? false);
+                state.widget.onEdit != null || stateInlineActions.isNotEmpty;
+            final wrapActions = [
+              for (final action in stateInlineActions) ...action.wrapActions,
+            ];
+            final wrapChildrenActions = stateEditing
+                ? state.widget.wrapChildrenActions
+                : const <EditorSlotWrapAction>[];
+            final canEditWithAi = state._canEditWithAi;
+            final canExportContent = state._canExportContent;
+            final canConfigureAsComponent = state._canConfigureAsComponent;
+            final showMoreButton =
+                wrapActions.isNotEmpty ||
+                wrapChildrenActions.isNotEmpty ||
+                canEditWithAi ||
+                canExportContent ||
+                canConfigureAsComponent ||
+                (state.canEdit && hasExtractableTargetsInSlot(state));
             return PopupMenuItem<EditorSlotState>(
               height: 40,
               key: ValueKey('style-menu-${state.label}'),
@@ -668,8 +814,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                             () {
                               final indicators = _resolveSlotIndicators(
                                 state,
-                                inlineActions[state] ??
-                                    const <EditorSlotAction>[],
+                                stateInlineActions,
+                                axis: axisAction,
                               );
                               return _menuTitle(
                                 state.titleLabel,
@@ -681,7 +827,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                                 ),
                                 tooltip:
                                     state.widget.menuTooltip?.call() ??
-                                    state.widget.axisAction?.call().flowTooltip,
+                                    axisAction?.flowTooltip,
                                 tooltipKey: ValueKey(
                                   'style-menu-tooltip-${state.label}',
                                 ),
@@ -693,11 +839,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                               );
                             }(),
                             if ((state.widget.menuSubtitle?.call() ??
-                                    ((StyleEditScope.controllerOf(state.context)
-                                                    ?.value ??
-                                                false) &&
-                                            state.widget.axisAction != null
-                                        ? state.widget.axisAction!().zoneLabel
+                                    (stateEditing && axisAction != null
+                                        ? axisAction.zoneLabel
                                         : state.widget.menuType ??
                                               (state.widget.menuTitle == null
                                                   ? null
@@ -738,14 +881,12 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                           ],
                         ),
                       ),
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.axisAction != null) ...[
+                      if (stateEditing && axisAction != null) ...[
                         ZoneAxisButton(
                           key: ValueKey('style-menu-axis-${state.label}'),
                           action: LayoutAxisAction(
-                            zoneLabel: state.widget.axisAction!().zoneLabel,
-                            axis: state.widget.axisAction!().axis,
+                            zoneLabel: axisAction.zoneLabel,
+                            axis: axisAction.axis,
                             onToggle: () => onSelect(() async {
                               if (state.mounted) {
                                 state.widget.axisAction!().onToggle();
@@ -753,15 +894,14 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                             }),
                           ),
                         ),
-                        if (state.widget.axisAction!().onEditFlow
-                            case final editFlow?)
+                        if (axisAction.onEditFlow case final editFlow?)
                           IconButton(
                             key: ValueKey(
                               'style-menu-zone-flow-${state.label}',
                             ),
                             tooltip:
-                                state.widget.axisAction!().flowTooltip ??
-                                'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
+                                axisAction.flowTooltip ??
+                                'Taille et flux de la zone ${axisAction.zoneLabel}',
                             icon: const Icon(Icons.straighten),
                             style: _menuIconButtonStyle(hostContext),
                             onPressed: () => onSelect(() async {
@@ -774,9 +914,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                             }),
                           ),
                       ],
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state._canRename)
+                      if (stateEditing && state._canRename)
                         IconButton(
                           key: ValueKey('style-menu-rename-${state.label}'),
                           tooltip: 'Renommer',
@@ -788,9 +926,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                             }
                           }),
                         ),
-                      for (final action
-                          in inlineActions[state] ??
-                              const <EditorSlotAction>[]) ...[
+                      for (final action in stateInlineActions) ...[
                         if (action.showEdit)
                           IconButton(
                             key: ValueKey('style-menu-size-${action.label}'),
@@ -833,9 +969,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                             onPressed: () => onSelect(remove),
                           ),
                       ],
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.onRemoveChild != null &&
+                      if (state.widget.onRemoveChild != null &&
+                          stateEditing &&
                           !state._hasNestedEditableTarget)
                         IconButton(
                           key: ValueKey(
@@ -850,9 +985,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                           onPressed: () =>
                               onSelect(state.widget.onRemoveChild!),
                         ),
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.onAdd != null)
+                      if (stateEditing && state.widget.onAdd != null)
                         IconButton(
                           key: ValueKey('style-menu-add-${state.label}'),
                           tooltip: 'Ajouter un slot',
@@ -860,130 +993,16 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                           style: _menuIconButtonStyle(hostContext),
                           onPressed: () => onSelect(state.widget.onAdd!),
                         ),
-                      if ((
-                            [
-                              for (final action
-                                  in inlineActions[state] ??
-                                      const <EditorSlotAction>[])
-                                ...action.wrapActions,
-                            ],
-                            (StyleEditScope.controllerOf(state.context)
-                                        ?.value ??
-                                    false)
-                                ? state.widget.wrapChildrenActions
-                                : const <EditorSlotWrapAction>[],
-                            state.canEdit
-                                ? collectExtractableTargetsFromSlot(state)
-                                : const <ExtractableComponentTarget>[],
-                            state._canEditWithAi,
-                          )
-                          case (
-                            final wrapActions,
-                            final wrapChildrenActions,
-                            final extractableTargets,
-                            final canEditWithAi,
-                          )
-                          when wrapActions.isNotEmpty ||
-                              wrapChildrenActions.isNotEmpty ||
-                              extractableTargets.isNotEmpty ||
-                              canEditWithAi ||
-                              state._canExportContent ||
-                              state._canConfigureAsComponent)
-                        MenuAnchor(
-                          consumeOutsideTap: true,
-                          menuChildren: [
-                            if (state._canConfigureAsComponent)
-                              MenuItemButton(
-                                key: ValueKey(
-                                  'style-menu-configure-as-${state.label}',
-                                ),
-                                leadingIcon: const Icon(
-                                  Icons.settings_suggest_outlined,
-                                ),
-                                onPressed: () =>
-                                    onSelect(state._openConfigureAsDialog),
-                                child: const Text('Configure as...'),
-                              ),
-                            if (state._canExportContent)
-                              MenuItemButton(
-                                key: ValueKey(
-                                  'style-menu-export-${state.label}',
-                                ),
-                                leadingIcon: const Icon(Icons.upload),
-                                onPressed: () => onSelect(state._exportContent),
-                                child: const Text('Exporter le contenu...'),
-                              ),
-                            if (wrapActions.isNotEmpty)
-                              SubmenuButton(
-                                leadingIcon: const Icon(Icons.wrap_text),
-                                menuChildren: [
-                                  for (final action in wrapActions)
-                                    MenuItemButton(
-                                      leadingIcon: Icon(action.icon),
-                                      onPressed: () =>
-                                          onSelect(action.onSelected),
-                                      child: Text(action.label),
-                                    ),
-                                ],
-                                child: const Text('Envelopper dans…'),
-                              ),
-                            if (wrapChildrenActions.isNotEmpty)
-                              SubmenuButton(
-                                leadingIcon: const Icon(Icons.wrap_text),
-                                menuChildren: [
-                                  for (final action in wrapChildrenActions)
-                                    MenuItemButton(
-                                      leadingIcon: Icon(action.icon),
-                                      onPressed: () =>
-                                          onSelect(action.onSelected),
-                                      child: Text(action.label),
-                                    ),
-                                ],
-                                child: const Text(
-                                  'Envelopper les enfants dans…',
-                                ),
-                              ),
-                            if (extractableTargets.isNotEmpty)
-                              MenuItemButton(
-                                key: ValueKey(
-                                  'style-menu-extract-super-values-${state.label}',
-                                ),
-                                leadingIcon: const Icon(Icons.data_object),
-                                onPressed: () => onSelect(() async {
-                                  if (!state.mounted) return;
-                                  final latest =
-                                      collectExtractableTargetsFromSlot(state);
-                                  if (latest.isEmpty) return;
-                                  await SuperValueJsonExtractDialog.show(
-                                    state.context,
-                                    targets: latest,
-                                    sourceLabel: state.titleLabel,
-                                    target: state.context,
-                                    rootSlot: state,
-                                  );
-                                }),
-                                child: const Text('Extraire & lier en JSON…'),
-                              ),
-                            if (canEditWithAi)
-                              MenuItemButton(
-                                key: ValueKey('style-menu-ai-${state.label}'),
-                                leadingIcon: const Icon(
-                                  Icons.auto_awesome_outlined,
-                                ),
-                                onPressed: () =>
-                                    onSelect(state._openAiWithScope),
-                                child: const Text('Modifier avec l’IA…'),
-                              ),
-                          ],
-                          builder: (context, controller, child) => IconButton(
-                            key: ValueKey('style-menu-more-${state.label}'),
-                            tooltip: 'Autres options',
-                            icon: const Icon(Icons.more_vert),
-                            style: _menuIconButtonStyle(hostContext),
-                            onPressed: () => controller.isOpen
-                                ? controller.close()
-                                : controller.open(),
-                          ),
+                      if (showMoreButton)
+                        _LazySlotMoreMenuButton(
+                          slot: state,
+                          wrapActions: wrapActions,
+                          wrapChildrenActions: wrapChildrenActions,
+                          canEditWithAi: canEditWithAi,
+                          canExportContent: canExportContent,
+                          canConfigureAsComponent: canConfigureAsComponent,
+                          buttonStyle: _menuIconButtonStyle(hostContext),
+                          onSelect: onSelect,
                         ),
                     ],
                   ),
@@ -1002,7 +1021,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     bool selectTarget = true,
   }) async {
     if (!mounted ||
-        !(StyleEditScope.controllerOf(context)?.value ?? true) ||
+        !(StyleEditScope.maybeReadOf(context)?.value ?? true) ||
         EditorZoom.suppressContextMenu ||
         (EditorZoomScope.controllerOf(context)?.suppressContextMenu ?? false)) {
       return;
@@ -1012,7 +1031,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
             EditorSlotState._pinnedUpdatedThisTurn)) {
       return;
     }
-    final chain = editableChain;
+    final ancestry = _collectMenuAncestry(actions);
+    final chain = ancestry.chain;
     final origin = targetContext ?? context;
     final zoomController = EditorZoomScope.controllerOf(context);
     if (selectTarget) {
@@ -1020,75 +1040,54 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       try {
         final callbacks = <VoidCallback>[];
         if (origin is Element) {
-          void collectElement(Element element) {
+          final chainSet = chain.toSet();
+          final slotStates = <EditorSlotState>[];
+          var foundSlotBoundary = false;
+
+          void visitElement(Element element) {
             if (element is StatefulElement) {
               final state = element.state;
-              if (state is EditorSlotState &&
-                  chain.contains(state) &&
-                  (StyleEditScope.controllerOf(state.context)?.value ??
-                      false) &&
-                  state.widget.onContextMenu != null) {
-                final onContextMenu = state.widget.onContextMenu!;
-                callbacks.add(() => onContextMenu(globalPosition));
+              if (state is EditorSlotState && chainSet.contains(state)) {
+                if (!foundSlotBoundary) {
+                  if (state.widget.onContextMenu != null) {
+                    foundSlotBoundary = true;
+                  } else {
+                    slotStates.add(state);
+                  }
+                }
+                if ((StyleEditScope.maybeReadOf(state.context)?.value ??
+                        false) &&
+                    state.widget.onContextMenu != null) {
+                  final onContextMenu = state.widget.onContextMenu!;
+                  callbacks.add(() => onContextMenu(globalPosition));
+                }
               }
             } else {
               final widget = element.widget;
+              if (!foundSlotBoundary &&
+                  ((widget is EditorSlotAction &&
+                          widget.enabled &&
+                          widget.onSelect != null) ||
+                      widget is LayoutSelectionScope)) {
+                foundSlotBoundary = true;
+              }
               if (widget is EditorSlotAction &&
                   widget.enabled &&
                   widget.onSelect != null &&
-                  (StyleEditScope.controllerOf(element)?.value ?? false)) {
+                  (StyleEditScope.maybeReadOf(element)?.value ?? false)) {
                 callbacks.add(widget.onSelect!);
               }
             }
           }
 
-          collectElement(origin);
+          visitElement(origin);
           origin.visitAncestorElements((element) {
-            collectElement(element);
+            visitElement(element);
             return true;
           });
-        } else {
-          for (final state in chain) {
-            if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
-                state.widget.onContextMenu != null) {
-              final onContextMenu = state.widget.onContextMenu!;
-              callbacks.add(() => onContextMenu(globalPosition));
-            }
+          for (final callback in callbacks.reversed) {
+            callback();
           }
-        }
-        for (final callback in callbacks.reversed) {
-          callback();
-        }
-        if (origin is Element) {
-          final slotStates = <EditorSlotState>[];
-          var foundSlotBoundary = false;
-          void collectLeaf(Element element) {
-            if (foundSlotBoundary) return;
-            if (element is StatefulElement) {
-              final state = element.state;
-              if (state is EditorSlotState && chain.contains(state)) {
-                if (state.widget.onContextMenu != null) {
-                  foundSlotBoundary = true;
-                  return;
-                }
-                slotStates.add(state);
-              }
-            } else {
-              final widget = element.widget;
-              if ((widget is EditorSlotAction &&
-                      widget.enabled &&
-                      widget.onSelect != null) ||
-                  widget is LayoutSelectionScope) {
-                foundSlotBoundary = true;
-              }
-            }
-          }
-
-          collectLeaf(origin);
-          origin.visitAncestorElements((element) {
-            collectLeaf(element);
-            return !foundSlotBoundary;
-          });
           if (slotStates.length > 1) {
             final deepestLeaf = slotStates.first;
             final leaves = [
@@ -1141,6 +1140,17 @@ extension _EditorSlotMenuExtension on EditorSlotState {
               });
             }
           }
+        } else {
+          for (final state in chain) {
+            if ((StyleEditScope.maybeReadOf(state.context)?.value ?? false) &&
+                state.widget.onContextMenu != null) {
+              final onContextMenu = state.widget.onContextMenu!;
+              callbacks.add(() => onContextMenu(globalPosition));
+            }
+          }
+          for (final callback in callbacks.reversed) {
+            callback();
+          }
         }
       } finally {
         zoomController?.endRightClickSelection();
@@ -1171,6 +1181,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       },
       interceptItemTap: false,
       actions: actions,
+      precomputedAncestry: ancestry,
     );
     if (items.isEmpty) return;
     final overlay = overlayState.context.findRenderObject()! as RenderBox;
@@ -1282,7 +1293,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     List<EditorSlotAction>? actions,
     BuildContext? targetContext,
   }) async {
-    if (!mounted || !(StyleEditScope.controllerOf(context)?.value ?? true)) {
+    if (!mounted || !(StyleEditScope.maybeReadOf(context)?.value ?? true)) {
       return;
     }
     final navigator = Navigator.of(context);

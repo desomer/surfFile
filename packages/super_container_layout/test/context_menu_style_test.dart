@@ -1350,4 +1350,83 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    '3-dot MenuAnchor submenu and Data wizard defer target collection until opened',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: Center(
+                child: SuperLayout(
+                  id: 'lazy-layout',
+                  label: 'Disposition',
+                  config: const SuperLayoutConfig(
+                    north: false,
+                    south: false,
+                    west: false,
+                    east: false,
+                    placements: {
+                      SuperLayoutZone.center: ['val-a', 'val-b'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'val-a',
+                      label: 'Valeur A',
+                      builder: (_) => const SuperValue(
+                        id: 'val-a',
+                        config: SuperValueConfig(initialText: 'Alpha'),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'val-b',
+                      label: 'Valeur B',
+                      builder: (_) => const SuperValue(
+                        id: 'val-b',
+                        config: SuperValueConfig(initialText: 'Beta'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Alpha'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      // 3-dot button is shown, while its MenuItemButtons are not built yet.
+      final moreCentre = find.byKey(const ValueKey('style-menu-more-Centre'));
+      expect(moreCentre, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('style-menu-extract-super-values-Centre')),
+        findsNothing,
+      );
+
+      // Opening the 3-dot submenu builds the items immediately on the same frame.
+      await tester.tap(moreCentre);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('style-menu-extract-super-values-Centre')),
+        findsOneWidget,
+      );
+
+      // Close submenu + open Data wizard lazily.
+      await tester.tap(moreCentre);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('data-wizard-dialog')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

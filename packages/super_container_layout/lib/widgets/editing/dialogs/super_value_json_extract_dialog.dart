@@ -22,6 +22,7 @@ export 'json_extract/extract_contracts.dart'
 export 'json_extract/extract_detection.dart'
     show
         computeBlockSimilarity,
+        hasExtractableTargetsInSlot,
         collectExtractableTargetsFromSlot,
         detectRecurringBlockGroups;
 

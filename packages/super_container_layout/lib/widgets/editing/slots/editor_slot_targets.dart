@@ -152,54 +152,168 @@ extension _EditorSlotTargetsExtension on EditorSlotState {
   List<EditorSlotState> _computeEditableChain() {
     final chain = <EditorSlotState>[];
     final identities = <Object>{};
-    final registry = SuperApp.maybeOf(context)?.registry;
-    EditorSlotState? state = this;
-    while (state != null) {
-      if (SuperApp.maybeOf(state.context)?.registry != registry) break;
+    final registry = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app
+        .registry;
+    void record(EditorSlotState state) {
       final identity = state.widget.identity;
       if (state.canEdit && (identity == null || identities.add(identity))) {
         chain.add(state);
       }
-      state = state.context.findAncestorStateOfType<EditorSlotState>();
     }
-    return chain;
-  }
 
-  Map<EditorSlotState, List<EditorSlotAction>> _inlineActionsByState(
-    List<EditorSlotState> chain,
-    List<EditorSlotAction> provided,
-  ) {
-    final result = <EditorSlotState, List<EditorSlotAction>>{};
-    if (chain.isEmpty) return result;
-    final ancestors = <EditorSlotAction>{};
+    record(this);
     context.visitAncestorElements((element) {
-      final widget = element.widget;
-      if (widget is EditorSlotAction && widget.inline) ancestors.add(widget);
-      return true;
-    });
-    final below = [
-      for (final action in provided)
-        if (action.inline && !ancestors.contains(action)) action,
-    ];
-    if (below.isNotEmpty) result[chain.first] = below;
-    EditorSlotState? current = chain.contains(this) ? this : null;
-    final claimed = <EditorSlotState>{if (below.isNotEmpty) chain.first};
-    context.visitAncestorElements((element) {
-      final inherited = element.widget;
-      if (element is StatefulElement) {
-        final state = element.state;
-        if (state is EditorSlotState && chain.contains(state)) {
-          current = state;
-        }
-      } else if (inherited is EditorSlotAction &&
-          inherited.enabled &&
-          inherited.inline) {
-        final owner = current ?? chain.first;
-        if (claimed.add(owner)) (result[owner] ??= []).add(inherited);
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final state = element.state as EditorSlotState;
+        final stateRegistry = state.context
+            .getInheritedWidgetOfExactType<SuperAppScope>()
+            ?.app
+            .registry;
+        if (!identical(stateRegistry, registry)) return false;
+        record(state);
       }
       return true;
     });
-    return result;
+    return chain;
+  }
+
+  ({
+    List<EditorSlotState> chain,
+    List<EditorSlotAction> extraActions,
+    Map<EditorSlotState, List<EditorSlotAction>> inlineActions,
+    List<(int, Object)> entries,
+  })
+  _collectMenuAncestry(List<EditorSlotAction>? providedActions) {
+    final chain = <EditorSlotState>[];
+    final chainSet = <EditorSlotState>{};
+    final identities = <Object>{};
+    final registry = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app
+        .registry;
+    final inlineAncestors = <EditorSlotAction>{};
+    final collectedExtraActions = <EditorSlotAction>[];
+    var hasExtraInline = false;
+    final rawAncestors = <Object>[];
+
+    void recordSlot(EditorSlotState state) {
+      final identity = state.widget.identity;
+      if (state.canEdit && (identity == null || identities.add(identity))) {
+        chain.add(state);
+        chainSet.add(state);
+      }
+    }
+
+    recordSlot(this);
+    var crossedRegistry = false;
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is EditorSlotAction) {
+        if (widget.inline) inlineAncestors.add(widget);
+        if (widget.enabled) {
+          if (providedActions == null && (!widget.inline || !hasExtraInline)) {
+            collectedExtraActions.add(widget);
+          }
+          if (widget.inline) hasExtraInline = true;
+          rawAncestors.add(widget);
+        }
+      } else if (widget is EditorContextMenuEntry && widget.enabled) {
+        rawAncestors.add(widget);
+      } else if (!crossedRegistry &&
+          element is StatefulElement &&
+          element.state is EditorSlotState) {
+        final state = element.state as EditorSlotState;
+        final stateRegistry = state.context
+            .getInheritedWidgetOfExactType<SuperAppScope>()
+            ?.app
+            .registry;
+        if (!identical(stateRegistry, registry)) {
+          crossedRegistry = true;
+        } else {
+          recordSlot(state);
+          rawAncestors.add(state);
+        }
+      }
+      return true;
+    });
+
+    final extraActions = providedActions != null
+        ? [
+            for (final action in providedActions)
+              if (action.enabled) action,
+          ]
+        : collectedExtraActions;
+
+    final inlineActions = <EditorSlotState, List<EditorSlotAction>>{};
+    final entries = <(int, Object)>[
+      if (chainSet.contains(this)) (chain.indexOf(this), this),
+    ];
+
+    if (chain.isNotEmpty) {
+      final below = [
+        for (final action in extraActions)
+          if (action.inline && !inlineAncestors.contains(action)) action,
+      ];
+      if (below.isNotEmpty) inlineActions[chain.first] = below;
+      EditorSlotState? current = chainSet.contains(this) ? this : null;
+      final claimed = <EditorSlotState>{if (below.isNotEmpty) chain.first};
+      for (final node in rawAncestors) {
+        if (node is EditorSlotState) {
+          if (chainSet.contains(node)) {
+            current = node;
+            entries.add((entries.length, node));
+          }
+        } else if (node is EditorContextMenuEntry) {
+          entries.add((entries.length, node));
+        } else if (node is EditorSlotAction && node.inline) {
+          final owner = current ?? chain.first;
+          if (claimed.add(owner)) (inlineActions[owner] ??= []).add(node);
+        }
+      }
+    } else {
+      for (final node in rawAncestors) {
+        if (node is EditorContextMenuEntry) {
+          entries.add((entries.length, node));
+        }
+      }
+    }
+
+    return (
+      chain: chain,
+      extraActions: extraActions,
+      inlineActions: inlineActions,
+      entries: entries,
+    );
+  }
+
+  /// Indique rapidement si au moins un niveau d'ajout contextuel existe sans
+  /// construire les aperçus de placement de tous les ancêtres.
+  bool _hasInsertionLevels(List<EditorSlotAction>? provided) {
+    if (provided != null) {
+      for (final action in provided) {
+        if (action.enabled && action.insertion != null) return true;
+      }
+    }
+    var found = false;
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is EditorSlotAction &&
+          widget.enabled &&
+          widget.insertion != null) {
+        found = true;
+        return false;
+      }
+      if (widget is EditorAddZones && widget.enabled) {
+        if (widget.zones().isNotEmpty) {
+          found = true;
+          return false;
+        }
+      }
+      return true;
+    });
+    return found;
   }
 
   /// Contextual addition levels, from the clicked element to its outermost

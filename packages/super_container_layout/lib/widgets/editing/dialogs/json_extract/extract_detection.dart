@@ -135,6 +135,62 @@ double computeBlockSimilarity(
   }
 }
 
+/// Retourne `true` dès qu'au moins un composant extractible (`SuperValue`,
+/// `SuperAction` ou `EditableSurface` avec propriétés extractibles) est trouvé
+/// sur [slot] ou dans son sous-arbre, avec arrêt précoce sans construire la liste complète.
+bool hasExtractableTargetsInSlot(EditorSlotState slot) {
+  if (!slot.mounted) return false;
+  var found = false;
+
+  bool hasProperties(JsonExtractableState state) {
+    if (!state.isExtractableMounted) return false;
+    return state
+        .buildExtractableTarget(
+          sanitizeJsonAttributeKey(state.preferredExtractableKey),
+        )
+        .properties
+        .isNotEmpty;
+  }
+
+  JsonExtractableState? direct;
+  slot.context.visitAncestorElements((element) {
+    if (element is StatefulElement && element.state is JsonExtractableState) {
+      final candidate = element.state as JsonExtractableState;
+      if (candidate.isExtractableMounted &&
+          identical(candidate.extractableSurface, slot)) {
+        direct = candidate;
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (direct != null) {
+    if (hasProperties(direct!)) return true;
+    if (direct!.extractableKind != ExtractableComponentKind.surface) {
+      return false;
+    }
+  }
+
+  void visit(Element element) {
+    if (found) return;
+    if (element is StatefulElement && element.state is JsonExtractableState) {
+      final state = element.state as JsonExtractableState;
+      if (hasProperties(state)) {
+        found = true;
+        return;
+      }
+      if (state.extractableKind != ExtractableComponentKind.surface) {
+        return;
+      }
+    }
+    element.visitChildren(visit);
+  }
+
+  slot.context.visitChildElements(visit);
+  return found;
+}
+
 /// Collects all extractable `SuperValue` and `SuperAction` components owned by
 /// [slot] or mounted inside [slot]'s subtree.
 List<ExtractableComponentTarget> collectExtractableTargetsFromSlot(

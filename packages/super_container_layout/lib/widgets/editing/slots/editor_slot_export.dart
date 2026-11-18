@@ -46,11 +46,18 @@ extension _EditorSlotExportExtension on EditorSlotState {
   }
 
   bool get _canEditWithAi =>
-      canEdit && AppearanceScope.controllerOf(context) != null;
+      canEdit &&
+      context.getInheritedWidgetOfExactType<AppearanceScope>()?.notifier !=
+          null;
 
   bool get _canExportContent {
-    final registry = SuperApp.maybeOf(context)?.registry;
-    final appearance = AppearanceScope.controllerOf(context);
+    final registry = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app
+        .registry;
+    final appearance = context
+        .getInheritedWidgetOfExactType<AppearanceScope>()
+        ?.notifier;
     final config =
         appearance?.value.components[effectiveComponentId] ??
         registry?.componentConfigById[effectiveComponentId]?.value;
@@ -67,7 +74,8 @@ extension _EditorSlotExportExtension on EditorSlotState {
       widget.zoneId == null &&
       widget.eventComponentType != 'renderer' &&
       widget.identity is! AppearanceSlot &&
-      SuperApp.maybeOf(context)?.registry != null;
+      context.getInheritedWidgetOfExactType<SuperAppScope>()?.app.registry !=
+          null;
 
   Future<void> _openConfigureAsDialog() async {
     if (!mounted) return;

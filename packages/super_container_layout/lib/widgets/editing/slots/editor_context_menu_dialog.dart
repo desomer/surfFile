@@ -445,7 +445,7 @@ class _EditorContextMenuDialogState<T>
         position: _position,
         dragged: _dragged,
         bannerLocal: widget.bannerLocal,
-        avoidRect: _initialAvoidRect ?? widget.avoidRectResolver?.call(),
+        avoidRect: _initialAvoidRect,
         menuConstraints: widget.constraints,
       );
     }
