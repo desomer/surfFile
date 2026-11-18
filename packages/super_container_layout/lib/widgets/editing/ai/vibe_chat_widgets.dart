@@ -581,6 +581,7 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
             valueListenable: snapshot,
             builder: (context, current, _) {
               final streamedMessage = current?.message;
+              final activeToolStatus = current?.activeToolStatus;
               if (current == null || streamedMessage == null) {
                 return Container(
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -603,7 +604,7 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          'Génération en cours…',
+                          activeToolStatus ?? 'Génération en cours…',
                           style: TextStyle(
                             fontSize: 13,
                             color: scheme.onSurfaceVariant,
@@ -674,6 +675,30 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                           Flexible(
                             child: Text(
                               repoLabel,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (activeToolStatus != null ||
+                        (current.isMessageComplete &&
+                            current.hasToolCallsObject)) ...[
+                      if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              activeToolStatus ??
+                                  'Inspection de l’application en cours…',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: scheme.onSurfaceVariant,

@@ -17,25 +17,46 @@ abstract final class VibePromptBuilder {
   /// Directives strictes communes injectées lorsque le mode « Reproduire à l'identique » est actif.
   static const String reproduceExactCommonDirective = '''
 MODE « REPRODUIRE À L’IDENTIQUE » ACTIF (CONSIGNE ESTHÉTIQUE EXPLICITE PRIORITAIRE) :
-- DÉROGATION AU DESIGN SYSTEM GÉNÉRIQUE : n’utilise PAS les jetons "theme:*" ni les valeurs par défaut du Design System (rayons 12/16, espacements 4/8px génériques). Reproduis AU PIXEL ET À LA COULEUR #HEX PRÈS la source fournie (.md Blueprint, HTML/CSS ou capture) :
-  - Applique les valeurs exactes "mode", "accent", "styles['background'].color", couleurs #RRGGBB / #AARRGGBB (fonds, textes, bordures, ombres, boutons et hover), rayons (radius / radii), bordures (borderWidth / borderWidths / borderColor / borderLine), ombres (shadow), paddingInsets, marginInsets, spacing, fontSize, fontWeight, lineHeight et textAlign.
-- QUESTIONNEMENT DÉSACTIVÉ : ne pose aucune question ("askUser": null obligatoire).
-- MISE EN PAGE & PROPORTIONS SANS PROPRIÉTÉS INVENTÉES :
-  - N’invente JAMAIS "colTracks" ni de CSS brut : traduis les lignes et colonnes via "zoneAxes" ("row"/"column") + "slotSizeConstraints" ("preferredWidth", "preferredHeight", "maxWidth", "minHeight", "fitContent") ou via "positioning": "grid" ("columns", "rowHeight", "gap", "items").
-  - Si la page source est plus haute que le viewport (page web scrollable), configure le défilement vertical sans compresser ni étirer les sections ("root.bodyMode": "singleChildScrollView", ou "mainLayout.zoneFlows.center" avec "expandSlots": false, "scrollable": true, "showScrollbar": true, "autoSides": []).
-  - Conserve le slot hôte "scaffold:body" dans "root.placements.body" et rattache tes conteneurs dans "mainLayout" (ou dans le scope ciblé).
-- IMAGES, LOGOS & SVGs FIDÈLES :
-  - Copie les URLs EXACTES (avec tous leurs paramètres) ou le code "<svg...>" inline de la source dans "styles[<cardId>].fill.imageUrl". Ne remplace jamais une image/URL de la source par une icône Material ou un texte placeholder.
-  - Utilise "fill.imageFit": "contain" pour les logos/SVGs/visuels détourés et "cover" pour les photos/bannières.
-  - Pour une Card purement visuelle sans enfant, déclare "color": "#00000000" (sauf fond explicite), "components[<cardId>]": {"type": "native", "regions": {"child": true}, "placements": {}} (JAMAIS "child": false) et dimensionne-la dans le "slotSizeConstraints[<cardId>]" de son parent.
-  - Lorsque des textes ou contrôles se superposent sur une image/surface stylisée, utilise "registry:IterableContent" (même ID dans "styles" et dans "components" avec "type": "layout").''';
+Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la source fournie (fichier Blueprint GenUI .md, HTML/CSS ou capture), sans poser aucune question ("askUser": null obligatoire).
+
+1. DÉROGATION EXPLICITE AU DESIGN SYSTEM GÉNÉRIQUE :
+- N’utilise PAS les tokens "theme:*" ni les valeurs par défaut du Design System (rayons 12/16, espacements 4/8px génériques) : applique les valeurs EXACTES mesurées dans la source (.md) :
+  - "mode", "accent" et "styles['background'].color" de la Section 1.
+  - Toutes les couleurs #RRGGBB / #AARRGGBB exactes (fonds, textes, bordures, ombres, boutons et hover) issues des attributs data-surface, data-text, data-action et des règles CSS (Section 4).
+  - Les rayons (radius / radii), bordures (borderWidth / borderWidths / borderColor / borderLine), ombres (shadow), paddingInsets, marginInsets, spacing, fontSize, fontWeight, lineHeight et textAlign exacts.
+
+2. ARCHITECTURE & DÉFILEMENT DE LA PAGE :
+- Conserve le slot hôte "scaffold:body" dans "root.placements.body" et configure "components['mainLayout']" (ou le conteneur du scope ciblé).
+- Si la page de la source est plus haute que le viewport (ex: page web scrollable), configure le corps pour scroller verticalement sans compresser ni étirer les sections :
+  - Utilise soit "root.bodyMode": "singleChildScrollView", soit "mainLayout.zoneFlows.center": { "expandSlots": false, "scrollable": true, "showScrollbar": true, "crossAxisAlignment": "stretch" } avec "autoSides": [] sur tout layout contenant une zone scrollable.
+- Si la Section 1 détecte des barres fixes (appBar / north, west, east, south / bottomNavigationBar), place-les dans les zones correspondantes de "root" ou "mainLayout" avec les dimensions exactes (northSize, westSize, eastSize, southSize) et configure les coins (nw, ne, sw, se) en "row" ou "column" (jamais "none" à vide).
+- Respecte les conteneurs centrés à largeur bornée du CSS (ex: max-width) via "slotSizeConstraints.<id>.maxWidth" (ex: "1232px") et "crossAxisAlignment": "center" sur leur zone parente.
+
+3. MISE EN PAGE, FLEX & GRILLES (SANS PROPRIÉTÉS INVENTÉES) :
+- Traduis chaque data-layout (axis:row / axis:column) via "zoneAxes" et "zoneFlows" ("mainAxisAlignment", "crossAxisAlignment", "spacing", "paddingInsets", "expandSlots": false quand fitContent:true).
+- N’invente JAMAIS la propriété "colTracks" ni de CSS brut :
+  - Pour des colonnes de largeurs inégales ou fixes (ex: 585px ou 45%/55%), utilise un "layout" en "zoneAxes": { "center": "row" } avec "slotSizeConstraints.<slotId>" ("preferredWidth" en "px" ou "%", "percentBasis": "zone", "fitContent": true/false).
+  - Pour une grille multi-colonnes uniforme (ex: mosaïque de logos, cartes produits, footer 4 colonnes), utilise soit "positioning": "grid" avec "grid": { "columns": 12..48, "rowHeight": ..., "gap": ..., "items": { ... } }, soit des lignes "row" imbriquées.
+- Lorsque data-ui vaut "iterableContent(card+layout)" ou qu’une surface stylisée contient plusieurs enfants, privilégie "registry:IterableContent" (même ID dans "styles" et dans "components" avec "type": "layout") pour éviter d’empiler Card + Layout inutilement.
+
+4. IMAGES, LOGOS & SVGs (SECTION 2) — STRICTEMENT FIDÈLES :
+- Pour CHAQUE image (img, background-image) ou <svg> listé en Section 2 et visible dans la structure de la page :
+  - Copie l’URL EXACTE au caractère près (avec tous ses paramètres ?width=...&format=...&fit=...) ou le code "<svg...>" inline dans "styles[<cardId>].fill.imageUrl". Ne remplace jamais une URL d’image de la Section 2 par une icône Material ou un texte placeholder.
+  - Renseigne "fill.imageFit": "contain" pour les logos, icônes SVG et visuels détourés, ou "cover" pour les photos/bannières.
+  - Fixe les dimensions exactes [w, h] de la Section 2 dans le "slotSizeConstraints[<cardId>]" de son conteneur parent ("preferredWidth": "<w>px", "preferredHeight": "<h>px", "fitContent": true).
+  - Si la carte image n’a pas de composant enfant, laisse "color": "#00000000" (sauf fond explicite dans le .md) et déclare dans "components[<cardId>]" : { "type": "native", "regions": { "child": true }, "placements": {} } (ne mets JAMAIS "child": false).
+  - Si des textes/boutons sont superposés sur une image de fond, utilise un "registry:IterableContent" avec "fill.imageUrl" dans "styles[<id>]" et les enfants dans "components[<id>].placements".
+
+5. TEXTES, BOUTONS & RÈGLES GENUI STRICTES :
+- Reproduis tous les textes exacts du DOM (Section 3) avec "type": "value" (mode "display" par défaut, "input" pour les champs de saisie), et "type": "action" pour les boutons/liens (variant, backgroundColor, color, radius, horizontalPadding, verticalPadding et states.hover d’après la Section 4 CSS).
+- Respecte toutes les contraintes du moteur : JSON strict valide, ordre Top-Down ("styles" puis "components" parent -> enfants puis "usages"), "slotLabels" non vide sur le parent pour chaque nouveau composant, et "usages" renseigné pour chaque composant sans binding.''';
 
   /// Consigne de planification automatique en lots (Phase 1 du mode « Reproduire à l'identique »).
   static const String reproduceExactPlanningDirective = '''
 PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
 - Avant de générer des composants "vibe", découpe la reproduction complète de la source en un plan ordonné de lots cohérents et autonomes afin de ne jamais dépasser la limite de sortie JSON ni dégrader la précision :
   - Lot 1 : Thème global ("mode", "accent", "styles['background']"), architecture de scroll/navigation, en-tête (header) et section Hero.
-  - Lots intermédiaires : 1 à 2 sections visuelles, grilles de logos/cartes ou blocs fonctionnels par lot (avec toutes leurs URLs exactes).
+  - Lots intermédiaires : 1 à x sections visuelles, blocs fonctionnels par lot (avec toutes leurs URLs exactes).
   - Dernier lot : Pied de page (footer), bandeaux finaux et finitions.
   - (Si la page source est courte/simple, un plan à 1 seul lot suffit.)
 - Renvoie UNIQUEMENT un objet JSON de la forme :
@@ -83,6 +104,7 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
     required AppearanceCodec codec,
     required VibeChatScope? scope,
     Iterable<String>? instantiatedComponentIds,
+    List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
     bool reproduceExactMode = false,
   }) {
@@ -95,6 +117,10 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
     final exactSection = reproduceExactMode
         ? '$reproduceExactCommonDirective\n\n$reproduceExactPlanningDirective'
         : null;
+    final mountedHint = mountedSlotSummaries.isEmpty
+        ? null
+        : 'Slots montés actuellement à l’écran (utilisables avec get_component_geometry / capture_screenshot) : '
+              '${jsonEncode(mountedSlotSummaries)}.';
 
     if (scope != null) {
       final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
@@ -111,6 +137,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
 - Ne modifie AUCUN composant situé au-dessus ou en dehors du conteneur parent ($effectiveParent).
 - Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
 - Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.''',
+        ?mountedHint,
         ?repositoriesSection,
         'ÉTAT DU SCOPE CIBLÉ (JSON) :\n${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
         'CONVERSATION :\n$conversation',
@@ -128,6 +155,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les modifications à ces composants ou aux pages déclarées ; '
             'une configuration sauvegardée mais isolée ne suffit pas.',
+      ?mountedHint,
       ?repositoriesSection,
       'ÉTAT ACTUEL (JSON) :\n$current',
       'CONVERSATION :\n$conversation',
@@ -144,6 +172,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     required VibeChatScope? scope,
     List<VibeChatAttachment> sourceAttachments = const [],
     Iterable<String>? instantiatedComponentIds,
+    List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
   }) {
     final trimmedRepositories = repositoriesContext?.trim() ?? '';
@@ -152,6 +181,9 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
         : (trimmedRepositories.startsWith('REPOSITORIES DISPONIBLES')
               ? trimmedRepositories
               : 'REPOSITORIES DISPONIBLES (JSON) :\n$trimmedRepositories');
+    final mountedHint = mountedSlotSummaries.isEmpty
+        ? null
+        : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
     final lotDirective = '''
 PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
 ${plan.formatLotContextPrompt(lotIndex)}
@@ -182,6 +214,7 @@ RÈGLES D’EXÉCUTION DU LOT :
         lotDirective,
         '''RESTRICTION STRICTE DE SCOPE :
 Périmètre modifiable autorisé : "${scope.canonicalComponentId}" et son parent ($effectiveParent).''',
+        ?mountedHint,
         ?repositoriesSection,
         'ÉTAT ACTUEL DU SCOPE APRÈS LES LOTS PRÉCÉDENTS (JSON) :\n'
             '${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
@@ -199,6 +232,7 @@ Périmètre modifiable autorisé : "${scope.canonicalComponentId}" et son parent
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les nouvelles sections à ces conteneurs existants.',
+      ?mountedHint,
       ?repositoriesSection,
       'ÉTAT ACTUEL DE L’ÉCRAN APRÈS LES LOTS PRÉCÉDENTS (JSON) :\n$current',
       sourceSection,

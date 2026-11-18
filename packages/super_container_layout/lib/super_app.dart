@@ -27,6 +27,7 @@ import 'models/registry.dart';
 
 import 'services/appearance/appearance_store.dart';
 import 'services/events/super_event_bus.dart';
+import 'services/inspection/vibe_mounted_slot_index.dart';
 import 'services/pages/editor_page_router.dart';
 import 'services/repositories/json_repository_store.dart';
 import 'services/repositories/json_repository_scope.dart';
@@ -130,6 +131,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   final _styleEditMode = ValueNotifier(false);
   final _appearanceToolbarPosition = ValueNotifier<Offset?>(null);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
+  final _appRootBoundaryKey = GlobalKey();
   bool _loading = true;
   bool _pagesScheduled = false;
   String? _loadError;
@@ -140,6 +142,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VibeMountedSlotIndex.instance.registerAppRoot(_appRootBoundaryKey);
     _checkPageRouting();
     _repositories =
         widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
@@ -335,6 +338,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    VibeMountedSlotIndex.instance.unregisterAppRoot(_appRootBoundaryKey);
     WidgetsBinding.instance.removeObserver(this);
     widget.registry?.unbindAppearance();
     _editorHistory.dispose();
@@ -407,7 +411,10 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       builder: (context, child) => MaterialCompatibilityBridge(
         child: _buildShell(
           context,
-          _buildContent(child!),
+          RepaintBoundary(
+            key: _appRootBoundaryKey,
+            child: _buildContent(child!),
+          ),
           value,
           router.routerDelegate.navigatorKey,
         ),

@@ -23,6 +23,7 @@ class VibeStreamSnapshot {
     this.hasVibeObject = false,
     this.hasAskUserObject = false,
     this.hasPlanObject = false,
+    this.hasToolCallsObject = false,
     this.hasRepositoriesObject = false,
     this.estimatedComponentCount = 0,
     this.receivedChars = 0,
@@ -32,6 +33,7 @@ class VibeStreamSnapshot {
     this.repositoriesRevision = 0,
     this.activeSection,
     this.activeEntryKey,
+    this.activeToolStatus,
   });
 
   /// Instantané initial vide avant réception de tout fragment.
@@ -58,6 +60,11 @@ class VibeStreamSnapshot {
   ///
   /// Reste `false` lorsque `"plan"` vaut `null` ou est absent.
   final bool hasPlanObject;
+
+  /// Indique si un champ `"toolCalls"` de premier niveau débutant par `[` a été détecté.
+  ///
+  /// Reste `false` lorsque `"toolCalls"` vaut `null` ou est absent.
+  final bool hasToolCallsObject;
 
   /// Indique si un champ `"repositories"` de premier niveau débutant par `{` a été détecté.
   ///
@@ -94,6 +101,9 @@ class VibeStreamSnapshot {
   /// bloc JSON (ex. identifiant d'un composant ou d'un style), ou `null`.
   final String? activeEntryKey;
 
+  /// Statut lisible de l'outil d'inspection en cours d'exécution par l'orchestrateur, ou `null`.
+  final String? activeToolStatus;
+
   /// Retourne une copie modifiée de cet instantané.
   VibeStreamSnapshot copyWith({
     String? message,
@@ -102,6 +112,7 @@ class VibeStreamSnapshot {
     bool? hasVibeObject,
     bool? hasAskUserObject,
     bool? hasPlanObject,
+    bool? hasToolCallsObject,
     bool? hasRepositoriesObject,
     int? estimatedComponentCount,
     int? receivedChars,
@@ -115,12 +126,15 @@ class VibeStreamSnapshot {
     bool clearActiveSection = false,
     String? activeEntryKey,
     bool clearActiveEntryKey = false,
+    String? activeToolStatus,
+    bool clearActiveToolStatus = false,
   }) => VibeStreamSnapshot(
     message: clearMessage ? null : (message ?? this.message),
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
     hasVibeObject: hasVibeObject ?? this.hasVibeObject,
     hasAskUserObject: hasAskUserObject ?? this.hasAskUserObject,
     hasPlanObject: hasPlanObject ?? this.hasPlanObject,
+    hasToolCallsObject: hasToolCallsObject ?? this.hasToolCallsObject,
     hasRepositoriesObject: hasRepositoriesObject ?? this.hasRepositoriesObject,
     estimatedComponentCount:
         estimatedComponentCount ?? this.estimatedComponentCount,
@@ -139,6 +153,9 @@ class VibeStreamSnapshot {
     activeEntryKey: clearActiveEntryKey
         ? null
         : (activeEntryKey ?? this.activeEntryKey),
+    activeToolStatus: clearActiveToolStatus
+        ? null
+        : (activeToolStatus ?? this.activeToolStatus),
   );
 
   /// Compare deux instantanés par égalité de valeur.
@@ -151,6 +168,7 @@ class VibeStreamSnapshot {
           other.hasVibeObject == hasVibeObject &&
           other.hasAskUserObject == hasAskUserObject &&
           other.hasPlanObject == hasPlanObject &&
+          other.hasToolCallsObject == hasToolCallsObject &&
           other.hasRepositoriesObject == hasRepositoriesObject &&
           other.estimatedComponentCount == estimatedComponentCount &&
           other.receivedChars == receivedChars &&
@@ -158,6 +176,7 @@ class VibeStreamSnapshot {
           other.repositoriesRevision == repositoriesRevision &&
           other.activeSection == activeSection &&
           other.activeEntryKey == activeEntryKey &&
+          other.activeToolStatus == activeToolStatus &&
           (other.partialVibePatch == null) == (partialVibePatch == null) &&
           (other.partialRepositoriesPatch == null) ==
               (partialRepositoriesPatch == null);
@@ -170,6 +189,7 @@ class VibeStreamSnapshot {
     hasVibeObject,
     hasAskUserObject,
     hasPlanObject,
+    hasToolCallsObject,
     hasRepositoriesObject,
     estimatedComponentCount,
     receivedChars,
@@ -177,6 +197,7 @@ class VibeStreamSnapshot {
     repositoriesRevision,
     activeSection,
     activeEntryKey,
+    activeToolStatus,
     partialVibePatch != null,
     partialRepositoriesPatch != null,
   );
@@ -190,13 +211,15 @@ class VibeStreamSnapshot {
       'hasVibeObject: $hasVibeObject, '
       'hasAskUserObject: $hasAskUserObject, '
       'hasPlanObject: $hasPlanObject, '
+      'hasToolCallsObject: $hasToolCallsObject, '
       'hasRepositoriesObject: $hasRepositoriesObject, '
       'estimatedComponentCount: $estimatedComponentCount, '
       'receivedChars: $receivedChars, '
       'patchRevision: $patchRevision, '
       'repositoriesRevision: $repositoriesRevision, '
       'activeSection: $activeSection, '
-      'activeEntryKey: $activeEntryKey'
+      'activeEntryKey: $activeEntryKey, '
+      'activeToolStatus: $activeToolStatus'
       ')';
 }
 
@@ -263,6 +286,7 @@ class VibeIncrementalStreamParser {
   bool _hasVibeObject = false;
   bool _hasAskUserObject = false;
   bool _hasPlanObject = false;
+  bool _hasToolCallsObject = false;
   bool _hasRepositoriesObject = false;
   final Set<String> _seenComponentIds = <String>{};
   int _estimatedComponentCount = 0;
@@ -309,6 +333,7 @@ class VibeIncrementalStreamParser {
     _hasVibeObject = false;
     _hasAskUserObject = false;
     _hasPlanObject = false;
+    _hasToolCallsObject = false;
     _hasRepositoriesObject = false;
     _seenComponentIds.clear();
     _estimatedComponentCount = 0;
@@ -379,6 +404,7 @@ class VibeIncrementalStreamParser {
       hasVibeObject: _hasVibeObject,
       hasAskUserObject: _hasAskUserObject,
       hasPlanObject: _hasPlanObject,
+      hasToolCallsObject: _hasToolCallsObject,
       hasRepositoriesObject: _hasRepositoriesObject,
       estimatedComponentCount: _estimatedComponentCount,
       receivedChars: _receivedChars,
@@ -680,6 +706,8 @@ class VibeIncrementalStreamParser {
       // '['
       if (parent.kind == _FrameKind.rootObject && key == 'askUser') {
         _hasAskUserObject = true;
+      } else if (parent.kind == _FrameKind.rootObject && key == 'toolCalls') {
+        _hasToolCallsObject = true;
       }
       _stack.add(
         _ContainerFrame(

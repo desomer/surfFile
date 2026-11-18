@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,6 +35,8 @@ import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../services/inspection/vibe_app_inspector.dart';
+import '../../../services/inspection/vibe_mounted_slot_index.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -56,6 +59,13 @@ import '../../appearance/appearance_scope.dart';
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
 export '../../../ai/design_md_parser.dart';
 export '../../../ai/design_system_catalog.dart';
+export '../../../ai/vibe_app_tools.dart'
+    show
+        VibeAppToolRegistry,
+        VibeRegisteredTool,
+        VibeToolCall,
+        VibeToolDeclaration,
+        VibeToolResult;
 export '../../../ai/vibe_ask_user.dart'
     show
         VibeAskUserFieldType,
@@ -99,6 +109,7 @@ class VibeChatDialog extends StatefulWidget {
     this.registry,
     this.repositoryStore,
     this.pageRouting,
+    this.toolRegistry,
     this.initialDesignSystem,
     this.onDesignSystemChanged,
     this.customDesignSystems = const [],
@@ -115,6 +126,9 @@ class VibeChatDialog extends StatefulWidget {
   /// Désactivé par défaut afin d'éviter le blocage de l'isolate UI sur les charges JSON volumineuses.
   static bool verboseLogging = false;
 
+  /// Nombre maximal de tours d'appels d'outils d'introspection autorisés par génération.
+  static const int maxToolRounds = 5;
+
   /// Instructions système invariantes transmises au modèle GenUI pour le chat Vibe IA.
   static const String defaultSystemInstruction = '''
 Tu es l’assistant de création d’écrans de super_container_layout. Réponds en français.
@@ -125,6 +139,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
+5. Interrogation de l'application en cours d'exécution (lecture seule, si des mesures réelles manquent) : tu peux appeler les outils d'introspection (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_screenshot`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Appelle obligatoirement ces outils pour toute question sur les dimensions/positions réelles en dp, un débordement ou texte coupé, une adaptation au viewport réel, un slot monté hors JSON, des données paginées de repository ou une vérification visuelle ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -245,6 +260,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   /// Lorsqu'il est omis, celui du [SuperApp] englobant est utilisé automatiquement s'il existe.
   final EditorPageRouter? pageRouting;
 
+  /// Registre optionnel d'outils d'introspection exposés à l'IA (par défaut construit via [VibeAppInspector]).
+  final VibeAppToolRegistry? toolRegistry;
+
   /// Système de design `DESIGN.md` initialement actif à l'ouverture (`null` pour Material 3 par défaut).
   final DesignSystemPreset? initialDesignSystem;
 
@@ -287,6 +305,8 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     String? selectedDesignSystemName,
     String? customDesignGuide,
     bool replaceDefaultDesignGuide = false,
+    String? toolsGuide,
+    bool includeToolsGuide = true,
   }) {
     final trimmedScreen = screenGuide.trim();
     final trimmedRepository = repositoryGuide?.trim() ?? '';
@@ -332,6 +352,14 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
       buffer
         ..write('\n\n---\n\n$heading\n')
         ..write(trimmedCustomDesign);
+    }
+    final resolvedToolsGuide =
+        toolsGuide?.trim() ??
+        (includeToolsGuide ? VibeAppToolRegistry.standardToolsGuide() : '');
+    if (resolvedToolsGuide.isNotEmpty) {
+      buffer
+        ..write('\n\n---\n\n')
+        ..write(resolvedToolsGuide);
     }
     return buffer.toString();
   }
@@ -534,6 +562,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
         systemInstruction: defaultSystemInstruction,
         staticGuide: guide,
         speedMode: speedMode,
+        tools: VibeAppToolRegistry.standardDeclarations,
       );
     } catch (_) {
       // Le préchauffage est purement opportuniste et ne lève jamais d'exception.
@@ -2222,6 +2251,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         scope: _scope,
         instantiatedComponentIds:
             instantiatedIdsOverride ?? session.initialInstantiatedIds,
+        mountedSlotSummaries: VibeMountedSlotIndex.instance
+            .mountedSlotSummaries(),
         repositoriesContext: repositoriesContext,
       );
 
@@ -2323,25 +2354,334 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     return generator(prompt);
   }
 
-  Future<({String rawResponse, VibeStreamSnapshot finalSnapshot})>
+  VibeAppToolRegistry _resolveToolRegistry(_LiveTurnSession session) {
+    final explicit = widget.toolRegistry;
+    if (explicit != null) return explicit;
+    return VibeAppInspector(
+      readAppearance: () => session.checkpointAppearance,
+      registry: widget.registry,
+      repositoryStore: session.repoTransaction?.store,
+      pageRouting: session.pageRouting,
+      readScope: () => _scope,
+      fallbackContext: () => mounted ? context : null,
+    ).buildToolRegistry();
+  }
+
+  static String _formatToolStatusLabel(List<VibeToolCall> calls) {
+    if (calls.isEmpty) return 'Inspection de l’application…';
+    if (calls.length == 1) {
+      return switch (calls.first.name) {
+        'get_viewport_and_route' => 'Lecture du viewport et de la route…',
+        'get_component_geometry' => 'Mesure des composants à l’écran…',
+        'get_runtime_tree' => 'Inspection de l’arbre monté…',
+        'query_repository_data' => 'Interrogation des repositories…',
+        'capture_screenshot' => 'Capture visuelle de l’écran…',
+        final other => 'Exécution de $other…',
+      };
+    }
+    return 'Inspection de l’application (${calls.map((c) => c.name).join(', ')})…';
+  }
+
+  Future<({Appearance? correctedAppearance, String? summaryMessage})>
+  _runPostRenderVerifyPass({
+    required Appearance candidateAppearance,
+    required String systemGuide,
+    required _LiveTurnSession session,
+    required VibeAppToolRegistry toolRegistry,
+    required bool isDirectGemini,
+    required bool useStreaming,
+  }) async {
+    const maxVerifyToolRounds = 2;
+    try {
+      session.checkpointAppearance = candidateAppearance;
+      session.hasCheckpoint = true;
+      _setPreviewAppearance(candidateAppearance);
+      _pulseAppearanceDiff(session, candidateAppearance);
+      if (_scope == null) {
+        _maybeNavigateToNewLivePage(session, candidateAppearance);
+      }
+
+      _streamingSnapshot.value = (_streamingSnapshot.value ??
+              VibeStreamSnapshot.empty)
+          .copyWith(activeToolStatus: 'Vérification du rendu appliqué…');
+
+      SchedulerBinding.instance.ensureVisualUpdate();
+      if (SchedulerBinding.instance.hasScheduledFrame) {
+        try {
+          await SchedulerBinding.instance.endOfFrame.timeout(
+            const Duration(milliseconds: 120),
+          );
+        } on TimeoutException {
+          // Ignore si aucune pompe de frame n'est active (ex. tests sans ticker).
+        }
+      }
+
+      final mountedSummaries = VibeMountedSlotIndex.instance
+          .mountedSlotSummaries();
+      final verifyPrompt = [
+        'VÉRIFICATION POST-RENDU (APERÇU APPLIQUÉ) :',
+        'Le patch "vibe" vient d’être appliqué en aperçu à l’écran.',
+        if (mountedSummaries.isNotEmpty)
+          'Slots montés actuellement à l’écran : ${jsonEncode(mountedSummaries)}.',
+        'Appelle si besoin `get_component_geometry` ou `capture_screenshot` pour vérifier les dimensions réelles et détecter tout débordement, zone de taille nulle ou chevauchement.',
+        '- Si le rendu est correct, renvoie {"message":"Rendu vérifié.","vibe":null}.',
+        '- Si un ajustement est nécessaire, renvoie uniquement un petit patch delta correctif dans "vibe" (avec "verifyRender": false).',
+      ].join('\n');
+
+      var roundPrompt = verifyPrompt;
+      var roundAttachments = const <VibeChatAttachment>[];
+      final conversationContents = isDirectGemini
+          ? <Map<String, Object?>>[
+              <String, Object?>{
+                'role': 'user',
+                'parts': GeminiRestClient.buildUserParts(
+                  verifyPrompt,
+                  const <VibeChatAttachment>[],
+                ),
+              },
+            ]
+          : null;
+
+      late String verifyResponse;
+      Map<String, dynamic>? decoded;
+
+      for (var round = 0; round <= maxVerifyToolRounds; round++) {
+        final allowTools = round < maxVerifyToolRounds;
+        var nativeCalls = const <VibeToolCall>[];
+        var rawModelParts = const <Map<String, Object?>>[];
+
+        if (useStreaming) {
+          final streamed = await _consumeStreamingGenerate(
+            roundPrompt,
+            systemGuide: systemGuide,
+            attachments: roundAttachments,
+            tools: allowTools ? toolRegistry.declarations : const [],
+            conversationContents: conversationContents,
+            enforceJsonResponse: !allowTools,
+          );
+          verifyResponse = streamed.rawResponse;
+          nativeCalls = streamed.functionCalls;
+          rawModelParts = streamed.rawModelParts;
+        } else {
+          final combined =
+              '${VibeChatDialog.defaultSystemInstruction}\n\n'
+              'GUIDE DE MODÉLISATION :\n$systemGuide\n\n'
+              '$roundPrompt';
+          verifyResponse = await _invokeGenerate(combined, roundAttachments);
+        }
+
+        if (nativeCalls.isNotEmpty) {
+          if (!allowTools) break;
+          _streamingSnapshot.value = (_streamingSnapshot.value ??
+                  VibeStreamSnapshot.empty)
+              .copyWith(activeToolStatus: _formatToolStatusLabel(nativeCalls));
+          final results = await toolRegistry.executeAll(nativeCalls);
+          final generatedAttachments = <VibeChatAttachment>[
+            for (final r in results) ...r.attachments,
+          ];
+          if (generatedAttachments.isNotEmpty) {
+            roundAttachments = [...roundAttachments, ...generatedAttachments];
+          }
+          if (conversationContents != null) {
+            conversationContents.add(<String, Object?>{
+              'role': 'model',
+              'parts': rawModelParts.isNotEmpty
+                  ? rawModelParts
+                  : <Map<String, Object?>>[
+                      for (final c in nativeCalls)
+                        <String, Object?>{
+                          'functionCall': c.toGeminiFunctionCall(),
+                        },
+                    ],
+            });
+            conversationContents.add(<String, Object?>{
+              'role': 'user',
+              'parts': <Map<String, Object?>>[
+                for (final r in results)
+                  <String, Object?>{
+                    'functionResponse': <String, Object?>{
+                      'name': r.name,
+                      'response': r.toGeminiFunctionResponsePayload(),
+                    },
+                  },
+                for (final att in generatedAttachments)
+                  if (att.isImage) ...<Map<String, Object?>>[
+                    <String, Object?>{
+                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                    },
+                    <String, Object?>{
+                      'inlineData': <String, Object?>{
+                        'mimeType': att.mimeType,
+                        'data': base64Encode(att.bytes),
+                      },
+                    },
+                  ],
+              ],
+            });
+          } else {
+            roundPrompt =
+                '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (vérification ${round + 1}) :\n'
+                '${jsonEncode([for (final r in results) r.toJson()])}\n'
+                'Conclue maintenant avec {"message":"...","vibe":null} ou un patch delta correctif.';
+          }
+          continue;
+        }
+
+        decoded = null;
+        List<VibeToolCall> jsonCalls = const <VibeToolCall>[];
+        if (verifyResponse.trim().isNotEmpty) {
+          final parsed = _decodeResponseJson(_extractJson(verifyResponse));
+          if (parsed is Map<String, dynamic>) {
+            decoded = parsed;
+            if (parsed['vibe'] == null && parsed['toolCalls'] != null) {
+              jsonCalls = VibeToolCall.tryListFromJson(parsed['toolCalls']);
+            }
+          }
+        }
+        if (jsonCalls.isNotEmpty && allowTools) {
+          _streamingSnapshot.value = (_streamingSnapshot.value ??
+                  VibeStreamSnapshot.empty)
+              .copyWith(activeToolStatus: _formatToolStatusLabel(jsonCalls));
+          final results = await toolRegistry.executeAll(jsonCalls);
+          final generatedAttachments = <VibeChatAttachment>[
+            for (final r in results) ...r.attachments,
+          ];
+          if (generatedAttachments.isNotEmpty) {
+            roundAttachments = [...roundAttachments, ...generatedAttachments];
+          }
+          final encodedResults = jsonEncode([
+            for (final r in results) r.toJson(),
+          ]);
+          if (conversationContents != null) {
+            conversationContents.add(<String, Object?>{
+              'role': 'model',
+              'parts': <Map<String, Object?>>[
+                <String, Object?>{'text': verifyResponse},
+              ],
+            });
+            conversationContents.add(<String, Object?>{
+              'role': 'user',
+              'parts': <Map<String, Object?>>[
+                <String, Object?>{
+                  'text':
+                      'RÉSULTATS DES OUTILS DEMANDÉS (vérification ${round + 1}) :\n'
+                      '$encodedResults\n'
+                      'Conclue maintenant avec {"message":"...","vibe":null} ou un patch delta correctif.',
+                },
+                for (final att in generatedAttachments)
+                  if (att.isImage) ...<Map<String, Object?>>[
+                    <String, Object?>{
+                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                    },
+                    <String, Object?>{
+                      'inlineData': <String, Object?>{
+                        'mimeType': att.mimeType,
+                        'data': base64Encode(att.bytes),
+                      },
+                    },
+                  ],
+              ],
+            });
+          } else {
+            roundPrompt =
+                '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (vérification ${round + 1}) :\n'
+                '$encodedResults\n'
+                'Conclue maintenant avec {"message":"...","vibe":null} ou un patch delta correctif.';
+          }
+          continue;
+        }
+        break;
+      }
+
+      if (decoded == null) {
+        return (correctedAppearance: null, summaryMessage: null);
+      }
+      final summary = decoded['message'] is String
+          ? (decoded['message'] as String).trim()
+          : null;
+      final patch = _extractPatch(decoded);
+      if (patch == null) {
+        return (correctedAppearance: null, summaryMessage: summary);
+      }
+
+      final activeScope = _scope;
+      final rewritten = session.repoTransaction != null
+          ? session.repoTransaction!.rewriteVibePatchBindings(patch)
+          : patch;
+      final effectivePatch = activeScope == null
+          ? rewritten
+          : VibeChatDialog.filterPatchToScope(
+              candidateAppearance,
+              rewritten,
+              activeScope,
+            );
+      if (!_hasPatchChanges(effectivePatch)) {
+        return (correctedAppearance: null, summaryMessage: summary);
+      }
+
+      final corrected = AppearanceTransfer.applyVibe(
+        candidateAppearance,
+        jsonEncode(effectivePatch),
+        codec: widget.codec,
+      );
+      widget.validateAppearance?.call(corrected);
+      _validatePatchedComponents(
+        candidateAppearance,
+        corrected,
+        effectivePatch,
+        instantiatedIds: session.initialInstantiatedIds,
+      );
+      return (correctedAppearance: corrected, summaryMessage: summary);
+    } catch (error) {
+      debugPrint(
+        '[Vibe IA] Passe de vérification post-rendu ignorée après erreur : $error',
+      );
+      return (correctedAppearance: null, summaryMessage: null);
+    }
+  }
+
+  Future<
+    ({
+      String rawResponse,
+      VibeStreamSnapshot finalSnapshot,
+      List<VibeToolCall> functionCalls,
+      List<Map<String, Object?>> rawModelParts,
+    })
+  >
   _consumeStreamingGenerate(
     String turnPrompt, {
     required String systemGuide,
     required List<VibeChatAttachment> attachments,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<Map<String, Object?>>? conversationContents,
+    bool enforceJsonResponse = true,
   }) async {
-    final streamFn = widget.streamGenerate ?? streamGemini;
+    final customStream = widget.streamGenerate;
     final parser = VibeIncrementalStreamParser();
     _pendingSnapshot = null;
     _streamingSnapshot.value = VibeStreamSnapshot.empty;
 
     var finalAccumulated = '';
-    final stream = streamFn(
-      turnPrompt,
-      systemInstruction: VibeChatDialog.defaultSystemInstruction,
-      staticGuide: systemGuide,
-      attachments: attachments,
-      speedMode: _speedMode,
-    );
+    var functionCalls = const <VibeToolCall>[];
+    var rawModelParts = const <Map<String, Object?>>[];
+    final stream = customStream != null
+        ? customStream(
+            turnPrompt,
+            systemInstruction: VibeChatDialog.defaultSystemInstruction,
+            staticGuide: systemGuide,
+            attachments: attachments,
+            speedMode: _speedMode,
+          )
+        : streamGemini(
+            turnPrompt,
+            systemInstruction: VibeChatDialog.defaultSystemInstruction,
+            staticGuide: systemGuide,
+            attachments: attachments,
+            speedMode: _speedMode,
+            tools: tools,
+            conversationContents: conversationContents,
+            enforceJsonResponse: enforceJsonResponse,
+          );
 
     await for (final event in stream) {
       if (event.deltaText.isNotEmpty) {
@@ -2351,6 +2691,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           parser.rawBuffer.isEmpty &&
           event.accumulatedText.isNotEmpty) {
         parser.addChunk(event.accumulatedText);
+      }
+      if (event.functionCalls.isNotEmpty) {
+        functionCalls = event.functionCalls;
+      }
+      if (event.rawModelParts.isNotEmpty) {
+        rawModelParts = event.rawModelParts;
       }
       if (event.accumulatedText.isNotEmpty) {
         finalAccumulated = event.accumulatedText;
@@ -2364,7 +2710,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final rawResponse = parser.rawBuffer.isNotEmpty
         ? parser.rawBuffer
         : finalAccumulated;
-    return (rawResponse: rawResponse, finalSnapshot: parser.current);
+    return (
+      rawResponse: rawResponse,
+      finalSnapshot: parser.current,
+      functionCalls: functionCalls,
+      rawModelParts: rawModelParts,
+    );
   }
 
   Future<
@@ -2392,6 +2743,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     const maxAttempts = 4;
     var currentTurnPrompt = turnPrompt;
     final priorCauses = <String>[];
+    final toolRegistry = _resolveToolRegistry(session);
     VibeSalvageOutcome? lastCheckpointSalvage;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
@@ -2401,6 +2753,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         session.liveRepoQueue = Future<void>.value();
       }
       final useStreaming = _usesStreamingGenerator;
+      final isDirectGemini =
+          useStreaming &&
+          widget.streamGenerate == null &&
+          identical(widget.generate, callGemini);
       debugPrint(
         '[Vibe IA] Tentative ${attempt + 1}/$maxAttempts — envoi du prompt '
         '(${currentTurnPrompt.length} caractères dynamiques, '
@@ -2408,33 +2764,216 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'fichiers joints: ${attachments.length}'
         '${session.hasCheckpoint ? ", mode: delta sur checkpoint" : ""})...',
       );
-      final String response;
-      final VibeStreamSnapshot finalSnapshot;
-      try {
-        if (useStreaming) {
-          final streamed = await _consumeStreamingGenerate(
-            currentTurnPrompt,
-            systemGuide: systemGuide,
-            attachments: attachments,
+
+      var roundPrompt = currentTurnPrompt;
+      var roundAttachments = List<VibeChatAttachment>.of(attachments);
+      final conversationContents = isDirectGemini
+          ? <Map<String, Object?>>[
+              <String, Object?>{
+                'role': 'user',
+                'parts': GeminiRestClient.buildUserParts(
+                  currentTurnPrompt,
+                  attachments,
+                ),
+              },
+            ]
+          : null;
+
+      late String response;
+      late VibeStreamSnapshot finalSnapshot;
+      Map<String, dynamic>? preDecodedMap;
+
+      for (var toolRound = 0; toolRound <= VibeChatDialog.maxToolRounds; toolRound++) {
+        final allowTools =
+            toolRegistry.isNotEmpty && toolRound < VibeChatDialog.maxToolRounds;
+        var nativeCalls = const <VibeToolCall>[];
+        var rawModelParts = const <Map<String, Object?>>[];
+        try {
+          if (useStreaming) {
+            final streamed = await _consumeStreamingGenerate(
+              roundPrompt,
+              systemGuide: systemGuide,
+              attachments: roundAttachments,
+              tools: allowTools ? toolRegistry.declarations : const [],
+              conversationContents: conversationContents,
+              enforceJsonResponse: !allowTools,
+            );
+            response = streamed.rawResponse;
+            finalSnapshot = streamed.finalSnapshot;
+            nativeCalls = streamed.functionCalls;
+            rawModelParts = streamed.rawModelParts;
+          } else {
+            final toolsSection = allowTools && toolRound == 0
+                ? '\n\n${toolRegistry.formatToolsGuideSection()}'
+                : '';
+            final combinedPrompt =
+                '${VibeChatDialog.defaultSystemInstruction}\n\n'
+                'GUIDE DE MODÉLISATION :\n$systemGuide$toolsSection\n\n'
+                '$roundPrompt';
+            response = await _invokeGenerate(combinedPrompt, roundAttachments);
+            final parser = VibeIncrementalStreamParser()..addChunk(response);
+            finalSnapshot = parser.current;
+          }
+        } catch (error, stackTrace) {
+          debugPrint(
+            '[Vibe IA] Échec de génération à la tentative ${attempt + 1} '
+            '(tour outil $toolRound, ${error.runtimeType}) : $error\n$stackTrace',
           );
-          response = streamed.rawResponse;
-          finalSnapshot = streamed.finalSnapshot;
-        } else {
-          final combinedPrompt =
-              '${VibeChatDialog.defaultSystemInstruction}\n\n'
-              'GUIDE DE MODÉLISATION :\n$systemGuide\n\n'
-              '$currentTurnPrompt';
-          response = await _invokeGenerate(combinedPrompt, attachments);
-          final parser = VibeIncrementalStreamParser()..addChunk(response);
-          finalSnapshot = parser.current;
+          rethrow;
         }
-      } catch (error, stackTrace) {
-        debugPrint(
-          '[Vibe IA] Échec de génération à la tentative ${attempt + 1} '
-          '(${error.runtimeType}) : $error\n$stackTrace',
-        );
-        rethrow;
+
+        if (nativeCalls.isNotEmpty) {
+          if (!allowTools) {
+            throw const FormatException(
+              'Nombre maximal d’appels d’outils atteint : génère la réponse finale.',
+            );
+          }
+          debugPrint(
+            '[Vibe IA] Exécution de ${nativeCalls.length} outil(s) natif(s) : '
+            '${nativeCalls.map((c) => c.name).join(', ')}',
+          );
+          _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
+              .copyWith(activeToolStatus: _formatToolStatusLabel(nativeCalls));
+          final results = await toolRegistry.executeAll(nativeCalls);
+          final generatedAttachments = <VibeChatAttachment>[
+            for (final r in results) ...r.attachments,
+          ];
+          if (generatedAttachments.isNotEmpty) {
+            roundAttachments = [...roundAttachments, ...generatedAttachments];
+          }
+          if (conversationContents != null) {
+            conversationContents.add(<String, Object?>{
+              'role': 'model',
+              'parts': rawModelParts.isNotEmpty
+                  ? rawModelParts
+                  : <Map<String, Object?>>[
+                      for (final c in nativeCalls)
+                        <String, Object?>{
+                          'functionCall': c.toGeminiFunctionCall(),
+                        },
+                    ],
+            });
+            conversationContents.add(<String, Object?>{
+              'role': 'user',
+              'parts': <Map<String, Object?>>[
+                for (final r in results)
+                  <String, Object?>{
+                    'functionResponse': <String, Object?>{
+                      'name': r.name,
+                      'response': r.toGeminiFunctionResponsePayload(),
+                    },
+                  },
+                for (final att in generatedAttachments)
+                  if (att.isImage) ...<Map<String, Object?>>[
+                    <String, Object?>{
+                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                    },
+                    <String, Object?>{
+                      'inlineData': <String, Object?>{
+                        'mimeType': att.mimeType,
+                        'data': base64Encode(att.bytes),
+                      },
+                    },
+                  ],
+              ],
+            });
+          } else {
+            roundPrompt =
+                '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
+                '${jsonEncode([for (final r in results) r.toJson()])}\n'
+                'Utilise ces mesures réelles pour poursuivre ou produire ta réponse JSON finale.';
+          }
+          continue;
+        }
+
+        // Vérifie le protocole JSON unifié ("toolCalls": [...]) lorsqu'aucun patch final n'est émis.
+        preDecodedMap = null;
+        List<VibeToolCall> jsonToolCalls = const <VibeToolCall>[];
+        if (response.trim().isNotEmpty) {
+          try {
+            final extracted = _extractJson(response);
+            final parsed = _decodeResponseJson(extracted);
+            if (parsed is Map<String, dynamic>) {
+              preDecodedMap = parsed;
+              final hasFinalPayload =
+                  parsed['vibe'] != null ||
+                  parsed['repositories'] != null ||
+                  parsed['askUser'] != null ||
+                  parsed['plan'] != null;
+              if (!hasFinalPayload && parsed['toolCalls'] != null) {
+                jsonToolCalls = VibeToolCall.tryListFromJson(
+                  parsed['toolCalls'],
+                );
+              }
+            }
+          } on FormatException {
+            // Laisse la phase de validation normale diagnostiquer l'erreur JSON.
+          }
+        }
+
+        if (jsonToolCalls.isNotEmpty) {
+          if (!allowTools) {
+            preDecodedMap = null;
+            break;
+          }
+          debugPrint(
+            '[Vibe IA] Exécution de ${jsonToolCalls.length} outil(s) JSON : '
+            '${jsonToolCalls.map((c) => c.name).join(', ')}',
+          );
+          _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
+              .copyWith(activeToolStatus: _formatToolStatusLabel(jsonToolCalls));
+          final results = await toolRegistry.executeAll(jsonToolCalls);
+          final generatedAttachments = <VibeChatAttachment>[
+            for (final r in results) ...r.attachments,
+          ];
+          if (generatedAttachments.isNotEmpty) {
+            roundAttachments = [...roundAttachments, ...generatedAttachments];
+          }
+          final encodedResults = jsonEncode([
+            for (final r in results) r.toJson(),
+          ]);
+          if (conversationContents != null) {
+            conversationContents.add(<String, Object?>{
+              'role': 'model',
+              'parts': <Map<String, Object?>>[
+                <String, Object?>{'text': response},
+              ],
+            });
+            conversationContents.add(<String, Object?>{
+              'role': 'user',
+              'parts': <Map<String, Object?>>[
+                <String, Object?>{
+                  'text':
+                      'RÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
+                      '$encodedResults\n'
+                      'Utilise ces mesures réelles pour appeler un autre outil ou renvoyer ta réponse JSON finale (sans "toolCalls").',
+                },
+                for (final att in generatedAttachments)
+                  if (att.isImage) ...<Map<String, Object?>>[
+                    <String, Object?>{
+                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                    },
+                    <String, Object?>{
+                      'inlineData': <String, Object?>{
+                        'mimeType': att.mimeType,
+                        'data': base64Encode(att.bytes),
+                      },
+                    },
+                  ],
+              ],
+            });
+          } else {
+            roundPrompt =
+                '$roundPrompt\n\nRÉSULTATS DES OUTILS DEMANDÉS (tour ${toolRound + 1}) :\n'
+                '$encodedResults\n'
+                'Utilise ces mesures réelles pour appeler un autre outil ou renvoyer ta réponse JSON finale (sans "toolCalls").';
+          }
+          continue;
+        }
+
+        break;
       }
+
       session.livePreviewDisabled = true;
       try {
         await session.liveRepoQueue;
@@ -2445,16 +2984,20 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       _logLong('[Vibe IA] Réponse brute (tentative ${attempt + 1})', response);
       Map<String, dynamic>? decodedMap;
       try {
-        final json = _extractJson(response);
         final Object? result;
-        try {
-          result = _decodeResponseJson(json);
-        } on FormatException catch (error) {
-          debugPrint(
-            '[Vibe IA] Échec de jsonDecode (tentative ${attempt + 1}) : '
-            '${error.message} (offset: ${error.offset})',
-          );
-          rethrow;
+        if (preDecodedMap != null) {
+          result = preDecodedMap;
+        } else {
+          final json = _extractJson(response);
+          try {
+            result = _decodeResponseJson(json);
+          } on FormatException catch (error) {
+            debugPrint(
+              '[Vibe IA] Échec de jsonDecode (tentative ${attempt + 1}) : '
+              '${error.message} (offset: ${error.offset})',
+            );
+            rethrow;
+          }
         }
         if (result is! Map<String, dynamic>) {
           debugPrint(
@@ -2464,6 +3007,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           throw const FormatException('La réponse doit être un objet JSON.');
         }
         decodedMap = result;
+        if (result['toolCalls'] != null &&
+            VibeToolCall.tryListFromJson(result['toolCalls']).isNotEmpty &&
+            result['vibe'] == null &&
+            result['repositories'] == null &&
+            result['askUser'] == null &&
+            result['plan'] == null) {
+          throw const FormatException(
+            'Nombre maximal d’appels d’outils atteint : génère maintenant la réponse finale sans "toolCalls".',
+          );
+        }
         final rawAskUser = VibeAskUserRequest.tryFromJson(result['askUser']);
         final rawPlan = allowPlan
             ? VibeExecutionPlan.tryFromJson(result['plan'])
@@ -2674,12 +3227,40 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
 
         _lastFailedResponse = null;
+        var finalResult = result;
+        final wantsPostVerify =
+            appearance != null &&
+            toolRegistry.isNotEmpty &&
+            (result['verifyRender'] == true ||
+                (_reproduceExactMode &&
+                    isDirectGemini &&
+                    VibeMountedSlotIndex.instance.allEntries.isNotEmpty));
+        if (wantsPostVerify) {
+          final verified = await _runPostRenderVerifyPass(
+            candidateAppearance: appearance,
+            systemGuide: systemGuide,
+            session: session,
+            toolRegistry: toolRegistry,
+            isDirectGemini: isDirectGemini,
+            useStreaming: useStreaming,
+          );
+          if (verified.correctedAppearance != null) {
+            appearance = verified.correctedAppearance;
+          }
+          if (verified.summaryMessage != null &&
+              verified.summaryMessage!.isNotEmpty) {
+            finalResult = <String, dynamic>{
+              ...result,
+              'message': verified.summaryMessage,
+            };
+          }
+        }
         return (
           appearance: appearance,
           repositoriesUpdated:
               (session.repoTransaction?.hasChanges ?? false) ||
               repositoriesPatch != null,
-          result: result,
+          result: finalResult,
           askUser: null,
           plan: null,
         );
@@ -2933,6 +3514,8 @@ $response
       ..remove('message')
       ..remove('askUser')
       ..remove('plan')
+      ..remove('toolCalls')
+      ..remove('verifyRender')
       ..remove('repositories');
     return _hasPatchChanges(candidate) ? candidate : null;
   }
@@ -3054,6 +3637,8 @@ $response
       scope: _scope,
       instantiatedComponentIds:
           instantiatedIdsOverride ?? widget.registry?.instantiatedComponentIds,
+      mountedSlotSummaries: VibeMountedSlotIndex.instance
+          .mountedSlotSummaries(),
       repositoriesContext: repositoriesContext,
       reproduceExactMode: _reproduceExactMode,
     );
@@ -3101,6 +3686,7 @@ $response
                 decoded.containsKey('message') ||
                 decoded.containsKey('askUser') ||
                 decoded.containsKey('plan') ||
+                decoded.containsKey('toolCalls') ||
                 decoded.containsKey('repositories'))) {
           debugPrint(
             '[Vibe IA] JSON réparé automatiquement '

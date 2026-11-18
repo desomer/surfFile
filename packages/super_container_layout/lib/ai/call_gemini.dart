@@ -13,9 +13,11 @@ import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'gemini_rest_client.dart';
+import 'vibe_app_tools.dart';
 import 'vibe_chat_attachment.dart';
 
 export 'gemini_rest_client.dart';
+export 'vibe_app_tools.dart';
 export 'vibe_chat_attachment.dart';
 
 const String _dartDefineGeminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
@@ -217,10 +219,12 @@ Future<void> warmUpGemini({
   String? systemInstruction,
   String? staticGuide,
   VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+  List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
 }) => GeminiRestClient.instance.warmUp(
   systemInstruction: systemInstruction,
   staticGuide: staticGuide,
   speedMode: speedMode,
+  tools: tools,
 );
 
 /// Diffuse en flux SSE ([GeminiStreamEvent]) la génération JSON Gemini pour [prompt].
@@ -230,12 +234,18 @@ Stream<GeminiStreamEvent> streamGemini(
   String? staticGuide,
   List<VibeChatAttachment> attachments = const [],
   VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+  List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+  List<Map<String, Object?>>? conversationContents,
+  bool enforceJsonResponse = true,
 }) => GeminiRestClient.instance.streamGenerate(
   prompt,
   systemInstruction: systemInstruction,
   staticGuide: staticGuide,
   attachments: attachments,
   speedMode: speedMode,
+  tools: tools,
+  conversationContents: conversationContents,
+  enforceJsonResponse: enforceJsonResponse,
 );
 
 /// Génère une réponse Gemini complète pour [prompt] tout en restant compatible avec les callbacks existants.

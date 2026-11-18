@@ -25,6 +25,7 @@ import '../../../models/super_tree_view_config.dart';
 import '../../../services/codegen/dart_code_generator.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/appearance/appearance_store.dart';
+import '../../../services/inspection/vibe_mounted_slot_index.dart';
 import '../../../models/super_renderer_config.dart';
 import '../../../super_app.dart';
 import '../../appearance/appearance_transfer_dialog.dart';
@@ -622,21 +623,54 @@ class EditorSlotState extends State<EditorSlot> {
     }
   }
 
+  void _syncMountedSlotRegistration() {
+    if (!mounted || !_active) return;
+    VibeMountedSlotIndex.instance.register(
+      VibeMountedSlotEntry(
+        token: this,
+        componentId: effectiveComponentId,
+        zoneId: widget.zoneId,
+        label: titleLabel,
+        componentType: widget.eventComponentType,
+        scrollable: widget.scrollable,
+        fixedWidth: widget.fixedWidth,
+        fixedHeight: widget.fixedHeight,
+        slotContext: () => mounted ? context : null,
+        contentKey: _childKey,
+      ),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMountedSlotRegistration();
+  }
+
+  @override
+  void didUpdateWidget(EditorSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncMountedSlotRegistration();
+  }
+
   @override
   void activate() {
     super.activate();
     _active = true;
+    _syncMountedSlotRegistration();
   }
 
   @override
   void deactivate() {
     _active = false;
+    VibeMountedSlotIndex.instance.unregister(this);
     _removeHoveredSafely();
     super.deactivate();
   }
 
   @override
   void dispose() {
+    VibeMountedSlotIndex.instance.unregister(this);
     if (_ownsOpenMenu) {
       _ownsOpenMenu = false;
       _menuOpen = false;

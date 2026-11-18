@@ -1651,3 +1651,19 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 
 La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"components":{...},"styles":{...}}}`.
 
+### 6.1. Outils d'introspection runtime (lecture seule) & auto-vérification
+
+Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 5 outils d'introspection en lecture seule (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
+
+| Outil | Rôle | Paramètres principaux |
+| :--- | :--- | :--- |
+| `get_viewport_and_route` | Dimensions réelles de la fenêtre/viewport en dp, `devicePixelRatio`, route GoRouter active, page du catalogue, mode édition et scope. | `{}` |
+| `get_component_geometry` | Taille réelle rendue (`width`, `height` en dp), bornes globales/relatives, contraintes (`RenderBox`/`RenderSliver`), état de scroll et diagnostics (`isZeroSized`, débordements). | `ids?: string[]`, `zoneId?: string`, `includeScroll?: bool`, `includeZones?: bool` |
+| `get_runtime_tree` | Arbre effectivement monté sur la page active avec zones/placements, statut monté et dimensions. | `rootId?: string`, `maxDepth?: int` |
+| `query_repository_data` | Catalogue, schémas, requêtes paginées et sélections actives Maître/Détail sur `JsonRepositoryStore`. | `repositoryId?: string`, `path?: string`, `offset?: int`, `limit?: int` |
+| `capture_screenshot` | Capture PNG réelle du composant ciblé ou de la vue applicative entière (réinjectée en image au tour suivant). | `componentId?: string`, `zoneId?: string`, `maxDimension?: int` |
+
+- **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, adaptation au viewport, diagnostic de débordement/clipping, consultation de données tronquées dans un repository, ou inspection visuelle.
+- **Quand ne pas les appeler** : modifications purement déclaratives simples dont le JSON courant suffit déjà.
+- **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également activé automatiquement en mode « Reproduire à l'identique ») pour inspecter le rendu réel juste après application en aperçu et se corriger en 1 passe avant validation finale.
+

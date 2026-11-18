@@ -10,10 +10,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint, immutable;
+import 'package:flutter/foundation.dart' show debugPrint, immutable, listEquals;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'call_gemini.dart' show resolveGeminiApiKey;
+import 'vibe_app_tools.dart';
 import 'vibe_chat_attachment.dart';
 
 /// Modes de vitesse et de raisonnement proposés par l'assistant Vibe IA.
@@ -86,6 +87,8 @@ class GeminiStreamEvent {
     required this.accumulatedText,
     required this.isDone,
     required this.usedContextCache,
+    this.functionCalls = const <VibeToolCall>[],
+    this.rawModelParts = const <Map<String, Object?>>[],
   });
 
   /// Fragment de texte nouvellement reçu dans ce paquet SSE (vide sur l'événement final).
@@ -100,6 +103,13 @@ class GeminiStreamEvent {
   /// Indique si la requête a exploité un `cachedContent` explicite côté serveur.
   final bool usedContextCache;
 
+  /// Appels d'outils natifs (`functionCall`) émis par le modèle dans le flux.
+  final List<VibeToolCall> functionCalls;
+
+  /// Parts brutes du modèle (conservant par exemple `thoughtSignature`) à réinjecter
+  /// telles quelles dans l'historique multi-tours avant `functionResponse`.
+  final List<Map<String, Object?>> rawModelParts;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -107,16 +117,23 @@ class GeminiStreamEvent {
           other.deltaText == deltaText &&
           other.accumulatedText == accumulatedText &&
           other.isDone == isDone &&
-          other.usedContextCache == usedContextCache;
+          other.usedContextCache == usedContextCache &&
+          listEquals(other.functionCalls, functionCalls);
 
   @override
-  int get hashCode =>
-      Object.hash(deltaText, accumulatedText, isDone, usedContextCache);
+  int get hashCode => Object.hash(
+    deltaText,
+    accumulatedText,
+    isDone,
+    usedContextCache,
+    Object.hashAll(functionCalls),
+  );
 
   @override
   String toString() =>
       'GeminiStreamEvent(delta: ${deltaText.length} chars, '
       'accumulated: ${accumulatedText.length} chars, '
+      'functionCalls: ${functionCalls.length}, '
       'isDone: $isDone, usedContextCache: $usedContextCache)';
 }
 
@@ -385,6 +402,7 @@ class GeminiRestClient {
   final Set<String> _unsupportedCacheKeys = <String>{};
   final Set<String> _unsupportedThinkingModels = <String>{};
   final Set<String> _unsupportedThinkingConfigs = <String>{};
+  final Set<String> _unsupportedJsonWithToolsModels = <String>{};
   final Set<String> _unavailableModels = <String>{};
   final Map<String, String> _suggestedReplacementModels = <String, String>{};
 
@@ -440,6 +458,7 @@ class GeminiRestClient {
     _unsupportedCacheKeys.clear();
     _unsupportedThinkingModels.clear();
     _unsupportedThinkingConfigs.clear();
+    _unsupportedJsonWithToolsModels.clear();
     _unavailableModels.clear();
     _suggestedReplacementModels.clear();
   }
@@ -459,6 +478,7 @@ class GeminiRestClient {
     String? systemInstruction,
     String? staticGuide,
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
   }) async {
     try {
       final resolvedKey = (apiKey ?? await _apiKeyResolver()).trim();
@@ -476,6 +496,7 @@ class GeminiRestClient {
           model: model,
           systemInstruction: systemInstruction,
           staticGuide: staticGuide,
+          tools: tools,
         );
         final existing = _activeCaches[cacheKey];
         final now = _clock();
@@ -489,6 +510,7 @@ class GeminiRestClient {
             model: model,
             systemInstruction: systemInstruction,
             staticGuide: staticGuide,
+            tools: tools,
           );
           if (created == null && _unavailableModels.contains(model)) {
             final nextModel = resolveModel(speedMode);
@@ -499,6 +521,7 @@ class GeminiRestClient {
                 model: model,
                 systemInstruction: systemInstruction,
                 staticGuide: staticGuide,
+                tools: tools,
               );
             }
           }
@@ -520,6 +543,7 @@ class GeminiRestClient {
     required String model,
     String? systemInstruction,
     String? staticGuide,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
   }) async {
     if (staticGuide == null ||
         staticGuide.trim().isEmpty ||
@@ -531,6 +555,7 @@ class GeminiRestClient {
       model: model,
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
+      tools: tools,
     );
     if (_unsupportedCacheKeys.contains(cacheKey)) {
       return null;
@@ -556,6 +581,7 @@ class GeminiRestClient {
       model: model,
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
+      tools: tools,
     );
     _inFlightCacheCreations[cacheKey] = future;
     try {
@@ -573,8 +599,18 @@ class GeminiRestClient {
     required String model,
     required String? systemInstruction,
     required String staticGuide,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
   }) async {
     final stopwatch = Stopwatch()..start();
+    final toolsPayload = tools.isEmpty
+        ? const <Map<String, Object?>>[]
+        : <Map<String, Object?>>[
+            <String, Object?>{
+              'functionDeclarations': [
+                for (final t in tools) t.toGeminiFunctionDeclaration(),
+              ],
+            },
+          ];
     final requestBody = <String, Object?>{
       'model': 'models/$model',
       if (systemInstruction != null && systemInstruction.trim().isNotEmpty)
@@ -582,6 +618,11 @@ class GeminiRestClient {
           'parts': [
             {'text': systemInstruction},
           ],
+        },
+      if (toolsPayload.isNotEmpty) 'tools': toolsPayload,
+      if (toolsPayload.isNotEmpty)
+        'toolConfig': <String, Object?>{
+          'functionCallingConfig': <String, Object?>{'mode': 'AUTO'},
         },
       'contents': [
         {
@@ -662,8 +703,8 @@ class GeminiRestClient {
   /// Génère une réponse JSON en streaming SSE incrémental ([GeminiStreamEvent]).
   ///
   /// Utilise automatiquement un `cachedContent` lorsque [staticGuide] dépasse
-  /// [minGuideCharsForExplicitCache], et bascule sans coupure sur `systemInstruction`
-  /// ou sans `thinkingConfig` si l'API le requiert.
+  /// [minGuideCharsForExplicitCache], et bascule sans coupure sur `systemInstruction`,
+  /// sans `thinkingConfig` ou sans `responseMimeType` avec outils si l'API le requiert.
   Stream<GeminiStreamEvent> streamGenerate(
     String prompt, {
     String? apiKey,
@@ -671,6 +712,9 @@ class GeminiRestClient {
     String? staticGuide,
     List<VibeChatAttachment> attachments = const [],
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<Map<String, Object?>>? conversationContents,
+    bool enforceJsonResponse = true,
   }) async* {
     final resolvedKey = (apiKey ?? await _apiKeyResolver()).trim();
     if (resolvedKey.isEmpty) {
@@ -695,6 +739,7 @@ class GeminiRestClient {
             model: model,
             systemInstruction: systemInstruction,
             staticGuide: staticGuide,
+            tools: tools,
           )
         : null;
 
@@ -703,6 +748,7 @@ class GeminiRestClient {
       model: model,
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
+      tools: tools,
     );
 
     if (cachedContentName == null && _unavailableModels.contains(model)) {
@@ -721,6 +767,7 @@ class GeminiRestClient {
                 model: model,
                 systemInstruction: systemInstruction,
                 staticGuide: staticGuide,
+                tools: tools,
               )
             : null;
         cachedContentName = await ensureCachedContent(
@@ -728,17 +775,25 @@ class GeminiRestClient {
           model: model,
           systemInstruction: systemInstruction,
           staticGuide: staticGuide,
+          tools: tools,
         );
       }
     }
 
-    final userParts = _buildUserParts(prompt, attachments);
+    final contentsPayload = conversationContents ??
+        <Map<String, Object?>>[
+          <String, Object?>{
+            'role': 'user',
+            'parts': _buildUserParts(prompt, attachments),
+          },
+        ];
     var streamUri = Uri.parse(
       '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
     );
 
     var retriedWithoutCache = false;
     var retriedWithoutThinking = false;
+    var retriedWithoutResponseMimeType = false;
     late GeminiHttpStreamResponse streamResponse;
 
     while (true) {
@@ -746,13 +801,19 @@ class GeminiRestClient {
       final includeThinking =
           !_unsupportedThinkingModels.contains(model) &&
           !_unsupportedThinkingConfigs.contains(thinkingKey);
+      final includeResponseMimeType =
+          enforceJsonResponse &&
+          !(tools.isNotEmpty &&
+              _unsupportedJsonWithToolsModels.contains(model));
       final requestBody = _buildGenerateRequestBody(
-        userParts: userParts,
+        contents: contentsPayload,
         cachedContentName: cachedContentName,
         systemInstruction: systemInstruction,
         staticGuide: staticGuide,
         speedMode: speedMode,
         includeThinkingConfig: includeThinking,
+        tools: tools,
+        includeResponseMimeType: includeResponseMimeType,
       );
 
       streamResponse = await _transport.postSseStream(
@@ -785,6 +846,7 @@ class GeminiRestClient {
                   model: model,
                   systemInstruction: systemInstruction,
                   staticGuide: staticGuide,
+                  tools: tools,
                 )
               : null;
           cachedContentName = await ensureCachedContent(
@@ -792,12 +854,14 @@ class GeminiRestClient {
             model: model,
             systemInstruction: systemInstruction,
             staticGuide: staticGuide,
+            tools: tools,
           );
           streamUri = Uri.parse(
             '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
           );
           retriedWithoutCache = false;
           retriedWithoutThinking = false;
+          retriedWithoutResponseMimeType = false;
           continue;
         }
       }
@@ -815,6 +879,20 @@ class GeminiRestClient {
         );
         cachedContentName = null;
         retriedWithoutCache = true;
+        continue;
+      }
+
+      if (tools.isNotEmpty &&
+          includeResponseMimeType &&
+          !retriedWithoutResponseMimeType &&
+          status == 400 &&
+          _mentionsResponseMimeTypeWithTools(errorBody)) {
+        _unsupportedJsonWithToolsModels.add(model);
+        debugPrint(
+          '[Vibe IA][Gemini REST] Modèle $model incompatible avec responseMimeType + tools '
+          '(HTTP 400), nouvelle tentative sans responseMimeType.',
+        );
+        retriedWithoutResponseMimeType = true;
         continue;
       }
 
@@ -849,6 +927,8 @@ class GeminiRestClient {
 
     final usedCache = cachedContentName != null;
     final accumulatedBuffer = StringBuffer();
+    final accumulatedCalls = <VibeToolCall>[];
+    final accumulatedModelParts = <Map<String, Object?>>[];
     int? ttftMs;
     Map<String, dynamic>? lastUsageMetadata;
     String? lastFinishReason;
@@ -905,15 +985,28 @@ class GeminiRestClient {
         }
       }
 
-      final chunkText = _extractCandidateChunkText(decoded);
-      if (chunkText.isNotEmpty) {
+      final extracted = _extractCandidateChunk(
+        decoded,
+        nextCallIndex: accumulatedCalls.length,
+      );
+      if (extracted.rawParts.isNotEmpty) {
+        accumulatedModelParts.addAll(extracted.rawParts);
+      }
+      if (extracted.functionCalls.isNotEmpty) {
+        accumulatedCalls.addAll(extracted.functionCalls);
+      }
+      if (extracted.text.isNotEmpty || extracted.functionCalls.isNotEmpty) {
         ttftMs ??= totalStopwatch.elapsedMilliseconds;
-        accumulatedBuffer.write(chunkText);
+        accumulatedBuffer.write(extracted.text);
         yield GeminiStreamEvent(
-          deltaText: chunkText,
+          deltaText: extracted.text,
           accumulatedText: accumulatedBuffer.toString(),
           isDone: false,
           usedContextCache: usedCache,
+          functionCalls: List<VibeToolCall>.unmodifiable(accumulatedCalls),
+          rawModelParts: List<Map<String, Object?>>.unmodifiable(
+            accumulatedModelParts,
+          ),
         );
       }
     }
@@ -929,6 +1022,7 @@ class GeminiRestClient {
       'TTFT: ${ttftMs ?? totalStopwatch.elapsedMilliseconds} ms, '
       'total: ${totalStopwatch.elapsedMilliseconds} ms, '
       'cache: ${usedCache ? "HIT" : "MISS"}'
+      '${accumulatedCalls.isNotEmpty ? ", tools=${accumulatedCalls.length}" : ""}'
       '$finishInfo'
       '${usageSummary.isEmpty ? "" : ", $usageSummary"}.',
     );
@@ -938,6 +1032,10 @@ class GeminiRestClient {
       accumulatedText: accumulatedBuffer.toString(),
       isDone: true,
       usedContextCache: usedCache,
+      functionCalls: List<VibeToolCall>.unmodifiable(accumulatedCalls),
+      rawModelParts: List<Map<String, Object?>>.unmodifiable(
+        accumulatedModelParts,
+      ),
     );
   }
 
@@ -1069,6 +1167,12 @@ class GeminiRestClient {
     'Accept': 'text/event-stream',
   };
 
+  /// Construit les `parts` utilisateur pour un message texte et ses pièces jointes.
+  static List<Map<String, Object?>> buildUserParts(
+    String prompt,
+    List<VibeChatAttachment> attachments,
+  ) => _buildUserParts(prompt, attachments);
+
   static List<Map<String, Object?>> _buildUserParts(
     String prompt,
     List<VibeChatAttachment> attachments,
@@ -1096,12 +1200,14 @@ class GeminiRestClient {
   }
 
   static Map<String, Object?> _buildGenerateRequestBody({
-    required List<Map<String, Object?>> userParts,
+    required List<Map<String, Object?>> contents,
     required String? cachedContentName,
     required String? systemInstruction,
     required String? staticGuide,
     required VibeAiSpeedMode speedMode,
     required bool includeThinkingConfig,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    bool includeResponseMimeType = true,
   }) {
     final body = <String, Object?>{};
 
@@ -1121,41 +1227,108 @@ class GeminiRestClient {
           ],
         };
       }
+      if (tools.isNotEmpty) {
+        body['tools'] = <Map<String, Object?>>[
+          <String, Object?>{
+            'functionDeclarations': [
+              for (final t in tools) t.toGeminiFunctionDeclaration(),
+            ],
+          },
+        ];
+        body['toolConfig'] = <String, Object?>{
+          'functionCallingConfig': <String, Object?>{'mode': 'AUTO'},
+        };
+      }
     }
 
-    body['contents'] = [
-      {'role': 'user', 'parts': userParts},
-    ];
+    body['contents'] = contents;
 
     body['generationConfig'] = <String, Object?>{
       'temperature': 0.15,
-      'responseMimeType': 'application/json',
+      if (includeResponseMimeType) 'responseMimeType': 'application/json',
       if (includeThinkingConfig) 'thinkingConfig': speedMode.thinkingConfig,
     };
 
     return body;
   }
 
-  static String _extractCandidateChunkText(Map<String, dynamic> chunk) {
+  static String _extractCandidateChunkText(Map<String, dynamic> chunk) =>
+      _extractCandidateChunk(chunk).text;
+
+  static ({
+    String text,
+    List<VibeToolCall> functionCalls,
+    List<Map<String, Object?>> rawParts,
+  })
+  _extractCandidateChunk(Map<String, dynamic> chunk, {int nextCallIndex = 0}) {
     final candidates = chunk['candidates'];
-    if (candidates is! List || candidates.isEmpty) return '';
+    if (candidates is! List || candidates.isEmpty) {
+      return (text: '', functionCalls: const [], rawParts: const []);
+    }
     final first = candidates.first;
-    if (first is! Map) return '';
+    if (first is! Map) {
+      return (text: '', functionCalls: const [], rawParts: const []);
+    }
     final content = first['content'];
-    if (content is! Map) return '';
+    if (content is! Map) {
+      return (text: '', functionCalls: const [], rawParts: const []);
+    }
     final parts = content['parts'];
-    if (parts is! List || parts.isEmpty) return '';
+    if (parts is! List || parts.isEmpty) {
+      return (text: '', functionCalls: const [], rawParts: const []);
+    }
 
     final buffer = StringBuffer();
+    final calls = <VibeToolCall>[];
+    final rawParts = <Map<String, Object?>>[];
     for (final part in parts) {
-      if (part is Map && part['thought'] != true) {
-        final text = part['text'];
-        if (text is String && text.isNotEmpty) {
-          buffer.write(text);
+      if (part is! Map) continue;
+      if (part['thought'] == true) continue;
+
+      final typedPart = <String, Object?>{
+        for (final entry in part.entries) '${entry.key}': entry.value,
+      };
+      rawParts.add(typedPart);
+
+      final text = part['text'];
+      if (text is String && text.isNotEmpty) {
+        buffer.write(text);
+      }
+
+      final fc = part['functionCall'];
+      if (fc is Map) {
+        final rawName = fc['name'];
+        if (rawName is String && rawName.trim().isNotEmpty) {
+          final rawArgs = fc['args'];
+          final args = <String, Object?>{};
+          if (rawArgs is Map) {
+            for (final entry in rawArgs.entries) {
+              args['${entry.key}'] = entry.value;
+            }
+          }
+          calls.add(
+            VibeToolCall(
+              id: 'gemini_fc_${nextCallIndex + calls.length}',
+              name: rawName.trim(),
+              arguments: args,
+            ),
+          );
         }
       }
     }
-    return buffer.toString();
+    return (
+      text: buffer.toString(),
+      functionCalls: calls,
+      rawParts: rawParts,
+    );
+  }
+
+  static bool _mentionsResponseMimeTypeWithTools(String errorBody) {
+    final lower = errorBody.toLowerCase();
+    return lower.contains('responsemimetype') ||
+        lower.contains('response_mime_type') ||
+        lower.contains('function calling') ||
+        lower.contains('json mode');
   }
 
   static bool _mentionsCachedContent(String errorBody) =>
@@ -1249,9 +1422,18 @@ class GeminiRestClient {
     required String model,
     required String? systemInstruction,
     required String? staticGuide,
-  }) =>
-      '$model|${_stableHash(systemInstruction ?? '')}|'
-      '${_stableHash(staticGuide ?? '')}';
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+  }) {
+    final toolsDigest = tools.isEmpty
+        ? ''
+        : _stableHash(
+            jsonEncode([
+              for (final t in tools) t.toGeminiFunctionDeclaration(),
+            ]),
+          );
+    return '$model|${_stableHash(systemInstruction ?? '')}|'
+        '${_stableHash(staticGuide ?? '')}|$toolsDigest';
+  }
 
   static String _stableHash(String input) {
     var h1 = 0x811c9dc5;
