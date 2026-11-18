@@ -257,11 +257,8 @@ class _EditorZoomState extends State<EditorZoom>
         MediaQuery.disableAnimationsOf(context);
     if (disableAnimations) {
       _animation.stop();
-      _controller.scale.value = 1.0;
-      _controller.transform.value = next;
-      setState(() {
-        _current = _from = _to = next;
-      });
+      _from = _to = next;
+      _applyTransform(next);
       return;
     }
     final desiredDuration = Duration(
@@ -643,9 +640,7 @@ class _EditorZoomState extends State<EditorZoom>
     _to = destination;
     if (disableAnimations) {
       _animation.stop();
-      _controller.scale.value = _to.scale;
-      _controller.transform.value = _to;
-      setState(() => _current = _to);
+      _applyTransform(_to);
     } else {
       _animation.forward(from: 0);
     }
@@ -697,10 +692,8 @@ class _EditorZoomState extends State<EditorZoom>
         if (_controller.openContextMenus.value > 0) {
           _preRightClickTransform = next;
         }
-        _controller.transform.value = next;
-        setState(() {
-          _current = _from = _to = next;
-        });
+        _from = _to = next;
+        _applyTransform(next);
       }
     }
   }
@@ -836,25 +829,23 @@ class _EditorZoomState extends State<EditorZoom>
     } else if (dialog == null) {
       _preRightClickTransform = null;
     }
-    _controller.scale.value = nextScale;
     _animation.stop();
     final next = (scale: nextScale, offset: nextOffset);
+    _from = _to = next;
+    _applyTransform(next);
+  }
+
+  void _applyTransform(({double scale, Offset offset}) next) {
+    _current = next;
+    _controller.scale.value = next.scale;
     _controller.transform.value = next;
-    setState(() {
-      _current = _from = _to = next;
-    });
   }
 
   void _animate() {
     final progress = Curves.easeInOutCubic.transform(_animation.value);
     final scale = _from.scale + (_to.scale - _from.scale) * progress;
     final offset = Offset.lerp(_from.offset, _to.offset, progress)!;
-    _controller.scale.value = scale;
-    final next = (scale: scale, offset: offset);
-    _controller.transform.value = next;
-    setState(() {
-      _current = next;
-    });
+    _applyTransform((scale: scale, offset: offset));
   }
 
   @override
@@ -877,95 +868,118 @@ class _EditorZoomState extends State<EditorZoom>
   }
 
   @override
-  Widget build(BuildContext context) => EditorZoomScope(
-    scale: _current.scale,
-    offset: _current.offset,
-    controller: _controller,
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        if (_viewport != constraints.biggest) {
-          _viewport = constraints.biggest;
-          _schedule();
-        }
-        final editing = _editMode?.value ?? false;
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            MouseRegion(
-              opaque: false,
-              onHover: (event) =>
-                  EditorSlotState.recordViewportPointerHover(event.position),
-              onExit: (_) => EditorSlotState.clearCanvasHoveredParent(),
-              child: Listener(
-                onPointerDown: _onPointerDown,
-                onPointerMove: _onPointerMove,
-                onPointerUp: _onPointerUp,
-                onPointerCancel: _onPointerCancel,
-                onPointerSignal: _onPointerSignal,
-                behavior: HitTestBehavior.translucent,
-                child: ClipRect(
-                  key: _viewportKey,
-                  child: Transform(
-                    key: const ValueKey('editor-zoom-transform'),
-                    alignment: Alignment.topLeft,
-                    transform: Matrix4.identity()
-                      ..translateByDouble(
-                        _current.offset.dx,
-                        _current.offset.dy,
-                        0,
-                        1,
-                      )
-                      ..scaleByDouble(_current.scale, _current.scale, 1, 1),
-                    child: SizedBox.expand(key: _content, child: widget.child),
+  Widget build(BuildContext context) {
+    final zoomedContent = RepaintBoundary(
+      child: SizedBox.expand(key: _content, child: widget.child),
+    );
+    return EditorZoomScope(
+      scale: 1.0,
+      offset: Offset.zero,
+      controller: _controller,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (_viewport != constraints.biggest) {
+            _viewport = constraints.biggest;
+            _schedule();
+          }
+          final editing = _editMode?.value ?? false;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              MouseRegion(
+                opaque: false,
+                onHover: (event) =>
+                    EditorSlotState.recordViewportPointerHover(event.position),
+                onExit: (_) => EditorSlotState.clearCanvasHoveredParent(),
+                child: Listener(
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _onPointerUp,
+                  onPointerCancel: _onPointerCancel,
+                  onPointerSignal: _onPointerSignal,
+                  behavior: HitTestBehavior.translucent,
+                  child: ClipRect(
+                    key: _viewportKey,
+                    child:
+                        ValueListenableBuilder<({double scale, Offset offset})>(
+                          valueListenable: _controller.transform,
+                          child: zoomedContent,
+                          builder: (context, transform, child) => Transform(
+                            key: const ValueKey('editor-zoom-transform'),
+                            alignment: Alignment.topLeft,
+                            transform: Matrix4.identity()
+                              ..translateByDouble(
+                                transform.offset.dx,
+                                transform.offset.dy,
+                                0,
+                                1,
+                              )
+                              ..scaleByDouble(
+                                transform.scale,
+                                transform.scale,
+                                1,
+                                1,
+                              ),
+                            child: child,
+                          ),
+                        ),
                   ),
                 ),
               ),
-            ),
-            if (editing)
-              ListenableBuilder(
-                listenable: Listenable.merge([
-                  EditorOverlayVisibility.openDialogs,
-                  _controller.openContextMenus,
-                ]),
-                builder: (context, _) =>
-                    EditorOverlayVisibility.openDialogs.value > 0 ||
-                        _controller.openContextMenus.value > 0
-                    ? const SizedBox.shrink()
-                    : Positioned.fill(
-                        child: CustomSingleChildLayout(
-                          delegate: _toolbarLayout = ZoomToolbarLayout(
-                            _controller.toolbarPosition,
-                          ),
-                          child: Material(
-                            key: const ValueKey('editor-zoom-toolbar'),
-                            type: MaterialType.card,
-                            elevation: 8,
-                            borderRadius: BorderRadius.circular(8),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: EditorZoomToolbarContent(
-                                scale: _current.scale,
-                                onScaleChanged: _setSliderScale,
-                                onDrag: (details) => setState(() {
-                                  final nextPosition =
-                                      _toolbarLayout.resolvedPosition +
-                                      details.delta;
-                                  _controller.toolbarPosition = nextPosition;
-                                  _toolbarLayout = ZoomToolbarLayout(
-                                    nextPosition,
-                                  );
-                                }),
+              if (editing)
+                ListenableBuilder(
+                  listenable: Listenable.merge([
+                    EditorOverlayVisibility.openDialogs,
+                    _controller.openContextMenus,
+                  ]),
+                  builder: (context, _) =>
+                      EditorOverlayVisibility.openDialogs.value > 0 ||
+                          _controller.openContextMenus.value > 0
+                      ? const SizedBox.shrink()
+                      : Positioned.fill(
+                          child: RepaintBoundary(
+                            child: CustomSingleChildLayout(
+                              delegate: _toolbarLayout = ZoomToolbarLayout(
+                                _controller.toolbarPosition,
+                              ),
+                              child: Material(
+                                key: const ValueKey('editor-zoom-toolbar'),
+                                type: MaterialType.card,
+                                elevation: 8,
+                                borderRadius: BorderRadius.circular(8),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: ValueListenableBuilder<double>(
+                                    valueListenable: _controller.scale,
+                                    builder: (context, scale, _) =>
+                                        EditorZoomToolbarContent(
+                                          scale: scale,
+                                          onScaleChanged: _setSliderScale,
+                                          onDrag: (details) => setState(() {
+                                            final nextPosition =
+                                                _toolbarLayout
+                                                    .resolvedPosition +
+                                                details.delta;
+                                            _controller.toolbarPosition =
+                                                nextPosition;
+                                            _toolbarLayout = ZoomToolbarLayout(
+                                              nextPosition,
+                                            );
+                                          }),
+                                        ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-              ),
-          ],
-        );
-      },
-    ),
-  );
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
 
 /// Portée `InheritedNotifier` fournissant l'[EditorZoomController] aux widgets enfants.
@@ -982,27 +996,36 @@ class EditorZoomScope extends InheritedWidget {
   final Offset offset;
   final EditorZoomController? controller;
 
-  static EditorZoomController? controllerOf(BuildContext context) {
-    final inherited = context
-        .getInheritedWidgetOfExactType<EditorZoomScope>()
-        ?.controller;
-    if (inherited != null) return inherited;
-    EditorZoomController? descendant;
-    void visit(Element element) {
-      if (descendant != null) return;
-      if (element.widget case EditorZoomScope(:final controller?)) {
-        descendant = controller;
-        return;
-      }
-      element.visitChildElements(visit);
-    }
+  /// Retourne le contrôleur fourni par un ancêtre [EditorZoomScope] sans
+  /// parcourir les descendants (sûr pendant `build` et `initState`).
+  static EditorZoomController? maybeAncestorControllerOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<EditorZoomScope>()?.controller;
 
-    if (context is Element) visit(context);
-    return descendant ?? EditorZoomController._active;
+  static EditorZoomController? controllerOf(BuildContext context) {
+    final inherited = maybeAncestorControllerOf(context);
+    if (inherited != null) return inherited;
+    if (context is Element &&
+        context.mounted &&
+        !context.debugDoingBuild &&
+        !(context.owner?.debugBuilding ?? false)) {
+      EditorZoomController? descendant;
+      void visit(Element element) {
+        if (descendant != null) return;
+        if (element.widget case EditorZoomScope(:final controller?)) {
+          descendant = controller;
+          return;
+        }
+        element.visitChildElements(visit);
+      }
+
+      visit(context);
+      if (descendant != null) return descendant;
+    }
+    return EditorZoomController._active;
   }
 
   static bool contains(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<EditorZoomScope>() != null;
+      context.getInheritedWidgetOfExactType<EditorZoomScope>() != null;
 
   @override
   bool updateShouldNotify(EditorZoomScope oldWidget) =>

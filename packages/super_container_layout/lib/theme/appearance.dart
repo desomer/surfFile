@@ -61,6 +61,27 @@ class Appearance {
     }
   }
 
+  Appearance._frozen({
+    required this.mode,
+    required this.accent,
+    required this.backgroundOpacity,
+    required this.windowOpacity,
+    required this.windowEffect,
+    required this.styles,
+    required this.components,
+    required this.behaviors,
+    required this.usages,
+    required this.pageCatalog,
+  }) {
+    if (accent is ThemeColor) {
+      throw ArgumentError.value(
+        accent,
+        'accent',
+        'Une couleur fixe est requise pour générer le thème.',
+      );
+    }
+  }
+
   static SuperLayoutConfig _freezeLayout(SuperLayoutConfig l) => l.copyWith(
     swaps: Set.unmodifiable(l.swaps),
     autoSides: Set.unmodifiable(l.autoSides),
@@ -78,19 +99,22 @@ class Appearance {
     }),
   );
 
+  static ComponentConfig _freezeComponent(ComponentConfig value) =>
+      switch (value) {
+        final SuperLayoutConfig l => _freezeLayout(l),
+        final SuperListViewConfig list => list.copyWith(
+          template: _freezeLayout(list.template),
+        ),
+        final other => other,
+      };
+
   static Map<String, ComponentConfig> _mergeComponents(
     Map<String, ComponentConfig> components,
     Map<String, SuperLayoutConfig> layouts,
   ) {
     final result = <String, ComponentConfig>{
       for (final entry in components.entries)
-        entry.key: switch (entry.value) {
-          final SuperLayoutConfig l => _freezeLayout(l),
-          final SuperListViewConfig list => list.copyWith(
-            template: _freezeLayout(list.template),
-          ),
-          final other => other,
-        },
+        entry.key: _freezeComponent(entry.value),
     };
     for (final entry in layouts.entries) {
       final frozen = _freezeLayout(entry.value);
@@ -130,7 +154,18 @@ class Appearance {
     } else {
       next[id] = usage;
     }
-    return copyWith(usages: next);
+    return Appearance._frozen(
+      mode: mode,
+      accent: accent,
+      backgroundOpacity: backgroundOpacity,
+      windowOpacity: windowOpacity,
+      windowEffect: windowEffect,
+      styles: styles,
+      components: components,
+      behaviors: behaviors,
+      usages: Map.unmodifiable(next),
+      pageCatalog: pageCatalog,
+    );
   }
 
   List<ComponentBehavior> behaviorsFor(String id) => behaviors[id] ?? const [];
@@ -138,11 +173,23 @@ class Appearance {
   Appearance withBehaviors(String id, List<ComponentBehavior> list) {
     final next = Map<String, List<ComponentBehavior>>.from(behaviors);
     if (list.isEmpty) {
+      if (!behaviors.containsKey(id)) return this;
       next.remove(id);
     } else {
       next[id] = List<ComponentBehavior>.unmodifiable(list);
     }
-    return copyWith(behaviors: next);
+    return Appearance._frozen(
+      mode: mode,
+      accent: accent,
+      backgroundOpacity: backgroundOpacity,
+      windowOpacity: windowOpacity,
+      windowEffect: windowEffect,
+      styles: styles,
+      components: components,
+      behaviors: Map.unmodifiable(next),
+      usages: usages,
+      pageCatalog: pageCatalog,
+    );
   }
 
   Appearance withAddedBehavior(String id, ComponentBehavior behavior) {
@@ -182,14 +229,38 @@ class Appearance {
       });
 
   Appearance withComponent(String id, ComponentConfig? value) {
-    final next = {...components};
     if (value == null) {
-      next.remove(id);
-    } else {
-      value.validate();
-      next[id] = value;
+      if (!components.containsKey(id)) return this;
+      final next = {...components}..remove(id);
+      return Appearance._frozen(
+        mode: mode,
+        accent: accent,
+        backgroundOpacity: backgroundOpacity,
+        windowOpacity: windowOpacity,
+        windowEffect: windowEffect,
+        styles: styles,
+        components: Map.unmodifiable(next),
+        behaviors: behaviors,
+        usages: usages,
+        pageCatalog: pageCatalog,
+      );
     }
-    return copyWith(components: next);
+    value.validate();
+    final frozen = _freezeComponent(value);
+    if (components[id] == frozen) return this;
+    final next = {...components, id: frozen};
+    return Appearance._frozen(
+      mode: mode,
+      accent: accent,
+      backgroundOpacity: backgroundOpacity,
+      windowOpacity: windowOpacity,
+      windowEffect: windowEffect,
+      styles: styles,
+      components: Map.unmodifiable(next),
+      behaviors: behaviors,
+      usages: usages,
+      pageCatalog: pageCatalog,
+    );
   }
 
   SuperValueConfig valueComponent(
@@ -349,39 +420,80 @@ class Appearance {
     Map<String, ComponentUsage>? usages,
     EditorPageCatalog? pageCatalog,
   }) {
-    final baseComponents =
-        components ??
-        (layouts != null
-            ? {
-                for (final entry in this.components.entries)
-                  if (entry.value is! SuperLayoutConfig) entry.key: entry.value,
-              }
-            : this.components);
-    return Appearance(
+    final nextStyles = backgroundStyle == null
+        ? (styles == null ? this.styles : Map<String, ContainerStyle>.unmodifiable(styles))
+        : Map<String, ContainerStyle>.unmodifiable({
+            ...(styles ?? this.styles),
+            'background': backgroundStyle,
+          });
+    final Map<String, ComponentConfig> nextComponents;
+    if (components == null && layouts == null) {
+      nextComponents = this.components;
+    } else {
+      final baseComponents =
+          components ??
+          {
+            for (final entry in this.components.entries)
+              if (entry.value is! SuperLayoutConfig) entry.key: entry.value,
+          };
+      nextComponents = Map.unmodifiable(
+        _mergeComponents(baseComponents, layouts ?? const {}),
+      );
+    }
+    final nextBehaviors = behaviors == null
+        ? this.behaviors
+        : Map<String, List<ComponentBehavior>>.unmodifiable({
+            for (final entry in behaviors.entries)
+              entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
+          });
+    final nextUsages = usages == null
+        ? this.usages
+        : Map<String, ComponentUsage>.unmodifiable(usages);
+    return Appearance._frozen(
       mode: mode ?? this.mode,
       accent: accent ?? this.accent,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       windowOpacity: windowOpacity ?? this.windowOpacity,
       windowEffect: windowEffect ?? this.windowEffect,
-      styles: backgroundStyle == null
-          ? styles ?? this.styles
-          : {...styles ?? this.styles, 'background': backgroundStyle},
-      layouts: layouts ?? const {},
-      components: baseComponents,
-      behaviors: behaviors ?? this.behaviors,
-      usages: usages ?? this.usages,
+      styles: nextStyles,
+      components: nextComponents,
+      behaviors: nextBehaviors,
+      usages: nextUsages,
       pageCatalog: pageCatalog ?? this.pageCatalog,
     );
   }
 
   Appearance withStyle(String id, ContainerStyle? value) {
-    final next = {...styles};
     if (value == null) {
-      next.remove(id);
-    } else {
-      next[id] = value;
+      if (!styles.containsKey(id)) return this;
+      final next = {...styles}..remove(id);
+      return Appearance._frozen(
+        mode: mode,
+        accent: accent,
+        backgroundOpacity: backgroundOpacity,
+        windowOpacity: windowOpacity,
+        windowEffect: windowEffect,
+        styles: Map.unmodifiable(next),
+        components: components,
+        behaviors: behaviors,
+        usages: usages,
+        pageCatalog: pageCatalog,
+      );
     }
-    return copyWith(styles: next);
+    if (styles[id] == value) return this;
+    final next = {...styles, id: value};
+    return Appearance._frozen(
+      mode: mode,
+      accent: accent,
+      backgroundOpacity: backgroundOpacity,
+      windowOpacity: windowOpacity,
+      windowEffect: windowEffect,
+      styles: Map.unmodifiable(next),
+      components: components,
+      behaviors: behaviors,
+      usages: usages,
+      pageCatalog: pageCatalog,
+    );
   }
 
   Appearance withLayout(String id, SuperLayoutConfig value) =>

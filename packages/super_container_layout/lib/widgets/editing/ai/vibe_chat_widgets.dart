@@ -1,6 +1,7 @@
 /// Bulles de conversation, indicateurs de génération et pièces jointes du chat Vibe.
 library;
 
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -291,6 +292,13 @@ class VibeMessageBubble extends StatelessWidget {
                   ),
                   if (message.text.isNotEmpty) const SizedBox(height: 6),
                 ],
+                if (message.toolTraces.isNotEmpty) ...[
+                  VibeToolTracesSection(traces: message.toolTraces),
+                  if (message.text.isNotEmpty ||
+                      askUser != null ||
+                      plan != null)
+                    const SizedBox(height: 6),
+                ],
                 if (message.text.isNotEmpty) SelectableText(message.text),
                 if (askUser != null) ...[
                   if (message.text.isNotEmpty) const SizedBox(height: 8),
@@ -329,6 +337,197 @@ class VibeMessageBubble extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Section compacte et dépliable présentant les outils d'introspection exécutés pour un message.
+class VibeToolTracesSection extends StatefulWidget {
+  /// Crée une section listant [traces].
+  const VibeToolTracesSection({required this.traces, super.key});
+
+  /// Traces d'appels d'outils associées à la réponse de l'assistant.
+  final List<VibeToolTrace> traces;
+
+  @override
+  State<VibeToolTracesSection> createState() => _VibeToolTracesSectionState();
+}
+
+class _VibeToolTracesSectionState extends State<VibeToolTracesSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final count = widget.traces.length;
+    final hasError = widget.traces.any((t) => t.isError);
+    final uniqueNames = <String>{
+      for (final t in widget.traces)
+        if (t.name.trim().isNotEmpty) t.name,
+    }.toList();
+    final namesPreview = uniqueNames.length <= 2
+        ? uniqueNames.join(', ')
+        : '${uniqueNames.take(2).join(', ')} (+${uniqueNames.length - 2})';
+    final headerLabel = count == 1
+        ? '1 outil utilisé : $namesPreview'
+        : '$count outils utilisés : $namesPreview';
+
+    return Container(
+      key: const ValueKey('vibe-message-tools-section'),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasError ? scheme.error.withValues(alpha: 0.45) : scheme.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            key: const ValueKey('vibe-message-tools-toggle'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    hasError ? Icons.warning_amber_rounded : Icons.troubleshoot_outlined,
+                    size: 14,
+                    color: hasError ? scheme.error : scheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      headerLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 15,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final trace in widget.traces)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: _VibeToolTraceRow(trace: trace),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VibeToolTraceRow extends StatelessWidget {
+  const _VibeToolTraceRow({required this.trace});
+
+  final VibeToolTrace trace;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final argsText = trace.arguments.isEmpty ? '' : jsonEncode(trace.arguments);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(
+            trace.isError ? Icons.error_outline : Icons.check_circle_outline,
+            size: 13,
+            color: trace.isError ? scheme.error : scheme.primary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    trace.name,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  if (trace.isPostVerify)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'post-rendu',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: scheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  if (trace.summary.isNotEmpty)
+                    Text(
+                      trace.summary,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: trace.isError
+                            ? scheme.error
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+              if (argsText.isNotEmpty)
+                Text(
+                  argsText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontFamily: 'monospace',
+                    color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -582,6 +781,7 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
             builder: (context, current, _) {
               final streamedMessage = current?.message;
               final activeToolStatus = current?.activeToolStatus;
+              final completedTraces = current?.toolTraces ?? const <VibeToolTrace>[];
               if (current == null || streamedMessage == null) {
                 return Container(
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -594,22 +794,33 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                     color: scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const SizedBox.square(
-                        dimension: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          activeToolStatus ?? 'Génération en cours…',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: scheme.onSurfaceVariant,
-                          ),
+                      for (final trace in completedTraces)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: _VibeToolTraceRow(trace: trace),
                         ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              activeToolStatus ?? 'Génération en cours…',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -640,6 +851,11 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    for (final trace in completedTraces)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: _VibeToolTraceRow(trace: trace),
+                      ),
                     SelectableText(streamedMessage),
                     if (current.hasVibeObject) ...[
                       if (streamedMessage.isNotEmpty) const SizedBox(height: 6),

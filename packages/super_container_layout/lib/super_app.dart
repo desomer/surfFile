@@ -482,25 +482,28 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       ),
       if (!_loading && _loadError == null)
         Positioned.fill(
-          child: StyleEditBanner(
-            navigatorKey: navigatorKey,
-            initialAlignment: widget.editorBannerAlignment,
-            customDesignGuide: widget.customDesignGuide,
-            replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
-            validateAppearance: (appearance) =>
-                widget.pageRouting?.validate(appearance.pageCatalog),
-            onManagePages: widget.pageRouting == null || widget.registry == null
-                ? null
-                : () async {
-                    final target = navigatorKey.currentContext;
-                    if (target == null) return;
-                    await showEditorPageManager(
-                      context: target,
-                      appearance: _appearance,
-                      routing: widget.pageRouting!,
-                      registry: widget.registry!,
-                    );
-                  },
+          child: RepaintBoundary(
+            child: StyleEditBanner(
+              navigatorKey: navigatorKey,
+              initialAlignment: widget.editorBannerAlignment,
+              customDesignGuide: widget.customDesignGuide,
+              replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+              validateAppearance: (appearance) =>
+                  widget.pageRouting?.validate(appearance.pageCatalog),
+              onManagePages:
+                  widget.pageRouting == null || widget.registry == null
+                  ? null
+                  : () async {
+                      final target = navigatorKey.currentContext;
+                      if (target == null) return;
+                      await showEditorPageManager(
+                        context: target,
+                        appearance: _appearance,
+                        routing: widget.pageRouting!,
+                        registry: widget.registry!,
+                      );
+                    },
+            ),
           ),
         ),
     ],

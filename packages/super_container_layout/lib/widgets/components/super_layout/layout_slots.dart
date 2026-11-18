@@ -1,7 +1,79 @@
 // Résolution et normalisation des listes de slots placés dans un [SuperLayout].
 part of 'super_layout.dart';
 
+class _SlotLookupIndex {
+  const _SlotLookupIndex({
+    required this.registry,
+    required this.widgetSlots,
+    required this.registryCount,
+    required this.componentsCount,
+    required this.suppliedById,
+    required this.factoriesByType,
+    required this.componentsByType,
+  });
+
+  final Registry? registry;
+  final List<SlotImplementation> widgetSlots;
+  final int registryCount;
+  final int componentsCount;
+  final Map<String, SlotImplementation> suppliedById;
+  final Map<String, (String key, ComponentBuilder builder)> factoriesByType;
+  final Map<String, List<RegisteredComponent>> componentsByType;
+
+  bool matches(Registry? currentRegistry, List<SlotImplementation> slots) =>
+      identical(registry, currentRegistry) &&
+      identical(widgetSlots, slots) &&
+      (currentRegistry?.registry.length ?? -1) == registryCount &&
+      (currentRegistry?.components.length ?? -1) == componentsCount;
+}
+
 extension _SuperLayoutSlots on SuperLayoutState {
+  _SlotLookupIndex _resolveSlotLookup(Registry? registry) {
+    final current = _slotLookup;
+    if (current != null && current.matches(registry, widget.slots)) {
+      return current;
+    }
+    final suppliedById = <String, SlotImplementation>{
+      for (final slot in widget.slots) slot.id: slot,
+    };
+    final ids = suppliedById.keys.toSet();
+    final factoriesByType = <String, (String key, ComponentBuilder builder)>{};
+    final componentsByType = <String, List<RegisteredComponent>>{};
+    if (registry != null) {
+      for (final entry in registry.registry.entries) {
+        final record = (entry.key, entry.value);
+        factoriesByType[_registrySlotId(entry.key, ids)] = record;
+        factoriesByType['factory:${entry.key}'] = record;
+      }
+      for (final entry in registry.components.entries) {
+        final candidate = entry.value;
+        if (ids.contains(candidate.slotId)) continue;
+        final regId = _registrySlotId(entry.key, ids);
+        final compId = 'component:${candidate.slotId ?? entry.key}';
+        if (candidate.slotId != null) {
+          (componentsByType[candidate.slotId!] ??= []).add(candidate);
+        }
+        if (regId != candidate.slotId) {
+          (componentsByType[regId] ??= []).add(candidate);
+        }
+        if (compId != candidate.slotId && compId != regId) {
+          (componentsByType[compId] ??= []).add(candidate);
+        }
+      }
+    }
+    final next = _SlotLookupIndex(
+      registry: registry,
+      widgetSlots: widget.slots,
+      registryCount: registry?.registry.length ?? -1,
+      componentsCount: registry?.components.length ?? -1,
+      suppliedById: suppliedById,
+      factoriesByType: factoriesByType,
+      componentsByType: componentsByType,
+    );
+    _slotLookup = next;
+    return next;
+  }
+
   List<SlotImplementation> _availableSlots(
     BuildContext context, {
     bool? includeRegistry,
@@ -165,12 +237,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
   }) {
     final type = (configuration ?? config).slotTypeOf(id);
     final registry = SuperApp.maybeOf(context)?.registry;
-    final ids = <String>{};
-    SlotImplementation? supplied;
-    for (final slot in widget.slots) {
-      ids.add(slot.id);
-      if (slot.id == type) supplied = slot;
-    }
+    final lookup = _resolveSlotLookup(registry);
+    SlotImplementation? supplied = lookup.suppliedById[type];
     supplied ??=
         ProvidedSlotScope.find(context, id) ??
         ProvidedSlotScope.find(context, type);
@@ -191,22 +259,16 @@ extension _SuperLayoutSlots on SuperLayoutState {
     }
     if (registry == null) return supplied;
 
-    for (final entry in registry.registry.entries) {
-      if (_registrySlotId(entry.key, ids) == type ||
-          'factory:${entry.key}' == type) {
-        return _createRegistrySlot(entry.key, entry.value, id);
-      }
+    if (lookup.factoriesByType[type] case (final key, final builder)) {
+      return _createRegistrySlot(key, builder, id);
     }
     if (supplied != null) return supplied;
 
+    final candidates = lookup.componentsByType[type];
+    if (candidates == null) return null;
     RegisteredComponent? component;
-    for (final entry in registry.components.entries) {
-      final candidate = entry.value;
-      if (ids.contains(candidate.slotId)) continue;
-      if ((candidate.slotId == type ||
-              _registrySlotId(entry.key, ids) == type ||
-              'component:${candidate.slotId ?? entry.key}' == type) &&
-          (candidate.isAvailable?.call(context) ?? true)) {
+    for (final candidate in candidates) {
+      if (candidate.isAvailable?.call(context) ?? true) {
         component = candidate;
       }
     }
@@ -592,10 +654,54 @@ extension _SuperLayoutSlots on SuperLayoutState {
   ) {
     final ids = config.placementsOf(content);
     if (ids.isEmpty) return const [];
-    return [
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final registryCount = registry?.registry.length ?? -1;
+    final componentsCount = registry?.components.length ?? -1;
+    if (!identical(config, _cachedSlotsConfig) ||
+        !identical(registry, _cachedSlotsRegistry) ||
+        !identical(widget.slots, _cachedSlotsWidgetList) ||
+        registryCount != _cachedRegistryCount ||
+        componentsCount != _cachedComponentsCount) {
+      _cachedSlotsByContent.clear();
+      _cachedSlotsConfig = config;
+      _cachedSlotsRegistry = registry;
+      _cachedSlotsWidgetList = widget.slots;
+      _cachedRegistryCount = registryCount;
+      _cachedComponentsCount = componentsCount;
+    }
+    return _cachedSlotsByContent[content] ??= List.unmodifiable([
       for (final id in ids)
-        if (searchSlot(id) case final slot? when slot.visible) slot,
-    ];
+        if (_searchSlotForConfig(id, config) case final slot? when slot.visible)
+          slot,
+    ]);
+  }
+
+  SlotImplementation? _searchSlotForConfig(
+    String id,
+    SuperLayoutConfig configuration,
+  ) {
+    final slot = _searchSlot(id, configuration: configuration);
+    if (slot == null) return null;
+    final previousLabel = configuration.slotLabels[id];
+    return InstanceSlot(
+      slot,
+      label: configuration.slotLabels[id] ?? slot.label,
+      onRename: (label) => _update(
+        label == slot.label
+            ? _config.value.copyWith(
+                slotLabels: {..._config.value.slotLabels}..remove(id),
+              )
+            : _config.value.withSlotLabel(id, label),
+      ),
+      overridden: previousLabel != null,
+      onRestore: () => _update(
+        _config.value.copyWith(
+          slotLabels: {..._config.value.slotLabels}
+            ..remove(id)
+            ..addAll({id: ?previousLabel}),
+        ),
+      ),
+    );
   }
 
   bool _hasContent(SuperLayoutConfig config, SuperLayoutZone content) =>
@@ -607,6 +713,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     Set<SuperLayoutZone> autoSides,
     bool editMode,
     Size layoutSize, {
+    required String? selectedSlotId,
     required bool shrinkWidth,
     required bool shrinkHeight,
     required bool hasHorizontalSide,
@@ -653,7 +760,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,
-      selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
+      selectedSlotId: selectedSlotId,
       onResizeSlot: canEditSlots ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
       onSelectContent: canEditSlots

@@ -528,4 +528,68 @@ void main() {
       }
     },
   );
+  test(
+    'PersistentAppearanceController debounces rapid writes and flushes on saved',
+    () async {
+      final store = _CountingSaveStore();
+      final controller = PersistentAppearanceController(
+        store,
+        (error) => fail('$error'),
+        persistDelay: const Duration(milliseconds: 250),
+      );
+      addTearDown(controller.dispose);
+
+      for (var i = 1; i <= 5; i++) {
+        controller.value = controller.value.withStyle(
+          'card',
+          ContainerStyle(radius: i.toDouble()),
+        );
+      }
+      expect(store.saveCalls, 0);
+
+      await controller.saved;
+      expect(store.saveCalls, 1);
+      expect(store.lastSaved?.style('card').radius, 5);
+    },
+  );
+  test(
+    'Appearance preserves unchanged layout references across unrelated edits',
+    () {
+      final before = Appearance(
+        layouts: {
+          'a': const SuperLayoutConfig(
+            westSize: 180,
+            placements: {
+              SuperLayoutZone.center: ['btn'],
+            },
+          ),
+        },
+        styles: {'s': const ContainerStyle(radius: 4)},
+      );
+
+      final afterStyle = before.withStyle('s', const ContainerStyle(radius: 12));
+      expect(identical(afterStyle.layout('a'), before.layout('a')), isTrue);
+
+      final afterOtherComponent = afterStyle.withValueComponent(
+        'title',
+        const SuperValueConfig(initialText: 'Updated'),
+      );
+      expect(
+        identical(afterOtherComponent.layout('a'), before.layout('a')),
+        isTrue,
+      );
+    },
+  );
+}
+
+class _CountingSaveStore extends AppearanceStore {
+  int saveCalls = 0;
+  Appearance? lastSaved;
+
+  @override
+  Future<void> save(Appearance appearance) async {
+    saveCalls++;
+    lastSaved = appearance;
+    await super.save(appearance);
+  }
 }

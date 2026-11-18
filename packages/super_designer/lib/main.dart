@@ -449,7 +449,9 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       child: Stack(
         children: [
           Positioned.fill(child: page),
-          const Positioned.fill(child: FloatingAppearanceToolbar()),
+          const Positioned.fill(
+            child: RepaintBoundary(child: FloatingAppearanceToolbar()),
+          ),
         ],
       ),
     );

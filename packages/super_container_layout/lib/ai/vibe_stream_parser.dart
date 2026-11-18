@@ -13,6 +13,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'vibe_app_tools.dart';
+
 /// État instantané immuable décodé par [VibeIncrementalStreamParser] pendant le streaming SSE.
 @immutable
 class VibeStreamSnapshot {
@@ -34,6 +36,7 @@ class VibeStreamSnapshot {
     this.activeSection,
     this.activeEntryKey,
     this.activeToolStatus,
+    this.toolTraces = const <VibeToolTrace>[],
   });
 
   /// Instantané initial vide avant réception de tout fragment.
@@ -104,6 +107,9 @@ class VibeStreamSnapshot {
   /// Statut lisible de l'outil d'inspection en cours d'exécution par l'orchestrateur, ou `null`.
   final String? activeToolStatus;
 
+  /// Liste cumulative des appels d'outils déjà exécutés durant le tour en cours.
+  final List<VibeToolTrace> toolTraces;
+
   /// Retourne une copie modifiée de cet instantané.
   VibeStreamSnapshot copyWith({
     String? message,
@@ -128,6 +134,7 @@ class VibeStreamSnapshot {
     bool clearActiveEntryKey = false,
     String? activeToolStatus,
     bool clearActiveToolStatus = false,
+    List<VibeToolTrace>? toolTraces,
   }) => VibeStreamSnapshot(
     message: clearMessage ? null : (message ?? this.message),
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
@@ -156,6 +163,7 @@ class VibeStreamSnapshot {
     activeToolStatus: clearActiveToolStatus
         ? null
         : (activeToolStatus ?? this.activeToolStatus),
+    toolTraces: toolTraces ?? this.toolTraces,
   );
 
   /// Compare deux instantanés par égalité de valeur.
@@ -177,6 +185,7 @@ class VibeStreamSnapshot {
           other.activeSection == activeSection &&
           other.activeEntryKey == activeEntryKey &&
           other.activeToolStatus == activeToolStatus &&
+          listEquals(other.toolTraces, toolTraces) &&
           (other.partialVibePatch == null) == (partialVibePatch == null) &&
           (other.partialRepositoriesPatch == null) ==
               (partialRepositoriesPatch == null);
@@ -198,6 +207,7 @@ class VibeStreamSnapshot {
     activeSection,
     activeEntryKey,
     activeToolStatus,
+    Object.hashAll(toolTraces),
     partialVibePatch != null,
     partialRepositoriesPatch != null,
   );

@@ -340,11 +340,14 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
   Widget build(BuildContext context) {
     final child = KeyedSubtree(key: _childKey, child: widget.child);
     if (!widget.enabled) return child;
+    final accent = AppearanceScope.of(context).accent;
     final isSliver = SliverSlotScope.isSliver(context);
     if (isSliver) {
-      return ListenableBuilder(
-        listenable: _paintListenable,
-        builder: (context, child) => SliverPointerRegion(
+      return _SelectionRegionPaintHost(
+        region: this,
+        accent: accent,
+        child: child,
+        builder: (context, painter, inner) => SliverPointerRegion(
           onEnter: (_) {
             if (widget.enabled) _hovered.add(this);
             _refreshHover();
@@ -369,20 +372,9 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
           },
           onPointerUp: _pointerUp,
           onPointerCancel: (_) => _down = null,
-          foregroundPainter:
-              widget.enabled &&
-                  identical(_hoverTarget.value, this) &&
-                  EditorOverlayVisibility.openDialogs.value == 0 &&
-                  EditorSlotState.highlightedTarget.value == null &&
-                  EditorSlotState.canvasHoveredParent.value == null
-              ? EditorSelectionOutline(
-                  color: AppearanceScope.of(context).accent,
-                  dashed: !widget.isZone,
-                )
-              : null,
-          child: child,
+          foregroundPainter: painter,
+          child: inner,
         ),
-        child: child,
       );
     }
     return MouseRegion(
@@ -413,25 +405,94 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
         },
         onPointerUp: _pointerUp,
         onPointerCancel: (_) => _down = null,
-        child: ListenableBuilder(
-          listenable: _paintListenable,
-          builder: (context, child) => CustomPaint(
-            foregroundPainter:
-                widget.enabled &&
-                    identical(_hoverTarget.value, this) &&
-                    EditorOverlayVisibility.openDialogs.value == 0 &&
-                    EditorSlotState.highlightedTarget.value == null &&
-                    EditorSlotState.canvasHoveredParent.value == null
-                ? EditorSelectionOutline(
-                    color: AppearanceScope.of(context).accent,
-                    dashed: !widget.isZone,
-                  )
-                : null,
-            child: child,
+        child: RepaintBoundary(
+          child: _SelectionRegionPaintHost(
+            region: this,
+            accent: accent,
+            child: RepaintBoundary(child: child),
+            builder: (context, painter, inner) => CustomPaint(
+              foregroundPainter: painter,
+              child: inner,
+            ),
           ),
-          child: child,
         ),
       ),
     );
+  }
+}
+
+class _SelectionRegionPaintHost extends StatefulWidget {
+  const _SelectionRegionPaintHost({
+    required this.region,
+    required this.accent,
+    required this.child,
+    required this.builder,
+  });
+
+  final _EditorSelectionRegionState region;
+  final Color accent;
+  final Widget child;
+  final Widget Function(
+    BuildContext context,
+    CustomPainter? painter,
+    Widget child,
+  )
+  builder;
+
+  @override
+  State<_SelectionRegionPaintHost> createState() =>
+      _SelectionRegionPaintHostState();
+}
+
+class _SelectionRegionPaintHostState extends State<_SelectionRegionPaintHost> {
+  late bool _showOutline;
+
+  bool _computeShowOutline() {
+    final region = widget.region;
+    return region.mounted &&
+        region.widget.enabled &&
+        identical(_EditorSelectionRegionState._hoverTarget.value, region) &&
+        EditorOverlayVisibility.openDialogs.value == 0 &&
+        EditorSlotState.highlightedTarget.value == null &&
+        EditorSlotState.canvasHoveredParent.value == null;
+  }
+
+  void _onPaintChanged() {
+    if (!mounted) return;
+    final next = _computeShowOutline();
+    if (next == _showOutline) return;
+    setState(() => _showOutline = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _showOutline = _computeShowOutline();
+    _EditorSelectionRegionState._paintListenable.addListener(_onPaintChanged);
+  }
+
+  @override
+  void didUpdateWidget(_SelectionRegionPaintHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _showOutline = _computeShowOutline();
+  }
+
+  @override
+  void dispose() {
+    _EditorSelectionRegionState._paintListenable.removeListener(
+      _onPaintChanged,
+    );
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final painter = _showOutline
+        ? EditorSelectionOutline(
+            color: widget.accent,
+            dashed: !widget.region.widget.isZone,
+          )
+        : null;
+    return widget.builder(context, painter, widget.child);
   }
 }

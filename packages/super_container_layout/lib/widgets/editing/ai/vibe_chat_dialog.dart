@@ -65,7 +65,8 @@ export '../../../ai/vibe_app_tools.dart'
         VibeRegisteredTool,
         VibeToolCall,
         VibeToolDeclaration,
-        VibeToolResult;
+        VibeToolResult,
+        VibeToolTrace;
 export '../../../ai/vibe_ask_user.dart'
     show
         VibeAskUserFieldType,
@@ -1807,6 +1808,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         planSourceAttachments: !hasMutations && generated.plan != null
             ? attachments
             : const [],
+        toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
       );
       if (!hasMutations && generated.plan != null && mounted) {
         setState(() {
@@ -2383,6 +2385,24 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     return 'Inspection de l’application (${calls.map((c) => c.name).join(', ')})…';
   }
 
+  static void _recordToolTraces(
+    _LiveTurnSession session,
+    List<VibeToolCall> calls,
+    List<VibeToolResult> results, {
+    bool isPostVerify = false,
+  }) {
+    final count = calls.length < results.length ? calls.length : results.length;
+    for (var i = 0; i < count; i++) {
+      session.toolTraces.add(
+        VibeToolTrace.fromExecution(
+          calls[i],
+          results[i],
+          isPostVerify: isPostVerify,
+        ),
+      );
+    }
+  }
+
   Future<({Appearance? correctedAppearance, String? summaryMessage})>
   _runPostRenderVerifyPass({
     required Appearance candidateAppearance,
@@ -2404,7 +2424,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
       _streamingSnapshot.value = (_streamingSnapshot.value ??
               VibeStreamSnapshot.empty)
-          .copyWith(activeToolStatus: 'Vérification du rendu appliqué…');
+          .copyWith(
+            activeToolStatus: 'Vérification du rendu appliqué…',
+            toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+          );
 
       SchedulerBinding.instance.ensureVisualUpdate();
       if (SchedulerBinding.instance.hasScheduledFrame) {
@@ -2459,6 +2482,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             tools: allowTools ? toolRegistry.declarations : const [],
             conversationContents: conversationContents,
             enforceJsonResponse: !allowTools,
+            completedToolTraces: List<VibeToolTrace>.unmodifiable(
+              session.toolTraces,
+            ),
           );
           verifyResponse = streamed.rawResponse;
           nativeCalls = streamed.functionCalls;
@@ -2475,8 +2501,23 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           if (!allowTools) break;
           _streamingSnapshot.value = (_streamingSnapshot.value ??
                   VibeStreamSnapshot.empty)
-              .copyWith(activeToolStatus: _formatToolStatusLabel(nativeCalls));
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(nativeCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final results = await toolRegistry.executeAll(nativeCalls);
+          _recordToolTraces(
+            session,
+            nativeCalls,
+            results,
+            isPostVerify: true,
+          );
+          _streamingSnapshot.value = (_streamingSnapshot.value ??
+                  VibeStreamSnapshot.empty)
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(nativeCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
           ];
@@ -2542,8 +2583,18 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         if (jsonCalls.isNotEmpty && allowTools) {
           _streamingSnapshot.value = (_streamingSnapshot.value ??
                   VibeStreamSnapshot.empty)
-              .copyWith(activeToolStatus: _formatToolStatusLabel(jsonCalls));
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(jsonCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final results = await toolRegistry.executeAll(jsonCalls);
+          _recordToolTraces(session, jsonCalls, results, isPostVerify: true);
+          _streamingSnapshot.value = (_streamingSnapshot.value ??
+                  VibeStreamSnapshot.empty)
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(jsonCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
           ];
@@ -2656,11 +2707,14 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
     List<Map<String, Object?>>? conversationContents,
     bool enforceJsonResponse = true,
+    List<VibeToolTrace> completedToolTraces = const <VibeToolTrace>[],
   }) async {
     final customStream = widget.streamGenerate;
     final parser = VibeIncrementalStreamParser();
     _pendingSnapshot = null;
-    _streamingSnapshot.value = VibeStreamSnapshot.empty;
+    _streamingSnapshot.value = VibeStreamSnapshot(
+      toolTraces: completedToolTraces,
+    );
 
     var finalAccumulated = '';
     var functionCalls = const <VibeToolCall>[];
@@ -2686,7 +2740,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
     await for (final event in stream) {
       if (event.deltaText.isNotEmpty) {
-        final snapshot = parser.addChunk(event.deltaText);
+        final snapshot = parser
+            .addChunk(event.deltaText)
+            .copyWith(toolTraces: completedToolTraces);
         _publishStreamSnapshot(snapshot);
       } else if (event.isDone &&
           parser.rawBuffer.isEmpty &&
@@ -2704,7 +2760,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
       if (event.isDone) {
         _pendingSnapshot = null;
-        _streamingSnapshot.value = parser.current;
+        _streamingSnapshot.value = parser.current.copyWith(
+          toolTraces: completedToolTraces,
+        );
       }
     }
 
@@ -2754,6 +2812,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         _streamingSnapshot.value = null;
         session.livePreviewDisabled = false;
         session.liveRepoQueue = Future<void>.value();
+        session.toolTraces.clear();
       }
       final useStreaming = _usesStreamingGenerator;
       final isDirectGemini =
@@ -2805,6 +2864,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               tools: allowTools ? toolRegistry.declarations : const [],
               conversationContents: conversationContents,
               enforceJsonResponse: !allowTools,
+              completedToolTraces: List<VibeToolTrace>.unmodifiable(
+                session.toolTraces,
+              ),
             );
             response = streamed.rawResponse;
             finalSnapshot = streamed.finalSnapshot;
@@ -2840,8 +2902,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             '${nativeCalls.map((c) => c.name).join(', ')}',
           );
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
-              .copyWith(activeToolStatus: _formatToolStatusLabel(nativeCalls));
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(nativeCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final results = await toolRegistry.executeAll(nativeCalls);
+          _recordToolTraces(session, nativeCalls, results);
+          _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(nativeCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
@@ -2941,8 +3012,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             '${jsonToolCalls.map((c) => c.name).join(', ')}',
           );
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
-              .copyWith(activeToolStatus: _formatToolStatusLabel(jsonToolCalls));
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(jsonToolCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           final results = await toolRegistry.executeAll(jsonToolCalls);
+          _recordToolTraces(session, jsonToolCalls, results);
+          _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
+              .copyWith(
+                activeToolStatus: _formatToolStatusLabel(jsonToolCalls),
+                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+              );
           collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
@@ -3862,6 +3942,7 @@ $response
     VibeExecutionPlan? plan,
     String? planSourcePrompt,
     List<VibeChatAttachment> planSourceAttachments = const [],
+    List<VibeToolTrace> toolTraces = const [],
   }) {
     if (!mounted) return;
     setState(
@@ -3874,6 +3955,7 @@ $response
           plan: plan,
           planSourcePrompt: planSourcePrompt,
           planSourceAttachments: planSourceAttachments,
+          toolTraces: toolTraces,
         ),
       ),
     );
@@ -4421,4 +4503,5 @@ final class _LiveTurnSession {
   bool livePreviewDisabled = false;
   bool hasAppliedLivePreview = false;
   String? liveNavigatedPageId;
+  final List<VibeToolTrace> toolTraces = <VibeToolTrace>[];
 }

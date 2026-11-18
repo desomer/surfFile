@@ -59,15 +59,9 @@ extension _SuperLayoutView on SuperLayoutState {
         zoneLabel: widget.zoneLabel,
       ),
       onContextMenu: _selectContextZone,
-      child: ListenableBuilder(
-        listenable: Listenable.merge([
-          _config,
-          _selected,
-          _selectedSlot,
-          _LayoutEditSelection.selected,
-          _zoneSizes,
-        ]),
-        builder: (context, _) {
+      child: _SuperLayoutStructureHost(
+        owner: this,
+        builder: (context) {
           _zoneSizes.sync(
             widget.behaviours ??
                 (effectiveId == null
@@ -87,18 +81,14 @@ extension _SuperLayoutView on SuperLayoutState {
               styleEditMode &&
               identical(_LayoutEditSelection.selected.value, this);
           final parentPath = _LabelScope.pathOf(context);
-          final selected = _selected.value;
-          final selectedSlot = selected == null
-              ? null
-              : _slotsOf(
-                  config,
-                  config.contentZone(selected),
-                ).where((slot) => slot.id == _selectedSlot.value).firstOrNull;
           final name =
               _config.value.label != null ||
                   (editorComponentLabelOf(context)?.overridden ?? false)
               ? _displayLabel
               : widget.name ?? widget.label;
+          _lastParentPath = parentPath;
+          _lastLayoutName = name;
+          _lastStyleEditMode = styleEditMode;
           LayoutSelection.register(
             this,
             [...parentPath, name],
@@ -124,11 +114,12 @@ extension _SuperLayoutView on SuperLayoutState {
                 _config.value,
                 _config.value.contentZone(zone),
               );
+              final currentSlotId = _selectedSlot.value;
               final slot =
                   slots
                       .where(
                         (slot) =>
-                            slot.id == selectedSlot?.id && slot.label == label,
+                            slot.id == currentSlotId && slot.label == label,
                       )
                       .firstOrNull ??
                   slots.where((slot) => slot.label == label).firstOrNull;
@@ -208,17 +199,7 @@ extension _SuperLayoutView on SuperLayoutState {
               ];
             },
           );
-          _reportPath(
-            editMode
-                ? [
-                    ...parentPath,
-                    name,
-                    if (selected != null) widget.zoneLabel(selected),
-                    if (selectedSlot != null) selectedSlot.label,
-                  ]
-                : const [],
-            axis: editMode && widget.editable ? _axisAction(_actionZone) : null,
-          );
+          _syncReportedPathFromSelection();
           final editing = widget.showZoneNames && editMode;
           final zones = config.visibleZones;
           final boundSides = _zoneSizes.boundSides;
@@ -326,45 +307,59 @@ extension _SuperLayoutView on SuperLayoutState {
                                             closed(SuperLayoutZone.east),
                                       _ => false,
                                     },
-                                child: EditorSelectionRegion(
-                                  enabled: styleEditMode,
-                                  isZone: true,
-                                  selected:
-                                      editMode &&
-                                      selected == zone &&
-                                      selectedSlot == null,
-                                  onSelect: () => _selectZone(zone),
-                                  child: EditorSlot(
-                                    key: _zoneSlotKeys.putIfAbsent(
-                                      zone,
-                                      GlobalKey<EditorSlotState>.new,
-                                    ),
-                                    id: effectiveId,
-                                    zoneId: config.contentZone(zone).name,
-                                    exportConfig: () => _config.value,
-                                    label: widget.zoneLabel(zone),
-                                    menuTitle: 'zone ${widget.zoneLabel(zone)}',
-                                    menuSubtitle: () => _displayLabel,
-                                    menuIcon: EditorSlot.zoneMenuIcon,
-                                    editable: widget.editable,
-                                    onEdit: () => _openZoneFlowEditor(zone),
-                                    onAdd: () => _addSlot(zone),
-                                    axisAction: () => _axisAction(zone),
-                                    wrapChildrenActions: _wrapActionsForZone(
-                                      zone,
-                                    ),
-                                    onContextMenu: (_) => _selectZone(zone),
-                                    child: _contentOf(
-                                      config,
-                                      zone,
-                                      autoSides,
-                                      editMode,
-                                      layoutSize,
-                                      shrinkWidth: shrinkWidth,
-                                      shrinkHeight: shrinkHeight,
-                                      hasHorizontalSide: hasHorizontalSide,
-                                    ),
-                                  ),
+                                child: _ZoneSelectionHost(
+                                  selectedZone: _selected,
+                                  selectedSlot: _selectedSlot,
+                                  zone: zone,
+                                  builder:
+                                      (
+                                        context,
+                                        zoneSelected,
+                                        selectedSlotId,
+                                      ) => EditorSelectionRegion(
+                                        enabled: styleEditMode,
+                                        isZone: true,
+                                        selected:
+                                            editMode &&
+                                            zoneSelected &&
+                                            selectedSlotId == null,
+                                        onSelect: () => _selectZone(zone),
+                                        child: EditorSlot(
+                                          key: _zoneSlotKeys.putIfAbsent(
+                                            zone,
+                                            GlobalKey<EditorSlotState>.new,
+                                          ),
+                                          id: effectiveId,
+                                          zoneId: config.contentZone(zone).name,
+                                          exportConfig: () => _config.value,
+                                          label: widget.zoneLabel(zone),
+                                          menuTitle:
+                                              'zone ${widget.zoneLabel(zone)}',
+                                          menuSubtitle: () => _displayLabel,
+                                          menuIcon: EditorSlot.zoneMenuIcon,
+                                          editable: widget.editable,
+                                          onEdit: () =>
+                                              _openZoneFlowEditor(zone),
+                                          onAdd: () => _addSlot(zone),
+                                          axisAction: () => _axisAction(zone),
+                                          wrapChildrenActions:
+                                              _wrapActionsForZone(zone),
+                                          onContextMenu: (_) =>
+                                              _selectZone(zone),
+                                          child: _contentOf(
+                                            config,
+                                            zone,
+                                            autoSides,
+                                            editMode,
+                                            layoutSize,
+                                            selectedSlotId: selectedSlotId,
+                                            shrinkWidth: shrinkWidth,
+                                            shrinkHeight: shrinkHeight,
+                                            hasHorizontalSide:
+                                                hasHorizontalSide,
+                                          ),
+                                        ),
+                                      ),
                                 ),
                               ),
                             ),
@@ -424,39 +419,48 @@ extension _SuperLayoutView on SuperLayoutState {
                         zone: zone,
                         overlay: true,
                         child: EditorOverlay(
-                          child: _ZoneNameBadge(
+                          child: _ZoneSelectionHost(
+                            selectedZone: _selected,
+                            selectedSlot: _selectedSlot,
                             zone: zone,
-                            label: widget.zoneLabel(zone),
-                            zoneLabel: widget.zoneLabel,
-                            axisAction: widget.editable
-                                ? _axisAction(zone)
-                                : null,
-                            overCenter: _overCenter,
-                            onCenterHint: (active) => _hintCenter(zone, active),
-                            emphasis: _emphasisFor(zone),
-                            selected: selected == zone,
-                            hasSelectedChild:
-                                selected == zone && selectedSlot != null,
-                            zoneSlot: () => _zoneSlotKeys[zone]?.currentState,
-                            onSelect: () => _select(zone),
-                            onContextMenu: widget.editable
-                                ? (position) => _zoneSlotKeys[zone]
-                                      ?.currentState
-                                      ?.openMenu(position)
-                                : null,
-                            onAdd:
-                                widget.editable &&
-                                    !_hasContent(
-                                      config,
-                                      config.contentZone(zone),
-                                    )
-                                ? () => _addSlot(zone)
-                                : null,
-                            swapTarget: widget.editable && _canSwapZone(zone)
-                                ? zone.opposite
-                                : null,
-                            moves: !zones.contains(zone.opposite),
-                            onSwap: () => _update(config.withSwap(zone)),
+                            builder: (context, zoneSelected, selectedSlotId) =>
+                                _ZoneNameBadge(
+                                  zone: zone,
+                                  label: widget.zoneLabel(zone),
+                                  zoneLabel: widget.zoneLabel,
+                                  axisAction: widget.editable
+                                      ? _axisAction(zone)
+                                      : null,
+                                  overCenter: _overCenter,
+                                  onCenterHint: (active) =>
+                                      _hintCenter(zone, active),
+                                  emphasis: _emphasisFor(zone),
+                                  selected: zoneSelected,
+                                  hasSelectedChild:
+                                      zoneSelected && selectedSlotId != null,
+                                  zoneSlot: () =>
+                                      _zoneSlotKeys[zone]?.currentState,
+                                  onSelect: () => _select(zone),
+                                  onContextMenu: widget.editable
+                                      ? (position) => _zoneSlotKeys[zone]
+                                            ?.currentState
+                                            ?.openMenu(position)
+                                      : null,
+                                  onAdd:
+                                      widget.editable &&
+                                          !_hasContent(
+                                            config,
+                                            config.contentZone(zone),
+                                          )
+                                      ? () => _addSlot(zone)
+                                      : null,
+                                  swapTarget:
+                                      widget.editable && _canSwapZone(zone)
+                                      ? zone.opposite
+                                      : null,
+                                  moves: !zones.contains(zone.opposite),
+                                  onSwap: () => _update(config.withSwap(zone)),
+                                ),
                           ),
                         ),
                       ),
@@ -527,4 +531,168 @@ extension _SuperLayoutView on SuperLayoutState {
       ),
     );
   }
+}
+
+class _SuperLayoutStructureHost extends StatefulWidget {
+  const _SuperLayoutStructureHost({
+    required this.owner,
+    required this.builder,
+  });
+
+  final SuperLayoutState owner;
+  final WidgetBuilder builder;
+
+  @override
+  State<_SuperLayoutStructureHost> createState() =>
+      _SuperLayoutStructureHostState();
+}
+
+class _SuperLayoutStructureHostState extends State<_SuperLayoutStructureHost> {
+  late bool _isActiveLayout;
+
+  void _onStructureChanged() {
+    if (!mounted) return;
+    _isActiveLayout = identical(
+      _LayoutEditSelection.selected.value,
+      widget.owner,
+    );
+    setState(() {});
+  }
+
+  void _onActiveLayoutChanged() {
+    if (!mounted) return;
+    final nextActive = identical(
+      _LayoutEditSelection.selected.value,
+      widget.owner,
+    );
+    if (nextActive == _isActiveLayout) return;
+    setState(() => _isActiveLayout = nextActive);
+  }
+
+  void _onGridSelectionChanged() {
+    if (!mounted) return;
+    if (widget.owner._config.value.positioning != SuperLayoutPositioning.grid) {
+      return;
+    }
+    setState(() {});
+  }
+
+  void _attach(SuperLayoutState owner) {
+    owner._config.addListener(_onStructureChanged);
+    owner._zoneSizes.addListener(_onStructureChanged);
+    owner._selected.addListener(_onGridSelectionChanged);
+    owner._selectedSlot.addListener(_onGridSelectionChanged);
+  }
+
+  void _detach(SuperLayoutState owner) {
+    owner._config.removeListener(_onStructureChanged);
+    owner._zoneSizes.removeListener(_onStructureChanged);
+    owner._selected.removeListener(_onGridSelectionChanged);
+    owner._selectedSlot.removeListener(_onGridSelectionChanged);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _isActiveLayout = identical(
+      _LayoutEditSelection.selected.value,
+      widget.owner,
+    );
+    _attach(widget.owner);
+    _LayoutEditSelection.selected.addListener(_onActiveLayoutChanged);
+  }
+
+  @override
+  void didUpdateWidget(_SuperLayoutStructureHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.owner, widget.owner)) {
+      _detach(oldWidget.owner);
+      _attach(widget.owner);
+    }
+    _isActiveLayout = identical(
+      _LayoutEditSelection.selected.value,
+      widget.owner,
+    );
+  }
+
+  @override
+  void dispose() {
+    _detach(widget.owner);
+    _LayoutEditSelection.selected.removeListener(_onActiveLayoutChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
+}
+
+class _ZoneSelectionHost extends StatefulWidget {
+  const _ZoneSelectionHost({
+    required this.selectedZone,
+    required this.selectedSlot,
+    required this.zone,
+    required this.builder,
+  });
+
+  final ValueNotifier<SuperLayoutZone?> selectedZone;
+  final ValueNotifier<String?> selectedSlot;
+  final SuperLayoutZone zone;
+  final Widget Function(
+    BuildContext context,
+    bool zoneSelected,
+    String? selectedSlotId,
+  )
+  builder;
+
+  @override
+  State<_ZoneSelectionHost> createState() => _ZoneSelectionHostState();
+}
+
+class _ZoneSelectionHostState extends State<_ZoneSelectionHost> {
+  late (bool, String?) _selectionState;
+
+  (bool, String?) _computeState() {
+    final zoneSelected = widget.selectedZone.value == widget.zone;
+    return (zoneSelected, zoneSelected ? widget.selectedSlot.value : null);
+  }
+
+  void _onSelectionChanged() {
+    if (!mounted) return;
+    final next = _computeState();
+    if (next == _selectionState) return;
+    setState(() => _selectionState = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectionState = _computeState();
+    widget.selectedZone.addListener(_onSelectionChanged);
+    widget.selectedSlot.addListener(_onSelectionChanged);
+  }
+
+  @override
+  void didUpdateWidget(_ZoneSelectionHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.selectedZone, widget.selectedZone)) {
+      oldWidget.selectedZone.removeListener(_onSelectionChanged);
+      widget.selectedZone.addListener(_onSelectionChanged);
+    }
+    if (!identical(oldWidget.selectedSlot, widget.selectedSlot)) {
+      oldWidget.selectedSlot.removeListener(_onSelectionChanged);
+      widget.selectedSlot.addListener(_onSelectionChanged);
+    }
+    _selectionState = _computeState();
+  }
+
+  @override
+  void dispose() {
+    widget.selectedZone.removeListener(_onSelectionChanged);
+    widget.selectedSlot.removeListener(_onSelectionChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.builder(context, _selectionState.$1, _selectionState.$2);
 }

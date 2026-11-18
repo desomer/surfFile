@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../../../ai/vibe_app_tools.dart';
 import '../../../ai/vibe_ask_user.dart';
 import '../../../ai/vibe_chat_attachment.dart';
 import '../../../ai/vibe_plan.dart';
@@ -26,6 +27,7 @@ class VibeChatMessage {
     this.plan,
     this.planSourcePrompt,
     this.planSourceAttachments = const [],
+    this.toolTraces = const [],
   });
 
   /// Texte affiché dans la bulle.
@@ -64,6 +66,9 @@ class VibeChatMessage {
   /// Pièces jointes sources conservées pour être réinjectées dans chaque lot du plan.
   final List<VibeChatAttachment> planSourceAttachments;
 
+  /// Appels d'outils d'introspection exécutés pour produire cette réponse.
+  final List<VibeToolTrace> toolTraces;
+
   /// Copie ce message en conservant les valeurs non spécifiées.
   VibeChatMessage copyWith({
     String? text,
@@ -78,6 +83,7 @@ class VibeChatMessage {
     VibeExecutionPlan? plan,
     String? planSourcePrompt,
     List<VibeChatAttachment>? planSourceAttachments,
+    List<VibeToolTrace>? toolTraces,
   }) => VibeChatMessage(
     text: text ?? this.text,
     isUser: isUser ?? this.isUser,
@@ -92,6 +98,7 @@ class VibeChatMessage {
     planSourcePrompt: planSourcePrompt ?? this.planSourcePrompt,
     planSourceAttachments:
         planSourceAttachments ?? this.planSourceAttachments,
+    toolTraces: toolTraces ?? this.toolTraces,
   );
 
   /// Formate le message à inclure dans l'historique transmis à l'IA.

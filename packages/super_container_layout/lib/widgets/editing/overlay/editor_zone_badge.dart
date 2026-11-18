@@ -255,17 +255,19 @@ class EditorSelectionBorder extends StatelessWidget {
     final disableAnimations =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final effectiveAnimated = animated && !dashed && !disableAnimations;
-    Widget buildBorder() => IgnorePointer(
-      child: CustomPaint(
-        painter: EditorSelectionBorderPainter(
-          color: baseColor,
-          opacity: opacity,
-          fillOpacity: filled ? fillOpacity : 0.0,
-          dashed: dashed,
-          animated: effectiveAnimated,
-          strokeWidth: strokeWidth,
+    Widget buildBorder() => RepaintBoundary(
+      child: IgnorePointer(
+        child: CustomPaint(
+          painter: EditorSelectionBorderPainter(
+            color: baseColor,
+            opacity: opacity,
+            fillOpacity: filled ? fillOpacity : 0.0,
+            dashed: dashed,
+            animated: effectiveAnimated,
+            strokeWidth: strokeWidth,
+          ),
+          child: const SizedBox.expand(),
         ),
-        child: const SizedBox.expand(),
       ),
     );
     if (!hideOnTargetHighlight) return buildBorder();
@@ -303,6 +305,46 @@ class EditorSelectionBorderPainter extends CustomPainter {
   final bool animated;
   final double strokeWidth;
 
+  static const MaskFilter _activeHaloBlur = MaskFilter.blur(
+    BlurStyle.normal,
+    4.5,
+  );
+  static const MaskFilter _dashedHaloBlur = MaskFilter.blur(
+    BlurStyle.normal,
+    2.5,
+  );
+  static final Map<(Size, double), Path> _dashedRectCache = {};
+
+  static Path _resolveDashedRectPath(Size size, double inset, Rect rect) {
+    final key = (size, inset);
+    final cached = _dashedRectCache.remove(key);
+    if (cached != null) {
+      _dashedRectCache[key] = cached;
+      return cached;
+    }
+    final path = Path()..addRect(rect);
+    final dashedPath = Path();
+    const dashLength = 6.0;
+    const gapLength = 4.5;
+    const step = dashLength + gapLength;
+    for (final metric in path.computeMetrics()) {
+      for (var offset = 0.0; offset < metric.length; offset += step) {
+        dashedPath.addPath(
+          metric.extractPath(
+            offset,
+            (offset + dashLength).clamp(0.0, metric.length),
+          ),
+          Offset.zero,
+        );
+      }
+    }
+    if (_dashedRectCache.length >= 128) {
+      _dashedRectCache.remove(_dashedRectCache.keys.first);
+    }
+    _dashedRectCache[key] = dashedPath;
+    return dashedPath;
+  }
+
   static Color _shiftHue(Color source, double deltaDegrees, double lightness) {
     final hsl = HSLColor.fromColor(source);
     return hsl
@@ -312,13 +354,17 @@ class EditorSelectionBorderPainter extends CustomPainter {
         .toColor();
   }
 
+  late final Color _baseColor = color.withValues(alpha: 1.0);
+  late final Color _secondaryColor = _shiftHue(_baseColor, 38, 0.14);
+  late final Color _highlightColor = Color.lerp(_baseColor, Colors.white, 0.78)!;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
     final fullRect = Offset.zero & size;
-    final baseColor = color.withValues(alpha: 1.0);
-    final secondaryColor = _shiftHue(baseColor, 38, 0.14);
-    final highlightColor = Color.lerp(baseColor, Colors.white, 0.78)!;
+    final baseColor = _baseColor;
+    final secondaryColor = _secondaryColor;
+    final highlightColor = _highlightColor;
 
     if (fillOpacity > 0) {
       final fillShader = LinearGradient(
@@ -348,7 +394,7 @@ class EditorSelectionBorderPainter extends CustomPainter {
           ..color = baseColor.withValues(alpha: 0.34 * opacity)
           ..style = PaintingStyle.stroke
           ..strokeWidth = (strokeWidth + 4.5) * pulse
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.5),
+          ..maskFilter = _activeHaloBlur,
       );
 
       // 2. Coeur lumineux blanc (tube néon)
@@ -385,22 +431,7 @@ class EditorSelectionBorderPainter extends CustomPainter {
     }
 
     // Mode Néon Pointillé (Non Animé) pour le parent et le survol
-    final path = Path()..addRect(rect);
-    final dashedPath = Path();
-    const dashLength = 6.0;
-    const gapLength = 4.5;
-    const step = dashLength + gapLength;
-    for (final metric in path.computeMetrics()) {
-      for (var offset = 0.0; offset < metric.length; offset += step) {
-        dashedPath.addPath(
-          metric.extractPath(
-            offset,
-            (offset + dashLength).clamp(0.0, metric.length),
-          ),
-          Offset.zero,
-        );
-      }
-    }
+    final dashedPath = _resolveDashedRectPath(size, inset, rect);
 
     // 1. Halo néon externe statique autour des pointillés
     canvas.drawPath(
@@ -410,7 +441,7 @@ class EditorSelectionBorderPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth + 3.0
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+        ..maskFilter = _dashedHaloBlur,
     );
 
     // 2. Sous-couche claire pour le contraste néon

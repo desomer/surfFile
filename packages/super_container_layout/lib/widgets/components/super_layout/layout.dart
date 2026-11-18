@@ -212,6 +212,70 @@ class SuperLayoutState extends State<SuperLayout>
   final _gridSlotSizeKeys = <String, GlobalKey>{};
   SuperLayoutConfig? _reportedConfig;
 
+  _SlotLookupIndex? _slotLookup;
+  SuperLayoutConfig? _cachedSlotsConfig;
+  Registry? _cachedSlotsRegistry;
+  List<SlotImplementation>? _cachedSlotsWidgetList;
+  int _cachedRegistryCount = -1;
+  int _cachedComponentsCount = -1;
+  final Map<SuperLayoutZone, List<SlotImplementation>> _cachedSlotsByContent =
+      {};
+
+  List<String> _lastParentPath = const [];
+  String _lastLayoutName = '';
+  bool _lastStyleEditMode = false;
+
+  void _invalidateSlotCache() {
+    _slotLookup = null;
+    _cachedSlotsConfig = null;
+    _cachedSlotsRegistry = null;
+    _cachedSlotsWidgetList = null;
+    _cachedRegistryCount = -1;
+    _cachedComponentsCount = -1;
+    _cachedSlotsByContent.clear();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selected.addListener(_syncReportedPathFromSelection);
+    _selectedSlot.addListener(_syncReportedPathFromSelection);
+    _LayoutEditSelection.selected.addListener(_syncReportedPathFromSelection);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _invalidateSlotCache();
+  }
+
+  void _syncReportedPathFromSelection() {
+    if (!mounted) return;
+    final config = _config.value;
+    if (config.positioning == SuperLayoutPositioning.grid) return;
+    final editMode =
+        _lastStyleEditMode &&
+        identical(_LayoutEditSelection.selected.value, this);
+    final selected = _selected.value;
+    final selectedSlot = selected == null
+        ? null
+        : _slotsOf(
+            config,
+            config.contentZone(selected),
+          ).where((slot) => slot.id == _selectedSlot.value).firstOrNull;
+    _reportPath(
+      editMode
+          ? [
+              ..._lastParentPath,
+              _lastLayoutName,
+              if (selected != null) widget.zoneLabel(selected),
+              if (selectedSlot != null) selectedSlot.label,
+            ]
+          : const [],
+      axis: editMode && widget.editable ? _axisAction(_actionZone) : null,
+    );
+  }
+
   void _select(SuperLayoutZone zone) {
     if (_selectedSlot.value != null) {
       _selectedSlot.value = null;
@@ -382,11 +446,17 @@ class SuperLayoutState extends State<SuperLayout>
   @override
   void didUpdateWidget(SuperLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.slots != widget.slots) {
+      _invalidateSlotCache();
+    }
     if (oldWidget.config != widget.config) _config.value = widget.config;
   }
 
   @override
   void dispose() {
+    _selected.removeListener(_syncReportedPathFromSelection);
+    _selectedSlot.removeListener(_syncReportedPathFromSelection);
+    _LayoutEditSelection.selected.removeListener(_syncReportedPathFromSelection);
     LayoutSelection.unregister(this);
     _zoneSizes.dispose();
     _config.dispose();

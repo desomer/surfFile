@@ -177,6 +177,136 @@ class VibeToolResult {
   };
 }
 
+/// Trace synthétique d'un appel d'outil exécuté, affichée dans l'historique du chat.
+@immutable
+class VibeToolTrace {
+  /// Crée une trace immuable d'appel d'outil.
+  VibeToolTrace({
+    required this.name,
+    Map<String, Object?> arguments = const <String, Object?>{},
+    this.isError = false,
+    this.summary = '',
+    this.isPostVerify = false,
+  }) : arguments = Map<String, Object?>.unmodifiable(arguments);
+
+  /// Construit une trace synthétique à partir d'un [call] et de son [result].
+  factory VibeToolTrace.fromExecution(
+    VibeToolCall call,
+    VibeToolResult result, {
+    bool isPostVerify = false,
+  }) => VibeToolTrace(
+    name: call.name,
+    arguments: call.arguments,
+    isError: result.isError,
+    summary: _summarize(call, result),
+    isPostVerify: isPostVerify,
+  );
+
+  /// Nom de l'outil exécuté.
+  final String name;
+
+  /// Arguments transmis lors de l'appel.
+  final Map<String, Object?> arguments;
+
+  /// Indique si l'exécution s'est terminée en erreur.
+  final bool isError;
+
+  /// Résumé lisible en une ligne du résultat obtenu.
+  final String summary;
+
+  /// Indique si cet appel a eu lieu durant la passe d'auto-vérification post-rendu.
+  final bool isPostVerify;
+
+  static String _summarize(VibeToolCall call, VibeToolResult result) {
+    final data = result.data;
+    if (result.isError) {
+      final err = data['error'];
+      return err is String && err.trim().isNotEmpty ? err.trim() : 'Erreur';
+    }
+    switch (call.name) {
+      case 'get_component_geometry':
+        final comps = data['components'];
+        if (comps is Map && comps.isNotEmpty) {
+          final parts = <String>[];
+          for (final entry in comps.entries) {
+            final val = entry.value;
+            if (val is Map) {
+              if (val['mounted'] == false) {
+                parts.add('${entry.key}: non monté');
+              } else if (val['occurrences'] case final List occs
+                  when occs.isNotEmpty && occs.first is Map) {
+                final firstOcc = occs.first as Map;
+                final size = firstOcc['size'];
+                if (size is Map) {
+                  parts.add(
+                    '${entry.key}: ${_fmtNum(size['width'])}×${_fmtNum(size['height'])} dp',
+                  );
+                  continue;
+                }
+              }
+            }
+            if (parts.length < 3) parts.add('${entry.key}');
+          }
+          if (parts.isNotEmpty) return parts.take(3).join(', ');
+        }
+      case 'get_viewport_and_route':
+        final vp = data['viewport'];
+        final route = data['route'];
+        final vpText = vp is Map
+            ? '${_fmtNum(vp['width'])}×${_fmtNum(vp['height'])} dp'
+            : null;
+        final loc = route is Map ? route['location'] as String? : null;
+        if (vpText != null && loc != null && loc.isNotEmpty) {
+          return '$vpText ($loc)';
+        }
+        if (vpText != null) return vpText;
+      case 'get_runtime_tree':
+        final rootId = data['rootId'];
+        if (rootId is String && rootId.isNotEmpty) {
+          return 'racine $rootId${data['truncated'] == true ? ' (tronqué)' : ''}';
+        }
+      case 'query_repository_data':
+        final repoId = data['id'] ?? call.arguments['repositoryId'];
+        final path = data['path'] ?? call.arguments['path'];
+        if (repoId is String && repoId.isNotEmpty) {
+          return path is String && path.isNotEmpty ? '$repoId.$path' : repoId;
+        }
+        final count = data['repositoryCount'];
+        if (count is num) return '$count repository(s)';
+      case 'capture_screenshot':
+        final target = data['target'] ?? 'viewport';
+        final w = data['logicalWidth'];
+        final h = data['logicalHeight'];
+        if (w != null && h != null) {
+          return '$target (${_fmtNum(w)}×${_fmtNum(h)} dp)';
+        }
+        return '$target';
+    }
+    return 'OK';
+  }
+
+  static String _fmtNum(Object? v) {
+    if (v is num) {
+      return v == v.roundToDouble() ? '${v.toInt()}' : '$v';
+    }
+    return '$v';
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VibeToolTrace &&
+          other.name == name &&
+          other.isError == isError &&
+          other.summary == summary &&
+          other.isPostVerify == isPostVerify &&
+          mapEquals(other.arguments, arguments);
+
+  @override
+  int get hashCode =>
+      Object.hash(name, isError, summary, isPostVerify, arguments.length);
+}
+
 /// Fonction d'exécution asynchrone d'un outil enregistré dans [VibeAppToolRegistry].
 typedef VibeToolHandler = Future<VibeToolResult> Function(VibeToolCall call);
 

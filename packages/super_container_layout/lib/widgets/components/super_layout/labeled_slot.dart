@@ -95,13 +95,19 @@ class _LabeledSlotState extends State<LabeledSlot> {
   EditorHistoryController? _resizeHistory;
   bool _resizeBlocked = false;
   bool _active = true;
-  late final Listenable _selectionListenable = Listenable.merge([
+  bool _cachedHasSelectedDescendant = false;
+  bool _focusDirty = true;
+
+  static final Listenable _focusListenable = Listenable.merge([
+    LayoutSelection.path,
+    LayoutSelection.focus,
+  ]);
+
+  static final Listenable _hoverListenable = Listenable.merge([
     EditorSlotState.highlightedTarget,
     EditorSlotState.canvasHoveredParent,
     EditorSelectionRegion.hoverTarget,
     LayoutSelection.highlightedSlotId,
-    LayoutSelection.path,
-    LayoutSelection.focus,
   ]);
 
   bool _isDirectSlotOfThis(BuildContext targetContext) {
@@ -131,12 +137,40 @@ class _LabeledSlotState extends State<LabeledSlot> {
     return foundSelf && !hasIntermediateSlot;
   }
 
-  bool get _hasSelectedDescendant {
-    if (!_active) return false;
+  bool _computeHasSelectedDescendant() {
+    if (!_active || !mounted) return false;
     final focusCtx = LayoutSelection.focus.value?.context;
-    if (focusCtx == null || !focusCtx.mounted) return false;
-    if (!LayoutSelection.isAncestorOfFocus(context)) return false;
-    return !_isDirectSlotOfThis(focusCtx);
+    if (focusCtx == null || !focusCtx.mounted || identical(focusCtx, context)) {
+      return false;
+    }
+    var foundSelf = false;
+    var hasIntermediateSlot = false;
+    try {
+      focusCtx.visitAncestorElements((element) {
+        if (identical(element, context)) {
+          foundSelf = true;
+          return false;
+        }
+        if (element is StatefulElement) {
+          if (element.state is _LabeledSlotState ||
+              element.state is EditorSlotState) {
+            hasIntermediateSlot = true;
+          }
+        }
+        return true;
+      });
+    } catch (_) {
+      return false;
+    }
+    return foundSelf && hasIntermediateSlot;
+  }
+
+  bool get _hasSelectedDescendant {
+    if (_focusDirty) {
+      _cachedHasSelectedDescendant = _computeHasSelectedDescendant();
+      _focusDirty = false;
+    }
+    return _cachedHasSelectedDescendant;
   }
 
   bool get _hasExternalHighlight =>
@@ -149,7 +183,11 @@ class _LabeledSlotState extends State<LabeledSlot> {
   bool get _isParentOfSelected => _hasSelectedDescendant;
 
   bool get _isHighlightedTarget {
-    if (!_active || (_isActivelySelected && !_hasExternalHighlight)) {
+    if (!_active) return false;
+    final hasExternal = _hasExternalHighlight;
+    final hasDescendant = _hasSelectedDescendant;
+    final activelySelected = widget.showLabel && widget.selected && !hasDescendant;
+    if (activelySelected && !hasExternal) {
       return false;
     }
     final highlightedId = LayoutSelection.highlightedSlotId.value;
@@ -164,7 +202,7 @@ class _LabeledSlotState extends State<LabeledSlot> {
         _isDirectSlotOfThis(highlighted.context)) {
       return true;
     }
-    if (_isParentOfSelected) {
+    if (hasDescendant) {
       final hoverCtx = EditorSelectionRegion.hoverTargetContext;
       if (hoverCtx != null && _isDirectSlotOfThis(hoverCtx)) {
         return true;
@@ -182,15 +220,35 @@ class _LabeledSlotState extends State<LabeledSlot> {
           (_isActivelySelected && !_hasExternalHighlight) ||
           _isHoveredForResize);
 
-  (bool, bool, bool, bool, bool) get _selectionVisualState => (
-    _hasExternalHighlight,
-    _isHighlightedTarget,
-    _isParentOfSelected,
-    _isActivelySelected,
-    _showResizeHandles,
-  );
+  (bool, bool, bool, bool, bool) get _selectionVisualState {
+    final hasExternal = _hasExternalHighlight;
+    final hasDescendant = _hasSelectedDescendant;
+    final activelySelected =
+        widget.showLabel && widget.selected && !hasDescendant;
+    final highlightedTarget = _isHighlightedTarget;
+    final showHandles =
+        _active &&
+        widget.onResize != null &&
+        (_resizeStart != null ||
+            (activelySelected && !hasExternal) ||
+            _hover ||
+            highlightedTarget);
+    return (
+      hasExternal,
+      highlightedTarget,
+      hasDescendant,
+      activelySelected,
+      showHandles,
+    );
+  }
+
   (bool, bool, bool, bool, bool)? _lastSelectionVisualState;
   bool _selectionCheckScheduled = false;
+
+  void _onFocusChanged() {
+    _focusDirty = true;
+    _onSelectionOrHoverChanged();
+  }
 
   void _onSelectionOrHoverChanged() {
     if (!mounted || !_active || _selectionCheckScheduled) return;
@@ -198,8 +256,9 @@ class _LabeledSlotState extends State<LabeledSlot> {
     scheduleMicrotask(() {
       _selectionCheckScheduled = false;
       if (!mounted || !_active) return;
-      _syncResizeOverlay();
-      if (_selectionVisualState != _lastSelectionVisualState) {
+      final next = _selectionVisualState;
+      _syncResizeOverlay(shouldShowOverride: next.$5);
+      if (next != _lastSelectionVisualState) {
         setState(() {});
       }
     });
@@ -209,6 +268,7 @@ class _LabeledSlotState extends State<LabeledSlot> {
   void activate() {
     super.activate();
     _active = true;
+    _focusDirty = true;
   }
 
   @override
@@ -217,8 +277,8 @@ class _LabeledSlotState extends State<LabeledSlot> {
     super.deactivate();
   }
 
-  void _syncResizeOverlay() {
-    final shouldShow = _showResizeHandles;
+  void _syncResizeOverlay({bool? shouldShowOverride}) {
+    final shouldShow = shouldShowOverride ?? _showResizeHandles;
     if (shouldShow == _resizeOverlay.isShowing &&
         (shouldShow || _resizeStart == null)) {
       return;
@@ -248,9 +308,12 @@ class _LabeledSlotState extends State<LabeledSlot> {
     if (value == _listening) return;
     _listening = value;
     if (value) {
-      _selectionListenable.addListener(_onSelectionOrHoverChanged);
+      _focusDirty = true;
+      _focusListenable.addListener(_onFocusChanged);
+      _hoverListenable.addListener(_onSelectionOrHoverChanged);
     } else {
-      _selectionListenable.removeListener(_onSelectionOrHoverChanged);
+      _focusListenable.removeListener(_onFocusChanged);
+      _hoverListenable.removeListener(_onSelectionOrHoverChanged);
     }
   }
 
@@ -263,6 +326,7 @@ class _LabeledSlotState extends State<LabeledSlot> {
   @override
   void didUpdateWidget(LabeledSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _focusDirty = true;
     _syncResizeOverlay();
   }
 

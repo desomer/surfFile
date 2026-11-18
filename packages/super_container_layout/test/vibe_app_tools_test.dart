@@ -474,6 +474,13 @@ void main() {
           (appearance.value.components['card_1'] as SuperValueConfig).initialText,
           '240x120',
         );
+        expect(
+          find.text('1 outil utilisé : get_component_geometry'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-message-tools-toggle')));
+        await tester.pumpAndSettle();
+        expect(find.text('card_1: 240×120 dp'), findsOneWidget);
       },
     );
 
@@ -970,6 +977,14 @@ void main() {
           'Vérifié 240px',
         );
         expect(find.text('Rendu vérifié (240px).'), findsOneWidget);
+        expect(
+          find.text('1 outil utilisé : get_component_geometry'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-message-tools-toggle')));
+        await tester.pumpAndSettle();
+        expect(find.text('post-rendu'), findsOneWidget);
+        expect(find.text('card_1: 240×100 dp'), findsOneWidget);
       },
     );
   });

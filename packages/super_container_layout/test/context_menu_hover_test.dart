@@ -75,4 +75,120 @@ void main() {
       expect(highlighted('Parent style'), isFalse);
     },
   );
+
+  testWidgets(
+    'hovering sibling EditorSlots isolates repaints with RepaintBoundary and avoids rebuilding children',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      var buildsA = 0;
+      var buildsB = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: Column(
+                children: [
+                  EditorSlot(
+                    id: 'slot-a',
+                    label: 'Slot A',
+                    child: Builder(
+                      builder: (_) {
+                        buildsA++;
+                        return const SizedBox(
+                          key: ValueKey('slot-a-content'),
+                          width: 120,
+                          height: 60,
+                          child: Text('Alpha'),
+                        );
+                      },
+                    ),
+                  ),
+                  EditorSlot(
+                    id: 'slot-b',
+                    label: 'Slot B',
+                    child: Builder(
+                      builder: (_) {
+                        buildsB++;
+                        return const SizedBox(
+                          key: ValueKey('slot-b-content'),
+                          width: 120,
+                          height: 60,
+                          child: Text('Beta'),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final slotAFinder = find.byWidgetPredicate(
+        (w) => w is EditorSlot && w.id == 'slot-a',
+      );
+      final slotAContent = find.byKey(const ValueKey('slot-a-content'));
+      final customPaintA = find.descendant(
+        of: slotAFinder,
+        matching: find.byWidgetPredicate(
+          (w) =>
+              w is CustomPaint &&
+              tester
+                  .widgetList<Widget>(
+                    find.descendant(
+                      of: find.byWidget(w),
+                      matching: slotAContent,
+                    ),
+                  )
+                  .isNotEmpty,
+        ),
+      );
+      expect(customPaintA, findsOneWidget);
+      // An outer RepaintBoundary isolates the foreground CustomPaint from ancestors/siblings,
+      // and an inner RepaintBoundary isolates the slot content below it.
+      expect(
+        find.ancestor(
+          of: customPaintA,
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsWidgets,
+      );
+      expect(
+        find.descendant(
+          of: customPaintA,
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsOneWidget,
+      );
+
+      final initialBuildsA = buildsA;
+      final initialBuildsB = buildsB;
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1, 1));
+      addTearDown(mouse.removePointer);
+
+      await mouse.moveTo(tester.getCenter(find.text('Alpha')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<CustomPaint>(customPaintA).foregroundPainter,
+        isA<EditorSelectionOutline>(),
+      );
+
+      await mouse.moveTo(tester.getCenter(find.text('Beta')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<CustomPaint>(customPaintA).foregroundPainter,
+        isNull,
+      );
+
+      expect(buildsA, initialBuildsA);
+      expect(buildsB, initialBuildsB);
+    },
+  );
 }

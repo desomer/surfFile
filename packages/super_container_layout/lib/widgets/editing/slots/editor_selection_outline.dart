@@ -109,11 +109,93 @@ class EditorSelectionOutline extends CustomPainter {
         .toColor();
   }
 
+  late final Color _baseColor = color.withValues(alpha: 1.0);
+  late final Color _secondaryColor = _shiftHue(_baseColor, 38, 0.14);
+  late final Color _highlightColor = Color.lerp(_baseColor, Colors.white, 0.72)!;
+
+  static final Map<(Size, double, double), Path> _settledDashedCache = {};
+  static final Map<(String, double), TextPainter> _badgeTextCache = {};
+  static const MaskFilter _badgeShadowBlur = MaskFilter.blur(
+    BlurStyle.normal,
+    3.0,
+  );
+
+  static Path _buildDashedRRectPath(RRect rrect, double dashPhase) {
+    final path = Path()..addRRect(rrect);
+    final dashedPath = Path();
+    for (final metric in path.computeMetrics()) {
+      for (var offset = dashPhase; offset < metric.length; offset += 12) {
+        dashedPath.addPath(
+          metric.extractPath(
+            offset,
+            (offset + 7.5).clamp(0.0, metric.length),
+          ),
+          Offset.zero,
+        );
+      }
+    }
+    return dashedPath;
+  }
+
+  static Path _resolveSettledDashedPath(
+    Size size,
+    double inset,
+    double cornerRadius,
+    RRect rrect,
+  ) {
+    final key = (size, inset, cornerRadius);
+    final cached = _settledDashedCache.remove(key);
+    if (cached != null) {
+      _settledDashedCache[key] = cached;
+      return cached;
+    }
+    final built = _buildDashedRRectPath(rrect, 0.0);
+    if (_settledDashedCache.length >= 64) {
+      _settledDashedCache.remove(_settledDashedCache.keys.first);
+    }
+    _settledDashedCache[key] = built;
+    return built;
+  }
+
+  static TextPainter _resolveSettledBadgeTextPainter(
+    String text,
+    double maxWidth,
+  ) {
+    final key = (text, maxWidth);
+    final cached = _badgeTextCache.remove(key);
+    if (cached != null) {
+      _badgeTextCache[key] = cached;
+      return cached;
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.25,
+          height: 1.1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: maxWidth);
+    if (_badgeTextCache.length >= 32) {
+      final oldestKey = _badgeTextCache.keys.first;
+      _badgeTextCache.remove(oldestKey)?.dispose();
+    }
+    _badgeTextCache[key] = painter;
+    return painter;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final rawProgress = _EditorOutlineAnimation.instance.progress;
-    final lockCurve = Curves.easeOutBack.transform(rawProgress);
-    final fadeCurve = Curves.easeOutCubic.transform(rawProgress);
+    final settled = rawProgress >= 1.0;
+    final lockCurve = settled ? 1.0 : Curves.easeOutBack.transform(rawProgress);
+    final fadeCurve = settled ? 1.0 : Curves.easeOutCubic.transform(rawProgress);
 
     final baseInset = emphasized ? 1.5 : 1.0;
     // Slight initial expansion that locks onto the target bounds
@@ -126,11 +208,10 @@ class EditorSelectionOutline extends CustomPainter {
     final cornerRadius = (radius - baseInset).clamp(0.0, maxCorner).toDouble();
     final r = Radius.circular(cornerRadius);
     final rrect = RRect.fromRectAndRadius(rect, r);
-    final path = Path()..addRRect(rrect);
 
-    final baseColor = color.withValues(alpha: 1.0);
-    final secondaryColor = _shiftHue(baseColor, 38, 0.14);
-    final highlightColor = Color.lerp(baseColor, Colors.white, 0.72)!;
+    final baseColor = _baseColor;
+    final secondaryColor = _secondaryColor;
+    final highlightColor = _highlightColor;
     final strokeWidth = emphasized ? 2.6 : 2.0;
 
     // 1. Subtle inner spotlight tint when emphasized
@@ -148,7 +229,7 @@ class EditorSelectionOutline extends CustomPainter {
     }
 
     // 2. Outer luminous glow halo
-    final pulseFactor = 1.0 + 0.25 * math.sin(rawProgress * math.pi);
+    final pulseFactor = settled ? 1.0 : 1.0 + 0.25 * math.sin(rawProgress * math.pi);
     final glowPaint = Paint()
       ..color = baseColor.withValues(
         alpha: (emphasized ? 0.26 : 0.14) * fadeCurve,
@@ -187,21 +268,11 @@ class EditorSelectionOutline extends CustomPainter {
 
     if (!dashed) {
       canvas.drawRRect(rrect, contrastPaint);
-      canvas.drawPath(path, borderPaint);
+      canvas.drawRRect(rrect, borderPaint);
     } else {
-      final dashedPath = Path();
-      final dashPhase = (1.0 - rawProgress) * 14.0;
-      for (final metric in path.computeMetrics()) {
-        for (var offset = dashPhase; offset < metric.length; offset += 12) {
-          dashedPath.addPath(
-            metric.extractPath(
-              offset,
-              (offset + 7.5).clamp(0.0, metric.length),
-            ),
-            Offset.zero,
-          );
-        }
-      }
+      final dashedPath = settled
+          ? _resolveSettledDashedPath(size, baseInset, cornerRadius, rrect)
+          : _buildDashedRRectPath(rrect, (1.0 - rawProgress) * 14.0);
       canvas.drawPath(dashedPath, contrastPaint);
       canvas.drawPath(dashedPath, borderPaint);
     }
@@ -249,21 +320,27 @@ class EditorSelectionOutline extends CustomPainter {
         badgeText.isNotEmpty &&
         screenWidth >= 44 &&
         screenHeight >= 22) {
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: badgeText,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: fadeCurve),
-            fontSize: 10.5,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.25,
-            height: 1.1,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '…',
-      )..layout(maxWidth: (screenWidth - 24).clamp(24.0, 240.0));
+      final maxTextWidth = (screenWidth - 24).clamp(24.0, 240.0);
+      final cachedTextPainter = settled
+          ? _resolveSettledBadgeTextPainter(badgeText, maxTextWidth)
+          : null;
+      final textPainter =
+          cachedTextPainter ??
+          (TextPainter(
+            text: TextSpan(
+              text: badgeText,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: fadeCurve),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.25,
+                height: 1.1,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+            ellipsis: '…',
+          )..layout(maxWidth: maxTextWidth));
 
       const hPad = 8.0;
       const vPad = 4.0;
@@ -294,7 +371,7 @@ class EditorSelectionOutline extends CustomPainter {
         badgeRRect.shift(const Offset(0, 1.5)),
         Paint()
           ..color = Colors.black.withValues(alpha: 0.28 * fadeCurve)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0),
+          ..maskFilter = _badgeShadowBlur,
       );
 
       // Pill gradient background
@@ -332,7 +409,9 @@ class EditorSelectionOutline extends CustomPainter {
         canvas,
         Offset(badgeLeft + hPad + dotSize + dotGap, badgeTop + vPad),
       );
-      textPainter.dispose();
+      if (cachedTextPainter == null) {
+        textPainter.dispose();
+      }
       canvas.restore();
     }
   }
@@ -424,6 +503,39 @@ class EditorComposedComponentBadgePainter extends CustomPainter {
   static const Color forcedPrimary = Color(0xFF0D9488);
   static const Color forcedSecondary = Color(0xFF0284C7);
 
+  static final Map<(Size, double), Path> _dashedRRectCache = {};
+
+  static Path _resolveDashedRRect(
+    Size size,
+    double cornerRadius,
+    RRect rrect,
+  ) {
+    final key = (size, cornerRadius);
+    final cached = _dashedRRectCache.remove(key);
+    if (cached != null) {
+      _dashedRRectCache[key] = cached;
+      return cached;
+    }
+    final path = Path()..addRRect(rrect);
+    final dashedPath = Path();
+    for (final metric in path.computeMetrics()) {
+      for (var offset = 0.0; offset < metric.length; offset += 10) {
+        dashedPath.addPath(
+          metric.extractPath(
+            offset,
+            (offset + 5.0).clamp(0.0, metric.length),
+          ),
+          Offset.zero,
+        );
+      }
+    }
+    if (_dashedRRectCache.length >= 64) {
+      _dashedRRectCache.remove(_dashedRRectCache.keys.first);
+    }
+    _dashedRRectCache[key] = dashedPath;
+    return dashedPath;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = (Offset.zero & size).deflate(1.0);
@@ -438,19 +550,7 @@ class EditorComposedComponentBadgePainter extends CustomPainter {
 
       // Fin liseré pointillé si aucun peintre de survol actif n'est présent
       if (innerPainter == null) {
-        final path = Path()..addRRect(rrect);
-        final dashedPath = Path();
-        for (final metric in path.computeMetrics()) {
-          for (var offset = 0.0; offset < metric.length; offset += 10) {
-            dashedPath.addPath(
-              metric.extractPath(
-                offset,
-                (offset + 5.0).clamp(0.0, metric.length),
-              ),
-              Offset.zero,
-            );
-          }
-        }
+        final dashedPath = _resolveDashedRRect(size, cornerRadius, rrect);
         canvas.drawPath(
           dashedPath,
           Paint()

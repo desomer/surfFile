@@ -2338,4 +2338,85 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'selecting zones or slots in SuperLayout does not rebuild unaffected sibling zones',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      var northBuilds = 0;
+      var southBuilds = 0;
+
+      await pump(
+        tester,
+        mode,
+        SuperLayout(
+          name: 'Main',
+          config: const SuperLayoutConfig(
+            northSize: 60,
+            southSize: 60,
+            west: false,
+            east: false,
+            placements: {
+              SuperLayoutZone.north: ['north-slot'],
+              SuperLayoutZone.center: ['center-slot'],
+              SuperLayoutZone.south: ['south-slot'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'north-slot',
+              label: 'Nord Slot',
+              builder: (_) {
+                northBuilds++;
+                return const Center(child: Text('Nord Content'));
+              },
+            ),
+            BuilderSlot(
+              id: 'center-slot',
+              label: 'Centre Slot',
+              builder: (_) => const SizedBox.expand(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 24),
+                    child: Text('Centre Content'),
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'south-slot',
+              label: 'Sud Slot',
+              builder: (_) {
+                southBuilds++;
+                return const Center(child: Text('Sud Content'));
+              },
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // First tap activates layout and selects Centre zone; subsequent double-click
+      // on Centre Slot must not rebuild North or South zones.
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre']);
+
+      final northAfterCenterZone = northBuilds;
+      final southAfterCenterZone = southBuilds;
+
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Centre Slot']);
+      expect(northBuilds, northAfterCenterZone);
+      expect(southBuilds, southAfterCenterZone);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -1530,6 +1530,159 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'zooming and panning isolate content with RepaintBoundary without rebuilding non-outlined children',
+    (tester) async {
+      var childBuilds = 0;
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => SuperPage(
+              maxAutoZoomExtent: 1000,
+              child: EditorSlot(
+                id: 'counted-slot',
+                label: 'Counted',
+                child: Builder(
+                  builder: (_) {
+                    childBuilds++;
+                    return const SizedBox(
+                      key: ValueKey('zoom-counted-content'),
+                      width: 200,
+                      height: 120,
+                      child: ColoredBox(color: Colors.amber),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(SuperApp(router: router));
+      await tester.pumpAndSettle();
+
+      final mode = StyleEditScope.controllerOf(
+        tester.element(find.byType(SuperPage)),
+      )!;
+      mode.value = true;
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-zoom-transform')),
+          matching: find.byType(RepaintBoundary),
+        ),
+        findsWidgets,
+      );
+
+      final buildsAfterEditEnter = childBuilds;
+
+      tester
+          .widget<Slider>(find.byKey(const ValueKey('editor-zoom-slider')))
+          .onChanged!(2.0);
+      await tester.pumpAndSettle();
+
+      final panGesture = await tester.startGesture(
+        const Offset(160, 120),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await panGesture.moveBy(const Offset(50, 30));
+      await tester.pumpAndSettle();
+      await panGesture.up();
+      await tester.pumpAndSettle();
+
+      expect(childBuilds, buildsAfterEditEnter);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'EditorSlot wrapping SuperPage and controllerOf during build never call visitChildElements during build',
+    (tester) async {
+      final ready = ValueNotifier<bool>(false);
+      addTearDown(ready.dispose);
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => _BuildTimeControllerProbe(
+              child: EditableSurface(
+                label: 'Outer background',
+                decorate: false,
+                child: SuperPage(
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        ValueListenableBuilder<bool>(
+          valueListenable: ready,
+          builder: (context, isReady, _) {
+            if (!isReady) {
+              return const MaterialApp(
+                home: Scaffold(body: Center(child: CircularProgressIndicator())),
+              );
+            }
+            return SuperApp(router: router);
+          },
+        ),
+      );
+      await tester.pump();
+
+      // Transitioning from loading to SuperApp mounts EditableSurface (above SuperPage)
+      // inside buildScope; neither EditorSlot nor controllerOf may throw.
+      ready.value = true;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Toggling edit mode on and off swaps _EditorSlotPaintHost and
+      // _StandaloneAiHighlightHost on the outer EditableSurface during build.
+      final mode = StyleEditScope.controllerOf(
+        tester.element(find.byType(SuperPage)),
+      )!;
+      mode.value = true;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      mode.value = false;
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+class _BuildTimeControllerProbe extends StatefulWidget {
+  const _BuildTimeControllerProbe({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_BuildTimeControllerProbe> createState() =>
+      _BuildTimeControllerProbeState();
+}
+
+class _BuildTimeControllerProbeState extends State<_BuildTimeControllerProbe> {
+  @override
+  void initState() {
+    super.initState();
+    EditorZoomScope.controllerOf(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    EditorZoomScope.controllerOf(context);
+    return widget.child;
+  }
 }
 
 Widget _target(BuildContext context) =>
