@@ -36,18 +36,47 @@ Registry createSuperDesignerRegistry({
 /// Alias conservé pour la compatibilité avec le `main.dart` de `super_container_layout`.
 typedef TestApp = SuperDesignerApp;
 
-/// Lance l'application autonome `super_designer`.
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final geminiKey = await resolveGeminiApiKey();
-  if (!dotenv.isInitialized) {
-    dotenv.loadFromString(envString: '', isOptional: true);
-  }
-  if (geminiKey.isNotEmpty) {
-    unawaited(VibeChatDialog.warmUp(rootBundle));
-  }
-  // Le point d'entrée de démonstration active la persistance par défaut.
-  runApp(const SuperDesignerApp(persistRepository: true));
+/// Lance l'application autonome `super_designer` en capturant les journaux et erreurs.
+void main() {
+  // Capture les erreurs Flutter (UI, widgets, rendering…)
+  FlutterError.onError = (FlutterErrorDetails details) {
+    final message = '[FLUTTER ERROR] ${details.exceptionAsString()}';
+    saveError(message, details.stack);
+    //debugPrintSynchronously(message /*, stackTrace: details.stack*/);
+    FlutterError.dumpErrorToConsole(details);
+  };
+
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      final geminiKey = await resolveGeminiApiKey();
+      if (!dotenv.isInitialized) {
+        dotenv.loadFromString(envString: '', isOptional: true);
+      }
+      if (geminiKey.isNotEmpty) {
+        unawaited(VibeChatDialog.warmUp(rootBundle));
+      }
+      // Le point d'entrée de démonstration active la persistance par défaut.
+      runApp(const SuperDesignerApp(persistRepository: true));
+    },
+    (error, stack) {
+      final message = '[DART ERROR] $error\n$stack';
+      saveError(message, stack);
+      //debugPrintSynchronously(message);
+      FlutterError.dumpErrorToConsole(
+        FlutterErrorDetails(exception: error, stack: stack),
+      );
+    },
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        // Capture la stack ici, dans le contexte de l'appelant du print
+        saveLog(line, null);
+
+        // Et tu continues d'afficher normalement
+        parent.print(zone, line);
+      },
+    ),
+  );
 }
 
 /// Widget racine de l'application de démonstration et d'édition `super_designer`,

@@ -520,8 +520,11 @@ class _LocalCodec extends AppearanceCodec {
   @override
   Appearance decode(String text) => delegate.decode(text);
   @override
-  Appearance patchFromJson(Appearance current, Map<String, dynamic> patch) =>
-      delegate.patchFromJson(current, patch);
+  Appearance patchFromJson(
+    Appearance current,
+    Map<String, dynamic> patch, {
+    bool logErrors = true,
+  }) => delegate.patchFromJson(current, patch, logErrors: logErrors);
   @override
   Map<String, Object?> normalizeTransfer(
     Map<String, dynamic> data,

@@ -5,6 +5,7 @@
 /// et les contraintes de dimension par slot ([SlotSizeConstraints]).
 library;
 
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/painting.dart' show Axis;
@@ -240,7 +241,13 @@ class SuperLayoutConfig extends ComponentConfig {
     final stacked =
         axisOf(side) == (vertical ? Axis.vertical : Axis.horizontal);
     var lower = minSize;
-    var upper = maxSize;
+    var upper = math.max(
+      maxSize,
+      math.max(
+        isAuto(side) ? 0.0 : sizeOf(side),
+        collapsedSides[side] ?? 0.0,
+      ),
+    );
     void constrain(double coefficient, double constant) {
       if (coefficient > 0) {
         final bound = constant / coefficient;
@@ -426,7 +433,7 @@ class SuperLayoutConfig extends ComponentConfig {
   };
 
   SuperLayoutConfig withSize(SuperLayoutZone side, double value) {
-    if (!side.isSide || !value.isFinite || value < minSize || value > maxSize) {
+    if (!side.isSide || !value.isFinite || value < minSize) {
       throw ArgumentError('Cote et taille finie superieure a $minSize requis.');
     }
     return _withSize(side, value);
@@ -797,8 +804,7 @@ class SuperLayoutConfig extends ComponentConfig {
         if (side == null ||
             extent is! num ||
             !extent.isFinite ||
-            extent < minSize ||
-            extent > maxSize) {
+            extent < minSize) {
           throw const FormatException('Cote reduit invalide.');
         }
         result[side] = extent.toDouble();
@@ -814,7 +820,7 @@ class SuperLayoutConfig extends ComponentConfig {
 
     double size(String key, double fallback) {
       final v = value[key] ?? fallback;
-      if (v is! num || !v.isFinite || v < minSize || v > maxSize) {
+      if (v is! num || !v.isFinite || v < minSize) {
         throw FormatException('Valeur invalide pour "$key".');
       }
       return v.toDouble();

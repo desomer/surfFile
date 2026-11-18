@@ -273,7 +273,7 @@ void main() {
         transform: const TransformSpec(dx: 4000.12, scale: 40.12),
       );
       final layout = const SuperLayoutConfig()
-          .withSize(SuperLayoutZone.west, SuperLayoutConfig.maxSize)
+          .withSize(SuperLayoutZone.west, 5000.12)
           .copyWith(
             zoneFlows: {
               SuperLayoutZone.center: const ZoneFlowConfig(

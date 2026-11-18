@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **322 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **323 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -152,7 +152,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 322 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 323 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -255,9 +255,10 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
 
-### 3.5. Services (`lib/services/` — 42 fichiers)
+### 3.5. Services (`lib/services/` — 43 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
+| `services/diagnostics/debug_entry.dart` | `DebugEntry`, `DebugEntryType`, `debugEntries`, `saveLog`, `saveError` : tampon circulaire en mémoire (plafonné à 1000 entrées) pour les journaux `print`/`debugPrint` et erreurs `FlutterError` / `runZonedGuarded`. |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
 | `services/appearance/appearance_store.dart` | `AppearanceStore`, `AppearanceServicesScope` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`) et création de contrôleurs persistants. |
 | `services/appearance/appearance_transfer.dart` | `AppearanceTransfer`, `TransferGroup` : import/export JSON par groupes (Styles, Dispositions), export compact minifié pour l'IA, usages compris (`exportCompactAi`) et application incrémentale des patches (`applyVibe`, qui conserve l'usage existant des composants liés à des données). |

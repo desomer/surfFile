@@ -266,7 +266,7 @@ void main() {
           });
         });
         await send(tester);
-        expect(requests, 2);
+        expect(requests, 4);
         expect(appearance.value, same(initial));
         expect(find.text('Liste appliquée.'), findsNothing);
         expect(find.textContaining('Composants non rattachés'), findsOneWidget);
@@ -386,7 +386,7 @@ void main() {
 
       await pumpChat(tester, appearance, registry, (prompt) async {
         prompts.add(prompt);
-        if (prompts.length <= 2) {
+        if (prompts.length <= 4) {
           return invalidResponse;
         }
         return jsonEncode({
@@ -395,10 +395,10 @@ void main() {
         });
       });
 
-      // Premier envoi : les 2 tentatives échouent sur le composant invalide.
+      // Premier envoi : les 4 tentatives échouent sur le composant invalide.
       await send(tester);
-      expect(prompts.length, 2);
-      // La tentative 2 a déjà reçu la cause précise du composant en erreur.
+      expect(prompts.length, 4);
+      // Les tentatives de correction ont reçu la cause précise du composant en erreur.
       expect(prompts[1], contains('CORRECTION REQUISE'));
       expect(prompts[1], contains('Composant "broken-comp"'));
       expect(prompts[1], contains('unknown_widget'));
@@ -415,10 +415,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
       await tester.pumpAndSettle();
 
-      expect(prompts.length, 3);
-      expect(prompts[2], contains('Assistant (ERREUR À CORRIGER) :'));
-      expect(prompts[2], contains('Composant "broken-comp"'));
-      expect(prompts[2], contains(invalidResponse));
+      expect(prompts.length, 5);
+      expect(prompts[4], contains('Assistant (ERREUR À CORRIGER) :'));
+      expect(prompts[4], contains('Composant "broken-comp"'));
+      expect(prompts[4], contains(invalidResponse));
       expect(find.text('Corrigé après lecture de la cause.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -3191,11 +3191,7 @@ void main() {
       addTearDown(router.dispose);
 
       await tester.pumpWidget(
-        SuperApp(
-          router: router,
-          appearanceStore: store,
-          registry: registry,
-        ),
+        SuperApp(router: router, appearanceStore: store, registry: registry),
       );
       await tester.pumpAndSettle();
       expect(find.text('Avant'), findsOneWidget);
@@ -3221,10 +3217,9 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(
-        VibeWorkHighlightController.instance.streamingIds,
-        {'kpi-existing'},
-      );
+      expect(VibeWorkHighlightController.instance.streamingIds, {
+        'kpi-existing',
+      });
       expect(
         VibeWorkHighlightController.instance.stateFor('kpi-existing')?.kind,
         VibeWorkKind.streaming,
@@ -3577,11 +3572,7 @@ void main() {
       addTearDown(router.dispose);
 
       await tester.pumpWidget(
-        SuperApp(
-          router: router,
-          appearanceStore: store,
-          registry: registry,
-        ),
+        SuperApp(router: router, appearanceStore: store, registry: registry),
       );
       await tester.pumpAndSettle();
 
@@ -3600,53 +3591,46 @@ void main() {
       expect(find.text('Carte corrigée.'), findsOneWidget);
       expect(find.text('Premier'), findsOneWidget);
       expect(find.text('Second'), findsOneWidget);
-      expect(
-        appAppearance.value.nativeComponent('card-1').slotsOf('child'),
-        ['card-layout'],
-      );
+      expect(appAppearance.value.nativeComponent('card-1').slotsOf('child'), [
+        'card-layout',
+      ]);
       expect(tester.takeException(), isNull);
     },
   );
 
-  test(
-    'VibeAudioWavEncoder and VibeSpeechTextInsertion encode WAV, compute RMS, and insert transcripts cleanly',
-    () {
-      final pcm = Uint8List(8);
-      final bd = ByteData.sublistView(pcm);
-      bd.setInt16(0, 16384, Endian.little);
-      bd.setInt16(2, -16384, Endian.little);
-      bd.setInt16(4, 16384, Endian.little);
-      bd.setInt16(6, -16384, Endian.little);
+  test('VibeAudioWavEncoder and VibeSpeechTextInsertion encode WAV, compute RMS, and insert transcripts cleanly', () {
+    final pcm = Uint8List(8);
+    final bd = ByteData.sublistView(pcm);
+    bd.setInt16(0, 16384, Endian.little);
+    bd.setInt16(2, -16384, Endian.little);
+    bd.setInt16(4, 16384, Endian.little);
+    bd.setInt16(6, -16384, Endian.little);
 
-      final rms = VibeAudioWavEncoder.computeNormalizedRms(pcm);
-      expect(rms, closeTo(0.5, 0.01));
+    final rms = VibeAudioWavEncoder.computeNormalizedRms(pcm);
+    expect(rms, closeTo(0.5, 0.01));
 
-      final wav = VibeAudioWavEncoder.encodePcm16MonoToWav(
-        pcm,
-        sampleRate: 16000,
-      );
-      expect(wav.length, 44 + 8);
-      expect(ascii.decode(wav.sublist(0, 4)), 'RIFF');
-      expect(ascii.decode(wav.sublist(8, 12)), 'WAVE');
-      expect(ascii.decode(wav.sublist(12, 16)), 'fmt ');
-      expect(ascii.decode(wav.sublist(36, 40)), 'data');
+    final wav = VibeAudioWavEncoder.encodePcm16MonoToWav(
+      pcm,
+      sampleRate: 16000,
+    );
+    expect(wav.length, 44 + 8);
+    expect(ascii.decode(wav.sublist(0, 4)), 'RIFF');
+    expect(ascii.decode(wav.sublist(8, 12)), 'WAVE');
+    expect(ascii.decode(wav.sublist(12, 16)), 'fmt ');
+    expect(ascii.decode(wav.sublist(36, 40)), 'data');
 
-      final controller = TextEditingController();
-      addTearDown(controller.dispose);
-      VibeSpeechTextInsertion.insertTranscript(
-        controller,
-        'Ajoute un graphique',
-      );
-      expect(controller.text, 'Ajoute un graphique');
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    VibeSpeechTextInsertion.insertTranscript(controller, 'Ajoute un graphique');
+    expect(controller.text, 'Ajoute un graphique');
 
-      VibeSpeechTextInsertion.insertTranscript(controller, 'des ventes');
-      expect(controller.text, 'Ajoute un graphique des ventes');
+    VibeSpeechTextInsertion.insertTranscript(controller, 'des ventes');
+    expect(controller.text, 'Ajoute un graphique des ventes');
 
-      controller.selection = const TextSelection.collapsed(offset: 6);
-      VibeSpeechTextInsertion.insertTranscript(controller, 'vite');
-      expect(controller.text, 'Ajoute vite un graphique des ventes');
-    },
-  );
+    controller.selection = const TextSelection.collapsed(offset: 6);
+    VibeSpeechTextInsertion.insertTranscript(controller, 'vite');
+    expect(controller.text, 'Ajoute vite un graphique des ventes');
+  });
 
   testWidgets(
     'microphone button in VibeChatDialog input bar and VibeAskUserCard text fields supports auto-stop on silence and second-click stop',
@@ -3777,6 +3761,125 @@ void main() {
             .text,
         'Style néomorphique',
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'accepts fixed side sizes above 400px (e.g. westSize: 600) and repairs a missing trailing closing brace without retry',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      var callCount = 0;
+      final validFull = jsonEncode({
+        'message': 'Cartes héro créées.',
+        'vibe': {
+          'components': {
+            'mainLayout': {
+              'type': 'layout',
+              'placements': {
+                'center': [
+                  {'id': 'hero-cards', 'type': 'registry:Layout'},
+                ],
+              },
+            },
+            'hero-cards': {
+              'type': 'layout',
+              'west': true,
+              'westSize': 600,
+              'autoSides': <String>[],
+              'zoneFlows': {
+                'west': {'expandSlots': true, 'padding': 8},
+                'center': {'expandSlots': true, 'padding': 8},
+              },
+              'slotLabels': {
+                'card-solde': 'Vérification de solde',
+                'card-offre': 'Offrir une carte',
+              },
+              'placements': {
+                'west': [
+                  {'id': 'card-solde', 'type': 'registry:Value'},
+                ],
+                'center': [
+                  {'id': 'card-offre', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'card-solde': {'type': 'value', 'text': 'Solde'},
+            'card-offre': {'type': 'value', 'text': 'Offrir'},
+          },
+          'usages': {
+            'card-solde': {
+              'kind': 'explanation',
+              'translationKey': 'bannerDesc',
+            },
+          },
+        },
+      });
+      // Simule l'oubli par le LLM de la toute dernière accolade fermante '}' :
+      final missingOuterBrace = validFull.substring(0, validFull.length - 1);
+
+      await pumpChat(tester, appearance, registry, (_) async {
+        callCount++;
+        return missingOuterBrace;
+      });
+
+      await send(tester);
+
+      expect(callCount, 1);
+      expect(find.text('Cartes héro créées.'), findsOneWidget);
+      expect(appearance.value.layout('hero-cards').westSize, 600);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'retries past attempt 2 up to 4 attempts when earlier attempts fail with truncation then validation error',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final prompts = <String>[];
+      await pumpChat(tester, appearance, registry, (prompt) async {
+        prompts.add(prompt);
+        if (prompts.length == 1) {
+          // Tentative 1 : JSON réellement tronqué en pleine chaîne (non réparable).
+          return '{"message":"MARQUEUR_ANCIENNE_REPONSE_TENTATIVE_1___________________________fin_tronquee';
+        }
+        if (prompts.length == 2) {
+          // Tentative 2 : JSON complet mais composant inconnu (FormatException).
+          return '{"message":"Erreur schéma","vibe":{"components":{"bad":{"type":"unknown_type"}}}}';
+        }
+        // Tentative 3 : patch valide !
+        return jsonEncode({
+          'message': 'Corrigé à la tentative 3.',
+          'vibe': _fileListPatch('mainLayout'),
+        });
+      });
+
+      await send(tester);
+
+      expect(prompts, hasLength(3));
+      expect(prompts[1], contains('CORRECTION REQUISE'));
+      expect(prompts[2], contains('CORRECTION REQUISE'));
+      expect(prompts[2], contains('Tentative 1'));
+      expect(prompts[2], contains('Tentative 2'));
+      expect(prompts[2], contains('unknown_type'));
+      // Vérifie que la réponse invalide de la tentative 1 n'est pas réempilée dans la tentative 3.
+      expect(
+        prompts[2],
+        isNot(contains('MARQUEUR_ANCIENNE_REPONSE_TENTATIVE_1')),
+      );
+      expect(find.text('Corrigé à la tentative 3.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

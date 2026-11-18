@@ -1009,6 +1009,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         effectivePatch,
         codec: widget.codec,
         normalizeRoundTrip: false,
+        logErrors: false,
       );
       widget.validateAppearance?.call(previewAppearance);
       _setPreviewAppearance(previewAppearance);
@@ -1809,8 +1810,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     required _LiveTurnSession session,
     List<VibeChatAttachment> attachments = const [],
   }) async {
+    const maxAttempts = 4;
     var currentTurnPrompt = turnPrompt;
-    for (var attempt = 0; attempt < 4; attempt++) {
+    final priorCauses = <String>[];
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
         _pendingSnapshot = null;
         _streamingSnapshot.value = null;
@@ -1820,7 +1823,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
       final useStreaming = _usesStreamingGenerator;
       debugPrint(
-        '[Vibe IA] Tentative ${attempt + 1}/4 — envoi du prompt '
+        '[Vibe IA] Tentative ${attempt + 1}/$maxAttempts — envoi du prompt '
         '(${currentTurnPrompt.length} caractères dynamiques, '
         'mode: ${useStreaming ? _speedMode.name : "custom"}, '
         'fichiers joints: ${attachments.length})...',
@@ -1859,7 +1862,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         final json = _extractJson(response);
         final Object? result;
         try {
-          result = jsonDecode(json);
+          result = _decodeResponseJson(json);
         } on FormatException catch (error) {
           debugPrint(
             '[Vibe IA] Échec de jsonDecode (tentative ${attempt + 1}) : '
@@ -1997,7 +2000,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             error is FormatException ||
             error is ArgumentError ||
             error is StateError;
-        if (attempt != 0 || !isValidationError) {
+        if (attempt >= maxAttempts - 1 || !isValidationError) {
           debugPrint(
             '[Vibe IA] Tentative ${attempt + 1} échouée sans relance '
             '(${error.runtimeType}) : ${_describeErrorCause(error)}',
@@ -2005,18 +2008,24 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           rethrow;
         }
         final cause = _describeErrorCause(error);
+        priorCauses.add(
+          'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+        );
         debugPrint(
           '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
           'Relance avec prompt de correction...',
         );
+        final causesSummary = priorCauses.length == 1
+            ? cause
+            : priorCauses.join('\n- ');
         currentTurnPrompt =
             '''
-$currentTurnPrompt
+$turnPrompt
 
 CORRECTION REQUISE :
 La réponse précédente a été refusée.
 Cause de l'erreur (${error.runtimeType}) :
-$cause
+${priorCauses.length == 1 ? causesSummary : '- $causesSummary'}
 Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
 Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte).
@@ -2209,6 +2218,99 @@ $response
       }
     }
     return value;
+  }
+
+  Object? _decodeResponseJson(String json) {
+    try {
+      return jsonDecode(json);
+    } on FormatException catch (originalError) {
+      final repaired = _tryCloseTrailingJsonDelimiters(json);
+      if (repaired == null) rethrow;
+      try {
+        final decoded = jsonDecode(repaired.json);
+        if (decoded is Map<String, dynamic> &&
+            (decoded.containsKey('vibe') ||
+                decoded.containsKey('message') ||
+                decoded.containsKey('askUser') ||
+                decoded.containsKey('repositories'))) {
+          debugPrint(
+            '[Vibe IA] JSON réparé automatiquement '
+            '(${repaired.closing.length} délimiteur(s) fermant(s) manquant(s) '
+            'en fin de réponse : "${repaired.closing}").',
+          );
+          return decoded;
+        }
+      } on FormatException {
+        // La réparation n'a pas produit un JSON valide : relance l'erreur initiale.
+      }
+      Error.throwWithStackTrace(originalError, StackTrace.current);
+    }
+  }
+
+  static ({String json, String closing})? _tryCloseTrailingJsonDelimiters(
+    String json,
+  ) {
+    final stack = <int>[];
+    var inString = false;
+    var escaped = false;
+    int? lastNonWhitespace;
+
+    for (var i = 0; i < json.length; i++) {
+      final unit = json.codeUnitAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (unit == 0x5C) {
+          escaped = true;
+        } else if (unit == 0x22) {
+          inString = false;
+          lastNonWhitespace = unit;
+        }
+        continue;
+      }
+      if (unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D) {
+        continue;
+      }
+      lastNonWhitespace = unit;
+      if (unit == 0x22) {
+        inString = true;
+      } else if (unit == 0x7B || unit == 0x5B) {
+        stack.add(unit);
+      } else if (unit == 0x7D) {
+        if (stack.isEmpty || stack.last != 0x7B) return null;
+        stack.removeLast();
+      } else if (unit == 0x5D) {
+        if (stack.isEmpty || stack.last != 0x5B) return null;
+        stack.removeLast();
+      }
+    }
+
+    if (inString ||
+        escaped ||
+        stack.isEmpty ||
+        stack.length > 4 ||
+        stack.first != 0x7B ||
+        lastNonWhitespace == null) {
+      return null;
+    }
+
+    // N'autorise la fermeture automatique que si le dernier jeton hors espaces
+    // termine une valeur JSON complète ('}', ']', '"', chiffre, 'e' de true/false, 'l' de null).
+    final validValueEnd =
+        lastNonWhitespace == 0x7D ||
+        lastNonWhitespace == 0x5D ||
+        lastNonWhitespace == 0x22 ||
+        (lastNonWhitespace >= 0x30 && lastNonWhitespace <= 0x39) ||
+        lastNonWhitespace == 0x65 ||
+        lastNonWhitespace == 0x6C;
+    if (!validValueEnd) return null;
+
+    final closingBuffer = StringBuffer();
+    for (var i = stack.length - 1; i >= 0; i--) {
+      closingBuffer.writeCharCode(stack[i] == 0x7B ? 0x7D : 0x5D);
+    }
+    final closing = closingBuffer.toString();
+    return (json: '$json$closing', closing: closing);
   }
 
   void _appendMessage(

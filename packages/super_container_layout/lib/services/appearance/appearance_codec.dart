@@ -369,7 +369,11 @@ class AppearanceCodec {
   ///   unplaces deleted component IDs from parent containers).
   /// - Entries in `usages` replace the usage of their ID; `null` deletes it.
   ///   Usages of deleted components are dropped.
-  Appearance patchFromJson(Appearance current, Map<String, dynamic> patch) {
+  Appearance patchFromJson(
+    Appearance current,
+    Map<String, dynamic> patch, {
+    bool logErrors = true,
+  }) {
     final known = {
       'version',
       'mode',
@@ -390,10 +394,12 @@ class AppearanceCodec {
         .where((key) => !known.contains(key))
         .toList();
     if (unknownKeys.isNotEmpty) {
-      debugPrint(
-        '[AppearanceCodec] Clés de patch inconnues : $unknownKeys '
-        '(attendues : ${known.toList()}).',
-      );
+      if (logErrors) {
+        debugPrint(
+          '[AppearanceCodec] Clés de patch inconnues : $unknownKeys '
+          '(attendues : ${known.toList()}).',
+        );
+      }
       throw FormatException(
         'Unknown appearance preference: ${unknownKeys.join(', ')}.',
       );
@@ -460,26 +466,32 @@ class AppearanceCodec {
                 ? existing.patchFromJson(entry.value as Map)
                 : ContainerStyle.fromJson(entry.value);
           } on FormatException catch (error) {
-            debugPrint(
-              '[AppearanceCodec] Échec du décodage du style "$id" '
-              '(FormatException) : ${error.message} | JSON: ${jsonEncode(entry.value)}',
-            );
+            if (logErrors) {
+              debugPrint(
+                '[AppearanceCodec] Échec du décodage du style "$id" '
+                '(FormatException) : ${error.message} | JSON: ${jsonEncode(entry.value)}',
+              );
+            }
             throw FormatException(
               'Style "$id" : ${error.message}',
               error.source,
               error.offset,
             );
           } catch (error) {
-            debugPrint(
-              '[AppearanceCodec] Échec du décodage du style "$id" '
-              '(${error.runtimeType}) : $error | JSON: ${jsonEncode(entry.value)}',
-            );
+            if (logErrors) {
+              debugPrint(
+                '[AppearanceCodec] Échec du décodage du style "$id" '
+                '(${error.runtimeType}) : $error | JSON: ${jsonEncode(entry.value)}',
+              );
+            }
             rethrow;
           }
         } else {
-          debugPrint(
-            '[AppearanceCodec] Style "$id" invalide (type: ${entry.value.runtimeType}).',
-          );
+          if (logErrors) {
+            debugPrint(
+              '[AppearanceCodec] Style "$id" invalide (type: ${entry.value.runtimeType}).',
+            );
+          }
           throw const FormatException('Invalid "styles" map.');
         }
       }
@@ -527,28 +539,34 @@ class AppearanceCodec {
               components[id] = ComponentConfig.fromJson(map);
             }
           } on FormatException catch (error) {
-            debugPrint(
-              '[AppearanceCodec] Échec du décodage du composant "$id" '
-              '(type: $resolvedType, FormatException) : ${error.message} | '
-              'JSON: ${jsonEncode(entry.value)}',
-            );
+            if (logErrors) {
+              debugPrint(
+                '[AppearanceCodec] Échec du décodage du composant "$id" '
+                '(type: $resolvedType, FormatException) : ${error.message} | '
+                'JSON: ${jsonEncode(entry.value)}',
+              );
+            }
             throw FormatException(
               'Composant "$id" (type: $resolvedType) : ${error.message}',
               error.source,
               error.offset,
             );
           } catch (error) {
-            debugPrint(
-              '[AppearanceCodec] Échec du décodage du composant "$id" '
-              '(type: $resolvedType, ${error.runtimeType}) : $error | '
-              'JSON: ${jsonEncode(entry.value)}',
-            );
+            if (logErrors) {
+              debugPrint(
+                '[AppearanceCodec] Échec du décodage du composant "$id" '
+                '(type: $resolvedType, ${error.runtimeType}) : $error | '
+                'JSON: ${jsonEncode(entry.value)}',
+              );
+            }
             rethrow;
           }
         } else {
-          debugPrint(
-            '[AppearanceCodec] Composant "$id" invalide (type: ${entry.value.runtimeType}).',
-          );
+          if (logErrors) {
+            debugPrint(
+              '[AppearanceCodec] Composant "$id" invalide (type: ${entry.value.runtimeType}).',
+            );
+          }
           throw const FormatException('Invalid "components" map.');
         }
       }

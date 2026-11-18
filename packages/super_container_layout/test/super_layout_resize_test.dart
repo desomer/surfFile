@@ -207,12 +207,17 @@ void main() {
       () => SuperLayoutConfig.fromJson({'resizeSides': 'yes'}),
       throwsFormatException,
     );
-    for (final value in [0.0, 401.0, double.nan]) {
+    for (final value in [0.0, 19.0, double.infinity, double.nan]) {
       expect(
         () => enabled.withSize(SuperLayoutZone.north, value),
         throwsArgumentError,
       );
     }
+    expect(enabled.withSize(SuperLayoutZone.west, 600).westSize, 600);
+    expect(
+      SuperLayoutConfig.fromJson({'west': true, 'westSize': 600}).westSize,
+      600,
+    );
     expect(
       () => enabled.withSize(SuperLayoutZone.center, 100),
       throwsArgumentError,
@@ -223,7 +228,7 @@ void main() {
     'collapsed sizes are validated and included in equality and hashing',
     () {
       final collapsed = enabled.copyWith(
-        collapsedSides: {SuperLayoutZone.north: 80},
+        collapsedSides: {SuperLayoutZone.north: 80, SuperLayoutZone.west: 600},
       );
       final restored = SuperLayoutConfig.fromJson(collapsed.toJson());
       expect(restored, collapsed);
@@ -235,7 +240,8 @@ void main() {
         [],
         {'center': 80},
         {'north': 0},
-        {'west': 401},
+        {'west': 19},
+        {'west': double.infinity},
         {'east': double.nan},
         {'south': '80'},
       ]) {

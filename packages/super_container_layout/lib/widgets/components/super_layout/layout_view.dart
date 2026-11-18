@@ -482,10 +482,9 @@ extension _SuperLayoutView on SuperLayoutState {
                               _config.value.copyWith(
                                 collapsedSides: {
                                   ..._config.value.collapsedSides,
-                                  side: extent.clamp(
-                                    SuperLayoutConfig.minSize,
-                                    SuperLayoutConfig.maxSize,
-                                  ),
+                                  side: extent < SuperLayoutConfig.minSize
+                                      ? SuperLayoutConfig.minSize
+                                      : extent,
                                 },
                               ),
                             ),

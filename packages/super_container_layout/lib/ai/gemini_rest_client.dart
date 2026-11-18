@@ -851,6 +851,7 @@ class GeminiRestClient {
     final accumulatedBuffer = StringBuffer();
     int? ttftMs;
     Map<String, dynamic>? lastUsageMetadata;
+    String? lastFinishReason;
 
     final lineStream = utf8.decoder
         .bind(streamResponse.byteStream)
@@ -897,6 +898,12 @@ class GeminiRestClient {
       if (decoded['usageMetadata'] case final Map<String, dynamic> usage) {
         lastUsageMetadata = usage;
       }
+      if (decoded['candidates'] case [final Map<Object?, Object?> first, ...]) {
+        if (first['finishReason'] case final String reason
+            when reason.isNotEmpty) {
+          lastFinishReason = reason;
+        }
+      }
 
       final chunkText = _extractCandidateChunkText(decoded);
       if (chunkText.isNotEmpty) {
@@ -913,11 +920,16 @@ class GeminiRestClient {
 
     totalStopwatch.stop();
     final usageSummary = _formatUsageSummary(lastUsageMetadata);
+    final finishInfo =
+        lastFinishReason != null && lastFinishReason != 'STOP'
+        ? ', finish: $lastFinishReason'
+        : '';
     debugPrint(
       '[Vibe IA][Gemini REST] $model (${speedMode.name}) terminé — '
       'TTFT: ${ttftMs ?? totalStopwatch.elapsedMilliseconds} ms, '
       'total: ${totalStopwatch.elapsedMilliseconds} ms, '
       'cache: ${usedCache ? "HIT" : "MISS"}'
+      '$finishInfo'
       '${usageSummary.isEmpty ? "" : ", $usageSummary"}.',
     );
 

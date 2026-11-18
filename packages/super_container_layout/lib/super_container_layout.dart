@@ -26,6 +26,7 @@ export 'models/component_usage.dart';
 export 'widgets/components/component_state_behavior.dart';
 export 'widgets/components/component_tooltip.dart';
 export 'services/events/super_event_bus.dart';
+export 'services/diagnostics/debug_entry.dart';
 export 'widgets/editing/behaviors/component_behavior_editor.dart';
 export 'models/json_syntax.dart';
 export 'models/json_numbers.dart';

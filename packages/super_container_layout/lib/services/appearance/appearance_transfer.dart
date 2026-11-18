@@ -440,6 +440,7 @@ class AppearanceTransfer {
     Map<String, dynamic> raw, {
     AppearanceCodec codec = const AppearanceCodec(),
     bool normalizeRoundTrip = true,
+    bool logErrors = true,
   }) {
     final payload = raw['data'] is Map<String, dynamic>
         ? <String, dynamic>{
@@ -460,7 +461,11 @@ class AppearanceTransfer {
               _groupOf(entry.key) == TransferGroup.layouts)
             entry.key: entry.value,
       };
-      final patched = codec.patchFromJson(current, filtered);
+      final patched = codec.patchFromJson(
+        current,
+        filtered,
+        logErrors: logErrors,
+      );
       final result = _keepBoundUsages(current, patched);
       validateComponentRegions(result, previous: current);
       return result;
