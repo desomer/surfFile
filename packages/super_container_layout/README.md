@@ -994,6 +994,13 @@ le wizard.
 
 ## Données et liaisons JSON
 
+L'appui sur **`F1`** (en mode édition comme hors mode édition) ouvre l'éditeur
+JSON flottant sur le repository lié au composant actuellement sélectionné (ou
+détenant le focus clavier), ou — s'il ne possède pas de `binding` propre — sur
+le premier repository lié trouvé parmi ses composants enfants (montés ou
+persistés). Si aucune liaison n'est trouvée ou qu'aucun composant n'est
+sélectionné, `JsonRepositoryManager` s'ouvre directement.
+
 Dans le wizard **Données & Liaisons JSON**, cliquer sur le badge des liaisons
 actives ouvre l'éditeur flottant sur le premier repository lié à la cible.
 Si aucun identifiant ne peut être résolu, le gestionnaire s'ouvre sans
@@ -1466,7 +1473,11 @@ selection est active : vers le haut pour zoomer, vers le bas pour dezoomer
 (de x1 a x3), avec animation et une sensibilite reduite. A x1, la page
 retrouve sa position normale ; le cadrage se rapproche progressivement de la
 selection jusqu'au centrage a x3. Le cadrage automatique des dialogues peut
-toujours descendre sous x1 pour laisser le composant visible. Une nouvelle
+toujours descendre sous x1 pour laisser le composant visible. L'appui sur la
+touche Échap en mode édition annule l'effet du zoom et du panoramique et
+ramène la vue à la normale (100 %, sans décalage) tout en conservant la
+sélection courante ; lorsqu'un menu contextuel, un popup de saisie ou une
+boîte de dialogue est ouvert, Échap le ferme d'abord. Une nouvelle
 selection ou la sortie du mode edition retablit le cadrage automatique.
 Les zones defilantes gardent la priorite pour leur propre defilement.
 Le clic droit selectionne la zone sous le pointeur avant d'ouvrir le menu,

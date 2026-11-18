@@ -52,3 +52,13 @@ L'evenement fournit `componentId`, `trigger`, `data.previousValue`,
 `data.value` et un objet `custom` configurable. Le double-clic conserve
 les deux clics simples s'ils sont configures. Le bus et les abonnements
 sont liberes dans `dispose`.
+
+
+Utilisation en build Release : 
+Dans le dépôt (build\windows\x64\runner\Release\super_designer.exe) : l'exécutable recompilé retrouve désormais automatiquement env quel que soit le dossier depuis lequel vous le lancez.
+
+Si vous copiez/déployez le dossier Release hors du dépôt (le fichier env n'est pas embarqué automatiquement par sécurité) :
+compilez avec flutter build windows --release --dart-define=GEMINI_API_KEY=..., ou
+placez un fichier env ou .env à côté de super_designer.exe, ou
+placez un fichier env dans %USERPROFILE%\.super_container_layout\env, ou
+définissez la variable d'environnement Windows GEMINI_API_KEY.

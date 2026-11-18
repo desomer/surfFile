@@ -1651,4 +1651,3 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 
 La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"components":{...},"styles":{...}}}`.
 
-Pour l’application de démonstration, la clé `GEMINI_API_KEY` peut être définie dans le fichier local `env` ou dans l’environnement du processus. Ne versionnez jamais cette clé. Les applications de production devraient appeler un service intermédiaire plutôt que d’embarquer une clé Gemini dans le client.

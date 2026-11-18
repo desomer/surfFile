@@ -39,60 +39,11 @@ typedef TestApp = SuperDesignerApp;
 /// Lance l'application autonome `super_designer`.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  var envText = '';
-  final sep = Platform.pathSeparator;
-  final paths = [
-    'env',
-    '.env',
-    ['packages', 'super_designer', 'env'].join(sep),
-    ['packages', 'super_designer', '.env'].join(sep),
-    ['packages', 'super_container_layout', 'env'].join(sep),
-    ['packages', 'super_container_layout', '.env'].join(sep),
-    ['..', 'super_container_layout', 'env'].join(sep),
-    ['..', 'super_container_layout', '.env'].join(sep),
-    ['..', 'super_designer', 'env'].join(sep),
-    ['..', 'super_designer', '.env'].join(sep),
-    ['..', 'env'].join(sep),
-    ['..', '.env'].join(sep),
-  ];
-  for (final path in paths) {
-    final file = File(path);
-    if (await file.exists()) {
-      envText = await file.readAsString();
-      break;
-    }
+  final geminiKey = await resolveGeminiApiKey();
+  if (!dotenv.isInitialized) {
+    dotenv.loadFromString(envString: '', isOptional: true);
   }
-  if (envText.isEmpty) {
-    // Permet aussi de lancer l'application depuis un sous-dossier du monorepo.
-    try {
-      var dir = Directory.current;
-      while (true) {
-        for (final candidate in [
-          'env',
-          '.env',
-          ['packages', 'super_designer', 'env'].join(sep),
-          ['packages', 'super_container_layout', 'env'].join(sep),
-        ]) {
-          final file = File('${dir.path}$sep$candidate');
-          if (await file.exists()) {
-            envText = await file.readAsString();
-            break;
-          }
-        }
-        if (envText.isNotEmpty || dir.parent.path == dir.path) break;
-        dir = dir.parent;
-      }
-    } catch (_) {}
-  }
-  final environmentKey = Platform.environment['GEMINI_API_KEY'];
-  dotenv.loadFromString(
-    envString: envText,
-    isOptional: true,
-    mergeWith: environmentKey == null
-        ? const {}
-        : {'GEMINI_API_KEY': environmentKey},
-  );
-  if ((dotenv.env['GEMINI_API_KEY'] ?? '').trim().isNotEmpty) {
+  if (geminiKey.isNotEmpty) {
     unawaited(VibeChatDialog.warmUp(rootBundle));
   }
   // Le point d'entrée de démonstration active la persistance par défaut.

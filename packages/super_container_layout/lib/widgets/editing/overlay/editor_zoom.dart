@@ -148,6 +148,7 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = _setSliderScale;
     _controller._resetZoomHandler = _resetZoom;
     _controller.scale.value = _current.scale;
+    HardwareKeyboard.instance.addHandler(_onKey);
     _controller._interactionHandler = (held) {
       _framingHeld = held;
       if (held) {
@@ -189,17 +190,92 @@ class _EditorZoomState extends State<EditorZoom>
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  void _resetZoom() {
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isShiftPressed) {
+      return false;
+    }
+    if (!mounted || !(_editMode?.value ?? false) || _framingHeld) {
+      return false;
+    }
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      return false;
+    }
+    if (_controller.openContextMenus.value > 0 ||
+        _controller.dialog.value != null ||
+        EditorOverlayVisibility.openDialogs.value > 0) {
+      return false;
+    }
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    if (focusedContext != null &&
+        (MenuController.maybeOf(focusedContext)?.isOpen ?? false)) {
+      return false;
+    }
+    const normal = (scale: 1.0, offset: Offset.zero);
+    if (_current == normal && _to == normal && !_animation.isAnimating) {
+      return false;
+    }
+    if (_isSecondaryDown) {
+      _isSecondaryPanning = true;
+    }
+    _resetZoom(animate: true);
+    return true;
+  }
+
+  void _resetZoom({bool animate = false}) {
     if (!(_editMode?.value ?? false) || _framingHeld) return;
+    if (EditorSlotState.highlightedTarget.value != null) {
+      LayoutSelection.highlightNode(null);
+      _debouncedHighlight = null;
+      _lastHoverTarget = null;
+    }
+    _focusFromRightClick = false;
+    if (_zoomDialog == null) {
+      _preRightClickTransform = null;
+      final currentFocus = LayoutSelection.focus.value?.context;
+      _zoomTarget = currentFocus;
+      _wasKeepingCurrentView =
+          _controller.enabled &&
+          currentFocus != null &&
+          !_controller.options.value.zoomOnSelection;
+    }
+    _anchorViewportPoint = null;
+    _anchorContentPoint = null;
     _manualScale = 1.0;
     _manualOffset = Offset.zero;
-    _controller.scale.value = 1.0;
-    _animation.stop();
     const next = (scale: 1.0, offset: Offset.zero);
-    _controller.transform.value = next;
-    setState(() {
-      _current = _from = _to = next;
-    });
+    final options = _controller.options.value;
+    final disableAnimations =
+        !animate ||
+        !options.animateTransitions ||
+        options.animationDurationMs <= 0 ||
+        MediaQuery.disableAnimationsOf(context);
+    if (disableAnimations) {
+      _animation.stop();
+      _controller.scale.value = 1.0;
+      _controller.transform.value = next;
+      setState(() {
+        _current = _from = _to = next;
+      });
+      return;
+    }
+    final desiredDuration = Duration(
+      milliseconds: options.animationDurationMs.clamp(50, 600),
+    );
+    if (_animation.duration != desiredDuration) {
+      _animation.duration = desiredDuration;
+    }
+    if (_to == next && _animation.isAnimating) {
+      return;
+    }
+    _from = _current;
+    _to = next;
+    _animation.forward(from: 0);
   }
 
   void _frameSelection() {
@@ -783,6 +859,7 @@ class _EditorZoomState extends State<EditorZoom>
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _hoverZoomTimer?.cancel();
     _controller.sliderScaleHandler = null;
     _controller._resetZoomHandler = null;

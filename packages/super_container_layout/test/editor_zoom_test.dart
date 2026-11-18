@@ -1360,9 +1360,8 @@ void main() {
       // Also verify right-clicking directly on a large area while zoomed in:
       // menu open keeps the custom 1.5x zoom, hovering `panModel` dezooms to fit
       // the full component beside the menu, and closing restores the 1.5x zoom.
-      EditorZoomScope.controllerOf(
-        tester.element(find.byType(SuperPage)),
-      )!.resetZoom();
+      EditorZoomScope.controllerOf(tester.element(find.byType(SuperPage)))!
+          .resetZoom();
       await tester.pumpAndSettle();
       final slider = tester.widget<Slider>(
         find.byKey(const ValueKey('editor-zoom-slider')),
@@ -1399,6 +1398,135 @@ void main() {
         screenRect(tester, panModelFinder),
         within(distance: 0.5, from: customZoomedRect),
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'pressing Escape in edit mode cancels automatic and manual zoom/pan back to normal while preserving selection and modal priority',
+    (tester) async {
+      await pumpPage(tester, twoSlots: true);
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      final second = find.byKey(const ValueKey('zoom-second-content'));
+      final initialTargetRect = screenRect(tester, target);
+
+      // 1. Auto-zoom on slot selection, then Escape restores 100% view and keeps selection.
+      await selectTargetZone(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-target')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'Target');
+      final zoomedTargetRect = screenRect(tester, target);
+      expect(zoomedTargetRect.width, greaterThan(initialTargetRect.width));
+
+      // Ctrl + Escape does not cancel zoom.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), zoomedTargetRect);
+
+      // Plain Escape animates back to normal (scale 1.0, Offset.zero) while keeping 'Target' selected.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+        screenRect(tester, target).width,
+        lessThan(zoomedTargetRect.width),
+      );
+      expect(
+        screenRect(tester, target).width,
+        greaterThan(initialTargetRect.width),
+      );
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialTargetRect);
+      expect(find.text('100 %'), findsOneWidget);
+      expect(LayoutSelection.path.value.last, 'Target');
+      expect(
+        tester
+            .widget<Transform>(
+              find.byKey(const ValueKey('editor-zoom-transform')),
+            )
+            .transform,
+        Matrix4.identity(),
+      );
+
+      // Selecting another slot afterwards re-triggers automatic zoom normally.
+      LayoutSelection.select(const [
+        'Page',
+        'Corps',
+        'Zoom target',
+        'Centre',
+        'Second',
+      ]);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'Second');
+      expect(screenRect(tester, second).width, greaterThan(120));
+
+      // Escape returns to normal again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialTargetRect);
+
+      // 2. Right-click pan at 100% scale: Escape also cancels pan offset back to zero.
+      final panGesture = await tester.startGesture(
+        const Offset(160, 120),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await panGesture.moveBy(const Offset(70, 45));
+      await tester.pumpAndSettle();
+      await panGesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        screenRect(tester, target).topLeft,
+        initialTargetRect.topLeft + const Offset(70, 45),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialTargetRect);
+
+      // 3. Manual zoom + open number popup / context menu / editor dialog:
+      // Escape closes the active popup or dialog first, then resets zoom on the next Escape.
+      tester
+          .widget<Slider>(find.byKey(const ValueKey('editor-zoom-slider')))
+          .onChanged!(2.0);
+      await tester.pumpAndSettle();
+      final manualZoomRect = screenRect(tester, target);
+      expect(manualZoomRect.width, greaterThan(initialTargetRect.width));
+
+      // Number field popup cancels without resetting the 200% zoom.
+      await tester.tap(find.byKey(const ValueKey('editor-zoom-percentage')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '300');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(screenRect(tester, target), manualZoomRect);
+
+      // Right-click context menu closes on first Escape, second Escape resets zoom.
+      await tester.tap(second, buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('editor-context-menu-dialog')),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('editor-context-menu-dialog')),
+        findsNothing,
+      );
+      expect(
+        screenRect(tester, second).width,
+        greaterThan(120),
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialTargetRect);
       expect(tester.takeException(), isNull);
     },
   );

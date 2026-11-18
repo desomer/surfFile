@@ -28,6 +28,10 @@ class JsonRepositoryManager extends StatefulWidget {
   });
 
   static const _preferredWidth = AlwaysStoppedAnimation<double>(900);
+  static int _openCount = 0;
+
+  /// Indique si au moins une boîte de dialogue [JsonRepositoryManager] est actuellement ouverte.
+  static bool get isOpen => _openCount > 0;
 
   final JsonRepositoryStore? store;
   final ValueNotifier<Appearance>? appearance;
@@ -36,21 +40,26 @@ class JsonRepositoryManager extends StatefulWidget {
   static Future<void> show(
     BuildContext context, {
     String? initialRepositoryId,
-  }) {
+  }) async {
     final store = JsonRepositoryScope.maybeOf(context);
     final appearance = AppearanceScope.controllerOf(context);
     final zoom = EditorZoomScope.controllerOf(context);
-    return showEditorDialog<void>(
-      context: context,
-      target: zoom?.contentContext,
-      preferredWidth: _preferredWidth,
-      barrierDismissible: false,
-      builder: (_) => JsonRepositoryManager(
-        store: store,
-        appearance: appearance,
-        initialRepositoryId: initialRepositoryId,
-      ),
-    );
+    _openCount++;
+    try {
+      await showEditorDialog<void>(
+        context: context,
+        target: zoom?.contentContext,
+        preferredWidth: _preferredWidth,
+        barrierDismissible: false,
+        builder: (_) => JsonRepositoryManager(
+          store: store,
+          appearance: appearance,
+          initialRepositoryId: initialRepositoryId,
+        ),
+      );
+    } finally {
+      if (_openCount > 0) _openCount--;
+    }
   }
 
   @override

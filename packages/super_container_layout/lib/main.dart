@@ -4,11 +4,10 @@
 /// avec [DefaultAppearanceCodec] et monte une [SuperPage] d'exemple.
 library;
 
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
@@ -23,58 +22,10 @@ export 'package:super_container_layout/models/registry.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  var envText = '';
-  final sep = Platform.pathSeparator;
-  final paths = [
-    'env',
-    '.env',
-    ['packages', 'super_container_layout', 'env'].join(sep),
-    ['packages', 'super_container_layout', '.env'].join(sep),
-    ['packages', 'super_designer', 'env'].join(sep),
-    ['packages', 'super_designer', '.env'].join(sep),
-    ['..', 'super_container_layout', 'env'].join(sep),
-    ['..', 'super_container_layout', '.env'].join(sep),
-    ['..', 'super_designer', 'env'].join(sep),
-    ['..', 'super_designer', '.env'].join(sep),
-    ['..', 'env'].join(sep),
-    ['..', '.env'].join(sep),
-  ];
-  for (final path in paths) {
-    final file = File(path);
-    if (await file.exists()) {
-      envText = await file.readAsString();
-      break;
-    }
+  await resolveGeminiApiKey();
+  if (!dotenv.isInitialized) {
+    dotenv.loadFromString(envString: '', isOptional: true);
   }
-  if (envText.isEmpty) {
-    try {
-      var dir = Directory.current;
-      while (true) {
-        for (final candidate in [
-          'env',
-          '.env',
-          ['packages', 'super_container_layout', 'env'].join(sep),
-          ['packages', 'super_designer', 'env'].join(sep),
-        ]) {
-          final file = File('${dir.path}$sep$candidate');
-          if (await file.exists()) {
-            envText = await file.readAsString();
-            break;
-          }
-        }
-        if (envText.isNotEmpty || dir.parent.path == dir.path) break;
-        dir = dir.parent;
-      }
-    } catch (_) {}
-  }
-  final environmentKey = Platform.environment['GEMINI_API_KEY'];
-  dotenv.loadFromString(
-    envString: envText,
-    isOptional: true,
-    mergeWith: environmentKey == null
-        ? const {}
-        : {'GEMINI_API_KEY': environmentKey},
-  );
   runApp(const TestApp());
 }
 

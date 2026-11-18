@@ -5,10 +5,10 @@ packages:
     dependency: transitive
     description:
       name: align_positioned
-      sha256: "753a66dc7577def79e14b1d10d514097035c61a8d6f896601f3dfc3aa32b9977"
+      sha256: "2c6c59716dfdb1c51c63aa68ebfe165b95ac48b027367410e4e4edb527d52a62"
       url: "https://pub.dev"
     source: hosted
-    version: "5.1.0"
+    version: "5.1.1"
   args:
     dependency: transitive
     description:
@@ -21,10 +21,10 @@ packages:
     dependency: transitive
     description:
       name: assorted_layout_widgets
-      sha256: "7799aa84b020dae2b38e96e46f54db10149c8240c207cf329ad1ba3acda48850"
+      sha256: b9348a92a98453ea9d17a3eb733c920b7eb957d25e4d6aed68e1db25f532543d
       url: "https://pub.dev"
     source: hosted
-    version: "13.3.1"
+    version: "13.3.2"
   async:
     dependency: transitive
     description:
@@ -489,10 +489,10 @@ packages:
     dependency: transitive
     description:
       name: matrix4_transform
-      sha256: "1346e53517e3081d3e8362377be97e285e2bd348855c177eae2a18aa965cafa0"
+      sha256: de3d16a772bb0aa465680bc46aade868a12eeac5d6b80db4812d67730fbbdd29
       url: "https://pub.dev"
     source: hosted
-    version: "4.0.1"
+    version: "4.0.2"
   meta:
     dependency: transitive
     description:
@@ -625,10 +625,10 @@ packages:
     dependency: "direct main"
     description:
       name: pro_image_editor
-      sha256: "27025145ea8c4ac08c91bc6fdc80b6c9e9fe72aef1961fd8018d342c83e8973b"
+      sha256: "5912cb004275e7dae5026ddd9596fb355e4f99dabcd87e137dcd95be3cab04db"
       url: "https://pub.dev"
     source: hosted
-    version: "14.28.0"
+    version: "14.29.0"
   process:
     dependency: transitive
     description:
@@ -843,10 +843,10 @@ packages:
     dependency: transitive
     description:
       name: url_launcher_android
-      sha256: "611e87fb320b70d1dd721dc46af89c98aceccea9b31fde49e084591414e0c610"
+      sha256: b8073b1e5173d63afe1a18985a75896d72f759d3bc1817eb1ae8d26e8527cceb
       url: "https://pub.dev"
     source: hosted
-    version: "6.3.33"
+    version: "6.3.35"
   url_launcher_ios:
     dependency: transitive
     description:

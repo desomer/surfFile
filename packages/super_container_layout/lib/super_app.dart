@@ -36,6 +36,7 @@ import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
 import 'widgets/editing/history/editor_history.dart';
 import 'widgets/editing/pages/editor_page_manager.dart';
+import 'widgets/editing/repositories/floating_repository_shortcut.dart';
 import 'widgets/components/super_layout/layout_reset_shortcut.dart';
 import 'widgets/surfaces/neon_surface.dart';
 import 'widgets/surfaces/styled_surface.dart';
@@ -360,16 +361,22 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
           controller: _appearance,
           child: LayoutResetShortcut(
             onReset: _resetLayouts,
-            child: EditorHistoryShortcut(
-              editMode: _styleEditMode,
-              history: _editorHistory,
-              child: EditorHistoryScope(
-                controller: _editorHistory,
-                child: StyleEditScope(
-                  controller: _styleEditMode,
-                  child: ValueListenableBuilder<Appearance>(
-                    valueListenable: _appearance,
-                    builder: (context, value, _) => _buildApp(value),
+            child: FloatingRepositoryShortcut(
+              navigatorKey: widget.router.routerDelegate.navigatorKey,
+              store: _repositories,
+              appearance: _appearance,
+              registry: widget.registry,
+              child: EditorHistoryShortcut(
+                editMode: _styleEditMode,
+                history: _editorHistory,
+                child: EditorHistoryScope(
+                  controller: _editorHistory,
+                  child: StyleEditScope(
+                    controller: _styleEditMode,
+                    child: ValueListenableBuilder<Appearance>(
+                      valueListenable: _appearance,
+                      builder: (context, value, _) => _buildApp(value),
+                    ),
                   ),
                 ),
               ),

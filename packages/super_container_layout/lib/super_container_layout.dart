@@ -138,6 +138,8 @@ export 'widgets/editing/addition/component_add_configurators.dart';
 export 'widgets/editing/addition/contextual_add.dart';
 export 'widgets/editing/addition/insertion_plan.dart';
 export 'widgets/editing/history/editor_history.dart';
+export 'widgets/editing/repositories/floating_repository_editor.dart';
+export 'widgets/editing/repositories/floating_repository_shortcut.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
 export 'widgets/editing/repositories/repository_binding_fields.dart';
 export 'widgets/editing/datasources/datasource_form.dart';

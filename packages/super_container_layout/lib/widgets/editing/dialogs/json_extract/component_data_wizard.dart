@@ -1,8 +1,6 @@
 /// Sélecteur de cible et commandes pour l'extraction ou l'ouverture des repositories.
 library;
 
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/json_text_binding.dart';
@@ -13,8 +11,6 @@ import '../../../../models/super_table_config.dart';
 import '../../../../models/super_tree_view_config.dart';
 import '../../../../models/super_value_config.dart';
 import '../../../../services/repositories/json_list_scope.dart';
-import '../../../../services/repositories/json_repository_scope.dart';
-import '../../../../services/repositories/json_repository_store.dart';
 import '../../repositories/floating_repository_editor.dart';
 import '../../repositories/json_repository_manager.dart';
 import '../editor_dialog.dart';
@@ -154,87 +150,15 @@ enum _DataWizardAction {
   openFloatingRepository,
 }
 
-final _defaultFloatingStores = Expando<_DefaultFloatingStore>();
-
-class _DefaultFloatingStore {
-  _DefaultFloatingStore(this.overlay);
-
-  final OverlayState overlay;
-  final JsonRepositoryStore store = JsonRepositoryStore.defaultStore();
-  int references = 0;
-
-  void release() {
-    if (--references != 0) return;
-    _defaultFloatingStores[overlay] = null;
-    store.dispose();
-  }
-}
-
 Future<void> _openBoundRepository(
   BuildContext context,
   DataTargetElement target,
-) async {
-  final id = target.firstBoundRepositoryId;
-  if (id == null) {
-    await JsonRepositoryManager.show(context);
-    return;
-  }
-  if (!target.slot.mounted) return;
-  var store =
-      JsonRepositoryScope.maybeOf(target.slot.context) ??
-      JsonRepositoryScope.maybeOf(context);
-  _DefaultFloatingStore? owned;
-  if (store == null) {
-    final overlay = Overlay.of(context, rootOverlay: true);
-    owned = _defaultFloatingStores[overlay] ??= _DefaultFloatingStore(overlay);
-    owned.references++;
-    store = owned.store;
-  }
-  var opened = false;
-  try {
-    final catalog = await store.catalog();
-    final entry = catalog.where((entry) => entry.id == id).firstOrNull;
-    if (entry == null) {
-      throw const FormatException('Repository lié introuvable.');
-    }
-    final text = await store.read(entry.name);
-    if (!context.mounted || !target.slot.mounted) return;
-    opened = openFloatingRepositoryEditor(
-      context,
-      store: store,
-      repositoryId: id,
-      name: entry.name,
-      text: text,
-      onClosed: owned?.release,
-    );
-  } on FormatException catch (error) {
-    if (context.mounted) await _showRepositoryOpenError(context, error.message);
-  } on FileSystemException catch (error) {
-    if (context.mounted) {
-      await _showRepositoryOpenError(
-        context,
-        'Erreur de fichier : ${error.message}',
-      );
-    }
-  } finally {
-    if (!opened) owned?.release();
-  }
-}
-
-Future<void> _showRepositoryOpenError(BuildContext context, String message) =>
-    showEditorDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Impossible d’ouvrir le repository'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Fermer'),
-          ),
-        ],
-      ),
-    );
+) => openBoundRepositoryOrManager(
+  context,
+  repositoryId: target.firstBoundRepositoryId,
+  targetContext: target.slot.context,
+  requireTargetMounted: true,
+);
 
 /// Orchestre le sélecteur de données et délègue l'extraction au dialogue appelant.
 Future<void> showComponentDataWizardInternal({

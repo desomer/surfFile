@@ -11,10 +11,132 @@ import 'package:flutter/services.dart';
 import 'package:highlight/languages/json.dart' as highlight;
 import 'package:material_ui/material_ui.dart';
 
+import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../components/internal_widget/code_editor.dart';
+import '../dialogs/editor_dialog.dart';
+import 'json_repository_manager.dart';
 
+OverlayState _resolveRootOverlay(BuildContext context) {
+  if (Overlay.maybeOf(context, rootOverlay: true) case final overlay?) {
+    return overlay;
+  }
+  if (context is StatefulElement && context.state is NavigatorState) {
+    if ((context.state as NavigatorState).overlay case final navOverlay?) {
+      return navOverlay;
+    }
+  }
+  if (Navigator.maybeOf(context, rootNavigator: true)?.overlay
+      case final rootNavOverlay?) {
+    return rootNavOverlay;
+  }
+  if (Navigator.maybeOf(context)?.overlay case final navOverlay?) {
+    return navOverlay;
+  }
+  return Overlay.of(context, rootOverlay: true);
+}
 final _hosts = Expando<_FloatingRepositoryHost>();
+final _defaultFloatingStores = Expando<_DefaultFloatingStore>();
+
+class _DefaultFloatingStore {
+  _DefaultFloatingStore(this.overlay);
+
+  final OverlayState overlay;
+  final JsonRepositoryStore store = JsonRepositoryStore.defaultStore();
+  int references = 0;
+
+  void release() {
+    if (--references != 0) return;
+    _defaultFloatingStores[overlay] = null;
+    store.dispose();
+  }
+}
+
+/// Ouvre le repository [repositoryId] dans un éditeur JSON flottant (ou le met
+/// au premier plan s'il est déjà ouvert), ou ouvre [JsonRepositoryManager]
+/// lorsque [repositoryId] est `null` ou vide.
+Future<void> openBoundRepositoryOrManager(
+  BuildContext context, {
+  required String? repositoryId,
+  BuildContext? targetContext,
+  JsonRepositoryStore? store,
+  bool requireTargetMounted = false,
+}) async {
+  final trimmedId = repositoryId?.trim();
+  if (trimmedId == null || trimmedId.isEmpty) {
+    if (!JsonRepositoryManager.isOpen) {
+      await JsonRepositoryManager.show(context);
+    }
+    return;
+  }
+  if (requireTargetMounted &&
+      targetContext != null &&
+      !targetContext.mounted) {
+    return;
+  }
+  var resolvedStore =
+      store ??
+      (targetContext != null && targetContext.mounted
+          ? JsonRepositoryScope.maybeOf(targetContext)
+          : null) ??
+      JsonRepositoryScope.maybeOf(context);
+  _DefaultFloatingStore? owned;
+  if (resolvedStore == null) {
+    final overlay = _resolveRootOverlay(targetContext ?? context);
+    owned = _defaultFloatingStores[overlay] ??= _DefaultFloatingStore(overlay);
+    owned.references++;
+    resolvedStore = owned.store;
+  }
+  var opened = false;
+  try {
+    final catalog = await resolvedStore.catalog();
+    final entry = catalog.where((entry) => entry.id == trimmedId).firstOrNull;
+    if (entry == null) {
+      throw const FormatException('Repository lié introuvable.');
+    }
+    final text = await resolvedStore.read(entry.name);
+    if (!context.mounted ||
+        (requireTargetMounted &&
+            targetContext != null &&
+            !targetContext.mounted)) {
+      return;
+    }
+    opened = openFloatingRepositoryEditor(
+      context,
+      store: resolvedStore,
+      repositoryId: trimmedId,
+      name: entry.name,
+      text: text,
+      onClosed: owned?.release,
+    );
+  } on FormatException catch (error) {
+    if (context.mounted) await _showRepositoryOpenError(context, error.message);
+  } on FileSystemException catch (error) {
+    if (context.mounted) {
+      await _showRepositoryOpenError(
+        context,
+        'Erreur de fichier : ${error.message}',
+      );
+    }
+  } finally {
+    if (!opened) owned?.release();
+  }
+}
+
+Future<void> _showRepositoryOpenError(BuildContext context, String message) =>
+    showEditorDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Impossible d’ouvrir le repository'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
 
 /// Ouvre ou met au premier plan l'éditeur flottant du repository.
 ///
@@ -28,7 +150,7 @@ bool openFloatingRepositoryEditor(
   required String text,
   VoidCallback? onClosed,
 }) {
-  final overlay = Overlay.of(context, rootOverlay: true);
+  final overlay = _resolveRootOverlay(context);
   final host = _hosts[overlay] ??= _FloatingRepositoryHost(overlay);
   return host.open(store, repositoryId, name, text, onClosed);
 }

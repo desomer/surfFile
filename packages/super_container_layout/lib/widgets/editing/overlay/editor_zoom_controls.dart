@@ -208,18 +208,25 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                       ),
                       ValueListenableBuilder<double>(
                         valueListenable: controller.scale,
-                        builder: (context, currentScale, _) =>
-                            FilledButton.tonalIcon(
-                              key: const ValueKey('zoom-option-reset-100'),
-                              onPressed: controller.resetZoom,
-                              icon: const Icon(
-                                Icons.center_focus_strong,
-                                size: 16,
-                              ),
-                              label: Text(
-                                '100% (${(currentScale * 100).round()}%)',
-                              ),
+                        builder: (context, currentScale, _) {
+                          final button = FilledButton.tonalIcon(
+                            key: const ValueKey('zoom-option-reset-100'),
+                            onPressed: controller.resetZoom,
+                            icon: const Icon(
+                              Icons.center_focus_strong,
+                              size: 16,
                             ),
+                            label: Text(
+                              '100% (${(currentScale * 100).round()}%)',
+                            ),
+                          );
+                          return Overlay.maybeOf(context) != null
+                              ? Tooltip(
+                                  message: 'Réinitialiser le zoom (Échap)',
+                                  child: button,
+                                )
+                              : button;
+                        },
                       ),
                       const SizedBox(width: 4),
                       IconButton(

@@ -451,6 +451,8 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/overlay/editor_zoom_controls.dart` | Barre flottante, délégué de placement et dialogue de réglage des options du zoom. |
 | `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides et le panneau latéral Vibe IA. |
 | `widgets/editing/pages/editor_page_manager.dart` | Gestionnaire des pages de l'application (`EditorPageCatalog` : création, renommage, duplication, suppression, page d'accueil). |
+| `widgets/editing/repositories/floating_repository_editor.dart` | `openFloatingRepositoryEditor`, `openBoundRepositoryOrManager` : fenêtres flottantes non modales d'édition JSON synchronisées avec les repositories. |
+| `widgets/editing/repositories/floating_repository_shortcut.dart` | `FloatingRepositoryShortcut`, `resolveSelectedBoundRepositoryId`, `openSelectedComponentRepositoryEditor` : raccourci global `F1` ouvrant l'éditeur JSON flottant sur le `binding` du composant sélectionné ou, à défaut, sur celui de son premier enfant lié (avec repli sur `JsonRepositoryManager`). |
 | `widgets/editing/repositories/json_repository_manager.dart` | Éditeur et gestionnaire des documents `JsonRepositoryDocument` (import/export JSON, édition de schéma/données). |
 | `widgets/editing/repositories/repository_binding_fields.dart` | Champs d'interface réutilisables pour sélectionner un repository et un chemin `JsonTextBinding` avec autocomplétion. |
 | `widgets/editing/datasources/datasource_form.dart` | `DatasourceForm`, `DatasourceDraft` : formulaire des providers par opération, de la clé, du tri, de la pagination et de l'état de recherche. |
