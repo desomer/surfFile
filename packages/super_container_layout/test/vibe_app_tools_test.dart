@@ -6,13 +6,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/ai/vibe_stream_parser.dart';
+import 'package:super_container_layout/models/datasources/datasource_config.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/models/providers/http_provider_config.dart';
+import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
+import 'package:super_container_layout/services/diagnostics/debug_entry.dart';
 import 'package:super_container_layout/services/inspection/vibe_app_inspector.dart';
+import 'package:super_container_layout/services/inspection/vibe_debug_capture.dart';
+import 'package:super_container_layout/services/inspection/vibe_diagnostics_inspector.dart';
 import 'package:super_container_layout/services/inspection/vibe_mounted_slot_index.dart';
+import 'package:super_container_layout/services/providers/http_data_provider.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
@@ -985,6 +994,422 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('post-rendu'), findsOneWidget);
         expect(find.text('card_1: 240×100 dp'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'capture_element_screenshot isole un élément précis (occurrenceIndex, contextPadding, sans toute la page)',
+      (tester) async {
+        tester.view.physicalSize = const Size(900, 650);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RepaintBoundary(
+                child: SizedBox.expand(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        EditorSlot(
+                          id: 'row_item',
+                          label: 'Ligne 0',
+                          editable: false,
+                          child: Container(
+                            width: 120,
+                            height: 40,
+                            color: Colors.teal,
+                            child: const Text('Item 0'),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        EditorSlot(
+                          id: 'row_item',
+                          label: 'Ligne 1',
+                          editable: false,
+                          child: Container(
+                            width: 140,
+                            height: 50,
+                            color: Colors.orange,
+                            child: const Text('Item 1'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final inspector = VibeAppInspector(
+          readAppearance: () => Appearance(),
+          fallbackContext: () => tester.element(find.byType(Scaffold)),
+        );
+
+        // Sans cible ni scope : refuse proprement sans capturer toute la page
+        final noTarget = await inspector.captureElementScreenshot(
+          'el-0',
+          'capture_element_screenshot',
+          const {},
+        );
+        expect(noTarget.isError, isTrue);
+        expect(noTarget.data['error'], contains('Aucun élément ciblé'));
+
+        // Occurrence #1 isolée via son propre RenderRepaintBoundary à pixelRatio=2.0 (280x100 px)
+        final isolated = await tester.runAsync(
+          () => inspector.captureElementScreenshot(
+            'el-1',
+            'capture_element_screenshot',
+            {'componentId': 'row_item', 'occurrenceIndex': 1},
+          ),
+        );
+        expect(isolated, isNotNull);
+        expect(isolated!.isError, isFalse);
+        expect(isolated.data['isolatedBoundary'], isTrue);
+        expect(isolated.data['occurrenceIndex'], 1);
+        expect(isolated.data['totalOccurrences'], 2);
+        expect(isolated.data['logicalWidth'], 140.0);
+        expect(isolated.data['logicalHeight'], 50.0);
+        expect(isolated.data['pixelWidth'], 280);
+        expect(isolated.data['pixelHeight'], 100);
+        expect(
+          isolated.attachments.single.bytes.sublist(0, 4),
+          [0x89, 0x50, 0x4E, 0x47],
+        );
+
+        // Avec contextPadding > 0 : inclut le contexte autour dans le parent
+        final withPadding = await tester.runAsync(
+          () => inspector.captureElementScreenshot(
+            'el-2',
+            'capture_element_screenshot',
+            {
+              'componentId': 'row_item',
+              'occurrenceIndex': 1,
+              'contextPadding': 10,
+            },
+          ),
+        );
+        expect(withPadding, isNotNull);
+        expect(withPadding!.isError, isFalse);
+        expect(withPadding.data['isolatedBoundary'], isFalse);
+        expect(withPadding.data['pixelWidth'], greaterThan(280));
+      },
+    );
+
+    test(
+      'VibeDebugCapture déduplique les erreurs et get_debug_entries filtre les logs internes Vibe',
+      () async {
+        debugEntries.clear();
+        addTearDown(debugEntries.clear);
+
+        final marker = VibeDebugCapture.markNow();
+        saveLog('[Vibe IA] log interne ignoré par défaut');
+        saveLog('Chargement initial OK');
+        final details = FlutterErrorDetails(
+          exception: FlutterError('A RenderFlex overflowed by 48 pixels'),
+          stack: StackTrace.current,
+        );
+        // Simule un hôte (ex: super_designer) qui a déjà appelé saveError, suivi du hook SuperApp :
+        saveError('[FLUTTER ERROR] ${details.exceptionAsString()}', details.stack);
+        VibeDebugCapture.recordFlutterError(details);
+        VibeDebugCapture.recordFlutterError(details);
+
+        final inspector = VibeAppInspector(
+          readAppearance: () => Appearance(),
+          turnStartMarker: marker,
+        );
+
+        final errorsOnly = await inspector.getDebugEntries({
+          'type': 'error',
+          'sinceTurnStart': true,
+        });
+        expect(errorsOnly['turnErrorCount'], 1);
+        expect(errorsOnly['returnedCount'], 1);
+        final firstErr = (errorsOnly['entries'] as List).single as Map;
+        expect(firstErr['message'], contains('overflowed by 48 pixels'));
+
+        final allNonInternal = await inspector.getDebugEntries({'type': 'all'});
+        final messages = [
+          for (final e in allNonInternal['entries'] as List)
+            (e as Map)['message'] as String,
+        ];
+        expect(messages, contains('Chargement initial OK'));
+        expect(
+          messages.any((m) => m.contains('[Vibe IA]')),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'get_datasources_and_providers masque les secrets HTTP et inspect_bindings_and_diagnostics détecte les pièges Maître/Détail',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('vibe_diag_');
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        final store = JsonRepositoryStore(tempDir);
+        addTearDown(store.dispose);
+        store.registerRepository(
+          RepositoryImpl(
+            id: 'crm',
+            json: {
+              'clients': [
+                {'nom': 'Alice'},
+              ],
+            },
+          ),
+        );
+        store.providers.register(
+          HttpDataProvider(
+            HttpProviderConfig(
+              id: 'fetch_clients',
+              label: 'Clients API',
+              target: const JsonTextBinding(
+                repositoryId: 'crm',
+                path: 'clients',
+              ),
+              request: HttpRequestTemplate(
+                url: 'https://api.example.com/clients',
+                headers: const {
+                  'Authorization': 'Bearer super-secret-literal',
+                  'X-Env-Auth': '{{env.PROVIDER_API_TOKEN}}',
+                  'Accept': 'application/json',
+                },
+              ),
+            ),
+          ),
+        );
+        store.datasources.register(
+          const DatasourceConfig(
+            id: 'ds_clients',
+            label: 'Clients CRUD',
+            keyPath: 'id',
+            search: DatasourceSearchConfig(provider: 'fetch_clients'),
+          ),
+        );
+
+        final appearance = Appearance(
+          styles: {
+            'background': const ContainerStyle(color: Color(0xFFFFFFFF)),
+          },
+          components: {
+            'mainLayout': SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['detail_nom', 'low_contrast_text'],
+              },
+            ),
+            // Piège classique : omission de repositoryId hors d'une liste !
+            'detail_nom': const SuperValueConfig(
+              binding: JsonTextBinding(path: 'clients[?].nom'),
+            ),
+            // Contraste insuffisant (#EAEAEA sur #FFFFFF) :
+            'low_contrast_text': const SuperValueConfig(
+              initialText: 'Illisible',
+              color: Color(0xFFEAEAEA),
+            ),
+            // Composant orphelin non placé :
+            'orphan_val': const SuperValueConfig(initialText: 'Orphelin'),
+          },
+        );
+
+        final registry = Registry()..bootstrap();
+        final inspector = VibeAppInspector(
+          readAppearance: () => appearance,
+          repositoryStore: store,
+          registry: registry,
+        );
+
+        final dsInfo = await inspector.getDatasourcesAndProviders(const {});
+        expect(dsInfo['datasourceCount'], 1);
+        expect(dsInfo['providerCount'], 1);
+        final prov = (dsInfo['providers'] as List).single as Map;
+        final headers = (prov['http'] as Map)['headers'] as Map;
+        expect(headers['Authorization'], '***REDACTED***');
+        expect(headers['X-Env-Auth'], '{{env.PROVIDER_API_TOKEN}}');
+        expect(headers['Accept'], 'application/json');
+
+        final audit = await inspector.inspectBindingsAndDiagnostics(const {});
+        expect(audit['orphanComponentIds'], contains('orphan_val'));
+        final issues = audit['issues'] as List;
+        expect(
+          issues.any(
+            (i) =>
+                (i as Map)['kind'] == 'missing_repository_prefix_outside_list' &&
+                i['componentId'] == 'detail_nom',
+          ),
+          isTrue,
+        );
+
+        final contrast = await inspector.getThemeAndContrast({
+          'onlyIssues': true,
+        });
+        expect(contrast['contrastIssueCount'], greaterThanOrEqualTo(1));
+        final failedChecks = contrast['contrastChecks'] as List;
+        expect(
+          failedChecks.any((c) => (c as Map)['componentId'] == 'low_contrast_text'),
+          isTrue,
+        );
+
+        final regInfo = await inspector.getRegistryAndSelection(const {});
+        expect(regInfo['registeredBuilderCount'], greaterThan(5));
+      },
+    );
+
+    test(
+      'preview_navigation_or_selection sélectionne une ligne en aperçu et restaure la sélection initiale au rollback',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('vibe_prev_');
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final store = JsonRepositoryStore(tempDir);
+        addTearDown(store.dispose);
+        store.registerRepository(
+          RepositoryImpl(
+            id: 'crm',
+            json: {
+              'clients': [
+                {'nom': 'Alice'},
+                {'nom': 'Bob'},
+              ],
+            },
+          ),
+        );
+        store.bindingOf('crm').array('clients').select(const [], 0);
+
+        final tracker = VibePreviewStateTracker();
+        final inspector = VibeAppInspector(
+          readAppearance: () => Appearance(),
+          repositoryStore: store,
+          previewTracker: tracker,
+        );
+
+        final res = await inspector.previewNavigationOrSelection(
+          'p-1',
+          'preview_navigation_or_selection',
+          {
+            'repositoryId': 'crm',
+            'arrayTemplate': 'clients',
+            'index': 1,
+          },
+        );
+        expect(res.isError, isFalse);
+        expect(store.bindingOf('crm').array('clients').selection, [1]);
+
+        // Simule un rollback de session :
+        tracker.restoreSelections(store);
+        expect(store.bindingOf('crm').array('clients').selection, [0]);
+      },
+    );
+
+    testWidgets(
+      'déclenche automatiquement la passe de correction post-rendu lorsqu’une erreur debugEntries survient',
+      (tester) async {
+        debugEntries.clear();
+        addTearDown(debugEntries.clear);
+
+        final appearance = ValueNotifier(
+          Appearance(
+            components: {
+              'card_1': const SuperValueConfig(
+                label: 'Titre',
+                initialText: 'Initial',
+              ),
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        var genCall = 0;
+        final prompts = <String>[];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DefaultAssetBundle(
+                bundle: _TestGuideBundle(),
+                child: VibeChatDialog(
+                  controller: appearance,
+                  codec: const AppearanceCodec(),
+                  initialQuestioningLevel: VibeQuestioningLevel.none,
+                  onClose: () {},
+                  onDrag: (_) {},
+                  generate: (prompt) async {
+                    genCall++;
+                    prompts.add(prompt);
+                    if (genCall == 1) {
+                      // Simule une erreur Flutter apparue pendant le tour / aperçu
+                      saveError(
+                        '[FLUTTER ERROR] A RenderFlex overflowed by 32 pixels on the right.',
+                        null,
+                      );
+                      return jsonEncode({
+                        'message': 'Premier essai',
+                        'vibe': {
+                          'components': {
+                            'card_1': {
+                              'type': 'value',
+                              'label': 'Titre',
+                              'initialText': 'Trop large',
+                            },
+                          },
+                        },
+                      });
+                    }
+                    return jsonEncode({
+                      'message': 'Débordement corrigé.',
+                      'vibe': {
+                        'components': {
+                          'card_1': {
+                            'type': 'value',
+                            'label': 'Titre',
+                            'initialText': 'Ajusté',
+                          },
+                        },
+                      },
+                    });
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Modifie le titre',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(genCall, 2);
+        expect(
+          prompts[1],
+          contains('ERREURS D’EXÉCUTION DÉTECTÉES DANS debugEntries'),
+        );
+        expect(prompts[1], contains('overflowed by 32 pixels'));
+        expect(
+          (appearance.value.components['card_1'] as SuperValueConfig)
+              .initialText,
+          'Ajusté',
+        );
+        expect(find.text('Débordement corrigé.'), findsOneWidget);
       },
     );
   });

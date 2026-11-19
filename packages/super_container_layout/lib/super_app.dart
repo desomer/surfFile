@@ -27,6 +27,7 @@ import 'models/registry.dart';
 
 import 'services/appearance/appearance_store.dart';
 import 'services/events/super_event_bus.dart';
+import 'services/inspection/vibe_debug_capture.dart';
 import 'services/inspection/vibe_mounted_slot_index.dart';
 import 'services/pages/editor_page_router.dart';
 import 'services/repositories/json_repository_store.dart';
@@ -142,6 +143,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    VibeDebugCapture.attachAppListener();
     VibeMountedSlotIndex.instance.registerAppRoot(_appRootBoundaryKey);
     _checkPageRouting();
     _repositories =
@@ -161,13 +163,34 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     }
   }
 
+  bool _hasMountedScaffold() {
+    final ctx = _messenger.currentContext;
+    if (ctx == null || !ctx.mounted) return false;
+    var found = false;
+    void visit(Element element) {
+      if (found) return;
+      if (element.widget is Scaffold) {
+        found = true;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (ctx as Element).visitChildren(visit);
+    return found;
+  }
+
+  void _showSnackBarIfPossible(SnackBar snackBar) {
+    if (!mounted || !_hasMountedScaffold()) return;
+    _messenger.currentState?.showSnackBar(snackBar);
+  }
+
   void _repositoryFailed() {
     final error = _repositories.errors.value;
     if (error == null || !mounted) return;
+    VibeDebugCapture.recordErrorDeduplicated('[REPOSITORY ERROR] $error');
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _messenger.currentState?.showSnackBar(SnackBar(content: Text(error)));
-      }
+      _showSnackBarIfPossible(SnackBar(content: Text(error)));
     });
   }
 
@@ -289,8 +312,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     debugPrint('Error applying window transparency: $error');
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _messenger.currentState?.showSnackBar(
+      _showSnackBarIfPossible(
         SnackBar(
           content: const Text(
             'Impossible d’appliquer la transparence Windows. '
@@ -339,6 +361,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     VibeMountedSlotIndex.instance.unregisterAppRoot(_appRootBoundaryKey);
+    VibeDebugCapture.detachAppListener();
     WidgetsBinding.instance.removeObserver(this);
     widget.registry?.unbindAppearance();
     _editorHistory.dispose();

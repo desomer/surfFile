@@ -652,6 +652,129 @@ void main() {
   );
 
   testWidgets(
+    'pasting image from clipboard button and Ctrl+V deduplicates names and forwards binary image attachment',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      // Génère un PNG 1x1 valide à partir d'un DIB 24 bits.
+      final dib1x1 = Uint8List(40 + 4);
+      ByteData.sublistView(dib1x1)
+        ..setUint32(0, 40, Endian.little)
+        ..setInt32(4, 1, Endian.little)
+        ..setInt32(8, 1, Endian.little)
+        ..setUint16(12, 1, Endian.little)
+        ..setUint16(14, 24, Endian.little);
+      dib1x1.setAll(40, [0xCC, 0x88, 0x44, 0x00]);
+      final pngBytes = VibeChatAttachment.encodeDibToPng(dib1x1)!;
+
+      var hasMediaInClipboard = true;
+      List<VibeChatAttachment>? receivedAttachments;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                onClose: () {},
+                onDrag: (_) {},
+                hasClipboardMedia: () => hasMediaInClipboard,
+                pasteAttachments: () async => [
+                  VibeChatAttachment.image(
+                    name: 'presse-papiers.png',
+                    bytes: pngBytes,
+                  ),
+                ],
+                generate: (_) async => jsonEncode({'message': 'OK'}),
+                streamGenerate:
+                    (
+                      prompt, {
+                      systemInstruction,
+                      staticGuide,
+                      attachments = const [],
+                      speedMode = VibeAiSpeedMode.fast,
+                    }) async* {
+                      receivedAttachments = attachments;
+                      const payload =
+                          '{"message":"Images bien reçues.","vibe":null}';
+                      yield const GeminiStreamEvent(
+                        deltaText: payload,
+                        accumulatedText: payload,
+                        isDone: true,
+                        usedContextCache: false,
+                      );
+                    },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // 1. Clic sur le bouton presse-papiers du wizard Vibe IA.
+      await tester.tap(
+        find.byKey(const ValueKey('vibe-chat-paste-attachment')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('presse-papiers.png'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('vibe-chat-pending-attachment-0')),
+          matching: find.byType(Image),
+        ),
+        findsOneWidget,
+      );
+
+      // 2. Ctrl+V dans le champ de prompt lorsqu'une image est dans le presse-papiers :
+      //    ajoute une 2e pièce jointe numérotée sans polluer le champ texte.
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-input')));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(find.text('presse-papiers-2.png'), findsOneWidget);
+      final textField = tester.widget<TextField>(
+        find.byKey(const ValueKey('vibe-chat-input')),
+      );
+      expect(textField.controller!.text, isEmpty);
+
+      // 3. Lorsque le presse-papiers ne contient pas de média, Ctrl+V n'ajoute pas de 3e image.
+      hasMediaInClipboard = false;
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.text('presse-papiers-3.png'), findsNothing);
+
+      // 4. Envoi direct des images jointes sans texte obligatoire : vérifie les octets transmis.
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(receivedAttachments, isNotNull);
+      expect(receivedAttachments, hasLength(2));
+      expect(receivedAttachments![0].name, 'presse-papiers.png');
+      expect(receivedAttachments![0].mimeType, 'image/png');
+      expect(receivedAttachments![0].isImage, isTrue);
+      expect(receivedAttachments![0].bytes, pngBytes);
+      expect(receivedAttachments![1].name, 'presse-papiers-2.png');
+      expect(receivedAttachments![1].bytes, pngBytes);
+      expect(find.text('Images bien reçues.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     '3-dot context menu exposes "Modifier avec l’IA…", opens VibeChatDialog with scope, and restricts AI changes to that scope',
     (tester) async {
       final registry = Registry()..bootstrap();
@@ -3965,11 +4088,7 @@ void main() {
       addTearDown(router.dispose);
 
       await tester.pumpWidget(
-        SuperApp(
-          router: router,
-          appearanceStore: store,
-          registry: registry,
-        ),
+        SuperApp(router: router, appearanceStore: store, registry: registry),
       );
       await tester.pumpAndSettle();
 
@@ -4142,7 +4261,10 @@ void main() {
                           'message': 'Tableau complété.',
                           'vibe': {
                             'components': {
-                              'kpi-2': {'type': 'value', 'text': 'Marge : 32 %'},
+                              'kpi-2': {
+                                'type': 'value',
+                                'text': 'Marge : 32 %',
+                              },
                             },
                           },
                         });
@@ -4167,7 +4289,10 @@ void main() {
       expect(prompts[1], contains('MODE DELTA INCRÉMENTAL'));
       expect(prompts[1], contains('"kpi-1"'));
       expect(prompts[1], contains('"kpi-2"'));
-      expect(appearance.value.valueComponent('kpi-1').initialText, 'CA : 240 k€');
+      expect(
+        appearance.value.valueComponent('kpi-1').initialText,
+        'CA : 240 k€',
+      );
       expect(
         appearance.value.valueComponent('kpi-2').initialText,
         'Marge : 32 %',
@@ -4190,7 +4315,10 @@ void main() {
       expect(plan!.title, 'Landing page test');
       expect(plan.lots.map((l) => l.id).toList(), ['lot-1', 'lot-1_2']);
       expect(plan.status, VibePlanStatus.awaitingConfirmation);
-      expect(plan.formatLotContextPrompt(1), contains('>>> À EXÉCUTER MAINTENANT'));
+      expect(
+        plan.formatLotContextPrompt(1),
+        contains('>>> À EXÉCUTER MAINTENANT'),
+      );
     });
 
     test('VibeIncrementalStreamParser détecte hasPlanObject en streaming', () {
@@ -4245,14 +4373,25 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+          findsOneWidget,
+        );
         expect(find.text('Équilibré'), findsOneWidget);
 
-        await tester.tap(find.byKey(const ValueKey('vibe-chat-reproduce-exact')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-reproduce-exact')),
+        );
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const ValueKey('vibe-chat-exact-design-notice')), findsOneWidget);
-        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsNothing);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-exact-design-notice')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+          findsNothing,
+        );
         expect(find.text('Aucun'), findsOneWidget);
 
         await tester.enterText(
@@ -4269,10 +4408,15 @@ void main() {
         expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
 
         // Désactiver le mode restaure le niveau de questionnement précédent.
-        await tester.tap(find.byKey(const ValueKey('vibe-chat-reproduce-exact')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-reproduce-exact')),
+        );
         await tester.pumpAndSettle();
         expect(find.text('Équilibré'), findsOneWidget);
-        expect(find.byKey(const ValueKey('vibe-chat-design-system-button')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+          findsOneWidget,
+        );
       },
     );
 
@@ -4321,112 +4465,113 @@ void main() {
                         pickAttachments: () async => [mdAttachment],
                         onClose: () {},
                         onDrag: (_) {},
-                        streamGenerate: (
-                          prompt, {
-                          systemInstruction,
-                          staticGuide,
-                          attachments = const [],
-                          speedMode = VibeAiSpeedMode.fast,
-                        }) async* {
-                          callCount++;
-                          capturedPrompts.add(prompt);
-                          capturedAttachments.add(attachments);
-                          late final String payload;
-                          if (callCount == 1) {
-                            payload = jsonEncode({
-                              'message': 'Voici le plan en 2 lots.',
-                              'plan': {
-                                'title': 'Reproduction Blueprint',
-                                'lots': [
-                                  {
-                                    'id': 'lot-1',
-                                    'title': 'Lot Header',
-                                    'description': 'Logo et titre',
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) async* {
+                              callCount++;
+                              capturedPrompts.add(prompt);
+                              capturedAttachments.add(attachments);
+                              late final String payload;
+                              if (callCount == 1) {
+                                payload = jsonEncode({
+                                  'message': 'Voici le plan en 2 lots.',
+                                  'plan': {
+                                    'title': 'Reproduction Blueprint',
+                                    'lots': [
+                                      {
+                                        'id': 'lot-1',
+                                        'title': 'Lot Header',
+                                        'description': 'Logo et titre',
+                                      },
+                                      {
+                                        'id': 'lot-2',
+                                        'title': 'Lot Hero',
+                                        'description': 'Sous-titre',
+                                      },
+                                    ],
                                   },
-                                  {
-                                    'id': 'lot-2',
-                                    'title': 'Lot Hero',
-                                    'description': 'Sous-titre',
-                                  },
-                                ],
-                              },
-                              'vibe': null,
-                            });
-                          } else if (callCount == 2) {
-                            payload = jsonEncode({
-                              'message': 'Lot 1 appliqué.',
-                              'vibe': {
-                                'components': {
-                                  'mainLayout': {
-                                    'type': 'layout',
-                                    'slotLabels': {'hero-title': 'Titre'},
-                                    'placements': {
-                                      'center': [
-                                        {
-                                          'id': 'hero-title',
-                                          'type': 'registry:Value',
+                                  'vibe': null,
+                                });
+                              } else if (callCount == 2) {
+                                payload = jsonEncode({
+                                  'message': 'Lot 1 appliqué.',
+                                  'vibe': {
+                                    'components': {
+                                      'mainLayout': {
+                                        'type': 'layout',
+                                        'slotLabels': {'hero-title': 'Titre'},
+                                        'placements': {
+                                          'center': [
+                                            {
+                                              'id': 'hero-title',
+                                              'type': 'registry:Value',
+                                            },
+                                          ],
                                         },
-                                      ],
+                                      },
+                                      'hero-title': {
+                                        'type': 'value',
+                                        'text': 'Bienvenue',
+                                      },
+                                    },
+                                    'usages': {
+                                      'hero-title': {
+                                        'kind': 'explanation',
+                                        'translationKey': 'heroTitle',
+                                      },
                                     },
                                   },
-                                  'hero-title': {
-                                    'type': 'value',
-                                    'text': 'Bienvenue',
-                                  },
-                                },
-                                'usages': {
-                                  'hero-title': {
-                                    'kind': 'explanation',
-                                    'translationKey': 'heroTitle',
-                                  },
-                                },
-                              },
-                            });
-                          } else {
-                            payload = jsonEncode({
-                              'message': 'Lot 2 appliqué.',
-                              'vibe': {
-                                'components': {
-                                  'mainLayout': {
-                                    'type': 'layout',
-                                    'slotLabels': {
-                                      'hero-title': 'Titre',
-                                      'hero-sub': 'Sous-titre',
-                                    },
-                                    'placements': {
-                                      'center': [
-                                        {
-                                          'id': 'hero-title',
-                                          'type': 'registry:Value',
+                                });
+                              } else {
+                                payload = jsonEncode({
+                                  'message': 'Lot 2 appliqué.',
+                                  'vibe': {
+                                    'components': {
+                                      'mainLayout': {
+                                        'type': 'layout',
+                                        'slotLabels': {
+                                          'hero-title': 'Titre',
+                                          'hero-sub': 'Sous-titre',
                                         },
-                                        {
-                                          'id': 'hero-sub',
-                                          'type': 'registry:Value',
+                                        'placements': {
+                                          'center': [
+                                            {
+                                              'id': 'hero-title',
+                                              'type': 'registry:Value',
+                                            },
+                                            {
+                                              'id': 'hero-sub',
+                                              'type': 'registry:Value',
+                                            },
+                                          ],
                                         },
-                                      ],
+                                      },
+                                      'hero-sub': {
+                                        'type': 'value',
+                                        'text': 'Description exacte',
+                                      },
+                                    },
+                                    'usages': {
+                                      'hero-sub': {
+                                        'kind': 'explanation',
+                                        'translationKey': 'heroSub',
+                                      },
                                     },
                                   },
-                                  'hero-sub': {
-                                    'type': 'value',
-                                    'text': 'Description exacte',
-                                  },
-                                },
-                                'usages': {
-                                  'hero-sub': {
-                                    'kind': 'explanation',
-                                    'translationKey': 'heroSub',
-                                  },
-                                },
-                              },
-                            });
-                          }
-                          yield GeminiStreamEvent(
-                            deltaText: payload,
-                            accumulatedText: payload,
-                            isDone: true,
-                            usedContextCache: true,
-                          );
-                        },
+                                });
+                              }
+                              yield GeminiStreamEvent(
+                                deltaText: payload,
+                                accumulatedText: payload,
+                                isDone: true,
+                                usedContextCache: true,
+                              );
+                            },
                         generate: (_) async => '',
                       ),
                     ),
@@ -4462,12 +4607,18 @@ void main() {
         expect(capturedAttachments[1].single.name, 'blueprint.md');
         expect(capturedAttachments[2].single.name, 'blueprint.md');
 
-        expect(appearance.value.valueComponent('hero-title').initialText, 'Bienvenue');
+        expect(
+          appearance.value.valueComponent('hero-title').initialText,
+          'Bienvenue',
+        );
         expect(
           appearance.value.valueComponent('hero-sub').initialText,
           'Description exacte',
         );
-        expect(find.text('Reproduction terminée : 2/2 lots appliqués.'), findsOneWidget);
+        expect(
+          find.text('Reproduction terminée : 2/2 lots appliqués.'),
+          findsOneWidget,
+        );
 
         // 1 seul Undo annule tout le plan.
         expect(history.canUndo, isTrue);
@@ -4664,8 +4815,14 @@ void main() {
         expect(lot2Attempts, 4);
         expect(lot3Called, isFalse);
         expect(appearance.value.valueComponent('lot1-val').initialText, 'Un');
-        expect(find.byKey(const ValueKey('vibe-plan-retry-lot')), findsOneWidget);
-        expect(find.byKey(const ValueKey('vibe-plan-skip-lot')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-plan-retry-lot')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-skip-lot')),
+          findsOneWidget,
+        );
         expect(find.byKey(const ValueKey('vibe-plan-stop')), findsOneWidget);
 
         // On corrige le générateur et on clique sur « Réessayer ce lot ».
@@ -4675,8 +4832,14 @@ void main() {
 
         expect(lot3Called, isTrue);
         expect(appearance.value.valueComponent('lot2-val').initialText, 'Deux');
-        expect(appearance.value.valueComponent('lot3-val').initialText, 'Trois');
-        expect(find.text('Reproduction terminée : 3/3 lots appliqués.'), findsOneWidget);
+        expect(
+          appearance.value.valueComponent('lot3-val').initialText,
+          'Trois',
+        );
+        expect(
+          find.text('Reproduction terminée : 3/3 lots appliqués.'),
+          findsOneWidget,
+        );
 
         // 1 seul Undo global annule tout le plan même après pause/reprise.
         history.undo();
@@ -4769,13 +4932,18 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
         await tester.pumpAndSettle();
 
-        expect(find.byKey(const ValueKey('vibe-plan-skip-lot')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-plan-skip-lot')),
+          findsOneWidget,
+        );
         await tester.tap(find.byKey(const ValueKey('vibe-plan-skip-lot')));
         await tester.pumpAndSettle();
 
         expect(appearance.value.valueComponent('lot2-val').initialText, 'Deux');
         expect(
-          find.text('Reproduction terminée : 1/2 lots appliqués (1 ignoré(s)).'),
+          find.text(
+            'Reproduction terminée : 1/2 lots appliqués (1 ignoré(s)).',
+          ),
           findsOneWidget,
         );
       },
@@ -4783,142 +4951,137 @@ void main() {
   });
 
   group('Layout styles rejection and delta recovery', () {
-    test(
-      'findIneffectiveLayoutStyleViolations flags styles targeting registry:Layout or mainLayout, and allows IterableContent, Card, list items and deletions',
-      () {
-        final base = Appearance(
-          components: {
-            'mainLayout': const SuperLayoutConfig(
-              placements: {
-                SuperLayoutZone.center: ['footer-container', 'card-1'],
-              },
-              slotTypes: {
-                'footer-container': 'registry:Layout',
-                'card-1': 'registry:Card',
-              },
-            ),
-            'footer-container': const SuperLayoutConfig(
-              placements: {
-                SuperLayoutZone.center: ['footer-bottom-row'],
-              },
-              slotTypes: {
-                'footer-bottom-row': 'registry:IterableContent',
-              },
-            ),
-            'footer-bottom-row': const SuperLayoutConfig(),
-          },
-        );
-
-        final withLayoutStyle = base.copyWith(
-          styles: {
-            'background': const ContainerStyle(color: Color(0xFFFFFFFF)),
-            'mainLayout': const ContainerStyle(color: Color(0xFF000000)),
-            'footer-container': const ContainerStyle(color: Color(0xFF1A365D)),
-            'footer-bottom-row': const ContainerStyle(color: Color(0xFF152B4B)),
-            'card-1': const ContainerStyle(color: Color(0xFFEEEEEE)),
-            'list-1:item': const ContainerStyle(color: Color(0xFFDDDDDD)),
-          },
-        );
-
-        final violations =
-            AppearanceTransfer.findIneffectiveLayoutStyleViolations(
-              withLayoutStyle,
-              previous: base,
-            );
-        expect(violations.keys.toSet(), {'mainLayout', 'footer-container'});
-        expect(violations['footer-container'], contains('registry:IterableContent'));
-        expect(violations['mainLayout'], contains('background'));
-        expect(violations.containsKey('footer-bottom-row'), isFalse);
-        expect(violations.containsKey('card-1'), isFalse);
-        expect(violations.containsKey('list-1:item'), isFalse);
-        expect(violations.containsKey('background'), isFalse);
-
-        // Supprimer un style existant via null reste toujours autorisé.
-        final afterDeletion = withLayoutStyle.copyWith(
-          styles: Map<String, ContainerStyle>.of(withLayoutStyle.styles)
-            ..remove('footer-container')
-            ..remove('mainLayout'),
-        );
-        expect(
-          AppearanceTransfer.findIneffectiveLayoutStyleViolations(
-            afterDeletion,
-            previous: withLayoutStyle,
-            patchedStyleIds: const {'footer-container', 'mainLayout'},
+    test('findIneffectiveLayoutStyleViolations flags styles targeting registry:Layout or mainLayout, and allows IterableContent, Card, list items and deletions', () {
+      final base = Appearance(
+        components: {
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['footer-container', 'card-1'],
+            },
+            slotTypes: {
+              'footer-container': 'registry:Layout',
+              'card-1': 'registry:Card',
+            },
           ),
-          isEmpty,
-        );
-      },
-    );
-
-    test(
-      'VibeDeltaRecovery.salvageFailedAttempt rejects styles targeting registry:Layout while preserving valid components',
-      () {
-        final base = Appearance(
-          components: {
-            'mainLayout': const SuperLayoutConfig(
-              placements: {
-                SuperLayoutZone.center: ['footer-container'],
-              },
-              slotTypes: {'footer-container': 'registry:Layout'},
-            ),
-            'footer-container': const SuperLayoutConfig(),
-          },
-        );
-
-        final outcome = VibeDeltaRecovery.salvageFailedAttempt(
-          initialAppearance: base,
-          workingAppearance: base,
-          initialPageIds: const {},
-          instantiatedIds: const {'mainLayout'},
-          hasRegistry: true,
-          scope: null,
-          codec: const AppearanceCodec(),
-          validateAppearance: null,
-          effectiveVibePatch: {
-            'styles': {
-              'footer-container': {'color': '#1A365D'},
+          'footer-container': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['footer-bottom-row'],
             },
-            'components': {
-              'footer-note': {'type': 'value', 'text': 'Mentions légales'},
-              'footer-container': {
-                'type': 'layout',
-                'slotLabels': {'footer-note': 'Mentions'},
-                'placements': {
-                  'center': [
-                    {'id': 'footer-note', 'type': 'registry:Value'},
-                  ],
-                },
+            slotTypes: {'footer-bottom-row': 'registry:IterableContent'},
+          ),
+          'footer-bottom-row': const SuperLayoutConfig(),
+        },
+      );
+
+      final withLayoutStyle = base.copyWith(
+        styles: {
+          'background': const ContainerStyle(color: Color(0xFFFFFFFF)),
+          'mainLayout': const ContainerStyle(color: Color(0xFF000000)),
+          'footer-container': const ContainerStyle(color: Color(0xFF1A365D)),
+          'footer-bottom-row': const ContainerStyle(color: Color(0xFF152B4B)),
+          'card-1': const ContainerStyle(color: Color(0xFFEEEEEE)),
+          'list-1:item': const ContainerStyle(color: Color(0xFFDDDDDD)),
+        },
+      );
+
+      final violations =
+          AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+            withLayoutStyle,
+            previous: base,
+          );
+      expect(violations.keys.toSet(), {'mainLayout', 'footer-container'});
+      expect(
+        violations['footer-container'],
+        contains('registry:IterableContent'),
+      );
+      expect(violations['mainLayout'], contains('background'));
+      expect(violations.containsKey('footer-bottom-row'), isFalse);
+      expect(violations.containsKey('card-1'), isFalse);
+      expect(violations.containsKey('list-1:item'), isFalse);
+      expect(violations.containsKey('background'), isFalse);
+
+      // Supprimer un style existant via null reste toujours autorisé.
+      final afterDeletion = withLayoutStyle.copyWith(
+        styles: Map<String, ContainerStyle>.of(withLayoutStyle.styles)
+          ..remove('footer-container')
+          ..remove('mainLayout'),
+      );
+      expect(
+        AppearanceTransfer.findIneffectiveLayoutStyleViolations(
+          afterDeletion,
+          previous: withLayoutStyle,
+          patchedStyleIds: const {'footer-container', 'mainLayout'},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('VibeDeltaRecovery.salvageFailedAttempt rejects styles targeting registry:Layout while preserving valid components', () {
+      final base = Appearance(
+        components: {
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['footer-container'],
+            },
+            slotTypes: {'footer-container': 'registry:Layout'},
+          ),
+          'footer-container': const SuperLayoutConfig(),
+        },
+      );
+
+      final outcome = VibeDeltaRecovery.salvageFailedAttempt(
+        initialAppearance: base,
+        workingAppearance: base,
+        initialPageIds: const {},
+        instantiatedIds: const {'mainLayout'},
+        hasRegistry: true,
+        scope: null,
+        codec: const AppearanceCodec(),
+        validateAppearance: null,
+        effectiveVibePatch: {
+          'styles': {
+            'footer-container': {'color': '#1A365D'},
+          },
+          'components': {
+            'footer-note': {'type': 'value', 'text': 'Mentions légales'},
+            'footer-container': {
+              'type': 'layout',
+              'slotLabels': {'footer-note': 'Mentions'},
+              'placements': {
+                'center': [
+                  {'id': 'footer-note', 'type': 'registry:Value'},
+                ],
               },
             },
           },
-          rejectedRepoEntries: const [],
-          appliedRepoKeys: const {},
-          wasTruncated: false,
-        );
+        },
+        rejectedRepoEntries: const [],
+        appliedRepoKeys: const {},
+        wasTruncated: false,
+      );
 
-        expect(outcome.hasCheckpoint, isTrue);
-        expect(
-          outcome.checkpointAppearance.styles.containsKey('footer-container'),
-          isFalse,
-        );
-        expect(
-          outcome.checkpointAppearance.valueComponent('footer-note').initialText,
-          'Mentions légales',
-        );
-        expect(outcome.rejectedEntries, hasLength(1));
-        expect(outcome.rejectedEntries.single.section, 'styles');
-        expect(outcome.rejectedEntries.single.key, 'footer-container');
+      expect(outcome.hasCheckpoint, isTrue);
+      expect(
+        outcome.checkpointAppearance.styles.containsKey('footer-container'),
+        isFalse,
+      );
+      expect(
+        outcome.checkpointAppearance.valueComponent('footer-note').initialText,
+        'Mentions légales',
+      );
+      expect(outcome.rejectedEntries, hasLength(1));
+      expect(outcome.rejectedEntries.single.section, 'styles');
+      expect(outcome.rejectedEntries.single.key, 'footer-container');
 
-        final retryPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
-          refreshedTurnPrompt: 'ÉTAT ACTUEL',
-          priorCauses: const ['Style "footer-container" ignoré au rendu'],
-          salvage: outcome,
-          pendingRequiredComponentIds: outcome.pendingRequiredComponentIds,
-        );
-        expect(retryPrompt, contains('styles["footer-container"]'));
-        expect(retryPrompt, contains('registry:IterableContent'));
-      },
-    );
+      final retryPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
+        refreshedTurnPrompt: 'ÉTAT ACTUEL',
+        priorCauses: const ['Style "footer-container" ignoré au rendu'],
+        salvage: outcome,
+        pendingRequiredComponentIds: outcome.pendingRequiredComponentIds,
+      );
+      expect(retryPrompt, contains('styles["footer-container"]'));
+      expect(retryPrompt, contains('registry:IterableContent'));
+    });
 
     testWidgets(
       'VibeChatDialog rejects styles targeting registry:Layout, retries with guidance, and applies once promoted to registry:IterableContent',
@@ -4988,7 +5151,8 @@ void main() {
                         });
                       }
                       return jsonEncode({
-                        'message': 'Footer converti en IterableContent et coloré.',
+                        'message':
+                            'Footer converti en IterableContent et coloré.',
                         'vibe': {
                           'styles': {
                             'footer-container': {
@@ -5127,41 +5291,43 @@ void main() {
                           onDrag: (_) {},
                           generate: (_) =>
                               Future.error('Should use streamGenerate'),
-                          streamGenerate: (
-                            prompt, {
-                            systemInstruction,
-                            staticGuide,
-                            attachments = const [],
-                            speedMode = VibeAiSpeedMode.fast,
-                          }) {
-                            streamCalls++;
-                            final ctrl = StreamController<GeminiStreamEvent>();
-                            const part1 =
-                                '{"message":"Footer stylisé.","vibe":{"styles":{"footer-container":{"color":"#1A365D"}},';
-                            const part2 =
-                                '"components":{"mainLayout":{"type":"layout","placements":{"center":[{"id":"footer-container","type":"registry:IterableContent"}]}}}}}';
-                            Future<void>(() async {
-                              ctrl.add(
-                                const GeminiStreamEvent(
-                                  deltaText: part1,
-                                  accumulatedText: part1,
-                                  isDone: false,
-                                  usedContextCache: true,
-                                ),
-                              );
-                              await Future<void>.delayed(Duration.zero);
-                              ctrl.add(
-                                const GeminiStreamEvent(
-                                  deltaText: part2,
-                                  accumulatedText: '$part1$part2',
-                                  isDone: true,
-                                  usedContextCache: true,
-                                ),
-                              );
-                              await ctrl.close();
-                            });
-                            return ctrl.stream;
-                          },
+                          streamGenerate:
+                              (
+                                prompt, {
+                                systemInstruction,
+                                staticGuide,
+                                attachments = const [],
+                                speedMode = VibeAiSpeedMode.fast,
+                              }) {
+                                streamCalls++;
+                                final ctrl =
+                                    StreamController<GeminiStreamEvent>();
+                                const part1 =
+                                    '{"message":"Footer stylisé.","vibe":{"styles":{"footer-container":{"color":"#1A365D"}},';
+                                const part2 =
+                                    '"components":{"mainLayout":{"type":"layout","placements":{"center":[{"id":"footer-container","type":"registry:IterableContent"}]}}}}}';
+                                Future<void>(() async {
+                                  ctrl.add(
+                                    const GeminiStreamEvent(
+                                      deltaText: part1,
+                                      accumulatedText: part1,
+                                      isDone: false,
+                                      usedContextCache: true,
+                                    ),
+                                  );
+                                  await Future<void>.delayed(Duration.zero);
+                                  ctrl.add(
+                                    const GeminiStreamEvent(
+                                      deltaText: part2,
+                                      accumulatedText: '$part1$part2',
+                                      isDone: true,
+                                      usedContextCache: true,
+                                    ),
+                                  );
+                                  await ctrl.close();
+                                });
+                                return ctrl.stream;
+                              },
                         ),
                       ),
                     ),
@@ -5174,11 +5340,7 @@ void main() {
         addTearDown(router.dispose);
 
         await tester.pumpWidget(
-          SuperApp(
-            router: router,
-            appearanceStore: store,
-            registry: registry,
-          ),
+          SuperApp(router: router, appearanceStore: store, registry: registry),
         );
         await tester.pumpAndSettle();
 
@@ -5191,7 +5353,9 @@ void main() {
 
         expect(streamCalls, 1);
         expect(
-          appAppearance.value.layout('mainLayout').slotTypeOf('footer-container'),
+          appAppearance.value
+              .layout('mainLayout')
+              .slotTypeOf('footer-container'),
           'registry:IterableContent',
         );
         expect(

@@ -1653,9 +1653,9 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 
 La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"components":{...},"styles":{...}}}`.
 
-### 6.1. Outils d'introspection runtime (lecture seule) & auto-vérification
+### 6.1. Outils d'introspection runtime & auto-vérification
 
-Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 5 outils d'introspection en lecture seule (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
+Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 12 outils d'introspection (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
 
 | Outil | Rôle | Paramètres principaux |
 | :--- | :--- | :--- |
@@ -1663,9 +1663,16 @@ Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA di
 | `get_component_geometry` | Taille réelle rendue (`width`, `height` en dp), bornes globales/relatives, contraintes (`RenderBox`/`RenderSliver`), état de scroll et diagnostics (`isZeroSized`, débordements). | `ids?: string[]`, `zoneId?: string`, `includeScroll?: bool`, `includeZones?: bool` |
 | `get_runtime_tree` | Arbre effectivement monté sur la page active avec zones/placements, statut monté et dimensions. | `rootId?: string`, `maxDepth?: int` |
 | `query_repository_data` | Catalogue, schémas, requêtes paginées et sélections actives Maître/Détail sur `JsonRepositoryStore`. | `repositoryId?: string`, `path?: string`, `offset?: int`, `limit?: int` |
-| `capture_screenshot` | Capture PNG réelle du composant ciblé ou de la vue applicative entière (réinjectée en image au tour suivant). | `componentId?: string`, `zoneId?: string`, `maxDimension?: int` |
+| `capture_element_screenshot` | Copie d'écran PNG **isolée** d'un élément précis (`RepaintBoundary` interne du slot sans contours d'édition ni page entière, netteté HiDPI, support `occurrenceIndex`, `scrollIntoView` et `contextPadding`). | `componentId?: string`, `zoneId?: string`, `occurrenceIndex?: int`, `scrollIntoView?: bool`, `contextPadding?: number`, `maxDimension?: int` |
+| `capture_screenshot` | Capture PNG de la vue applicative entière (préférer `capture_element_screenshot` pour un composant ou une zone). | `componentId?: string`, `zoneId?: string`, `maxDimension?: int` |
+| `get_debug_entries` | Lecture filtrée de `debugEntries` (erreurs Flutter `RenderFlex overflowed`, contraintes, erreurs repository et journaux). | `type?: "error"\|"log"\|"all"`, `query?: string`, `sinceTurnStart?: bool`, `includeStackTrace?: bool`, `limit?: int` |
+| `get_datasources_and_providers` | Catalogue et état runtime (`DatasourceStatus`, `DataProviderStatus`) des datasources CRUD et providers HTTP/code hors d'`Appearance` (en-têtes sensibles masqués). | `datasourceId?: string`, `providerId?: string`, `includeProblems?: bool` |
+| `inspect_bindings_and_diagnostics` | Audit des liaisons JSON (repositories manquants, oubli de `<repoId>:` hors liste en Maître/Détail, `[?]` sans sélection, clés absentes), orphelins et états `ComponentBehaviorStateScope`. | `componentIds?: string[]` |
+| `get_theme_and_contrast` | Rôles `theme:*` résolus en `#RRGGBB` et calcul de contraste WCAG AA texte/fond des composants de l'écran. | `componentIds?: string[]`, `onlyIssues?: bool` |
+| `get_registry_and_selection` | Constructeurs/extensions enregistrés dans `Registry`, polices disponibles et sélection active `LayoutSelection`. | `includeComponents?: bool`, `includeFonts?: bool` |
+| `preview_navigation_or_selection` | Action d'aperçu réversible (annulée au rollback) : navigation vers une page de `pageCatalog` ou sélection d'une ligne `JsonArrayBinding` pour inspecter une vue Détail. | `pageId?: string`, `routePath?: string`, `repositoryId?: string`, `arrayTemplate?: string`, `index?: int`, `parentIndices?: int[]`, `clearSelection?: bool` |
 
-- **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, adaptation au viewport, diagnostic de débordement/clipping, consultation de données tronquées dans un repository, ou inspection visuelle.
+- **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, erreurs Flutter/overflow (`get_debug_entries`), liaisons ou données vides (`inspect_bindings_and_diagnostics`, `get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne/page (`preview_navigation_or_selection`) ou inspection visuelle ciblée (`capture_element_screenshot`).
 - **Quand ne pas les appeler** : modifications purement déclaratives simples dont le JSON courant suffit déjà.
-- **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également activé automatiquement en mode « Reproduire à l'identique ») pour inspecter le rendu réel juste après application en aperçu et se corriger en 1 passe avant validation finale.
+- **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également déclenché automatiquement en mode « Reproduire à l'identique » ou dès qu'une nouvelle erreur apparaît dans `debugEntries` après l'aperçu) pour inspecter le rendu réel et se corriger en 1 passe avant validation finale.
 

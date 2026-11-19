@@ -15,7 +15,13 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
-import 'package:flutter/services.dart' show AssetBundle, rootBundle;
+import 'package:flutter/services.dart'
+    show
+        AssetBundle,
+        HardwareKeyboard,
+        KeyDownEvent,
+        LogicalKeyboardKey,
+        rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -35,7 +41,10 @@ import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../services/diagnostics/debug_entry.dart';
 import '../../../services/inspection/vibe_app_inspector.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
+import '../../../services/inspection/vibe_diagnostics_inspector.dart';
 import '../../../services/inspection/vibe_mounted_slot_index.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -104,6 +113,8 @@ class VibeChatDialog extends StatefulWidget {
     this.onScopeChanged,
     this.pickAttachments,
     this.pasteAttachments,
+    this.hasClipboardMedia,
+    this.pasteClipboardMedia,
     this.readClipboardText,
     this.speechTranscriber,
     this.validateAppearance,
@@ -140,7 +151,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
-5. Interrogation de l'application en cours d'exécution (lecture seule, si des mesures réelles manquent) : tu peux appeler les outils d'introspection (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_screenshot`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Appelle obligatoirement ces outils pour toute question sur les dimensions/positions réelles en dp, un débordement ou texte coupé, une adaptation au viewport réel, un slot monté hors JSON, des données paginées de repository ou une vérification visuelle ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
+5. Interrogation de l'application en cours d'exécution (si des mesures ou diagnostics réels manquent) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -237,8 +248,14 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   /// Sélecteur personnalisé optionnel de pièces jointes (fichiers images ou texte).
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
 
-  /// Lecteur personnalisé optionnel du presse-papiers pour les pièces jointes.
+  /// Lecteur personnalisé optionnel du presse-papiers pour les pièces jointes (bouton presse-papiers).
   final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
+
+  /// Prédicat personnalisé optionnel indiquant si le presse-papiers contient une image ou des fichiers lors d'un `Ctrl+V`.
+  final bool Function()? hasClipboardMedia;
+
+  /// Lecteur personnalisé optionnel d'images ou fichiers du presse-papiers lors d'un `Ctrl+V`.
+  final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
 
   /// Lecteur personnalisé optionnel du texte du presse-papiers pour l'import de chartes `DESIGN.md`.
   final Future<String?> Function()? readClipboardText;
@@ -773,7 +790,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
       return scoped;
     }
-    return context.getInheritedWidgetOfExactType<JsonRepositoryScope>()?.store ??
+    return context
+            .getInheritedWidgetOfExactType<JsonRepositoryScope>()
+            ?.store ??
         _ambientRepositoryStore ??
         superApp?.repositoryStore;
   }
@@ -842,7 +861,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         !_reproduceExactMode) {
       _questioningLevel = widget.initialQuestioningLevel;
     }
-    if (oldWidget.initialReproduceExactMode != widget.initialReproduceExactMode) {
+    if (oldWidget.initialReproduceExactMode !=
+        widget.initialReproduceExactMode) {
       _setReproduceExactMode(
         widget.initialReproduceExactMode,
         notifyCallback: false,
@@ -1078,11 +1098,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final activeScope = _scope;
     final effectivePatch = activeScope == null
         ? rawPatch
-        : VibeChatDialog.filterPatchToScope(
-            base,
-            rawPatch,
-            activeScope,
-          );
+        : VibeChatDialog.filterPatchToScope(base, rawPatch, activeScope);
     if (!_hasPatchChanges(effectivePatch)) return;
 
     try {
@@ -1170,7 +1186,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       }
       session.hasAppliedLivePreview = false;
     }
-    if (session.liveNavigatedPageId != null) {
+    if (session.liveNavigatedPageId != null ||
+        session.previewTracker.hasNavigated) {
       final routing = session.pageRouting;
       final previousLocation = session.initialRouteLocation;
       session.liveNavigatedPageId = null;
@@ -1243,6 +1260,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       // Ignore les erreurs éventuelles de la file live.
     }
     _rollbackLivePreview(session);
+    session.previewTracker.restoreSelections(session.repoTransaction?.store);
     try {
       await session.repoTransaction?.rollback();
     } catch (_) {
@@ -1499,6 +1517,29 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
   }
 
+  void _appendPendingAttachments(Iterable<VibeChatAttachment> incoming) {
+    final usedNames = <String>{for (final a in _pendingAttachments) a.name};
+    for (final attachment in incoming) {
+      var candidateName = attachment.name;
+      if (usedNames.contains(candidateName)) {
+        final dot = candidateName.lastIndexOf('.');
+        final stem = dot > 0 ? candidateName.substring(0, dot) : candidateName;
+        final ext = dot > 0 ? candidateName.substring(dot) : '';
+        var suffix = 2;
+        while (usedNames.contains('$stem-$suffix$ext')) {
+          suffix++;
+        }
+        candidateName = '$stem-$suffix$ext';
+      }
+      usedNames.add(candidateName);
+      _pendingAttachments.add(
+        candidateName == attachment.name
+            ? attachment
+            : attachment.withName(candidateName),
+      );
+    }
+  }
+
   Future<void> _attachFromPicker() async {
     if (_isBusy) return;
     setState(() => _attachmentError = null);
@@ -1507,7 +1548,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       final picked = await picker();
       if (!mounted || picked.isEmpty) return;
       setState(() {
-        _pendingAttachments.addAll(picked);
+        _appendPendingAttachments(picked);
         _attachmentError = null;
       });
     } on FormatException catch (error) {
@@ -1539,12 +1580,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       if (pasted.isEmpty) {
         setState(
           () => _attachmentError =
-              'Aucun fichier ou texte trouvé dans le presse-papiers.',
+              'Aucune image, fichier ou texte trouvé dans le presse-papiers.',
         );
         return;
       }
       setState(() {
-        _pendingAttachments.addAll(pasted);
+        _appendPendingAttachments(pasted);
         _attachmentError = null;
       });
     } on FormatException catch (error) {
@@ -1564,6 +1605,64 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         );
       }
     }
+  }
+
+  Future<void> _attachMediaFromShortcut() async {
+    if (_isBusy) return;
+    setState(() => _attachmentError = null);
+    try {
+      final paster =
+          widget.pasteClipboardMedia ??
+          (widget.hasClipboardMedia != null ? widget.pasteAttachments : null) ??
+          VibeChatAttachment.fromClipboardImagesOrFiles;
+      final pasted = await paster();
+      if (!mounted || pasted.isEmpty) return;
+      setState(() {
+        _appendPendingAttachments(pasted);
+        _attachmentError = null;
+      });
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _attachmentError = error.message);
+    } on FileSystemException catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError = 'Lecture impossible : ${error.message}',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError =
+              'Impossible de coller depuis le presse-papiers : '
+              '${_describeErrorCause(error)}',
+        );
+      }
+    }
+  }
+
+  KeyEventResult _handleInputKeyEvent(FocusNode node, KeyEvent event) {
+    if (_isBusy || event is! KeyDownEvent) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    final isCtrlOrMetaV =
+        event.logicalKey == LogicalKeyboardKey.keyV &&
+        (keyboard.isControlPressed || keyboard.isMetaPressed) &&
+        !keyboard.isAltPressed &&
+        !keyboard.isShiftPressed;
+    final isShiftInsert =
+        event.logicalKey == LogicalKeyboardKey.insert &&
+        keyboard.isShiftPressed &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isMetaPressed;
+    if (!isCtrlOrMetaV && !isShiftInsert) return KeyEventResult.ignored;
+
+    final hasMedia =
+        (widget.hasClipboardMedia ??
+        VibeChatAttachment.hasClipboardImageOrFiles)();
+    if (!hasMedia) return KeyEventResult.ignored;
+
+    unawaited(_attachMediaFromShortcut());
+    return KeyEventResult.handled;
   }
 
   void _removePendingAttachment(int index) {
@@ -2367,6 +2466,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       pageRouting: session.pageRouting,
       readScope: () => _scope,
       fallbackContext: () => mounted ? context : null,
+      turnStartMarker: session.turnStartMarker,
+      previewTracker: session.previewTracker,
     ).buildToolRegistry();
   }
 
@@ -2378,7 +2479,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'get_component_geometry' => 'Mesure des composants à l’écran…',
         'get_runtime_tree' => 'Inspection de l’arbre monté…',
         'query_repository_data' => 'Interrogation des repositories…',
+        'capture_element_screenshot' => 'Capture visuelle de l’élément…',
         'capture_screenshot' => 'Capture visuelle de l’écran…',
+        'get_debug_entries' => 'Lecture des journaux et erreurs…',
+        'get_datasources_and_providers' =>
+          'Inspection des datasources et providers…',
+        'inspect_bindings_and_diagnostics' => 'Audit des liaisons JSON…',
+        'get_theme_and_contrast' => 'Vérification du thème et des contrastes…',
+        'get_registry_and_selection' =>
+          'Lecture du registre et de la sélection…',
+        'preview_navigation_or_selection' =>
+          'Mise à jour de la route / sélection d’aperçu…',
         final other => 'Exécution de $other…',
       };
     }
@@ -2411,6 +2522,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     required VibeAppToolRegistry toolRegistry,
     required bool isDirectGemini,
     required bool useStreaming,
+    List<DebugEntry> detectedErrors = const <DebugEntry>[],
   }) async {
     const maxVerifyToolRounds = 2;
     try {
@@ -2422,15 +2534,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         _maybeNavigateToNewLivePage(session, candidateAppearance);
       }
 
-      _streamingSnapshot.value = (_streamingSnapshot.value ??
-              VibeStreamSnapshot.empty)
-          .copyWith(
-            activeToolStatus: 'Vérification du rendu appliqué…',
+      _streamingSnapshot.value =
+          (_streamingSnapshot.value ?? VibeStreamSnapshot.empty).copyWith(
+            activeToolStatus: detectedErrors.isNotEmpty
+                ? 'Correction des erreurs d’exécution détectées…'
+                : 'Vérification du rendu appliqué…',
             toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
           );
 
       SchedulerBinding.instance.ensureVisualUpdate();
-      if (SchedulerBinding.instance.hasScheduledFrame) {
+      if (!_isWidgetTestBinding &&
+          SchedulerBinding.instance.hasScheduledFrame) {
         try {
           await SchedulerBinding.instance.endOfFrame.timeout(
             const Duration(milliseconds: 120),
@@ -2442,13 +2556,19 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
       final mountedSummaries = VibeMountedSlotIndex.instance
           .mountedSlotSummaries();
+      final errorsSection = detectedErrors.isEmpty
+          ? null
+          : 'ERREURS D’EXÉCUTION DÉTECTÉES DANS debugEntries APRÈS L’APERÇU :\n'
+                '${detectedErrors.take(5).map((e) => '- ${e.message}').join('\n')}\n'
+                'Corrige impérativement la cause de ces erreurs dans ton patch delta "vibe".';
       final verifyPrompt = [
         'VÉRIFICATION POST-RENDU (APERÇU APPLIQUÉ) :',
         'Le patch "vibe" vient d’être appliqué en aperçu à l’écran.',
+        ?errorsSection,
         if (mountedSummaries.isNotEmpty)
           'Slots montés actuellement à l’écran : ${jsonEncode(mountedSummaries)}.',
-        'Appelle si besoin `get_component_geometry` ou `capture_screenshot` pour vérifier les dimensions réelles et détecter tout débordement, zone de taille nulle ou chevauchement.',
-        '- Si le rendu est correct, renvoie {"message":"Rendu vérifié.","vibe":null}.',
+        'Appelle si besoin `get_component_geometry`, `get_debug_entries` ou `capture_element_screenshot` pour vérifier les dimensions réelles et détecter tout débordement, zone de taille nulle ou chevauchement.',
+        '- Si le rendu est correct et sans erreur, renvoie {"message":"Rendu vérifié.","vibe":null}.',
         '- Si un ajustement est nécessaire, renvoie uniquement un petit patch delta correctif dans "vibe" (avec "verifyRender": false).',
       ].join('\n');
 
@@ -2499,24 +2619,21 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
         if (nativeCalls.isNotEmpty) {
           if (!allowTools) break;
-          _streamingSnapshot.value = (_streamingSnapshot.value ??
-                  VibeStreamSnapshot.empty)
-              .copyWith(
+          _streamingSnapshot.value =
+              (_streamingSnapshot.value ?? VibeStreamSnapshot.empty).copyWith(
                 activeToolStatus: _formatToolStatusLabel(nativeCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final results = await toolRegistry.executeAll(nativeCalls);
-          _recordToolTraces(
-            session,
-            nativeCalls,
-            results,
-            isPostVerify: true,
-          );
-          _streamingSnapshot.value = (_streamingSnapshot.value ??
-                  VibeStreamSnapshot.empty)
-              .copyWith(
+          _recordToolTraces(session, nativeCalls, results, isPostVerify: true);
+          _streamingSnapshot.value =
+              (_streamingSnapshot.value ?? VibeStreamSnapshot.empty).copyWith(
                 activeToolStatus: _formatToolStatusLabel(nativeCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
@@ -2549,7 +2666,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
                     <String, Object?>{
-                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                      'text':
+                          'Capture d’écran produite par outil (${att.name}) :',
                     },
                     <String, Object?>{
                       'inlineData': <String, Object?>{
@@ -2581,19 +2699,21 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           }
         }
         if (jsonCalls.isNotEmpty && allowTools) {
-          _streamingSnapshot.value = (_streamingSnapshot.value ??
-                  VibeStreamSnapshot.empty)
-              .copyWith(
+          _streamingSnapshot.value =
+              (_streamingSnapshot.value ?? VibeStreamSnapshot.empty).copyWith(
                 activeToolStatus: _formatToolStatusLabel(jsonCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final results = await toolRegistry.executeAll(jsonCalls);
           _recordToolTraces(session, jsonCalls, results, isPostVerify: true);
-          _streamingSnapshot.value = (_streamingSnapshot.value ??
-                  VibeStreamSnapshot.empty)
-              .copyWith(
+          _streamingSnapshot.value =
+              (_streamingSnapshot.value ?? VibeStreamSnapshot.empty).copyWith(
                 activeToolStatus: _formatToolStatusLabel(jsonCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final generatedAttachments = <VibeChatAttachment>[
             for (final r in results) ...r.attachments,
@@ -2623,7 +2743,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
                     <String, Object?>{
-                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                      'text':
+                          'Capture d’écran produite par outil (${att.name}) :',
                     },
                     <String, Object?>{
                       'inlineData': <String, Object?>{
@@ -2807,6 +2928,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final toolRegistry = _resolveToolRegistry(session);
     VibeSalvageOutcome? lastCheckpointSalvage;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final attemptDebugMarker = VibeDebugCapture.markNow();
       if (attempt > 0) {
         _pendingSnapshot = null;
         _streamingSnapshot.value = null;
@@ -2848,7 +2970,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       Map<String, dynamic>? preDecodedMap;
       var exceededNativeToolRounds = false;
 
-      for (var toolRound = 0; toolRound <= VibeChatDialog.maxToolRounds; toolRound++) {
+      for (
+        var toolRound = 0;
+        toolRound <= VibeChatDialog.maxToolRounds;
+        toolRound++
+      ) {
         final allowTools =
             !disableToolsForAttempt &&
             toolRegistry.isNotEmpty &&
@@ -2904,14 +3030,18 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(
                 activeToolStatus: _formatToolStatusLabel(nativeCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final results = await toolRegistry.executeAll(nativeCalls);
           _recordToolTraces(session, nativeCalls, results);
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(
                 activeToolStatus: _formatToolStatusLabel(nativeCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
@@ -2921,8 +3051,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             roundAttachments = [...roundAttachments, ...generatedAttachments];
             collectedToolAttachments.addAll(generatedAttachments);
           }
-          final isLastToolRound =
-              toolRound + 1 >= VibeChatDialog.maxToolRounds;
+          final isLastToolRound = toolRound + 1 >= VibeChatDialog.maxToolRounds;
           if (conversationContents != null) {
             conversationContents.add(<String, Object?>{
               'role': 'model',
@@ -2957,7 +3086,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
                     <String, Object?>{
-                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                      'text':
+                          'Capture d’écran produite par outil (${att.name}) :',
                     },
                     <String, Object?>{
                       'inlineData': <String, Object?>{
@@ -3014,14 +3144,18 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(
                 activeToolStatus: _formatToolStatusLabel(jsonToolCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           final results = await toolRegistry.executeAll(jsonToolCalls);
           _recordToolTraces(session, jsonToolCalls, results);
           _streamingSnapshot.value = (_streamingSnapshot.value ?? finalSnapshot)
               .copyWith(
                 activeToolStatus: _formatToolStatusLabel(jsonToolCalls),
-                toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
+                toolTraces: List<VibeToolTrace>.unmodifiable(
+                  session.toolTraces,
+                ),
               );
           collectedToolResults.addAll(results.map((r) => r.toJson()));
           final generatedAttachments = <VibeChatAttachment>[
@@ -3034,8 +3168,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           final encodedResults = jsonEncode([
             for (final r in results) r.toJson(),
           ]);
-          final isLastToolRound =
-              toolRound + 1 >= VibeChatDialog.maxToolRounds;
+          final isLastToolRound = toolRound + 1 >= VibeChatDialog.maxToolRounds;
           final nextToolDirective = isLastToolRound
               ? 'ATTENTION : limite maximale d’appels d’outils atteinte. '
                     'N’appelle PLUS aucun outil et renvoie immédiatement ta réponse JSON finale '
@@ -3060,7 +3193,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 for (final att in generatedAttachments)
                   if (att.isImage) ...<Map<String, Object?>>[
                     <String, Object?>{
-                      'text': 'Capture d’écran produite par outil (${att.name}) :',
+                      'text':
+                          'Capture d’écran produite par outil (${att.name}) :',
                     },
                     <String, Object?>{
                       'inlineData': <String, Object?>{
@@ -3344,10 +3478,31 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
         _lastFailedResponse = null;
         var finalResult = result;
+        var detectedPostErrors = const <DebugEntry>[];
+        if (appearance != null && toolRegistry.isNotEmpty) {
+          if (!_isWidgetTestBinding) {
+            _setPreviewAppearance(appearance);
+            session.hasAppliedLivePreview = true;
+            if (SchedulerBinding.instance.hasScheduledFrame) {
+              try {
+                await SchedulerBinding.instance.endOfFrame.timeout(
+                  const Duration(milliseconds: 80),
+                );
+              } on TimeoutException {
+                // Poursuit sans attente supplémentaire.
+              }
+            }
+          }
+          detectedPostErrors = VibeDebugCapture.entriesSince(
+            attemptDebugMarker,
+            type: DebugEntryType.error,
+          );
+        }
         final wantsPostVerify =
             appearance != null &&
             toolRegistry.isNotEmpty &&
             (result['verifyRender'] == true ||
+                detectedPostErrors.isNotEmpty ||
                 (_reproduceExactMode &&
                     isDirectGemini &&
                     VibeMountedSlotIndex.instance.allEntries.isNotEmpty));
@@ -3359,6 +3514,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             toolRegistry: toolRegistry,
             isDirectGemini: isDirectGemini,
             useStreaming: useStreaming,
+            detectedErrors: detectedPostErrors,
           );
           if (verified.correctedAppearance != null) {
             appearance = verified.correctedAppearance;
@@ -3385,6 +3541,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         try {
           await session.liveRepoQueue;
         } catch (_) {}
+
+        final preRollbackAliases = session.repoTransaction == null
+            ? const <String, String>{}
+            : Map<String, String>.of(session.repoTransaction!.aliasToActualId);
 
         if (session.repoCheckpoint != null) {
           try {
@@ -3437,21 +3597,27 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
         var appliedRepoKeys = const <String>{};
         var rejectedRepoEntries = const <PatchRejectedEntry>[];
-        if (rawReposCandidate != null && session.repoTransaction != null) {
+        if (wasTruncated &&
+            rawReposCandidate != null &&
+            session.repoTransaction != null) {
           final repoPartial = await session.repoTransaction!
               .applyRepositoriesPatchPartial(rawReposCandidate);
           appliedRepoKeys = repoPartial.appliedEntries.keys.toSet();
           rejectedRepoEntries = repoPartial.rejectedEntries;
         }
 
-        Map<String, dynamic>? effectiveCandidatePatch;
-        if (rawVibeCandidate != null) {
-          final rewritten = session.repoTransaction != null
-              ? session.repoTransaction!.rewriteVibePatchBindings(
-                  rawVibeCandidate,
-                )
-              : rawVibeCandidate;
-          effectiveCandidatePatch = _scope == null
+        Map<String, dynamic>? buildEffectiveCandidate(
+          Map<String, String> aliasMap,
+        ) {
+          if (rawVibeCandidate == null) return null;
+          final rewritten = aliasMap.isNotEmpty
+              ? rewriteVibePatchRepositoryAliases(rawVibeCandidate, aliasMap)
+              : (session.repoTransaction != null
+                    ? session.repoTransaction!.rewriteVibePatchBindings(
+                        rawVibeCandidate,
+                      )
+                    : rawVibeCandidate);
+          return _scope == null
               ? rewritten
               : VibeChatDialog.filterPatchToScope(
                   session.checkpointAppearance,
@@ -3460,7 +3626,14 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
                 );
         }
 
-        final salvage = VibeDeltaRecovery.salvageFailedAttempt(
+        var effectiveCandidatePatch = buildEffectiveCandidate(
+          wasTruncated
+              ? (session.repoTransaction?.aliasToActualId ??
+                    const <String, String>{})
+              : preRollbackAliases,
+        );
+
+        var salvage = VibeDeltaRecovery.salvageFailedAttempt(
           initialAppearance: session.baseAppearance,
           workingAppearance: session.checkpointAppearance,
           initialPageIds: session.initialPageIds,
@@ -3476,6 +3649,33 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           interruptedSection: wasTruncated ? finalSnapshot.activeSection : null,
           interruptedKey: wasTruncated ? finalSnapshot.activeEntryKey : null,
         );
+
+        if (!wasTruncated &&
+            salvage.hasCheckpoint &&
+            rawReposCandidate != null &&
+            session.repoTransaction != null) {
+          final repoPartial = await session.repoTransaction!
+              .applyRepositoriesPatchPartial(rawReposCandidate);
+          appliedRepoKeys = repoPartial.appliedEntries.keys.toSet();
+          rejectedRepoEntries = repoPartial.rejectedEntries;
+          effectiveCandidatePatch = buildEffectiveCandidate(
+            session.repoTransaction!.aliasToActualId,
+          );
+          salvage = VibeDeltaRecovery.salvageFailedAttempt(
+            initialAppearance: session.baseAppearance,
+            workingAppearance: session.checkpointAppearance,
+            initialPageIds: session.initialPageIds,
+            instantiatedIds: session.initialInstantiatedIds,
+            hasRegistry: widget.registry != null,
+            scope: _scope,
+            codec: widget.codec,
+            validateAppearance: widget.validateAppearance,
+            effectiveVibePatch: effectiveCandidatePatch,
+            rejectedRepoEntries: rejectedRepoEntries,
+            appliedRepoKeys: appliedRepoKeys,
+            wasTruncated: false,
+          );
+        }
 
         if (salvage.hasCheckpoint) {
           final candidateComps = effectiveCandidatePatch == null
@@ -4389,30 +4589,34 @@ $response
                 ),
                 IconButton(
                   key: const ValueKey('vibe-chat-paste-attachment'),
-                  tooltip: 'Coller un fichier ou texte du presse-papiers',
+                  tooltip: 'Coller une image, un fichier ou du texte du presse-papiers',
                   visualDensity: VisualDensity.compact,
                   onPressed: _isBusy ? null : _attachFromClipboard,
                   icon: const Icon(Icons.content_paste),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: TextField(
-                    key: const ValueKey('vibe-chat-input'),
-                    controller: _input,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
-                    decoration: InputDecoration(
-                      hintText: _speechState == VibeSpeechState.listening
-                          ? 'Écoute en cours… (parlez puis faites une pause)'
-                          : _speechState == VibeSpeechState.transcribing
-                          ? 'Transcription en cours…'
-                          : _reproduceExactMode
-                          ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
-                          : 'Décris l’écran souhaité…',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
+                  child: Focus(
+                    onKeyEvent: _handleInputKeyEvent,
+                    skipTraversal: true,
+                    child: TextField(
+                      key: const ValueKey('vibe-chat-input'),
+                      controller: _input,
+                      minLines: 1,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _send(),
+                      decoration: InputDecoration(
+                        hintText: _speechState == VibeSpeechState.listening
+                            ? 'Écoute en cours… (parlez puis faites une pause)'
+                            : _speechState == VibeSpeechState.transcribing
+                            ? 'Transcription en cours…'
+                            : _reproduceExactMode
+                            ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
+                            : 'Décris l’écran souhaité…',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
                     ),
                   ),
                 ),
@@ -4504,4 +4708,6 @@ final class _LiveTurnSession {
   bool hasAppliedLivePreview = false;
   String? liveNavigatedPageId;
   final List<VibeToolTrace> toolTraces = <VibeToolTrace>[];
+  final VibeDebugMarker turnStartMarker = VibeDebugCapture.markNow();
+  final VibePreviewStateTracker previewTracker = VibePreviewStateTracker();
 }

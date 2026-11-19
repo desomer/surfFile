@@ -1107,7 +1107,9 @@ class EditorSlotState extends State<EditorSlot> {
       ),
     );
 
-    final Widget child = KeyedSubtree(key: _childKey, child: runtimeChild);
+    final Widget child = isSliver
+        ? KeyedSubtree(key: _childKey, child: runtimeChild)
+        : RepaintBoundary(key: _childKey, child: runtimeChild);
     if (isSliver) {
       return SliverPointerRegion(
         enabled: interactive,
@@ -1189,7 +1191,7 @@ class EditorSlotState extends State<EditorSlot> {
       child: RepaintBoundary(
         child: ValueListenableBuilder<CustomPainter?>(
           valueListenable: _painterNotifier,
-          child: RepaintBoundary(child: child),
+          child: child,
           builder: (context, painter, inner) =>
               CustomPaint(foregroundPainter: painter, child: inner),
         ),

@@ -31,11 +31,15 @@ import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
 import '../../models/super_tree_view_config.dart';
 import '../../theme/appearance.dart';
+import '../../widgets/components/super_layout/layout_selection.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope;
-import '../../widgets/editing/slots/editor_slot.dart' show StyleEditScope;
+import '../../widgets/editing/slots/editor_slot.dart'
+    show EditorSlotState, StyleEditScope;
 import '../pages/editor_page_router.dart';
 import '../repositories/json_repository_store.dart';
+import 'vibe_debug_capture.dart';
+import 'vibe_diagnostics_inspector.dart';
 import 'vibe_mounted_slot_index.dart';
 
 /// Service d'introspection runtime de l'application Flutter exposé à Vibe IA.
@@ -49,6 +53,8 @@ class VibeAppInspector {
     this.pageRouting,
     this.readScope,
     this.fallbackContext,
+    this.turnStartMarker,
+    this.previewTracker,
   }) : slotIndex = slotIndex ?? VibeMountedSlotIndex.instance;
 
   /// Fournisseur de l'[Appearance] active (incluant les éventuels défauts runtime).
@@ -72,7 +78,25 @@ class VibeAppInspector {
   /// Contexte Flutter de repli (ex. celui de `VibeChatDialog`) si aucune racine `SuperApp` n'est enregistrée.
   final BuildContext? Function()? fallbackContext;
 
-  /// Construit le [VibeAppToolRegistry] complet exposant les 5 outils en lecture seule.
+  /// Repère optionnel dans `debugEntries` capturé au début du tour courant.
+  final VibeDebugMarker? turnStartMarker;
+
+  /// Suivi optionnel des modifications d'aperçu réversibles.
+  final VibePreviewStateTracker? previewTracker;
+
+  late final VibeDiagnosticsInspector _diagnostics = VibeDiagnosticsInspector(
+    readAppearance: readAppearance,
+    slotIndex: slotIndex,
+    resolvePrimaryContext: _resolvePrimaryContext,
+    registry: registry,
+    repositoryStore: repositoryStore,
+    pageRouting: pageRouting,
+    readScope: readScope,
+    turnStartMarker: turnStartMarker,
+    previewTracker: previewTracker,
+  );
+
+  /// Construit le [VibeAppToolRegistry] complet exposant l'ensemble des outils d'introspection.
   VibeAppToolRegistry buildToolRegistry() =>
       VibeAppToolRegistry.fromStandardHandlers(<String, VibeToolHandler>{
         'get_viewport_and_route': (call) async => VibeToolResult(
@@ -95,9 +119,68 @@ class VibeAppInspector {
           name: call.name,
           data: await queryRepositoryData(call.arguments),
         ),
+        'capture_element_screenshot': (call) =>
+            captureElementScreenshot(call.id, call.name, call.arguments),
         'capture_screenshot': (call) =>
             captureScreenshot(call.id, call.name, call.arguments),
+        'get_debug_entries': (call) async => VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: await getDebugEntries(call.arguments),
+        ),
+        'get_datasources_and_providers': (call) async => VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: await getDatasourcesAndProviders(call.arguments),
+        ),
+        'inspect_bindings_and_diagnostics': (call) async => VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: await inspectBindingsAndDiagnostics(call.arguments),
+        ),
+        'get_theme_and_contrast': (call) async => VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: await getThemeAndContrast(call.arguments),
+        ),
+        'get_registry_and_selection': (call) async => VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: await getRegistryAndSelection(call.arguments),
+        ),
+        'preview_navigation_or_selection': (call) =>
+            previewNavigationOrSelection(call.id, call.name, call.arguments),
       });
+
+  /// Lit et filtre les journaux et erreurs d'exécution depuis `debugEntries`.
+  Future<Map<String, Object?>> getDebugEntries(Map<String, Object?> args) =>
+      _diagnostics.getDebugEntries(args);
+
+  /// Inspecte le catalogue et l'état runtime de `DatasourceRegistry` et `DataProviderRegistry`.
+  Future<Map<String, Object?>> getDatasourcesAndProviders(
+    Map<String, Object?> args,
+  ) => _diagnostics.getDatasourcesAndProviders(args);
+
+  /// Audite la santé des liaisons JSON, les composants orphelins et les états forcés.
+  Future<Map<String, Object?>> inspectBindingsAndDiagnostics(
+    Map<String, Object?> args,
+  ) => _diagnostics.inspectBindingsAndDiagnostics(args);
+
+  /// Résout les rôles `theme:*` en `#RRGGBB` et vérifie les contrastes WCAG AA.
+  Future<Map<String, Object?>> getThemeAndContrast(Map<String, Object?> args) =>
+      _diagnostics.getThemeAndContrast(args);
+
+  /// Expose les constructeurs/extensions de `Registry`, les polices et la sélection active.
+  Future<Map<String, Object?>> getRegistryAndSelection(
+    Map<String, Object?> args,
+  ) => _diagnostics.getRegistryAndSelection(args);
+
+  /// Navigue temporairement vers une page ou sélectionne une ligne Maître/Détail en aperçu.
+  Future<VibeToolResult> previewNavigationOrSelection(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) => _diagnostics.previewNavigationOrSelection(callId, toolName, args);
 
   BuildContext? _resolvePrimaryContext() {
     final appRootCtx = slotIndex.activeAppRootKey?.currentContext;
@@ -827,7 +910,477 @@ class VibeAppInspector {
     return value;
   }
 
-  /// Capture une image PNG d'un composant monté ou de la vue applicative complète.
+  /// Capture une image PNG isolée d'un élément monté précis (sans capturer toute la page).
+  ///
+  /// Utilise directement le [RenderRepaintBoundary] interne propre à l'[EditorSlot]
+  /// lorsque `contextPadding == 0`, garantissant un rendu net (HiDPI) sans contours
+  /// d'édition ni rasterisation de la fenêtre complète.
+  Future<VibeToolResult> captureElementScreenshot(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) async {
+    var componentId =
+        args['componentId'] is String &&
+                (args['componentId'] as String).trim().isNotEmpty
+            ? (args['componentId'] as String).trim()
+            : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
+                  ? (args['id'] as String).trim()
+                  : null);
+    var zoneId =
+        args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
+            ? (args['zoneId'] as String).trim()
+            : null;
+
+    if (componentId == null) {
+      final scope = readScope?.call();
+      if (scope != null) {
+        componentId = scope.componentId;
+        zoneId ??= scope.zoneId;
+      } else {
+        final focusCtx = LayoutSelection.focus.value?.context;
+        final focusedSlot = (focusCtx != null && focusCtx.mounted)
+            ? EditorSlotState.resolveFromContext(focusCtx)
+            : null;
+        if (focusedSlot != null && focusedSlot.mounted) {
+          componentId = focusedSlot.effectiveComponentId;
+          zoneId ??= focusedSlot.widget.zoneId;
+        }
+      }
+    }
+
+    if (componentId == null || componentId.isEmpty) {
+      final available = slotIndex.mountedSlotSummaries(limit: 20);
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Aucun élément ciblé : fournis "componentId" '
+            '${available.isEmpty ? '' : '(ex: ${available.join(', ')}) '}'
+            'ou utilise "capture_screenshot" pour la page entière.',
+      );
+    }
+
+    var entries = slotIndex.entriesFor(componentId, zoneId: zoneId);
+    if (entries.isEmpty) {
+      final canonical = VibeChatScope.canonicalizeId(componentId);
+      if (canonical != componentId) {
+        entries = slotIndex.entriesFor(canonical, zoneId: zoneId);
+        if (entries.isNotEmpty) {
+          componentId = canonical;
+        }
+      }
+    }
+    if (entries.isEmpty) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Élément "$componentId"${zoneId == null ? '' : ' (zone "$zoneId")'} non monté à l’écran.',
+      );
+    }
+
+    final rawOcc = args['occurrenceIndex'];
+    final occurrenceIndex = rawOcc is num ? rawOcc.toInt() : 0;
+    if (occurrenceIndex < 0 || occurrenceIndex >= entries.length) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'occurrenceIndex $occurrenceIndex hors limites pour "$componentId" '
+            '(${entries.length} occurrence(s) montée(s), indices 0..${entries.length - 1}).',
+      );
+    }
+
+    final entry = entries[occurrenceIndex];
+    final scrollIntoView = args['scrollIntoView'] is bool
+        ? args['scrollIntoView'] as bool
+        : true;
+    final rawPadding = args['contextPadding'];
+    final contextPadding =
+        (rawPadding is num ? rawPadding.toDouble() : 0.0).clamp(0.0, 200.0);
+    final rawMaxDim = args['maxDimension'];
+    final maxDimension = (rawMaxDim is num ? rawMaxDim.toInt() : 800).clamp(
+      256,
+      1600,
+    );
+
+    if (scrollIntoView) {
+      final initialSlotCtx = entry.slotContext();
+      if (initialSlotCtx != null &&
+          initialSlotCtx.mounted &&
+          Scrollable.maybeOf(initialSlotCtx) != null) {
+        try {
+          await Scrollable.ensureVisible(
+            initialSlotCtx,
+            alignment: 0.5,
+            duration: Duration.zero,
+          );
+        } catch (_) {
+          // Poursuit même si le Scrollable ne peut pas défiler jusqu'à la cible.
+        }
+      }
+    }
+
+    final ctx = entry.contentKey.currentContext ?? entry.slotContext();
+    if (ctx == null || !ctx.mounted) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Contexte de l’élément "$componentId" indisponible.',
+      );
+    }
+
+    final devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(ctx) ?? 1.0;
+    final renderObj = ctx.findRenderObject();
+    final directAncestorBoundary = ctx
+        .findAncestorRenderObjectOfType<RenderRepaintBoundary>();
+    await _settleFrameIfNeeded(renderObj);
+
+    if (renderObj == null || !renderObj.attached) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Objet de rendu de "$componentId" détaché.',
+      );
+    }
+
+    // Chemin rapide isolé : le contenu du slot possède son propre RenderRepaintBoundary
+    // et aucune marge externe autour de l'élément n'est demandée.
+    if (contextPadding <= 0.0 &&
+        renderObj is RenderRepaintBoundary &&
+        renderObj.hasSize) {
+      final targetSize = renderObj.size;
+      if (targetSize.width <= 0 || targetSize.height <= 0) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" a une taille nulle (${targetSize.width}x${targetSize.height}).',
+        );
+      }
+      final paintError = await _ensureBoundaryPainted(renderObj);
+      if (paintError != null) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message: paintError,
+        );
+      }
+      final idealRatio = math.max(1.0, math.min(devicePixelRatio, 3.0));
+      final longest = math.max(targetSize.width, targetSize.height);
+      final ratio = longest * idealRatio > maxDimension
+          ? maxDimension / longest
+          : idealRatio;
+
+      final ui.Image image = await renderObj.toImage(pixelRatio: ratio);
+      final int pixelW = image.width;
+      final int pixelH = image.height;
+      Uint8List? pngBytes;
+      try {
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+        pngBytes = byteData?.buffer.asUint8List();
+      } finally {
+        image.dispose();
+      }
+      if (pngBytes == null || pngBytes.isEmpty) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message: 'Échec de l’encodage PNG de "$componentId".',
+        );
+      }
+      final fileLabel = _elementScreenshotFileName(
+        componentId,
+        zoneId: zoneId,
+        occurrenceIndex: occurrenceIndex,
+      );
+      return VibeToolResult(
+        callId: callId,
+        name: toolName,
+        data: <String, Object?>{
+          'target': componentId,
+          'componentId': componentId,
+          'zoneId': ?zoneId,
+          'occurrenceIndex': occurrenceIndex,
+          'totalOccurrences': entries.length,
+          'isolatedBoundary': true,
+          'contextPadding': 0.0,
+          'logicalWidth': _round2(targetSize.width),
+          'logicalHeight': _round2(targetSize.height),
+          'pixelWidth': pixelW,
+          'pixelHeight': pixelH,
+          'pixelRatio': _round2(ratio),
+          'imageAttachment': fileLabel,
+        },
+        attachments: <VibeChatAttachment>[
+          VibeChatAttachment.image(
+            name: fileLabel,
+            bytes: pngBytes,
+            mimeType: 'image/png',
+          ),
+        ],
+      );
+    }
+
+    // Chemin avec contexte parent (contextPadding > 0), RenderBox sans boundary propre, ou RenderSliver.
+    RenderRepaintBoundary? boundary;
+    if (renderObj is RenderRepaintBoundary && contextPadding <= 0.0) {
+      boundary = renderObj;
+    } else if (contextPadding > 0.0 && renderObj is RenderBox && renderObj.hasSize) {
+      boundary = _findLargerAncestorBoundary(renderObj, renderObj.size) ??
+          directAncestorBoundary;
+    } else {
+      boundary = directAncestorBoundary;
+    }
+    if (boundary == null || !boundary.attached || !boundary.hasSize) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Aucun RenderRepaintBoundary parent trouvé pour capturer "$componentId".',
+      );
+    }
+
+    Rect? logicalRectInBoundary;
+    Size? logicalElementSize;
+
+    if (renderObj is RenderBox && renderObj.hasSize) {
+      logicalElementSize = renderObj.size;
+      if (logicalElementSize.width <= 0 || logicalElementSize.height <= 0) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" a une taille nulle (${logicalElementSize.width}x${logicalElementSize.height}).',
+        );
+      }
+      final baseRect = MatrixUtils.transformRect(
+        renderObj.getTransformTo(boundary),
+        Offset.zero & logicalElementSize,
+      );
+      logicalRectInBoundary = baseRect
+          .inflate(contextPadding)
+          .intersect(Offset.zero & boundary.size);
+    } else if (renderObj is RenderSliver) {
+      final geo = renderObj.geometry;
+      final paintExtent = geo?.paintExtent ?? 0.0;
+      final crossExtent = renderObj.constraints.crossAxisExtent;
+      if (paintExtent <= 0 || crossExtent <= 0) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Le sliver "$componentId" n’a aucune surface visible peinte (paintExtent=$paintExtent).',
+        );
+      }
+      final localSliverRect = renderObj.constraints.axis == Axis.vertical
+          ? Rect.fromLTWH(0, 0, crossExtent, paintExtent)
+          : Rect.fromLTWH(0, 0, paintExtent, crossExtent);
+      logicalElementSize = localSliverRect.size;
+      final viewportBox = _findNearestRenderBox(renderObj);
+      final baseRect = viewportBox != null
+          ? MatrixUtils.transformRect(
+              renderObj.getTransformTo(boundary),
+              localSliverRect,
+            )
+          : localSliverRect;
+      logicalRectInBoundary = baseRect
+          .inflate(contextPadding)
+          .intersect(Offset.zero & boundary.size);
+    } else {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'L’élément "$componentId" ne dispose pas d’une géométrie mesurable.',
+      );
+    }
+
+    if (logicalRectInBoundary.isEmpty ||
+        logicalRectInBoundary.width <= 0 ||
+        logicalRectInBoundary.height <= 0) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'L’élément "$componentId" est entièrement hors de la zone visible de son conteneur.',
+      );
+    }
+
+    final paintError = await _ensureBoundaryPainted(boundary);
+    if (paintError != null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: paintError,
+      );
+    }
+
+    final idealRatio = math.max(1.0, math.min(devicePixelRatio, 3.0));
+    final boundaryLongest = math.max(boundary.size.width, boundary.size.height);
+    final cropLongest = math.max(
+      logicalRectInBoundary.width,
+      logicalRectInBoundary.height,
+    );
+    var ratio = cropLongest * idealRatio > maxDimension
+        ? maxDimension / cropLongest
+        : idealRatio;
+    if (boundaryLongest * ratio > 2400) {
+      ratio = 2400 / boundaryLongest;
+    }
+
+    final ui.Image boundaryImage = await boundary.toImage(pixelRatio: ratio);
+    Uint8List? pngBytes;
+    int outPixelW = 0;
+    int outPixelH = 0;
+    try {
+      final srcRect = Rect.fromLTWH(
+        (logicalRectInBoundary.left * ratio).clamp(
+          0.0,
+          boundaryImage.width.toDouble(),
+        ),
+        (logicalRectInBoundary.top * ratio).clamp(
+          0.0,
+          boundaryImage.height.toDouble(),
+        ),
+        (logicalRectInBoundary.width * ratio).clamp(
+          1.0,
+          boundaryImage.width.toDouble(),
+        ),
+        (logicalRectInBoundary.height * ratio).clamp(
+          1.0,
+          boundaryImage.height.toDouble(),
+        ),
+      );
+      final scaleDown = math.max(srcRect.width, srcRect.height) > maxDimension
+          ? maxDimension / math.max(srcRect.width, srcRect.height)
+          : 1.0;
+      outPixelW = math.max(1, (srcRect.width * scaleDown).round());
+      outPixelH = math.max(1, (srcRect.height * scaleDown).round());
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawImageRect(
+        boundaryImage,
+        srcRect,
+        Rect.fromLTWH(0, 0, outPixelW.toDouble(), outPixelH.toDouble()),
+        Paint(),
+      );
+      final picture = recorder.endRecording();
+      final cropped = await picture.toImage(outPixelW, outPixelH);
+      picture.dispose();
+      try {
+        final byteData = await cropped.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        pngBytes = byteData?.buffer.asUint8List();
+      } finally {
+        cropped.dispose();
+      }
+    } finally {
+      boundaryImage.dispose();
+    }
+
+    if (pngBytes == null || pngBytes.isEmpty) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Échec de l’encodage PNG de "$componentId".',
+      );
+    }
+
+    final fileLabel = _elementScreenshotFileName(
+      componentId,
+      zoneId: zoneId,
+      occurrenceIndex: occurrenceIndex,
+    );
+    return VibeToolResult(
+      callId: callId,
+      name: toolName,
+      data: <String, Object?>{
+        'target': componentId,
+        'componentId': componentId,
+        'zoneId': ?zoneId,
+        'occurrenceIndex': occurrenceIndex,
+        'totalOccurrences': entries.length,
+        'isolatedBoundary': false,
+        'contextPadding': _round2(contextPadding),
+        'logicalWidth': _round2(logicalElementSize.width),
+        'logicalHeight': _round2(logicalElementSize.height),
+        'pixelWidth': outPixelW,
+        'pixelHeight': outPixelH,
+        'pixelRatio': _round2(ratio),
+        'imageAttachment': fileLabel,
+      },
+      attachments: <VibeChatAttachment>[
+        VibeChatAttachment.image(
+          name: fileLabel,
+          bytes: pngBytes,
+          mimeType: 'image/png',
+        ),
+      ],
+    );
+  }
+
+  static RenderRepaintBoundary? _findLargerAncestorBoundary(
+    RenderObject start,
+    Size elementSize,
+  ) {
+    RenderRepaintBoundary? outermost;
+    RenderObject? current = start.parent;
+    while (current != null) {
+      if (current is RenderRepaintBoundary && current.attached && current.hasSize) {
+        outermost = current;
+        if (current.size.width > elementSize.width + 0.5 ||
+            current.size.height > elementSize.height + 0.5) {
+          return current;
+        }
+      }
+      current = current.parent;
+    }
+    return outermost;
+  }
+
+  static RenderBox? _findNearestRenderBox(RenderObject node) {
+    RenderObject? current = node.parent;
+    while (current != null) {
+      if (current is RenderBox) return current;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  static String _elementScreenshotFileName(
+    String componentId, {
+    String? zoneId,
+    int occurrenceIndex = 0,
+  }) {
+    final safeId = componentId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    final safeZone = zoneId == null || zoneId.isEmpty
+        ? ''
+        : '_${zoneId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}';
+    final occ = occurrenceIndex > 0 ? '_$occurrenceIndex' : '';
+    return 'element_$safeId$safeZone$occ.png';
+  }
+
+  Future<String?> _ensureBoundaryPainted(RenderRepaintBoundary boundary) async {
+    if (!boundary.debugNeedsPaint) return null;
+    SchedulerBinding.instance.ensureVisualUpdate();
+    try {
+      await SchedulerBinding.instance.endOfFrame.timeout(
+        const Duration(milliseconds: 250),
+      );
+    } on TimeoutException {
+      // Poursuit et revérifie debugNeedsPaint ci-dessous.
+    }
+    if (boundary.debugNeedsPaint) {
+      return 'La surface n’a pas encore été peinte : réessaye après le rendu.';
+    }
+    return null;
+  }
+
+  /// Capture une image PNG de la vue applicative complète (ou délègue à [captureElementScreenshot]
+  /// lorsqu'un `componentId` est explicitement fourni).
   Future<VibeToolResult> captureScreenshot(
     String callId,
     String toolName,
@@ -838,77 +1391,40 @@ class VibeAppInspector {
                 (args['componentId'] as String).trim().isNotEmpty
             ? (args['componentId'] as String).trim()
             : null;
-    final zoneId =
-        args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
-            ? (args['zoneId'] as String).trim()
-            : null;
+    if (componentId != null) {
+      return captureElementScreenshot(callId, toolName, args);
+    }
+
     final rawMaxDim = args['maxDimension'];
     final maxDimension = (rawMaxDim is num ? rawMaxDim.toInt() : 1024).clamp(
       256,
       1600,
     );
 
-    RenderBox? targetBox;
-    RenderRepaintBoundary? boundary;
+    final rootCtx = _resolvePrimaryContext();
+    if (rootCtx == null || !rootCtx.mounted) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Aucune vue applicative montée à capturer.',
+      );
+    }
+    final rootObj = rootCtx.findRenderObject();
+    final ancestorBoundary = rootCtx
+        .findAncestorRenderObjectOfType<RenderRepaintBoundary>();
+    await _settleFrameIfNeeded(rootObj);
 
-    if (componentId != null) {
-      final entries = slotIndex.entriesFor(componentId, zoneId: zoneId);
-      if (entries.isEmpty) {
-        return VibeToolResult.error(
-          callId: callId,
-          name: toolName,
-          message:
-              'Composant "$componentId" non monté à l’écran : impossible de le capturer.',
-        );
-      }
-      final entry = entries.first;
-      final ctx = entry.contentKey.currentContext ?? entry.slotContext();
-      if (ctx == null || !ctx.mounted) {
-        return VibeToolResult.error(
-          callId: callId,
-          name: toolName,
-          message: 'Contexte du composant "$componentId" indisponible.',
-        );
-      }
-      final renderObj = ctx.findRenderObject();
-      final ancestorBoundary = ctx
-          .findAncestorRenderObjectOfType<RenderRepaintBoundary>();
-      await _settleFrameIfNeeded(renderObj);
-      if (renderObj is! RenderBox || !renderObj.attached || !renderObj.hasSize) {
-        return VibeToolResult.error(
-          callId: callId,
-          name: toolName,
-          message:
-              'Le composant "$componentId" ne dispose pas d’une boîte de rendu mesurée.',
-        );
-      }
-      targetBox = renderObj;
-      boundary = renderObj is RenderRepaintBoundary
-          ? renderObj
-          : ancestorBoundary;
+    RenderRepaintBoundary? boundary;
+    RenderBox? targetBox;
+    if (rootObj is RenderRepaintBoundary) {
+      boundary = rootObj;
+      targetBox = rootObj;
     } else {
-      final rootCtx = _resolvePrimaryContext();
-      if (rootCtx == null || !rootCtx.mounted) {
-        return VibeToolResult.error(
-          callId: callId,
-          name: toolName,
-          message: 'Aucune vue applicative montée à capturer.',
-        );
-      }
-      final rootObj = rootCtx.findRenderObject();
-      final ancestorBoundary = rootCtx
-          .findAncestorRenderObjectOfType<RenderRepaintBoundary>();
-      await _settleFrameIfNeeded(rootObj);
-      if (rootObj is RenderRepaintBoundary) {
-        boundary = rootObj;
+      boundary = ancestorBoundary;
+      if (rootObj is RenderBox && rootObj.attached && rootObj.hasSize) {
         targetBox = rootObj;
       } else {
-        boundary = ancestorBoundary;
-        if (rootObj is RenderBox && rootObj.attached && rootObj.hasSize) {
-          targetBox = rootObj;
-        } else {
-          targetBox = boundary;
-        }
+        targetBox = boundary;
       }
     }
 
@@ -925,23 +1441,13 @@ class VibeAppInspector {
       );
     }
 
-    if (boundary.debugNeedsPaint) {
-      SchedulerBinding.instance.ensureVisualUpdate();
-      try {
-        await SchedulerBinding.instance.endOfFrame.timeout(
-          const Duration(milliseconds: 250),
-        );
-      } on TimeoutException {
-        // Poursuit si possible, sinon retourne une erreur propre ci-dessous.
-      }
-      if (boundary.debugNeedsPaint) {
-        return VibeToolResult.error(
-          callId: callId,
-          name: toolName,
-          message:
-              'La surface n’a pas encore été peinte : réessaye après le rendu.',
-        );
-      }
+    final paintError = await _ensureBoundaryPainted(boundary);
+    if (paintError != null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: paintError,
+      );
     }
 
     final targetSize = targetBox.size;
@@ -949,7 +1455,8 @@ class VibeAppInspector {
       return VibeToolResult.error(
         callId: callId,
         name: toolName,
-        message: 'La cible a une taille nulle (${targetSize.width}x${targetSize.height}).',
+        message:
+            'La cible a une taille nulle (${targetSize.width}x${targetSize.height}).',
       );
     }
 
@@ -959,44 +1466,10 @@ class VibeAppInspector {
     final ui.Image boundaryImage = await boundary.toImage(pixelRatio: ratio);
     Uint8List? pngBytes;
     try {
-      if (identical(targetBox, boundary)) {
-        final byteData = await boundaryImage.toByteData(
-          format: ui.ImageByteFormat.png,
-        );
-        pngBytes = byteData?.buffer.asUint8List();
-      } else {
-        final relativeRect = MatrixUtils.transformRect(
-          targetBox.getTransformTo(boundary),
-          Offset.zero & targetSize,
-        );
-        final srcRect = Rect.fromLTWH(
-          (relativeRect.left * ratio).clamp(0.0, boundaryImage.width.toDouble()),
-          (relativeRect.top * ratio).clamp(0.0, boundaryImage.height.toDouble()),
-          (relativeRect.width * ratio).clamp(1.0, boundaryImage.width.toDouble()),
-          (relativeRect.height * ratio).clamp(1.0, boundaryImage.height.toDouble()),
-        );
-        final dstWidth = math.max(1, srcRect.width.round());
-        final dstHeight = math.max(1, srcRect.height.round());
-        final recorder = ui.PictureRecorder();
-        final canvas = Canvas(recorder);
-        canvas.drawImageRect(
-          boundaryImage,
-          srcRect,
-          Rect.fromLTWH(0, 0, dstWidth.toDouble(), dstHeight.toDouble()),
-          Paint(),
-        );
-        final picture = recorder.endRecording();
-        final cropped = await picture.toImage(dstWidth, dstHeight);
-        picture.dispose();
-        try {
-          final byteData = await cropped.toByteData(
-            format: ui.ImageByteFormat.png,
-          );
-          pngBytes = byteData?.buffer.asUint8List();
-        } finally {
-          cropped.dispose();
-        }
-      }
+      final byteData = await boundaryImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      pngBytes = byteData?.buffer.asUint8List();
     } finally {
       boundaryImage.dispose();
     }
@@ -1009,16 +1482,12 @@ class VibeAppInspector {
       );
     }
 
-    final fileLabel = componentId == null
-        ? 'screenshot_viewport.png'
-        : 'screenshot_$componentId${zoneId == null ? '' : '_$zoneId'}.png';
-
+    const fileLabel = 'screenshot_viewport.png';
     return VibeToolResult(
       callId: callId,
       name: toolName,
       data: <String, Object?>{
-        'target': componentId ?? 'viewport',
-        'zoneId': ?zoneId,
+        'target': 'viewport',
         'logicalWidth': _round2(targetSize.width),
         'logicalHeight': _round2(targetSize.height),
         'pixelRatio': _round2(ratio),
