@@ -1028,7 +1028,10 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     if (globalPosition == null) {
       final ro = origin.findRenderObject();
       if (ro is RenderBox && ro.attached && ro.hasSize) {
-        resolvedPosition = ro.localToGlobal(ro.size.center(Offset.zero));
+        final candidate = ro.localToGlobal(ro.size.center(Offset.zero));
+        if (candidate.isFinite) {
+          resolvedPosition = candidate;
+        }
       }
     }
     zoomController?.beginRightClickSelection();

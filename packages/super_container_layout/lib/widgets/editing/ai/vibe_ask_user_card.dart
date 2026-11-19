@@ -16,6 +16,7 @@ class VibeAskUserCard extends StatefulWidget {
     required this.sending,
     required this.onSubmit,
     required this.onSkip,
+    this.onAskMore,
     this.speechTranscriber,
     this.onSpeechError,
     super.key,
@@ -32,6 +33,9 @@ class VibeAskUserCard extends StatefulWidget {
 
   /// Transmet la demande de poursuivre avec les valeurs par défaut.
   final VoidCallback onSkip;
+
+  /// Transmet les réponses actuelles en demandant 2 à 4 questions complémentaires avant de générer.
+  final ValueChanged<Map<String, Object?>>? onAskMore;
 
   /// Service optionnel de dictée vocale (Speech-to-Text) pour les champs texte.
   final VibeSpeechTranscriber? speechTranscriber;
@@ -321,6 +325,11 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
     widget.onSubmit(_collectAnswers());
   }
 
+  void _handleAskMore() {
+    if (widget.sending || widget.onAskMore == null) return;
+    widget.onAskMore!(_collectAnswers());
+  }
+
   Widget _buildQuestionControl(BuildContext context, VibeAskUserQuestion q) {
     final scheme = Theme.of(context).colorScheme;
     switch (q.type) {
@@ -570,6 +579,20 @@ class _VibeAskUserCardState extends State<VibeAskUserCard> {
                     child: const Text('Passer'),
                   ),
                 ),
+                if (widget.onAskMore != null)
+                  Tooltip(
+                    message:
+                        'Valider ces réponses et poser 2 à 4 questions complémentaires avant de générer',
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('vibe-ask-user-more'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: widget.sending ? null : _handleAskMore,
+                      icon: const Icon(Icons.add_comment_outlined, size: 15),
+                      label: const Text('+ de questions'),
+                    ),
+                  ),
                 FilledButton.icon(
                   key: const ValueKey('vibe-ask-user-submit'),
                   style: FilledButton.styleFrom(

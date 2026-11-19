@@ -347,6 +347,9 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<Map<String, String>>? _loadingCatalog;
   int _activeMutations = 0;
 
+  /// Indique si au moins une écriture ou mutation exclusive est en cours.
+  bool get hasActiveMutations => _activeMutations > 0;
+
   /// Registers an application-provided repository without writing it to disk.
   void registerRepository(RepositoryImpl repository) {
     if (_memoryRepositories.containsKey(repository.id)) {

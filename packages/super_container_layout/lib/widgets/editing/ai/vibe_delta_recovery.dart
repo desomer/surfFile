@@ -623,6 +623,8 @@ abstract final class VibeDeltaRecovery {
         previous.backgroundOpacity != next.backgroundOpacity ||
         previous.windowOpacity != next.windowOpacity ||
         previous.windowEffect != next.windowEffect ||
+        previous.bindingDebounceMs != next.bindingDebounceMs ||
+        previous.bindingSaveOnBlurOnly != next.bindingSaveOnBlurOnly ||
         !_samePageList(previous.pageCatalog.pages, next.pageCatalog.pages) ||
         previous.pageCatalog.homePageId != next.pageCatalog.homePageId) {
       return true;

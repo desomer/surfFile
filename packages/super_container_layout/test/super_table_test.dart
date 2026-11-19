@@ -326,6 +326,61 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Editing a SuperValue inside a SuperTable row preserves focus after debounced repository save',
+    (tester) async {
+      await mount(
+        tester,
+        SuperTable(
+          id: 'clients-table-focus',
+          config: SuperTableConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            columns: const [
+              SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 200),
+              SuperTableColumnConfig(id: 'col_1', title: 'Ville', width: 200),
+            ],
+            placements: const {
+              'cell:col_0': ['cell:col_0'],
+              'cell:col_1': ['cell:col_1'],
+            },
+          ),
+          cells: const {
+            'col_0': SuperValue(
+              id: 'val-nom',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                binding: JsonTextBinding(path: 'nom'),
+              ),
+            ),
+            'col_1': SuperValue(
+              id: 'val-ville-input',
+              config: SuperValueConfig(
+                mode: SuperValueMode.input,
+                binding: JsonTextBinding(path: 'ville'),
+              ),
+            ),
+          },
+        ),
+      );
+
+      final secondRowInput = find.byType(TextField).at(1);
+      final focusBefore = tester.widget<TextField>(secondRowInput).focusNode!;
+      await tester.tap(secondRowInput);
+      await tester.pumpAndSettle();
+      expect(focusBefore.hasFocus, isTrue);
+
+      await real(
+        tester,
+        () => tester.enterText(secondRowInput, 'Marseille'),
+        save: true,
+      );
+
+      final focusAfter = tester.widget<TextField>(secondRowInput).focusNode!;
+      expect(identical(focusBefore, focusAfter), isTrue);
+      expect(focusAfter.hasFocus, isTrue);
+    },
+  );
+
   test('EditorPageGraph duplicates SuperTable and its column slots', () {
     final registry = Registry()..bootstrap();
     final source = Appearance(

@@ -15,9 +15,12 @@ import '../../../models/super_text_field_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
+import '../../../theme/appearance.dart';
+import '../../appearance/appearance_scope.dart';
 import '../../components/super_choice.dart';
 import '../../components/super_text_field.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
+import '../repositories/binding_save_timing_controls.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../styles/style_editor_panel.dart';
@@ -560,6 +563,74 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         '(ou booléens) à la saisie ; les indices de tableau doivent déjà exister. '
         'Les modifications sont enregistrées automatiquement dans le JSON.',
       ),
+      if (_bound &&
+          _draft.mode == SuperValueMode.input &&
+          _draft.kind.isText) ...[
+        Builder(
+          builder: (context) {
+            final global = AppearanceScope.of(context);
+            final hasCustom =
+                _draft.bindingDebounceMs != null ||
+                _draft.bindingSaveOnBlurOnly != null;
+            final globalSummary = global.bindingSaveOnBlurOnly
+                ? 'à la perte de focus'
+                : '${global.bindingDebounceMs} ms';
+            final effectiveDebounceMs =
+                _draft.bindingDebounceMs ?? global.bindingDebounceMs;
+            final effectiveBlurOnly =
+                _draft.bindingSaveOnBlurOnly ?? global.bindingSaveOnBlurOnly;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                EditorSwitchTile(
+                  tileKey: const ValueKey(
+                    'super-value-setting-custom-save-timing',
+                  ),
+                  title: 'Personnaliser le délai d’enregistrement',
+                  subtitle: 'Réglage global : $globalSummary',
+                  value: hasCustom,
+                  onChanged: (custom) => setState(() {
+                    _draft = custom
+                        ? _draft.copyWith(
+                            bindingDebounceMs: global.bindingDebounceMs,
+                            bindingSaveOnBlurOnly:
+                                global.bindingSaveOnBlurOnly,
+                          )
+                        : _draft.copyWith(
+                            inheritBindingDebounceMs: true,
+                            inheritBindingSaveOnBlurOnly: true,
+                          );
+                  }),
+                ),
+                if (hasCustom)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: BindingSaveTimingControls(
+                      keyPrefix: 'super-value-save-timing',
+                      debounceMs: effectiveDebounceMs,
+                      saveOnBlurOnly: effectiveBlurOnly,
+                      onDebounceMsChanged: (ms) => setState(
+                        () => _draft = _draft.copyWith(bindingDebounceMs: ms),
+                      ),
+                      onSaveOnBlurOnlyChanged: (blurOnly) => setState(
+                        () => _draft = _draft.copyWith(
+                          bindingSaveOnBlurOnly: blurOnly,
+                        ),
+                      ),
+                      onReset: () => setState(
+                        () => _draft = _draft.copyWith(
+                          bindingDebounceMs:
+                              Appearance.defaultBindingDebounceMs,
+                          bindingSaveOnBlurOnly: false,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
       if (_draft.obscureText && _bound)
         const Text(
           'Attention : le mot de passe sera enregistré en clair sur disque.',

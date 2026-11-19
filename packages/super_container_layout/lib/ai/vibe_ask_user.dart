@@ -38,6 +38,14 @@ enum VibeQuestioningLevel {
     tooltip:
         '4 à 6 questions à toute étape pour cadrer disposition, champs, style et interactions',
     maxQuestions: 6,
+  ),
+
+  /// Questionnement exhaustif : 6 à 10 questions quelle que soit l'étape pour couvrir l'ensemble des détails fonctionnels, visuels et d'interaction.
+  exhaustive(
+    label: 'Exhaustif',
+    tooltip:
+        '6 à 10 questions à toute étape pour cadrer structure, données, style, états et interactions',
+    maxQuestions: 10,
   );
 
   /// Construit un niveau de questionnement Vibe IA.
@@ -46,6 +54,9 @@ enum VibeQuestioningLevel {
     required this.tooltip,
     required this.maxQuestions,
   });
+
+  /// Nombre maximal de questions ciblées émises lors d'une demande explicite « + de questions ».
+  static const int followUpMaxQuestions = 4;
 
   /// Libellé court affiché à côté du slider.
   final String label;
@@ -56,14 +67,24 @@ enum VibeQuestioningLevel {
   /// Nombre maximal de questions autorisées pour ce cran (`0` désactive `askUser`).
   final int maxQuestions;
 
-  /// Résout le [VibeQuestioningLevel] correspondant à une valeur numérique de slider (`0..3`).
+  /// Résout le [VibeQuestioningLevel] correspondant à une valeur numérique de slider (`0..4`).
   static VibeQuestioningLevel fromSliderValue(double value) {
     final idx = value.round().clamp(0, values.length - 1);
     return values[idx];
   }
 
   /// Génère la consigne dynamique de tour sans modifier l'instruction système mise en cache.
-  String promptDirective({required bool afterAskUserReply}) {
+  String promptDirective({
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+  }) {
+    if (forceFollowUpQuestions) {
+      return 'NIVEAU DE QUESTIONNEMENT : + de questions demandé '
+          '(2 à $followUpMaxQuestions questions complémentaires OBLIGATOIRES) — '
+          'Pose impérativement 2 à $followUpMaxQuestions nouvelles questions ciblées et non redondantes '
+          'avec "default" via "askUser" (sans répéter les questions déjà posées dans la conversation) '
+          'pour approfondir la demande ou affiner l’écran actuel, et renvoie "vibe": null sur ce tour.';
+    }
     if (afterAskUserReply) {
       return 'NIVEAU DE QUESTIONNEMENT : Réponses déjà fournies — '
           'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
@@ -71,25 +92,31 @@ enum VibeQuestioningLevel {
     }
     return switch (this) {
       VibeQuestioningLevel.none =>
-        'NIVEAU DE QUESTIONNEMENT : 0/3 (Aucun) — '
+        'NIVEAU DE QUESTIONNEMENT : 0/4 (Aucun) — '
             'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
             'Génère directement le patch "vibe" en faisant des hypothèses raisonnables '
             '(ou réponds par "message" si c’est une pure question).',
       VibeQuestioningLevel.light =>
-        'NIVEAU DE QUESTIONNEMENT : 1/3 (Léger, max 2 questions) — '
+        'NIVEAU DE QUESTIONNEMENT : 1/4 (Léger, max 2 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 1 à 2 questions courtes avec "default" via "askUser" pour clarifier la demande '
             'avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.balanced =>
-        'NIVEAU DE QUESTIONNEMENT : 2/3 (Équilibré, max 4 questions) — '
+        'NIVEAU DE QUESTIONNEMENT : 2/4 (Équilibré, max 4 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 2 à 4 questions courtes avec "default" via "askUser" pour clarifier les choix '
             'fonctionnels, de disposition ou de style avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.thorough =>
-        'NIVEAU DE QUESTIONNEMENT : 3/3 (Approfondi, 4 à 6 questions) — '
+        'NIVEAU DE QUESTIONNEMENT : 3/4 (Approfondi, 4 à 6 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 4 à 6 questions structurées avec "default" via "askUser" (couvrant disposition, '
             'données/champs, style visuel et interactions) pour cadrer le besoin avant de générer "vibe" '
+            '(ou réponds par "message" si c’est une pure question d’information).',
+      VibeQuestioningLevel.exhaustive =>
+        'NIVEAU DE QUESTIONNEMENT : 4/4 (Exhaustif, 6 à 10 questions) — '
+            'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
+            'pose 6 à 10 questions complètes et structurées avec "default" via "askUser" (couvrant architecture, '
+            'données/liaisons, hiérarchie visuelle, états de surface, actions et cas limites) avant de générer "vibe" '
             '(ou réponds par "message" si c’est une pure question d’information).',
     };
   }
@@ -620,7 +647,7 @@ class VibeAskUserRequest {
       );
 
   /// Nombre maximal de questions retenues dans un même questionnaire.
-  static const int maxQuestions = 6;
+  static const int maxQuestions = 10;
 
   /// Liste immuable des questions de clarification (au plus [maxQuestions]).
   final List<VibeAskUserQuestion> questions;
@@ -757,6 +784,17 @@ class VibeAskUserRequest {
         '$summary\n'
         'Génère maintenant directement le patch "vibe" correspondant '
         'sans poser de nouvelles questions ("askUser": null).';
+  }
+
+  /// Formate le message structuré demandant une série complémentaire de questions après validation de [answers].
+  String formatMoreQuestionsPromptReply(Map<String, Object?> answers) {
+    final summary = formatDisplaySummary(answers);
+    return 'Réponses enregistrées pour cette étape :\n'
+        '$summary\n'
+        'Ne génère PAS encore le patch "vibe" ("vibe": null obligatoire) : '
+        'pose maintenant 2 à ${VibeQuestioningLevel.followUpMaxQuestions} nouvelles questions '
+        'complémentaires et non redondantes avec "default" via "askUser" '
+        'pour approfondir les points restants.';
   }
 
   /// Sérialise le questionnaire dans une carte JSON compatible avec [tryFromJson].

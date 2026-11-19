@@ -10,6 +10,7 @@ import 'package:super_container_layout/services/appearance/appearance_store.dart
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_task_completion_alert.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
@@ -973,6 +974,115 @@ void main() {
       final reExpandedRect = tester.getRect(chatFinder);
       expect(reExpandedRect.width, 1056);
       expect(reExpandedRect.center.dx, 600);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'affiche une pastille et un toast visuel sur la bannière lorsqu’une tâche IA se termine chat fermé',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+      addTearDown(VibeTaskCompletionController.instance.dismiss);
+
+      await pumpWithAppearance(tester, mode, appearance);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-badge')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-toast')),
+        findsNothing,
+      );
+
+      VibeTaskCompletionController.instance.notifyCompleted(
+        outcome: VibeTaskOutcome.success,
+        title: 'Tâche IA terminée',
+        detail: 'Écran généré avec succès.',
+        playSound: false,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-badge')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-toast')),
+        findsOneWidget,
+      );
+      expect(find.text('Tâche IA terminée'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('vibe-chat-completion-dismiss')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-badge')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-ai-toast')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'edit banner dial adjusts global binding debounce and blur-only save mode',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+
+      await pumpWithAppearance(tester, mode, appearance);
+      await tester.pumpAndSettle();
+
+      final button = find.byKey(
+        const ValueKey('style-edit-banner-save-timing'),
+      );
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('binding-save-timing-dialog')),
+        findsOneWidget,
+      );
+      final slider = find.byKey(const ValueKey('global-save-timing-slider'));
+      await tester.drag(slider, const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(appearance.value.bindingDebounceMs, greaterThan(350));
+      expect(appearance.value.bindingDebounceMs % 50, 0);
+
+      await tester.tap(
+        find.byKey(const ValueKey('global-save-timing-blur-only')),
+      );
+      await tester.pumpAndSettle();
+      expect(appearance.value.bindingSaveOnBlurOnly, isTrue);
+      expect(
+        tester.widget<Slider>(slider).onChanged,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('global-save-timing-reset')));
+      await tester.pumpAndSettle();
+      expect(appearance.value.bindingDebounceMs, 350);
+      expect(appearance.value.bindingSaveOnBlurOnly, isFalse);
+
+      await tester.tap(find.byKey(const ValueKey('binding-save-timing-close')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('binding-save-timing-dialog')),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );

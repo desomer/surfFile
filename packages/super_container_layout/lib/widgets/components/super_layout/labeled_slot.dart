@@ -666,6 +666,19 @@ class _LabeledSlotState extends State<LabeledSlot> {
                   child: OverlayPortal.overlayChildLayoutBuilder(
                     controller: _resizeOverlay,
                     overlayChildBuilder: (context, info) {
+                      if (info.childPaintTransform.isZero() ||
+                          !info.childSize.isFinite) {
+                        return const SizedBox.shrink();
+                      }
+                      final overlay = Overlay.maybeOf(
+                        this.context,
+                      )?.context.findRenderObject();
+                      if (isEditorOverlaySourceOffstage(
+                        this.context,
+                        stopAt: overlay,
+                      )) {
+                        return const SizedBox.shrink();
+                      }
                       final handles = Stack(
                         clipBehavior: Clip.none,
                         children: [
@@ -712,11 +725,13 @@ class _LabeledSlotState extends State<LabeledSlot> {
                         ],
                       );
                       if (EditorZoomScope.contains(context)) {
+                        final rect = MatrixUtils.transformRect(
+                          info.childPaintTransform,
+                          Offset.zero & info.childSize,
+                        );
+                        if (!rect.isFinite) return const SizedBox.shrink();
                         return Positioned.fromRect(
-                          rect: MatrixUtils.transformRect(
-                            info.childPaintTransform,
-                            Offset.zero & info.childSize,
-                          ),
+                          rect: rect,
                           child: handles,
                         );
                       }

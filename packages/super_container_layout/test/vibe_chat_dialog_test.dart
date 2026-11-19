@@ -2072,7 +2072,7 @@ void main() {
 
       // Tentative 1 rejetée car askUser est interdit au cran 0, tentative 2 appliquée !
       expect(callIndex, 2);
-      expect(turnPrompts[0], contains('0/3 (Aucun)'));
+      expect(turnPrompts[0], contains('0/4 (Aucun)'));
       expect(turnPrompts[1], contains('CORRECTION REQUISE'));
       expect(
         turnPrompts[1],
@@ -2096,7 +2096,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
       await tester.pumpAndSettle();
 
-      expect(turnPrompts[2], contains('1/3 (Léger, max 2 questions)'));
+      expect(turnPrompts[2], contains('1/4 (Léger, max 2 questions)'));
       expect(find.text('Question 1'), findsOneWidget);
       expect(find.text('Question 2'), findsOneWidget);
       expect(find.text('Question 3 en trop'), findsNothing);
@@ -2115,7 +2115,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
       await tester.pumpAndSettle();
 
-      expect(turnPrompts[3], contains('3/3 (Approfondi, 4 à 6 questions)'));
+      expect(turnPrompts[3], contains('3/4 (Approfondi, 4 à 6 questions)'));
       final skipButtons = find.byKey(const ValueKey('vibe-ask-user-skip'));
       await tester.ensureVisible(skipButtons.first);
       await tester.tap(skipButtons.first);
@@ -5367,6 +5367,464 @@ void main() {
       },
     );
   });
+
+  group('+ de questions et niveau Exhaustif', () {
+    testWidgets(
+      'le bouton « + de questions » de VibeAskUserCard enchaîne une série complémentaire plafonnée à 4 questions avant génération',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final prompts = <String>[];
+        var turn = 0;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.exhaustive,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      prompts.add(prompt);
+                      turn++;
+                      if (turn == 1) {
+                        return jsonEncode({
+                          'message': 'Première série exhaustive :',
+                          'askUser': {
+                            'questions': [
+                              for (var i = 1; i <= 8; i++)
+                                {
+                                  'id': 'q_$i',
+                                  'title': 'Question initiale $i',
+                                  'type': 'single',
+                                  'options': ['Option A', 'Option B'],
+                                  'default': 'Option A',
+                                },
+                            ],
+                          },
+                          'vibe': null,
+                        });
+                      }
+                      if (turn == 2) {
+                        return jsonEncode({
+                          'message': 'Questions complémentaires :',
+                          'askUser': {
+                            'questions': [
+                              for (var i = 1; i <= 6; i++)
+                                {
+                                  'id': 'more_$i',
+                                  'title': 'Question complémentaire $i',
+                                  'type': 'boolean',
+                                  'default': true,
+                                },
+                            ],
+                          },
+                          'vibe': null,
+                        });
+                      }
+                      return jsonEncode({
+                        'message': 'Écran généré après approfondissement.',
+                        'vibe': {
+                          'components': {
+                            'mainLayout': {
+                              'type': 'layout',
+                              'slotLabels': {'done-label': 'Titre'},
+                              'placements': {
+                                'center': [
+                                  {
+                                    'id': 'done-label',
+                                    'type': 'registry:Value',
+                                  },
+                                ],
+                              },
+                            },
+                            'done-label': {
+                              'type': 'value',
+                              'text': 'Approfondi OK',
+                            },
+                          },
+                          'usages': {
+                            'done-label': {
+                              'kind': 'explanation',
+                              'translationKey': 'doneTitle',
+                            },
+                          },
+                        },
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Le cran Exhaustif (4/4) accepte plus de 6 questions (ici 8).
+        expect(find.text('Exhaustif'), findsOneWidget);
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Crée un CRM complet.',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(prompts[0], contains('4/4 (Exhaustif, 6 à 10 questions)'));
+        expect(find.text('Question initiale 1'), findsOneWidget);
+        expect(find.text('Question initiale 8'), findsOneWidget);
+
+        // Clic sur « + de questions » sur la carte : enregistre les choix et demande 2 à 4 questions.
+        final moreBtn = find.byKey(const ValueKey('vibe-ask-user-more'));
+        await tester.ensureVisible(moreBtn);
+        await tester.tap(moreBtn);
+        await tester.pumpAndSettle();
+
+        expect(
+          prompts[1],
+          contains(
+            '+ de questions demandé (2 à 4 questions complémentaires OBLIGATOIRES)',
+          ),
+        );
+        expect(prompts[1], contains('Réponses enregistrées pour cette étape'));
+        expect(
+          find.text('Questions complémentaires demandées'),
+          findsOneWidget,
+        );
+        // Plafonné à 4 questions complémentaires même si le modèle en a renvoyé 6.
+        expect(find.text('Question complémentaire 1'), findsOneWidget);
+        expect(find.text('Question complémentaire 4'), findsOneWidget);
+        expect(find.text('Question complémentaire 5'), findsNothing);
+
+        // Puis clic sur « Générer » applique le patch avec blocage anti-boucle.
+        final submitBtn = find.byKey(const ValueKey('vibe-ask-user-submit'));
+        await tester.ensureVisible(submitBtn);
+        await tester.tap(submitBtn);
+        await tester.pumpAndSettle();
+
+        expect(prompts[2], contains('Réponses déjà fournies — INTERDICTION'));
+        expect(
+          appearance.value.valueComponent('done-label').initialText,
+          'Approfondi OK',
+        );
+        // Après génération, la bulle assistant expose l'action « + de questions ».
+        expect(
+          find.byKey(const ValueKey('vibe-message-more-questions')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'les boutons « + de questions » de la barre de saisie et du message assistant fonctionnent même avec le slider sur Aucun et relancent si askUser manque',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final prompts = <String>[];
+        var callCount = 0;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      prompts.add(prompt);
+                      callCount++;
+                      if (callCount == 1) {
+                        // Omet askUser au 1er essai : doit être rejeté et relancé !
+                        return jsonEncode({
+                          'message': 'Pas de questions.',
+                          'vibe': null,
+                        });
+                      }
+                      if (callCount == 2) {
+                        return jsonEncode({
+                          'message': 'Précisons votre demande :',
+                          'askUser': {
+                            'questions': [
+                              {
+                                'id': 'style',
+                                'title': 'Style de tableau ?',
+                                'type': 'single',
+                                'options': ['Compact', 'Aéré'],
+                                'default': 'Compact',
+                              },
+                            ],
+                          },
+                          'vibe': null,
+                        });
+                      }
+                      if (callCount == 3) {
+                        return jsonEncode({
+                          'message': 'Tableau créé.',
+                          'vibe': {
+                            'components': {
+                              'mainLayout': {
+                                'type': 'layout',
+                                'slotLabels': {'tbl-title': 'Titre'},
+                                'placements': {
+                                  'center': [
+                                    {
+                                      'id': 'tbl-title',
+                                      'type': 'registry:Value',
+                                    },
+                                  ],
+                                },
+                              },
+                              'tbl-title': {
+                                'type': 'value',
+                                'text': 'Tableau Compact',
+                              },
+                            },
+                            'usages': {
+                              'tbl-title': {
+                                'kind': 'explanation',
+                                'translationKey': 'tblTitle',
+                              },
+                            },
+                          },
+                        });
+                      }
+                      return jsonEncode({
+                        'message': 'Affinons le tableau créé :',
+                        'askUser': {
+                          'questions': [
+                            {
+                              'id': 'export',
+                              'title': 'Ajouter un export CSV ?',
+                              'type': 'boolean',
+                              'default': true,
+                            },
+                          ],
+                        },
+                        'vibe': null,
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Aucun'), findsOneWidget);
+        // Sur le message d'accueil initial, pas de puce vides sous la bulle.
+        expect(
+          find.byKey(const ValueKey('vibe-message-more-questions')),
+          findsNothing,
+        );
+
+        // Saisit un brouillon et clique sur « + de questions » dans la barre de saisie.
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Ajoute un tableau de factures',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-ask-more')));
+        await tester.pumpAndSettle();
+
+        // Appel 1 rejeté (pas d'askUser), appel 2 renvoie la carte !
+        expect(callCount, 2);
+        expect(prompts[1], contains('CORRECTION REQUISE'));
+        expect(
+          find.byKey(const ValueKey('vibe-ask-user-card')),
+          findsOneWidget,
+        );
+        expect(find.text('Style de tableau ?'), findsOneWidget);
+
+        // Valide la carte -> génère le tableau.
+        await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
+        await tester.pumpAndSettle();
+        expect(
+          appearance.value.valueComponent('tbl-title').initialText,
+          'Tableau Compact',
+        );
+
+        // Clique ensuite sur « + de questions » directement sous la réponse de l'assistant.
+        final msgMoreBtn = find.byKey(
+          const ValueKey('vibe-message-more-questions'),
+        );
+        expect(msgMoreBtn, findsOneWidget);
+        await tester.ensureVisible(msgMoreBtn);
+        await tester.tap(msgMoreBtn);
+        await tester.pumpAndSettle();
+
+        expect(callCount, 4);
+        expect(find.text('Ajouter un export CSV ?'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'déclenche une alerte sonore et un retour visuel à la fin d’une tâche IA (succès, erreur et mode muet)',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final soundPlayer = _RecordingVibeSoundPlayer();
+        final completionController = VibeTaskCompletionController();
+        addTearDown(completionController.dispose);
+
+        var callCount = 0;
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    completionController: completionController,
+                    soundPlayer: soundPlayer,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async {
+                      callCount++;
+                      if (callCount == 1) {
+                        return jsonEncode({
+                          'message': 'Carte ajoutée.',
+                          'vibe': {'accent': '#10B981'},
+                        });
+                      }
+                      if (callCount == 2) {
+                        return 'réponse invalide non JSON';
+                      }
+                      return jsonEncode({
+                        'message': 'Réponse silencieuse prête.',
+                        'vibe': null,
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('vibe-chat-completion-alert')),
+          findsNothing,
+        );
+
+        // 1. Tâche réussie -> alerte sonore success + bandeau + badge d'en-tête.
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Passe en vert émeraude',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(soundPlayer.outcomes, [VibeTaskOutcome.success]);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-completion-alert')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-chat-header-completion-badge')),
+          findsOneWidget,
+        );
+        expect(find.text('Tâche IA terminée'), findsOneWidget);
+        expect(find.text('Carte ajoutée.'), findsAtLeastNWidgets(1));
+
+        // Fermeture manuelle de l'alerte visuelle.
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-completion-dismiss')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('vibe-chat-completion-alert')),
+          findsNothing,
+        );
+
+        // 2. Tâche en erreur -> alerte sonore error + bandeau erreur.
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Provoque une erreur',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(soundPlayer.outcomes, [
+          VibeTaskOutcome.success,
+          VibeTaskOutcome.error,
+        ]);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-completion-alert')),
+          findsOneWidget,
+        );
+        expect(find.text('Tâche IA échouée'), findsOneWidget);
+
+        // 3. Coupure du son via le bouton de l'en-tête -> la 3e tâche n'émet aucun son
+        // tout en conservant le retour visuel.
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-sound-toggle')));
+        await tester.pumpAndSettle();
+        expect(completionController.soundEnabled, isFalse);
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Simple question',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(soundPlayer.outcomes, [
+          VibeTaskOutcome.success,
+          VibeTaskOutcome.error,
+        ]);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-completion-alert')),
+          findsOneWidget,
+        );
+        expect(find.text('Réponse IA prête'), findsOneWidget);
+      },
+    );
+  });
+}
+
+class _RecordingVibeSoundPlayer extends VibeTaskSoundPlayer {
+  final List<VibeTaskOutcome> outcomes = <VibeTaskOutcome>[];
+
+  @override
+  Future<void> play(VibeTaskOutcome outcome) async {
+    outcomes.add(outcome);
+  }
 }
 
 class _FakeVibeSpeechTranscriber extends VibeSpeechTranscriber {

@@ -186,16 +186,26 @@ class _SuperChoiceState extends State<SuperChoice> {
       return;
     }
 
-    final cached = store.peekArray(
-      resolvedBinding.repositoryId!,
-      resolvedBinding.path,
-    );
-    if (cached != null) {
-      _dynamicOptions = choice.extractOptionsFromJsonArray(cached);
-      _optionsError = null;
+    var seededFromCache = false;
+    if (!store.hasActiveMutations) {
+      final cached = store.peekArray(
+        resolvedBinding.repositoryId!,
+        resolvedBinding.path,
+      );
+      if (cached != null) {
+        try {
+          _dynamicOptions = choice.extractOptionsFromJsonArray(cached);
+          _optionsError = null;
+          seededFromCache = true;
+        } on FormatException {
+          seededFromCache = false;
+        }
+      }
     }
 
-    _reloadDynamicOptions();
+    if (!seededFromCache) {
+      _reloadDynamicOptions();
+    }
   }
 
   void _reloadDynamicOptions() {

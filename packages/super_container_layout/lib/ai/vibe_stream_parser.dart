@@ -290,6 +290,8 @@ class VibeIncrementalStreamParser {
     'backgroundOpacity',
     'windowOpacity',
     'windowEffect',
+    'bindingDebounceMs',
+    'bindingSaveOnBlurOnly',
     'pageCatalog',
   };
 

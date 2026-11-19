@@ -240,14 +240,19 @@ extension NativeComponentEditorSlots on NativeComponentEditorState {
         !zoneBox.hasSize) {
       return null;
     }
-    Rect bounds(RenderBox box) => MatrixUtils.transformRect(
-      box.getTransformTo(layout),
-      Offset.zero & box.size,
-    );
+    Rect? bounds(RenderBox box) {
+      final transform = box.getTransformTo(layout);
+      if (transform.isZero()) return null;
+      final rect = MatrixUtils.transformRect(transform, Offset.zero & box.size);
+      return rect.isFinite ? rect : null;
+    }
+    final zoneRect = bounds(zoneBox);
+    final slotRect = bounds(slotBox);
+    if (zoneRect == null || slotRect == null) return null;
     return (
       layout: layout.size,
-      zone: bounds(zoneBox),
-      slot: bounds(slotBox),
+      zone: zoneRect,
+      slot: slotRect,
     );
   }
 

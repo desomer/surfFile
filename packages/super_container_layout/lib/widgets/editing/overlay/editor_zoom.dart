@@ -1147,15 +1147,20 @@ class EditorZoomController {
       return wrapsContent ? Offset.zero & content.size : null;
     }
     final target = targetContext.findRenderObject();
-    if (target == null || !target.attached) {
+    if (target == null ||
+        !target.attached ||
+        isEditorOverlaySourceOffstage(targetContext, stopAt: content)) {
       return null;
     }
     if (target is RenderBox) {
-      if (!target.hasSize) return null;
-      return MatrixUtils.transformRect(
-        target.getTransformTo(content),
+      if (!target.hasSize || !target.size.isFinite) return null;
+      final transform = target.getTransformTo(content);
+      if (transform.isZero()) return null;
+      final rect = MatrixUtils.transformRect(
+        transform,
         Offset.zero & target.size,
       );
+      return rect.isFinite ? rect : null;
     }
     if (target is RenderSliver) {
       final geom = target.geometry;
@@ -1164,10 +1169,13 @@ class EditorZoomController {
           ? Size(target.constraints.crossAxisExtent, geom.paintExtent)
           : Size(geom.paintExtent, target.constraints.crossAxisExtent);
       if (size.isEmpty || !size.isFinite) return null;
-      return MatrixUtils.transformRect(
-        target.getTransformTo(content),
+      final transform = target.getTransformTo(content);
+      if (transform.isZero()) return null;
+      final rect = MatrixUtils.transformRect(
+        transform,
         Offset.zero & size,
       );
+      return rect.isFinite ? rect : null;
     }
     return null;
   }

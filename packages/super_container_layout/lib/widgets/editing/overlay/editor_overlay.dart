@@ -1,10 +1,41 @@
 /// Superposition visuelle du mode édition pour un [SuperLayout].
 library;
 
+import 'package:flutter/rendering.dart'
+    show RenderOffstage, RenderSliverOffstage;
 import 'package:material_ui/material_ui.dart';
 
 import 'editor_zoom.dart';
 import '../slots/editor_slot.dart';
+
+/// Indique si [renderObject] se trouve dans un sous-arbre masqué par un
+/// [RenderOffstage] ou un [RenderSliverOffstage] actif avant d'atteindre [stopAt].
+bool isRenderObjectOffstage(
+  RenderObject? renderObject, {
+  RenderObject? stopAt,
+}) {
+  if (renderObject == null || !renderObject.attached) return true;
+  for (
+    RenderObject? node = renderObject;
+    node != null && !identical(node, stopAt);
+    node = node.parent
+  ) {
+    if ((node is RenderOffstage && node.offstage) ||
+        (node is RenderSliverOffstage && node.offstage)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Indique si [sourceContext] se trouve dans un sous-arbre masqué par un
+/// [Offstage] ou un [SliverOffstage] actif avant d'atteindre [stopAt].
+bool isEditorOverlaySourceOffstage(
+  BuildContext sourceContext, {
+  RenderObject? stopAt,
+}) =>
+    !sourceContext.mounted ||
+    isRenderObjectOffstage(sourceContext.findRenderObject(), stopAt: stopAt);
 
 /// Hides editing controls without changing content geometry or selection.
 class EditorOverlayVisibility extends StatelessWidget {
@@ -69,10 +100,18 @@ class _EditorOverlayState extends State<EditorOverlay> {
       child: OverlayPortal.overlayChildLayoutBuilder(
         controller: _controller,
         overlayChildBuilder: (context, info) {
+          if (info.childPaintTransform.isZero() || !info.childSize.isFinite) {
+            return const SizedBox.shrink();
+          }
+          final overlay = Overlay.of(this.context).context.findRenderObject();
+          if (isEditorOverlaySourceOffstage(this.context, stopAt: overlay)) {
+            return const SizedBox.shrink();
+          }
           final rect = MatrixUtils.transformRect(
             info.childPaintTransform,
             Offset.zero & info.childSize,
           );
+          if (!rect.isFinite) return const SizedBox.shrink();
           final zoomController = EditorZoomScope.controllerOf(this.context);
           final controls = ExcludeSemantics(
             child: Listener(
@@ -102,16 +141,20 @@ class _EditorOverlayState extends State<EditorOverlay> {
             ),
           );
           final viewport = widget.clipKey?.currentContext?.findRenderObject();
-          final overlay = Overlay.of(this.context).context.findRenderObject();
           if (viewport is RenderBox &&
               viewport.hasSize &&
               overlay is RenderBox) {
+            final viewportTransform = viewport.getTransformTo(overlay);
+            if (viewportTransform.isZero()) return const SizedBox.shrink();
             final clip = MatrixUtils.transformRect(
-              viewport.getTransformTo(overlay),
+              viewportTransform,
               Offset.zero & viewport.size,
             );
+            if (!clip.isFinite) return const SizedBox.shrink();
             final visible = rect.intersect(clip);
-            if (visible.isEmpty) return const SizedBox.shrink();
+            if (visible.isEmpty || !visible.isFinite) {
+              return const SizedBox.shrink();
+            }
             return Positioned.fromRect(
               rect: visible,
               child: ClipRect(

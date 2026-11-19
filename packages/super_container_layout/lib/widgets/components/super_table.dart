@@ -264,17 +264,35 @@ class _SuperTableState extends State<SuperTable> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(template);
     _listen([?_selection, ...source.arrays]);
-    if (binding != null && store != null) {
+    var seededFromCache = false;
+    if (binding != null && store != null && !store.hasActiveMutations) {
       final cached = store.peekArray(binding.repositoryId!, binding.path);
       if (cached != null) {
         _items = cached;
         _error = null;
         _loading = false;
+        seededFromCache = true;
+        final selected = _selection?.indexFor(source.parents);
+        if (selected != null && selected >= cached.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _selection?.clear();
+          });
+        }
       }
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _reload();
-    });
+    if (binding == null || store == null) {
+      _items = null;
+      _loading = false;
+      _error =
+          source.error ??
+          (store == null && source.unselected
+              ? 'Service de repositories indisponible.'
+              : null);
+    } else if (!seededFromCache) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reload();
+      });
+    }
   }
 
   Future<void> _reload() async {

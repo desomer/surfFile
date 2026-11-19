@@ -2,6 +2,39 @@
 part of 'super_layout.dart';
 
 extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
+  ({Size layout, Rect zone, Rect slot})? _measureSlotBounds(
+    SlotImplementation slot,
+  ) {
+    final layout = context.findRenderObject();
+    final cellBox = _slotFocusKeys[slot.id]?.currentContext?.findRenderObject();
+    final slotBox = _config.value.positioning == SuperLayoutPositioning.grid
+        ? _gridSlotSizeKeys[slot.id]?.currentContext?.findRenderObject()
+        : cellBox;
+    final zone = _displayZoneOf(_config.value, slot.id);
+    final zoneBox = _config.value.positioning == SuperLayoutPositioning.grid
+        ? cellBox
+        : _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
+    if (layout is! RenderBox ||
+        !layout.hasSize ||
+        slotBox is! RenderBox ||
+        !slotBox.hasSize ||
+        zoneBox is! RenderBox ||
+        !zoneBox.hasSize) {
+      return null;
+    }
+    Rect? bounds(RenderBox box) {
+      final transform = box.getTransformTo(layout);
+      if (transform.isZero()) return null;
+      final rect = MatrixUtils.transformRect(transform, Offset.zero & box.size);
+      return rect.isFinite ? rect : null;
+    }
+
+    final zoneRect = bounds(zoneBox);
+    final slotRect = bounds(slotBox);
+    if (zoneRect == null || slotRect == null) return null;
+    return (layout: layout.size, zone: zoneRect, slot: slotRect);
+  }
+
   SlotSizeDimensionDelegate _buildSlotSizeDelegate(
     SlotImplementation slot, {
     SuperLayoutConfig? initialOverride,
@@ -19,35 +52,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
       changes: _config,
       onLabelChanged: (label) =>
           _update(_config.value.withSlotLabel(slot.id, label)),
-      measure: () {
-        final layout = context.findRenderObject();
-        final cellBox = _slotFocusKeys[slot.id]?.currentContext
-            ?.findRenderObject();
-        final slotBox = _config.value.positioning == SuperLayoutPositioning.grid
-            ? _gridSlotSizeKeys[slot.id]?.currentContext?.findRenderObject()
-            : cellBox;
-        final zone = _displayZoneOf(_config.value, slot.id);
-        final zoneBox = _config.value.positioning == SuperLayoutPositioning.grid
-            ? cellBox
-            : _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
-        if (layout is! RenderBox ||
-            !layout.hasSize ||
-            slotBox is! RenderBox ||
-            !slotBox.hasSize ||
-            zoneBox is! RenderBox ||
-            !zoneBox.hasSize) {
-          return null;
-        }
-        Rect bounds(RenderBox box) => MatrixUtils.transformRect(
-          box.getTransformTo(layout),
-          Offset.zero & box.size,
-        );
-        return (
-          layout: layout.size,
-          zone: bounds(zoneBox),
-          slot: bounds(slotBox),
-        );
-      },
+      measure: () => _measureSlotBounds(slot),
       onApply: (dimensions, useLegacyPixels) => _applySlotDimensions(
         slot,
         dimensions,
@@ -93,35 +98,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
       target: _slotFocusKeys[slot.id]?.currentContext,
       onLabelChanged: (label) =>
           _update(_config.value.withSlotLabel(slot.id, label)),
-      measure: () {
-        final layout = context.findRenderObject();
-        final cellBox = _slotFocusKeys[slot.id]?.currentContext
-            ?.findRenderObject();
-        final slotBox = _config.value.positioning == SuperLayoutPositioning.grid
-            ? _gridSlotSizeKeys[slot.id]?.currentContext?.findRenderObject()
-            : cellBox;
-        final zone = _displayZoneOf(_config.value, slot.id);
-        final zoneBox = _config.value.positioning == SuperLayoutPositioning.grid
-            ? cellBox
-            : _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
-        if (layout is! RenderBox ||
-            !layout.hasSize ||
-            slotBox is! RenderBox ||
-            !slotBox.hasSize ||
-            zoneBox is! RenderBox ||
-            !zoneBox.hasSize) {
-          return null;
-        }
-        Rect bounds(RenderBox box) => MatrixUtils.transformRect(
-          box.getTransformTo(layout),
-          Offset.zero & box.size,
-        );
-        return (
-          layout: layout.size,
-          zone: bounds(zoneBox),
-          slot: bounds(slotBox),
-        );
-      },
+      measure: () => _measureSlotBounds(slot),
       onApply: (dimensions, useLegacyPixels) => _applySlotDimensions(
         slot,
         dimensions,

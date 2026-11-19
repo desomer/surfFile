@@ -14,6 +14,9 @@ import 'json_repository_store.dart';
 
 /// Runtime data stays here, never in appearance preferences or editor history.
 class JsonTextControllerBinding extends ChangeNotifier {
+  /// Temporisation anti-rebond par défaut avant l'écriture automatique.
+  static const Duration defaultDebounceDuration = Duration(milliseconds: 350);
+
   JsonTextControllerBinding({
     required this.store,
     required this.binding,
@@ -23,7 +26,14 @@ class JsonTextControllerBinding extends ChangeNotifier {
     this.asBool = false,
     this.asStringList = false,
     this.requireString = false,
-  }) {
+    Duration debounceDuration = defaultDebounceDuration,
+    bool saveOnBlurOnly = false,
+  }) : _debounceDuration = debounceDuration < Duration.zero
+           ? Duration.zero
+           : debounceDuration,
+       // Le champ reste privé pour passer obligatoirement par configureTiming().
+       // ignore: prefer_initializing_formals
+       _saveOnBlurOnly = saveOnBlurOnly {
     store.registerBindings(this, [binding.repositoryId]);
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
@@ -38,8 +48,12 @@ class JsonTextControllerBinding extends ChangeNotifier {
         },
       );
     }
-    _seedFromCache();
-    reload();
+    if (!store.hasActiveMutations) {
+      _seedFromCache();
+    }
+    if (!_ready) {
+      reload();
+    }
   }
 
   final JsonRepositoryStore store;
@@ -59,6 +73,35 @@ class JsonTextControllerBinding extends ChangeNotifier {
   String? error;
   bool loading = true;
   bool saving = false;
+  Duration _debounceDuration;
+  bool _saveOnBlurOnly;
+
+  /// Temporisation anti-rebond actuelle avant écriture automatique dans le repository.
+  Duration get debounceDuration => _debounceDuration;
+
+  /// Indique si l'écriture automatique pendant la frappe est désactivée au profit
+  /// d'un enregistrement uniquement à la perte de focus.
+  bool get saveOnBlurOnly => _saveOnBlurOnly;
+
+  /// Met à jour dynamiquement le délai anti-rebond et le mode d'enregistrement
+  /// sans réinitialiser ni recharger la liaison.
+  void configureTiming({Duration? debounceDuration, bool? saveOnBlurOnly}) {
+    final nextDuration = debounceDuration == null
+        ? _debounceDuration
+        : (debounceDuration < Duration.zero ? Duration.zero : debounceDuration);
+    final nextBlurOnly = saveOnBlurOnly ?? _saveOnBlurOnly;
+    if (nextDuration == _debounceDuration && nextBlurOnly == _saveOnBlurOnly) {
+      return;
+    }
+    _debounceDuration = nextDuration;
+    _saveOnBlurOnly = nextBlurOnly;
+    if (_saveOnBlurOnly) {
+      _timer?.cancel();
+    } else if (_timer?.isActive == true) {
+      _timer?.cancel();
+      _timer = Timer(_debounceDuration, flush);
+    }
+  }
   bool _disposed = false;
   bool _applying = false;
   bool _writing = false;
@@ -209,7 +252,36 @@ class JsonTextControllerBinding extends ChangeNotifier {
   }
 
   void _repositoryChanged() {
-    if (!_writing) reload();
+    if (_writing || _disposed) return;
+    if (!dirty &&
+        _ready &&
+        error == null &&
+        !loading &&
+        !store.hasActiveMutations) {
+      final cached = store.peekAttribute(
+        binding,
+        allowStringList: asStringList,
+      );
+      if (cached != null &&
+          (!asBool || cached.value == null || cached.value is bool) &&
+          (!asStringList ||
+              cached.value == null ||
+              cached.value is String ||
+              cached.value is List) &&
+          (!requireString ||
+              cached.value == null ||
+              cached.value is String)) {
+        final resolvedText = asBool
+            ? (cached.value == true ? 'true' : 'false')
+            : cached.text;
+        if (JsonRepositoryStore.jsonEquals(cached.value, _expected) &&
+            resolvedText == _saved &&
+            controller.text == resolvedText) {
+          return;
+        }
+      }
+    }
+    reload();
   }
 
   void _restoreReadOnlyValue() {
@@ -245,7 +317,11 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _timer?.cancel();
     error = null;
     if (composing) return;
-    _timer = Timer(const Duration(milliseconds: 350), flush);
+    if (_saveOnBlurOnly) {
+      _notify();
+      return;
+    }
+    _timer = Timer(_debounceDuration, flush);
     _notify();
   }
 

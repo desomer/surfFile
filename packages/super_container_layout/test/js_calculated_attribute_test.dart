@@ -68,6 +68,9 @@ class _FakeJsEvaluator implements JsCalculatedEvaluator {
   }
 
   @override
+  void invalidateDocument([String? repositoryId]) {}
+
+  @override
   void dispose() {}
 }
 
@@ -253,6 +256,62 @@ return ht * (1 + tva);
             ),
             throwsFormatException,
           );
+        },
+      );
+
+      test(
+        'uploads repository document once across many row evaluations and re-uploads after mutation',
+        () async {
+          final qjs = QuickJsCalculatedEvaluator();
+          final localStore = JsonRepositoryStore(dir, jsEvaluator: qjs);
+          addTearDown(localStore.dispose);
+
+          final repo = RepositoryImpl(
+            id: 'bulk_repo',
+            json: {
+              'tax': 0.2,
+              'rows': [
+                for (var i = 0; i < 20; i++) {'qty': i + 1, 'price': 10.0},
+              ],
+            },
+          );
+          repo.addJsCalculatedAttribute(
+            'ttc',
+            scope: 'rows[?]',
+            'row.qty * row.price * (1 + doc.tax)',
+          );
+          localStore.registerRepository(repo);
+
+          for (var i = 0; i < 20; i++) {
+            final value = localStore
+                .peekAttribute(
+                  JsonTextBinding(
+                    repositoryId: 'bulk_repo',
+                    path: 'rows[$i].@ttc',
+                  ),
+                )
+                ?.value;
+            expect(value, closeTo((i + 1) * 12.0, 1e-9));
+          }
+          expect(qjs.debugDocumentUploadCount, 1);
+
+          await localStore.writeAttribute(
+            const JsonTextBinding(repositoryId: 'bulk_repo', path: 'tax'),
+            '0.5',
+            expectedValue: 0.2,
+          );
+          for (var i = 0; i < 20; i++) {
+            final value = localStore
+                .peekAttribute(
+                  JsonTextBinding(
+                    repositoryId: 'bulk_repo',
+                    path: 'rows[$i].@ttc',
+                  ),
+                )
+                ?.value;
+            expect(value, closeTo((i + 1) * 15.0, 1e-9));
+          }
+          expect(qjs.debugDocumentUploadCount, 2);
         },
       );
     });

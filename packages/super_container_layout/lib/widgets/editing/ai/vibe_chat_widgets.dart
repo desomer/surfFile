@@ -110,6 +110,8 @@ class VibeMessageBubble extends StatelessWidget {
     this.isActivePlan = false,
     this.onSubmitAskUser,
     this.onSkipAskUser,
+    this.onAskMoreAskUser,
+    this.onRequestMoreQuestions,
     this.onStartPlan,
     this.onCancelPlan,
     this.onStopPlan,
@@ -134,6 +136,12 @@ class VibeMessageBubble extends StatelessWidget {
 
   /// Demande de répondre avec les valeurs par défaut.
   final VoidCallback? onSkipAskUser;
+
+  /// Enregistre les réponses du questionnaire courant et demande 2 à 4 questions complémentaires.
+  final ValueChanged<Map<String, Object?>>? onAskMoreAskUser;
+
+  /// Déclenche une demande de 2 à 4 questions d'affinage sous cette réponse de l'assistant.
+  final VoidCallback? onRequestMoreQuestions;
 
   /// Déclenche l'exécution automatique du plan.
   final VoidCallback? onStartPlan;
@@ -306,6 +314,7 @@ class VibeMessageBubble extends StatelessWidget {
                     VibeResolvedAskUserBadge(
                       dismissed: message.askUserDismissed,
                       usedDefaults: message.askUserUsedDefaults,
+                      requestedMore: message.askUserRequestedMore,
                     )
                   else
                     VibeAskUserCard(
@@ -314,6 +323,7 @@ class VibeMessageBubble extends StatelessWidget {
                       sending: sending,
                       onSubmit: onSubmitAskUser ?? (_) {},
                       onSkip: onSkipAskUser ?? () {},
+                      onAskMore: onAskMoreAskUser,
                       speechTranscriber: speechTranscriber,
                       onSpeechError: onSpeechError,
                     ),
@@ -330,6 +340,33 @@ class VibeMessageBubble extends StatelessWidget {
                     onStop: onStopPlan,
                     onRetryLot: onRetryPlanLot,
                     onSkipLot: onSkipPlanLot,
+                  ),
+                ],
+                if (onRequestMoreQuestions != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Tooltip(
+                      message:
+                          'Demander 2 à 4 questions pour affiner ou compléter cet écran',
+                      child: ActionChip(
+                        key: const ValueKey('vibe-message-more-questions'),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        avatar: Icon(
+                          Icons.add_comment_outlined,
+                          size: 14,
+                          color: sending
+                              ? scheme.onSurfaceVariant.withValues(alpha: 0.5)
+                              : scheme.primary,
+                        ),
+                        label: const Text(
+                          '+ de questions',
+                          style: TextStyle(fontSize: 11.5),
+                        ),
+                        onPressed: sending ? null : onRequestMoreQuestions,
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -532,12 +569,13 @@ class _VibeToolTraceRow extends StatelessWidget {
   }
 }
 
-/// Indicate le résultat d'un questionnaire déjà traité.
+/// Indique le résultat d'un questionnaire déjà traité.
 class VibeResolvedAskUserBadge extends StatelessWidget {
   /// Crée une indication de questionnaire terminé ou ignoré.
   const VibeResolvedAskUserBadge({
     required this.dismissed,
     required this.usedDefaults,
+    this.requestedMore = false,
     super.key,
   });
 
@@ -547,11 +585,19 @@ class VibeResolvedAskUserBadge extends StatelessWidget {
   /// Indique si les valeurs proposées ont été utilisées.
   final bool usedDefaults;
 
+  /// Indique si l'utilisateur a validé les réponses en demandant « + de questions ».
+  final bool requestedMore;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (IconData icon, String label) = dismissed
         ? (Icons.remove_circle_outline, 'Questionnaire ignoré')
+        : requestedMore
+        ? (
+            Icons.playlist_add_check_outlined,
+            'Questions complémentaires demandées',
+          )
         : usedDefaults
         ? (Icons.fast_forward_outlined, 'Valeurs par défaut appliquées')
         : (Icons.check_circle_outline, 'Réponses envoyées');

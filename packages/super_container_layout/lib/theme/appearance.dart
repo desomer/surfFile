@@ -33,12 +33,28 @@ import 'neon_style.dart';
 /// Application-independent theme, window, styles and layouts.
 @immutable
 class Appearance {
+  /// Délai minimum (en ms) de temporisation anti-rebond globale des saisies liées.
+  static const int minBindingDebounceMs = SuperValueConfig.minBindingDebounceMs;
+
+  /// Délai maximum (en ms) de temporisation anti-rebond globale des saisies liées.
+  static const int maxBindingDebounceMs = SuperValueConfig.maxBindingDebounceMs;
+
+  /// Délai par défaut (en ms) avant enregistrement automatique des saisies liées.
+  static const int defaultBindingDebounceMs =
+      SuperValueConfig.defaultBindingDebounceMs;
+
+  /// Pas recommandé (en ms) pour la molette de réglage du délai d'enregistrement.
+  static const int bindingDebounceStepMs =
+      SuperValueConfig.bindingDebounceStepMs;
+
   Appearance({
     this.mode = ThemeMode.light,
     this.accent = const Color(0xFF5268D9),
     this.backgroundOpacity = 1,
     this.windowOpacity = 1,
     this.windowEffect = WindowEffect.transparent,
+    this.bindingDebounceMs = defaultBindingDebounceMs,
+    this.bindingSaveOnBlurOnly = false,
     Map<String, ContainerStyle> styles = const {},
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ComponentConfig> components = const {},
@@ -52,13 +68,7 @@ class Appearance {
            entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
        }),
        usages = Map.unmodifiable(usages) {
-    if (accent is ThemeColor) {
-      throw ArgumentError.value(
-        accent,
-        'accent',
-        'Une couleur fixe est requise pour générer le thème.',
-      );
-    }
+    _validateInvariants();
   }
 
   Appearance._frozen({
@@ -67,17 +77,32 @@ class Appearance {
     required this.backgroundOpacity,
     required this.windowOpacity,
     required this.windowEffect,
+    required this.bindingDebounceMs,
+    required this.bindingSaveOnBlurOnly,
     required this.styles,
     required this.components,
     required this.behaviors,
     required this.usages,
     required this.pageCatalog,
   }) {
+    _validateInvariants();
+  }
+
+  void _validateInvariants() {
     if (accent is ThemeColor) {
       throw ArgumentError.value(
         accent,
         'accent',
         'Une couleur fixe est requise pour générer le thème.',
+      );
+    }
+    if (bindingDebounceMs < minBindingDebounceMs ||
+        bindingDebounceMs > maxBindingDebounceMs) {
+      throw RangeError.range(
+        bindingDebounceMs,
+        minBindingDebounceMs,
+        maxBindingDebounceMs,
+        'bindingDebounceMs',
       );
     }
   }
@@ -133,6 +158,13 @@ class Appearance {
   final double backgroundOpacity;
   final double windowOpacity;
   final WindowEffect windowEffect;
+
+  /// Délai anti-rebond global (en ms, `100..2000`) avant sauvegarde automatique
+  /// d'une saisie liée.
+  final int bindingDebounceMs;
+
+  /// Indique si les saisies liées ne sont enregistrées qu'à la perte de focus.
+  final bool bindingSaveOnBlurOnly;
   final Map<String, ContainerStyle> styles;
   final Map<String, ComponentConfig> components;
   final Map<String, List<ComponentBehavior>> behaviors;
@@ -160,6 +192,8 @@ class Appearance {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: styles,
       components: components,
       behaviors: behaviors,
@@ -184,6 +218,8 @@ class Appearance {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: styles,
       components: components,
       behaviors: Map.unmodifiable(next),
@@ -238,6 +274,8 @@ class Appearance {
         backgroundOpacity: backgroundOpacity,
         windowOpacity: windowOpacity,
         windowEffect: windowEffect,
+        bindingDebounceMs: bindingDebounceMs,
+        bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
         styles: styles,
         components: Map.unmodifiable(next),
         behaviors: behaviors,
@@ -255,6 +293,8 @@ class Appearance {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: styles,
       components: Map.unmodifiable(next),
       behaviors: behaviors,
@@ -412,6 +452,8 @@ class Appearance {
     double? backgroundOpacity,
     double? windowOpacity,
     WindowEffect? windowEffect,
+    int? bindingDebounceMs,
+    bool? bindingSaveOnBlurOnly,
     ContainerStyle? backgroundStyle,
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
@@ -455,6 +497,9 @@ class Appearance {
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       windowOpacity: windowOpacity ?? this.windowOpacity,
       windowEffect: windowEffect ?? this.windowEffect,
+      bindingDebounceMs: bindingDebounceMs ?? this.bindingDebounceMs,
+      bindingSaveOnBlurOnly:
+          bindingSaveOnBlurOnly ?? this.bindingSaveOnBlurOnly,
       styles: nextStyles,
       components: nextComponents,
       behaviors: nextBehaviors,
@@ -473,6 +518,8 @@ class Appearance {
         backgroundOpacity: backgroundOpacity,
         windowOpacity: windowOpacity,
         windowEffect: windowEffect,
+        bindingDebounceMs: bindingDebounceMs,
+        bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
         styles: Map.unmodifiable(next),
         components: components,
         behaviors: behaviors,
@@ -488,6 +535,8 @@ class Appearance {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: Map.unmodifiable(next),
       components: components,
       behaviors: behaviors,

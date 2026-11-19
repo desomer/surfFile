@@ -1053,4 +1053,332 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'sliding between tabs keeps visited tab subtrees alive and does not re-evaluate cached calculated attributes',
+    (tester) async {
+      var tabACalcRuns = 0;
+      var tabABuilds = 0;
+      final repo =
+          RepositoryImpl(
+            id: 'tab_calc_repo',
+            json: {
+              'ui': {'tab': 0},
+              'amount': 42,
+            },
+          )..addCalculatedAttribute('doubled', (ctx) {
+            tabACalcRuns++;
+            return (ctx.sync.getInt('amount') ?? 0) * 2;
+          });
+      repositoryStore.registerRepository(repo);
+
+      final registry = Registry()..bootstrap();
+      registry.valueController(
+        'calc-val-a',
+        fallback: const SuperValueConfig(
+          binding: JsonTextBinding(
+            repositoryId: 'tab_calc_repo',
+            path: '@doubled',
+          ),
+        ),
+      );
+      registry.valueController(
+        'plain-val-b',
+        fallback: const SuperValueConfig(initialText: 'Contenu B'),
+      );
+
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'keepalive-tabs',
+            config: SuperTabConfig(
+              binding: const JsonTextBinding(
+                repositoryId: 'tab_calc_repo',
+                path: 'ui.tab',
+              ),
+              placements: const {
+                'tabs': ['tab-a', 'tab-b'],
+                'content:tab-a': ['slot-a'],
+                'content:tab-b': ['slot-b'],
+              },
+            ),
+            tabs: const [
+              SuperAction(
+                id: 'tab-a',
+                config: SuperActionConfig(label: 'Onglet Calc'),
+              ),
+              SuperAction(
+                id: 'tab-b',
+                config: SuperActionConfig(label: 'Onglet Autre'),
+              ),
+            ],
+            slots: [
+              BuilderSlot(
+                id: 'slot-a',
+                label: 'Slot A',
+                builder: (_) {
+                  tabABuilds++;
+                  return const SuperValue(
+                    id: 'calc-val-a',
+                    config: SuperValueConfig(
+                      binding: JsonTextBinding(
+                        repositoryId: 'tab_calc_repo',
+                        path: '@doubled',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              BuilderSlot(
+                id: 'slot-b',
+                label: 'Slot B',
+                builder: (_) => const SuperValue(
+                  id: 'plain-val-b',
+                  config: SuperValueConfig(initialText: 'Contenu B'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      expect(find.text('84'), findsOneWidget);
+      expect(tabACalcRuns, 1);
+      final buildsAfterInitial = tabABuilds;
+
+      // Slide to Tab B (also writes ui.tab = 1 in tab_calc_repo)
+      await real(
+        tester,
+        () => tester.tap(find.text('Onglet Autre')),
+        save: true,
+      );
+      expect(find.text('Contenu B'), findsOneWidget);
+      expect(tabACalcRuns, 1);
+
+      // Slide back to Tab A: Tab A was kept alive (not rebuilt from scratch)
+      // and @doubled is still served from cache without recalculation.
+      await real(
+        tester,
+        () => tester.tap(find.text('Onglet Calc')),
+        save: true,
+      );
+      expect(find.text('84'), findsOneWidget);
+      expect(tabACalcRuns, 1);
+      expect(tabABuilds, buildsAfterInitial);
+    },
+  );
+
+  testWidgets(
+    'switching tabs in edit mode hides EditorOverlay and resize portals of kept-alive inactive tabs without NaN layout or hit-test errors',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final registry = Registry()..bootstrap();
+      registry.valueController(
+        'val-dash',
+        fallback: const SuperValueConfig(initialText: 'Vue Dashboard'),
+      );
+      registry.valueController(
+        'val-settings',
+        fallback: const SuperValueConfig(initialText: 'Vue Paramètres'),
+      );
+
+      await mount(
+        SuperPage(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 64),
+            child: SuperTab(
+              id: 'edit-keepalive-tabs',
+              config: SuperTabConfig(
+                placements: const {
+                  'tabs': ['tab-dash', 'tab-settings'],
+                  'content:tab-dash': ['val-dash'],
+                  'content:tab-settings': ['val-settings'],
+                },
+                slotTypes: const {
+                  'tab-dash': 'registry:Action',
+                  'tab-settings': 'registry:Action',
+                  'val-dash': 'registry:Value',
+                  'val-settings': 'registry:Value',
+                },
+              ),
+              tabs: const [
+                SuperAction(
+                  id: 'tab-dash',
+                  config: SuperActionConfig(label: 'Dashboard'),
+                ),
+                SuperAction(
+                  id: 'tab-settings',
+                  config: SuperActionConfig(label: 'Paramètres'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      final tabContext = tester.element(find.byType(SuperTab));
+      StyleEditScope.controllerOf(tabContext)!.value = true;
+      await tester.pumpAndSettle();
+
+      // Select the slot in tab-dash so both region EditorOverlay badges and
+      // LabeledSlot resize OverlayPortals are active on tab-dash.
+      await tester.tap(find.text('Vue Dashboard'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-tab-badge-content-content:tab-dash')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      // Switch to Paramètres: tab-dash is kept alive in _keepAliveBucket with
+      // a Matrix4.zero() paint transform.
+      await tester.tap(find.text('Paramètres'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      expect(find.text('Vue Paramètres'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-tab-badge-content-content:tab-dash')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('super-tab-badge-content-content:tab-settings'),
+        ),
+        findsOneWidget,
+      );
+
+      // Hovering across the canvas must not hit-test any unlaid-out render box.
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: const Offset(200, 200));
+      await tester.pump();
+      await mouse.moveTo(const Offset(640, 450));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      // VibeAppInspector geometry on the kept-alive inactive tab component
+      // must report isOffscreen without throwing NaN rounding errors.
+      final inspector = VibeAppInspector(
+        readAppearance: () => AppearanceScope.controllerOf(tabContext)!.value,
+        registry: registry,
+        repositoryStore: repositoryStore,
+      );
+      final geometry = await tester.runAsync(
+        () => inspector.getComponentGeometry({'id': 'val-dash'}),
+      );
+      expect(geometry, isNotNull);
+      final components = geometry!['components']! as Map<String, Object?>;
+      final valDashEntry = components['val-dash']! as Map<String, Object?>;
+      final occurrences = valDashEntry['occurrences'] as List<Object?>;
+      expect(occurrences, isNotEmpty);
+      final firstOccurrence = occurrences.first! as Map<String, Object?>;
+      expect(firstOccurrence.containsKey('bounds'), isFalse);
+      final diagnostics =
+          firstOccurrence['diagnostics']! as Map<String, Object?>;
+      expect(diagnostics['isOffscreen'], isTrue);
+
+      // Switch back to Dashboard: tab-dash overlays reappear cleanly.
+      await tester.tap(find.text('Dashboard'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('super-tab-badge-content-content:tab-dash')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'SuperTab dynamic mode with cached repository items mounts without build-time setState and preserves SuperValue focus after save',
+    (tester) async {
+      repositoryStore.registerRepository(
+        RepositoryImpl(
+          id: 'dyn_focus_repo',
+          json: {
+            'items': [
+              {'name': 'Premier'},
+              {'name': 'Second'},
+            ],
+          },
+        ),
+      );
+
+      final registry = Registry()..bootstrap();
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'dyn-focus-tabs',
+            config: SuperTabConfig(
+              mode: SuperTabMode.dynamic,
+              binding: const JsonTextBinding(
+                repositoryId: 'dyn_focus_repo',
+                path: 'items',
+              ),
+              placements: const {
+                'tabs': ['dyn-tab'],
+                'content': ['dyn-val'],
+              },
+            ),
+            slots: [
+              BuilderSlot(
+                id: 'dyn-tab',
+                label: 'Onglet',
+                builder: (_) => const SuperAction(
+                  id: 'dyn-tab',
+                  config: SuperActionConfig(
+                    propertyBindings: {
+                      SuperActionProperty.label: JsonTextBinding(
+                        path: 'items[?].name',
+                      ),
+                    },
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'dyn-val',
+                label: 'Valeur',
+                builder: (_) => const SuperValue(
+                  id: 'dyn-val',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    binding: JsonTextBinding(path: 'items[?].name'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+      expect(tester.takeException(), isNull);
+
+      final input = find.byKey(const ValueKey('super-value-input-dyn-val'));
+      final focusBefore = tester.widget<TextField>(input).focusNode!;
+      await tester.tap(input);
+      await tester.pumpAndSettle();
+      expect(focusBefore.hasFocus, isTrue);
+
+      await real(
+        tester,
+        () => tester.enterText(input, 'Premier modifié'),
+        save: true,
+      );
+
+      final focusAfter = tester.widget<TextField>(input).focusNode!;
+      expect(identical(focusBefore, focusAfter), isTrue);
+      expect(focusAfter.hasFocus, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

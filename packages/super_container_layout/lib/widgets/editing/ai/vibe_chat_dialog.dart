@@ -62,6 +62,7 @@ import 'vibe_delta_recovery.dart';
 import 'vibe_prompt_builder.dart';
 import 'vibe_repository_applier.dart';
 import 'vibe_scope_helpers.dart';
+import 'vibe_task_completion_alert.dart';
 import 'vibe_work_highlight.dart';
 import '../../appearance/appearance_scope.dart';
 
@@ -92,6 +93,15 @@ export 'design_system_preview_card.dart';
 export 'vibe_ask_user_card.dart' show VibeAskUserCard;
 export 'vibe_chat_message.dart' show VibeChatMessage;
 export 'vibe_plan_card.dart' show VibePlanCard;
+export 'vibe_task_completion_alert.dart'
+    show
+        DefaultVibeTaskSoundPlayer,
+        VibeTaskCompletionBanner,
+        VibeTaskCompletionController,
+        VibeTaskCompletionEvent,
+        VibeTaskCompletionGlow,
+        VibeTaskOutcome,
+        VibeTaskSoundPlayer;
 export '../slots/editor_context_menu.dart' show VibeChatScope;
 
 /// Panneau et boîte de dialogue de chat avec l'IA Vibe pour créer ou modifier l'interface en langage naturel.
@@ -130,6 +140,10 @@ class VibeChatDialog extends StatefulWidget {
     this.replaceDefaultDesignGuide = false,
     this.expanded,
     this.onExpandedChanged,
+    this.completionController,
+    this.soundPlayer,
+    this.initialSoundAlertEnabled,
+    this.onSoundAlertEnabledChanged,
     super.key,
   });
 
@@ -310,6 +324,20 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Callback notifié lorsque le wizard s'agrandit (phase de questions) ou se réduit (phase de construction).
   final ValueChanged<bool>? onExpandedChanged;
+
+  /// Contrôleur optionnel recevant les alertes visuelles et sonores de fin de tâche IA.
+  ///
+  /// Par défaut, utilise [VibeTaskCompletionController.instance].
+  final VibeTaskCompletionController? completionController;
+
+  /// Lecteur audio optionnel utilisé pour l'alerte sonore de fin de tâche IA.
+  final VibeTaskSoundPlayer? soundPlayer;
+
+  /// Active ou désactive initialement l'alerte sonore de fin de tâche IA.
+  final bool? initialSoundAlertEnabled;
+
+  /// Callback notifié lorsque l'utilisateur active ou coupe l'alerte sonore dans le chat.
+  final ValueChanged<bool>? onSoundAlertEnabledChanged;
 
   /// Assemble le guide statique complet envoyé au modèle à partir du guide JSON
   /// technique [screenGuide], du guide optionnel de modélisation des repositories
@@ -703,10 +731,13 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   State<VibeChatDialog> createState() => _VibeChatDialogState();
 }
 
-class _VibeChatDialogState extends State<VibeChatDialog> {
+class _VibeChatDialogState extends State<VibeChatDialog>
+    with SingleTickerProviderStateMixin {
   static const String _initialGreetingText =
       'Décris l’écran à créer ou les changements souhaités.';
   static const int _maxConversationEntries = 8;
+  static const Duration _completionAutoHideDuration = Duration(seconds: 6);
+  static const Duration _completionGlowDuration = Duration(milliseconds: 1200);
 
   final _input = TextEditingController();
   final _pendingAttachments = <VibeChatAttachment>[];
@@ -742,6 +773,78 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   late List<DesignSystemPreset> _customDesignSystems =
       List<DesignSystemPreset>.of(widget.customDesignSystems);
   late bool _expanded = widget.expanded ?? true;
+  late final AnimationController _completionGlowController =
+      AnimationController(vsync: this, duration: _completionGlowDuration);
+  VibeTaskCompletionEvent? _localCompletionEvent;
+  Timer? _completionHideTimer;
+  late bool _soundEnabled =
+      widget.initialSoundAlertEnabled ??
+      _resolvedCompletionController.soundEnabled;
+
+  VibeTaskCompletionController get _resolvedCompletionController =>
+      widget.completionController ?? VibeTaskCompletionController.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialSoundAlertEnabled != null) {
+      _resolvedCompletionController.setSoundEnabled(
+        widget.initialSoundAlertEnabled!,
+      );
+    }
+    _resolvedCompletionController.addListener(_onCompletionControllerChanged);
+  }
+
+  void _onCompletionControllerChanged() {
+    final enabled = _resolvedCompletionController.soundEnabled;
+    if (mounted && _soundEnabled != enabled) {
+      setState(() => _soundEnabled = enabled);
+    }
+  }
+
+  void _toggleSoundAlert() {
+    final next = !_soundEnabled;
+    _resolvedCompletionController.setSoundEnabled(next);
+    if (mounted) {
+      setState(() => _soundEnabled = next);
+    }
+    widget.onSoundAlertEnabledChanged?.call(next);
+  }
+
+  void _clearCompletionAlert() {
+    _completionHideTimer?.cancel();
+    _completionHideTimer = null;
+    if (_localCompletionEvent != null && mounted) {
+      setState(() => _localCompletionEvent = null);
+    } else {
+      _localCompletionEvent = null;
+    }
+  }
+
+  void _notifyTaskCompletion({
+    required VibeTaskOutcome outcome,
+    required String title,
+    String detail = '',
+  }) {
+    final event = _resolvedCompletionController.notifyCompleted(
+      outcome: outcome,
+      title: title,
+      detail: detail,
+      soundPlayer: widget.soundPlayer,
+      playSound: _soundEnabled,
+    );
+    _completionHideTimer?.cancel();
+    _completionHideTimer = Timer(_completionAutoHideDuration, () {
+      if (!mounted) return;
+      if (_localCompletionEvent?.id == event.id) {
+        setState(() => _localCompletionEvent = null);
+      }
+    });
+    if (mounted) {
+      setState(() => _localCompletionEvent = event);
+      _completionGlowController.forward(from: 0.0);
+    }
+  }
 
   bool get _isBusy => _sending || _executingPlan;
 
@@ -749,7 +852,17 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     for (var i = _messages.length - 1; i >= 0; i--) {
       final msg = _messages[i];
       if (msg.isUser) {
-        return msg.promptText != null;
+        return msg.promptText != null && !msg.requestsMoreQuestions;
+      }
+    }
+    return false;
+  }
+
+  bool get _isForceFollowUpQuestions {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final msg = _messages[i];
+      if (msg.isUser) {
+        return msg.requestsMoreQuestions;
       }
     }
     return false;
@@ -873,6 +986,21 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         widget.expanded != _expanded) {
       _expanded = widget.expanded!;
     }
+    if (oldWidget.completionController != widget.completionController) {
+      final oldCtrl =
+          oldWidget.completionController ??
+          VibeTaskCompletionController.instance;
+      oldCtrl.removeListener(_onCompletionControllerChanged);
+      _resolvedCompletionController.addListener(_onCompletionControllerChanged);
+      _soundEnabled = _resolvedCompletionController.soundEnabled;
+    }
+    if (oldWidget.initialSoundAlertEnabled != widget.initialSoundAlertEnabled &&
+        widget.initialSoundAlertEnabled != null) {
+      _resolvedCompletionController.setSoundEnabled(
+        widget.initialSoundAlertEnabled!,
+      );
+      _soundEnabled = widget.initialSoundAlertEnabled!;
+    }
   }
 
   void _setExpanded(bool expanded) {
@@ -886,6 +1014,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   }
 
   void _syncExpansionFromSnapshot(VibeStreamSnapshot snapshot) {
+    if (_isForceFollowUpQuestions) {
+      _setExpanded(true);
+      return;
+    }
     if (snapshot.hasVibeObject || snapshot.hasRepositoriesObject) {
       _setExpanded(false);
     } else if (snapshot.hasAskUserObject || snapshot.hasPlanObject) {
@@ -1019,7 +1151,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     final session = _activeTurnSession;
     if (session == null ||
         session.livePreviewDisabled ||
-        snapshot.hasAskUserObject) {
+        snapshot.hasAskUserObject ||
+        _isForceFollowUpQuestions) {
       return;
     }
     _syncStreamingWorkHighlight(session, snapshot);
@@ -1428,6 +1561,12 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   @override
   void dispose() {
+    _completionHideTimer?.cancel();
+    _completionHideTimer = null;
+    _resolvedCompletionController.removeListener(
+      _onCompletionControllerChanged,
+    );
+    _completionGlowController.dispose();
     _planStopRequested = true;
     _commitOuterPlanTransaction();
     _cancelSpeechDictation();
@@ -1773,10 +1912,111 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     );
   }
 
+  Future<void> _submitAskMoreFromCard(
+    int messageIndex,
+    Map<String, Object?> answers,
+  ) async {
+    if (_isBusy ||
+        _reproduceExactMode ||
+        messageIndex < 0 ||
+        messageIndex >= _messages.length) {
+      return;
+    }
+    final target = _messages[messageIndex];
+    final request = target.askUser;
+    if (request == null ||
+        target.askUserAnswers != null ||
+        target.askUserDismissed) {
+      return;
+    }
+    final normalizedAnswers = Map<String, Object?>.unmodifiable(answers);
+    _setExpanded(true);
+    setState(() {
+      _messages[messageIndex] = target.copyWith(
+        askUserAnswers: normalizedAnswers,
+        askUserRequestedMore: true,
+      );
+    });
+    final summary = request.formatDisplaySummary(normalizedAnswers);
+    final displaySummary = 'Choix enregistrés (+ de questions) :\n$summary';
+    final promptReply = request.formatMoreQuestionsPromptReply(
+      normalizedAnswers,
+    );
+    await _runGenerationTurn(
+      displayUserText: displaySummary,
+      promptOverride: promptReply,
+      requestsMoreQuestions: true,
+    );
+  }
+
+  Future<void> _requestMoreQuestionsFromChat() async {
+    if (_isBusy || _reproduceExactMode) return;
+    _cancelSpeechDictation();
+    final draft = _input.text.trim();
+    final attachments = List<VibeChatAttachment>.unmodifiable(
+      _pendingAttachments,
+    );
+    _input.clear();
+    _setExpanded(true);
+    _stopStaleActivePlan();
+    setState(() {
+      _pendingAttachments.clear();
+      _attachmentError = null;
+      for (var i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg.askUser != null &&
+            msg.askUserAnswers == null &&
+            !msg.askUserDismissed) {
+          _messages[i] = msg.copyWith(askUserDismissed: true);
+        }
+      }
+    });
+
+    final hasDraftOrFiles = draft.isNotEmpty || attachments.isNotEmpty;
+    final displayUserText = draft.isNotEmpty
+        ? '$draft (+ de questions)'
+        : attachments.isNotEmpty
+        ? '+ de questions sur les pièces jointes'
+        : '+ de questions pour affiner l’écran';
+    final promptOverride = hasDraftOrFiles
+        ? '${draft.isEmpty ? 'Analyse les fichiers joints.' : draft}\n'
+              'Ne génère PAS encore le patch "vibe" ("vibe": null obligatoire) : '
+              'pose d’abord 2 à ${VibeQuestioningLevel.followUpMaxQuestions} questions ciblées '
+              'et non redondantes avec "default" via "askUser" pour préciser le besoin.'
+        : 'Examine l’état actuel de l’écran et l’historique de conversation, '
+              'sans générer de patch "vibe" ("vibe": null obligatoire) : '
+              'pose 2 à ${VibeQuestioningLevel.followUpMaxQuestions} nouvelles questions pertinentes '
+              'et non redondantes avec "default" via "askUser" pour affiner, compléter ou améliorer l’écran.';
+
+    await _runGenerationTurn(
+      displayUserText: displayUserText,
+      promptOverride: promptOverride,
+      attachments: attachments,
+      requestsMoreQuestions: true,
+    );
+  }
+
+  bool _canShowMessageMoreQuestions(int index) {
+    if (_reproduceExactMode || index <= 0 || index != _messages.length - 1) {
+      return false;
+    }
+    final msg = _messages[index];
+    if (msg.isUser || msg.failedResponse != null || msg.plan != null) {
+      return false;
+    }
+    if (msg.askUser != null &&
+        msg.askUserAnswers == null &&
+        !msg.askUserDismissed) {
+      return false;
+    }
+    return true;
+  }
+
   Future<void> _runGenerationTurn({
     required String displayUserText,
     String? promptOverride,
     List<VibeChatAttachment> attachments = const [],
+    bool requestsMoreQuestions = false,
   }) async {
     final history = EditorHistoryScope.controllerOf(context);
     final resolvedPageRouting =
@@ -1808,6 +2048,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
     _lastFailedResponse = null;
     _activeTurnSession = session;
+    _clearCompletionAlert();
     setState(() {
       _sending = true;
       _messages.add(
@@ -1816,6 +2057,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           promptText: promptOverride,
           isUser: true,
           attachments: attachments,
+          requestsMoreQuestions: requestsMoreQuestions,
         ),
       );
     });
@@ -1892,15 +2134,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         }
       }
       final summary = generated.result['message'];
+      final summaryText = summary is String && summary.trim().isNotEmpty
+          ? summary.trim()
+          : null;
       final fallbackText = generated.plan != null && !hasMutations
           ? 'Plan prêt — clique sur « Exécuter les lots » pour démarrer :'
           : generated.askUser != null && !hasMutations
           ? 'Précise tes préférences :'
           : 'Modifications appliquées.';
       _appendMessage(
-        summary is String && summary.trim().isNotEmpty
-            ? summary.trim()
-            : fallbackText,
+        summaryText ?? fallbackText,
         askUser: !hasMutations && generated.plan == null
             ? generated.askUser
             : null,
@@ -1918,6 +2161,39 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _activePlanMessageIndex = _messages.length - 1;
         });
       }
+      if (hasMutations) {
+        final detail =
+            summaryText ??
+            (generated.appearance != null && generated.repositoriesUpdated
+                ? 'Écran et données mis à jour.'
+                : generated.appearance != null
+                ? 'Modifications appliquées à l’écran.'
+                : 'Données des repositories mises à jour.');
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.success,
+          title: 'Tâche IA terminée',
+          detail: detail,
+        );
+      } else if (generated.plan case final plan?) {
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.needsInput,
+          title: 'Plan IA prêt',
+          detail: '${plan.lots.length} lot(s) prêt(s) à exécuter.',
+        );
+      } else if (generated.askUser case final askUser?) {
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.needsInput,
+          title: 'Clarification requise',
+          detail:
+              '${askUser.questions.length} question(s) en attente de réponse.',
+        );
+      } else {
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.info,
+          title: 'Réponse IA prête',
+          detail: summaryText ?? 'Réponse affichée dans le chat.',
+        );
+      }
     } on FormatException catch (error, stackTrace) {
       await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
@@ -1930,6 +2206,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'Réponse Vibe invalide : $cause',
         failedResponse: _lastFailedResponse,
       );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
+      );
     } on ArgumentError catch (error, stackTrace) {
       await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
@@ -1939,6 +2220,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       _appendMessage(
         'Modification refusée : $cause',
         failedResponse: _lastFailedResponse,
+      );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
       );
     } on StateError catch (error, stackTrace) {
       await _rollbackTurnSession(session);
@@ -1950,6 +2236,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'Modification impossible : $cause',
         failedResponse: _lastFailedResponse,
       );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
+      );
     } on FlutterError catch (error, stackTrace) {
       await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
@@ -1957,6 +2248,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       _appendMessage(
         'Guide de génération indisponible : $cause',
         failedResponse: _lastFailedResponse,
+      );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
       );
     } on Exception catch (error, stackTrace) {
       await _rollbackTurnSession(session);
@@ -1969,6 +2265,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         'Génération impossible (${error.runtimeType}) : $cause',
         failedResponse: _lastFailedResponse,
       );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
+      );
     } catch (error, stackTrace) {
       await _rollbackTurnSession(session);
       final cause = _describeErrorCause(error);
@@ -1979,6 +2280,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       _appendMessage(
         'Génération impossible (${error.runtimeType}) : $cause',
         failedResponse: _lastFailedResponse,
+      );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.error,
+        title: 'Tâche IA échouée',
+        detail: cause,
       );
     } finally {
       VibeWorkHighlightController.instance.clearStreamingTargets();
@@ -2140,9 +2446,20 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         setState(() => _activePlanMessageIndex = null);
       }
       _commitOuterPlanTransaction();
+      final skippedCount = updated.lots
+          .where((l) => l.status == VibeLotStatus.skipped)
+          .length;
+      final detail = skippedCount == 0
+          ? '${updated.doneCount}/${updated.lots.length} lots appliqués.'
+          : '${updated.doneCount}/${updated.lots.length} lots appliqués ($skippedCount ignoré(s)).';
       _appendMessage(
         'Plan terminé (${updated.doneCount}/${updated.lots.length} lots appliqués, '
-        '${updated.lots.where((l) => l.status == VibeLotStatus.skipped).length} ignoré(s)).',
+        '$skippedCount ignoré(s)).',
+      );
+      _notifyTaskCompletion(
+        outcome: VibeTaskOutcome.success,
+        title: 'Plan IA terminé',
+        detail: detail,
       );
       return;
     }
@@ -2152,6 +2469,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   Future<void> _runPlanLoop(int messageIndex, int startLotIndex) async {
     if (!mounted) return;
+    _clearCompletionAlert();
     setState(() {
       _executingPlan = true;
       _planStopRequested = false;
@@ -2176,8 +2494,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           }
           _commitOuterPlanTransaction();
           if (stoppedPlan != null) {
-            _appendMessage(
-              'Exécution du plan arrêtée (${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués).',
+            final summary =
+                '${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués';
+            _appendMessage('Exécution du plan arrêtée ($summary).');
+            _notifyTaskCompletion(
+              outcome: VibeTaskOutcome.info,
+              title: 'Plan IA arrêté',
+              detail: '$summary.',
             );
           }
           return;
@@ -2238,8 +2561,13 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           setState(() => _activePlanMessageIndex = null);
           _commitOuterPlanTransaction();
           if (stoppedPlan != null) {
-            _appendMessage(
-              'Exécution du plan arrêtée (${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués).',
+            final summary =
+                '${stoppedPlan.doneCount}/${stoppedPlan.lots.length} lots appliqués';
+            _appendMessage('Exécution du plan arrêtée ($summary).');
+            _notifyTaskCompletion(
+              outcome: VibeTaskOutcome.info,
+              title: 'Plan IA arrêté',
+              detail: '$summary.',
             );
           }
           return;
@@ -2258,6 +2586,11 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
               ),
         );
         _setExpanded(true);
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.error,
+          title: 'Plan IA en pause (erreur)',
+          detail: 'Lot ${i + 1}/$totalLots : $errorCause',
+        );
         return;
       }
 
@@ -2273,10 +2606,18 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         final skipped = completedPlan.lots
             .where((l) => l.status == VibeLotStatus.skipped)
             .length;
+        final detail = skipped == 0
+            ? '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
+            : '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).';
         _appendMessage(
           skipped == 0
               ? 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
               : 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).',
+        );
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.success,
+          title: 'Plan IA terminé',
+          detail: detail,
         );
       }
     } finally {
@@ -3285,6 +3626,25 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         final rawPlan = allowPlan
             ? VibeExecutionPlan.tryFromJson(result['plan'])
             : null;
+        if (_isForceFollowUpQuestions) {
+          final followUpAskUser = rawAskUser?.truncate(
+            VibeQuestioningLevel.followUpMaxQuestions,
+          );
+          if (followUpAskUser == null) {
+            throw const FormatException(
+              'L’utilisateur a demandé "+ de questions" : renvoie un objet "askUser" '
+              'contenant 2 à 4 questions complémentaires et "vibe": null.',
+            );
+          }
+          _lastFailedResponse = null;
+          return (
+            appearance: null,
+            repositoriesUpdated: false,
+            result: result,
+            askUser: followUpAskUser,
+            plan: null,
+          );
+        }
         final repositoriesPatch = _extractRepositoriesPatch(result);
         final patch = _extractPatch(result);
         if (repositoriesPatch == null &&
@@ -4011,6 +4371,7 @@ $response
     return VibePromptBuilder.buildTurnPrompt(
       questioningDirective: _questioningLevel.promptDirective(
         afterAskUserReply: _isAfterAskUserReply,
+        forceFollowUpQuestions: _isForceFollowUpQuestions,
       ),
       conversation: _buildConversationHistory(),
       appearance: appearanceOverride ?? _currentAppearance,
@@ -4037,6 +4398,7 @@ $response
         VibeQuestioningLevel.light => Icons.help_outline,
         VibeQuestioningLevel.balanced => Icons.quiz_outlined,
         VibeQuestioningLevel.thorough => Icons.fact_check_outlined,
+        VibeQuestioningLevel.exhaustive => Icons.checklist_rtl,
       };
 
   String _extractJson(String response) {
@@ -4178,63 +4540,130 @@ $response
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      key: const ValueKey('vibe-chat-dialog'),
-      color: scheme.surface,
-      elevation: 18,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: scheme.outlineVariant),
+    final completionEvent = _localCompletionEvent;
+    final headerBadgePalette = completionEvent == null
+        ? null
+        : VibeTaskOutcomePalette.resolve(context, completionEvent.outcome);
+    return AnimatedBuilder(
+      animation: _completionGlowController,
+      builder: (context, child) => VibeTaskCompletionGlow(
+        progress: _completionGlowController.isAnimating
+            ? _completionGlowController.value
+            : 1.0,
+        outcome: completionEvent?.outcome,
+        child: child!,
       ),
-      child: Column(
-        children: [
-          GestureDetector(
-            key: const ValueKey('vibe-chat-drag'),
-            behavior: HitTestBehavior.opaque,
-            onPanUpdate: (details) => widget.onDrag(details.delta),
-            child: Container(
-              height: 46,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              color: scheme.primary,
-              child: Row(
-                children: [
-                  Icon(Icons.auto_awesome, color: scheme.onPrimary, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Vibe — création d’écran',
-                      style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontWeight: FontWeight.w600,
+      child: Material(
+        key: const ValueKey('vibe-chat-dialog'),
+        color: scheme.surface,
+        elevation: 18,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        child: Column(
+          children: [
+            GestureDetector(
+              key: const ValueKey('vibe-chat-drag'),
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) => widget.onDrag(details.delta),
+              child: Container(
+                height: 46,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                color: scheme.primary,
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: scheme.onPrimary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Vibe — création d’écran',
+                        style: TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  Icon(Icons.drag_indicator, color: scheme.onPrimary, size: 18),
-                  if (widget.onExpandedChanged != null)
+                    if (completionEvent != null && headerBadgePalette != null) ...[
+                      Container(
+                        key: const ValueKey('vibe-chat-header-completion-badge'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: headerBadgePalette.background,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: headerBadgePalette.border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              headerBadgePalette.icon,
+                              size: 13,
+                              color: headerBadgePalette.accent,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              headerBadgePalette.shortLabel,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: headerBadgePalette.foreground,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     IconButton(
-                      key: const ValueKey('vibe-chat-toggle-expand'),
-                      tooltip: _expanded
-                          ? 'Réduire en bas à droite'
-                          : 'Agrandir au centre',
-                      onPressed: () => _setExpanded(!_expanded),
+                      key: const ValueKey('vibe-chat-sound-toggle'),
+                      tooltip: _soundEnabled
+                          ? 'Désactiver l’alerte sonore'
+                          : 'Activer l’alerte sonore',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _toggleSoundAlert,
                       icon: Icon(
-                        _expanded ? Icons.close_fullscreen : Icons.open_in_full,
+                        _soundEnabled
+                            ? Icons.volume_up_outlined
+                            : Icons.volume_off_outlined,
                         color: scheme.onPrimary,
                         size: 18,
                       ),
                     ),
-                  IconButton(
-                    key: const ValueKey('vibe-chat-close'),
-                    tooltip: 'Fermer le chat',
-                    onPressed: widget.onClose,
-                    icon: Icon(Icons.close, color: scheme.onPrimary, size: 20),
-                  ),
-                ],
+                    Icon(Icons.drag_indicator, color: scheme.onPrimary, size: 18),
+                    if (widget.onExpandedChanged != null)
+                      IconButton(
+                        key: const ValueKey('vibe-chat-toggle-expand'),
+                        tooltip: _expanded
+                            ? 'Réduire en bas à droite'
+                            : 'Agrandir au centre',
+                        onPressed: () => _setExpanded(!_expanded),
+                        icon: Icon(
+                          _expanded ? Icons.close_fullscreen : Icons.open_in_full,
+                          color: scheme.onPrimary,
+                          size: 18,
+                        ),
+                      ),
+                    IconButton(
+                      key: const ValueKey('vibe-chat-close'),
+                      tooltip: 'Fermer le chat',
+                      onPressed: widget.onClose,
+                      icon: Icon(Icons.close, color: scheme.onPrimary, size: 20),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          Expanded(
+            if (completionEvent != null)
+              VibeTaskCompletionBanner(
+                event: completionEvent,
+                onDismiss: _clearCompletionAlert,
+              ),
+            Expanded(
             child: LayoutBuilder(
               builder: (context, middleConstraints) => Column(
                 children: [
@@ -4327,8 +4756,13 @@ $response
                                       ),
                                       value: _questioningLevel.index.toDouble(),
                                       min: 0,
-                                      max: 3,
-                                      divisions: 3,
+                                      max:
+                                          (VibeQuestioningLevel.values.length -
+                                                  1)
+                                              .toDouble(),
+                                      divisions:
+                                          VibeQuestioningLevel.values.length -
+                                          1,
                                       label: _questioningLevel.label,
                                       onChanged: _isBusy || _reproduceExactMode
                                           ? null
@@ -4512,6 +4946,13 @@ $response
                                 usedDefaults: true,
                               );
                             },
+                            onAskMoreAskUser: _reproduceExactMode
+                                ? null
+                                : (answers) => _submitAskMoreFromCard(i, answers),
+                            onRequestMoreQuestions:
+                                _canShowMessageMoreQuestions(i)
+                                ? _requestMoreQuestionsFromChat
+                                : null,
                             onStartPlan: () => _startPlanExecution(i),
                             onCancelPlan: () => _cancelPlan(i),
                             onStopPlan: () => _stopPlan(i),
@@ -4666,6 +5107,18 @@ $response
                         ),
                 ),
                 const SizedBox(width: 4),
+                IconButton(
+                  key: const ValueKey('vibe-chat-ask-more'),
+                  tooltip: _reproduceExactMode
+                      ? 'Questions désactivées en mode « Reproduire à l’identique »'
+                      : '+ de questions (poser 2 à 4 questions ciblées avant de générer)',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _isBusy || _reproduceExactMode
+                      ? null
+                      : _requestMoreQuestionsFromChat,
+                  icon: const Icon(Icons.add_comment_outlined),
+                ),
+                const SizedBox(width: 4),
                 IconButton.filled(
                   key: const ValueKey('vibe-chat-send'),
                   tooltip: _reproduceExactMode
@@ -4683,6 +5136,7 @@ $response
             ),
           ),
         ],
+      ),
       ),
     );
   }

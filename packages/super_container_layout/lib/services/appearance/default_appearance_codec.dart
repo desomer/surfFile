@@ -93,6 +93,8 @@ class DefaultAppearanceCodec extends AppearanceCodec {
       backgroundOpacity: base.backgroundOpacity,
       windowOpacity: base.windowOpacity,
       windowEffect: base.windowEffect,
+      bindingDebounceMs: base.bindingDebounceMs,
+      bindingSaveOnBlurOnly: base.bindingSaveOnBlurOnly,
       styles: base.styles,
       layouts: base.layouts,
       components: base.components,

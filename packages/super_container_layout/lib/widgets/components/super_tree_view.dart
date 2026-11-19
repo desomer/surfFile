@@ -327,7 +327,8 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(template);
     _listen([?_selection, ...source.arrays]);
-    if (binding != null && store != null) {
+    var seededFromCache = false;
+    if (binding != null && store != null && !store.hasActiveMutations) {
       final cached = store.peekTreeNodes(binding.repositoryId!, binding.path);
       if (cached != null) {
         _rawNodes = cached.nodes;
@@ -335,11 +336,24 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         _error = null;
         _loading = false;
         _renderRevision++;
+        seededFromCache = true;
       }
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _reload();
-    });
+    if (binding == null || store == null) {
+      _rawNodes = null;
+      _singleRootObject = false;
+      _loading = false;
+      _error =
+          source.error ??
+          (store == null && source.unselected
+              ? 'Service de repositories indisponible.'
+              : null);
+      _renderRevision++;
+    } else if (!seededFromCache) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reload();
+      });
+    }
   }
 
   Future<void> _reload() async {

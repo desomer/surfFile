@@ -109,6 +109,8 @@ class AppearanceCodec {
     'backgroundOpacity': a.backgroundOpacity,
     'windowOpacity': a.windowOpacity,
     'windowEffect': a.windowEffect.name,
+    'bindingDebounceMs': a.bindingDebounceMs,
+    'bindingSaveOnBlurOnly': a.bindingSaveOnBlurOnly,
     'styles': {
       for (final entry in a.styles.entries) entry.key: entry.value.toJson(),
     },
@@ -141,6 +143,10 @@ class AppearanceCodec {
       if (a.windowOpacity != 1.0) 'windowOpacity': a.windowOpacity,
       if (a.windowEffect != WindowEffect.transparent)
         'windowEffect': a.windowEffect.name,
+      if (a.bindingDebounceMs != Appearance.defaultBindingDebounceMs)
+        'bindingDebounceMs': a.bindingDebounceMs,
+      if (a.bindingSaveOnBlurOnly)
+        'bindingSaveOnBlurOnly': a.bindingSaveOnBlurOnly,
       if (compactStyles.isNotEmpty) 'styles': compactStyles,
       if (a.components.isNotEmpty)
         'components': {
@@ -249,6 +255,8 @@ class AppearanceCodec {
       'backgroundOpacity',
       'windowOpacity',
       'windowEffect',
+      'bindingDebounceMs',
+      'bindingSaveOnBlurOnly',
       'styles',
       'components',
       'behaviors',
@@ -265,6 +273,26 @@ class AppearanceCodec {
         throw FormatException('Invalid "$key".');
       }
       return value.toDouble();
+    }
+
+    int integer(String key, int fallback, int min, int max) {
+      final value = json[key] ?? fallback;
+      if (value is! num ||
+          !value.isFinite ||
+          value != value.roundToDouble() ||
+          value < min ||
+          value > max) {
+        throw FormatException('Invalid "$key".');
+      }
+      return value.round();
+    }
+
+    bool boolean(String key, bool fallback) {
+      final value = json[key] ?? fallback;
+      if (value is! bool) {
+        throw FormatException('Invalid "$key".');
+      }
+      return value;
     }
 
     final mode = ThemeMode.values
@@ -313,6 +341,13 @@ class AppearanceCodec {
       windowEffect: effect,
       backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
       windowOpacity: number('windowOpacity', 1, .2, 1),
+      bindingDebounceMs: integer(
+        'bindingDebounceMs',
+        Appearance.defaultBindingDebounceMs,
+        Appearance.minBindingDebounceMs,
+        Appearance.maxBindingDebounceMs,
+      ),
+      bindingSaveOnBlurOnly: boolean('bindingSaveOnBlurOnly', false),
       styles: {
         for (final entry in entries('styles').entries)
           entry.key: ContainerStyle.fromJson(entry.value),
@@ -431,6 +466,8 @@ class AppearanceCodec {
       'backgroundOpacity',
       'windowOpacity',
       'windowEffect',
+      'bindingDebounceMs',
+      'bindingSaveOnBlurOnly',
       'styles',
       'components',
       'behaviors',
@@ -495,6 +532,37 @@ class AppearanceCodec {
               .firstOrNull ??
           (throw const FormatException('Invalid theme or window preferences.'));
     }
+
+    int integer(String key, int fallback, int min, int max) {
+      final value = patch[key] ?? fallback;
+      if (value is! num ||
+          !value.isFinite ||
+          value != value.roundToDouble() ||
+          value < min ||
+          value > max) {
+        throw FormatException('Invalid "$key".');
+      }
+      return value.round();
+    }
+
+    bool boolean(String key, bool fallback) {
+      final value = patch[key] ?? fallback;
+      if (value is! bool) {
+        throw FormatException('Invalid "$key".');
+      }
+      return value;
+    }
+
+    final bindingDebounceMs = integer(
+      'bindingDebounceMs',
+      current.bindingDebounceMs,
+      Appearance.minBindingDebounceMs,
+      Appearance.maxBindingDebounceMs,
+    );
+    final bindingSaveOnBlurOnly = boolean(
+      'bindingSaveOnBlurOnly',
+      current.bindingSaveOnBlurOnly,
+    );
 
     final styles = Map<String, ContainerStyle>.of(current.styles);
     if (patch.containsKey('styles') && patch['styles'] != null) {
@@ -752,6 +820,8 @@ class AppearanceCodec {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: styles,
       components: components,
       behaviors: behaviors,
@@ -773,6 +843,8 @@ class AppearanceCodec {
       'backgroundOpacity',
       'windowOpacity',
       'windowEffect',
+      'bindingDebounceMs',
+      'bindingSaveOnBlurOnly',
       'styles',
       'components',
       'behaviors',
@@ -885,6 +957,57 @@ class AppearanceCodec {
         applied['windowEffect'] = patch['windowEffect'];
       }
     }
+
+    int boundedInt(String key, int fallback, int min, int max) {
+      if (!patch.containsKey(key) || patch[key] == null) return fallback;
+      final value = patch[key];
+      if (value is! num ||
+          !value.isFinite ||
+          value != value.roundToDouble() ||
+          value < min ||
+          value > max) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: key,
+            message: 'Invalid "$key".',
+            rawValue: value,
+          ),
+        );
+        return fallback;
+      }
+      applied[key] = value.round();
+      return value.round();
+    }
+
+    bool booleanValue(String key, bool fallback) {
+      if (!patch.containsKey(key) || patch[key] == null) return fallback;
+      final value = patch[key];
+      if (value is! bool) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'root',
+            key: key,
+            message: 'Invalid "$key".',
+            rawValue: value,
+          ),
+        );
+        return fallback;
+      }
+      applied[key] = value;
+      return value;
+    }
+
+    final bindingDebounceMs = boundedInt(
+      'bindingDebounceMs',
+      current.bindingDebounceMs,
+      Appearance.minBindingDebounceMs,
+      Appearance.maxBindingDebounceMs,
+    );
+    final bindingSaveOnBlurOnly = booleanValue(
+      'bindingSaveOnBlurOnly',
+      current.bindingSaveOnBlurOnly,
+    );
 
     final styles = Map<String, ContainerStyle>.of(current.styles);
     if (patch.containsKey('styles') && patch['styles'] != null) {
@@ -1219,6 +1342,8 @@ class AppearanceCodec {
       backgroundOpacity: backgroundOpacity,
       windowOpacity: windowOpacity,
       windowEffect: windowEffect,
+      bindingDebounceMs: bindingDebounceMs,
+      bindingSaveOnBlurOnly: bindingSaveOnBlurOnly,
       styles: styles,
       components: components,
       behaviors: behaviors,

@@ -224,6 +224,33 @@ mixin ComponentPropertyBindingsMixin<W extends StatefulWidget, P extends Enum>
   void _propertyStoreChanged() {
     final store = _requestedPropertyStore;
     if (!mounted || store == null || _activePropertyBindings.isEmpty) return;
+    if (!store.hasActiveMutations && propertyBindingErrors.isEmpty) {
+      var unchanged = true;
+      for (final entry in _activePropertyBindings.entries) {
+        final cached = store.peekAttribute(entry.value);
+        if (cached == null) {
+          unchanged = false;
+          break;
+        }
+        try {
+          final parsed = parseBoundProperty(entry.key, cached.value);
+          if ((isFontFamilyProperty(entry.key) &&
+                  availableComponentFontFamilies.isNotEmpty &&
+                  !availableComponentFontFamilies.contains(parsed)) ||
+              boundPropertyValues[entry.key] != parsed) {
+            unchanged = false;
+            break;
+          }
+        } on FormatException {
+          unchanged = false;
+          break;
+        }
+      }
+      if (unchanged &&
+          boundPropertyValues.length == _activePropertyBindings.length) {
+        return;
+      }
+    }
     final generation = ++_propertyBindingGeneration;
     unawaited(
       _loadPropertyBindings(_activePropertyBindings, store, generation),
@@ -304,23 +331,31 @@ mixin ComponentPropertyBindingsMixin<W extends StatefulWidget, P extends Enum>
       for (final entry in boundPropertyValues.entries)
         if (resolved.containsKey(entry.key)) entry.key: entry.value,
     };
+    var allCached = !store.hasActiveMutations;
     for (final entry in resolved.entries) {
       final cached = store.peekAttribute(entry.value);
-      if (cached == null) continue;
+      if (cached == null) {
+        allCached = false;
+        continue;
+      }
       try {
         final value = parseBoundProperty(entry.key, cached.value);
         if (isFontFamilyProperty(entry.key) &&
             availableComponentFontFamilies.isNotEmpty &&
             !availableComponentFontFamilies.contains(value)) {
+          allCached = false;
           continue;
         }
         syncedValues[entry.key] = value;
       } on FormatException {
         // L'erreur sera signalée par _loadPropertyBindings.
+        allCached = false;
       }
     }
     boundPropertyValues = syncedValues;
-    unawaited(_loadPropertyBindings(resolved, store, generation));
+    if (!allCached) {
+      unawaited(_loadPropertyBindings(resolved, store, generation));
+    }
   }
 
   Future<void> _loadPropertyBindings(

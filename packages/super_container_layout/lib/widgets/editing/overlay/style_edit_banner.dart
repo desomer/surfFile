@@ -1,7 +1,7 @@
 /// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
 library;
 
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -13,7 +13,9 @@ import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_task_completion_alert.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
+import 'package:super_container_layout/widgets/editing/repositories/binding_save_timing_controls.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
@@ -63,12 +65,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   _VibeChatLayout _chatLayout = _VibeChatLayout(null, expanded: true);
   bool _chatOpen = false;
   bool _chatExpanded = true;
+  bool _saveTimingOpen = false;
   Offset? _expandedChatPosition;
   Offset? _compactChatPosition;
   VibeChatScope? _chatScope;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
+  int _lastSeenCompletionId = 0;
+  VibeTaskCompletionEvent? _bannerCompletionEvent;
+  Timer? _bannerCompletionTimer;
   ({
     int chevronIndex,
     List<String> prefix,
@@ -103,6 +109,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
 
   bool _openScopedChat(VibeChatScope scope) {
     if (!mounted || AppearanceScope.controllerOf(context) == null) return false;
+    _dismissBannerCompletion();
     setState(() {
       _chatScope = scope;
       if (!_chatOpen) {
@@ -140,6 +147,11 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     VibeChatScope.onOpenRequested = _openScopedChat;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
+    _lastSeenCompletionId =
+        VibeTaskCompletionController.instance.currentEvent?.id ?? 0;
+    VibeTaskCompletionController.instance.addListener(
+      _onTaskCompletionChanged,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || widget.aiResponseGenerator != null) return;
       if (dotenv.isInitialized &&
@@ -231,8 +243,38 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     });
   }
 
+  void _onTaskCompletionChanged() {
+    final event = VibeTaskCompletionController.instance.currentEvent;
+    if (event == null || event.id <= _lastSeenCompletionId) return;
+    _lastSeenCompletionId = event.id;
+    if (_chatOpen) return;
+    _bannerCompletionTimer?.cancel();
+    _bannerCompletionTimer = Timer(const Duration(seconds: 6), () {
+      if (!mounted) return;
+      if (_bannerCompletionEvent?.id == event.id) {
+        setState(() => _bannerCompletionEvent = null);
+      }
+    });
+    if (mounted) {
+      setState(() => _bannerCompletionEvent = event);
+    }
+  }
+
+  void _dismissBannerCompletion() {
+    _bannerCompletionTimer?.cancel();
+    _bannerCompletionTimer = null;
+    if (_bannerCompletionEvent != null && mounted) {
+      setState(() => _bannerCompletionEvent = null);
+    }
+  }
+
   @override
   void dispose() {
+    _bannerCompletionTimer?.cancel();
+    _bannerCompletionTimer = null;
+    VibeTaskCompletionController.instance.removeListener(
+      _onTaskCompletionChanged,
+    );
     if (_treePopup != null) {
       LayoutSelection.highlightNode(null);
     }
@@ -388,19 +430,51 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                         iconSize: 18,
                         color: scheme.onPrimary,
                         isSelected: _chatOpen,
-                        icon: const Icon(Icons.auto_awesome_outlined),
-                        onPressed: () => setState(() {
-                          _chatOpen = !_chatOpen;
-                          _chatScope = null;
-                          if (_chatOpen) {
-                            _chatExpanded = true;
-                            _expandedChatPosition = null;
-                            _chatLayout = _newChatLayout(null, available);
-                          }
-                        }),
+                        icon: (!_chatOpen && _bannerCompletionEvent != null)
+                            ? Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  const Icon(Icons.auto_awesome_outlined),
+                                  Positioned(
+                                    right: -3,
+                                    top: -3,
+                                    child: Container(
+                                      key: const ValueKey(
+                                        'style-edit-banner-ai-badge',
+                                      ),
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: VibeTaskOutcomePalette.resolve(
+                                          context,
+                                          _bannerCompletionEvent!.outcome,
+                                        ).accent,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: scheme.primary,
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const Icon(Icons.auto_awesome_outlined),
+                        onPressed: () {
+                          _dismissBannerCompletion();
+                          setState(() {
+                            _chatOpen = !_chatOpen;
+                            _chatScope = null;
+                            if (_chatOpen) {
+                              _chatExpanded = true;
+                              _expandedChatPosition = null;
+                              _chatLayout = _newChatLayout(null, available);
+                            }
+                          });
+                        },
                       ),
                     if (AppearanceScope.controllerOf(context)
-                        case final appearance?)
+                        case final appearance?) ...[
                       IconButton(
                         key: const ValueKey('style-edit-banner-transfer'),
                         tooltip:
@@ -416,6 +490,24 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                           AppearanceTransferDialog.show(target, appearance);
                         },
                       ),
+                      IconButton(
+                        key: const ValueKey('style-edit-banner-save-timing'),
+                        tooltip: 'Délai d’enregistrement des saisies',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: scheme.onPrimary,
+                        icon: const Icon(Icons.timer_outlined),
+                        onPressed: () {
+                          final target =
+                              widget.navigatorKey?.currentContext ?? context;
+                          if (Navigator.maybeOf(target) != null) {
+                            showBindingSaveTimingDialog(target, appearance);
+                          } else {
+                            setState(() => _saveTimingOpen = !_saveTimingOpen);
+                          }
+                        },
+                      ),
+                    ],
 
                     // Dispositions et zones sélectionnées : parent > ... > enfant.
                     Flexible(
@@ -653,6 +745,28 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               },
             ),
           ),
+        if (_saveTimingOpen && appearance != null)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black54,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => setState(() => _saveTimingOpen = false),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {},
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: BindingSaveTimingDialogContent(
+                        appearance: appearance,
+                        onClose: () => setState(() => _saveTimingOpen = false),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         CustomMultiChildLayout(
           delegate: _BannerOverlayLayout(
             banner: _layout,
@@ -675,6 +789,41 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               LayoutId(id: _BannerOverlayChild.popup, child: popupChild),
           ],
         ),
+        if (!_chatOpen && _bannerCompletionEvent != null)
+          Positioned(
+            top: (_layout.resolvedBounds?.bottom ?? 52) + 8,
+            left: 16,
+            right: 16,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Material(
+                  key: const ValueKey('style-edit-banner-ai-toast'),
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      _dismissBannerCompletion();
+                      if (appearance != null) {
+                        setState(() {
+                          _chatOpen = true;
+                          _chatScope = null;
+                          _chatExpanded = true;
+                          _expandedChatPosition = null;
+                          _chatLayout = _newChatLayout(null, available);
+                        });
+                      }
+                    },
+                    child: VibeTaskCompletionBanner(
+                      event: _bannerCompletionEvent!,
+                      onDismiss: _dismissBannerCompletion,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

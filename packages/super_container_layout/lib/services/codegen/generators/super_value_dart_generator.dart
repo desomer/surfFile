@@ -94,6 +94,10 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
           indent: indent + 2,
           includeConst: !canBeConst && config.states != null,
         ),
+      if (config.bindingDebounceMs != null)
+        'bindingDebounceMs': '${config.bindingDebounceMs}',
+      if (config.bindingSaveOnBlurOnly != null)
+        'bindingSaveOnBlurOnly': '${config.bindingSaveOnBlurOnly}',
       if (config.propertyBindings.isNotEmpty)
         'propertyBindings': context.formatPropertyBindings(
           'SuperValueProperty',

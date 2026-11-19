@@ -24,6 +24,8 @@ class VibeChatMessage {
     this.askUserAnswers,
     this.askUserUsedDefaults = false,
     this.askUserDismissed = false,
+    this.askUserRequestedMore = false,
+    this.requestsMoreQuestions = false,
     this.plan,
     this.planSourcePrompt,
     this.planSourceAttachments = const [],
@@ -57,6 +59,12 @@ class VibeChatMessage {
   /// Indique si le questionnaire a été ignoré.
   final bool askUserDismissed;
 
+  /// Indique si l'utilisateur a validé ces réponses en demandant une série complémentaire (« + de questions »).
+  final bool askUserRequestedMore;
+
+  /// Indique si ce message utilisateur force l'émission de 2 à 4 questions complémentaires au tour suivant.
+  final bool requestsMoreQuestions;
+
   /// Plan d'exécution par lots associé à la réponse.
   final VibeExecutionPlan? plan;
 
@@ -80,6 +88,8 @@ class VibeChatMessage {
     Map<String, Object?>? askUserAnswers,
     bool? askUserUsedDefaults,
     bool? askUserDismissed,
+    bool? askUserRequestedMore,
+    bool? requestsMoreQuestions,
     VibeExecutionPlan? plan,
     String? planSourcePrompt,
     List<VibeChatAttachment>? planSourceAttachments,
@@ -94,6 +104,8 @@ class VibeChatMessage {
     askUserAnswers: askUserAnswers ?? this.askUserAnswers,
     askUserUsedDefaults: askUserUsedDefaults ?? this.askUserUsedDefaults,
     askUserDismissed: askUserDismissed ?? this.askUserDismissed,
+    askUserRequestedMore: askUserRequestedMore ?? this.askUserRequestedMore,
+    requestsMoreQuestions: requestsMoreQuestions ?? this.requestsMoreQuestions,
     plan: plan ?? this.plan,
     planSourcePrompt: planSourcePrompt ?? this.planSourcePrompt,
     planSourceAttachments:

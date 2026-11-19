@@ -382,7 +382,7 @@ class _ZoneDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: bindings.frames,
-    child: child,
+    child: RepaintBoundary(child: child),
     builder: (context, child) {
       final extent = bindings.drawerExtentOf(zone, basis);
       final vertical =

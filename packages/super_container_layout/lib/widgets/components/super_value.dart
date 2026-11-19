@@ -23,6 +23,7 @@ import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
 import '../../services/states/content_hover_scope.dart';
 import '../../super_app.dart';
+import '../appearance/appearance_scope.dart';
 import '../editing/components/super_value_editor.dart';
 import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/slots/editor_slot.dart';
@@ -130,6 +131,10 @@ class _SuperValueState extends State<SuperValue>
   SuperValueConfig? _effectiveConfig;
   bool _hadStates = false;
   final _focusNode = FocusNode();
+  bool _hadFocus = false;
+  Duration _requestedDebounceDuration =
+      JsonTextControllerBinding.defaultDebounceDuration;
+  bool _requestedSaveOnBlurOnly = false;
   Future<void>? _pendingBindingFlush;
 
   static String _initialTextFor(SuperValueConfig config) =>
@@ -214,7 +219,19 @@ class _SuperValueState extends State<SuperValue>
       text: _controlledText ?? _initialTextFor(widget.config),
     );
     _local = ValueNotifier(widget.config);
-    _focusNode.addListener(onComponentStateChanged);
+    _focusNode.addListener(_handleFocusChanged);
+  }
+
+  void _handleFocusChanged() {
+    final hasFocus = _focusNode.hasFocus;
+    if (_hadFocus && !hasFocus) {
+      final binding = _binding;
+      if (binding != null && binding.hasPendingWrite) {
+        unawaited(binding.flush());
+      }
+    }
+    _hadFocus = hasFocus;
+    onComponentStateChanged();
   }
 
   @override
@@ -352,7 +369,16 @@ class _SuperValueState extends State<SuperValue>
     JsonRepositoryStore? store, {
     bool resetText = false,
     bool stateful = false,
+    Duration debounceDuration =
+        JsonTextControllerBinding.defaultDebounceDuration,
+    bool saveOnBlurOnly = false,
   }) {
+    _requestedDebounceDuration = debounceDuration;
+    _requestedSaveOnBlurOnly = saveOnBlurOnly;
+    _binding?.configureTiming(
+      debounceDuration: debounceDuration,
+      saveOnBlurOnly: saveOnBlurOnly,
+    );
     final external = widget.controller != null || _controlledText != null;
     final asBool = config.kind.isBoolean;
     final asStringList =
@@ -482,6 +508,8 @@ class _SuperValueState extends State<SuperValue>
             componentId: widget.id,
             asBool: asBool,
             asStringList: asStringList,
+            debounceDuration: _requestedDebounceDuration,
+            saveOnBlurOnly: _requestedSaveOnBlurOnly,
             onChanged: stateful
                 ? null
                 : (text) {
@@ -541,7 +569,7 @@ class _SuperValueState extends State<SuperValue>
 
   @override
   void dispose() {
-    _focusNode.removeListener(onComponentStateChanged);
+    _focusNode.removeListener(_handleFocusChanged);
     _focusNode.dispose();
     disposeComponentStateReader();
     _bindingGeneration++;
@@ -640,12 +668,20 @@ class _SuperValueState extends State<SuperValue>
           _effectiveConfig = effective;
           _hadStates = states != null;
           _activeStates = active;
+          final appearance = AppearanceScope.of(context);
+          final debounceMs =
+              effective.bindingDebounceMs ?? appearance.bindingDebounceMs;
+          final saveOnBlurOnly =
+              effective.bindingSaveOnBlurOnly ??
+              appearance.bindingSaveOnBlurOnly;
           _observeBinding(
             effective,
             listScope,
             repositories,
             resetText: transition || contentChanged || removedStates,
             stateful: states != null || removedStates,
+            debounceDuration: Duration(milliseconds: debounceMs),
+            saveOnBlurOnly: saveOnBlurOnly,
           );
           if (removedStates) {
             _previousConfig = effective;

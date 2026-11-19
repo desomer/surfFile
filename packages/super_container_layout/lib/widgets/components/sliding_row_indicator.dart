@@ -82,6 +82,7 @@ class SlidingIndicatorMotion extends ChangeNotifier {
   /// la frame suivante.
   void show(Rect? target) {
     if (_disposed) return;
+    if (target != null && !target.isFinite) target = null;
     _silent = true;
     try {
       if (target == null) {
@@ -198,7 +199,8 @@ class SlidingIndicatorScope extends InheritedWidget {
       current = current.parent;
     }
     if (current == null) return null;
-    return box.localToGlobal(Offset.zero, ancestor: ancestor);
+    final offset = box.localToGlobal(Offset.zero, ancestor: ancestor);
+    return offset.isFinite ? offset : null;
   }
 
   @override

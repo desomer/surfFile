@@ -242,7 +242,6 @@ class CwTableRowState extends State<CwTableRow> {
     final Widget styledRow;
     if (elevation != null) {
       styledRow = Container(
-        key: widget.info.data != null ? ObjectKey(widget.info.data) : null,
         margin: margin,
         child: Material(
           color: effectiveColor ?? Colors.transparent,
@@ -257,7 +256,6 @@ class CwTableRowState extends State<CwTableRow> {
       );
     } else {
       styledRow = Container(
-        key: widget.info.data != null ? ObjectKey(widget.info.data) : null,
         margin: margin,
         decoration: boxDecoration,
         padding: padding,

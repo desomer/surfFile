@@ -459,6 +459,9 @@ class CalculatedAttributeEngine {
   void unregisterRepository(String repositoryId) {
     _dartDefinitions.remove(repositoryId);
     _jsDefinitions.remove(repositoryId);
+    (_injectedJsEvaluator ?? _ownedJsEvaluator)?.invalidateDocument(
+      repositoryId,
+    );
     invalidateForChange('', repositoryId: repositoryId);
   }
 
@@ -724,6 +727,9 @@ class CalculatedAttributeEngine {
   /// Un chemin vide concerne tout le repository. Sans [repositoryId], agit
   /// sur le document du moteur autonome.
   void invalidateForChange(String changedPath, {String repositoryId = ''}) {
+    (_injectedJsEvaluator ?? _ownedJsEvaluator)?.invalidateDocument(
+      repositoryId,
+    );
     final path = changedPath.isEmpty
         ? ''
         : JsonAttributePath(changedPath).toString();
@@ -743,7 +749,10 @@ class CalculatedAttributeEngine {
   }
 
   /// Invalide tous les résultats du store.
-  void invalidateAll() => _invalidate(_runs.keys.toSet());
+  void invalidateAll() {
+    (_injectedJsEvaluator ?? _ownedJsEvaluator)?.invalidateDocument();
+    _invalidate(_runs.keys.toSet());
+  }
 
   /// Invalide un calcul précis et tous ses lecteurs.
   void invalidateCalculation(String repositoryId, String path) {

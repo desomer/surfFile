@@ -226,12 +226,14 @@ class _SuperChartState extends State<SuperChart> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(_template!);
     _listen([?_selection, ...source.arrays]);
-    if (binding != null && store != null) {
+    var seededFromCache = false;
+    if (binding != null && store != null && !store.hasActiveMutations) {
       final cached = store.peekArray(binding.repositoryId!, binding.path);
       if (cached != null) {
         _items = cached;
         _error = null;
         _loading = false;
+        var allCalcCached = true;
         if (nextCalcPaths.isNotEmpty && cached.isNotEmpty) {
           final seededCalc = <String, Object?>{};
           for (var i = 0; i < cached.length; i++) {
@@ -244,16 +246,38 @@ class _SuperChartState extends State<SuperChart> {
               );
               if (attr != null) {
                 seededCalc['$i:$rel'] = attr.value;
+              } else {
+                allCalcCached = false;
               }
             }
           }
           _calculatedValues = seededCalc;
+        } else {
+          _calculatedValues = const {};
+        }
+        seededFromCache = allCalcCached;
+        final selected = _selection?.indexFor(source.parents);
+        if (selected != null && selected >= cached.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _selection?.clear();
+          });
         }
       }
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _reload();
-    });
+    if (binding == null || store == null) {
+      _items = null;
+      _calculatedValues = const {};
+      _loading = false;
+      _error =
+          source.error ??
+          (store == null && source.unselected
+              ? 'Service de repositories indisponible.'
+              : null);
+    } else if (!seededFromCache) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reload();
+      });
+    }
   }
 
   static bool _setEquals(Set<String> a, Set<String> b) =>

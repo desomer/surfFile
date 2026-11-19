@@ -49,6 +49,18 @@ enum SuperValueProperty {
 /// Modèle immuable de configuration persistée d'un composant [SuperValue].
 @immutable
 class SuperValueConfig extends ComponentConfig {
+  /// Délai minimum (en ms) de temporisation anti-rebond des saisies liées.
+  static const int minBindingDebounceMs = 100;
+
+  /// Délai maximum (en ms) de temporisation anti-rebond des saisies liées.
+  static const int maxBindingDebounceMs = 2000;
+
+  /// Délai par défaut (en ms) avant enregistrement automatique d'une saisie liée.
+  static const int defaultBindingDebounceMs = 350;
+
+  /// Pas recommandé (en ms) pour le curseur de réglage du délai.
+  static const int bindingDebounceStepMs = 50;
+
   /// Crée une configuration ; un sélecteur [SuperValueKind.choice] utilise la
   /// saisie par défaut.
   const SuperValueConfig({
@@ -72,6 +84,8 @@ class SuperValueConfig extends ComponentConfig {
     this.lineHeight,
     this.letterSpacing,
     this.binding,
+    this.bindingDebounceMs,
+    this.bindingSaveOnBlurOnly,
     this.propertyBindings = const {},
     this.field = const SuperTextFieldConfig(),
     this.choice = const SuperChoiceConfig(),
@@ -102,6 +116,14 @@ class SuperValueConfig extends ComponentConfig {
   final double? lineHeight;
   final double? letterSpacing;
   final JsonTextBinding? binding;
+
+  /// Surcharge locale du délai anti-rebond (en ms, `100..2000`) avant écriture
+  /// dans le repository ; `null` hérite du réglage global d'`Appearance`.
+  final int? bindingDebounceMs;
+
+  /// Surcharge locale imposant l'enregistrement uniquement à la perte de focus ;
+  /// `null` hérite du réglage global d'`Appearance`.
+  final bool? bindingSaveOnBlurOnly;
   final Map<SuperValueProperty, JsonTextBinding> propertyBindings;
   final SuperTextFieldConfig field;
   final SuperChoiceConfig choice;
@@ -142,6 +164,11 @@ class SuperValueConfig extends ComponentConfig {
     }
     field.validateFor(obscureText: obscureText, maxLines: maxLines);
     choice.validate();
+    if (bindingDebounceMs != null &&
+        (bindingDebounceMs! < minBindingDebounceMs ||
+            bindingDebounceMs! > maxBindingDebounceMs)) {
+      throw ArgumentError('Invalid Value configuration.');
+    }
     if (minLines < 1 ||
         maxLines < minLines ||
         (obscureText &&
@@ -190,6 +217,10 @@ class SuperValueConfig extends ComponentConfig {
     bool inheritLetterSpacing = false,
     JsonTextBinding? binding,
     bool clearBinding = false,
+    int? bindingDebounceMs,
+    bool inheritBindingDebounceMs = false,
+    bool? bindingSaveOnBlurOnly,
+    bool inheritBindingSaveOnBlurOnly = false,
     Map<SuperValueProperty, JsonTextBinding>? propertyBindings,
     SuperTextFieldConfig? field,
     SuperChoiceConfig? choice,
@@ -222,6 +253,12 @@ class SuperValueConfig extends ComponentConfig {
         ? null
         : letterSpacing ?? this.letterSpacing,
     binding: clearBinding ? null : binding ?? this.binding,
+    bindingDebounceMs: inheritBindingDebounceMs
+        ? null
+        : bindingDebounceMs ?? this.bindingDebounceMs,
+    bindingSaveOnBlurOnly: inheritBindingSaveOnBlurOnly
+        ? null
+        : bindingSaveOnBlurOnly ?? this.bindingSaveOnBlurOnly,
     propertyBindings: propertyBindings ?? this.propertyBindings,
     field: field ?? this.field,
     choice: choice ?? this.choice,
@@ -252,6 +289,9 @@ class SuperValueConfig extends ComponentConfig {
       'lineHeight': lineHeight,
       'letterSpacing': letterSpacing,
       if (binding != null) 'binding': binding!.toJson(),
+      if (bindingDebounceMs != null) 'bindingDebounceMs': bindingDebounceMs,
+      if (bindingSaveOnBlurOnly != null)
+        'bindingSaveOnBlurOnly': bindingSaveOnBlurOnly,
       if (propertyBindings.isNotEmpty)
         'propertyBindings': JsonReader.encodePropertyBindings(propertyBindings),
       if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
@@ -285,6 +325,9 @@ class SuperValueConfig extends ComponentConfig {
       if (lineHeight != null) 'lineHeight': lineHeight,
       if (letterSpacing != null) 'letterSpacing': letterSpacing,
       if (binding != null) 'binding': binding!.toCompactJson(),
+      if (bindingDebounceMs != null) 'bindingDebounceMs': bindingDebounceMs,
+      if (bindingSaveOnBlurOnly != null)
+        'bindingSaveOnBlurOnly': bindingSaveOnBlurOnly,
       if (propertyBindings.isNotEmpty)
         'propertyBindings': JsonReader.encodePropertyBindings(
           propertyBindings,
@@ -332,6 +375,8 @@ class SuperValueConfig extends ComponentConfig {
       'lineHeight',
       'letterSpacing',
       'binding',
+      'bindingDebounceMs',
+      'bindingSaveOnBlurOnly',
       'propertyBindings',
       'field',
       'choice',
@@ -446,6 +491,17 @@ class SuperValueConfig extends ComponentConfig {
         ? value['choice']
         : value['choise'];
 
+    int? readNullableInt(String key, int? fallbackVal) {
+      if (!value.containsKey(key)) return fallbackVal;
+      final raw = value[key];
+      if (raw == null) return null;
+      if (raw is int) return raw;
+      if (raw is num && raw.isFinite && raw == raw.roundToDouble()) {
+        return raw.round();
+      }
+      throw const FormatException('Invalid Value configuration.');
+    }
+
     final result = SuperValueConfig(
       mode: mode,
       kind: kind,
@@ -471,6 +527,14 @@ class SuperValueConfig extends ComponentConfig {
           : value['binding'] == null
           ? null
           : JsonTextBinding.fromJson(value['binding']),
+      bindingDebounceMs: readNullableInt(
+        'bindingDebounceMs',
+        fallback.bindingDebounceMs,
+      ),
+      bindingSaveOnBlurOnly: field<bool?>(
+        'bindingSaveOnBlurOnly',
+        fallback.bindingSaveOnBlurOnly,
+      ),
       propertyBindings: propertyBindings,
       field: value.containsKey('field')
           ? SuperTextFieldConfig.fromJson(
@@ -518,6 +582,8 @@ class SuperValueConfig extends ComponentConfig {
       lineHeight == other.lineHeight &&
       letterSpacing == other.letterSpacing &&
       binding == other.binding &&
+      bindingDebounceMs == other.bindingDebounceMs &&
+      bindingSaveOnBlurOnly == other.bindingSaveOnBlurOnly &&
       mapEquals(propertyBindings, other.propertyBindings) &&
       field == other.field &&
       choice == other.choice &&
@@ -545,6 +611,8 @@ class SuperValueConfig extends ComponentConfig {
     lineHeight,
     letterSpacing,
     binding,
+    bindingDebounceMs,
+    bindingSaveOnBlurOnly,
     JsonReader.hashPropertyBindings(propertyBindings),
     field,
     choice,

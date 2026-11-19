@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart' show RenderSliver;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart' show SlotSizeConstraints;
+import '../overlay/editor_overlay.dart' show isEditorOverlaySourceOffstage;
 
 /// Side of the target where the new component appears.
 enum InsertDirection {
@@ -199,9 +200,16 @@ Rect? boundsOfContextIn(BuildContext? target, RenderObject ancestor) {
           : Size(geom.paintExtent, ro.constraints.crossAxisExtent);
     }
   }
-  if (size == null || size.isEmpty || !size.isFinite) return null;
+  if (size == null ||
+      size.isEmpty ||
+      !size.isFinite ||
+      isEditorOverlaySourceOffstage(target, stopAt: ancestor)) {
+    return null;
+  }
+  final transform = ro.getTransformTo(ancestor);
+  if (transform.isZero()) return null;
   final rect = MatrixUtils.transformRect(
-    ro.getTransformTo(ancestor),
+    transform,
     Offset.zero & size,
   );
   return rect.isEmpty || !rect.isFinite ? null : rect;

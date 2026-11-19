@@ -33,7 +33,10 @@ import '../../models/super_tree_view_config.dart';
 import '../../theme/appearance.dart';
 import '../../widgets/components/super_layout/layout_selection.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
-import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope;
+import '../../widgets/editing/overlay/editor_overlay.dart'
+    show isRenderObjectOffstage;
+import '../../widgets/editing/slots/editor_context_menu.dart'
+    show VibeChatScope;
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
 import '../pages/editor_page_router.dart';
@@ -274,14 +277,16 @@ class VibeAppInspector {
     final appearance = readAppearance();
     final ctx = _resolvePrimaryContext();
     final media = ctx != null ? MediaQuery.maybeOf(ctx) : null;
-    final editMode = ctx != null ? StyleEditScope.controllerOf(ctx)?.value : null;
+    final editMode = ctx != null
+        ? StyleEditScope.controllerOf(ctx)?.value
+        : null;
     final scope = readScope?.call();
     final activePage = _resolveActivePage(appearance);
 
     String? currentLocation;
     try {
-      currentLocation =
-          pageRouting?.router.routeInformationProvider.value.uri.toString();
+      currentLocation = pageRouting?.router.routeInformationProvider.value.uri
+          .toString();
     } catch (_) {
       currentLocation = null;
     }
@@ -329,7 +334,8 @@ class VibeAppInspector {
   ) async {
     final appearance = readAppearance();
     final scope = readScope?.call();
-    final zoneFilter = args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
+    final zoneFilter =
+        args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
         ? (args['zoneId'] as String).trim()
         : null;
     final includeScroll = args['includeScroll'] is bool
@@ -347,7 +353,8 @@ class VibeAppInspector {
           requestedIds.add(item.trim());
         }
       }
-    } else if (args['id'] is String && (args['id'] as String).trim().isNotEmpty) {
+    } else if (args['id'] is String &&
+        (args['id'] as String).trim().isNotEmpty) {
       requestedIds.add((args['id'] as String).trim());
     }
 
@@ -370,8 +377,9 @@ class VibeAppInspector {
 
     final uniqueIds = requestedIds.toSet().toList();
     final primaryCtx = _resolvePrimaryContext();
-    final viewportSize =
-        primaryCtx != null ? MediaQuery.maybeSizeOf(primaryCtx) : null;
+    final viewportSize = primaryCtx != null
+        ? MediaQuery.maybeSizeOf(primaryCtx)
+        : null;
     final rootBox = _resolveRootBox(primaryCtx);
 
     final results = <String, Object?>{};
@@ -385,7 +393,8 @@ class VibeAppInspector {
       if (entries.isEmpty) {
         results[id] = <String, Object?>{
           'mounted': false,
-          'configured': appearance.components.containsKey(id) ||
+          'configured':
+              appearance.components.containsKey(id) ||
               appearance.styles.containsKey(id),
           'occurrences': const <Object?>[],
         };
@@ -432,29 +441,40 @@ class VibeAppInspector {
             'hasBoundedHeight': constraints.hasBoundedHeight,
           };
 
+          final isOffstage = isRenderObjectOffstage(renderObj, stopAt: rootBox);
           final origin = rootBox != null
               ? renderObj.localToGlobal(Offset.zero, ancestor: rootBox)
               : renderObj.localToGlobal(Offset.zero);
-          final globalRect = origin & size;
-          item['bounds'] = _rectToJson(globalRect);
+          final globalRect = !isOffstage && origin.isFinite && size.isFinite
+              ? (origin & size)
+              : null;
+          if (globalRect != null) {
+            item['bounds'] = _rectToJson(globalRect);
+          }
 
           final parentObj = renderObj.parent;
-          if (parentObj is RenderBox && parentObj.attached && parentObj.hasSize) {
+          if (parentObj is RenderBox &&
+              parentObj.attached &&
+              parentObj.hasSize) {
             final localOffset = renderObj.localToGlobal(
               Offset.zero,
               ancestor: parentObj,
             );
-            item['parentRelative'] = <String, Object?>{
-              'left': _round2(localOffset.dx),
-              'top': _round2(localOffset.dy),
-              'parentWidth': _round2(parentObj.size.width),
-              'parentHeight': _round2(parentObj.size.height),
-            };
+            if (localOffset.isFinite) {
+              item['parentRelative'] = <String, Object?>{
+                'left': _round2(localOffset.dx),
+                'top': _round2(localOffset.dy),
+                'parentWidth': _round2(parentObj.size.width),
+                'parentHeight': _round2(parentObj.size.height),
+              };
+            }
           }
 
           item['diagnostics'] = <String, Object?>{
             'isZeroSized': size.width <= 0.0 || size.height <= 0.0,
-            if (viewportSize != null) ...<String, Object?>{
+            if (globalRect == null)
+              'isOffscreen': true
+            else if (viewportSize != null) ...<String, Object?>{
               'exceedsViewportWidth':
                   globalRect.right > viewportSize.width + 0.5 ||
                   globalRect.left < -0.5,
@@ -531,13 +551,14 @@ class VibeAppInspector {
 
     String? rootId =
         args['rootId'] is String && (args['rootId'] as String).trim().isNotEmpty
-            ? (args['rootId'] as String).trim()
-            : null;
+        ? (args['rootId'] as String).trim()
+        : null;
     rootId ??= scope?.canonicalComponentId;
     rootId ??= _resolveActivePage(appearance)?.id;
     if (rootId == null) {
       for (final entry in appearance.components.entries) {
-        if (entry.value is ScaffoldPageConfig || entry.value is SuperLayoutConfig) {
+        if (entry.value is ScaffoldPageConfig ||
+            entry.value is SuperLayoutConfig) {
           rootId = entry.key;
           break;
         }
@@ -562,14 +583,16 @@ class VibeAppInspector {
       visitedNodes++;
       final config = appearance.components[id];
       final entries = slotIndex.entriesFor(id);
-      final primaryEntry = entries
-          .where((e) => e.zoneId == null || e.zoneId!.isEmpty)
-          .firstOrNull ??
+      final primaryEntry =
+          entries
+              .where((e) => e.zoneId == null || e.zoneId!.isEmpty)
+              .firstOrNull ??
           entries.firstOrNull;
 
       Map<String, Object?>? primarySize;
       final primaryCtx =
-          primaryEntry?.contentKey.currentContext ?? primaryEntry?.slotContext();
+          primaryEntry?.contentKey.currentContext ??
+          primaryEntry?.slotContext();
       if (primaryCtx != null && primaryCtx.mounted) {
         final ro = primaryCtx.findRenderObject();
         if (ro is RenderBox && ro.attached && ro.hasSize) {
@@ -582,7 +605,8 @@ class VibeAppInspector {
 
       final node = <String, Object?>{
         'id': id,
-        'type': config?.componentType ?? primaryEntry?.componentType ?? 'unknown',
+        'type':
+            config?.componentType ?? primaryEntry?.componentType ?? 'unknown',
         if (primaryEntry != null) 'label': primaryEntry.label,
         'mounted': entries.isNotEmpty,
         if (entries.length > 1) 'occurrenceCount': entries.length,
@@ -771,8 +795,7 @@ class VibeAppInspector {
               : (store.isMemoryOnlyRepository(entry.id) ? 'memory' : 'file'),
           if (doc is Map)
             'rootKeys': {
-              for (final k in doc.keys)
-                '$k': _describeJsonShape(doc[k]),
+              for (final k in doc.keys) '$k': _describeJsonShape(doc[k]),
             },
           'calculatedAttributes': [
             for (final attr in store.calculatedAttributeCatalog(entry.id))
@@ -898,12 +921,7 @@ class VibeAppInspector {
         'limit': limit,
         'items': [
           for (var i = safeOffset; i < end; i++)
-            _paginateJsonValue(
-              value[i],
-              offset: 0,
-              limit: 5,
-              depth: depth + 1,
-            ),
+            _paginateJsonValue(value[i], offset: 0, limit: 5, depth: depth + 1),
         ],
       };
     }
@@ -936,15 +954,15 @@ class VibeAppInspector {
   ) async {
     var componentId =
         args['componentId'] is String &&
-                (args['componentId'] as String).trim().isNotEmpty
-            ? (args['componentId'] as String).trim()
-            : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
-                  ? (args['id'] as String).trim()
-                  : null);
+            (args['componentId'] as String).trim().isNotEmpty
+        ? (args['componentId'] as String).trim()
+        : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
+              ? (args['id'] as String).trim()
+              : null);
     var zoneId =
         args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
-            ? (args['zoneId'] as String).trim()
-            : null;
+        ? (args['zoneId'] as String).trim()
+        : null;
 
     if (componentId == null) {
       final scope = readScope?.call();
@@ -1011,8 +1029,8 @@ class VibeAppInspector {
         ? args['scrollIntoView'] as bool
         : true;
     final rawPadding = args['contextPadding'];
-    final contextPadding =
-        (rawPadding is num ? rawPadding.toDouble() : 0.0).clamp(0.0, 200.0);
+    final contextPadding = (rawPadding is num ? rawPadding.toDouble() : 0.0)
+        .clamp(0.0, 200.0);
     final rawMaxDim = args['maxDimension'];
     final maxDimension = (rawMaxDim is num ? rawMaxDim.toInt() : 800).clamp(
       256,
@@ -1141,8 +1159,11 @@ class VibeAppInspector {
     RenderRepaintBoundary? boundary;
     if (renderObj is RenderRepaintBoundary && contextPadding <= 0.0) {
       boundary = renderObj;
-    } else if (contextPadding > 0.0 && renderObj is RenderBox && renderObj.hasSize) {
-      boundary = _findLargerAncestorBoundary(renderObj, renderObj.size) ??
+    } else if (contextPadding > 0.0 &&
+        renderObj is RenderBox &&
+        renderObj.hasSize) {
+      boundary =
+          _findLargerAncestorBoundary(renderObj, renderObj.size) ??
           directAncestorBoundary;
     } else {
       boundary = directAncestorBoundary;
@@ -1159,6 +1180,15 @@ class VibeAppInspector {
     Rect? logicalRectInBoundary;
     Size? logicalElementSize;
 
+    if (isRenderObjectOffstage(renderObj, stopAt: boundary)) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'L’élément "$componentId" est masqué (offstage) et ne peut pas être capturé.',
+      );
+    }
+
     if (renderObj is RenderBox && renderObj.hasSize) {
       logicalElementSize = renderObj.size;
       if (logicalElementSize.width <= 0 || logicalElementSize.height <= 0) {
@@ -1169,10 +1199,27 @@ class VibeAppInspector {
               'L’élément "$componentId" a une taille nulle (${logicalElementSize.width}x${logicalElementSize.height}).',
         );
       }
+      final transform = renderObj.getTransformTo(boundary);
+      if (transform.isZero()) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" est entièrement hors de la zone visible de son conteneur.',
+        );
+      }
       final baseRect = MatrixUtils.transformRect(
-        renderObj.getTransformTo(boundary),
+        transform,
         Offset.zero & logicalElementSize,
       );
+      if (!baseRect.isFinite) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" est entièrement hors de la zone visible de son conteneur.',
+        );
+      }
       logicalRectInBoundary = baseRect
           .inflate(contextPadding)
           .intersect(Offset.zero & boundary.size);
@@ -1193,12 +1240,28 @@ class VibeAppInspector {
           : Rect.fromLTWH(0, 0, paintExtent, crossExtent);
       logicalElementSize = localSliverRect.size;
       final viewportBox = _findNearestRenderBox(renderObj);
-      final baseRect = viewportBox != null
-          ? MatrixUtils.transformRect(
-              renderObj.getTransformTo(boundary),
-              localSliverRect,
-            )
+      final transform = viewportBox != null
+          ? renderObj.getTransformTo(boundary)
+          : null;
+      if (transform != null && transform.isZero()) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" est entièrement hors de la zone visible de son conteneur.',
+        );
+      }
+      final baseRect = transform != null
+          ? MatrixUtils.transformRect(transform, localSliverRect)
           : localSliverRect;
+      if (!baseRect.isFinite) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'L’élément "$componentId" est entièrement hors de la zone visible de son conteneur.',
+        );
+      }
       logicalRectInBoundary = baseRect
           .inflate(contextPadding)
           .intersect(Offset.zero & boundary.size);
@@ -1211,7 +1274,8 @@ class VibeAppInspector {
       );
     }
 
-    if (logicalRectInBoundary.isEmpty ||
+    if (!logicalRectInBoundary.isFinite ||
+        logicalRectInBoundary.isEmpty ||
         logicalRectInBoundary.width <= 0 ||
         logicalRectInBoundary.height <= 0) {
       return VibeToolResult.error(
@@ -1343,7 +1407,9 @@ class VibeAppInspector {
     RenderRepaintBoundary? outermost;
     RenderObject? current = start.parent;
     while (current != null) {
-      if (current is RenderRepaintBoundary && current.attached && current.hasSize) {
+      if (current is RenderRepaintBoundary &&
+          current.attached &&
+          current.hasSize) {
         outermost = current;
         if (current.size.width > elementSize.width + 0.5 ||
             current.size.height > elementSize.height + 0.5) {
@@ -1402,9 +1468,9 @@ class VibeAppInspector {
   ) async {
     final componentId =
         args['componentId'] is String &&
-                (args['componentId'] as String).trim().isNotEmpty
-            ? (args['componentId'] as String).trim()
-            : null;
+            (args['componentId'] as String).trim().isNotEmpty
+        ? (args['componentId'] as String).trim()
+        : null;
     if (componentId != null) {
       return captureElementScreenshot(callId, toolName, args);
     }

@@ -1052,4 +1052,198 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test(
+    'SuperValueConfig and Appearance serialize and validate binding save timing settings',
+    () {
+      const config = SuperValueConfig(
+        mode: SuperValueMode.input,
+        bindingDebounceMs: 850,
+        bindingSaveOnBlurOnly: true,
+      );
+      final compact = config.toCompactJson();
+      expect(compact['bindingDebounceMs'], 850);
+      expect(compact['bindingSaveOnBlurOnly'], isTrue);
+      expect(SuperValueConfig.fromJson(config.toJson()), config);
+      expect(SuperValueConfig.fromJson(compact), config);
+      expect(
+        const SuperValueConfig().toCompactJson().containsKey(
+          'bindingDebounceMs',
+        ),
+        isFalse,
+      );
+      expect(
+        () => SuperValueConfig(bindingDebounceMs: 50).validate(),
+        throwsArgumentError,
+      );
+      expect(
+        () => SuperValueConfig(bindingDebounceMs: 2500).validate(),
+        throwsArgumentError,
+      );
+
+      final appearance = Appearance(
+        bindingDebounceMs: 1200,
+        bindingSaveOnBlurOnly: true,
+      );
+      const codec = AppearanceCodec();
+      expect(codec.toCompactJson(appearance)['bindingDebounceMs'], 1200);
+      expect(codec.toCompactJson(appearance)['bindingSaveOnBlurOnly'], isTrue);
+      final decoded = codec.fromJson(codec.toJson(appearance));
+      expect(decoded.bindingDebounceMs, 1200);
+      expect(decoded.bindingSaveOnBlurOnly, isTrue);
+
+      final patched = codec.patchFromJson(Appearance(), {
+        'bindingDebounceMs': 600,
+        'bindingSaveOnBlurOnly': true,
+      });
+      expect(patched.bindingDebounceMs, 600);
+      expect(patched.bindingSaveOnBlurOnly, isTrue);
+
+      const defaultCodec = DefaultAppearanceCodec();
+      final defApp = DefaultAppearance(
+        bindingDebounceMs: 750,
+        bindingSaveOnBlurOnly: true,
+      );
+      final decodedDef = defaultCodec.fromJson(defaultCodec.toJson(defApp));
+      expect(decodedDef.bindingDebounceMs, 750);
+      expect(decodedDef.bindingSaveOnBlurOnly, isTrue);
+    },
+  );
+
+  testWidgets(
+    'SuperValue respects global Appearance debounce, per-component override, and save-on-blur-only mode',
+    (tester) async {
+      final appearance = ValueNotifier(Appearance(bindingDebounceMs: 900));
+      addTearDown(appearance.dispose);
+      final overrideBinding = JsonTextBinding(
+        repositoryId: binding.repositoryId,
+        path: 'client.city',
+      );
+      await tester.runAsync(
+        () => store.writeAttribute(overrideBinding, 'Paris', expectedValue: null),
+      );
+
+      await mount(
+        tester,
+        AppearanceScope(
+          controller: appearance,
+          child: Column(
+            children: [
+              SuperValue(
+                id: 'global-timed',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  binding: binding,
+                ),
+              ),
+              SuperValue(
+                id: 'override-timed',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  binding: overrideBinding,
+                  bindingDebounceMs: 150,
+                ),
+              ),
+              const TextField(
+                key: ValueKey('other-focus-target'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // 1) Global 900 ms: not saved at 450 ms, saved after another 600 ms.
+      await tester.runAsync(() async {
+        await tester.tap(input('global-timed'));
+        await tester.pump();
+        await tester.enterText(input('global-timed'), 'Bob');
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+      });
+      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Alice');
+
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+      });
+      await tester.pumpAndSettle();
+      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Bob');
+
+      // 2) Per-component override 150 ms: saved before 300 ms even with global 900 ms.
+      await tester.runAsync(() async {
+        await tester.tap(input('override-timed'));
+        await tester.pump();
+        await tester.enterText(input('override-timed'), 'Lyon');
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        (await tester.runAsync(() => store.readAttribute(overrideBinding)))?.text,
+        'Lyon',
+      );
+
+      // 3) Switch global mode to save-on-blur-only: typing does not save after 500 ms,
+      //    and moving focus to another field flushes immediately.
+      appearance.value = appearance.value.copyWith(bindingSaveOnBlurOnly: true);
+      await tester.pumpAndSettle();
+
+      await tester.runAsync(() async {
+        await tester.tap(input('global-timed'));
+        await tester.pump();
+        await tester.enterText(input('global-timed'), 'Claire');
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pump();
+      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Bob');
+
+      await real(
+        tester,
+        () => tester.tap(find.byKey(const ValueKey('other-focus-target'))),
+      );
+      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Claire');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperValue editor configures custom debounce and save-on-blur-only per component',
+    (tester) async {
+      SuperValueConfig? result;
+      await editorHost(
+        tester,
+        config: SuperValueConfig(
+          mode: SuperValueMode.input,
+          binding: binding,
+        ),
+        result: (value) => result = value,
+      );
+      await real(tester, () => tester.tap(find.text('Edit')));
+
+      final customToggle = find.byKey(
+        const ValueKey('super-value-setting-custom-save-timing'),
+      );
+      await tester.ensureVisible(customToggle);
+      await real(tester, () => tester.tap(customToggle));
+
+      final slider = find.byKey(
+        const ValueKey('super-value-save-timing-slider'),
+      );
+      await tester.ensureVisible(slider);
+      await tester.drag(slider, const Offset(80, 0));
+      await tester.pumpAndSettle();
+
+      final blurOnly = find.byKey(
+        const ValueKey('super-value-save-timing-blur-only'),
+      );
+      await tester.ensureVisible(blurOnly);
+      await real(tester, () => tester.tap(blurOnly));
+      await real(tester, () => tester.tap(find.text('Appliquer').last));
+
+      expect(result, isNotNull);
+      expect(result!.bindingDebounceMs, greaterThan(350));
+      expect(result!.bindingSaveOnBlurOnly, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

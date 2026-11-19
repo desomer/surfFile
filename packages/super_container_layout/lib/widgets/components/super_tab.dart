@@ -692,22 +692,43 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         ? null
         : store.bindingOf(binding.repositoryId!).array(templatePath);
     _listenDynamic([?_dynamicSelection, ...source.arrays]);
-    if (binding != null && store != null) {
+    var seededFromCache = false;
+    if (binding != null && store != null && !store.hasActiveMutations) {
       final cached = store.peekArray(binding.repositoryId!, binding.path);
       if (cached != null) {
         _dynamicItems = cached;
         _dynamicError = null;
         _dynamicLoading = false;
+        seededFromCache = true;
         final selected = _dynamicSelection?.indexFor(source.parents);
-        if (selected == null && cached.isNotEmpty) {
+        if (selected != null && selected >= cached.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _dynamicSelection?.clear();
+          });
+        } else if (selected == null && cached.isNotEmpty) {
           final initial = _selectedIndex.clamp(0, cached.length - 1);
-          _dynamicSelection?.select(source.parents, initial);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted &&
+                _dynamicSelection?.indexFor(source.parents) == null) {
+              _dynamicSelection?.select(source.parents, initial);
+            }
+          });
         }
       }
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _reloadDynamic();
-    });
+    if (binding == null || store == null) {
+      _dynamicItems = null;
+      _dynamicLoading = false;
+      _dynamicError =
+          source.error ??
+          (store == null && source.unselected
+              ? 'Service de repositories indisponible.'
+              : null);
+    } else if (!seededFromCache) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reloadDynamic();
+      });
+    }
   }
 
   void _selectDynamicIndex(int index) {
@@ -1340,7 +1361,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                       : null,
                   children: [
                     for (final slot in tabSlots)
-                      KeyedSubtree(
+                      _KeepAliveTabPage(
                         key: ValueKey('super-tab-content-${slot.id}'),
                         child: _buildContentRegion(
                           editor,
@@ -1608,9 +1629,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       ),
     );
 
-    final dynamicContent = KeyedSubtree(
+    final dynamicContent = RepaintBoundary(
       key: ValueKey(
-        'super-tab-dynamic-content-${widget.id}-${templateMode ? 'template' : effectiveIndex}',
+        'super-tab-dynamic-content-${widget.id}-${templateMode ? 'template' : 'active'}',
       ),
       child: wrapScope(
         effectiveIndex,
@@ -1772,5 +1793,26 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         );
       },
     );
+  }
+}
+
+class _KeepAliveTabPage extends StatefulWidget {
+  const _KeepAliveTabPage({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveTabPage> createState() => _KeepAliveTabPageState();
+}
+
+class _KeepAliveTabPageState extends State<_KeepAliveTabPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return RepaintBoundary(child: widget.child);
   }
 }

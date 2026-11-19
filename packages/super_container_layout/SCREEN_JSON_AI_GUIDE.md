@@ -759,6 +759,7 @@ Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un 
 - `minLines` (`1`), `maxLines` (`1`) : `int` (`maxLines >= minLines >= 1`).
 - Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"theme:<rôle>"` recommandé Material 3, ou `"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
 - `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}` (supporte `string` ou `List<string>` pour les choix multiples).
+- `bindingDebounceMs` (`int?`, `100..2000`) et `bindingSaveOnBlurOnly` (`bool?`) : surcharges optionnelles du délai anti-rebond (en ms, défaut global `350`) et de l'enregistrement uniquement à la perte de focus (omis par défaut pour hériter du réglage global `Appearance.bindingDebounceMs` / `Appearance.bindingSaveOnBlurOnly`).
 - `field` (`SuperTextFieldConfig`, pour `mode: "input"` et `kind: "text"`).
 - `choice` (`SuperChoiceConfig`, pour `kind: "choice"`) :
   - `variant` : `"segmented"` (2 à 5 choix uniques `SegmentedButton`), `"dropdown"` (défaut, `DropdownButton`), `"radio"` (`RadioListTile`), `"filterChip"` (choix multiples `FilterChip`), `"checkboxList"` (choix multiples `CheckboxListTile`), `"searchAnchor"` (grande liste recherchable `SearchAnchor`).

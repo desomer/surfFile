@@ -10,12 +10,14 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_js/flutter_js.dart';
 
+import '../../models/json_text_binding.dart';
 import 'calculated_attribute.dart';
 
 /// Interface d'évaluation d'une formule JavaScript pour un attribut calculé.
-abstract interface class JsCalculatedEvaluator {
+abstract class JsCalculatedEvaluator {
   /// Évalue [code] dans le contexte [context].
   ///
   /// [scopeData] représente la valeur JSON de la ligne courante (ou le
@@ -27,6 +29,10 @@ abstract interface class JsCalculatedEvaluator {
     required Object? rootData,
     required CalculatedAttributeContext context,
   });
+
+  /// Invalide le document mis en cache pour [repositoryId], ou l'ensemble des
+  /// documents si [repositoryId] vaut `null`.
+  void invalidateDocument([String? repositoryId]) {}
 
   /// Libère les ressources natives associées au runtime.
   void dispose();
@@ -59,11 +65,64 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
   bool _disposed = false;
 
   static const int _maxResolutionPasses = 64;
+  static const int _maxCachedDocs = 64;
+  static const int _maxCachedCodes = 1024;
+
+  final _cachedRoots = <String, Object?>{};
+  final _codeIds = <String, int>{};
+  final _uploadedCodeIds = <int>{};
+  int _nextCodeId = 0;
+  int _documentUploadCount = 0;
+
+  /// Nombre de synchronisations complètes de documents JSON vers QuickJS.
+  @visibleForTesting
+  int get debugDocumentUploadCount => _documentUploadCount;
 
   static const String _bootstrapScript = r'''
 (function() {
   if (globalThis.__sclCalcReady) return true;
   const __fnCache = Object.create(null);
+  const __fnById = Object.create(null);
+  const __codeSourceById = Object.create(null);
+  const __docCache = Object.create(null);
+
+  globalThis.__sclSetDoc = function(docKey, docJson) {
+    __docCache[String(docKey ?? '')] = JSON.parse(docJson);
+    return true;
+  };
+
+  globalThis.__sclClearDoc = function(docKey) {
+    if (docKey === null || docKey === undefined) {
+      for (const key of Object.keys(__docCache)) {
+        delete __docCache[key];
+      }
+    } else {
+      delete __docCache[String(docKey)];
+    }
+    return true;
+  };
+
+  globalThis.__sclClearCode = function(codeId) {
+    delete __codeSourceById[codeId];
+    delete __fnById[codeId];
+    return true;
+  };
+
+  function __resolveByPath(root, path) {
+    if (!path) return root;
+    let cur = root;
+    const re = /([^.\[\]]+)|\[(\d+)\]/g;
+    let match;
+    while ((match = re.exec(path)) !== null) {
+      if (cur === null || cur === undefined) return null;
+      if (match[1] !== undefined) {
+        cur = cur[match[1]];
+      } else {
+        cur = cur[Number(match[2])];
+      }
+    }
+    return cur === undefined ? null : cur;
+  }
 
   function __compile(source) {
     const key = String(source ?? '');
@@ -217,8 +276,17 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
       });
     }
 
-    const row = makeProxy(payload.scopeData, '', scopePaths, false);
-    const doc = makeProxy(payload.rootData, '', rootPaths, true);
+    const rawRoot = Object.prototype.hasOwnProperty.call(payload, 'rootData')
+      ? payload.rootData
+      : __docCache[String(payload.docKey ?? '')];
+    const rawScope = payload.scopeMode === 'root'
+      ? rawRoot
+      : payload.scopeMode === 'path'
+        ? __resolveByPath(rawRoot, payload.scopePath)
+        : payload.scopeData;
+
+    const row = makeProxy(rawScope, '', scopePaths, false);
+    const doc = makeProxy(rawRoot, '', rootPaths, true);
     const ctx = {
       repositoryId: payload.repositoryId,
       scopePath: payload.scopePath,
@@ -252,7 +320,19 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
     };
 
     try {
-      const fn = __compile(payload.code);
+      let fn;
+      if (payload.codeId !== undefined && payload.codeId !== null) {
+        const id = payload.codeId;
+        if (Object.prototype.hasOwnProperty.call(payload, 'code')) {
+          __codeSourceById[id] = payload.code;
+        }
+        if (!Object.prototype.hasOwnProperty.call(__fnById, id)) {
+          __fnById[id] = __compile(__codeSourceById[id]);
+        }
+        fn = __fnById[id];
+      } else {
+        fn = __compile(payload.code);
+      }
       const raw = fn(row, ctx, doc);
       if (raw && typeof raw.then === 'function') {
         throw new TypeError('Les fonctions JavaScript asynchrones (Promise) ne sont pas supportées ; utilisez ctx.get(...) directement.');
@@ -313,6 +393,74 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
   }
 
   @override
+  void invalidateDocument([String? repositoryId]) {
+    if (_disposed) return;
+    if (repositoryId == null) {
+      _cachedRoots.clear();
+      if (_bootstrapped && _runtime != null) {
+        _runtime!.evaluate('globalThis.__sclClearDoc(null)');
+      }
+    } else if (_cachedRoots.remove(repositoryId) != null &&
+        _bootstrapped &&
+        _runtime != null) {
+      _runtime!.evaluate(
+        'globalThis.__sclClearDoc(${jsonEncode(repositoryId)})',
+      );
+    }
+  }
+
+  int _resolveCodeId(String code) {
+    final existing = _codeIds.remove(code);
+    if (existing != null) {
+      _codeIds[code] = existing;
+      return existing;
+    }
+    if (_codeIds.length >= _maxCachedCodes) {
+      final oldestKey = _codeIds.keys.first;
+      final evicted = _codeIds.remove(oldestKey);
+      if (evicted != null) {
+        _uploadedCodeIds.remove(evicted);
+        if (_bootstrapped && _runtime != null) {
+          _runtime!.evaluate('globalThis.__sclClearCode($evicted)');
+        }
+      }
+    }
+    final assigned = ++_nextCodeId;
+    _codeIds[code] = assigned;
+    return assigned;
+  }
+
+  void _ensureRootUploaded(
+    JavascriptRuntime runtime,
+    String docKey,
+    Object? rootData,
+  ) {
+    if (_cachedRoots.containsKey(docKey) &&
+        identical(_cachedRoots[docKey], rootData)) {
+      final existing = _cachedRoots.remove(docKey);
+      _cachedRoots[docKey] = existing;
+      return;
+    }
+    if (_cachedRoots.length >= _maxCachedDocs &&
+        !_cachedRoots.containsKey(docKey)) {
+      final oldestKey = _cachedRoots.keys.first;
+      _cachedRoots.remove(oldestKey);
+      runtime.evaluate('globalThis.__sclClearDoc(${jsonEncode(oldestKey)})');
+    }
+    final encodedDoc = jsonEncode(rootData);
+    final setResult = runtime.evaluate(
+      'globalThis.__sclSetDoc(${jsonEncode(docKey)}, ${jsonEncode(encodedDoc)})',
+    );
+    if (setResult.isError) {
+      throw JsCalculationException(
+        'Synchronisation du document QuickJS impossible : ${setResult.stringResult}',
+      );
+    }
+    _cachedRoots[docKey] = rootData;
+    _documentUploadCount++;
+  }
+
+  @override
   FutureOr<Object?> evaluate({
     required String code,
     required Object? scopeData,
@@ -320,6 +468,21 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
     required CalculatedAttributeContext context,
   }) {
     final runtime = _ensureRuntime();
+    final docKey = context.repositoryId;
+    final codeId = _resolveCodeId(code);
+    final String scopeMode;
+    if (identical(scopeData, rootData)) {
+      scopeMode = 'root';
+    } else if (context.scopePath.isNotEmpty &&
+        rootData != null &&
+        identical(
+          scopeData,
+          JsonAttributePath(context.scopePath).readNode(rootData),
+        )) {
+      scopeMode = 'path';
+    } else {
+      scopeMode = 'inline';
+    }
     final resolved = <String, Map<String, Object?>>{};
     var pass = 0;
 
@@ -333,13 +496,17 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
             'Trop de dépendances imbriquées dans le calcul JavaScript.',
           );
         }
+        _ensureRootUploaded(runtime, docKey, rootData);
+        final sendCode = _uploadedCodeIds.add(codeId);
         final payloadJson = jsonEncode(<String, Object?>{
-          'code': code,
-          'scopeData': scopeData,
-          'rootData': rootData,
+          'codeId': codeId,
+          if (sendCode) 'code': code,
+          'docKey': docKey,
+          'scopeMode': scopeMode,
+          if (scopeMode == 'inline') 'scopeData': scopeData,
           'repositoryId': context.repositoryId,
           'scopePath': context.scopePath,
-          'resolved': resolved,
+          if (resolved.isNotEmpty) 'resolved': resolved,
         });
         final evalResult = runtime.evaluate(
           'globalThis.__sclEvalCalc(${jsonEncode(payloadJson)})',
@@ -582,6 +749,9 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
     if (_disposed) return;
     _disposed = true;
     _bootstrapped = false;
+    _cachedRoots.clear();
+    _codeIds.clear();
+    _uploadedCodeIds.clear();
     final runtime = _runtime;
     _runtime = null;
     runtime?.dispose();
