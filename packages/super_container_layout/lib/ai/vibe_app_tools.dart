@@ -273,6 +273,18 @@ class VibeToolTrace {
         }
         final count = data['repositoryCount'];
         if (count is num) return '$count repository(s)';
+      case 'manage_repository_json_schema':
+        final action = data['action'] ?? call.arguments['action'] ?? '';
+        final repoId =
+            data['id'] ?? data['name'] ?? call.arguments['repositoryId'] ?? '';
+        if (action == 'validate') {
+          final valid = data['valid'] == true;
+          final issueCount = data['issueCount'] ?? 0;
+          return valid
+              ? '$repoId : conforme'
+              : '$repoId : $issueCount erreur(s)';
+        }
+        return '$action $repoId'.trim();
       case 'capture_element_screenshot':
       case 'capture_screenshot':
         final target = data['target'] ?? data['componentId'] ?? 'viewport';
@@ -451,7 +463,7 @@ class VibeAppToolRegistry {
           name: 'query_repository_data',
           description:
               'Interroge le JsonRepositoryStore actif en lecture seule : liste des repositories, '
-              'schémas, échantillons paginés à un chemin JSON et sélections actives Maître/Détail.',
+              'présence et contenu de leur jsonSchema, échantillons paginés à un chemin JSON et sélections actives Maître/Détail.',
           parametersSchema: <String, Object?>{
             'type': 'object',
             'properties': <String, Object?>{
@@ -473,6 +485,55 @@ class VibeAppToolRegistry {
                 'type': 'integer',
                 'description':
                     'Nombre maximal d’éléments retournés pour un tableau (entre 1 et 50, défaut 10).',
+              },
+            },
+          },
+        ),
+        VibeToolDeclaration(
+          name: 'manage_repository_json_schema',
+          description:
+              'Lit, infère, valide, associe (create), modifie (update) ou dissocie (delete) le JSON Schema '
+              'standard (Draft 7 / Draft 2020-12) d’un repository existant. Participe à la transaction du tour '
+              '(rollback et Undo/Redo).',
+          parametersSchema: <String, Object?>{
+            'type': 'object',
+            'required': <String>['action', 'repositoryId'],
+            'properties': <String, Object?>{
+              'action': <String, Object?>{
+                'type': 'string',
+                'enum': <String>[
+                  'get',
+                  'create',
+                  'update',
+                  'delete',
+                  'validate',
+                  'infer',
+                ],
+                'description':
+                    'Opération : "get" (lire), "infer" (générer un schéma initial depuis les données), '
+                    '"validate" (tester le document contre un schéma), "create" (associer un nouveau schéma), '
+                    '"update" (remplacer le schéma existant), "delete" (dissocier le schéma).',
+              },
+              'repositoryId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant technique ou nom exact d’un repository existant dans le store.',
+              },
+              'schema': <String, Object?>{
+                'type': 'object',
+                'description':
+                    'Objet JSON Schema standard (requis pour "create" et "update", optionnel pour "validate").',
+              },
+              'validateCurrentDocument': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Valide immédiatement le document courant avant d’enregistrer le schéma (défaut true). '
+                    'Passer false uniquement si tu mets aussi à jour les données du repository dans le même tour.',
+              },
+              'markPresentKeysRequired': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Utilisé avec "infer" : marque les clés présentes dans le document comme "required" (défaut false).',
               },
             },
           },
@@ -814,7 +875,8 @@ class VibeAppToolRegistry {
       '(4) tu dois vérifier des couleurs/contrastes (`get_theme_and_contrast`), connaître les extensions/polices ou la sélection (`get_registry_and_selection`), '
       '(5) un tableau de repository est tronqué ("truncatedArrays" -> `query_repository_data`) ou une vue Détail/page secondaire doit être prévisualisée (`preview_navigation_or_selection`), '
       '(6) l’utilisateur demande où se trouve un élément ou de le sélectionner/pointer dans l’éditeur (`select_editor_element`), '
-      '(7) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
+      '(7) l’utilisateur demande de consulter, inférer, valider, associer, modifier ou supprimer le JSON Schema d’un repository existant (`manage_repository_json_schema`), '
+      '(8) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
       '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples dont le JSON courant contient déjà toute l’information.\n'
       '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
       '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'

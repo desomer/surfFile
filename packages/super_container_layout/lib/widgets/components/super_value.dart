@@ -21,6 +21,7 @@ import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
+import '../../services/repositories/json_schema_field_resolver.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
 import '../../services/states/content_hover_scope.dart';
 import '../../super_app.dart';
@@ -136,10 +137,90 @@ class _SuperValueState extends State<SuperValue>
   final _focusNode = FocusNode();
   bool _hadFocus = false;
   bool _touched = false;
+  JsonRepositoryStore? _schemaStore;
+  final Set<String> _schemaLoadRequested = {};
+  Map<String, Object?>? _lastObservedSchema;
   Duration _requestedDebounceDuration =
       JsonTextControllerBinding.defaultDebounceDuration;
   bool _requestedSaveOnBlurOnly = false;
   Future<void>? _pendingBindingFlush;
+
+  void _syncSchemaStoreListener(
+    JsonRepositoryStore? store,
+    SuperValueConfig config,
+    JsonListScope? scope,
+  ) {
+    if (!identical(_schemaStore, store)) {
+      _schemaStore?.removeListener(_handleSchemaStoreChanged);
+      _schemaStore = store;
+      _schemaLoadRequested.clear();
+      _lastObservedSchema = null;
+      _schemaStore?.addListener(_handleSchemaStoreChanged);
+    }
+    final repoId = config.binding?.repositoryId ?? scope?.repositoryId;
+    if (store != null &&
+        repoId != null &&
+        repoId.isNotEmpty &&
+        config.kind.isText &&
+        config.field.useRepositorySchema) {
+      _lastObservedSchema = store.jsonSchemaOf(repoId);
+      if (_lastObservedSchema == null && _schemaLoadRequested.add(repoId)) {
+        unawaited(
+          store.ensureSchemasLoaded().then((_) {
+            if (mounted && store.jsonSchemaOf(repoId) != null) {
+              setState(() {});
+            }
+          }),
+        );
+      }
+    } else {
+      _lastObservedSchema = null;
+    }
+  }
+
+  void _handleSchemaStoreChanged() {
+    if (!mounted) return;
+    final store = _schemaStore;
+    if (store == null) return;
+    final scope = JsonListScope.maybeOf(context);
+    final saved =
+        (SuperApp.maybeOf(context)?.registry?.valueController(
+                  widget.id,
+                  fallback: widget.config,
+                ) ??
+                _local)
+            .value;
+    final repoId = saved.binding?.repositoryId ?? scope?.repositoryId;
+    final nextSchema = repoId == null ? null : store.jsonSchemaOf(repoId);
+    if (!identical(nextSchema, _lastObservedSchema)) {
+      _lastObservedSchema = nextSchema;
+      setState(() {});
+    }
+  }
+
+  SuperValueConfig _applySchemaConstraints(
+    SuperValueConfig config,
+    JsonListScope? scope,
+    JsonRepositoryStore? store,
+  ) {
+    if (!config.kind.isText || !config.field.useRepositorySchema) {
+      return config;
+    }
+    final binding = config.binding;
+    if (binding == null || store == null) return config;
+    final repoId = binding.repositoryId ?? scope?.repositoryId;
+    if (repoId == null || repoId.isEmpty) return config;
+    final schema = store.jsonSchemaOf(repoId);
+    if (schema == null) return config;
+    final profile = JsonSchemaFieldResolver.resolve(schema, binding.path);
+    if (profile == null) return config;
+    return config.copyWith(
+      field: config.field.applySchemaProfile(
+        profile,
+        allowMaskAndFormat: !config.obscureText && config.maxLines == 1,
+      ),
+    );
+  }
 
   static String _initialTextFor(
     SuperValueConfig config, {
@@ -185,9 +266,10 @@ class _SuperValueState extends State<SuperValue>
   }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
-      final source =
+      final rawSource =
           saved.states?.resolve(saved, name: stateReader?.stateName) ??
           saved.copyWith(clearStates: true);
+      final source = _applySchemaConstraints(rawSource, scope, store);
       final input = source.mode == SuperValueMode.input;
       final effectiveDisabled =
           behaviorDisabled || (input && !source.enabled);
@@ -225,6 +307,7 @@ class _SuperValueState extends State<SuperValue>
             activeStates: automaticActiveStates,
           ) ??
           saved;
+      config = _applySchemaConstraints(config, scope, store);
       if (behaviorDisabled && config.enabled) {
         config = config.copyWith(enabled: false);
       }
@@ -238,7 +321,11 @@ class _SuperValueState extends State<SuperValue>
     } on ArgumentError {
       stateError = 'Combinaison d’états de la valeur invalide.';
     }
-    var fallback = saved.copyWith(clearStates: true);
+    var fallback = _applySchemaConstraints(
+      saved.copyWith(clearStates: true),
+      scope,
+      store,
+    );
     if (behaviorDisabled && fallback.enabled) {
       fallback = fallback.copyWith(enabled: false);
     }
@@ -724,6 +811,8 @@ class _SuperValueState extends State<SuperValue>
 
   @override
   void dispose() {
+    _schemaStore?.removeListener(_handleSchemaStoreChanged);
+    _schemaStore = null;
     _focusNode.removeListener(_handleFocusChanged);
     _focusNode.dispose();
     disposeComponentStateReader();
@@ -787,6 +876,7 @@ class _SuperValueState extends State<SuperValue>
       ValueListenableBuilder<SuperValueConfig>(
         valueListenable: configuration,
         builder: (context, savedConfig, _) {
+          _syncSchemaStoreListener(repositories, savedConfig, listScope);
           final effective = _resolveStates(
             savedConfig,
             listScope,

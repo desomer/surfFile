@@ -106,6 +106,7 @@ export 'services/pages/editor_page_router.dart';
 export 'services/pages/editor_page_graph.dart';
 export 'services/repositories/json_repository_store.dart';
 export 'services/repositories/json_repository_scope.dart';
+export 'services/repositories/json_schema_field_resolver.dart';
 export 'services/repositories/json_text_controller_binding.dart';
 export 'models/providers/data_provider.dart';
 export 'models/providers/http_provider_config.dart';

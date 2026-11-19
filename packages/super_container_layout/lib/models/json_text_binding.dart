@@ -327,6 +327,17 @@ class JsonAttributePath {
   int get wildcardCount =>
       _segments.where((segment) => identical(segment, _wildcard)).length;
 
+  /// Segments structurés du chemin dans l'ordre (clé d'objet, indice ou `[?]`).
+  List<({String? key, int? index, bool isWildcard})> get steps => [
+    for (final segment in _segments)
+      if (segment is String)
+        (key: segment, index: null, isWildcard: false)
+      else if (identical(segment, _wildcard))
+        (key: null, index: null, isWildcard: true)
+      else
+        (key: null, index: segment as int, isWildcard: false),
+  ];
+
   /// Vrai si le chemin ne contient aucun `[?]`.
   bool get isResolved => wildcardCount == 0;
 

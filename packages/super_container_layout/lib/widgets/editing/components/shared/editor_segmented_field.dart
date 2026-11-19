@@ -423,8 +423,8 @@ class EditorSegmentedField<T> extends StatelessWidget {
   /// Liste des segments proposés.
   final List<EditorSegmentOption<T>> options;
 
-  /// Callback appelé lorsqu'un segment est sélectionné.
-  final ValueChanged<T> onChanged;
+  /// Callback appelé lorsqu'un segment est sélectionné (`null` désactive le champ).
+  final ValueChanged<T>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -434,11 +434,13 @@ class EditorSegmentedField<T> extends StatelessWidget {
       style: editorCompactSegmentButtonStyle,
       segments: [for (final option in options) option.toButtonSegment()],
       selected: {value},
-      onSelectionChanged: (selected) {
-        if (selected.isNotEmpty) {
-          onChanged(selected.first);
-        }
-      },
+      onSelectionChanged: onChanged == null
+          ? null
+          : (selected) {
+              if (selected.isNotEmpty) {
+                onChanged!(selected.first);
+              }
+            },
     );
     if (label == null && subtitle == null) return button;
     return Column(

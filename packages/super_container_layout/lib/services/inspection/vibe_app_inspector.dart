@@ -23,6 +23,7 @@ import '../../models/editor_page_config.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
+import '../../models/repository_json_schema.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../models/super_conditional_config.dart';
 import '../../models/super_layout_config.dart';
@@ -32,6 +33,7 @@ import '../../models/super_table_config.dart';
 import '../../models/super_tree_view_config.dart';
 import '../../theme/appearance.dart';
 import '../../widgets/components/super_layout/layout_selection.dart';
+import '../../widgets/editing/ai/vibe_repository_applier.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../../widgets/editing/overlay/editor_overlay.dart'
     show isRenderObjectOffstage;
@@ -41,6 +43,7 @@ import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
 import '../pages/editor_page_router.dart';
 import '../repositories/json_repository_store.dart';
+import '../repositories/json_schema_validator.dart';
 import 'vibe_debug_capture.dart';
 import 'vibe_diagnostics_inspector.dart';
 import 'vibe_mounted_slot_index.dart';
@@ -59,6 +62,7 @@ class VibeAppInspector {
     this.fallbackContext,
     this.turnStartMarker,
     this.previewTracker,
+    this.repoTransaction,
   }) : slotIndex = slotIndex ?? VibeMountedSlotIndex.instance;
 
   /// Fournisseur de l'[Appearance] active (incluant les éventuels défauts runtime).
@@ -72,6 +76,9 @@ class VibeAppInspector {
 
   /// Store optionnel de repositories JSON.
   final JsonRepositoryStore? repositoryStore;
+
+  /// Transaction optionnelle du tour Vibe pour enregistrer les mutations de schémas.
+  final VibeRepositoryTurnTransaction? repoTransaction;
 
   /// Routeur GoRouter dynamique optionnel.
   final EditorPageRouter? pageRouting;
@@ -127,6 +134,8 @@ class VibeAppInspector {
           name: call.name,
           data: await queryRepositoryData(call.arguments),
         ),
+        'manage_repository_json_schema': (call) =>
+            manageRepositoryJsonSchema(call.id, call.name, call.arguments),
         'capture_element_screenshot': (call) =>
             captureElementScreenshot(call.id, call.name, call.arguments),
         'capture_screenshot': (call) =>
@@ -801,6 +810,8 @@ class VibeAppInspector {
             for (final attr in store.calculatedAttributeCatalog(entry.id))
               attr.path,
           ],
+          'hasJsonSchema': store.jsonSchemaOf(entry.id) != null,
+          if (store.isCodeJsonSchema(entry.id)) 'isCodeJsonSchema': true,
           'selections': {
             for (final arr in binding.arrays)
               if (arr.selection != null) arr.template: arr.selection,
@@ -831,11 +842,15 @@ class VibeAppInspector {
 
     if (path.isEmpty) {
       final doc = await store.readDocument(repoId);
+      final schema = await store.readJsonSchema(repoId);
       return <String, Object?>{
         'available': true,
         'found': true,
         'id': entry.id,
         'name': entry.name,
+        'hasJsonSchema': schema != null,
+        if (store.isCodeJsonSchema(repoId)) 'isCodeJsonSchema': true,
+        'jsonSchema': ?schema,
         if (selections.isNotEmpty) 'selections': selections,
         'data': _paginateJsonValue(doc, offset: offset, limit: limit),
       };
@@ -868,6 +883,264 @@ class VibeAppInspector {
       if (selections.isNotEmpty) 'selections': selections,
       'value': _paginateJsonValue(resolvedValue, offset: offset, limit: limit),
     };
+  }
+
+  /// Lit, infère, valide, crée, met à jour ou dissocie le JSON Schema d'un repository.
+  Future<VibeToolResult> manageRepositoryJsonSchema(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) async {
+    final store = repositoryStore;
+    if (store == null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Aucun JsonRepositoryStore actif dans ce contexte.',
+      );
+    }
+
+    final rawAction = args['action'];
+    if (rawAction is! String || rawAction.trim().isEmpty) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Paramètre "action" requis ("get", "create", "update", "delete", "validate" ou "infer").',
+      );
+    }
+    final action = rawAction.trim();
+
+    final rawRepo = args['repositoryId'];
+    if (rawRepo is! String || rawRepo.trim().isEmpty) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Paramètre "repositoryId" requis.',
+      );
+    }
+    final requestedRepo = rawRepo.trim();
+
+    final catalog = await store.catalog();
+    final entry =
+        catalog.where((e) => e.id == requestedRepo).firstOrNull ??
+        catalog
+            .where(
+              (e) => e.name.toLowerCase() == requestedRepo.toLowerCase(),
+            )
+            .firstOrNull;
+    if (entry == null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Repository "$requestedRepo" introuvable dans le store.',
+      );
+    }
+
+    final repoId = entry.id;
+    final isCodeSchema = store.isCodeJsonSchema(repoId);
+
+    try {
+      switch (action) {
+        case 'get':
+          final schema = await store.readJsonSchema(repoId);
+          return VibeToolResult(
+            callId: callId,
+            name: toolName,
+            data: <String, Object?>{
+              'ok': true,
+              'action': action,
+              'id': repoId,
+              'name': entry.name,
+              'hasJsonSchema': schema != null,
+              'isCodeJsonSchema': isCodeSchema,
+              'jsonSchema': ?schema,
+            },
+          );
+
+        case 'infer':
+          final doc = await store.readDocument(repoId);
+          final markRequired = args['markPresentKeysRequired'] == true;
+          final inferred = JsonSchemaValidator.inferSchema(
+            doc,
+            title: entry.name,
+            markPresentKeysRequired: markRequired,
+          );
+          return VibeToolResult(
+            callId: callId,
+            name: toolName,
+            data: <String, Object?>{
+              'ok': true,
+              'action': action,
+              'id': repoId,
+              'name': entry.name,
+              'schema': inferred,
+            },
+          );
+
+        case 'validate':
+          final rawSchema = args['schema'];
+          Map<String, Object?>? effectiveSchema;
+          if (rawSchema != null) {
+            effectiveSchema = JsonSchemaValidator.validateSchemaDefinition(
+              rawSchema,
+            );
+          } else {
+            effectiveSchema = await store.readJsonSchema(repoId);
+          }
+          if (effectiveSchema == null) {
+            return VibeToolResult(
+              callId: callId,
+              name: toolName,
+              data: <String, Object?>{
+                'ok': true,
+                'action': action,
+                'id': repoId,
+                'name': entry.name,
+                'hasJsonSchema': false,
+                'valid': true,
+                'issueCount': 0,
+                'issues': const <Object?>[],
+              },
+            );
+          }
+          final doc = await store.readDocument(repoId);
+          final result = JsonSchemaValidator.validate(doc, effectiveSchema);
+          return VibeToolResult(
+            callId: callId,
+            name: toolName,
+            data: <String, Object?>{
+              'ok': true,
+              'action': action,
+              'id': repoId,
+              'name': entry.name,
+              'hasJsonSchema': true,
+              'valid': result.isValid,
+              'issueCount': result.issues.length,
+              'issues': [for (final issue in result.issues) issue.toJson()],
+            },
+          );
+
+        case 'create':
+        case 'update':
+          if (isCodeSchema) {
+            return VibeToolResult.error(
+              callId: callId,
+              name: toolName,
+              message:
+                  'Le JSON Schema de "${entry.name}" ($repoId) est figé dans le code via RepositoryImpl.jsonSchema.',
+            );
+          }
+          final existing = await store.readJsonSchema(repoId);
+          if (action == 'create' && existing != null) {
+            return VibeToolResult.error(
+              callId: callId,
+              name: toolName,
+              message:
+                  'Un JSON Schema est déjà associé à "${entry.name}" ($repoId). Utilisez action="update" pour le remplacer.',
+            );
+          }
+          final rawSchema = args['schema'];
+          if (rawSchema is! Map) {
+            return VibeToolResult.error(
+              callId: callId,
+              name: toolName,
+              message:
+                  'Le paramètre "schema" (objet JSON Schema) est requis pour action="$action".',
+            );
+          }
+          final normalized = JsonSchemaValidator.validateSchemaDefinition(
+            rawSchema,
+          );
+          final validateDoc = args['validateCurrentDocument'] is bool
+              ? args['validateCurrentDocument'] as bool
+              : true;
+
+          final persisted = repoTransaction != null
+              ? await repoTransaction!.applyJsonSchemaFromTool(
+                  repoId,
+                  normalized,
+                  validateCurrentDocument: validateDoc,
+                )
+              : await (() async {
+                  await store.saveJsonSchema(
+                    repoId,
+                    normalized,
+                    validateCurrentDocument: validateDoc,
+                  );
+                  return store.readJsonSchema(repoId);
+                })();
+          return VibeToolResult(
+            callId: callId,
+            name: toolName,
+            data: <String, Object?>{
+              'ok': true,
+              'action': action,
+              'id': repoId,
+              'name': entry.name,
+              'hasJsonSchema': persisted != null,
+              'validateCurrentDocument': validateDoc,
+              'jsonSchema': ?persisted,
+            },
+          );
+
+        case 'delete':
+          if (isCodeSchema) {
+            return VibeToolResult.error(
+              callId: callId,
+              name: toolName,
+              message:
+                  'Le JSON Schema de "${entry.name}" ($repoId) est figé dans le code via RepositoryImpl.jsonSchema.',
+            );
+          }
+          final hadSchema = await store.readJsonSchema(repoId) != null;
+          if (repoTransaction != null) {
+            await repoTransaction!.applyJsonSchemaFromTool(repoId, null);
+          } else {
+            await store.saveJsonSchema(repoId, null);
+          }
+          return VibeToolResult(
+            callId: callId,
+            name: toolName,
+            data: <String, Object?>{
+              'ok': true,
+              'action': action,
+              'id': repoId,
+              'name': entry.name,
+              'hadJsonSchema': hadSchema,
+              'hasJsonSchema': false,
+            },
+          );
+
+        default:
+          return VibeToolResult.error(
+            callId: callId,
+            name: toolName,
+            message:
+                'Action inconnue "$action" (attendu: "get", "create", "update", "delete", "validate" ou "infer").',
+          );
+      }
+    } on JsonSchemaValidationException catch (error) {
+      return VibeToolResult(
+        callId: callId,
+        name: toolName,
+        isError: true,
+        data: <String, Object?>{
+          'ok': false,
+          'action': action,
+          'id': repoId,
+          'name': entry.name,
+          'error': error.message,
+          'issues': [for (final issue in error.issues) issue.toJson()],
+        },
+      );
+    } on FormatException catch (error) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: error.message,
+      );
+    }
   }
 
   static final RegExp _pathTokenPattern = RegExp(r'([^.\[\]]+)|\[(\d+)\]');

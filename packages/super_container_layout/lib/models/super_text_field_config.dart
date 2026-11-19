@@ -12,7 +12,7 @@ import 'material_icon_catalog.dart';
 import 'text_field_constraints.dart';
 
 export 'text_field_constraints.dart'
-    show TextFieldFormat, TextFieldValueType;
+    show SchemaFieldProfile, TextFieldFormat, TextFieldValueType;
 
 /// Style de bordure et de remplissage d'un [SuperTextField].
 enum TextFieldVariant { theme, filled, outlined, underline, borderless }
@@ -162,6 +162,7 @@ class SuperTextFieldConfig {
     this.enumValues = const [],
     this.constValue,
     this.validationMessage = '',
+    this.useRepositorySchema = true,
   });
 
   final TextFieldVariant variant;
@@ -240,6 +241,87 @@ class SuperTextFieldConfig {
 
   /// Message d'erreur personnalisé affiché lorsqu'une contrainte échoue.
   final String validationMessage;
+
+  /// Hérite automatiquement les contraintes et masques du `jsonSchema` du
+  /// repository lié lorsque ce champ possède un binding valide.
+  final bool useRepositorySchema;
+
+  /// Applique les contraintes et éventuels masques d'un [SchemaFieldProfile]
+  /// résolu depuis le JSON Schema du repository.
+  SuperTextFieldConfig applySchemaProfile(
+    SchemaFieldProfile profile, {
+    bool allowMaskAndFormat = true,
+  }) {
+    final nextDecimalSep = allowMaskAndFormat
+        ? (profile.decimalSeparator ?? decimalSeparator)
+        : decimalSeparator;
+    var nextThousandsSep = allowMaskAndFormat
+        ? (profile.thousandsSeparator ?? thousandsSeparator)
+        : thousandsSeparator;
+    if (nextThousandsSep.isNotEmpty && nextThousandsSep == nextDecimalSep) {
+      nextThousandsSep = '';
+    }
+    return SuperTextFieldConfig(
+      variant: variant,
+      fillColor: fillColor,
+      focusFillColor: focusFillColor,
+      disabledFillColor: disabledFillColor,
+      errorFillColor: errorFillColor,
+      borderColor: borderColor,
+      focusBorderColor: focusBorderColor,
+      disabledBorderColor: disabledBorderColor,
+      errorBorderColor: errorBorderColor,
+      radius: radius,
+      borderWidth: borderWidth,
+      horizontalPadding: horizontalPadding,
+      verticalPadding: verticalPadding,
+      dense: dense,
+      prefixText: prefixText,
+      suffixText: suffixText,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      suffix: suffix,
+      helperText: helperText,
+      errorText: errorText,
+      showCounter: showCounter,
+      maxLength: profile.maxLength,
+      filter: filter,
+      pattern: pattern,
+      keyboard: keyboard,
+      action: action,
+      capitalization: capitalization,
+      verticalAlign: verticalAlign,
+      floatingLabel: floatingLabel,
+      autocorrect: autocorrect,
+      suggestions: suggestions,
+      mask: allowMaskAndFormat ? (profile.mask ?? mask) : mask,
+      maskIncludeLiterals: allowMaskAndFormat
+          ? (profile.maskIncludeLiterals ?? maskIncludeLiterals)
+          : maskIncludeLiterals,
+      decimalDigits: allowMaskAndFormat
+          ? (profile.decimalDigits ?? decimalDigits)
+          : decimalDigits,
+      decimalSeparator: nextDecimalSep,
+      thousandsSeparator: nextThousandsSep,
+      dateFormat: allowMaskAndFormat
+          ? (profile.dateFormat ?? dateFormat)
+          : dateFormat,
+      valueType: profile.valueType,
+      required: profile.required,
+      minLength: profile.minLength,
+      validationPattern: profile.validationPattern,
+      format: profile.format,
+      minimum: profile.minimum,
+      maximum: profile.maximum,
+      exclusiveMinimum: profile.exclusiveMinimum,
+      exclusiveMaximum: profile.exclusiveMaximum,
+      multipleOf: profile.multipleOf,
+      enumValues: profile.enumValues,
+      constValue: profile.constValue,
+      validationMessage: profile.validationMessage ?? validationMessage,
+      useRepositorySchema: useRepositorySchema,
+    );
+  }
 
   /// Vrai si un formatage numérique (décimales ou séparateurs) est actif.
   bool get hasNumericFormatting =>
@@ -557,6 +639,7 @@ class SuperTextFieldConfig {
     List<String>? enumValues,
     String? constValue,
     String? validationMessage,
+    bool? useRepositorySchema,
     bool inheritFillColor = false,
     bool inheritFocusFillColor = false,
     bool inheritDisabledFillColor = false,
@@ -660,6 +743,7 @@ class SuperTextFieldConfig {
         : this.enumValues,
     constValue: clearConstValue ? null : constValue ?? this.constValue,
     validationMessage: validationMessage ?? this.validationMessage,
+    useRepositorySchema: useRepositorySchema ?? this.useRepositorySchema,
   );
 
   Map<String, Object?> toJson() => {
@@ -714,6 +798,7 @@ class SuperTextFieldConfig {
     'enumValues': List<String>.unmodifiable(enumValues),
     'constValue': constValue,
     'validationMessage': validationMessage,
+    'useRepositorySchema': useRepositorySchema,
   };
 
   Map<String, Object?> toCompactJson() {
@@ -783,6 +868,8 @@ class SuperTextFieldConfig {
       if (constValue != null) 'constValue': constValue,
       if (validationMessage.isNotEmpty)
         'validationMessage': validationMessage,
+      if (useRepositorySchema != d.useRepositorySchema)
+        'useRepositorySchema': useRepositorySchema,
     };
   }
 
@@ -1059,6 +1146,10 @@ class SuperTextFieldConfig {
       enumValues: parseEnumValues('enumValues', fallback.enumValues),
       constValue: field<String?>('constValue', fallback.constValue),
       validationMessage: field('validationMessage', fallback.validationMessage),
+      useRepositorySchema: field(
+        'useRepositorySchema',
+        fallback.useRepositorySchema,
+      ),
     );
     result.validate();
     return result;

@@ -165,7 +165,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
-5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
+5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -2822,6 +2822,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       fallbackContext: () => mounted ? context : null,
       turnStartMarker: session.turnStartMarker,
       previewTracker: session.previewTracker,
+      repoTransaction: session.repoTransaction,
     ).buildToolRegistry();
   }
 
@@ -2833,6 +2834,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         'get_component_geometry' => 'Mesure des composants à l’écran…',
         'get_runtime_tree' => 'Inspection de l’arbre monté…',
         'query_repository_data' => 'Interrogation des repositories…',
+        'manage_repository_json_schema' =>
+          'Gestion du JSON Schema du repository…',
         'capture_element_screenshot' => 'Capture visuelle de l’élément…',
         'capture_screenshot' => 'Capture visuelle de l’écran…',
         'get_debug_entries' => 'Lecture des journaux et erreurs…',
@@ -3648,9 +3651,11 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         }
         final repositoriesPatch = _extractRepositoriesPatch(result);
         final patch = _extractPatch(result);
+        final hasToolRepoChanges = session.repoTransaction?.hasChanges ?? false;
         if (repositoriesPatch == null &&
             patch == null &&
-            !session.hasCheckpoint) {
+            !session.hasCheckpoint &&
+            (!hasToolRepoChanges || rawAskUser != null || rawPlan != null)) {
           if (rawPlan != null) {
             _lastFailedResponse = null;
             return (
@@ -3717,6 +3722,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           }
           await repoTx.applyRepositoriesPatch(repositoriesPatch);
         }
+        await session.repoTransaction?.assertAllSchemasValid();
         Appearance? appearance;
         Map<String, dynamic>? effectivePatch;
         final current = session.checkpointAppearance;

@@ -17,11 +17,13 @@ class SuperTextFieldSettings extends StatefulWidget {
     required this.value,
     required this.onChanged,
     required this.builder,
+    this.schemaProfile,
     super.key,
   });
   final SuperTextFieldConfig value;
   final ValueChanged<SuperTextFieldConfig> onChanged;
   final Widget Function(List<StyleEditorSection> sections) builder;
+  final SchemaFieldProfile? schemaProfile;
 
   @override
   State<SuperTextFieldSettings> createState() => SuperTextFieldSettingsState();
@@ -205,6 +207,25 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         _ => Icons.tune,
       };
 
+  bool get _inheritsSchema =>
+      _values['useRepositorySchema'] != false && widget.schemaProfile != null;
+
+  Map<String, Object?>? get _schemaJson => _inheritsSchema
+      ? widget.value.applySchemaProfile(widget.schemaProfile!).toJson()
+      : null;
+
+  bool _isLocked(String key) =>
+      _inheritsSchema && (widget.schemaProfile?.lockedKeys.contains(key) ?? false);
+
+  String _schemaDisplayText(String key) {
+    final json = _schemaJson;
+    if (json == null) return '';
+    if (key == 'enumValues') {
+      return (json[key] as List?)?.join(', ') ?? '';
+    }
+    return json[key]?.toString() ?? '';
+  }
+
   Widget _choice<T extends Enum>(
     String key,
     String label,
@@ -212,11 +233,12 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     Map<String, String> labels = const {},
     bool nullable = false,
   }) {
+    final locked = _isLocked(key);
     final totalOptions = values.length + (nullable ? 1 : 0);
-    final current = _values[key] as String? ?? '';
+    final current = (locked ? _schemaJson![key] : _values[key]) as String? ?? '';
     if (totalOptions <= 5) {
       return EditorSegmentedField<String>(
-        buttonKey: ValueKey('text-field-setting-$key-${_values[key]}'),
+        buttonKey: ValueKey('text-field-setting-$key-$current${locked ? '-locked' : ''}'),
         label: label,
         value: current,
         options: [
@@ -237,11 +259,11 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
               flexibleIcon: true,
             ),
         ],
-        onChanged: (next) => _update(key, next == '' ? null : next),
+        onChanged: locked ? null : (next) => _update(key, next == '' ? null : next),
       );
     }
     return DropdownButtonFormField<String>(
-      key: ValueKey('text-field-setting-$key-${_values[key]}'),
+      key: ValueKey('text-field-setting-$key-$current${locked ? '-locked' : ''}'),
       initialValue: current,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
@@ -254,27 +276,43 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
             child: Text(labels[value.name] ?? value.name),
           ),
       ],
-      onChanged: (value) => _update(key, value == '' ? null : value),
+      onChanged: locked
+          ? null
+          : (value) => _update(key, value == '' ? null : value),
     );
   }
 
-  Widget _text(String key, String label, {bool numeric = false}) =>
-      TextFormField(
-        key: ValueKey('text-field-setting-$key'),
-        controller: _fields[key],
+  Widget _text(String key, String label, {bool numeric = false}) {
+    if (_isLocked(key)) {
+      final display = _schemaDisplayText(key);
+      return TextFormField(
+        key: ValueKey('text-field-setting-$key-locked-$display'),
+        initialValue: display,
+        enabled: false,
         decoration: InputDecoration(labelText: label),
-        keyboardType: numeric
-            ? const TextInputType.numberWithOptions(decimal: true, signed: true)
-            : TextInputType.text,
-        onChanged: (_) => _update(key, _fields[key]!.text),
       );
+    }
+    return TextFormField(
+      key: ValueKey('text-field-setting-$key'),
+      controller: _fields[key],
+      decoration: InputDecoration(labelText: label),
+      keyboardType: numeric
+          ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+          : TextInputType.text,
+      onChanged: (_) => _update(key, _fields[key]!.text),
+    );
+  }
 
-  Widget _switch(String key, String label) => EditorSwitchTile(
-    tileKey: ValueKey('text-field-setting-$key'),
-    title: label,
-    value: _values[key] == true,
-    onChanged: (value) => _update(key, value),
-  );
+  Widget _switch(String key, String label) {
+    final locked = _isLocked(key);
+    final active = locked ? _schemaJson![key] == true : _values[key] == true;
+    return EditorSwitchTile(
+      tileKey: ValueKey('text-field-setting-$key'),
+      title: label,
+      value: active,
+      onChanged: locked ? null : (value) => _update(key, value),
+    );
+  }
 
   Widget _color(String key, String label) {
     final color = JsonColor.parseNullable(_values[key], key);
@@ -453,8 +491,12 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
       tag: 'mask · JSON Schema',
       child: _group([
         _text('mask', 'Masque à motifs (ex. ##/##/####, UU-###-UU)'),
-        if ((_values['mask'] as String? ?? '').isNotEmpty ||
-            _fields['mask']!.text.isNotEmpty)
+        if ((_isLocked('mask')
+                ? _schemaDisplayText('mask')
+                : ((_values['mask'] as String? ?? '').isNotEmpty
+                      ? (_values['mask'] as String)
+                      : _fields['mask']!.text))
+            .isNotEmpty)
           _switch(
             'maskIncludeLiterals',
             'Inclure les littéraux du masque dans la valeur enregistrée',
@@ -470,21 +512,33 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         ),
         EditorSegmentedField<String>(
           buttonKey: ValueKey(
-            'text-field-setting-decimalSeparator-${_values['decimalSeparator']}',
+            'text-field-setting-decimalSeparator-'
+            '${_isLocked('decimalSeparator') ? _schemaJson!['decimalSeparator'] : _values['decimalSeparator']}',
           ),
           label: 'Séparateur décimal',
-          value: (_values['decimalSeparator'] as String?) ?? '.',
+          value: ((_isLocked('decimalSeparator')
+                  ? _schemaJson!['decimalSeparator']
+                  : _values['decimalSeparator'])
+              as String?) ??
+              '.',
           options: const [
             EditorSegmentOption(value: '.', label: 'Point (.)'),
             EditorSegmentOption(value: ',', label: 'Virgule (,)'),
           ],
-          onChanged: (value) => _update('decimalSeparator', value),
+          onChanged: _isLocked('decimalSeparator')
+              ? null
+              : (value) => _update('decimalSeparator', value),
         ),
         DropdownButtonFormField<String>(
           key: ValueKey(
-            'text-field-setting-thousandsSeparator-${_values['thousandsSeparator']}',
+            'text-field-setting-thousandsSeparator-'
+            '${_isLocked('thousandsSeparator') ? _schemaJson!['thousandsSeparator'] : _values['thousandsSeparator']}',
           ),
-          initialValue: (_values['thousandsSeparator'] as String?) ?? '',
+          initialValue: ((_isLocked('thousandsSeparator')
+                  ? _schemaJson!['thousandsSeparator']
+                  : _values['thousandsSeparator'])
+              as String?) ??
+              '',
           isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Séparateur des milliers',
@@ -495,7 +549,9 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
             DropdownMenuItem(value: ',', child: Text('Virgule (,)')),
             DropdownMenuItem(value: '.', child: Text('Point (.)')),
           ],
-          onChanged: (value) => _update('thousandsSeparator', value ?? ''),
+          onChanged: _isLocked('thousandsSeparator')
+              ? null
+              : (value) => _update('thousandsSeparator', value ?? ''),
         ),
         const Divider(),
         _choice(
@@ -519,8 +575,15 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         ),
         _text('validationPattern', 'Regex de validation complète (pattern)'),
         DropdownButtonFormField<String>(
-          key: ValueKey('text-field-setting-format-${_values['format']}'),
-          initialValue: (_values['format'] as String?) ?? 'none',
+          key: ValueKey(
+            'text-field-setting-format-'
+            '${_isLocked('format') ? _schemaJson!['format'] : _values['format']}',
+          ),
+          initialValue: ((_isLocked('format')
+                  ? _schemaJson!['format']
+                  : _values['format'])
+              as String?) ??
+              'none',
           isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Format JSON Schema (format)',
@@ -532,14 +595,34 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
                 child: Text(format.displayLabel),
               ),
           ],
-          onChanged: (value) => _update('format', value ?? 'none'),
+          onChanged: _isLocked('format')
+              ? null
+              : (value) => _update('format', value ?? 'none'),
         ),
-        if (_values['valueType'] != 'string' ||
-            _fields['minimum']!.text.isNotEmpty ||
-            _fields['maximum']!.text.isNotEmpty ||
-            _fields['exclusiveMinimum']!.text.isNotEmpty ||
-            _fields['exclusiveMaximum']!.text.isNotEmpty ||
-            _fields['multipleOf']!.text.isNotEmpty) ...[
+        if ((_isLocked('valueType')
+                    ? _schemaJson!['valueType']
+                    : _values['valueType']) !=
+                'string' ||
+            (_isLocked('minimum')
+                    ? _schemaDisplayText('minimum')
+                    : _fields['minimum']!.text)
+                .isNotEmpty ||
+            (_isLocked('maximum')
+                    ? _schemaDisplayText('maximum')
+                    : _fields['maximum']!.text)
+                .isNotEmpty ||
+            (_isLocked('exclusiveMinimum')
+                    ? _schemaDisplayText('exclusiveMinimum')
+                    : _fields['exclusiveMinimum']!.text)
+                .isNotEmpty ||
+            (_isLocked('exclusiveMaximum')
+                    ? _schemaDisplayText('exclusiveMaximum')
+                    : _fields['exclusiveMaximum']!.text)
+                .isNotEmpty ||
+            (_isLocked('multipleOf')
+                    ? _schemaDisplayText('multipleOf')
+                    : _fields['multipleOf']!.text)
+                .isNotEmpty) ...[
           _text('minimum', 'Minimum inclusif (minimum)', numeric: true),
           _text('maximum', 'Maximum inclusif (maximum)', numeric: true),
           _text(

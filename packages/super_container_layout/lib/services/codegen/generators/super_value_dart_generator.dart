@@ -251,6 +251,8 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
         'constValue': context.formatString(field.constValue!),
       if (field.validationMessage != d.validationMessage)
         'validationMessage': context.formatString(field.validationMessage),
+      if (field.useRepositorySchema != d.useRepositorySchema)
+        'useRepositorySchema': '${field.useRepositorySchema}',
     };
     final prefix = includeConst ? 'const ' : '';
     return context.formatCall(

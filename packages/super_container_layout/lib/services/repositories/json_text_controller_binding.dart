@@ -121,9 +121,23 @@ class JsonTextControllerBinding extends ChangeNotifier {
     String Function(String storageText)? toDisplayText,
     String? Function(String storageText, String displayText)? validateText,
   }) {
+    final wasDirty = dirty;
     this.toStorageText = toStorageText;
     this.toDisplayText = toDisplayText;
     this.validateText = validateText;
+    if (_ready && !wasDirty && !_disposed) {
+      final nextDisplay = _displayOf(_saved);
+      if (controller.text != nextDisplay) {
+        _applying = true;
+        controller.value = TextEditingValue(
+          text: nextDisplay,
+          selection: TextSelection.collapsed(offset: nextDisplay.length),
+        );
+        _observed = controller.text;
+        _savedDisplay = controller.text;
+        _applying = false;
+      }
+    }
   }
 
   String _storageOf(String displayText) =>

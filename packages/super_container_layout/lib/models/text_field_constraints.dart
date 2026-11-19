@@ -13,6 +13,7 @@
 ///   `enumValues`, `constValue`).
 library;
 
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -772,3 +773,110 @@ abstract final class TextFieldConstraintValidator {
       ? value.toInt().toString()
       : value.toString();
 }
+
+/// Profil de contraintes et de masques extrait d'un JSON Schema de repository
+/// pour un attribut donné.
+@immutable
+class SchemaFieldProfile {
+  /// Crée un [SchemaFieldProfile].
+  const SchemaFieldProfile({
+    this.valueType = TextFieldValueType.string,
+    this.required = false,
+    this.minLength,
+    this.maxLength,
+    this.validationPattern = '',
+    this.format = TextFieldFormat.none,
+    this.minimum,
+    this.maximum,
+    this.exclusiveMinimum,
+    this.exclusiveMaximum,
+    this.multipleOf,
+    this.enumValues = const [],
+    this.constValue,
+    this.validationMessage,
+    this.mask,
+    this.maskIncludeLiterals,
+    this.dateFormat,
+    this.decimalDigits,
+    this.decimalSeparator,
+    this.thousandsSeparator,
+    this.lockedKeys = const {},
+  });
+
+  final TextFieldValueType valueType;
+  final bool required;
+  final int? minLength;
+  final int? maxLength;
+  final String validationPattern;
+  final TextFieldFormat format;
+  final double? minimum;
+  final double? maximum;
+  final double? exclusiveMinimum;
+  final double? exclusiveMaximum;
+  final double? multipleOf;
+  final List<String> enumValues;
+  final String? constValue;
+  final String? validationMessage;
+
+  final String? mask;
+  final bool? maskIncludeLiterals;
+  final String? dateFormat;
+  final int? decimalDigits;
+  final String? decimalSeparator;
+  final String? thousandsSeparator;
+
+  /// Clés de `SuperTextFieldConfig` imposées par le JSON Schema et grisées dans
+  /// le wizard de propriétés lorsque l'héritage est actif.
+  final Set<String> lockedKeys;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SchemaFieldProfile &&
+      valueType == other.valueType &&
+      required == other.required &&
+      minLength == other.minLength &&
+      maxLength == other.maxLength &&
+      validationPattern == other.validationPattern &&
+      format == other.format &&
+      minimum == other.minimum &&
+      maximum == other.maximum &&
+      exclusiveMinimum == other.exclusiveMinimum &&
+      exclusiveMaximum == other.exclusiveMaximum &&
+      multipleOf == other.multipleOf &&
+      listEquals(enumValues, other.enumValues) &&
+      constValue == other.constValue &&
+      validationMessage == other.validationMessage &&
+      mask == other.mask &&
+      maskIncludeLiterals == other.maskIncludeLiterals &&
+      dateFormat == other.dateFormat &&
+      decimalDigits == other.decimalDigits &&
+      decimalSeparator == other.decimalSeparator &&
+      thousandsSeparator == other.thousandsSeparator &&
+      setEquals(lockedKeys, other.lockedKeys);
+
+  @override
+  int get hashCode => Object.hashAll([
+    valueType,
+    required,
+    minLength,
+    maxLength,
+    validationPattern,
+    format,
+    minimum,
+    maximum,
+    exclusiveMinimum,
+    exclusiveMaximum,
+    multipleOf,
+    Object.hashAll(enumValues),
+    constValue,
+    validationMessage,
+    mask,
+    maskIncludeLiterals,
+    dateFormat,
+    decimalDigits,
+    decimalSeparator,
+    thousandsSeparator,
+    Object.hashAllUnordered(lockedKeys),
+  ]);
+}
+

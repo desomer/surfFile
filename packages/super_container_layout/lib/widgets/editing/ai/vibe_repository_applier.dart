@@ -697,6 +697,7 @@ class VibeRepositoryTurnTransaction {
       <String, Map<String, Object?>?>{};
   final Map<String, Map<String, Object?>?> _finalJsonSchemas =
       <String, Map<String, Object?>?>{};
+  final Set<String> _pendingSchemaValidationRepoIds = <String>{};
 
   /// Table de correspondance immuable des alias résolus ou créés vers leur `repositoryId` réel.
   Map<String, String> get aliasToActualId => Map.unmodifiable(_aliasToActualId);
@@ -736,6 +737,65 @@ class VibeRepositoryTurnTransaction {
     vibePatch,
     _aliasToActualId,
   );
+
+  /// Associe, met à jour ou dissocie ([schema] = `null`) le JSON Schema de
+  /// [repositoryId] dans le cadre de cette transaction d'outil.
+  ///
+  /// Capture les états initiaux pour permettre [restoreSavepoint], [rollback]
+  /// et l'historique Undo/Redo. Lorsque [validateCurrentDocument] vaut `false`,
+  /// [repositoryId] est marqué comme devant être revalidé avant la fin du tour
+  /// via [assertAllSchemasValid].
+  Future<Map<String, Object?>?> applyJsonSchemaFromTool(
+    String repositoryId,
+    Map<String, Object?>? schema, {
+    bool validateCurrentDocument = true,
+  }) async {
+    final isCreatedInTurn = _createdRepositories.containsKey(repositoryId);
+    if (!isCreatedInTurn && !_baselineDocuments.containsKey(repositoryId)) {
+      final rawBaseline = await store.readDocument(repositoryId);
+      _baselineDocuments[repositoryId] = rawBaseline is Map
+          ? _deepCopyJsonMap(rawBaseline)
+          : <String, Object?>{};
+    }
+    if (!isCreatedInTurn && !_baselineJsonSchemas.containsKey(repositoryId)) {
+      final baselineSchema = await store.readJsonSchema(repositoryId);
+      _baselineJsonSchemas[repositoryId] = baselineSchema == null
+          ? null
+          : _deepCopyJsonMap(baselineSchema);
+    }
+
+    final normalized = schema == null ? null : _deepCopyJsonMap(schema);
+    await store.saveJsonSchema(
+      repositoryId,
+      normalized,
+      validateCurrentDocument: validateCurrentDocument,
+    );
+    final persisted = await store.readJsonSchema(repositoryId);
+    _finalJsonSchemas[repositoryId] = persisted == null
+        ? null
+        : _deepCopyJsonMap(persisted);
+    if (persisted == null || validateCurrentDocument) {
+      _pendingSchemaValidationRepoIds.remove(repositoryId);
+    } else {
+      _pendingSchemaValidationRepoIds.add(repositoryId);
+    }
+    return persisted;
+  }
+
+  /// Vérifie que tous les repositories dont la validation a été différée
+  /// (`validateCurrentDocument: false`) respectent désormais leur JSON Schema.
+  Future<void> assertAllSchemasValid() async {
+    for (final repoId in _pendingSchemaValidationRepoIds.toList()) {
+      final result = await store.validateRepository(repoId);
+      if (!result.isValid) {
+        throw JsonSchemaValidationException(
+          repositoryId: repoId,
+          issues: result.issues,
+        );
+      }
+      _pendingSchemaValidationRepoIds.remove(repoId);
+    }
+  }
 
   /// Valide puis applique de manière atomique et idempotente [rawRepositoriesPatch] sur [store].
   ///
@@ -895,16 +955,19 @@ class VibeRepositoryTurnTransaction {
         _finalJsonSchemas[actualId] = nextSchema;
         inPatchDocuments[actualId] = targetDoc;
         _finalDocuments[actualId] = targetDoc;
+        _pendingSchemaValidationRepoIds.remove(actualId);
       } else if (parsed.hasJsonSchema) {
         final nextSchema = parsed.jsonSchema == null
             ? null
             : _deepCopyJsonMap(parsed.jsonSchema!);
         await store.saveJsonSchema(actualId, nextSchema);
         _finalJsonSchemas[actualId] = nextSchema;
+        _pendingSchemaValidationRepoIds.remove(actualId);
       } else if (targetDoc != null) {
         await store.replaceDocumentById(actualId, targetDoc);
         inPatchDocuments[actualId] = targetDoc;
         _finalDocuments[actualId] = targetDoc;
+        _pendingSchemaValidationRepoIds.remove(actualId);
       }
 
       if (parsed.hasCalculatedAttributes) {
@@ -1018,6 +1081,7 @@ class VibeRepositoryTurnTransaction {
       for (final entry in _finalJsonSchemas.entries)
         entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
     },
+    Set<String>.of(_pendingSchemaValidationRepoIds),
   );
 
   /// Restaure le store et les tables internes exactement à l'état de [savepoint].
@@ -1087,6 +1151,9 @@ class VibeRepositoryTurnTransaction {
         for (final entry in savepoint._finalJsonSchemas.entries)
           entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
       });
+    _pendingSchemaValidationRepoIds
+      ..clear()
+      ..addAll(savepoint._pendingSchemaValidationRepoIds);
 
     for (final entry in restoreSchemaToBaseline) {
       if (!store.isCodeJsonSchema(entry.key)) {
@@ -1147,6 +1214,7 @@ class VibeRepositoryTurnTransaction {
     _finalCalculatedAttributes.clear();
     _baselineJsonSchemas.clear();
     _finalJsonSchemas.clear();
+    _pendingSchemaValidationRepoIds.clear();
     _aliasToActualId.clear();
     _resolvedTargetByKey.clear();
     _assignedIdsByAlias.clear();
@@ -1407,6 +1475,7 @@ class VibeRepositorySavepoint {
     this._finalCalculatedAttributes,
     this._baselineJsonSchemas,
     this._finalJsonSchemas,
+    this._pendingSchemaValidationRepoIds,
   );
 
   final Map<String, String> _assignedIdsByAlias;
@@ -1421,6 +1490,7 @@ class VibeRepositorySavepoint {
   _finalCalculatedAttributes;
   final Map<String, Map<String, Object?>?> _baselineJsonSchemas;
   final Map<String, Map<String, Object?>?> _finalJsonSchemas;
+  final Set<String> _pendingSchemaValidationRepoIds;
 }
 
 Map<String, Object?> _deepCopyJsonMap(Map<Object?, Object?> map) =>
