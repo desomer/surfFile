@@ -67,6 +67,13 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
       if (config.label != d.label) 'label': context.formatString(config.label),
       if (config.placeholder != d.placeholder)
         'placeholder': context.formatString(config.placeholder),
+      if (config.prefix != d.prefix)
+        'prefix': context.formatString(config.prefix),
+      if (config.suffix != d.suffix)
+        'suffix': context.formatString(config.suffix),
+      if (config.affixPlacement != d.affixPlacement)
+        'affixPlacement':
+            'SuperValueAffixPlacement.${config.affixPlacement.name}',
       if (config.enabled != d.enabled) 'enabled': '${config.enabled}',
       if (config.readOnly != d.readOnly) 'readOnly': '${config.readOnly}',
       if (config.obscureText != d.obscureText)

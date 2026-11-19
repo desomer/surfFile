@@ -39,6 +39,8 @@ Object _parseBoundProperty(SuperValueProperty property, Object? value) =>
     switch (property) {
       SuperValueProperty.label ||
       SuperValueProperty.placeholder ||
+      SuperValueProperty.prefix ||
+      SuperValueProperty.suffix ||
       SuperValueProperty.fontFamily => BoundPropertyParsers.parseString(
         property.name,
         value,
@@ -544,6 +546,12 @@ class _SuperValueState extends State<SuperValue>
         SuperValueProperty.placeholder => result.copyWith(
           placeholder: entry.value as String,
         ),
+        SuperValueProperty.prefix => result.copyWith(
+          prefix: entry.value as String,
+        ),
+        SuperValueProperty.suffix => result.copyWith(
+          suffix: entry.value as String,
+        ),
         SuperValueProperty.fontFamily => result.copyWith(
           fontFamily: entry.value as String,
         ),
@@ -878,6 +886,9 @@ class _SuperValueState extends State<SuperValue>
                     ),
                   );
                 } else if (config.kind.isChoice) {
+                  final choiceEnabled =
+                      config.enabled &&
+                      !(config.binding != null && _binding?.loading == true);
                   content = Listener(
                     onPointerDown: (event) {
                       if (canConfigure &&
@@ -885,33 +896,39 @@ class _SuperValueState extends State<SuperValue>
                         _surface.currentState?.openMenu(event.position);
                       }
                     },
-                    child: SuperChoice(
-                      key: ValueKey('super-value-choice-${widget.id}'),
-                      inputKey: ValueKey('super-value-input-${widget.id}'),
-                      config: config,
-                      focusNode: _focusNode,
-                      controller: controller,
-                      style: style,
-                      enabled:
-                          config.enabled &&
-                          !(config.binding != null && _binding?.loading == true),
-                      readOnly: _unselected || bindingReadOnly ? true : null,
-                      bindingError: _bindingError ?? _binding?.error,
-                      onChanged: (text) {
-                        if (_editorText != null) return;
-                        unawaited(_binding?.flush());
-                        widget.onChanged?.call(text);
-                        if (_controlledText != null) {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted &&
-                                widget.controller == null &&
-                                _controlledText != null &&
-                                _internal.text != _controlledText) {
-                              _setText(_internal, _controlledText!);
-                            }
-                          });
-                        }
-                      },
+                    child: wrapWithOutsideSuperValueAffixes(
+                      prefix: config.prefix,
+                      suffix: config.suffix,
+                      valueStyle: style,
+                      enabled: choiceEnabled,
+                      prefixKey: ValueKey('super-value-prefix-${widget.id}'),
+                      suffixKey: ValueKey('super-value-suffix-${widget.id}'),
+                      child: SuperChoice(
+                        key: ValueKey('super-value-choice-${widget.id}'),
+                        inputKey: ValueKey('super-value-input-${widget.id}'),
+                        config: config,
+                        focusNode: _focusNode,
+                        controller: controller,
+                        style: style,
+                        enabled: choiceEnabled,
+                        readOnly: _unselected || bindingReadOnly ? true : null,
+                        bindingError: _bindingError ?? _binding?.error,
+                        onChanged: (text) {
+                          if (_editorText != null) return;
+                          unawaited(_binding?.flush());
+                          widget.onChanged?.call(text);
+                          if (_controlledText != null) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted &&
+                                  widget.controller == null &&
+                                  _controlledText != null &&
+                                  _internal.text != _controlledText) {
+                                _setText(_internal, _controlledText!);
+                              }
+                            });
+                          }
+                        },
+                      ),
                     ),
                   );
                 } else {
@@ -926,26 +943,32 @@ class _SuperValueState extends State<SuperValue>
                       : null;
                   final effectiveColor =
                       style.color ?? Theme.of(context).colorScheme.onSurface;
-                  final display = Text(
-                    text.isEmpty
-                        ? (config.placeholder.isNotEmpty
-                              ? config.placeholder
-                              : (previewText ?? ''))
-                        : config.obscureText
-                        ? List.filled(text.runes.length, '\u2022').join()
-                        : text,
-                    key: ValueKey('super-value-display-${widget.id}'),
-                    style: previewText != null
-                        ? style.copyWith(
-                            color: effectiveColor.withValues(
-                              alpha: effectiveColor.a * 0.55,
-                            ),
-                            fontStyle: FontStyle.italic,
-                          )
-                        : style,
-                    textAlign: config.textAlign,
-                    maxLines: config.maxLines,
-                    overflow: TextOverflow.ellipsis,
+                  final display = buildSuperValueDisplayWithAffixes(
+                    config: config,
+                    valueStyle: style,
+                    prefixKey: ValueKey('super-value-prefix-${widget.id}'),
+                    suffixKey: ValueKey('super-value-suffix-${widget.id}'),
+                    display: Text(
+                      text.isEmpty
+                          ? (config.placeholder.isNotEmpty
+                                ? config.placeholder
+                                : (previewText ?? ''))
+                          : config.obscureText
+                          ? List.filled(text.runes.length, '\u2022').join()
+                          : text,
+                      key: ValueKey('super-value-display-${widget.id}'),
+                      style: previewText != null
+                          ? style.copyWith(
+                              color: effectiveColor.withValues(
+                                alpha: effectiveColor.a * 0.55,
+                              ),
+                              fontStyle: FontStyle.italic,
+                            )
+                          : style,
+                      textAlign: config.textAlign,
+                      maxLines: config.maxLines,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   );
                   content = config.mode == SuperValueMode.input
                       ? Listener(
@@ -960,6 +983,12 @@ class _SuperValueState extends State<SuperValue>
                             key: ValueKey('super-value-field-${widget.id}'),
                             inputKey: ValueKey(
                               'super-value-input-${widget.id}',
+                            ),
+                            prefixKey: ValueKey(
+                              'super-value-prefix-${widget.id}',
+                            ),
+                            suffixKey: ValueKey(
+                              'super-value-suffix-${widget.id}',
                             ),
                             config: config,
                             focusNode: _focusNode,
@@ -1210,6 +1239,18 @@ class _SuperValueState extends State<SuperValue>
           id: SuperValueProperty.placeholder.name,
           label: 'Placeholder',
           value: config.placeholder,
+        ),
+      if (config.prefix.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.prefix.name,
+          label: 'Préfixe',
+          value: config.prefix,
+        ),
+      if (config.suffix.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.suffix.name,
+          label: 'Suffixe',
+          value: config.suffix,
         ),
       ...buildTypographyExtractableOptions(
         fontFamily: config.fontFamily,

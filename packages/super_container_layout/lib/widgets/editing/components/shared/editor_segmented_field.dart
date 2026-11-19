@@ -376,6 +376,35 @@ class EditorSegmentedField<T> extends StatelessWidget {
     ],
   );
 
+  /// Preset pour le positionnement du préfixe et du suffixe [SuperValueAffixPlacement].
+  static EditorSegmentedField<SuperValueAffixPlacement> valueAffixPlacement({
+    required Key buttonKey,
+    required SuperValueAffixPlacement value,
+    required ValueChanged<SuperValueAffixPlacement> onChanged,
+    String? label = 'Position préfixe / suffixe',
+  }) => EditorSegmentedField<SuperValueAffixPlacement>(
+    buttonKey: buttonKey,
+    label: label,
+    value: value,
+    onChanged: onChanged,
+    options: const [
+      EditorSegmentOption(
+        value: SuperValueAffixPlacement.outside,
+        label: 'À côté (label)',
+        icon: Icons.label_outline,
+        iconSize: 14,
+        flexibleIcon: true,
+      ),
+      EditorSegmentOption(
+        value: SuperValueAffixPlacement.inside,
+        label: 'Dans le champ',
+        icon: Icons.input,
+        iconSize: 14,
+        flexibleIcon: true,
+      ),
+    ],
+  );
+
   /// Clé appliquée au [SegmentedButton] interne.
   final Key? buttonKey;
 

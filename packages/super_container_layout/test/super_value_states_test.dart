@@ -193,6 +193,9 @@ void main() {
         initialText: 'hello',
         label: 'Label',
         placeholder: 'Hint',
+        prefix: '€',
+        suffix: 'kg',
+        affixPlacement: SuperValueAffixPlacement.inside,
         enabled: false,
         readOnly: true,
         minLines: 2,
@@ -209,6 +212,8 @@ void main() {
         propertyBindings: {
           SuperValueProperty.label: binding,
           SuperValueProperty.placeholder: binding,
+          SuperValueProperty.prefix: binding,
+          SuperValueProperty.suffix: binding,
           SuperValueProperty.fontFamily: binding,
           SuperValueProperty.fontSize: binding,
           SuperValueProperty.fontWeight: binding,

@@ -347,6 +347,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       initialText: _draft.obscureText ? '' : _fields['initialText']!.text,
       label: _fields['label']!.text,
       placeholder: _fields['placeholder']!.text,
+      prefix: _fields['prefix']!.text,
+      suffix: _fields['suffix']!.text,
       minLines: _draft.obscureText || singleLineKind
           ? 1
           : _draft.mode == SuperValueMode.display && max != null
@@ -421,6 +423,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       'repositoryPath': TextEditingController(text: _draft.binding?.path ?? ''),
       'label': TextEditingController(text: _draft.label),
       'placeholder': TextEditingController(text: _draft.placeholder),
+      'prefix': TextEditingController(text: _draft.prefix),
+      'suffix': TextEditingController(text: _draft.suffix),
       'minLines': TextEditingController(text: '${_draft.minLines}'),
       'maxLines': TextEditingController(text: '${_draft.maxLines}'),
       'fontSize': TextEditingController(
@@ -782,13 +786,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     final max = math.max(min, int.tryParse(_fields['maxLines']!.text) ?? min);
     final label = _fields['label']!.text;
     final placeholder = _fields['placeholder']!.text;
-    final display = Text(
-      text.isEmpty ? placeholder : text,
-      style: style,
-      textAlign: _draft.textAlign,
-      maxLines: _draft.obscureText ? 1 : max,
-      overflow: TextOverflow.ellipsis,
-    );
+    final prefix = _fields['prefix']!.text;
+    final suffix = _fields['suffix']!.text;
     final scheme = Theme.of(context).colorScheme;
     final singleLineKind = !_draft.kind.isText;
     final previewConfig = _draft.copyWith(
@@ -797,8 +796,21 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       initialText: _draft.obscureText ? '' : text,
       label: label,
       placeholder: placeholder,
+      prefix: prefix,
+      suffix: suffix,
       minLines: _draft.obscureText || singleLineKind ? 1 : min,
       maxLines: _draft.obscureText || singleLineKind ? 1 : max,
+    );
+    final display = buildSuperValueDisplayWithAffixes(
+      config: previewConfig,
+      valueStyle: style,
+      display: Text(
+        text.isEmpty ? placeholder : text,
+        style: style,
+        textAlign: _draft.textAlign,
+        maxLines: _draft.obscureText ? 1 : max,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
     String? previewError;
     if (_draft.kind.isText) {
@@ -865,11 +877,17 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     } else if (_draft.kind.isChoice) {
       previewBody = previewError != null
           ? Text(previewError, style: TextStyle(color: scheme.error))
-          : SuperChoice(
-              config: previewConfig,
-              controller: _previewText,
-              readOnly: true,
-              style: style,
+          : wrapWithOutsideSuperValueAffixes(
+              prefix: prefix,
+              suffix: suffix,
+              valueStyle: style,
+              enabled: _draft.enabled,
+              child: SuperChoice(
+                config: previewConfig,
+                controller: _previewText,
+                readOnly: true,
+                style: style,
+              ),
             );
     } else if (_draft.mode == SuperValueMode.input) {
       previewBody = previewError != null
@@ -1143,12 +1161,36 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                       'le label',
                       _field('label', 'Label'),
                     ),
-                    if (!_draft.kind.isBoolean)
+                    if (!_draft.kind.isBoolean) ...[
                       _withBinding(
                         SuperValueProperty.placeholder,
                         'le placeholder',
                         _field('placeholder', 'Placeholder'),
                       ),
+                      _withBinding(
+                        SuperValueProperty.prefix,
+                        'le préfixe',
+                        _field('prefix', 'Préfixe (ex. €)'),
+                      ),
+                      _withBinding(
+                        SuperValueProperty.suffix,
+                        'le suffixe',
+                        _field('suffix', 'Suffixe (ex. €, cm, kg)'),
+                      ),
+                      if (_draft.mode == SuperValueMode.input &&
+                          _draft.kind.isText)
+                        EditorSegmentedField.valueAffixPlacement(
+                          buttonKey: const ValueKey(
+                            'super-value-setting-affixPlacement',
+                          ),
+                          value: _draft.affixPlacement,
+                          onChanged: (placement) => setState(
+                            () => _draft = _draft.copyWith(
+                              affixPlacement: placement,
+                            ),
+                          ),
+                        ),
+                    ],
                     const Text(
                       'Sans liaison, changer le mode ou la valeur initiale '
                       'réinitialise la valeur dans l’application. '

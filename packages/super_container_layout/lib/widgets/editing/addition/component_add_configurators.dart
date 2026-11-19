@@ -93,6 +93,10 @@ ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
     if (draft.label.isNotEmpty) ('Libellé du champ', draft.label),
     if (!draft.kind.isBoolean && draft.placeholder.isNotEmpty)
       ('Texte indicatif', draft.placeholder),
+    if (!draft.kind.isBoolean && draft.prefix.isNotEmpty)
+      ('Préfixe', draft.prefix),
+    if (!draft.kind.isBoolean && draft.suffix.isNotEmpty)
+      ('Suffixe', draft.suffix),
     if (draft.fontSize != null) ('Taille du texte', '${draft.fontSize}'),
     ('Alignement', _alignLabel(draft.textAlign)),
     ('Liaison', _bindingLabel(draft.binding)),

@@ -11,12 +11,163 @@ import '../../theme/theme_color.dart';
 import '../../models/super_value_config.dart';
 import '../../models/super_text_field_config.dart';
 
+/// Calcule le style typographique secondaire (« label atténué ») d'un préfixe
+/// ou suffixe d'unité d'un [SuperValue] (ex. `€`, `cm`, `kg`).
+TextStyle buildSuperValueAffixTextStyle(
+  BuildContext context, {
+  TextStyle? valueStyle,
+  required bool enabled,
+}) {
+  final theme = Theme.of(context);
+  final baseColor = theme.colorScheme.onSurfaceVariant;
+  final color = enabled ? baseColor : baseColor.withValues(alpha: 0.38);
+  final baseLabel = theme.textTheme.labelLarge ?? const TextStyle(fontSize: 14);
+  final fontSize = valueStyle?.fontSize != null
+      ? (valueStyle!.fontSize! * 0.92).clamp(11.0, 48.0)
+      : baseLabel.fontSize;
+  return baseLabel.copyWith(
+    fontFamily: valueStyle?.fontFamily,
+    fontSize: fontSize,
+    fontWeight: FontWeight.w500,
+    color: color,
+    height: valueStyle?.height,
+    letterSpacing: valueStyle?.letterSpacing,
+  );
+}
+
+/// Libellé secondaire affichant le préfixe ou le suffixe d'un [SuperValue].
+class SuperValueAffixLabel extends StatelessWidget {
+  /// Crée un libellé d'affixe ([prefix] ou [suffix]).
+  const SuperValueAffixLabel({
+    required this.text,
+    this.valueStyle,
+    this.enabled = true,
+    this.labelKey,
+    super.key,
+  });
+
+  final String text;
+  final TextStyle? valueStyle;
+  final bool enabled;
+  final Key? labelKey;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    text,
+    key: labelKey,
+    maxLines: 1,
+    softWrap: false,
+    overflow: TextOverflow.fade,
+    style: buildSuperValueAffixTextStyle(
+      context,
+      valueStyle: valueStyle,
+      enabled: enabled,
+    ),
+  );
+}
+
+/// Entoure un contrôle de saisie ([child]) de ses labels [prefix] et [suffix]
+/// externes alignés horizontalement.
+Widget wrapWithOutsideSuperValueAffixes({
+  required Widget child,
+  required String prefix,
+  required String suffix,
+  TextStyle? valueStyle,
+  bool enabled = true,
+  Key? prefixKey,
+  Key? suffixKey,
+}) {
+  if (prefix.isEmpty && suffix.isEmpty) return child;
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final bounded = constraints.hasBoundedWidth;
+      return Row(
+        mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (prefix.isNotEmpty) ...[
+            SuperValueAffixLabel(
+              labelKey: prefixKey,
+              text: prefix,
+              valueStyle: valueStyle,
+              enabled: enabled,
+            ),
+            const SizedBox(width: 8),
+          ],
+          if (bounded)
+            Expanded(child: child)
+          else
+            Flexible(
+              fit: FlexFit.loose,
+              child: SizedBox(width: 180, child: child),
+            ),
+          if (suffix.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            SuperValueAffixLabel(
+              labelKey: suffixKey,
+              text: suffix,
+              valueStyle: valueStyle,
+              enabled: enabled,
+            ),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+/// Entoure le widget de texte affiché ([display]) en mode `display` de ses
+/// labels [SuperValueConfig.prefix] et [SuperValueConfig.suffix].
+Widget buildSuperValueDisplayWithAffixes({
+  required Widget display,
+  required SuperValueConfig config,
+  TextStyle? valueStyle,
+  Key? prefixKey,
+  Key? suffixKey,
+}) {
+  if (config.prefix.isEmpty && config.suffix.isEmpty) return display;
+  final align = switch (config.textAlign) {
+    TextAlign.center => MainAxisAlignment.center,
+    TextAlign.end || TextAlign.right => MainAxisAlignment.end,
+    _ => MainAxisAlignment.start,
+  };
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    mainAxisAlignment: align,
+    crossAxisAlignment: CrossAxisAlignment.baseline,
+    textBaseline: TextBaseline.alphabetic,
+    children: [
+      if (config.prefix.isNotEmpty) ...[
+        SuperValueAffixLabel(
+          labelKey: prefixKey,
+          text: config.prefix,
+          valueStyle: valueStyle,
+          enabled: config.enabled,
+        ),
+        const SizedBox(width: 4),
+      ],
+      Flexible(child: display),
+      if (config.suffix.isNotEmpty) ...[
+        const SizedBox(width: 4),
+        SuperValueAffixLabel(
+          labelKey: suffixKey,
+          text: config.suffix,
+          valueStyle: valueStyle,
+          enabled: config.enabled,
+        ),
+      ],
+    ],
+  );
+}
+
 /// Shared by the live component and the isolated editor preview.
 class SuperTextField extends StatefulWidget {
   const SuperTextField({
     required this.config,
     required this.controller,
     this.inputKey,
+    this.prefixKey,
+    this.suffixKey,
     this.style,
     this.onChanged,
     this.enabled,
@@ -30,6 +181,8 @@ class SuperTextField extends StatefulWidget {
   final SuperValueConfig config;
   final TextEditingController controller;
   final Key? inputKey;
+  final Key? prefixKey;
+  final Key? suffixKey;
   final TextStyle? style;
   final ValueChanged<String>? onChanged;
   final bool? enabled, readOnly;
@@ -225,8 +378,78 @@ class _SuperTextFieldState extends State<SuperTextField> {
         field.suffixIcon != null) {
       suffix = Icon(field.suffixIcon!.data);
     }
+    final insideAffix = config.affixPlacement == SuperValueAffixPlacement.inside;
+    final hasInsidePrefix = insideAffix && config.prefix.isNotEmpty;
+    final hasInsideSuffix = insideAffix && config.suffix.isNotEmpty;
+    final Widget? resolvedPrefixIcon;
+    if (hasInsidePrefix && field.prefixIcon != null) {
+      resolvedPrefixIcon = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 12),
+            child: Icon(field.prefixIcon!.data),
+          ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 6, end: 6),
+            child: SuperValueAffixLabel(
+              labelKey: widget.prefixKey,
+              text: config.prefix,
+              valueStyle: widget.style,
+              enabled: enabled,
+            ),
+          ),
+        ],
+      );
+    } else if (hasInsidePrefix) {
+      resolvedPrefixIcon = Padding(
+        padding: const EdgeInsetsDirectional.only(start: 12, end: 6),
+        child: SuperValueAffixLabel(
+          labelKey: widget.prefixKey,
+          text: config.prefix,
+          valueStyle: widget.style,
+          enabled: enabled,
+        ),
+      );
+    } else if (field.prefixIcon != null) {
+      resolvedPrefixIcon = Icon(field.prefixIcon!.data);
+    } else {
+      resolvedPrefixIcon = null;
+    }
+
+    final Widget? resolvedSuffixIcon;
+    if (hasInsideSuffix && suffix != null) {
+      resolvedSuffixIcon = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 6, end: 2),
+            child: SuperValueAffixLabel(
+              labelKey: widget.suffixKey,
+              text: config.suffix,
+              valueStyle: widget.style,
+              enabled: enabled,
+            ),
+          ),
+          suffix,
+        ],
+      );
+    } else if (hasInsideSuffix) {
+      resolvedSuffixIcon = Padding(
+        padding: const EdgeInsetsDirectional.only(start: 6, end: 12),
+        child: SuperValueAffixLabel(
+          labelKey: widget.suffixKey,
+          text: config.suffix,
+          valueStyle: widget.style,
+          enabled: enabled,
+        ),
+      );
+    } else {
+      resolvedSuffixIcon = suffix;
+    }
+
     final padding = theme.contentPadding;
-    return TextField(
+    final textField = TextField(
       focusNode: widget.focusNode,
       key: widget.inputKey,
       controller: widget.controller,
@@ -303,16 +526,30 @@ class _SuperTextFieldState extends State<SuperTextField> {
               ),
         prefixText: field.prefixText.isEmpty ? null : field.prefixText,
         suffixText: field.suffixText.isEmpty ? null : field.suffixText,
-        prefixIcon: field.prefixIcon == null
-            ? null
-            : Icon(field.prefixIcon!.data),
-        suffixIcon: suffix,
+        prefixIcon: resolvedPrefixIcon,
+        prefixIconConstraints: hasInsidePrefix
+            ? const BoxConstraints(minWidth: 0, minHeight: 0)
+            : null,
+        suffixIcon: resolvedSuffixIcon,
+        suffixIconConstraints: hasInsideSuffix
+            ? const BoxConstraints(minWidth: 0, minHeight: 0)
+            : null,
         helperText: field.helperText.isEmpty ? null : field.helperText,
         errorText: errorText,
         errorMaxLines: 3,
         floatingLabelBehavior: field.floatingLabel,
       ),
       onChanged: widget.onChanged,
+    );
+    if (insideAffix) return textField;
+    return wrapWithOutsideSuperValueAffixes(
+      child: textField,
+      prefix: config.prefix,
+      suffix: config.suffix,
+      valueStyle: widget.style,
+      enabled: enabled,
+      prefixKey: widget.prefixKey,
+      suffixKey: widget.suffixKey,
     );
   }
 }

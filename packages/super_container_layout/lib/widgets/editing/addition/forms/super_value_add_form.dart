@@ -174,6 +174,50 @@ class _SuperValueAddFormState extends State<SuperValueAddForm>
                     widget.onChanged(draft.copyWith(placeholder: value)),
               ),
           ],
+          if (!draft.kind.isBoolean) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    key: const ValueKey('add-value-prefix'),
+                    initialValue: draft.prefix,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Préfixe (ex. €)',
+                    ),
+                    onChanged: (value) =>
+                        widget.onChanged(draft.copyWith(prefix: value)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    key: const ValueKey('add-value-suffix'),
+                    initialValue: draft.suffix,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Suffixe (ex. €, cm, kg)',
+                    ),
+                    onChanged: (value) =>
+                        widget.onChanged(draft.copyWith(suffix: value)),
+                  ),
+                ),
+              ],
+            ),
+            if (input &&
+                draft.kind.isText &&
+                (draft.prefix.isNotEmpty || draft.suffix.isNotEmpty)) ...[
+              const SizedBox(height: 8),
+              EditorSegmentedField.valueAffixPlacement(
+                buttonKey: const ValueKey('add-value-affix-placement'),
+                label: null,
+                value: draft.affixPlacement,
+                onChanged: (placement) => widget.onChanged(
+                  draft.copyWith(affixPlacement: placement),
+                ),
+              ),
+            ],
+          ],
           TextFormField(
             key: const ValueKey('add-value-font-size'),
             initialValue: draft.fontSize?.toString() ?? '',

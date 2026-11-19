@@ -1593,4 +1593,239 @@ void main() {
     expect(result!.kind, SuperValueKind.checkbox);
     expect(result!.initialBool, isTrue);
   });
+
+  test('prefix, suffix, affixPlacement, states and Dart codegen round trip', () {
+    const config = SuperValueConfig(
+      mode: SuperValueMode.input,
+      initialText: '120.5',
+      label: 'Montant',
+      prefix: 'HT',
+      suffix: '€',
+      affixPlacement: SuperValueAffixPlacement.inside,
+    );
+    final json = config.toJson();
+    expect(json['prefix'], 'HT');
+    expect(json['suffix'], '€');
+    expect(json['affixPlacement'], 'inside');
+    expect(SuperValueConfig.fromJson(json), config);
+
+    final compact = config.toCompactJson();
+    expect(compact['prefix'], 'HT');
+    expect(compact['suffix'], '€');
+    expect(compact['affixPlacement'], 'inside');
+    expect(SuperValueConfig.fromJson(compact), config);
+
+    expect(const SuperValueConfig().toJson().containsKey('prefix'), isFalse);
+    expect(const SuperValueConfig().toJson().containsKey('suffix'), isFalse);
+    expect(
+      const SuperValueConfig().toJson().containsKey('affixPlacement'),
+      isFalse,
+    );
+
+    final aliased = SuperValueConfig.fromJson(const {
+      'prefixText': r'$',
+      'suffixText': 'kg',
+      'affixPlacement': 'label',
+    });
+    expect(aliased.prefix, r'$');
+    expect(aliased.suffix, 'kg');
+    expect(aliased.affixPlacement, SuperValueAffixPlacement.outside);
+    expect(
+      () => SuperValueConfig.fromJson(const {'affixPlacement': 'bogus'}),
+      throwsFormatException,
+    );
+
+    const base = SuperValueConfig(
+      initialText: '100',
+      prefix: '€',
+      suffix: 'HT',
+      affixPlacement: SuperValueAffixPlacement.outside,
+    );
+    final override = ValueConfigOverride(config: base).edited(
+      base.copyWith(
+        suffix: 'TTC',
+        affixPlacement: SuperValueAffixPlacement.inside,
+      ),
+    );
+    expect(override.properties, {
+      ValueStateProperty.suffix,
+      ValueStateProperty.affixPlacement,
+    });
+    final applied = override.apply(base);
+    expect(applied.prefix, '€');
+    expect(applied.suffix, 'TTC');
+    expect(applied.affixPlacement, SuperValueAffixPlacement.inside);
+
+    final tooltip = formatSuperValueTooltip(title: 'Prix', config: config);
+    expect(tooltip, contains('Préfixe : HT'));
+    expect(tooltip, contains('Suffixe : €'));
+
+    final registry = Registry()..bootstrap();
+    final generated = DartCodeExporter.export(
+      appearance: Appearance(components: {'price': config}),
+      registry: registry,
+      componentId: 'price',
+      componentLabel: 'Price',
+    );
+    expect(generated, contains("prefix: 'HT'"));
+    expect(generated, contains("suffix: '€'"));
+    expect(
+      generated,
+      contains('affixPlacement: SuperValueAffixPlacement.inside'),
+    );
+  });
+
+  testWidgets(
+    'prefix and suffix render as muted labels in outside input, inside input, and display modes',
+    (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      // 1. Input mode — outside (adjacent label, visible even when empty & unfocused)
+      await tester.pumpWidget(
+        host(
+          SuperValue(
+            id: 'amount',
+            controller: controller,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
+              label: 'Poids',
+              prefix: '≈',
+              suffix: 'kg',
+              affixPlacement: SuperValueAffixPlacement.outside,
+            ),
+          ),
+        ),
+      );
+      final prefixFinder = find.byKey(
+        const ValueKey('super-value-prefix-amount'),
+      );
+      final suffixFinder = find.byKey(
+        const ValueKey('super-value-suffix-amount'),
+      );
+      final inputFinder = find.byKey(
+        const ValueKey('super-value-input-amount'),
+      );
+      expect(prefixFinder, findsOneWidget);
+      expect(suffixFinder, findsOneWidget);
+      expect(tester.widget<Text>(prefixFinder).data, '≈');
+      expect(tester.widget<Text>(suffixFinder).data, 'kg');
+      expect(
+        tester.getTopRight(prefixFinder).dx,
+        lessThanOrEqualTo(tester.getTopLeft(inputFinder).dx),
+      );
+      expect(
+        tester.getTopLeft(suffixFinder).dx,
+        greaterThanOrEqualTo(tester.getTopRight(inputFinder).dx),
+      );
+      await tester.enterText(inputFinder, '75.5');
+      expect(controller.text, '75.5');
+
+      // 2. Input mode — inside (persistent inside TextField + compatible with clear button)
+      await tester.pumpWidget(
+        host(
+          SuperValue(
+            id: 'amount',
+            controller: controller,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
+              suffix: 'cm',
+              affixPlacement: SuperValueAffixPlacement.inside,
+              field: SuperTextFieldConfig(suffix: TextFieldSuffix.clear),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('super-value-suffix-amount')), findsOneWidget);
+      expect(find.text('cm'), findsOneWidget);
+      expect(find.byTooltip('Effacer'), findsOneWidget);
+      await tester.tap(find.byTooltip('Effacer'));
+      await tester.pumpAndSettle();
+      expect(controller.text, '');
+      // Remains visible even when empty and unfocused!
+      expect(find.text('cm'), findsOneWidget);
+
+      // 3. Display mode — renders prefix and suffix around display value without altering raw text
+      await tester.pumpWidget(
+        host(
+          SuperValue(
+            id: 'amount',
+            controller: controller,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.display,
+              initialText: '1280',
+              label: 'Total HT',
+              prefix: '+',
+              suffix: '€',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-value-display-amount')),
+            )
+            .data,
+        '1280',
+      );
+      expect(find.text('+'), findsOneWidget);
+      expect(find.text('€'), findsOneWidget);
+      expect(find.text('Total HT'), findsOneWidget);
+    },
+  );
+
+  testWidgets('editor edits prefix, suffix and affixPlacement with live preview', (
+    tester,
+  ) async {
+    SuperValueConfig? result;
+    await tester.pumpWidget(
+      host(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showSuperValueEditor(
+              context: context,
+              config: input,
+              availableFontFamilies: const [],
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    final prefixField = find.byKey(const ValueKey('super-value-setting-prefix'));
+    final suffixField = find.byKey(const ValueKey('super-value-setting-suffix'));
+    await tester.ensureVisible(prefixField);
+    await tester.enterText(prefixField, '≈');
+    await tester.enterText(suffixField, '€');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('super-value-preview')),
+        matching: find.text('€'),
+      ),
+      findsOneWidget,
+    );
+
+    final placementField = find.byKey(
+      const ValueKey('super-value-setting-affixPlacement'),
+    );
+    await tester.ensureVisible(placementField);
+    await tester.tap(
+      find.descendant(of: placementField, matching: find.text('Dans le champ')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(result!.prefix, '≈');
+    expect(result!.suffix, '€');
+    expect(result!.affixPlacement, SuperValueAffixPlacement.inside);
+  });
 }

@@ -21,6 +21,9 @@ part 'super_value_states.dart';
 /// Mode de fonctionnement d'un [SuperValue] (affichage seul `display` ou champ de saisie `input`).
 enum SuperValueMode { display, input }
 
+/// Positionnement visuel du préfixe et du suffixe d'un [SuperValue] en mode saisie.
+enum SuperValueAffixPlacement { outside, inside }
+
 /// Nature du contrôle rendu par un [SuperValue] (`text`, `checkbox`, `switchControl` ou `choice`).
 enum SuperValueKind {
   text,
@@ -38,6 +41,8 @@ enum SuperValueKind {
 enum SuperValueProperty {
   label,
   placeholder,
+  prefix,
+  suffix,
   fontFamily,
   color,
   fontSize,
@@ -70,6 +75,9 @@ class SuperValueConfig extends ComponentConfig {
     this.initialBool = false,
     this.label = '',
     this.placeholder = '',
+    this.prefix = '',
+    this.suffix = '',
+    this.affixPlacement = SuperValueAffixPlacement.outside,
     this.enabled = true,
     this.readOnly = false,
     this.obscureText = false,
@@ -102,6 +110,9 @@ class SuperValueConfig extends ComponentConfig {
   final bool initialBool;
   final String label;
   final String placeholder;
+  final String prefix;
+  final String suffix;
+  final SuperValueAffixPlacement affixPlacement;
   final bool enabled;
   final bool readOnly;
   final bool obscureText;
@@ -195,6 +206,9 @@ class SuperValueConfig extends ComponentConfig {
     bool? initialBool,
     String? label,
     String? placeholder,
+    String? prefix,
+    String? suffix,
+    SuperValueAffixPlacement? affixPlacement,
     bool? enabled,
     bool? readOnly,
     bool? obscureText,
@@ -237,6 +251,9 @@ class SuperValueConfig extends ComponentConfig {
     initialBool: initialBool ?? this.initialBool,
     label: label ?? this.label,
     placeholder: placeholder ?? this.placeholder,
+    prefix: prefix ?? this.prefix,
+    suffix: suffix ?? this.suffix,
+    affixPlacement: affixPlacement ?? this.affixPlacement,
     enabled: enabled ?? this.enabled,
     readOnly: readOnly ?? this.readOnly,
     obscureText: obscureText ?? this.obscureText,
@@ -275,6 +292,10 @@ class SuperValueConfig extends ComponentConfig {
       if (initialBool) 'initialBool': initialBool,
       'label': label,
       'placeholder': placeholder,
+      if (prefix.isNotEmpty) 'prefix': prefix,
+      if (suffix.isNotEmpty) 'suffix': suffix,
+      if (affixPlacement != SuperValueAffixPlacement.outside)
+        'affixPlacement': affixPlacement.name,
       'enabled': enabled,
       'readOnly': readOnly,
       'obscureText': obscureText,
@@ -311,6 +332,10 @@ class SuperValueConfig extends ComponentConfig {
       if (initialBool) 'initialBool': initialBool,
       if (label.isNotEmpty) 'label': label,
       if (placeholder.isNotEmpty) 'placeholder': placeholder,
+      if (prefix.isNotEmpty) 'prefix': prefix,
+      if (suffix.isNotEmpty) 'suffix': suffix,
+      if (affixPlacement != d.affixPlacement)
+        'affixPlacement': affixPlacement.name,
       if (enabled != d.enabled) 'enabled': enabled,
       if (readOnly != d.readOnly) 'readOnly': readOnly,
       if (obscureText != d.obscureText) 'obscureText': obscureText,
@@ -361,6 +386,11 @@ class SuperValueConfig extends ComponentConfig {
       'value',
       'label',
       'placeholder',
+      'prefix',
+      'suffix',
+      'prefixText',
+      'suffixText',
+      'affixPlacement',
       'enabled',
       'readOnly',
       'obscureText',
@@ -414,6 +444,15 @@ class SuperValueConfig extends ComponentConfig {
       TextAlign.values,
       field('textAlign', fallback.textAlign.name),
     );
+    final affixPlacement = JsonReader.enumByName(
+      SuperValueAffixPlacement.values,
+      field('affixPlacement', fallback.affixPlacement.name),
+      const {
+        'label': SuperValueAffixPlacement.outside,
+        'external': SuperValueAffixPlacement.outside,
+        'internal': SuperValueAffixPlacement.inside,
+      },
+    );
     final fontWeight = JsonReader.readFontWeight(
       value,
       fallback.fontWeight,
@@ -430,7 +469,10 @@ class SuperValueConfig extends ComponentConfig {
       fallback.fontFamily,
       errorMessage: 'Invalid Value style.',
     );
-    if (mode == null || kind == null || align == null) {
+    if (mode == null ||
+        kind == null ||
+        align == null ||
+        affixPlacement == null) {
       throw const FormatException('Invalid Value style.');
     }
     final propertyBindings = JsonReader.readPropertyBindings(
@@ -502,6 +544,17 @@ class SuperValueConfig extends ComponentConfig {
       throw const FormatException('Invalid Value configuration.');
     }
 
+    final resolvedPrefix = value.containsKey('prefix')
+        ? field('prefix', fallback.prefix)
+        : value.containsKey('prefixText')
+        ? field('prefixText', fallback.prefix)
+        : fallback.prefix;
+    final resolvedSuffix = value.containsKey('suffix')
+        ? field('suffix', fallback.suffix)
+        : value.containsKey('suffixText')
+        ? field('suffixText', fallback.suffix)
+        : fallback.suffix;
+
     final result = SuperValueConfig(
       mode: mode,
       kind: kind,
@@ -510,6 +563,9 @@ class SuperValueConfig extends ComponentConfig {
       initialBool: resolvedInitialBool,
       label: field('label', fallback.label),
       placeholder: field('placeholder', fallback.placeholder),
+      prefix: resolvedPrefix,
+      suffix: resolvedSuffix,
+      affixPlacement: affixPlacement,
       enabled: field('enabled', fallback.enabled),
       readOnly: field('readOnly', fallback.readOnly),
       obscureText: resolvedObscure,
@@ -568,6 +624,9 @@ class SuperValueConfig extends ComponentConfig {
       initialBool == other.initialBool &&
       label == other.label &&
       placeholder == other.placeholder &&
+      prefix == other.prefix &&
+      suffix == other.suffix &&
+      affixPlacement == other.affixPlacement &&
       enabled == other.enabled &&
       readOnly == other.readOnly &&
       obscureText == other.obscureText &&
@@ -597,6 +656,9 @@ class SuperValueConfig extends ComponentConfig {
     initialBool,
     label,
     placeholder,
+    prefix,
+    suffix,
+    affixPlacement,
     enabled,
     readOnly,
     obscureText,
@@ -657,6 +719,8 @@ String formatSuperValueTooltip({
         'Options : ${config.choice.options.length}',
     if (config.label.isNotEmpty) 'Libellé : ${config.label}',
     if (config.placeholder.isNotEmpty) 'Placeholder : ${config.placeholder}',
+    if (config.prefix.isNotEmpty) 'Préfixe : ${config.prefix}',
+    if (config.suffix.isNotEmpty) 'Suffixe : ${config.suffix}',
   ];
   final styleParts = <String>[
     'Police : ${config.fontFamily ?? 'Auto'}',

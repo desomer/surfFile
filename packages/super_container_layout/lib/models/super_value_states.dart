@@ -20,6 +20,9 @@ enum ValueStateProperty implements ComponentStateProperty<SuperValueProperty> {
   ]),
   textLabel('Libellé', ['label'], SuperValueProperty.label),
   placeholder('Placeholder', ['placeholder'], SuperValueProperty.placeholder),
+  prefix('Préfixe', ['prefix'], SuperValueProperty.prefix),
+  suffix('Suffixe', ['suffix'], SuperValueProperty.suffix),
+  affixPlacement('Position préfixe / suffixe', ['affixPlacement']),
   enabled('Activation et lecture seule', ['enabled', 'readOnly']),
   fontFamily('Police', ['fontFamily'], SuperValueProperty.fontFamily),
   fontSize('Taille du texte', ['fontSize'], SuperValueProperty.fontSize),
@@ -96,6 +99,11 @@ class ValueConfigOverride
       placeholder: has(ValueStateProperty.placeholder)
           ? config.placeholder
           : base.placeholder,
+      prefix: has(ValueStateProperty.prefix) ? config.prefix : base.prefix,
+      suffix: has(ValueStateProperty.suffix) ? config.suffix : base.suffix,
+      affixPlacement: has(ValueStateProperty.affixPlacement)
+          ? config.affixPlacement
+          : base.affixPlacement,
       enabled: interaction.enabled,
       readOnly: interaction.readOnly,
       fontFamily: has(ValueStateProperty.fontFamily)

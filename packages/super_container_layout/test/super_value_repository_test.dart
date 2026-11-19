@@ -712,7 +712,7 @@ void main() {
         final previous = await store.read('People');
         await store.save(
           'People',
-          '{"client":{"name":"Alice","label":"Person","color":"#123456","size":24,"font":"Roboto","weight":"bold","italic":true,"align":"center"}}',
+          '{"client":{"name":"Alice","label":"Person","prefix":"M.","suffix":"€","color":"#123456","size":24,"font":"Roboto","weight":"bold","italic":true,"align":"center"}}',
           expectedText: previous,
         );
       });
@@ -729,6 +729,14 @@ void main() {
               SuperValueProperty.label: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.label',
+              ),
+              SuperValueProperty.prefix: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.prefix',
+              ),
+              SuperValueProperty.suffix: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.suffix',
               ),
               SuperValueProperty.color: JsonTextBinding(
                 repositoryId: binding.repositoryId,
@@ -769,6 +777,8 @@ void main() {
       expect(display.style?.fontStyle, FontStyle.italic);
       expect(display.textAlign, TextAlign.center);
       expect(find.text('Person'), findsOneWidget);
+      expect(find.text('M.'), findsOneWidget);
+      expect(find.text('€'), findsOneWidget);
       expect(find.text('Alice'), findsOneWidget);
       expect(await tester.runAsync(() => store.read('People')), original);
       expect(tester.takeException(), isNull);
@@ -1053,62 +1063,57 @@ void main() {
     },
   );
 
-  test(
-    'SuperValueConfig and Appearance serialize and validate binding save timing settings',
-    () {
-      const config = SuperValueConfig(
-        mode: SuperValueMode.input,
-        bindingDebounceMs: 850,
-        bindingSaveOnBlurOnly: true,
-      );
-      final compact = config.toCompactJson();
-      expect(compact['bindingDebounceMs'], 850);
-      expect(compact['bindingSaveOnBlurOnly'], isTrue);
-      expect(SuperValueConfig.fromJson(config.toJson()), config);
-      expect(SuperValueConfig.fromJson(compact), config);
-      expect(
-        const SuperValueConfig().toCompactJson().containsKey(
-          'bindingDebounceMs',
-        ),
-        isFalse,
-      );
-      expect(
-        () => SuperValueConfig(bindingDebounceMs: 50).validate(),
-        throwsArgumentError,
-      );
-      expect(
-        () => SuperValueConfig(bindingDebounceMs: 2500).validate(),
-        throwsArgumentError,
-      );
+  test('SuperValueConfig and Appearance serialize and validate binding save timing settings', () {
+    const config = SuperValueConfig(
+      mode: SuperValueMode.input,
+      bindingDebounceMs: 850,
+      bindingSaveOnBlurOnly: true,
+    );
+    final compact = config.toCompactJson();
+    expect(compact['bindingDebounceMs'], 850);
+    expect(compact['bindingSaveOnBlurOnly'], isTrue);
+    expect(SuperValueConfig.fromJson(config.toJson()), config);
+    expect(SuperValueConfig.fromJson(compact), config);
+    expect(
+      const SuperValueConfig().toCompactJson().containsKey('bindingDebounceMs'),
+      isFalse,
+    );
+    expect(
+      () => SuperValueConfig(bindingDebounceMs: 50).validate(),
+      throwsArgumentError,
+    );
+    expect(
+      () => SuperValueConfig(bindingDebounceMs: 2500).validate(),
+      throwsArgumentError,
+    );
 
-      final appearance = Appearance(
-        bindingDebounceMs: 1200,
-        bindingSaveOnBlurOnly: true,
-      );
-      const codec = AppearanceCodec();
-      expect(codec.toCompactJson(appearance)['bindingDebounceMs'], 1200);
-      expect(codec.toCompactJson(appearance)['bindingSaveOnBlurOnly'], isTrue);
-      final decoded = codec.fromJson(codec.toJson(appearance));
-      expect(decoded.bindingDebounceMs, 1200);
-      expect(decoded.bindingSaveOnBlurOnly, isTrue);
+    final appearance = Appearance(
+      bindingDebounceMs: 1200,
+      bindingSaveOnBlurOnly: true,
+    );
+    const codec = AppearanceCodec();
+    expect(codec.toCompactJson(appearance)['bindingDebounceMs'], 1200);
+    expect(codec.toCompactJson(appearance)['bindingSaveOnBlurOnly'], isTrue);
+    final decoded = codec.fromJson(codec.toJson(appearance));
+    expect(decoded.bindingDebounceMs, 1200);
+    expect(decoded.bindingSaveOnBlurOnly, isTrue);
 
-      final patched = codec.patchFromJson(Appearance(), {
-        'bindingDebounceMs': 600,
-        'bindingSaveOnBlurOnly': true,
-      });
-      expect(patched.bindingDebounceMs, 600);
-      expect(patched.bindingSaveOnBlurOnly, isTrue);
+    final patched = codec.patchFromJson(Appearance(), {
+      'bindingDebounceMs': 600,
+      'bindingSaveOnBlurOnly': true,
+    });
+    expect(patched.bindingDebounceMs, 600);
+    expect(patched.bindingSaveOnBlurOnly, isTrue);
 
-      const defaultCodec = DefaultAppearanceCodec();
-      final defApp = DefaultAppearance(
-        bindingDebounceMs: 750,
-        bindingSaveOnBlurOnly: true,
-      );
-      final decodedDef = defaultCodec.fromJson(defaultCodec.toJson(defApp));
-      expect(decodedDef.bindingDebounceMs, 750);
-      expect(decodedDef.bindingSaveOnBlurOnly, isTrue);
-    },
-  );
+    const defaultCodec = DefaultAppearanceCodec();
+    final defApp = DefaultAppearance(
+      bindingDebounceMs: 750,
+      bindingSaveOnBlurOnly: true,
+    );
+    final decodedDef = defaultCodec.fromJson(defaultCodec.toJson(defApp));
+    expect(decodedDef.bindingDebounceMs, 750);
+    expect(decodedDef.bindingSaveOnBlurOnly, isTrue);
+  });
 
   testWidgets(
     'SuperValue respects global Appearance debounce, per-component override, and save-on-blur-only mode',
@@ -1120,7 +1125,8 @@ void main() {
         path: 'client.city',
       );
       await tester.runAsync(
-        () => store.writeAttribute(overrideBinding, 'Paris', expectedValue: null),
+        () =>
+            store.writeAttribute(overrideBinding, 'Paris', expectedValue: null),
       );
 
       await mount(
@@ -1144,9 +1150,7 @@ void main() {
                   bindingDebounceMs: 150,
                 ),
               ),
-              const TextField(
-                key: ValueKey('other-focus-target'),
-              ),
+              const TextField(key: ValueKey('other-focus-target')),
             ],
           ),
         ),
@@ -1160,13 +1164,19 @@ void main() {
         await tester.pump();
         await Future<void>.delayed(const Duration(milliseconds: 450));
       });
-      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Alice');
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding)))?.text,
+        'Alice',
+      );
 
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 600));
       });
       await tester.pumpAndSettle();
-      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Bob');
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding)))?.text,
+        'Bob',
+      );
 
       // 2) Per-component override 150 ms: saved before 300 ms even with global 900 ms.
       await tester.runAsync(() async {
@@ -1178,7 +1188,8 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(
-        (await tester.runAsync(() => store.readAttribute(overrideBinding)))?.text,
+        (await tester.runAsync(() => store.readAttribute(overrideBinding)))
+            ?.text,
         'Lyon',
       );
 
@@ -1195,13 +1206,19 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 500));
       });
       await tester.pump();
-      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Bob');
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding)))?.text,
+        'Bob',
+      );
 
       await real(
         tester,
         () => tester.tap(find.byKey(const ValueKey('other-focus-target'))),
       );
-      expect((await tester.runAsync(() => store.readAttribute(binding)))?.text, 'Claire');
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding)))?.text,
+        'Claire',
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -1212,10 +1229,7 @@ void main() {
       SuperValueConfig? result;
       await editorHost(
         tester,
-        config: SuperValueConfig(
-          mode: SuperValueMode.input,
-          binding: binding,
-        ),
+        config: SuperValueConfig(mode: SuperValueMode.input, binding: binding),
         result: (value) => result = value,
       );
       await real(tester, () => tester.tap(find.text('Edit')));
