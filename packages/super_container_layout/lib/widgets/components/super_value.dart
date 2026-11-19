@@ -1163,6 +1163,9 @@ class _SuperValueState extends State<SuperValue>
                             suffixKey: ValueKey(
                               'super-value-suffix-${widget.id}',
                             ),
+                            errorIndicatorKey: ValueKey(
+                              'super-value-error-indicator-${widget.id}',
+                            ),
                             config: config,
                             focusNode: _focusNode,
                             controller: controller,

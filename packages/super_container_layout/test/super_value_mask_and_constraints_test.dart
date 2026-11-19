@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -460,43 +461,68 @@ void main() {
         await tester.pumpAndSettle();
 
         final inputFinder = find.byKey(const ValueKey('super-value-input-v'));
+        final indicatorFinder = find.byKey(
+          const ValueKey('super-value-error-indicator-v'),
+        );
+        String? tooltipMessage() {
+          if (indicatorFinder.evaluate().isEmpty) return null;
+          return tester
+              .widget<Tooltip>(
+                find.descendant(
+                  of: indicatorFinder,
+                  matching: find.byType(Tooltip),
+                ),
+              )
+              .message;
+        }
+
         // Silent before touch or blur
+        final initialHeight = tester.getSize(inputFinder).height;
+        expect(indicatorFinder, findsNothing);
         expect(
           tester.widget<TextField>(inputFinder).decoration!.errorText,
           isNull,
         );
         expect(tester.widget<TextField>(inputFinder).style!.color, isNot(Colors.red));
 
-        // Focus then blur without typing -> shows required error & invalid state
+        // Focus then blur without typing -> shows red Excel triangle + Tooltip & invalid state
         await tester.tap(inputFinder);
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('other')));
         await tester.pumpAndSettle();
         expect(
           tester.widget<TextField>(inputFinder).decoration!.errorText,
-          'Ce champ est obligatoire.',
+          isNull,
         );
+        expect(tester.getSize(inputFinder).height, initialHeight);
+        expect(indicatorFinder, findsOneWidget);
+        expect(tooltipMessage(), 'Ce champ est obligatoire.');
         expect(
           tester.widget<TextField>(inputFinder).style!.color!.toARGB32(),
           Colors.red.toARGB32(),
         );
 
-        // Typing invalid text preserves input and stays invalid
+        // Hovering the red triangle opens the Tooltip with the error message
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(tester.getCenter(indicatorFinder));
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(find.text('Ce champ est obligatoire.'), findsOneWidget);
+        await mouse.removePointer();
+
+        // Typing invalid text preserves input, updates tooltip and keeps invalid state
         await tester.enterText(inputFinder, 'A1');
         await tester.pumpAndSettle();
         expect(tester.widget<TextField>(inputFinder).controller!.text, 'A1');
         expect(
-          tester.widget<TextField>(inputFinder).decoration!.errorText,
+          tooltipMessage(),
           'Longueur minimale : 3 caractère(s).',
         );
 
-        // Typing valid text clears error and invalid state
+        // Typing valid text removes triangle indicator and invalid state
         await tester.enterText(inputFinder, 'abc');
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<TextField>(inputFinder).decoration!.errorText,
-          isNull,
-        );
+        expect(indicatorFinder, findsNothing);
         expect(
           tester.widget<TextField>(inputFinder).style!.color!.toARGB32(),
           isNot(Colors.red.toARGB32()),
@@ -600,6 +626,20 @@ void main() {
         final phoneInput = find.byKey(const ValueKey('super-value-input-phone'));
         final priceInput = find.byKey(const ValueKey('super-value-input-price'));
         final dateInput = find.byKey(const ValueKey('super-value-input-date'));
+        String? errorTooltipOf(String id) {
+          final indicator = find.byKey(
+            ValueKey('super-value-error-indicator-$id'),
+          );
+          if (indicator.evaluate().isEmpty) return null;
+          return tester
+              .widget<Tooltip>(
+                find.descendant(
+                  of: indicator,
+                  matching: find.byType(Tooltip),
+                ),
+              )
+              .message;
+        }
 
         expect(
           tester.widget<TextField>(phoneInput).controller!.text,
@@ -611,14 +651,11 @@ void main() {
           '19/05/2026',
         );
 
-        // Incomplete phone -> error shown, repository stays 0612345678
+        // Incomplete phone -> triangle tooltip shown, repository stays 0612345678
         await tester.enterText(phoneInput, '0612');
         await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<TextField>(phoneInput).decoration!.errorText,
-          contains('Saisie incomplète'),
-        );
+        expect(errorTooltipOf('phone'), contains('Saisie incomplète'));
         expect(
           (await store.readAttribute(
             const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
@@ -630,10 +667,7 @@ void main() {
         await tester.enterText(phoneInput, '0698765432');
         await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<TextField>(phoneInput).decoration!.errorText,
-          isNull,
-        );
+        expect(errorTooltipOf('phone'), isNull);
         expect(
           (await store.readAttribute(
             const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
@@ -645,10 +679,7 @@ void main() {
         await tester.enterText(priceInput, '1500');
         await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
-        expect(
-          tester.widget<TextField>(priceInput).decoration!.errorText,
-          contains('1000'),
-        );
+        expect(errorTooltipOf('price'), contains('1000'));
         expect(
           (await store.readAttribute(
             const JsonTextBinding(repositoryId: 'form_repo', path: 'price'),
@@ -681,10 +712,7 @@ void main() {
           tester.widget<TextField>(dateInput).controller!.text,
           '31/02/2026',
         );
-        expect(
-          tester.widget<TextField>(dateInput).decoration!.errorText,
-          contains('Date invalide'),
-        );
+        expect(errorTooltipOf('date'), contains('Date invalide'));
         expect(
           (await store.readAttribute(
             const JsonTextBinding(repositoryId: 'form_repo', path: 'birthDate'),

@@ -3,6 +3,8 @@
 /// Applique les options de [SuperTextFieldConfig] et s'intègre au mode édition.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -169,6 +171,7 @@ class SuperTextField extends StatefulWidget {
     this.inputKey,
     this.prefixKey,
     this.suffixKey,
+    this.errorIndicatorKey,
     this.style,
     this.onChanged,
     this.enabled,
@@ -185,6 +188,7 @@ class SuperTextField extends StatefulWidget {
   final Key? inputKey;
   final Key? prefixKey;
   final Key? suffixKey;
+  final Key? errorIndicatorKey;
   final TextStyle? style;
   final ValueChanged<String>? onChanged;
   final bool? enabled, readOnly;
@@ -297,8 +301,11 @@ class _SuperTextFieldState extends State<SuperTextField> {
     ].any((value) => value != null);
     final errorText =
         widget.bindingError ??
-        widget.validationError ??
         (field.errorText.isEmpty ? null : field.errorText);
+    final tooltipValidationError = errorText == null
+        ? widget.validationError
+        : null;
+    final hasAnyError = errorText != null || tooltipValidationError != null;
     final fill = hasFill
         ? WidgetStateColor.resolveWith((states) {
             final fallback = theme.fillColor ?? scheme.surfaceContainerHighest;
@@ -309,7 +316,7 @@ class _SuperTextFieldState extends State<SuperTextField> {
             if (states.contains(WidgetState.disabled)) {
               return field.disabledFillColor ?? field.fillColor ?? inherited;
             }
-            if (states.contains(WidgetState.error) || errorText != null) {
+            if (states.contains(WidgetState.error) || hasAnyError) {
               return field.errorFillColor ?? field.fillColor ?? inherited;
             }
             if (states.contains(WidgetState.focused)) {
@@ -452,6 +459,33 @@ class _SuperTextFieldState extends State<SuperTextField> {
       resolvedSuffixIcon = suffix;
     }
 
+    final focusedErrorColor =
+        field.errorBorderColor ??
+        inheritedColor(theme.focusedErrorBorder, scheme.error);
+    InputBorder? validationBorder({required bool focused}) {
+      if (customizedBorder) {
+        return border(
+          focused
+              ? (theme.focusedErrorBorder ?? theme.focusedBorder)
+              : (theme.errorBorder ?? theme.enabledBorder),
+          focused ? focusedErrorColor : error,
+          focused: focused,
+        );
+      }
+      final themed = focused ? theme.focusedErrorBorder : theme.errorBorder;
+      if (themed != null) return themed;
+      final base = theme.border;
+      if (base == InputBorder.none) return InputBorder.none;
+      final color = focused ? focusedErrorColor : error;
+      final width = focused ? 2.0 : 1.0;
+      if (base is OutlineInputBorder) {
+        return base.copyWith(borderSide: BorderSide(color: color, width: width));
+      }
+      return UnderlineInputBorder(
+        borderSide: BorderSide(color: color, width: width),
+      );
+    }
+
     final padding = theme.contentPadding;
     final textField = TextField(
       focusNode: widget.focusNode,
@@ -504,15 +538,20 @@ class _SuperTextFieldState extends State<SuperTextField> {
             ? true
             : null,
         fillColor: fill,
-        border: border(theme.border, normal),
-        enabledBorder: border(theme.enabledBorder, normal),
-        focusedBorder: border(theme.focusedBorder, focus, focused: true),
+        border: tooltipValidationError != null
+            ? validationBorder(focused: false)
+            : border(theme.border, normal),
+        enabledBorder: tooltipValidationError != null
+            ? validationBorder(focused: false)
+            : border(theme.enabledBorder, normal),
+        focusedBorder: tooltipValidationError != null
+            ? validationBorder(focused: true)
+            : border(theme.focusedBorder, focus, focused: true),
         disabledBorder: border(theme.disabledBorder, disabled),
         errorBorder: border(theme.errorBorder, error),
         focusedErrorBorder: border(
           theme.focusedErrorBorder,
-          field.errorBorderColor ??
-              inheritedColor(theme.focusedErrorBorder, scheme.error),
+          focusedErrorColor,
           focused: true,
         ),
         contentPadding:
@@ -545,9 +584,35 @@ class _SuperTextFieldState extends State<SuperTextField> {
       ),
       onChanged: widget.onChanged,
     );
-    if (insideAffix) return textField;
+    final isOutlined =
+        field.variant == TextFieldVariant.outlined ||
+        (field.variant == TextFieldVariant.theme &&
+            theme.border is OutlineInputBorder);
+    final cornerRadius = math.max(
+      0.0,
+      (field.radius ?? (isOutlined ? 4.0 : 0.0)) - 1.5,
+    );
+    final fieldWithIndicator = tooltipValidationError == null
+        ? textField
+        : Stack(
+            fit: StackFit.passthrough,
+            children: [
+              textField,
+              Positioned(
+                top: isOutlined && config.label.isNotEmpty ? 7.0 : 1.5,
+                right: 1.5,
+                child: _ExcelErrorTriangle(
+                  key: widget.errorIndicatorKey,
+                  message: tooltipValidationError,
+                  color: error,
+                  topRightRadius: cornerRadius,
+                ),
+              ),
+            ],
+          );
+    if (insideAffix) return fieldWithIndicator;
     return wrapWithOutsideSuperValueAffixes(
-      child: textField,
+      child: fieldWithIndicator,
       prefix: config.prefix,
       suffix: config.suffix,
       valueStyle: widget.style,
@@ -556,6 +621,75 @@ class _SuperTextFieldState extends State<SuperTextField> {
       suffixKey: widget.suffixKey,
     );
   }
+}
+
+/// Petit triangle rouge en coin supérieur droit (façon Excel) affichant
+/// le message d'erreur en info-bulle au survol sans agrandir la hauteur du champ.
+class _ExcelErrorTriangle extends StatelessWidget {
+  const _ExcelErrorTriangle({
+    required this.message,
+    required this.color,
+    required this.topRightRadius,
+    super.key,
+  });
+
+  final String message;
+  final Color color;
+  final double topRightRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: message,
+      child: Tooltip(
+        message: message,
+        waitDuration: const Duration(milliseconds: 150),
+        preferBelow: false,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.help,
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: ClipRRect(
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(topRightRadius),
+                ),
+                child: CustomPaint(
+                  size: const Size(9, 9),
+                  painter: _ExcelTrianglePainter(color),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExcelTrianglePainter extends CustomPainter {
+  const _ExcelTrianglePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_ExcelTrianglePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 List<TextInputFormatter> superTextInputFormatters(SuperTextFieldConfig config) {

@@ -17,6 +17,7 @@ import '../datasources/datasource_manager.dart';
 import '../providers/data_provider_manager.dart';
 import 'calculated_attributes_dialog.dart';
 import 'floating_repository_editor.dart';
+import 'repository_schema_dialog.dart';
 import '../../appearance/appearance_scope.dart';
 
 /// Boîte de dialogue de gestion et d'édition des documents du [JsonRepositoryStore].
@@ -381,6 +382,19 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     );
   }
 
+  Future<void> _openSchemaDialog() async {
+    if (_selected == null || _selectedId == null || _store == null || _busy) {
+      return;
+    }
+    await RepositorySchemaDialog.show(
+      context,
+      store: _store!,
+      repositoryId: _selectedId!,
+      repositoryName: _selected,
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _openFloatingEditor() async {
     if (_selected == null || _selectedId == null || _store == null || _busy) {
       return;
@@ -517,6 +531,23 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
               onPressed: _busy ? null : _openCalculatedAttributes,
               icon: const Icon(Icons.functions, size: 18),
             ),
+            IconButton(
+              key: const ValueKey('repository-json-schema'),
+              tooltip: _store?.jsonSchemaOf(_selectedId!) != null
+                  ? 'JSON Schema (associé)'
+                  : 'Associer un JSON Schema',
+              visualDensity: VisualDensity.compact,
+              onPressed: _busy ? null : _openSchemaDialog,
+              icon: Icon(
+                _store?.jsonSchemaOf(_selectedId!) != null
+                    ? Icons.verified_outlined
+                    : Icons.schema_outlined,
+                size: 18,
+                color: _store?.jsonSchemaOf(_selectedId!) != null
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+            ),
             TextButton(
               onPressed: _busy ? null : _rename,
               child: const Text('Renommer'),
@@ -539,10 +570,24 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
           ],
         ),
       if (_selectedId != null) ...[
-        SelectableText(
-          'ID technique : $_selectedId',
-          key: const ValueKey('repository-id'),
-          style: Theme.of(context).textTheme.bodySmall,
+        Wrap(
+          spacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SelectableText(
+              'ID technique : $_selectedId',
+              key: const ValueKey('repository-id'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (_store?.jsonSchemaOf(_selectedId!) != null)
+              Text(
+                '• JSON Schema actif',
+                key: const ValueKey('repository-schema-badge'),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
       ],

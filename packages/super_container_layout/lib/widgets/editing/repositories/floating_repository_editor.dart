@@ -17,6 +17,7 @@ import '../../components/internal_widget/code_editor.dart';
 import '../dialogs/editor_dialog.dart';
 import 'calculated_attributes_dialog.dart';
 import 'json_repository_manager.dart';
+import 'repository_schema_dialog.dart';
 
 OverlayState _resolveRootOverlay(BuildContext context) {
   if (Overlay.maybeOf(context, rootOverlay: true) case final overlay?) {
@@ -295,6 +296,23 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
     super.initState();
     widget.store.addListener(_repositoryChanged);
     _error = _validationError(_draft);
+    unawaited(_loadSchemaAndRevalidate());
+  }
+
+  Future<void> _loadSchemaAndRevalidate() async {
+    try {
+      await widget.store.readJsonSchema(widget.repositoryId);
+      if (!mounted || _conflict) return;
+      final error = _validationError(_draft);
+      if (error != _error) {
+        setState(() {
+          _error = error;
+          if (error != null) _pending = null;
+        });
+      }
+    } on FormatException {
+      // Les erreurs de schéma sont déjà signalées par le store.
+    }
   }
 
   @override
@@ -317,6 +335,13 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
       if (widget.store.isPersistentRepository(widget.repositoryId) &&
           decoded is! Map<String, dynamic>) {
         return 'Le repository applicatif doit être un objet JSON.';
+      }
+      final schemaResult = widget.store.validateDocumentAgainstSchema(
+        widget.repositoryId,
+        decoded,
+      );
+      if (!schemaResult.isValid) {
+        return 'JSON Schema non respecté :\n${schemaResult.formatSummary(maxIssues: 3)}';
       }
       return null;
     } on FormatException {
@@ -429,6 +454,9 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
           _pending = null;
           _conflict = true;
           _error = 'Le repository a changé. Copiez le brouillon ou rechargez.';
+        } else if (!_conflict) {
+          _error = _validationError(_draft);
+          if (_error != null) _pending = null;
         }
       });
     } on FormatException catch (error) {
@@ -616,6 +644,45 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
                                   repositoryName: _name,
                                 ),
                                 icon: const Icon(Icons.functions),
+                              ),
+                              IconButton(
+                                key: const ValueKey(
+                                  'floating-repository-schema',
+                                ),
+                                tooltip: widget.store.jsonSchemaOf(
+                                          widget.repositoryId,
+                                        ) !=
+                                        null
+                                    ? 'JSON Schema (associé)'
+                                    : 'Associer un JSON Schema',
+                                onPressed: () async {
+                                  await RepositorySchemaDialog.show(
+                                    context,
+                                    store: widget.store,
+                                    repositoryId: widget.repositoryId,
+                                    repositoryName: _name,
+                                  );
+                                  if (mounted && !_conflict) {
+                                    setState(() {
+                                      _error = _validationError(_draft);
+                                      if (_error != null) _pending = null;
+                                    });
+                                  }
+                                },
+                                icon: Icon(
+                                  widget.store.jsonSchemaOf(
+                                            widget.repositoryId,
+                                          ) !=
+                                          null
+                                      ? Icons.verified_outlined
+                                      : Icons.schema_outlined,
+                                  color: widget.store.jsonSchemaOf(
+                                            widget.repositoryId,
+                                          ) !=
+                                          null
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
                               ),
                               IconButton(
                                 tooltip: 'Copier le JSON',

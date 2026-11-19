@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/calculated_attribute_definition.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/repository_json_schema.dart';
 import '../../theme/appearance.dart';
 import '../datasources/datasource_registry.dart';
 import '../datasources/super_backend_datasource_bridge.dart';
@@ -21,6 +22,7 @@ import '../providers/data_provider_registry.dart';
 import '../providers/json_definition_folder.dart';
 import 'calculated_attribute.dart';
 import 'json_repository_binding.dart';
+import 'json_schema_validator.dart';
 import 'js_calculated_attribute_runtime.dart';
 
 /// Entrée immuable décrivant un repository JSON enregistré (identifiant, nom et contenu JSON).
@@ -111,6 +113,7 @@ class RepositoryImpl {
     required String id,
     required Map<String, Object?> json,
     ValueChanged<ChangeContext>? onChanged,
+    Map<String, Object?>? jsonSchema,
   }) {
     if (!RegExp(r'^[a-z0-9_]{1,32}$').hasMatch(id)) {
       throw FormatException('ID de repository invalide. $id');
@@ -119,18 +122,38 @@ class RepositoryImpl {
     if (copy is! Map<String, dynamic>) {
       throw const FormatException('Le repository doit être un objet JSON.');
     }
+    Map<String, Object?>? frozenSchema;
+    if (jsonSchema != null) {
+      final normalizedSchema = JsonSchemaValidator.validateSchemaDefinition(
+        jsonSchema,
+      );
+      JsonSchemaValidator.assertValid(
+        repositoryId: id,
+        document: copy,
+        schema: normalizedSchema,
+      );
+      frozenSchema = RepositoryJsonSchemaDocument(
+        repositoryId: id,
+        schema: normalizedSchema,
+      ).schema;
+    }
     return RepositoryImpl._(
       id,
       Map<String, Object?>.unmodifiable(copy),
       onChanged,
+      frozenSchema,
     );
   }
 
-  RepositoryImpl._(this.id, this.json, this.onChanged);
+  RepositoryImpl._(this.id, this.json, this.onChanged, this.jsonSchema);
 
   final String id;
   final Map<String, Object?> json;
   final ValueChanged<ChangeContext>? onChanged;
+
+  /// JSON Schema optionnel déclaré par l'application pour valider ce
+  /// repository à chaque écriture.
+  final Map<String, Object?>? jsonSchema;
 
   final _calculatedAttributes = <String, CalculatedAttributeFunction>{};
   final _jsCalculatedAttributes = <CalculatedAttributeDefinition>[];
@@ -339,6 +362,24 @@ class JsonRepositoryStore extends ChangeNotifier {
   bool _allCalculatedLoaded = false;
   Future<void>? _loadingAllCalculated;
   final _loadedCalculatedRepos = <String>{};
+  late final _schemasFolder =
+      JsonDefinitionFolder<RepositoryJsonSchemaDocument>(
+        directory: () => Directory(
+          '${directory.path}${Platform.pathSeparator}schemas',
+        ),
+        ofOne: 'de JSON Schema',
+        plural: 'JSON Schemas',
+        maxFiles: 500,
+        decode: RepositoryJsonSchemaDocument.fromJson,
+        encode: (doc) => doc.toJson(),
+        idOf: (doc) => doc.repositoryId,
+        isValidId: (id) => RegExp(r'^[a-z0-9_]{1,32}$').hasMatch(id),
+      );
+  bool _allSchemasLoaded = false;
+  Future<void>? _loadingAllSchemas;
+  final _loadedSchemaRepos = <String>{};
+  final _schemasByRepoId = <String, RepositoryJsonSchemaDocument>{};
+  final _codeSchemaRepoIds = <String>{};
   Map<String, _RegisteredRepositoryPersistence>? _persistentRepositoryState;
   Map<String, _RegisteredRepositoryPersistence> get _persistentRepositories =>
       _persistentRepositoryState ??= {};
@@ -360,6 +401,22 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     final document = _deepCloneJson(repository.json);
+    if (repository.jsonSchema case final codeSchema?) {
+      final normalized = JsonSchemaValidator.validateSchemaDefinition(
+        codeSchema,
+      );
+      JsonSchemaValidator.assertValid(
+        repositoryId: repository.id,
+        document: document,
+        schema: normalized,
+      );
+      _schemasByRepoId[repository.id] = RepositoryJsonSchemaDocument(
+        repositoryId: repository.id,
+        schema: normalized,
+      );
+      _codeSchemaRepoIds.add(repository.id);
+      _loadedSchemaRepos.add(repository.id);
+    }
     _memoryRepositories[repository.id] = document;
     _memoryRepositoryCallbacks[repository.id] = repository.onChanged;
     _loadingDocuments.remove(repository.id);
@@ -418,6 +475,15 @@ class JsonRepositoryStore extends ChangeNotifier {
     final document = text == null
         ? repository.json
         : await _decodeRegisteredDocumentAsync(text);
+    final effectiveSchema =
+        repository.jsonSchema ?? _schemasByRepoId[repository.id]?.schema;
+    if (effectiveSchema != null) {
+      JsonSchemaValidator.assertValid(
+        repositoryId: repository.id,
+        document: document,
+        schema: effectiveSchema,
+      );
+    }
     persistence.savedText = text;
     if (autoSave && text == null) {
       await _writeRegisteredDocument(persistence, document);
@@ -451,6 +517,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         id: repository.id,
         json: document,
         onChanged: repository.onChanged,
+        jsonSchema: repository.jsonSchema,
       )
         .._calculatedAttributes.addAll(repository._calculatedAttributes)
         .._jsCalculatedAttributes.addAll(effectiveJs),
@@ -467,6 +534,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     await flushBindings();
     await _exclusive(() async {
       final persistence = _registeredPersistenceOf(repositoryId);
+      await _assertValidDocument(repositoryId, _memoryRepositories[repositoryId]);
       await _writeRegisteredDocument(
         persistence,
         _memoryRepositories[repositoryId],
@@ -494,6 +562,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         );
       }
       final document = await _decodeRegisteredDocumentAsync(text);
+      await _assertValidDocument(repositoryId, document);
       final previous = _memoryRepositories[repositoryId];
       final savedText = persistence.savedText;
       if (!discardChanges &&
@@ -898,6 +967,7 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<List<JsonRepositoryEntry>> _catalog() async {
     await ensureCalculatedAttributesLoaded();
+    await ensureSchemasLoaded();
     final names = await list();
     final entries = <JsonRepositoryEntry>[];
     final ids = <String>{};
@@ -1042,6 +1112,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<void> preload() async {
     try {
       await ensureCalculatedAttributesLoaded();
+      await ensureSchemasLoaded();
       if (await FileSystemEntity.type(directory.path, followLinks: false) !=
           FileSystemEntityType.directory) {
         return;
@@ -1133,6 +1204,169 @@ class JsonRepositoryStore extends ChangeNotifier {
     _loadedCalculatedRepos.add(repositoryId);
     _changed();
   });
+
+  /// Charge les JSON Schemas persistés dans `schemas/<id>.json`.
+  Future<void> ensureSchemasLoaded() {
+    if (_allSchemasLoaded) return Future.value();
+    final inFlight = _loadingAllSchemas;
+    if (inFlight != null) return inFlight;
+    final future = _schemasFolder.serial(() async {
+      if (_allSchemasLoaded || _disposed) return;
+      final result = await _schemasFolder.readAll(
+        describe: (error) => error.toString(),
+      );
+      if (_disposed) return;
+      for (final entry in result.loaded.entries) {
+        if (_codeSchemaRepoIds.contains(entry.key) ||
+            (_loadedSchemaRepos.contains(entry.key) &&
+                isMemoryOnlyRepository(entry.key))) {
+          continue;
+        }
+        try {
+          JsonSchemaValidator.validateSchemaDefinition(entry.value.schema);
+          _schemasByRepoId[entry.key] = entry.value;
+          _loadedSchemaRepos.add(entry.key);
+        } on FormatException catch (error) {
+          reportBindingError(error.message);
+        }
+      }
+      _allSchemasLoaded = true;
+    }).whenComplete(() => _loadingAllSchemas = null);
+    _loadingAllSchemas = future;
+    return future;
+  }
+
+  /// Indique si le JSON Schema de [repositoryId] est figé dans le code via
+  /// [RepositoryImpl.jsonSchema].
+  bool isCodeJsonSchema(String repositoryId) =>
+      _codeSchemaRepoIds.contains(repositoryId);
+
+  /// Retourne le JSON Schema actuellement en cache pour [repositoryId], ou `null`.
+  Map<String, Object?>? jsonSchemaOf(String repositoryId) =>
+      _schemasByRepoId[repositoryId]?.schema;
+
+  /// Lit le JSON Schema associé à [repositoryId] après chargement disque.
+  Future<Map<String, Object?>?> readJsonSchema(String repositoryId) async {
+    await ensureSchemasLoaded();
+    return _schemasByRepoId[repositoryId]?.schema;
+  }
+
+  /// Associe ou met à jour le JSON Schema de [repositoryId] (ou le supprime si
+  /// [schema] vaut `null`).
+  ///
+  /// Par défaut ([validateCurrentDocument] = `true`), le document actuel du
+  /// repository est validé contre [schema] avant d'accepter l'association.
+  Future<void> saveJsonSchema(
+    String repositoryId,
+    Map<String, Object?>? schema, {
+    bool validateCurrentDocument = true,
+  }) => _exclusive(() async {
+    await ensureSchemasLoaded();
+    if (_codeSchemaRepoIds.contains(repositoryId)) {
+      throw const FormatException(
+        'Le JSON Schema déclaré par l’application sur ce repository ne peut '
+        'pas être modifié.',
+      );
+    }
+    final catalog = await _catalog();
+    final exists =
+        _memoryRepositories.containsKey(repositoryId) ||
+        catalog.any((entry) => entry.id == repositoryId);
+    if (!exists) {
+      throw const FormatException('Repository introuvable.');
+    }
+
+    final previous = _schemasByRepoId[repositoryId];
+    if (schema == null) {
+      _schemasByRepoId.remove(repositoryId);
+      _loadedSchemaRepos.remove(repositoryId);
+      try {
+        await _schemasFolder.serial(() => _schemasFolder.delete(repositoryId));
+      } catch (_) {
+        if (previous != null) {
+          _schemasByRepoId[repositoryId] = previous;
+          _loadedSchemaRepos.add(repositoryId);
+        }
+        rethrow;
+      }
+      _changed();
+      return;
+    }
+
+    final normalizedSchema = JsonSchemaValidator.validateSchemaDefinition(
+      schema,
+    );
+    final doc = RepositoryJsonSchemaDocument(
+      repositoryId: repositoryId,
+      schema: normalizedSchema,
+    );
+
+    if (validateCurrentDocument) {
+      final currentDoc = _memoryRepositories.containsKey(repositoryId)
+          ? _memoryRepositories[repositoryId]
+          : await _decodeAsync(await read(await _nameOf(repositoryId)));
+      JsonSchemaValidator.assertValid(
+        repositoryId: repositoryId,
+        document: currentDoc,
+        schema: doc.schema,
+      );
+    }
+
+    _schemasByRepoId[repositoryId] = doc;
+    _loadedSchemaRepos.add(repositoryId);
+    try {
+      await _schemasFolder.serial(() => _schemasFolder.write(doc));
+    } catch (_) {
+      if (previous == null) {
+        _schemasByRepoId.remove(repositoryId);
+        _loadedSchemaRepos.remove(repositoryId);
+      } else {
+        _schemasByRepoId[repositoryId] = previous;
+      }
+      rethrow;
+    }
+    _changed();
+  });
+
+  /// Valide [document] contre le JSON Schema en cache de [repositoryId] (ou
+  /// [schemaOverride] s'il est fourni).
+  JsonSchemaValidationResult validateDocumentAgainstSchema(
+    String repositoryId,
+    Object? document, {
+    Map<String, Object?>? schemaOverride,
+  }) {
+    final schema = schemaOverride ?? _schemasByRepoId[repositoryId]?.schema;
+    if (schema == null) return JsonSchemaValidationResult.valid;
+    return JsonSchemaValidator.validate(document, schema);
+  }
+
+  /// Charge le schéma et le document de [repositoryId] puis retourne le
+  /// résultat de validation complet.
+  Future<JsonSchemaValidationResult> validateRepository(
+    String repositoryId,
+  ) async {
+    await ensureSchemasLoaded();
+    final schema = _schemasByRepoId[repositoryId]?.schema;
+    if (schema == null) return JsonSchemaValidationResult.valid;
+    final document = await readDocument(repositoryId);
+    return JsonSchemaValidator.validate(document, schema);
+  }
+
+  Future<void> _assertValidDocument(
+    String repositoryId,
+    Object? document,
+  ) async {
+    if (!_allSchemasLoaded && !_loadedSchemaRepos.contains(repositoryId)) {
+      await ensureSchemasLoaded();
+    }
+    final schema = _schemasByRepoId[repositoryId]?.schema;
+    if (schema == null) return;
+    JsonSchemaValidator.assertValid(
+      repositoryId: repositoryId,
+      document: document,
+      schema: schema,
+    );
+  }
 
   /// Évalue ponctuellement une formule JS sans la persister ni la mettre en cache.
   Future<Object?> testCalculatedAttribute(
@@ -1368,6 +1602,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         asBool: asBool,
         asStringList: asStringList,
       );
+      await _assertValidDocument(repoId, updated);
       await _saveRegisteredAutomatically(repoId, updated);
       final value = path.read(updated, allowStringList: asStringList);
       _memoryRepositories[repoId] = updated;
@@ -1661,6 +1896,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       final next = change(previous);
       if (skipUnchanged && jsonEquals(previous, next)) return previous;
       final updated = attribute.replaceNode(root, next);
+      await _assertValidDocument(repositoryId, updated);
       await _saveRegisteredAutomatically(repositoryId, updated);
       _memoryRepositories[repositoryId] = updated;
       _documentCache[repositoryId] = updated;
@@ -1781,11 +2017,12 @@ class JsonRepositoryStore extends ChangeNotifier {
     return decoded;
   }
 
-  /// Crée un nouveau repository fichier [name] avec un identifiant technique 32 hex explicite [id] et le contenu objet [initialDocument].
+  /// Crée un nouveau repository fichier [name] avec un identifiant technique 32 hex explicite [id], le contenu objet [initialDocument] et un [jsonSchema] optionnel.
   Future<String> createWithId(
     String name, {
     required String id,
     Map<String, Object?> initialDocument = const {},
+    Map<String, Object?>? jsonSchema,
   }) {
     final validatedName = validateName(name);
     if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(id)) {
@@ -1794,6 +2031,21 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     final copy = _normalizeObjectDocument(initialDocument);
+    RepositoryJsonSchemaDocument? schemaDoc;
+    if (jsonSchema != null) {
+      final normalizedSchema = JsonSchemaValidator.validateSchemaDefinition(
+        jsonSchema,
+      );
+      schemaDoc = RepositoryJsonSchemaDocument(
+        repositoryId: id,
+        schema: normalizedSchema,
+      );
+      JsonSchemaValidator.assertValid(
+        repositoryId: id,
+        document: copy,
+        schema: schemaDoc.schema,
+      );
+    }
     return _exclusive(() async {
       await _checkAvailable(validatedName);
       final existingCatalog = await _catalog();
@@ -1811,7 +2063,17 @@ class JsonRepositoryStore extends ChangeNotifier {
         await idFile.writeAsString(id, flush: true);
         await jsonFile.create(exclusive: true);
         await jsonFile.writeAsString(await _encodeAsync(copy), flush: true);
+        if (schemaDoc case final createdSchema?) {
+          await _schemasFolder.serial(() => _schemasFolder.write(createdSchema));
+          _schemasByRepoId[id] = createdSchema;
+          _loadedSchemaRepos.add(id);
+        }
       } catch (_) {
+        _schemasByRepoId.remove(id);
+        _loadedSchemaRepos.remove(id);
+        if (schemaDoc != null) {
+          await _schemasFolder.serial(() => _schemasFolder.delete(id));
+        }
         if (await FileSystemEntity.type(jsonFile.path, followLinks: false) ==
             FileSystemEntityType.file) {
           await jsonFile.delete();
@@ -1838,6 +2100,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     JsonTextBinding(repositoryId: repositoryId, path: '_').validate();
     final decoded = _normalizeObjectDocument(document);
     return _exclusive(() async {
+      await _assertValidDocument(repositoryId, decoded);
       if (_memoryRepositories.containsKey(repositoryId)) {
         final previous = _memoryRepositories[repositoryId];
         if (jsonEquals(previous, decoded)) return;
@@ -1896,6 +2159,12 @@ class JsonRepositoryStore extends ChangeNotifier {
         await _calculatedFolder.serial(
           () => _calculatedFolder.delete(repositoryId),
         );
+        _schemasByRepoId.remove(repositoryId);
+        _codeSchemaRepoIds.remove(repositoryId);
+        _loadedSchemaRepos.remove(repositoryId);
+        await _schemasFolder.serial(
+          () => _schemasFolder.delete(repositoryId),
+        );
         _idToNameCache = null;
         final binding = _bindings[repositoryId];
         if (binding != null) {
@@ -1946,6 +2215,7 @@ class JsonRepositoryStore extends ChangeNotifier {
           'Le repository applicatif doit être un objet JSON.',
         );
       }
+      await _assertValidDocument(name, decoded);
       final previous = _memoryRepositories[name];
       if (persistence != null) {
         await _writeRegisteredDocument(persistence, decoded);
@@ -1971,6 +2241,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     final id = await _idOf(name);
+    await _assertValidDocument(id, decoded);
     await _file(name).writeAsString(text, flush: true);
     _documentCache[id] = decoded;
     _idToNameCache?[id] = validateName(name);
@@ -2064,6 +2335,10 @@ class JsonRepositoryStore extends ChangeNotifier {
       await _calculatedFolder.serial(
         () => _calculatedFolder.delete(validated),
       );
+      _schemasByRepoId.remove(validated);
+      _codeSchemaRepoIds.remove(validated);
+      _loadedSchemaRepos.remove(validated);
+      await _schemasFolder.serial(() => _schemasFolder.delete(validated));
       _changed();
       return;
     }
@@ -2103,6 +2378,10 @@ class JsonRepositoryStore extends ChangeNotifier {
       _calculatedEngine.unregisterRepository(deletedId);
       _loadedCalculatedRepos.remove(deletedId);
       await _calculatedFolder.serial(() => _calculatedFolder.delete(deletedId));
+      _schemasByRepoId.remove(deletedId);
+      _codeSchemaRepoIds.remove(deletedId);
+      _loadedSchemaRepos.remove(deletedId);
+      await _schemasFolder.serial(() => _schemasFolder.delete(deletedId));
     }
     _idToNameCache = null;
     final binding = id == null ? null : _bindings[id];

@@ -13,9 +13,11 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../../models/calculated_attribute_definition.dart';
+import '../../../models/repository_json_schema.dart';
 import '../../../services/appearance/appearance_codec.dart'
     show PatchRejectedEntry;
 import '../../../services/repositories/json_repository_store.dart';
+import '../../../services/repositories/json_schema_validator.dart';
 
 final RegExp _repoKeyOrIdPattern = RegExp(r'^[a-z0-9_]{1,32}$');
 final RegExp _forbiddenJsonKeyChars = RegExp(r'[.\[\]?\s]');
@@ -47,10 +49,18 @@ class VibeRepositoryPatchEntry {
     this.hasData = true,
     List<CalculatedAttributeDefinition> calculatedAttributes = const [],
     this.hasCalculatedAttributes = false,
+    Map<String, Object?>? jsonSchema,
+    this.hasJsonSchema = false,
   }) : data = Map<String, Object?>.unmodifiable(data),
        calculatedAttributes = List<CalculatedAttributeDefinition>.unmodifiable(
          calculatedAttributes,
-       );
+       ),
+       jsonSchema = jsonSchema == null
+           ? null
+           : RepositoryJsonSchemaDocument(
+               repositoryId: 'schema_preview',
+               schema: jsonSchema,
+             ).schema;
 
   /// Identifiant ou alias `<idOrAlias>` déclaré dans `"repositories"`.
   final String key;
@@ -72,6 +82,12 @@ class VibeRepositoryPatchEntry {
 
   /// Vrai lorsque le patch contient explicitement la clé `"calculatedAttributes"`.
   final bool hasCalculatedAttributes;
+
+  /// JSON Schema optionnel à associer au repository (`null` pour dissocier si [hasJsonSchema] vaut `true`).
+  final Map<String, Object?>? jsonSchema;
+
+  /// Vrai lorsque le patch contient explicitement la clé `"jsonSchema"`.
+  final bool hasJsonSchema;
 }
 
 /// Formateur produisant le résumé borné des repositories d'un [JsonRepositoryStore] pour le prompt Vibe IA.
@@ -158,6 +174,7 @@ abstract final class VibeRepositoryPromptFormatter {
       for (final def in store.jsCalculatedAttributesOf(entry.id))
         def.toCompactJson(),
     ];
+    final jsonSchema = store.jsonSchemaOf(entry.id);
     final truncatedArrays = <String, int>{};
     final sampledData = _sampleJsonValue(
       rawDocument,
@@ -171,6 +188,7 @@ abstract final class VibeRepositoryPromptFormatter {
       'kind': kind,
       if (calculated.isNotEmpty) 'calculatedAttributes': calculated,
       if (jsCalculated.isNotEmpty) 'jsCalculatedAttributes': jsCalculated,
+      'jsonSchema': ?jsonSchema,
       if (truncatedArrays.isNotEmpty) 'truncatedArrays': truncatedArrays,
       'data': sampledData,
     };
@@ -222,6 +240,7 @@ abstract final class VibeRepositoryPatchValidator {
     'mode',
     'data',
     'calculatedAttributes',
+    'jsonSchema',
   };
   static const Set<String> _descriptorMetaKeys = <String>{
     'name',
@@ -231,6 +250,7 @@ abstract final class VibeRepositoryPatchValidator {
     'kind',
     'calculatedAttributes',
     'jsCalculatedAttributes',
+    'jsonSchema',
     'truncatedArrays',
   };
 
@@ -278,7 +298,9 @@ abstract final class VibeRepositoryPatchValidator {
     }
     final map = Map<String, Object?>.from(rawValue);
 
-    if ((map.containsKey('data') || map.containsKey('calculatedAttributes')) &&
+    if ((map.containsKey('data') ||
+            map.containsKey('calculatedAttributes') ||
+            map.containsKey('jsonSchema')) &&
         map.keys.every(_envelopeKeys.contains)) {
       return _parseEnvelope(repoKey, map);
     }
@@ -315,6 +337,10 @@ abstract final class VibeRepositoryPatchValidator {
       return true;
     }
     if (map.containsKey('calculatedAttributes') &&
+        map.keys.every(_descriptorMetaKeys.contains)) {
+      return true;
+    }
+    if (map.containsKey('jsonSchema') &&
         map.keys.every(_descriptorMetaKeys.contains)) {
       return true;
     }
@@ -357,13 +383,14 @@ abstract final class VibeRepositoryPatchValidator {
 
     final hasData = map.containsKey('data');
     final hasCalculated = map.containsKey('calculatedAttributes');
+    final hasJsonSchema = map.containsKey('jsonSchema');
 
-    if (!hasData && !hasCalculated) {
+    if (!hasData && !hasCalculated && !hasJsonSchema) {
       throw FormatException(
         'Enveloppe du repository "$repoKey" incomplète : clé "data" manquante.',
       );
     }
-    if (mode == VibeRepositoryPatchMode.replace && !hasData) {
+    if (mode == VibeRepositoryPatchMode.replace && !hasData && !hasJsonSchema) {
       throw FormatException(
         'Enveloppe du repository "$repoKey" incomplète : clé "data" requise en mode "replace".',
       );
@@ -379,6 +406,16 @@ abstract final class VibeRepositoryPatchValidator {
         );
       }
       normalizedData = validateDataObject(repoKey, rawData);
+    }
+
+    Map<String, Object?>? validatedSchema;
+    if (hasJsonSchema) {
+      final rawSchema = map['jsonSchema'];
+      if (rawSchema != null) {
+        validatedSchema = JsonSchemaValidator.validateSchemaDefinition(
+          rawSchema,
+        );
+      }
     }
 
     final parsedCalculated = <CalculatedAttributeDefinition>[];
@@ -405,7 +442,7 @@ abstract final class VibeRepositoryPatchValidator {
       throw FormatException(
         'Clé(s) non autorisée(s) ${extraKeys.map((k) => '"$k"').join(', ')} '
         'dans l’enveloppe du repository "$repoKey" '
-        '(attendu uniquement : "name", "mode", "data", "calculatedAttributes").',
+        '(attendu uniquement : "name", "mode", "data", "calculatedAttributes", "jsonSchema").',
       );
     }
 
@@ -417,6 +454,8 @@ abstract final class VibeRepositoryPatchValidator {
       hasData: hasData,
       calculatedAttributes: parsedCalculated,
       hasCalculatedAttributes: hasCalculated,
+      jsonSchema: validatedSchema,
+      hasJsonSchema: hasJsonSchema,
     );
   }
 
@@ -654,6 +693,10 @@ class VibeRepositoryTurnTransaction {
       <String, List<CalculatedAttributeDefinition>>{};
   final Map<String, List<CalculatedAttributeDefinition>>
   _finalCalculatedAttributes = <String, List<CalculatedAttributeDefinition>>{};
+  final Map<String, Map<String, Object?>?> _baselineJsonSchemas =
+      <String, Map<String, Object?>?>{};
+  final Map<String, Map<String, Object?>?> _finalJsonSchemas =
+      <String, Map<String, Object?>?>{};
 
   /// Table de correspondance immuable des alias résolus ou créés vers leur `repositoryId` réel.
   Map<String, String> get aliasToActualId => Map.unmodifiable(_aliasToActualId);
@@ -671,6 +714,15 @@ class VibeRepositoryTurnTransaction {
     for (final entry in _baselineCalculatedAttributes.entries) {
       final finalCalc = _finalCalculatedAttributes[entry.key];
       if (finalCalc != null && !listEquals(entry.value, finalCalc)) {
+        return true;
+      }
+    }
+    for (final entry in _baselineJsonSchemas.entries) {
+      if (_finalJsonSchemas.containsKey(entry.key) &&
+          !JsonRepositoryStore.jsonEquals(
+            entry.value,
+            _finalJsonSchemas[entry.key],
+          )) {
         return true;
       }
     }
@@ -738,11 +790,18 @@ class VibeRepositoryTurnTransaction {
               catalog,
             );
             final initialDoc = _deepCopyJsonMap(parsed.data);
+            final initialSchema = parsed.hasJsonSchema && parsed.jsonSchema != null
+                ? _deepCopyJsonMap(parsed.jsonSchema!)
+                : null;
             await store.createWithId(
               chosenName,
               id: actualId,
               initialDocument: initialDoc,
+              jsonSchema: initialSchema,
             );
+            if (initialSchema != null) {
+              _finalJsonSchemas[actualId] = initialSchema;
+            }
             if (parsed.hasCalculatedAttributes) {
               await store.saveCalculatedAttributes(
                 actualId,
@@ -779,9 +838,15 @@ class VibeRepositoryTurnTransaction {
               await store.readCalculatedAttributes(actualId),
             );
       }
+      if (!isCreatedInTurn && !_baselineJsonSchemas.containsKey(actualId)) {
+        final baselineSchema = await store.readJsonSchema(actualId);
+        _baselineJsonSchemas[actualId] = baselineSchema == null
+            ? null
+            : _deepCopyJsonMap(baselineSchema);
+      }
 
+      Map<String, Object?>? targetDoc;
       if (parsed.hasData) {
-        final Map<String, Object?> targetDoc;
         if (inPatchDocuments.containsKey(actualId)) {
           targetDoc = parsed.mode == VibeRepositoryPatchMode.merge
               ? deepMergeJsonObjects(inPatchDocuments[actualId]!, parsed.data)
@@ -798,7 +863,45 @@ class VibeRepositoryTurnTransaction {
                 )
               : _deepCopyJsonMap(parsed.data);
         }
+      }
 
+      if (parsed.hasJsonSchema && targetDoc != null) {
+        final nextSchema = parsed.jsonSchema == null
+            ? null
+            : _deepCopyJsonMap(parsed.jsonSchema!);
+        if (nextSchema != null) {
+          JsonSchemaValidator.assertValid(
+            repositoryId: actualId,
+            document: targetDoc,
+            schema: nextSchema,
+          );
+        }
+        final prevSchema = await store.readJsonSchema(actualId);
+        await store.saveJsonSchema(
+          actualId,
+          nextSchema,
+          validateCurrentDocument: false,
+        );
+        try {
+          await store.replaceDocumentById(actualId, targetDoc);
+        } catch (_) {
+          await store.saveJsonSchema(
+            actualId,
+            prevSchema == null ? null : _deepCopyJsonMap(prevSchema),
+            validateCurrentDocument: false,
+          );
+          rethrow;
+        }
+        _finalJsonSchemas[actualId] = nextSchema;
+        inPatchDocuments[actualId] = targetDoc;
+        _finalDocuments[actualId] = targetDoc;
+      } else if (parsed.hasJsonSchema) {
+        final nextSchema = parsed.jsonSchema == null
+            ? null
+            : _deepCopyJsonMap(parsed.jsonSchema!);
+        await store.saveJsonSchema(actualId, nextSchema);
+        _finalJsonSchemas[actualId] = nextSchema;
+      } else if (targetDoc != null) {
         await store.replaceDocumentById(actualId, targetDoc);
         inPatchDocuments[actualId] = targetDoc;
         _finalDocuments[actualId] = targetDoc;
@@ -855,15 +958,18 @@ class VibeRepositoryTurnTransaction {
   applyRepositoriesPatchPartial(
     Map<String, dynamic> rawRepositoriesPatch,
   ) async {
-    final validMap = <String, dynamic>{};
+    final applied = <String, dynamic>{};
     final rejected = <PatchRejectedEntry>[];
 
     for (final entry in rawRepositoriesPatch.entries) {
       final key = entry.key;
+      final savepoint = createSavepoint();
       try {
         VibeRepositoryPatchValidator.parseEntry(key, entry.value);
-        validMap[key] = entry.value;
+        await applyRepositoriesPatch(<String, dynamic>{key: entry.value});
+        applied[key] = entry.value;
       } on FormatException catch (error) {
+        await restoreSavepoint(savepoint);
         rejected.add(
           PatchRejectedEntry(
             section: 'repositories',
@@ -875,12 +981,9 @@ class VibeRepositoryTurnTransaction {
       }
     }
 
-    if (validMap.isNotEmpty) {
-      await applyRepositoriesPatch(validMap);
-    }
     return (
       aliasToActualId: aliasToActualId,
-      appliedEntries: validMap,
+      appliedEntries: applied,
       rejectedEntries: List<PatchRejectedEntry>.unmodifiable(rejected),
     );
   }
@@ -907,6 +1010,14 @@ class VibeRepositoryTurnTransaction {
       for (final entry in _finalCalculatedAttributes.entries)
         entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
     },
+    {
+      for (final entry in _baselineJsonSchemas.entries)
+        entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+    },
+    {
+      for (final entry in _finalJsonSchemas.entries)
+        entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+    },
   );
 
   /// Restaure le store et les tables internes exactement à l'état de [savepoint].
@@ -922,6 +1033,10 @@ class VibeRepositoryTurnTransaction {
     final restoreCalcToBaseline = [
       for (final entry in _baselineCalculatedAttributes.entries)
         if (!savepoint._finalCalculatedAttributes.containsKey(entry.key)) entry,
+    ];
+    final restoreSchemaToBaseline = [
+      for (final entry in _baselineJsonSchemas.entries)
+        if (!savepoint._finalJsonSchemas.containsKey(entry.key)) entry,
     ];
 
     _assignedIdsByAlias
@@ -960,7 +1075,37 @@ class VibeRepositoryTurnTransaction {
         for (final entry in savepoint._finalCalculatedAttributes.entries)
           entry.key: List<CalculatedAttributeDefinition>.of(entry.value),
       });
+    _baselineJsonSchemas
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._baselineJsonSchemas.entries)
+          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+      });
+    _finalJsonSchemas
+      ..clear()
+      ..addAll({
+        for (final entry in savepoint._finalJsonSchemas.entries)
+          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+      });
 
+    for (final entry in restoreSchemaToBaseline) {
+      if (!store.isCodeJsonSchema(entry.key)) {
+        await store.saveJsonSchema(
+          entry.key,
+          entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          validateCurrentDocument: false,
+        );
+      }
+    }
+    for (final entry in savepoint._finalJsonSchemas.entries) {
+      if (!store.isCodeJsonSchema(entry.key)) {
+        await store.saveJsonSchema(
+          entry.key,
+          entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          validateCurrentDocument: false,
+        );
+      }
+    }
     for (final entry in restoreToBaseline) {
       await store.replaceDocumentById(entry.key, entry.value);
     }
@@ -987,6 +1132,10 @@ class VibeRepositoryTurnTransaction {
         List<MapEntry<String, List<CalculatedAttributeDefinition>>>.of(
           _baselineCalculatedAttributes.entries,
         );
+    final schemaBaselines =
+        List<MapEntry<String, Map<String, Object?>?>>.of(
+          _baselineJsonSchemas.entries,
+        );
     final created = List<({String name, String id})>.of(
       _createdRepositories.values,
     );
@@ -996,10 +1145,21 @@ class VibeRepositoryTurnTransaction {
     _finalDocuments.clear();
     _baselineCalculatedAttributes.clear();
     _finalCalculatedAttributes.clear();
+    _baselineJsonSchemas.clear();
+    _finalJsonSchemas.clear();
     _aliasToActualId.clear();
     _resolvedTargetByKey.clear();
     _assignedIdsByAlias.clear();
 
+    for (final entry in schemaBaselines) {
+      if (!store.isCodeJsonSchema(entry.key)) {
+        await store.saveJsonSchema(
+          entry.key,
+          entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          validateCurrentDocument: false,
+        );
+      }
+    }
     for (final entry in baselines) {
       await store.replaceDocumentById(entry.key, entry.value);
     }
@@ -1058,9 +1218,38 @@ class VibeRepositoryTurnTransaction {
           _finalCalculatedAttributes[id] ?? const [],
         ),
     };
+    final schemaBaselineSnapshot = <String, Map<String, Object?>?>{
+      for (final entry in _baselineJsonSchemas.entries)
+        if (_finalJsonSchemas.containsKey(entry.key) &&
+            !JsonRepositoryStore.jsonEquals(
+              entry.value,
+              _finalJsonSchemas[entry.key],
+            ))
+          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+    };
+    final schemaFinalSnapshot = <String, Map<String, Object?>?>{
+      for (final created in createdSnapshot)
+        if (_finalJsonSchemas.containsKey(created.id))
+          created.id: _finalJsonSchemas[created.id] == null
+              ? null
+              : _deepCopyJsonMap(_finalJsonSchemas[created.id]!),
+      for (final id in schemaBaselineSnapshot.keys)
+        id: _finalJsonSchemas[id] == null
+            ? null
+            : _deepCopyJsonMap(_finalJsonSchemas[id]!),
+    };
 
     return (
       undo: () async {
+        for (final entry in schemaBaselineSnapshot.entries) {
+          if (!store.isCodeJsonSchema(entry.key)) {
+            await store.saveJsonSchema(
+              entry.key,
+              entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+              validateCurrentDocument: false,
+            );
+          }
+        }
         for (final entry in baselineSnapshot.entries) {
           await store.replaceDocumentById(
             entry.key,
@@ -1085,7 +1274,16 @@ class VibeRepositoryTurnTransaction {
           final doc = _deepCopyJsonMap(
             finalSnapshot[created.id] ?? const <String, Object?>{},
           );
+          final schema = schemaFinalSnapshot[created.id];
           if (existingIds.contains(created.id)) {
+            if (schemaFinalSnapshot.containsKey(created.id) &&
+                !store.isCodeJsonSchema(created.id)) {
+              await store.saveJsonSchema(
+                created.id,
+                schema == null ? null : _deepCopyJsonMap(schema),
+                validateCurrentDocument: false,
+              );
+            }
             await store.replaceDocumentById(created.id, doc);
           } else {
             final chosenName = _chooseAvailableFileName(
@@ -1096,6 +1294,7 @@ class VibeRepositoryTurnTransaction {
               chosenName,
               id: created.id,
               initialDocument: doc,
+              jsonSchema: schema == null ? null : _deepCopyJsonMap(schema),
             );
             existingIds.add(created.id);
             currentCatalog.add((name: chosenName, id: created.id));
@@ -1103,6 +1302,16 @@ class VibeRepositoryTurnTransaction {
           final calcDefs = calcFinalSnapshot[created.id];
           if (calcDefs != null) {
             await store.saveCalculatedAttributes(created.id, calcDefs);
+          }
+        }
+        for (final id in schemaBaselineSnapshot.keys) {
+          if (!store.isCodeJsonSchema(id)) {
+            final schema = schemaFinalSnapshot[id];
+            await store.saveJsonSchema(
+              id,
+              schema == null ? null : _deepCopyJsonMap(schema),
+              validateCurrentDocument: false,
+            );
           }
         }
         for (final id in baselineSnapshot.keys) {
@@ -1196,6 +1405,8 @@ class VibeRepositorySavepoint {
     this._finalDocuments,
     this._baselineCalculatedAttributes,
     this._finalCalculatedAttributes,
+    this._baselineJsonSchemas,
+    this._finalJsonSchemas,
   );
 
   final Map<String, String> _assignedIdsByAlias;
@@ -1208,6 +1419,8 @@ class VibeRepositorySavepoint {
   _baselineCalculatedAttributes;
   final Map<String, List<CalculatedAttributeDefinition>>
   _finalCalculatedAttributes;
+  final Map<String, Map<String, Object?>?> _baselineJsonSchemas;
+  final Map<String, Map<String, Object?>?> _finalJsonSchemas;
 }
 
 Map<String, Object?> _deepCopyJsonMap(Map<Object?, Object?> map) =>
