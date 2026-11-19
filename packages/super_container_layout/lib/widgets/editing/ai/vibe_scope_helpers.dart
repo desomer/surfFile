@@ -20,18 +20,23 @@ import '../slots/editor_context_menu.dart';
 
 /// Fonctions pures de collecte, de filtrage et d'export des scopes Vibe.
 abstract final class VibeScopeHelpers {
-  /// Retourne les composants directement parents du composant ciblé.
+  /// Retourne les composants directement parents du ou des composants ciblés.
   static Set<String> parentIdsOfScope(Appearance current, VibeChatScope scope) {
-    final targetId = scope.canonicalComponentId;
+    final targetIds = scope.canonicalComponentIds;
     final parents = <String>{};
-    for (final entry in current.components.entries) {
-      if (entry.key == targetId) continue;
-      if (childrenOfComponent(entry.value).contains(targetId)) {
-        parents.add(entry.key);
+    for (final target in scope.allTargets) {
+      final targetId = target.canonicalComponentId;
+      for (final entry in current.components.entries) {
+        if (entry.key == targetId || targetIds.contains(entry.key)) continue;
+        if (childrenOfComponent(entry.value).contains(targetId)) {
+          parents.add(entry.key);
+        }
       }
-    }
-    if (scope.canonicalParentComponentId case final explicitParent?) {
-      parents.add(explicitParent);
+      if (target.canonicalParentComponentId case final explicitParent?) {
+        if (!targetIds.contains(explicitParent)) {
+          parents.add(explicitParent);
+        }
+      }
     }
     return parents;
   }
@@ -45,15 +50,23 @@ abstract final class VibeScopeHelpers {
     final payload = patch['data'] is Map<String, dynamic>
         ? patch['data'] as Map<String, dynamic>
         : patch;
-    final targetId = scope.canonicalComponentId;
-    final rawTargetId = scope.componentId;
+    final targetIds = scope.canonicalComponentIds;
+    final rawTargetIds = <String>{
+      for (final target in scope.allTargets) target.componentId,
+      ...targetIds,
+    };
     final parents = parentIdsOfScope(current, scope);
-    final topRootIds = parents.isNotEmpty ? parents : <String>{targetId};
+    final topRootIds = parents.isNotEmpty
+        ? <String>{...parents, ...targetIds}
+        : targetIds;
+    final nonTargetedParents = scope.isMultiTarget
+        ? parents.difference(targetIds)
+        : const <String>{};
 
     final existingSubtree = existingSubtreeIds(current, scope);
     final outsideExistingIds = <String>{
       for (final id in current.components.keys)
-        if (!existingSubtree.contains(id) && id != targetId) id,
+        if (!existingSubtree.contains(id) && !targetIds.contains(id)) id,
     };
 
     final allowedSubtreeIds = <String>{...existingSubtree};
@@ -73,10 +86,12 @@ abstract final class VibeScopeHelpers {
       final queue = <String>[...allowedSubtreeIds];
       while (queue.isNotEmpty) {
         final id = queue.removeLast();
-        for (final childId in childrenOfComponent(current.components[id])) {
-          if (!outsideExistingIds.contains(childId) &&
-              allowedSubtreeIds.add(childId)) {
-            queue.add(childId);
+        if (!nonTargetedParents.contains(id)) {
+          for (final childId in childrenOfComponent(current.components[id])) {
+            if (!outsideExistingIds.contains(childId) &&
+                allowedSubtreeIds.add(childId)) {
+              queue.add(childId);
+            }
           }
         }
         if (rawComponents[id] is Map) {
@@ -110,14 +125,15 @@ abstract final class VibeScopeHelpers {
     }
 
     bool isStyleAllowed(String styleId) {
+      if (nonTargetedParents.contains(styleId)) return false;
       if (allowedSubtreeIds.contains(styleId)) return true;
       if (styleId.endsWith(':item')) {
         final base = styleId.substring(0, styleId.length - 5);
+        if (nonTargetedParents.contains(base)) return false;
         if (allowedSubtreeIds.contains(base)) return true;
+        if (rawTargetIds.contains(base)) return true;
       }
-      return styleId == rawTargetId ||
-          styleId == targetId ||
-          styleId == '$targetId:item';
+      return rawTargetIds.contains(styleId);
     }
 
     final filteredStyles = <String, Object?>{};
@@ -134,7 +150,8 @@ abstract final class VibeScopeHelpers {
       for (final entry in rawBehaviors.entries) {
         final bid = entry.key;
         if (bid is String &&
-            (allowedSubtreeIds.contains(bid) || bid == rawTargetId)) {
+            !nonTargetedParents.contains(bid) &&
+            (allowedSubtreeIds.contains(bid) || rawTargetIds.contains(bid))) {
           filteredBehaviors[bid] = entry.value;
         }
       }
@@ -145,7 +162,8 @@ abstract final class VibeScopeHelpers {
       for (final entry in rawUsages.entries) {
         final uid = entry.key;
         if (uid is String &&
-            (allowedSubtreeIds.contains(uid) || uid == rawTargetId)) {
+            !nonTargetedParents.contains(uid) &&
+            (allowedSubtreeIds.contains(uid) || rawTargetIds.contains(uid))) {
           filteredUsages[uid] = entry.value;
         }
       }
@@ -165,11 +183,14 @@ abstract final class VibeScopeHelpers {
     VibeChatScope scope, {
     AppearanceCodec codec = const AppearanceCodec(),
   }) {
-    final targetId = scope.canonicalComponentId;
-    final rawTargetId = scope.componentId;
+    final targetIds = scope.canonicalComponentIds;
+    final rawTargetIds = <String>{
+      for (final target in scope.allTargets) target.componentId,
+      ...targetIds,
+    };
     final parentIds = parentIdsOfScope(appearance, scope);
     final subtreeIds = <String>{
-      targetId,
+      ...targetIds,
       ...parentIds,
       ...existingSubtreeIds(appearance, scope),
     };
@@ -190,38 +211,64 @@ abstract final class VibeScopeHelpers {
     final scopedStyles = <String, Object?>{
       for (final entry in allStyles.entries)
         if (subtreeIds.contains(entry.key) ||
-            entry.key == rawTargetId ||
-            entry.key == targetId ||
-            entry.key == '$targetId:item' ||
+            rawTargetIds.contains(entry.key) ||
             (entry.key.endsWith(':item') &&
-                subtreeIds.contains(
-                  entry.key.substring(0, entry.key.length - 5),
-                )))
+                (subtreeIds.contains(
+                      entry.key.substring(0, entry.key.length - 5),
+                    ) ||
+                    rawTargetIds.contains(
+                      entry.key.substring(0, entry.key.length - 5),
+                    ))))
           entry.key: entry.value,
     };
     final scopedBehaviors = <String, Object?>{
       for (final entry in allBehaviors.entries)
-        if (subtreeIds.contains(entry.key) || entry.key == rawTargetId)
+        if (subtreeIds.contains(entry.key) || rawTargetIds.contains(entry.key))
           entry.key: entry.value,
     };
     final scopedUsages = <String, Object?>{
       for (final entry in allUsages.entries)
-        if (subtreeIds.contains(entry.key) || entry.key == rawTargetId)
+        if (subtreeIds.contains(entry.key) || rawTargetIds.contains(entry.key))
           entry.key: entry.value,
     };
 
+    final Map<String, Object?> scopeMetadata;
+    if (!scope.isMultiTarget) {
+      final targetId = scope.canonicalComponentId;
+      final rawTargetId = scope.componentId;
+      scopeMetadata = {
+        'componentId': targetId,
+        if (rawTargetId != targetId) 'surfaceId': rawTargetId,
+        'zoneId': ?scope.zoneId,
+        if (parentIds.isNotEmpty)
+          'parentComponentId': parentIds.length == 1
+              ? parentIds.first
+              : parentIds.toList(),
+        'label': scope.displayLabel,
+      };
+    } else {
+      scopeMetadata = {
+        'multiTarget': true,
+        'targets': [
+          for (final target in scope.allTargets)
+            {
+              'componentId': target.canonicalComponentId,
+              if (target.componentId != target.canonicalComponentId)
+                'surfaceId': target.componentId,
+              'zoneId': ?target.zoneId,
+              if (target.canonicalParentComponentId != null)
+                'parentComponentId': target.canonicalParentComponentId,
+              'label': target.displayLabel,
+            },
+        ],
+        if (parentIds.isNotEmpty) 'parentComponentIds': parentIds.toList(),
+        'label': scope.displayLabel,
+      };
+    }
+
     return jsonEncode(
       JsonNumbers.normalizeMap({
-        'scope': {
-          'componentId': targetId,
-          if (rawTargetId != targetId) 'surfaceId': rawTargetId,
-          'zoneId': ?scope.zoneId,
-          if (parentIds.isNotEmpty)
-            'parentComponentId': parentIds.length == 1
-                ? parentIds.first
-                : parentIds.toList(),
-          'label': scope.displayLabel,
-        },
+        'scope': scopeMetadata,
         'components': scopedComponents,
         'styles': scopedStyles,
         if (scopedBehaviors.isNotEmpty) 'behaviors': scopedBehaviors,
@@ -283,15 +330,44 @@ abstract final class VibeScopeHelpers {
 
   /// Identifiants racines pris en compte pour une modification restreinte.
   static Set<String> scopeRootIds(Appearance current, VibeChatScope scope) =>
-      <String>{...parentIdsOfScope(current, scope), scope.canonicalComponentId};
+      <String>{
+        ...parentIdsOfScope(current, scope),
+        ...scope.canonicalComponentIds,
+      };
 
   /// Retourne les identifiants déjà présents dans le sous-arbre ciblé.
   static Set<String> existingSubtreeIds(
     Appearance current,
     VibeChatScope scope,
   ) {
-    final visited = <String>{};
-    final pending = <String>[...scopeRootIds(current, scope)];
+    if (!scope.isMultiTarget) {
+      final visited = <String>{};
+      final pending = <String>[...scopeRootIds(current, scope)];
+      while (pending.isNotEmpty) {
+        final id = pending.removeLast();
+        if (!visited.add(id)) continue;
+        pending.addAll(childrenOfComponent(current.components[id]));
+      }
+      return visited;
+    }
+
+    final parents = parentIdsOfScope(current, scope);
+    final visited = <String>{...parents};
+    final pending = <String>[];
+    for (final target in scope.allTargets) {
+      final id = target.canonicalComponentId;
+      if (target.zoneId != null && target.zoneId!.isNotEmpty) {
+        visited.add(id);
+        pending.addAll(
+          childrenOfComponent(
+            current.components[id],
+            onlyZoneId: target.zoneId,
+          ),
+        );
+      } else {
+        pending.add(id);
+      }
+    }
     while (pending.isNotEmpty) {
       final id = pending.removeLast();
       if (!visited.add(id)) continue;

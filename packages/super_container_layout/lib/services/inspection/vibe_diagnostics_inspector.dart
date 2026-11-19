@@ -42,6 +42,8 @@ import '../diagnostics/debug_entry.dart';
 import '../pages/editor_page_router.dart';
 import '../providers/http_data_provider.dart';
 import '../repositories/json_repository_store.dart';
+import '../repositories/json_schema_field_resolver.dart';
+import '../repositories/json_schema_validator.dart';
 import 'vibe_debug_capture.dart';
 import 'vibe_mounted_slot_index.dart';
 
@@ -376,6 +378,7 @@ class VibeDiagnosticsInspector {
 
     final knownRepos = <String, Object?>{};
     final calculatedByRepo = <String, Set<String>>{};
+    final schemasByRepo = <String, Map<String, Object?>?>{};
     if (store != null) {
       await store.providers.ensureLoaded();
       await store.datasources.ensureLoaded();
@@ -390,12 +393,47 @@ class VibeDiagnosticsInspector {
           for (final desc in store.calculatedAttributeCatalog(entry.id))
             desc.path,
         };
+        try {
+          schemasByRepo[entry.id] = await store.readJsonSchema(entry.id);
+        } on FormatException {
+          schemasByRepo[entry.id] = null;
+        }
       }
     }
 
     final reachable = <String>{};
     final issues = <Map<String, Object?>>[];
     var checkedBindings = 0;
+
+    for (final entry in schemasByRepo.entries) {
+      final repoId = entry.key;
+      final schema = entry.value;
+      if (schema == null) continue;
+      for (final extIssue in JsonSchemaFieldResolver.auditSchemaExtensions(
+        schema,
+      )) {
+        issues.add(<String, Object?>{
+          'repositoryId': repoId,
+          'location': 'schemas[$repoId]${extIssue.schemaPath}',
+          'kind': extIssue.kind,
+          'message': extIssue.message,
+        });
+      }
+      final doc = knownRepos[repoId];
+      final validation = JsonSchemaValidator.validate(doc, schema);
+      if (!validation.isValid) {
+        for (final vIssue in validation.issues.take(5)) {
+          issues.add(<String, Object?>{
+            'repositoryId': repoId,
+            'location': 'repositories[$repoId].${vIssue.instancePath}',
+            'kind': 'json_schema_document_violation',
+            'keyword': vIssue.keyword,
+            'instancePath': vIssue.instancePath,
+            'message': vIssue.message,
+          });
+        }
+      }
+    }
 
     void checkBinding({
       required String ownerId,
@@ -627,6 +665,64 @@ class VibeDiagnosticsInspector {
             inheritedWildcards: inheritedWildcards,
             inTreeScope: inTreeScope,
           );
+          if (v.binding != null &&
+              v.kind.isText &&
+              !v.obscureText &&
+              !inTreeScope &&
+              (requestedIds.isEmpty || requestedIds.contains(id))) {
+            final rawRepo = v.binding!.repositoryId?.trim() ?? '';
+            final effectiveRepo = rawRepo.isNotEmpty ? rawRepo : inheritedRepo;
+            if (effectiveRepo != null &&
+                effectiveRepo.isNotEmpty &&
+                knownRepos.containsKey(effectiveRepo) &&
+                !JsonTextBinding.isCalculatedPath(v.binding!.path)) {
+              final schema = schemasByRepo[effectiveRepo];
+              var effectiveField = v.field;
+              if (v.field.useRepositorySchema && schema != null) {
+                final profile = JsonSchemaFieldResolver.resolve(
+                  schema,
+                  v.binding!.path,
+                );
+                if (profile != null) {
+                  effectiveField = v.field.applySchemaProfile(
+                    profile,
+                    allowMaskAndFormat: !v.obscureText && v.maxLines == 1,
+                  );
+                }
+              }
+              if (effectiveField.hasConstraints ||
+                  effectiveField.hasMaskOrFormat) {
+                final samples = _sampleValuesAtPath(
+                  knownRepos[effectiveRepo],
+                  v.binding!.path,
+                );
+                for (final sample in samples) {
+                  final rawText = sample.value?.toString() ?? '';
+                  if (rawText.isEmpty && !effectiveField.required) continue;
+                  final display = effectiveField.toDisplayText(rawText);
+                  final errorMsg = effectiveField.validateValue(
+                    rawText,
+                    displayValue: display,
+                    obscureText: v.obscureText,
+                  );
+                  if (errorMsg != null) {
+                    issues.add(<String, Object?>{
+                      'componentId': id,
+                      'location': 'components[$id].binding',
+                      'kind': 'repository_value_incompatible_with_field_or_schema',
+                      'repositoryId': effectiveRepo,
+                      'binding': v.binding!.path,
+                      'samplePath': sample.concretePath,
+                      'sampleValue': sample.value,
+                      'message':
+                          'La valeur "${sample.value}" à "${sample.concretePath}" ne respecte pas les contraintes/masques du champ ($errorMsg).',
+                    });
+                    break;
+                  }
+                }
+              }
+            }
+          }
           for (final pb in v.propertyBindings.entries) {
             checkBinding(
               ownerId: id,
@@ -792,6 +888,11 @@ class VibeDiagnosticsInspector {
       }
     }
 
+    final recentErrors = debugEntries
+        .where((e) => e.type == DebugEntryType.error)
+        .length;
+    final activeRepoError = store?.errors.value;
+
     return <String, Object?>{
       'checkedBindings': checkedBindings,
       'issueCount': issues.length,
@@ -800,7 +901,57 @@ class VibeDiagnosticsInspector {
       if (orphanIds.isNotEmpty)
         'orphanComponentIds': orphanIds.take(30).toList(),
       if (forcedStates.isNotEmpty) 'forcedBehaviorStates': forcedStates,
+      'activeRepositoryError': ?activeRepoError,
+      if (recentErrors > 0) 'debugErrorCount': recentErrors,
     };
+  }
+
+  static List<({String concretePath, Object? value})> _sampleValuesAtPath(
+    Object? root,
+    String rawPath, {
+    int maxSamples = 3,
+  }) {
+    final JsonAttributePath parsed;
+    try {
+      parsed = JsonAttributePath(rawPath);
+    } on FormatException {
+      return const [];
+    }
+    final results = <({String concretePath, Object? value})>[];
+    final steps = parsed.steps;
+
+    void walk(Object? current, int stepIndex, String builtPath) {
+      if (results.length >= maxSamples) return;
+      if (stepIndex >= steps.length) {
+        if (current is! Map && current is! List) {
+          results.add((concretePath: builtPath, value: current));
+        }
+        return;
+      }
+      final step = steps[stepIndex];
+      if (step.key != null) {
+        if (current is! Map) return;
+        final next = current[step.key];
+        final nextPath = builtPath.isEmpty
+            ? step.key!
+            : '$builtPath.${step.key!}';
+        walk(next, stepIndex + 1, nextPath);
+      } else if (step.index != null) {
+        if (current is! List) return;
+        final idx = step.index!;
+        if (idx < 0 || idx >= current.length) return;
+        walk(current[idx], stepIndex + 1, '$builtPath[$idx]');
+      } else {
+        if (current is! List) return;
+        final limit = math.min(current.length, maxSamples);
+        for (var i = 0; i < limit && results.length < maxSamples; i++) {
+          walk(current[i], stepIndex + 1, '$builtPath[$i]');
+        }
+      }
+    }
+
+    walk(root, 0, '');
+    return results;
   }
 
   static String? _extractRootSegmentKey(String path) {

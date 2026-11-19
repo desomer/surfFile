@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
@@ -579,6 +582,255 @@ void main() {
         id: 'v',
       );
       expect(code, contains('useRepositorySchema: false'));
+    });
+  });
+
+  group('Date/mask coherence, anti-loop binding errors & AI diagnostics', () {
+    test('DateFieldFormat emits UTC Z for date-time compatible with JsonSchemaValidator and resolves x-mask on date', () {
+      final isoDateTime = DateFieldFormat.tryToIso(
+        '19/05/2026 14:30',
+        'dd/MM/yyyy HH:mm',
+        forceDateTime: true,
+      );
+      expect(isoDateTime, isNotNull);
+      expect(isoDateTime, endsWith('Z'));
+      final schemaCheck = JsonSchemaValidator.validate(
+        {'createdAt': isoDateTime},
+        const {
+          'type': 'object',
+          'properties': {
+            'createdAt': {'type': 'string', 'format': 'date-time'},
+          },
+        },
+      );
+      expect(schemaCheck.isValid, isTrue);
+      expect(
+        DateFieldFormat.formatDisplay(isoDateTime!, 'dd/MM/yyyy HH:mm'),
+        '19/05/2026 14:30',
+      );
+
+      final resolvedWithXMask = JsonSchemaFieldResolver.resolve(const {
+        'type': 'object',
+        'properties': {
+          'birthDate': {
+            'type': 'string',
+            'format': 'date',
+            'x-mask': '##/##/####',
+          },
+        },
+      }, 'birthDate');
+      expect(resolvedWithXMask, isNotNull);
+      expect(resolvedWithXMask!.dateFormat, 'dd/MM/yyyy');
+      expect(resolvedWithXMask.mask, '##/##/####');
+      expect(resolvedWithXMask.maskIncludeLiterals, isFalse);
+    });
+
+    test('VibeRepositoryPatchValidator rejects conflicting date format + pattern and invalid x-mask', () {
+      expect(
+        () => VibeRepositoryPatchValidator.validateAndParse({
+          'clients': {
+            'name': 'Clients',
+            'jsonSchema': {
+              'type': 'object',
+              'properties': {
+                'birthDate': {
+                  'type': 'string',
+                  'format': 'date',
+                  'pattern': r'^\d{2}/\d{2}/\d{4}$',
+                },
+              },
+            },
+            'data': {'birthDate': '2026-05-19'},
+          },
+        }),
+        throwsFormatException,
+      );
+
+      expect(
+        () => VibeRepositoryPatchValidator.validateAndParse({
+          'clients': {
+            'name': 'Clients',
+            'jsonSchema': {
+              'type': 'object',
+              'properties': {
+                'code': {
+                  'type': 'string',
+                  'x-mask': '---',
+                },
+              },
+            },
+            'data': {'code': '123'},
+          },
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('JsonTextControllerBinding does not retry identical failing writes on flush or dispose', () async {
+      final dir = await Directory.systemTemp.createTemp('sv-no-retry-loop-');
+      final store = JsonRepositoryStore(dir);
+      addTearDown(() async {
+        store.dispose();
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      store.registerRepository(
+        RepositoryImpl(
+          id: 'r',
+          json: const {'birthDate': '2026-05-19'},
+          jsonSchema: const {
+            'type': 'object',
+            'properties': {
+              'birthDate': {'type': 'string', 'format': 'date'},
+            },
+          },
+        ),
+      );
+      var errorEvents = 0;
+      void onErr() => errorEvents++;
+      store.errors.addListener(onErr);
+
+      final controller = TextEditingController();
+      final binding = JsonTextControllerBinding(
+        store: store,
+        binding: const JsonTextBinding(repositoryId: 'r', path: 'birthDate'),
+        controller: controller,
+      );
+      await binding.reload(showLoading: false);
+
+      // Simulate writing a value that violates the JSON Schema.
+      controller.text = '19/05/2026';
+      await binding.flush();
+      expect(binding.error, isNotNull);
+      expect(errorEvents, 1);
+
+      // Re-flushing the same failed value and disposing must NOT re-emit errors.
+      await binding.flush();
+      binding.dispose();
+      expect(errorEvents, 1);
+      controller.dispose();
+      store.errors.removeListener(onErr);
+    });
+
+    testWidgets('SuperApp deduplicates repeated repository SnackBars', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      for (final channel in [
+        const MethodChannel('com.alexmercerind/flutter_acrylic'),
+        WindowTransparency.channel,
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async => null);
+      }
+      addTearDown(() {
+        for (final channel in [
+          const MethodChannel('com.alexmercerind/flutter_acrylic'),
+          WindowTransparency.channel,
+        ]) {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        }
+      });
+
+      final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('sv-snack-dedup-'),
+      ))!;
+      final store = JsonRepositoryStore(dir);
+      addTearDown(() async {
+        store.dispose();
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: SizedBox.shrink()),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, repositoryStore: store));
+      await tester.pumpAndSettle();
+
+      store.reportBindingError('Erreur date A');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      store.reportBindingError('Erreur date B');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      store.reportBindingError('Erreur date A');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // clearSnackBars() keeps only the latest active SnackBar instead of queueing all of them.
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text('Erreur date A'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+
+    test('VibeAppInspector.inspectBindingsAndDiagnostics surfaces schema/mask/data conflicts', () async {
+      final dir = await Directory.systemTemp.createTemp('sv-diag-date-');
+      final store = JsonRepositoryStore(dir);
+      addTearDown(() async {
+        store.dispose();
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      await store.createWithId(
+        'crm',
+        id: '0123456789abcdef0123456789abcdef',
+        initialDocument: const {
+          'clients': [
+            {'birthDate': '19/05/2026'},
+          ],
+        },
+      );
+      await store.saveJsonSchema(
+        '0123456789abcdef0123456789abcdef',
+        const {
+          'type': 'object',
+          'properties': {
+            'clients': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'birthDate': {'type': 'string', 'format': 'date'},
+                },
+              },
+            },
+          },
+        },
+        validateCurrentDocument: false,
+      );
+
+      final appearance = Appearance().withValueComponent(
+        'birth_input',
+        const SuperValueConfig(
+          mode: SuperValueMode.input,
+          binding: JsonTextBinding(
+            repositoryId: '0123456789abcdef0123456789abcdef',
+            path: 'clients[?].birthDate',
+          ),
+        ),
+      );
+
+      final inspector = VibeAppInspector(
+        readAppearance: () => appearance,
+        repositoryStore: store,
+      );
+      final report = await inspector.inspectBindingsAndDiagnostics(const {});
+      final issues = (report['issues'] as List).cast<Map<String, Object?>>();
+      expect(
+        issues.any((i) => i['kind'] == 'json_schema_document_violation'),
+        isTrue,
+      );
+      expect(
+        issues.any(
+          (i) => i['kind'] == 'repository_value_incompatible_with_field_or_schema',
+        ),
+        isTrue,
+      );
     });
   });
 }

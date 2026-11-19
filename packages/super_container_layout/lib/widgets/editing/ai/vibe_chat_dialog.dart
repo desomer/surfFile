@@ -115,6 +115,7 @@ class VibeChatDialog extends StatefulWidget {
     required this.generate,
     this.streamGenerate,
     this.initialSpeedMode = VibeAiSpeedMode.fast,
+    this.onSpeedModeChanged,
     this.initialQuestioningLevel = VibeQuestioningLevel.balanced,
     this.onQuestioningLevelChanged,
     this.initialReproduceExactMode = false,
@@ -165,7 +166,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
-5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
+5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex, de message d'erreur de repository/validation, de conflit schéma/masque/données ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; si `get_debug_entries` ou `inspect_bindings_and_diagnostics` révèle des données existantes incompatibles avec le JSON Schema ou un conflit de masque/date, propose le correctif exact et demande confirmation via `"askUser"` avant d'écraser les données ou le schéma. Pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -177,6 +178,7 @@ Règles pour "repositories" (création et mise à jour des repositories JSON) :
 - Héritage strictement descendant (Pattern Maître / Détail) : l'héritage de repositoryId ne se propage JAMAIS horizontalement vers une branche sœur (ex: du panneau west vers la fiche détaillée en center). Tout composant hors de la liste source (SuperValue, KPI, sous-liste, Chart) DOIT déclarer explicitement son préfixe "<repoId>:..." ou "<alias>:..." (ou {"repositoryId":"...","path":"..."}) afin que le runtime synchronise sa sélection [?].
 - Dans chaque entrée de "repositories", "data" doit être un objet JSON {...} à la racine, et aucune clé JSON stockée ne doit jamais débuter par "@" (préfixe strictement réservé aux attributs calculés en lecture seule) ni contenir ".", "[", "]", "?" ou espace.
 - Si un repository de REPOSITORIES DISPONIBLES expose un champ "jsonSchema", respecte strictement ce JSON Schema dans toutes les données produites ou fusionnées (toute violation bloque l'écriture). Tu peux aussi fournir une clé optionnelle "jsonSchema" (objet JSON Schema Draft 7/2020-12 ou null) dans l'enveloppe d'une entrée de "repositories" lorsqu'on te demande de définir, modifier ou dissocier le schéma d'un repository.
+- Convention stricte pour les dates dans "jsonSchema" et "data" : stocke TOUJOURS les dates au format ISO 8601 (`"YYYY-MM-DD"` pour `"format": "date"`, `"YYYY-MM-DDTHH:MM:SSZ"` pour `"format": "date-time"`) dans `"repositories.*.data"` ; n'ajoute NI `"x-mask"` manuel redondant NI `"pattern"` au format `"dd/MM/yyyy"` sur un champ `"format": "date"` (le moteur déduit automatiquement le masque d'affichage/saisie `##/##/####` + `dd/MM/yyyy` et reconvertit vers ISO à l'écriture).
 Règles pour "askUser" :
 - Quelle que soit l'étape (création initiale, ajout, modification d'un écran existant ou d'un scope ciblé), applique systématiquement le NIVEAU DE QUESTIONNEMENT défini par le slider dans le contexte du tour courant, sans restreindre les questions à la première étape (seul le niveau 0/Aucun ou le tour d'application immédiate des réponses qui viennent d'être fournies désactive "askUser").
 - Fournis toujours des valeurs "default" pertinentes sur chaque question posée.
@@ -241,6 +243,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Mode de vitesse initial sélectionné à l'ouverture du panneau ([VibeAiSpeedMode.fast] par défaut).
   final VibeAiSpeedMode initialSpeedMode;
+
+  /// Callback optionnel notifié lorsque l'utilisateur change le mode de vitesse.
+  final ValueChanged<VibeAiSpeedMode>? onSpeedModeChanged;
 
   /// Niveau initial de questionnement préalable ([VibeQuestioningLevel.balanced] par défaut).
   final VibeQuestioningLevel initialQuestioningLevel;
@@ -617,14 +622,32 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     }
   }
 
+  /// Callback enregistré par le panneau flottant actif pour ouvrir ou cibler le chat avec des options de session.
+  static bool Function(
+    VibeChatScope scope, {
+    VibeAiSpeedMode? speedMode,
+    VibeQuestioningLevel? questioningLevel,
+  })?
+  onOpenScopedRequested;
+
   /// Opens the Vibe AI chat targeted at [scope]: reuses the active
   /// `StyleEditBanner` panel when mounted, or falls back to an editor dialog.
   static Future<void> showScoped(
     BuildContext context,
     VibeChatScope scope, {
+    VibeAiSpeedMode? speedMode,
+    VibeQuestioningLevel? questioningLevel,
     String? customDesignGuide,
     bool? replaceDefaultDesignGuide,
   }) async {
+    if (onOpenScopedRequested case final handler?
+        when handler(
+          scope,
+          speedMode: speedMode,
+          questioningLevel: questioningLevel,
+        )) {
+      return;
+    }
     if (VibeChatScope.onOpenRequested case final handler? when handler(scope)) {
       return;
     }
@@ -679,6 +702,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
                 registry: registry,
                 repositoryStore: repositoryStore,
                 scope: scope,
+                initialSpeedMode: speedMode ?? VibeAiSpeedMode.fast,
+                initialQuestioningLevel:
+                    questioningLevel ?? VibeQuestioningLevel.balanced,
                 customDesignGuide: effectiveCustomDesignGuide,
                 replaceDefaultDesignGuide: effectiveReplaceDefaultDesignGuide,
                 expanded: expanded,
@@ -1029,6 +1055,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
   void _setSpeedMode(VibeAiSpeedMode mode) {
     if (_speedMode == mode || _isBusy) return;
     setState(() => _speedMode = mode);
+    widget.onSpeedModeChanged?.call(mode);
     if (_usesStreamingGenerator) {
       unawaited(
         VibeChatDialog.warmUp(
@@ -1122,7 +1149,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         session.lastPreviewAppearance,
         activeScope,
       );
-      if (entryKey != activeScope.canonicalComponentId &&
+      if (!activeScope.canonicalComponentIds.contains(entryKey) &&
           !allowed.contains(entryKey)) {
         VibeWorkHighlightController.instance.clearStreamingTargets();
         return;
@@ -1548,7 +1575,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
               '- Préserve à 100 % la structure métier existante : conserve tous les identifiants de composants, placements, liaisons de données (bindings), usages, comportements (behaviors) et pages (pageCatalog).'
         : 'RESTYLAGE DU PÉRIMÈTRE "${activeScope.displayLabel}" SELON LE SYSTÈME DE DESIGN "${preset.name}" :\n'
               'Ne pose pas de questionnaire "askUser" : génère directement le patch "vibe".\n'
-              'Restyle uniquement le périmètre ciblé "${activeScope.displayLabel}" (id: "${activeScope.canonicalComponentId}") et son sous-arbre autorisé conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
+              'Restyle uniquement le périmètre ciblé "${activeScope.displayLabel}" (${activeScope.isMultiTarget ? 'ids: ${activeScope.canonicalComponentIds.map((id) => '"$id"').join(', ')}' : 'id: "${activeScope.canonicalComponentId}"'}) et son sous-arbre autorisé conformément au référentiel DESIGN.md actif ("${preset.name}") :\n'
               '- Mets à jour uniquement les styles des surfaces du périmètre (Card, IterableContent, lignes de collection — couleurs de surface "$surfaceHex", états "hover" et "selected", "radius": $radiusValue, "borderWidth", "borderColor": "$borderHex", "elevation" et "designSystem": "$surfaceSystemName"). Ne mets jamais d’entrée "styles" sur un "registry:Layout" pur (passe son placement parent en "registry:IterableContent" si une surface est requise).\n'
               '- Harmonise la typographie et les couleurs des composants SuperValue (texte primaire "$textHex", secondaire "$mutedHex"), SuperAction et SuperIndicator appartenant à ce périmètre.\n'
               '- Ne modifie aucune propriété globale de thème ("mode", "accent", styles["background"]) ni "pageCatalog".\n'
@@ -4888,16 +4915,36 @@ $response
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(
-                                      'Scope : ${activeScope.displayLabel}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: scheme.onSecondaryContainer,
-                                      ),
-                                    ),
+                                    child: activeScope.isMultiTarget
+                                        ? Tooltip(
+                                            message: activeScope.allTargets
+                                                .map(
+                                                  (t) => '• ${t.displayLabel}',
+                                                )
+                                                .join('\n'),
+                                            child: Text(
+                                              'Scope : ${activeScope.displayLabel}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    scheme.onSecondaryContainer,
+                                              ),
+                                            ),
+                                          )
+                                        : Text(
+                                            'Scope : ${activeScope.displayLabel}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color:
+                                                  scheme.onSecondaryContainer,
+                                            ),
+                                          ),
                                   ),
                                   IconButton(
                                     key: const ValueKey(

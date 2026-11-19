@@ -69,6 +69,8 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   Offset? _expandedChatPosition;
   Offset? _compactChatPosition;
   VibeChatScope? _chatScope;
+  VibeAiSpeedMode _chatSpeedMode = VibeAiSpeedMode.fast;
+  VibeQuestioningLevel _chatQuestioningLevel = VibeQuestioningLevel.balanced;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
@@ -107,11 +109,21 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   Offset? get _activeChatPosition =>
       _chatExpanded ? _expandedChatPosition : _compactChatPosition;
 
-  bool _openScopedChat(VibeChatScope scope) {
+  bool _openScopedChat(
+    VibeChatScope scope, {
+    VibeAiSpeedMode? speedMode,
+    VibeQuestioningLevel? questioningLevel,
+  }) {
     if (!mounted || AppearanceScope.controllerOf(context) == null) return false;
     _dismissBannerCompletion();
     setState(() {
       _chatScope = scope;
+      if (speedMode != null) {
+        _chatSpeedMode = speedMode;
+      }
+      if (questioningLevel != null) {
+        _chatQuestioningLevel = questioningLevel;
+      }
       if (!_chatOpen) {
         _chatOpen = true;
         _chatExpanded = true;
@@ -145,6 +157,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     );
     LayoutSelection.bannerBounds = _bannerRect;
     VibeChatScope.onOpenRequested = _openScopedChat;
+    VibeChatDialog.onOpenScopedRequested = _openScopedChat;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
     _lastSeenCompletionId =
@@ -283,6 +296,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     }
     if (identical(VibeChatScope.onOpenRequested, _openScopedChat)) {
       VibeChatScope.onOpenRequested = null;
+    }
+    if (identical(VibeChatDialog.onOpenScopedRequested, _openScopedChat)) {
+      VibeChatDialog.onOpenScopedRequested = null;
     }
     LayoutSelection.editorViewport.removeListener(_reposition);
     LayoutSelection.path.removeListener(_onPathChanged);
@@ -465,6 +481,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                           setState(() {
                             _chatOpen = !_chatOpen;
                             _chatScope = null;
+                            _chatSpeedMode = VibeAiSpeedMode.fast;
+                            _chatQuestioningLevel =
+                                VibeQuestioningLevel.balanced;
                             if (_chatOpen) {
                               _chatExpanded = true;
                               _expandedChatPosition = null;
@@ -685,6 +704,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     controller: appearance,
                     codec: codec,
                     scope: _chatScope,
+                    initialSpeedMode: _chatSpeedMode,
+                    onSpeedModeChanged: (mode) =>
+                        setState(() => _chatSpeedMode = mode),
+                    initialQuestioningLevel: _chatQuestioningLevel,
+                    onQuestioningLevelChanged: (level) =>
+                        setState(() => _chatQuestioningLevel = level),
                     initialDesignSystem: _selectedDesignSystem,
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),
@@ -715,6 +740,8 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     onClose: () => setState(() {
                       _chatOpen = false;
                       _chatScope = null;
+                      _chatSpeedMode = VibeAiSpeedMode.fast;
+                      _chatQuestioningLevel = VibeQuestioningLevel.balanced;
                     }),
                     onDrag: (delta) => setState(() {
                       final nextPosition = _chatLayout.resolvedPosition + delta;

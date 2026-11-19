@@ -161,6 +161,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   String _saved = '';
   String _savedDisplay = '';
   String _queuedText = '';
+  String? _failedText;
   int _queuedWrites = 0;
   String _observed = '';
   Timer? _timer;
@@ -390,6 +391,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     }
     _timer?.cancel();
     error = null;
+    _failedText = null;
     if (composing) return;
     if (_validationErrorOf(controller.text) != null) {
       _notify();
@@ -417,7 +419,8 @@ class JsonTextControllerBinding extends ChangeNotifier {
       return _writes;
     }
     final text = _storageOf(controller.text);
-    if (text == _queuedText && error == null) {
+    if ((text == _queuedText && error == null) ||
+        (error != null && text == _failedText)) {
       return _writes;
     }
     _queuedText = text;
@@ -438,10 +441,13 @@ class JsonTextControllerBinding extends ChangeNotifier {
         _expected = result.value;
         _saved = text;
         _savedDisplay = controller.text;
+        _failedText = null;
         error = null;
       } on FormatException catch (exception) {
+        _failedText = text;
         _failure(exception.message);
       } on FileSystemException {
+        _failedText = text;
         _failure('Impossible d’enregistrer le repository lié.');
       } finally {
         _queuedWrites--;
@@ -457,6 +463,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   /// Explicit retry discards the local draft, never does so on notifications.
   Future<void> discardAndReload() async {
     _timer?.cancel();
+    _failedText = null;
     await _writes;
     if (_disposed) return;
     _ready = false;
@@ -468,7 +475,11 @@ class JsonTextControllerBinding extends ChangeNotifier {
     store.unregisterBindings(this);
     if (!isReadOnly) {
       store.removeFlusher(flush);
-      flush();
+      if (_ready &&
+          _validationErrorOf(controller.text) == null &&
+          !(error != null && _storageOf(controller.text) == _failedText)) {
+        flush();
+      }
     } else {
       _restoreReadOnlyValue();
     }

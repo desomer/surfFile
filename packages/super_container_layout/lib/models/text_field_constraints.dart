@@ -437,7 +437,8 @@ abstract final class DateFieldFormat {
     if (trimmed.isEmpty || pattern.isEmpty) return storageText;
     final parsed = _parseIso(trimmed) ?? _tryParsePattern(trimmed, pattern);
     if (parsed == null) return storageText;
-    return DateFormat(pattern).format(parsed);
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
+    return DateFormat(pattern).format(local);
   }
 
   /// Convertit une saisie affichée selon [pattern] vers ISO 8601.
@@ -454,7 +455,7 @@ abstract final class DateFieldFormat {
     final parsed = _tryParsePattern(trimmed, pattern);
     if (parsed == null) return null;
     if (forceDateTime || includesTime(pattern)) {
-      return parsed.toIso8601String();
+      return parsed.toUtc().toIso8601String();
     }
     final y = parsed.year.toString().padLeft(4, '0');
     final m = parsed.month.toString().padLeft(2, '0');

@@ -15,9 +15,12 @@ import 'package:flutter/rendering.dart' show RenderSliver;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../appearance/appearance_scope.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../addition/insertion_plan.dart';
+import '../ai/vibe_chat_dialog.dart';
 import '../slots/editor_slot.dart';
+import 'editor_lasso.dart';
 import 'editor_overlay.dart';
 
 /// Animates the page around the selected layout, zone or slot.
@@ -48,7 +51,7 @@ class EditorZoom extends StatefulWidget {
 }
 
 class _EditorZoomState extends State<EditorZoom>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _content = GlobalKey();
   late final _animation = AnimationController(
     vsync: this,
@@ -63,7 +66,10 @@ class _EditorZoomState extends State<EditorZoom>
   ({double scale, Offset offset}) _current = (scale: 1, offset: Offset.zero);
   bool _scheduled = false;
   final _controller = EditorZoomController();
+  final _lassoController = EditorLassoController();
   final _viewportKey = GlobalKey();
+  int? _lassoPointerId;
+  bool _lassoSuppressedUntilCtrlUp = false;
   BuildContext? _zoomTarget;
   EditorDialogFocus? _zoomDialog;
   BuildContext? _lastHoverTarget;
@@ -148,12 +154,14 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = _setSliderScale;
     _controller._resetZoomHandler = _resetZoom;
     _controller.scale.value = _current.scale;
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_onKey);
     _controller._interactionHandler = (held) {
       _framingHeld = held;
       if (held) {
         _animation.stop();
         _from = _to = _current;
+        _cancelLasso();
       } else {
         _schedule();
       }
@@ -161,7 +169,10 @@ class _EditorZoomState extends State<EditorZoom>
     LayoutSelection.focus.addListener(_onFocusChanged);
     EditorSlotState.highlightedTarget.addListener(_onHighlightChanged);
     _controller.dialog.addListener(_schedule);
+    _controller.dialog.addListener(_syncLassoAvailability);
     _controller.openContextMenus.addListener(_schedule);
+    _controller.openContextMenus.addListener(_syncLassoAvailability);
+    EditorOverlayVisibility.openDialogs.addListener(_syncLassoAvailability);
     _controller.contextMenuAvailable.addListener(_schedule);
     _controller.options.addListener(_onOptionsChanged);
     EditorInsertionPreview.active.addListener(_schedule);
@@ -173,11 +184,21 @@ class _EditorZoomState extends State<EditorZoom>
     final mode = StyleEditScope.controllerOf(context);
     if (!identical(mode, _editMode)) {
       _editMode?.removeListener(_schedule);
+      _editMode?.removeListener(_syncLassoAvailability);
       _editMode = mode;
       mode?.addListener(_schedule);
+      mode?.addListener(_syncLassoAvailability);
     }
     _controller.enabled = mode?.value ?? false;
+    _syncLassoAvailability();
     _schedule();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _cancelLasso();
+    }
   }
 
   void _schedule() {
@@ -190,7 +211,168 @@ class _EditorZoomState extends State<EditorZoom>
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
+  bool _canArmLasso() {
+    if (!mounted || !(_editMode?.value ?? false) || _framingHeld) {
+      return false;
+    }
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      return false;
+    }
+    if (_controller.openContextMenus.value > 0 ||
+        _controller.dialog.value != null ||
+        EditorOverlayVisibility.openDialogs.value > 0) {
+      return false;
+    }
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    if (focusedContext != null &&
+        focusedContext.mounted &&
+        (MenuController.maybeOf(focusedContext)?.isOpen ?? false)) {
+      return false;
+    }
+    return true;
+  }
+
+  void _syncLassoAvailability() {
+    if (!_lassoController.isCtrlArmed &&
+        !_lassoController.hasAnyStroke &&
+        !_controller.lassoIntercepting.value) {
+      return;
+    }
+    if (!_canArmLasso()) {
+      _cancelLasso();
+    }
+  }
+
+  void _cancelLasso() {
+    _lassoPointerId = null;
+    if (_controller.lassoIntercepting.value) {
+      _controller.lassoIntercepting.value = false;
+    }
+    _lassoController.cancel();
+  }
+
+  void _commitLassoAndOpenVibe() {
+    _lassoPointerId = null;
+    if (_controller.lassoIntercepting.value) {
+      _controller.lassoIntercepting.value = false;
+    }
+    final scope = _lassoController.commitAndReset();
+    if (scope != null && mounted && (_editMode?.value ?? false)) {
+      unawaited(
+        VibeChatDialog.showScoped(
+          context,
+          scope,
+          speedMode: VibeAiSpeedMode.ultraFast,
+          questioningLevel: VibeQuestioningLevel.none,
+        ),
+      );
+    }
+  }
+
+  Offset _viewportLocalPosition(Offset globalPosition) {
+    final viewport = _viewportKey.currentContext?.findRenderObject();
+    if (viewport is RenderBox && viewport.attached && viewport.hasSize) {
+      return viewport.globalToLocal(globalPosition);
+    }
+    return globalPosition;
+  }
+
+  List<EditorLassoCandidate> _collectLassoCandidates() {
+    final contentCtx = _content.currentContext;
+    final viewport = _viewportKey.currentContext?.findRenderObject();
+    if (contentCtx == null ||
+        !contentCtx.mounted ||
+        viewport is! RenderBox ||
+        !viewport.attached ||
+        !viewport.hasSize) {
+      return const [];
+    }
+    return EditorLassoResolver.collectMountedCandidates(
+      contentContext: contentCtx,
+      viewportBox: viewport,
+    );
+  }
+
+  void _onLassoPointerDown(PointerDownEvent event) {
+    if ((event.buttons & kSecondaryMouseButton) != 0) {
+      _onPointerDown(event);
+      return;
+    }
+    if ((event.buttons & kPrimaryButton) == 0) return;
+    if (!HardwareKeyboard.instance.isControlPressed) {
+      _commitLassoAndOpenVibe();
+      return;
+    }
+    _lassoPointerId = event.pointer;
+    _lassoController.startStroke(
+      _viewportLocalPosition(event.position),
+      candidates: _collectLassoCandidates(),
+    );
+  }
+
+  void _onLassoPointerMove(PointerMoveEvent event) {
+    if (_isSecondaryDown) {
+      _onPointerMove(event);
+    }
+    if (event.pointer != _lassoPointerId) return;
+    if (!HardwareKeyboard.instance.isControlPressed) {
+      _commitLassoAndOpenVibe();
+      return;
+    }
+    _lassoController.appendPoint(_viewportLocalPosition(event.position));
+  }
+
+  void _onLassoPointerUp(PointerUpEvent event) {
+    if (_isSecondaryDown) {
+      _onPointerUp(event);
+    }
+    if (event.pointer != _lassoPointerId) return;
+    _lassoPointerId = null;
+    _lassoController.finishActiveStroke();
+    if (!HardwareKeyboard.instance.isControlPressed) {
+      _commitLassoAndOpenVibe();
+    }
+  }
+
+  void _onLassoPointerCancel(PointerCancelEvent event) {
+    if (_isSecondaryDown) {
+      _onPointerCancel(event);
+    }
+    if (event.pointer != _lassoPointerId) return;
+    _lassoPointerId = null;
+    _lassoController.finishActiveStroke();
+  }
+
   bool _onKey(KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        !HardwareKeyboard.instance.isMetaPressed &&
+        !HardwareKeyboard.instance.isAltPressed &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        (_lassoController.hasAnyStroke || _lassoController.isDrawing)) {
+      _lassoSuppressedUntilCtrlUp = HardwareKeyboard.instance.isControlPressed;
+      _cancelLasso();
+      return true;
+    }
+
+    final ctrlPressed = HardwareKeyboard.instance.isControlPressed;
+    if (ctrlPressed) {
+      if (!_lassoSuppressedUntilCtrlUp && _canArmLasso()) {
+        if (!_controller.lassoIntercepting.value) {
+          _controller.lassoIntercepting.value = true;
+        }
+        _lassoController.setCtrlArmed(true);
+      }
+    } else {
+      _lassoSuppressedUntilCtrlUp = false;
+      if (_lassoController.isCtrlArmed ||
+          _lassoController.hasAnyStroke ||
+          _controller.lassoIntercepting.value) {
+        _commitLassoAndOpenVibe();
+      }
+    }
+
     if (event is! KeyDownEvent ||
         event.logicalKey != LogicalKeyboardKey.escape ||
         HardwareKeyboard.instance.isMetaPressed ||
@@ -648,6 +830,19 @@ class _EditorZoomState extends State<EditorZoom>
 
   void _onPointerDown(PointerDownEvent event) {
     if (!(_editMode?.value ?? false)) return;
+    if ((event.buttons & kPrimaryButton) != 0 &&
+        HardwareKeyboard.instance.isControlPressed &&
+        !_lassoSuppressedUntilCtrlUp &&
+        _canArmLasso()) {
+      _controller.lassoIntercepting.value = true;
+      _lassoController.setCtrlArmed(true);
+      _lassoPointerId = event.pointer;
+      _lassoController.startStroke(
+        _viewportLocalPosition(event.position),
+        candidates: _collectLassoCandidates(),
+      );
+      return;
+    }
     if ((event.buttons & kSecondaryMouseButton) != 0) {
       if (_zoomDialog == null && _controller.openContextMenus.value == 0) {
         _preRightClickTransform = _to;
@@ -850,6 +1045,7 @@ class _EditorZoomState extends State<EditorZoom>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     HardwareKeyboard.instance.removeHandler(_onKey);
     _hoverZoomTimer?.cancel();
     _controller.sliderScaleHandler = null;
@@ -857,12 +1053,17 @@ class _EditorZoomState extends State<EditorZoom>
     LayoutSelection.focus.removeListener(_onFocusChanged);
     EditorSlotState.highlightedTarget.removeListener(_onHighlightChanged);
     _controller.dialog.removeListener(_schedule);
+    _controller.dialog.removeListener(_syncLassoAvailability);
     _controller.openContextMenus.removeListener(_schedule);
+    _controller.openContextMenus.removeListener(_syncLassoAvailability);
+    EditorOverlayVisibility.openDialogs.removeListener(_syncLassoAvailability);
     _controller.contextMenuAvailable.removeListener(_schedule);
     _controller.options.removeListener(_onOptionsChanged);
     EditorInsertionPreview.active.removeListener(_schedule);
+    _lassoController.dispose();
     _controller.dispose();
     _editMode?.removeListener(_schedule);
+    _editMode?.removeListener(_syncLassoAvailability);
     _animation.dispose();
     super.dispose();
   }
@@ -926,6 +1127,91 @@ class _EditorZoomState extends State<EditorZoom>
                   ),
                 ),
               ),
+              if (editing)
+                ValueListenableBuilder<bool>(
+                  valueListenable: _controller.lassoIntercepting,
+                  builder: (context, intercepting, _) {
+                    if (!intercepting) return const SizedBox.shrink();
+                    final accent =
+                        AppearanceScope.controllerOf(context)?.value.accent ??
+                        Theme.of(context).colorScheme.primary;
+                    final scheme = Theme.of(context).colorScheme;
+                    return Positioned.fill(
+                      child: MouseRegion(
+                        opaque: false,
+                        cursor: SystemMouseCursors.precise,
+                        child: Listener(
+                          key: const ValueKey('editor-lasso-layer'),
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: _onLassoPointerDown,
+                          onPointerMove: _onLassoPointerMove,
+                          onPointerUp: _onLassoPointerUp,
+                          onPointerCancel: _onLassoPointerCancel,
+                          onPointerSignal: _onPointerSignal,
+                          child: ListenableBuilder(
+                            listenable: _lassoController,
+                            builder: (context, _) {
+                              final resolution = _lassoController.resolution;
+                              return Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  RepaintBoundary(
+                                    child: CustomPaint(
+                                      key: const ValueKey('editor-lasso-paint'),
+                                      painter: EditorLassoPainter(
+                                        controller: _lassoController,
+                                        accent: accent,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_lassoController.hasAnyStroke)
+                                    Positioned(
+                                      top: 12,
+                                      left: 16,
+                                      right: 16,
+                                      child: IgnorePointer(
+                                        child: Center(
+                                          child: Material(
+                                            key: const ValueKey(
+                                              'editor-lasso-status-pill',
+                                            ),
+                                            color: scheme.inverseSurface
+                                                .withValues(alpha: 0.9),
+                                            elevation: 4,
+                                            shape: const StadiumBorder(),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 6,
+                                                  ),
+                                              child: Text(
+                                                resolution != null
+                                                    ? 'Lasso IA : ${resolution.scope.displayLabel} — relâchez Ctrl pour appliquer (Échap pour annuler)'
+                                                    : 'Lasso IA : entourez des composants — relâchez Ctrl (Échap pour annuler)',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w500,
+                                                  color:
+                                                      scheme.onInverseSurface,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               if (editing)
                 ListenableBuilder(
                   listenable: Listenable.merge([
@@ -1080,6 +1366,7 @@ class EditorZoomController {
       _pointerCancelHandler?.call(event);
 
   final scale = ValueNotifier<double>(1.0);
+  final lassoIntercepting = ValueNotifier<bool>(false);
   final openContextMenus = ValueNotifier<int>(0);
   final contextMenuAvailable = ValueNotifier<Rect?>(null);
 
@@ -1194,11 +1481,13 @@ class EditorZoomController {
         }
       });
     }
+    lassoIntercepting.dispose();
     openContextMenus.dispose();
     contextMenuAvailable.dispose();
     options.dispose();
     dialog.dispose();
     transform.dispose();
+    scale.dispose();
   }
 }
 

@@ -138,6 +138,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   String? _loadError;
   Future<void> _windowUpdates = Future.value();
   (double, WindowEffect, bool)? _appliedWindow;
+  String? _lastRepositorySnackError;
+  DateTime? _lastRepositorySnackAt;
 
   @override
   void initState() {
@@ -180,17 +182,47 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     return found;
   }
 
-  void _showSnackBarIfPossible(SnackBar snackBar) {
+  void _showSnackBarIfPossible(
+    SnackBar snackBar, {
+    bool replaceCurrent = false,
+  }) {
     if (!mounted || !_hasMountedScaffold()) return;
-    _messenger.currentState?.showSnackBar(snackBar);
+    final messenger = _messenger.currentState;
+    if (messenger == null) return;
+    if (replaceCurrent) {
+      messenger.clearSnackBars();
+    }
+    messenger.showSnackBar(snackBar);
   }
 
   void _repositoryFailed() {
     final error = _repositories.errors.value;
     if (error == null || !mounted) return;
     VibeDebugCapture.recordErrorDeduplicated('[REPOSITORY ERROR] $error');
+    final now = DateTime.now();
+    final lastAt = _lastRepositorySnackAt;
+    if (_lastRepositorySnackError == error &&
+        lastAt != null &&
+        now.difference(lastAt).inSeconds < 3) {
+      return;
+    }
+    _lastRepositorySnackError = error;
+    _lastRepositorySnackAt = now;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showSnackBarIfPossible(SnackBar(content: Text(error)));
+      _showSnackBarIfPossible(
+        SnackBar(
+          content: Text(
+            error,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          action: SnackBarAction(
+            label: 'Fermer',
+            onPressed: () => _messenger.currentState?.hideCurrentSnackBar(),
+          ),
+        ),
+        replaceCurrent: true,
+      );
     });
   }
 

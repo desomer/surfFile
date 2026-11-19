@@ -6,6 +6,7 @@ library;
 import 'dart:convert';
 
 import '../../models/repository_json_schema.dart';
+import '../../models/text_field_constraints.dart';
 
 /// Validateur et inspecteur JSON Schema (Draft 7 / Draft 2020-12) sans
 /// dépendance externe.
@@ -410,6 +411,38 @@ abstract final class JsonSchemaValidator {
       throw FormatException(
         'Mot-clé "format" invalide à « $schemaPath/format » : chaîne attendue.',
       );
+    }
+
+    if (node.containsKey('x-mask')) {
+      final rawMask = node['x-mask'];
+      if (rawMask is! String) {
+        throw FormatException(
+          'Mot-clé "x-mask" invalide à « $schemaPath/x-mask » : chaîne attendue.',
+        );
+      }
+      try {
+        PatternMask.validatePattern(rawMask);
+      } on FormatException catch (e) {
+        throw FormatException(
+          'Masque "x-mask" invalide à « $schemaPath/x-mask » : ${e.message}',
+        );
+      }
+    }
+
+    if (node.containsKey('x-dateFormat')) {
+      final rawDateFormat = node['x-dateFormat'];
+      if (rawDateFormat is! String) {
+        throw FormatException(
+          'Mot-clé "x-dateFormat" invalide à « $schemaPath/x-dateFormat » : chaîne attendue.',
+        );
+      }
+      try {
+        DateFieldFormat.validatePattern(rawDateFormat);
+      } on FormatException catch (e) {
+        throw FormatException(
+          'Format "x-dateFormat" invalide à « $schemaPath/x-dateFormat » : ${e.message}',
+        );
+      }
     }
 
     for (final mapKey in const [

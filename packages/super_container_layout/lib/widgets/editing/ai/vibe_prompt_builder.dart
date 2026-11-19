@@ -125,18 +125,30 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
     if (scope != null) {
       final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
       final parentList = parentIds.map((id) => '"$id"').join(', ');
+      final targetIdsList = scope.canonicalComponentIds
+          .map((id) => '"$id"')
+          .join(', ');
       final effectiveParent = parentIds.isNotEmpty
           ? parentList
-          : '"${scope.canonicalComponentId}"';
-      return [
-        questioningDirective,
-        ?exactSection,
-        '''RESTRICTION STRICTE DE SCOPE :
+          : targetIdsList;
+      final scopeDirective = scope.isMultiTarget
+          ? '''RESTRICTION STRICTE DE SCOPE (SÉLECTION LASSO MULTI-CIBLES) :
+L'utilisateur a entouré au lasso les éléments suivants :
+${scope.allTargets.map((t) => '- "${t.displayLabel}" (id: "${t.canonicalComponentId}"${t.zoneId != null ? ', zone/région: "${t.zoneId}"' : ''})').join('\n')}
+${parentIds.isNotEmpty ? '- Conteneur(s) parent(s) : $parentList\n' : ''}- Le périmètre modifiable autorisé couvre uniquement ces éléments sélectionnés ($targetIdsList), leurs sous-arbres et la réorganisation/ajout éventuel dans $effectiveParent.
+- Ne modifie ni ne supprime AUCUN composant frère non sélectionné dans $effectiveParent, ni aucun composant au-dessus de $effectiveParent.
+- Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
+- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un des éléments sélectionnés.'''
+          : '''RESTRICTION STRICTE DE SCOPE :
 L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayLabel}" (composant id: "${scope.canonicalComponentId}"${scope.zoneId != null ? ', zone/région: "${scope.zoneId}"' : ''}${parentIds.isNotEmpty ? ', conteneur parent: $parentList' : ''}).
 - Le périmètre modifiable autorisé couvre l'élément sélectionné ("${scope.canonicalComponentId}") ainsi que son conteneur parent ($effectiveParent) et tout le sous-arbre de ce parent.
 - Ne modifie AUCUN composant situé au-dessus ou en dehors du conteneur parent ($effectiveParent).
 - Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
-- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.''',
+- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.''';
+      return [
+        questioningDirective,
+        ?exactSection,
+        scopeDirective,
         ?mountedHint,
         ?repositoriesSection,
         'ÉTAT DU SCOPE CIBLÉ (JSON) :\n${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
@@ -206,14 +218,17 @@ RÈGLES D’EXÉCUTION DU LOT :
     if (scope != null) {
       final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
       final parentList = parentIds.map((id) => '"$id"').join(', ');
+      final targetIdsList = scope.canonicalComponentIds
+          .map((id) => '"$id"')
+          .join(', ');
       final effectiveParent = parentIds.isNotEmpty
           ? parentList
-          : '"${scope.canonicalComponentId}"';
+          : targetIdsList;
       return [
         reproduceExactCommonDirective,
         lotDirective,
         '''RESTRICTION STRICTE DE SCOPE :
-Périmètre modifiable autorisé : "${scope.canonicalComponentId}" et son parent ($effectiveParent).''',
+Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).''',
         ?mountedHint,
         ?repositoriesSection,
         'ÉTAT ACTUEL DU SCOPE APRÈS LES LOTS PRÉCÉDENTS (JSON) :\n'

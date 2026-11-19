@@ -113,7 +113,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
           );
           if (!rect.isFinite) return const SizedBox.shrink();
           final zoomController = EditorZoomScope.controllerOf(this.context);
-          final controls = ExcludeSemantics(
+          final controlsBody = ExcludeSemantics(
             child: Listener(
               onPointerDown: (event) =>
                   zoomController?.handlePointerDown(event),
@@ -140,6 +140,14 @@ class _EditorOverlayState extends State<EditorOverlay> {
               ),
             ),
           );
+          final controls = zoomController == null
+              ? controlsBody
+              : ValueListenableBuilder<bool>(
+                  valueListenable: zoomController.lassoIntercepting,
+                  child: controlsBody,
+                  builder: (context, intercepting, child) =>
+                      IgnorePointer(ignoring: intercepting, child: child),
+                );
           final viewport = widget.clipKey?.currentContext?.findRenderObject();
           if (viewport is RenderBox &&
               viewport.hasSize &&

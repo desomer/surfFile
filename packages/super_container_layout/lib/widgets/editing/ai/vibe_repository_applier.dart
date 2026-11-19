@@ -17,6 +17,7 @@ import '../../../models/repository_json_schema.dart';
 import '../../../services/appearance/appearance_codec.dart'
     show PatchRejectedEntry;
 import '../../../services/repositories/json_repository_store.dart';
+import '../../../services/repositories/json_schema_field_resolver.dart';
 import '../../../services/repositories/json_schema_validator.dart';
 
 final RegExp _repoKeyOrIdPattern = RegExp(r'^[a-z0-9_]{1,32}$');
@@ -415,6 +416,15 @@ abstract final class VibeRepositoryPatchValidator {
         validatedSchema = JsonSchemaValidator.validateSchemaDefinition(
           rawSchema,
         );
+        final extIssues = JsonSchemaFieldResolver.auditSchemaExtensions(
+          validatedSchema,
+        );
+        if (extIssues.isNotEmpty) {
+          throw FormatException(
+            'JSON Schema incohérent pour "$repoKey" (${extIssues.first.schemaPath}) : '
+            '${extIssues.first.message}',
+          );
+        }
       }
     }
 
@@ -765,6 +775,20 @@ class VibeRepositoryTurnTransaction {
     }
 
     final normalized = schema == null ? null : _deepCopyJsonMap(schema);
+    if (normalized != null) {
+      final validated = JsonSchemaValidator.validateSchemaDefinition(
+        normalized,
+      );
+      final extIssues = JsonSchemaFieldResolver.auditSchemaExtensions(
+        validated,
+      );
+      if (extIssues.isNotEmpty) {
+        throw FormatException(
+          'JSON Schema incohérent pour "$repositoryId" (${extIssues.first.schemaPath}) : '
+          '${extIssues.first.message}',
+        );
+      }
+    }
     await store.saveJsonSchema(
       repositoryId,
       normalized,

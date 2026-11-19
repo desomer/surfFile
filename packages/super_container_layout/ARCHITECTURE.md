@@ -451,10 +451,11 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/dialogs/json_extract/component_data_wizard.dart` | Sélecteur de cible, inventaire des liaisons et ouverture des repositories liés. |
 | `widgets/editing/history/editor_history.dart` | `EditorHistoryController`, `EditorHistoryScope`, `EditorHistorySideEffect` : pile Undo / Redo capturant les instantanés d'`Appearance` et les effets compagnons asynchrones sur les repositories JSON (`addTransactionSideEffect`, `undoAsync`, `redoAsync`). |
 | `widgets/editing/icons/material_icon_picker.dart` | `MaterialIconPicker` : sélecteur visuel d'icônes Material avec recherche instantanée dans `MaterialIconCatalog`. |
+| `widgets/editing/overlay/editor_lasso.dart` | `EditorLassoResolver`, `EditorLassoController`, `EditorLassoPainter` : sélection au lasso (`Ctrl` + clic gauche, multi-tracés) en mode édition, résolution géométrique hiérarchique sur `VibeMountedSlotIndex` et définition du `VibeChatScope` Vibe IA. |
 | `widgets/editing/overlay/editor_overlay.dart` | Superposition globale du mode édition coordonnant les cadres de sélection, les badges et les poignées. |
 | `widgets/editing/overlay/editor_resize_handle.dart` | Poignées carrées de 8 px (zone de saisie de 32 px) aux coins et côtés pour redimensionner un slot à la souris. |
 | `widgets/editing/overlay/editor_zone_badge.dart` | `EditorZoneBadge`, `EditorZoneHighlight`, `EditorSelectionBorder` : badges déplaçables et contours de survol/sélection des zones et composants. |
-| `widgets/editing/overlay/editor_zoom.dart` | Moteur animé, contrôleur, portée et raccourcis de zoom/panoramique du canevas en mode édition ; façade historique. |
+| `widgets/editing/overlay/editor_zoom.dart` | Moteur animé, contrôleur, portée, raccourcis de zoom/panoramique et interception du lasso `Ctrl` + clic gauche du canevas en mode édition. |
 | `widgets/editing/overlay/editor_zoom_options.dart` | Options immuables du zoom, seuil de grande cible et constantes par défaut partagées. |
 | `widgets/editing/overlay/editor_zoom_controls.dart` | Barre flottante, délégué de placement et dialogue de réglage des options du zoom. |
 | `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides et le panneau latéral Vibe IA. |
@@ -471,7 +472,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/providers/http_provider_form.dart` | Formulaire de configuration HTTP et des repositories de filtre, cible et indicateurs. |
 | `widgets/editing/slots/editable_single_child.dart` | Conteneur éditable monoenfant (utilisé notamment pour la région `child` d'une `Card`). |
 | `widgets/editing/slots/editable_surface.dart` | `EditableSurface` : surface interactive en mode édition permettant d'éditer son `ContainerStyle`, son contenu et ses états. |
-| `widgets/editing/slots/editor_context_menu.dart` | `EditorContextMenu`, `VibeChatScope` : modèles et `InheritedWidget` du menu contextuel riche du mode édition (`EditorSlotAction`, `EditorContextMenuEntry`, pastille de couleur). |
+| `widgets/editing/slots/editor_context_menu.dart` | `EditorContextMenu`, `VibeChatScope`, `VibeChatScopeTarget` : modèles (mono et multi-cibles) et `InheritedWidget` du menu contextuel riche du mode édition (`EditorSlotAction`, `EditorContextMenuEntry`, pastille de couleur). |
 | `widgets/editing/slots/editor_context_menu_dialog.dart` | `part of 'editor_slot.dart'` : route popup, hôte flottant non-modal épinglable (`editor-context-menu-pin`), carte déplaçable et délégué de positionnement du menu contextuel. |
 | `widgets/editing/slots/editor_selection_outline.dart` | `part of 'editor_selection_region.dart'` : animation et peintre `EditorSelectionOutline` du cadre de sélection et de survol. |
 | `widgets/editing/slots/editor_selection_region.dart` | `EditorSelectionRegion` : détection des clics/doubles-clics et sélection hiérarchique progressive d'un composant ou d'une zone. |

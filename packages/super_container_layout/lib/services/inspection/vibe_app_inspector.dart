@@ -332,6 +332,17 @@ class VibeAppInspector {
           'rawComponentId': scope.componentId,
           'zoneId': ?scope.zoneId,
           'displayLabel': scope.displayLabel,
+          if (scope.isMultiTarget) 'multiTarget': true,
+          if (scope.isMultiTarget)
+            'targets': [
+              for (final target in scope.allTargets)
+                <String, Object?>{
+                  'componentId': target.canonicalComponentId,
+                  'rawComponentId': target.componentId,
+                  'zoneId': ?target.zoneId,
+                  'displayLabel': target.displayLabel,
+                },
+            ],
         },
       'mountedComponentCount': slotIndex.mountedComponentIds.length,
     };
@@ -369,7 +380,7 @@ class VibeAppInspector {
 
     if (requestedIds.isEmpty) {
       if (scope != null) {
-        requestedIds.add(scope.canonicalComponentId);
+        requestedIds.addAll(scope.canonicalComponentIds);
         requestedIds.addAll(
           VibeScopeHelpers.parentIdsOfScope(appearance, scope),
         );

@@ -242,27 +242,31 @@ abstract final class JsonSchemaFieldResolver {
       }
     }
 
-    // Déduction automatique pour les formats temporels si aucune extension
-    // explicite x-mask / x-dateFormat n'est précisée.
-    if (mask == null && dateFormat == null) {
-      switch (format) {
-        case TextFieldFormat.date:
-          dateFormat = 'dd/MM/yyyy';
-          mask = '##/##/####';
-          maskIncludeLiterals ??= false;
-          locked.addAll({'dateFormat', 'mask', 'maskIncludeLiterals'});
-        case TextFieldFormat.dateTime:
-          dateFormat = 'dd/MM/yyyy HH:mm';
-          mask = '##/##/#### ##:##';
-          maskIncludeLiterals ??= false;
-          locked.addAll({'dateFormat', 'mask', 'maskIncludeLiterals'});
-        case TextFieldFormat.time:
-          mask = '##:##:##';
-          maskIncludeLiterals ??= true;
-          locked.addAll({'mask', 'maskIncludeLiterals'});
-        default:
-          break;
+    // Déduction automatique pour les formats temporels.
+    if (format == TextFieldFormat.date && dateFormat == null) {
+      if (mask == null || mask == '##/##/####') {
+        dateFormat = 'dd/MM/yyyy';
+        mask ??= '##/##/####';
+        maskIncludeLiterals ??= false;
+        locked.addAll({'dateFormat', 'mask', 'maskIncludeLiterals'});
+      } else if (mask == '####-##-##') {
+        dateFormat = 'yyyy-MM-dd';
+        maskIncludeLiterals ??= true;
+        locked.addAll({'dateFormat', 'maskIncludeLiterals'});
       }
+    } else if (format == TextFieldFormat.dateTime && dateFormat == null) {
+      if (mask == null || mask == '##/##/#### ##:##') {
+        dateFormat = 'dd/MM/yyyy HH:mm';
+        mask ??= '##/##/#### ##:##';
+        maskIncludeLiterals ??= false;
+        locked.addAll({'dateFormat', 'mask', 'maskIncludeLiterals'});
+      }
+    } else if (format == TextFieldFormat.time &&
+        mask == null &&
+        dateFormat == null) {
+      mask = '##:##:##';
+      maskIncludeLiterals ??= true;
+      locked.addAll({'mask', 'maskIncludeLiterals'});
     }
 
     return SchemaFieldProfile(
@@ -411,5 +415,146 @@ abstract final class JsonSchemaFieldResolver {
       }
     }
     return current;
+  }
+
+  /// Audite toutes les définitions de champs d'un JSON Schema pour détecter
+  /// d'éventuelles incohérences entre `format`, `pattern`, `x-mask` et `x-dateFormat`.
+  static List<({String schemaPath, String kind, String message})>
+  auditSchemaExtensions(Map<String, Object?> rootSchema) {
+    final issues = <({String schemaPath, String kind, String message})>[];
+    final visited = <Object>{};
+
+    void visit(Object? raw, String path) {
+      if (raw is! Map || !visited.add(raw)) return;
+      final node = <String, Object?>{
+        for (final entry in raw.entries) entry.key.toString(): entry.value,
+      };
+      final rawFormat = node['format'];
+      final parsedFormat = rawFormat is String
+          ? TextFieldFormat.tryParse(rawFormat)
+          : null;
+      final rawMask = node['x-mask'];
+      final rawDateFormat = node['x-dateFormat'];
+      final rawPattern = node['pattern'];
+
+      if (rawMask != null) {
+        if (rawMask is! String) {
+          issues.add((
+            schemaPath: '$path/x-mask',
+            kind: 'invalid_schema_mask',
+            message: 'L’extension "x-mask" doit être une chaîne de caractères.',
+          ));
+        } else {
+          try {
+            PatternMask.validatePattern(rawMask);
+          } on FormatException catch (e) {
+            issues.add((
+              schemaPath: '$path/x-mask',
+              kind: 'invalid_schema_mask',
+              message: e.message,
+            ));
+          }
+        }
+      }
+
+      if (rawDateFormat != null) {
+        if (rawDateFormat is! String) {
+          issues.add((
+            schemaPath: '$path/x-dateFormat',
+            kind: 'invalid_schema_date_format',
+            message:
+                'L’extension "x-dateFormat" doit être une chaîne de caractères.',
+          ));
+        } else {
+          try {
+            DateFieldFormat.validatePattern(rawDateFormat);
+          } on FormatException catch (e) {
+            issues.add((
+              schemaPath: '$path/x-dateFormat',
+              kind: 'invalid_schema_date_format',
+              message: e.message,
+            ));
+          }
+        }
+      }
+
+      if (parsedFormat == TextFieldFormat.date ||
+          parsedFormat == TextFieldFormat.dateTime) {
+        final sampleIso = parsedFormat == TextFieldFormat.date
+            ? '2026-05-19'
+            : '2026-05-19T14:30:00Z';
+        if (rawPattern is String) {
+          try {
+            if (!RegExp(rawPattern, unicode: true).hasMatch(sampleIso)) {
+              issues.add((
+                schemaPath: '$path/pattern',
+                kind: 'schema_date_pattern_conflict',
+                message:
+                    'Le motif "pattern" ($rawPattern) rejette le format ISO requis par "format": "${parsedFormat!.schemaName}" (ex. "$sampleIso"). Retire "pattern" ou aligne-le sur ISO 8601.',
+              ));
+            }
+          } on FormatException {
+            // Déjà signalé par JsonSchemaValidator.
+          }
+        }
+        if (rawMask is String &&
+            rawDateFormat == null &&
+            ((parsedFormat == TextFieldFormat.date &&
+                    rawMask != '##/##/####' &&
+                    rawMask != '####-##-##') ||
+                (parsedFormat == TextFieldFormat.dateTime &&
+                    rawMask != '##/##/#### ##:##'))) {
+          issues.add((
+            schemaPath: '$path/x-mask',
+            kind: 'schema_mask_date_conflict',
+            message:
+                'Le masque "x-mask" ("$rawMask") avec "format": "${parsedFormat!.schemaName}" exige un "x-dateFormat" explicite compatible.',
+          ));
+        }
+      }
+
+      for (final mapKey in const [
+        'properties',
+        'patternProperties',
+        r'$defs',
+        'definitions',
+      ]) {
+        if (node[mapKey] is Map) {
+          for (final entry in (node[mapKey] as Map).entries) {
+            visit(entry.value, '$path/$mapKey/${entry.key}');
+          }
+        }
+      }
+      if (node['items'] is Map) {
+        visit(node['items'], '$path/items');
+      } else if (node['items'] is List) {
+        final list = node['items'] as List;
+        for (var i = 0; i < list.length; i++) {
+          visit(list[i], '$path/items/$i');
+        }
+      }
+      for (final listKey in const ['prefixItems', 'allOf', 'anyOf', 'oneOf']) {
+        if (node[listKey] is List) {
+          final list = node[listKey] as List;
+          for (var i = 0; i < list.length; i++) {
+            visit(list[i], '$path/$listKey/$i');
+          }
+        }
+      }
+      for (final subKey in const [
+        'additionalProperties',
+        'additionalItems',
+        'if',
+        'then',
+        'else',
+      ]) {
+        if (node[subKey] is Map) {
+          visit(node[subKey], '$path/$subKey');
+        }
+      }
+    }
+
+    visit(rootSchema, '#');
+    return issues;
   }
 }

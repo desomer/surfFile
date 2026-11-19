@@ -671,8 +671,9 @@ class VibeAppToolRegistry {
           name: 'inspect_bindings_and_diagnostics',
           description:
               'Audite la santé des liaisons JSON sur l’écran (repositories manquants, oubli du préfixe '
-              '<repoId>: hors liste en Maître/Détail, jokers [?] sans sélection, clés absentes), les '
-              'composants orphelins et les états forcés (invisible, disabled, readOnly).',
+              '<repoId>: hors liste en Maître/Détail, jokers [?] sans sélection, clés absentes), '
+              'la conformité des données aux JSON Schemas, la cohérence masque/date/données, '
+              'les erreurs actives de repository, les composants orphelins et les états forcés.',
           parametersSchema: <String, Object?>{
             'type': 'object',
             'properties': <String, Object?>{
