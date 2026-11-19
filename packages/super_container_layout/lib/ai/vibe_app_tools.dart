@@ -338,6 +338,10 @@ class VibeToolTrace {
         return lbl is String && lbl.isNotEmpty && lbl != cid
             ? '$base ($lbl)'
             : base;
+      case 'register_design_system':
+        final name = data['name'] ?? data['id'] ?? 'DESIGN.md';
+        final selected = data['selected'] == true ? ' (activé)' : '';
+        return '$name ajouté$selected';
     }
     return 'OK';
   }
@@ -818,6 +822,135 @@ class VibeAppToolRegistry {
             },
           },
         ),
+        VibeToolDeclaration(
+          name: 'register_design_system',
+          description:
+              'Génère, valide et enregistre un nouveau système de design DESIGN.md dans la liste des choix '
+              'possibles du catalogue (et le sélectionne par défaut comme système actif du chat). '
+              'À appeler lorsqu’on te demande de créer, extraire ou ajouter un DESIGN.md / Design System '
+              'à partir de pièces jointes du chat (captures d’écran, maquettes, fichiers CSS/HTML, SVG, chartes) '
+              'ou d’une description. Essaie toujours de récupérer ou reconstruire le logo de la marque depuis les '
+              'pièces jointes (URL exacte, Data URI, <svg> inline joint ou extrait du HTML, ou SVG vectoriel minimal '
+              'fidèle au logo visible) via le paramètre "logo" et documente-le dans le DESIGN.md.',
+          parametersSchema: <String, Object?>{
+            'type': 'object',
+            'required': <String>['name', 'markdown'],
+            'properties': <String, Object?>{
+              'name': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Nom lisible du Design System (ex: "Acme Dashboard", "Aurora Dark").',
+              },
+              'markdown': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Contenu complet du document DESIGN.md en français (avec les 9 sections : '
+                    '1. Visual Theme & Atmosphere, 2. Color Palette & Roles (+ Brand Logo / SVG ou URL si récupéré), '
+                    '3. Typography Rules, 4. Component Stylings, 5. Layout Principles, 6. Depth & Elevation, '
+                    '7. Do\'s and Don\'ts, 8. Responsive & Desktop Ergonomics, 9. Agent Prompt Guide incluant le logo si disponible).',
+              },
+              'slug': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant kebab-case optionnel (ex: "acme-dashboard").',
+              },
+              'category': <String, Object?>{
+                'type': 'string',
+                'enum': <String>[
+                  'productivity-saas',
+                  'developer-tools',
+                  'ai-platforms',
+                  'fintech',
+                  'design-creative',
+                  'media-retail',
+                  'special-retro',
+                  'custom',
+                ],
+                'description':
+                    'Catégorie fonctionnelle ou esthétique du système de design (défaut "custom").',
+              },
+              'tagline': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Accroche courte résumant la personnalité visuelle sur la carte d’aperçu.',
+              },
+              'description': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Description synthétique de l’atmosphère, de la hiérarchie et des usages.',
+              },
+              'mode': <String, Object?>{
+                'type': 'string',
+                'enum': <String>['light', 'dark'],
+                'description':
+                    'Mode lumineux principal ("light" ou "dark") extrait des pièces jointes.',
+              },
+              'accent': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Couleur d’accentuation principale au format #RRGGBB.',
+              },
+              'canvasColor': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Couleur d’arrière-plan globale (canvas) au format #RRGGBB.',
+              },
+              'surfaceColor': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Couleur des cartes et panneaux (surface) au format #RRGGBB.',
+              },
+              'textColor': <String, Object?>{
+                'type': 'string',
+                'description': 'Couleur du texte principal au format #RRGGBB.',
+              },
+              'mutedTextColor': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Couleur du texte secondaire/atténué au format #RRGGBB.',
+              },
+              'borderColor': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Couleur des bordures fines et séparateurs au format #RRGGBB.',
+              },
+              'cardRadius': <String, Object?>{
+                'type': 'number',
+                'description':
+                    'Rayon d’arrondi représentatif des cartes en dp (ex: 8, 12, 16).',
+              },
+              'surfaceSystem': <String, Object?>{
+                'type': 'string',
+                'enum': <String>['material', 'neumorphism', 'liquidGlass'],
+                'description': 'Système de rendu de surface (défaut "material").',
+              },
+              'fontFamily': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Famille typographique principale recommandée (ex: "Inter").',
+              },
+              'logo': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Logo de la marque récupéré depuis les pièces jointes si disponible '
+                    '(code <svg...>...</svg> inline compact, Data URI data:image/..., ou URL exacte https://... '
+                    'extraite des pièces jointes — ne jamais inventer d’URL externe).',
+              },
+              'tags': <String, Object?>{
+                'type': 'array',
+                'items': <String, Object?>{'type': 'string'},
+                'description':
+                    'Mots-clés facilitant la recherche dans le catalogue.',
+              },
+              'select': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Si true (défaut), active immédiatement ce Design System dans le chat Vibe ; '
+                    'si false, l’ajoute uniquement à la liste des choix possibles.',
+              },
+            },
+          },
+        ),
       ];
 
   /// Construit un registre avec les 5 déclarations standard liées aux [handlers] fournis.
@@ -877,7 +1010,8 @@ class VibeAppToolRegistry {
       '(5) un tableau de repository est tronqué ("truncatedArrays" -> `query_repository_data`) ou une vue Détail/page secondaire doit être prévisualisée (`preview_navigation_or_selection`), '
       '(6) l’utilisateur demande où se trouve un élément ou de le sélectionner/pointer dans l’éditeur (`select_editor_element`), '
       '(7) l’utilisateur demande de consulter, inférer, valider, associer, modifier ou supprimer le JSON Schema d’un repository existant (`manage_repository_json_schema`), '
-      '(8) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
+      '(8) l’utilisateur demande de générer, extraire ou ajouter un DESIGN.md / Design System dans la liste des choix possibles à partir de pièces jointes ou d’instructions (`register_design_system` — essaie toujours de récupérer aussi le logo via `logo` et de l’inclure dans le DESIGN.md), '
+      '(9) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
       '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples dont le JSON courant contient déjà toute l’information.\n'
       '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
       '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'

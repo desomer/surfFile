@@ -99,6 +99,7 @@ export 'models/scrollbar_style_config.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance/appearance_codec.dart';
 export 'services/appearance/appearance_store.dart';
+export 'services/appearance/custom_design_system_store.dart';
 export 'services/appearance/default_appearance_codec.dart';
 export 'services/codegen/dart_code_generator.dart';
 export 'services/codegen/component_dart_generators.dart';

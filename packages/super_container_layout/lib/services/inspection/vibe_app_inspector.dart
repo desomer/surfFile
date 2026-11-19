@@ -17,8 +17,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../ai/design_md_parser.dart';
+import '../../ai/design_system_catalog.dart';
 import '../../ai/vibe_app_tools.dart';
 import '../../ai/vibe_chat_attachment.dart';
+import '../appearance/custom_design_system_store.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
@@ -63,6 +66,8 @@ class VibeAppInspector {
     this.turnStartMarker,
     this.previewTracker,
     this.repoTransaction,
+    this.customDesignSystemStore,
+    this.onRegisterDesignSystem,
   }) : slotIndex = slotIndex ?? VibeMountedSlotIndex.instance;
 
   /// Fournisseur de l'[Appearance] active (incluant les éventuels défauts runtime).
@@ -97,6 +102,16 @@ class VibeAppInspector {
 
   /// Suivi optionnel des modifications d'aperçu réversibles.
   final VibePreviewStateTracker? previewTracker;
+
+  /// Magasin disque optionnel utilisé en repli si [onRegisterDesignSystem] est absent.
+  final CustomDesignSystemStore? customDesignSystemStore;
+
+  /// Callback appelé par `register_design_system` pour enregistrer et éventuellement activer un `DESIGN.md`.
+  final Future<({String? persistedPath, int totalCustomPresets})> Function(
+    DesignSystemPreset preset, {
+    required bool select,
+  })?
+  onRegisterDesignSystem;
 
   late final VibeDiagnosticsInspector _diagnostics = VibeDiagnosticsInspector(
     readAppearance: readAppearance,
@@ -169,6 +184,8 @@ class VibeAppInspector {
             previewNavigationOrSelection(call.id, call.name, call.arguments),
         'select_editor_element': (call) =>
             selectEditorElement(call.id, call.name, call.arguments),
+        'register_design_system': (call) =>
+            registerDesignSystem(call.id, call.name, call.arguments),
       });
 
   /// Lit et filtre les journaux et erreurs d'exécution depuis `debugEntries`.
@@ -1865,5 +1882,159 @@ class VibeAppInspector {
         ),
       ],
     );
+  }
+
+  /// Génère, valide et enregistre un système de design `DESIGN.md` dans la liste des choix possibles.
+  Future<VibeToolResult> registerDesignSystem(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) async {
+    final registerCallback = onRegisterDesignSystem;
+    final store = customDesignSystemStore;
+    if (registerCallback == null && store == null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Aucun gestionnaire de systèmes de design n’est disponible dans ce contexte.',
+      );
+    }
+
+    String? optionalString(String key) {
+      final raw = args[key];
+      if (raw is! String) return null;
+      final trimmed = raw.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final rawName = optionalString('name');
+    final rawMarkdown = optionalString('markdown');
+    if (rawName == null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Le paramètre requis "name" est manquant ou vide.',
+      );
+    }
+    if (rawMarkdown == null) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Le paramètre requis "markdown" est manquant ou vide.',
+      );
+    }
+
+    final rawSlug = optionalString('slug');
+    final slugBase = rawSlug != null && rawSlug.toLowerCase().startsWith('custom:')
+        ? rawSlug.substring('custom:'.length)
+        : (rawSlug ?? rawName);
+    final normalizedSlug = DesignMdParser.slugify(slugBase);
+    final resolvedId = 'custom:$normalizedSlug';
+
+    final rawRadius = args['cardRadius'];
+    final cardRadius = rawRadius is num && rawRadius.isFinite
+        ? rawRadius.toDouble()
+        : null;
+
+    final rawTags = args['tags'];
+    final tags = rawTags is List
+        ? [
+            for (final item in rawTags)
+              if (item != null && item.toString().trim().isNotEmpty)
+                item.toString().trim(),
+          ]
+        : null;
+
+    final select = args['select'] is bool ? args['select'] as bool : true;
+
+    try {
+      final composedMarkdown = DesignMdParser.composeDesignMarkdown(
+        markdown: rawMarkdown,
+        id: resolvedId,
+        name: rawName,
+        slug: resolvedId,
+        category: optionalString('category'),
+        tagline: optionalString('tagline'),
+        description: optionalString('description'),
+        mode: optionalString('mode'),
+        accent: optionalString('accent'),
+        canvasColor: optionalString('canvasColor'),
+        surfaceColor: optionalString('surfaceColor'),
+        textColor: optionalString('textColor'),
+        mutedTextColor: optionalString('mutedTextColor'),
+        borderColor: optionalString('borderColor'),
+        cardRadius: cardRadius,
+        surfaceSystem: optionalString('surfaceSystem'),
+        fontFamily: optionalString('fontFamily'),
+        logo: optionalString('logo'),
+        tags: tags,
+      );
+
+      final parsed = DesignMdParser.parseExternal(
+        composedMarkdown,
+        idOverride: resolvedId,
+      );
+      final normalizedPreset = parsed.copyWith(
+        inlineMarkdown: DesignMdParser.toMarkdownWithFrontmatter(parsed),
+      );
+
+      String? persistedPath;
+      int totalCustomPresets;
+      if (registerCallback != null) {
+        final outcome = await registerCallback(
+          normalizedPreset,
+          select: select,
+        );
+        persistedPath = outcome.persistedPath;
+        totalCustomPresets = outcome.totalCustomPresets;
+      } else {
+        final file = await store!.save(normalizedPreset);
+        persistedPath = file.path;
+        totalCustomPresets = (await store.loadAll()).length;
+      }
+
+      final palette = normalizedPreset.palette;
+      return VibeToolResult(
+        callId: callId,
+        name: toolName,
+        data: <String, Object?>{
+          'ok': true,
+          'id': normalizedPreset.id,
+          'name': normalizedPreset.name,
+          'category': normalizedPreset.category.id,
+          'tagline': normalizedPreset.tagline,
+          'selected': select,
+          'hasLogo':
+              normalizedPreset.logo != null &&
+              normalizedPreset.logo!.trim().isNotEmpty,
+          'logo': ?normalizedPreset.logo,
+          'totalCustomPresets': totalCustomPresets,
+          'persistedPath': ?persistedPath,
+          'palette': <String, Object?>{
+            'mode': palette.isDark ? 'dark' : 'light',
+            'accent': DesignSystemPalettePreview.colorToHex(palette.accent),
+            'canvas': DesignSystemPalettePreview.colorToHex(palette.canvas),
+            'surface': DesignSystemPalettePreview.colorToHex(palette.surface),
+            'textPrimary': DesignSystemPalettePreview.colorToHex(
+              palette.textPrimary,
+            ),
+            'textMuted': DesignSystemPalettePreview.colorToHex(
+              palette.textMuted,
+            ),
+            'border': DesignSystemPalettePreview.colorToHex(palette.border),
+            'cardRadius': palette.cardRadius,
+            'surfaceSystem': palette.surfaceSystem.name,
+            'fontHint': palette.fontHint,
+          },
+        },
+      );
+    } on FormatException catch (error) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: error.message,
+      );
+    }
   }
 }

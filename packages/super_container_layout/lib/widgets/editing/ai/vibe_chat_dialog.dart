@@ -41,6 +41,7 @@ import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../services/appearance/custom_design_system_store.dart';
 import '../../../services/diagnostics/debug_entry.dart';
 import '../../../services/inspection/vibe_app_inspector.dart';
 import '../../../services/inspection/vibe_debug_capture.dart';
@@ -88,6 +89,8 @@ export '../../../ai/vibe_plan.dart'
     show VibeExecutionPlan, VibeLotStatus, VibePlanLot, VibePlanStatus;
 export '../../../ai/vibe_speech_to_text.dart';
 export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
+export '../../../services/appearance/custom_design_system_store.dart'
+    show CustomDesignSystemStore;
 export 'design_system_catalog_dialog.dart';
 export 'design_system_preview_card.dart';
 export 'vibe_ask_user_card.dart' show VibeAskUserCard;
@@ -137,6 +140,7 @@ class VibeChatDialog extends StatefulWidget {
     this.onDesignSystemChanged,
     this.customDesignSystems = const [],
     this.onCustomDesignSystemsChanged,
+    this.customDesignSystemStore,
     this.customDesignGuide,
     this.replaceDefaultDesignGuide = false,
     this.expanded,
@@ -166,7 +170,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
-5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex, de message d'erreur de repository/validation, de conflit schéma/masque/données ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; si `get_debug_entries` ou `inspect_bindings_and_diagnostics` révèle des données existantes incompatibles avec le JSON Schema ou un conflit de masque/date, propose le correctif exact et demande confirmation via `"askUser"` avant d'écraser les données ou le schéma. Pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
+5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`, `register_design_system`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Utilise `register_design_system` dès que l'utilisateur demande de générer, extraire ou ajouter un `DESIGN.md` / Design System dans la liste des choix possibles (notamment à partir des pièces jointes du chat), en essayant systématiquement de récupérer ou reconstruire le logo de la marque (URL exacte ou Data URI issue des pièces jointes, `<svg>` joint ou extrait, ou `<svg>` vectoriel simple fidèle au logo visible sans inventer d'URL) dans le champ `logo` et dans le document `DESIGN.md`. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex, de message d'erreur de repository/validation, de conflit schéma/masque/données ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; si `get_debug_entries` ou `inspect_bindings_and_diagnostics` révèle des données existantes incompatibles avec le JSON Schema ou un conflit de masque/date, propose le correctif exact et demande confirmation via `"askUser"` avant d'écraser les données ou le schéma. Pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -313,6 +317,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Callback optionnel notifié lorsque la liste des préréglages `DESIGN.md` personnalisés est mise à jour.
   final ValueChanged<List<DesignSystemPreset>>? onCustomDesignSystemsChanged;
+
+  /// Magasin disque optionnel persistant les `DESIGN.md` personnalisés (`<store>/design_systems/*.md`).
+  final CustomDesignSystemStore? customDesignSystemStore;
 
   /// Directives de design personnalisées fournies par l'application hôte.
   ///
@@ -778,6 +785,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
   JsonRepositoryStore? _ambientRepositoryStore;
   bool _frameSnapshotScheduled = false;
   bool _didWarmUpDependencies = false;
+  bool _didLoadCustomDesignSystems = false;
   bool _sending = false;
   String? _lastFailedResponse;
   String? _attachmentError;
@@ -937,12 +945,138 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         superApp?.repositoryStore;
   }
 
+  CustomDesignSystemStore? _resolveCustomDesignSystemStore() {
+    if (widget.customDesignSystemStore != null) {
+      return widget.customDesignSystemStore;
+    }
+    final repoStore = _resolveRepositoryStore();
+    if (repoStore != null) {
+      return CustomDesignSystemStore.forRepositoryStore(repoStore);
+    }
+    if (_isWidgetTestBinding) return null;
+    return CustomDesignSystemStore.tryDefaultStore();
+  }
+
+  Future<void> _loadPersistedCustomDesignSystemsIfNeeded() async {
+    if (_didLoadCustomDesignSystems) return;
+    _didLoadCustomDesignSystems = true;
+    final store = _resolveCustomDesignSystemStore();
+    if (store == null) return;
+    try {
+      final loaded = await store.loadAll();
+      if (!mounted || loaded.isEmpty) return;
+
+      final existingIds = <String>{
+        for (final preset in _customDesignSystems) preset.id,
+      };
+      final additions = <DesignSystemPreset>[
+        for (final preset in loaded)
+          if (!existingIds.contains(preset.id)) preset,
+      ];
+      if (additions.isEmpty) return;
+
+      setState(() {
+        _customDesignSystems = List<DesignSystemPreset>.of([
+          ..._customDesignSystems,
+          ...additions,
+        ]);
+      });
+      widget.onCustomDesignSystemsChanged?.call(
+        List<DesignSystemPreset>.unmodifiable(_customDesignSystems),
+      );
+    } catch (error) {
+      debugPrint(
+        '[Vibe IA] Chargement des DESIGN.md personnalisés ignoré : $error',
+      );
+    }
+  }
+
+  Future<void> _persistCustomDesignPresets(
+    Iterable<DesignSystemPreset> presets,
+  ) async {
+    final store = _resolveCustomDesignSystemStore();
+    if (store == null) return;
+    for (final preset in presets) {
+      try {
+        await store.save(preset);
+      } catch (error) {
+        debugPrint(
+          '[Vibe IA] Sauvegarde du DESIGN.md "${preset.id}" ignorée : $error',
+        );
+      }
+    }
+  }
+
+  Future<({String? persistedPath, int totalCustomPresets})>
+  _registerDesignSystemFromTool(
+    DesignSystemPreset preset, {
+    required bool select,
+    _LiveTurnSession? session,
+  }) async {
+    String? persistedPath;
+    final store = _resolveCustomDesignSystemStore();
+    if (store != null) {
+      final savedFile = await store.save(preset);
+      persistedPath = savedFile.path;
+    }
+
+    final updated = List<DesignSystemPreset>.of(_customDesignSystems);
+    final existingIdx = updated.indexWhere((item) => item.id == preset.id);
+    if (existingIdx >= 0) {
+      updated.removeAt(existingIdx);
+    }
+    updated.insert(0, preset);
+
+    if (mounted) {
+      setState(() {
+        _customDesignSystems = updated;
+        if (select) {
+          _selectedDesignSystem = preset;
+        }
+      });
+    } else {
+      _customDesignSystems = updated;
+      if (select) {
+        _selectedDesignSystem = preset;
+      }
+    }
+
+    if (session != null) {
+      session.registeredDesignSystem = preset;
+      session.registeredDesignSystemSelected = select;
+    }
+
+    widget.onCustomDesignSystemsChanged?.call(
+      List<DesignSystemPreset>.unmodifiable(_customDesignSystems),
+    );
+    if (select) {
+      widget.onDesignSystemChanged?.call(preset);
+      if (mounted && _usesStreamingGenerator) {
+        unawaited(
+          VibeChatDialog.warmUp(
+            DefaultAssetBundle.of(context),
+            speedMode: _speedMode,
+            designSystemPreset: preset,
+            customDesignGuide: widget.customDesignGuide,
+            replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+          ),
+        );
+      }
+    }
+
+    return (
+      persistedPath: persistedPath,
+      totalCustomPresets: _customDesignSystems.length,
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _ambientRepositoryStore =
         JsonRepositoryScope.maybeOf(context) ??
         SuperApp.maybeOf(context)?.repositoryStore;
+    unawaited(_loadPersistedCustomDesignSystemsIfNeeded());
     if (!_didWarmUpDependencies && _usesStreamingGenerator) {
       _didWarmUpDependencies = true;
       unawaited(
@@ -1439,6 +1573,54 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     widget.onScopeChanged?.call(null);
   }
 
+  Future<void> _deleteCustomDesignSystem(DesignSystemPreset preset) async {
+    final removedSelected = _selectedDesignSystem?.id == preset.id;
+    final updated = [
+      for (final item in _customDesignSystems)
+        if (item.id != preset.id) item,
+    ];
+    if (mounted) {
+      setState(() {
+        _customDesignSystems = updated;
+        if (removedSelected) {
+          _selectedDesignSystem = null;
+        }
+      });
+    } else {
+      _customDesignSystems = updated;
+      if (removedSelected) {
+        _selectedDesignSystem = null;
+      }
+    }
+    widget.onCustomDesignSystemsChanged?.call(
+      List<DesignSystemPreset>.unmodifiable(_customDesignSystems),
+    );
+    if (removedSelected) {
+      widget.onDesignSystemChanged?.call(null);
+      if (mounted && _usesStreamingGenerator) {
+        unawaited(
+          VibeChatDialog.warmUp(
+            DefaultAssetBundle.of(context),
+            speedMode: _speedMode,
+            designSystemPreset: null,
+            customDesignGuide: widget.customDesignGuide,
+            replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+          ),
+        );
+      }
+    }
+    final store = _resolveCustomDesignSystemStore();
+    if (store != null) {
+      try {
+        await store.delete(preset.id);
+      } catch (error) {
+        debugPrint(
+          '[Vibe IA] Suppression du DESIGN.md "${preset.id}" ignorée : $error',
+        );
+      }
+    }
+  }
+
   Future<void> _openDesignSystemCatalog() async {
     if (_isBusy) return;
     final bundle = DefaultAssetBundle.of(context);
@@ -1449,10 +1631,19 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       isScoped: _scope != null,
       pickMarkdownFiles: widget.pickAttachments,
       readClipboardText: widget.readClipboardText,
+      onDeleteCustomPreset: (preset) =>
+          unawaited(_deleteCustomDesignSystem(preset)),
       assetBundle: bundle,
     );
     if (!mounted || result == null) return;
 
+    final previousCustomIds = {
+      for (final item in _customDesignSystems) item.id,
+    };
+    final nextCustomIds = {
+      for (final item in result.updatedCustomPresets) item.id,
+    };
+    final removedCustomIds = previousCustomIds.difference(nextCustomIds);
     final customsChanged = !listEquals(
       _customDesignSystems,
       result.updatedCustomPresets,
@@ -1474,6 +1665,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         widget.onCustomDesignSystemsChanged?.call(
           List<DesignSystemPreset>.unmodifiable(_customDesignSystems),
         );
+        unawaited(_persistCustomDesignPresets(_customDesignSystems));
+        final store = _resolveCustomDesignSystemStore();
+        if (store != null) {
+          for (final removedId in removedCustomIds) {
+            unawaited(store.delete(removedId));
+          }
+        }
       }
       if (presetChanged) {
         widget.onDesignSystemChanged?.call(result.preset);
@@ -1901,6 +2099,53 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     );
   }
 
+  Future<void> _generateDesignSystemFromAttachments() async {
+    if (_isBusy || _pendingAttachments.isEmpty) return;
+    _cancelSpeechDictation();
+    final userNote = _input.text.trim();
+    final attachments = List<VibeChatAttachment>.unmodifiable(
+      _pendingAttachments,
+    );
+    _input.clear();
+    _stopStaleActivePlan();
+    setState(() {
+      _pendingAttachments.clear();
+      _attachmentError = null;
+      for (var i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg.askUser != null &&
+            msg.askUserAnswers == null &&
+            !msg.askUserDismissed) {
+          _messages[i] = msg.copyWith(askUserDismissed: true);
+        }
+      }
+    });
+
+    final fileNames = attachments.map((a) => '"${a.name}"').join(', ');
+    final displayUserText = userNote.isEmpty
+        ? 'Générer et ajouter un DESIGN.md à partir des pièces jointes ($fileNames).'
+        : 'Générer un DESIGN.md ($fileNames) : $userNote';
+
+    final promptOverride =
+        'GÉNÉRATION DE DESIGN SYSTEM (DESIGN.md) À PARTIR DES PIÈCES JOINTES ($fileNames) :\n'
+        '${userNote.isNotEmpty ? 'Précisions utilisateur : $userNote\n\n' : ''}'
+        '1. Analyse attentivement toutes les pièces jointes fournies (couleurs exactes #RRGGBB de fond/canvas, cartes/surface, accent primaire, textes primaire/secondaire, bordures, mode light/dark, typographie, rayons d’arrondi, ombres/élévation, style de boutons, badges et densité).\n'
+        '2. Essaie impérativement de RÉCUPÉRER UN LOGO depuis les pièces jointes :\n'
+        '   - Si un fichier `.svg` est joint ou si un `<svg>...</svg>` / `<img src="...">` / URL ou Data URI de logo est présent dans le code source (HTML/CSS/Markdown), extrais-le exactement.\n'
+        '   - Si un logo ou logotype simple est visible sur une image/capture jointe sans source vectorielle, essaie d’en produire une version `<svg viewBox="...">...</svg>` compacte et fidèle avec les couleurs extraites (n’invente jamais une URL `https://...` fictive).\n'
+        '   - Transmets ce logo dans le paramètre `logo` de `register_design_system` et documente-le dans le `DESIGN.md` (ex. bloc Brand Logo + exemple `styles["brand-logo"].fill.imageUrl` avec `imageFit: "contain"` dans la section 9).\n'
+        '3. Appelle OBLIGATOIREMENT l’outil `register_design_system` (avec `select: true`) en lui passant :\n'
+        '   - `name`, `slug`, `category`, `tagline`, `description`, `mode`, `accent`, `canvasColor`, `surfaceColor`, `textColor`, `mutedTextColor`, `borderColor`, `cardRadius`, `surfaceSystem`, `fontFamily`, `logo` (si récupéré), `tags` ;\n'
+        '   - `markdown` : un guide `DESIGN.md` complet et actionnable pour `super_container_layout` structuré avec les 9 sections standard (`1. Visual Theme & Atmosphere`, `2. Color Palette & Roles`, `3. Typography Rules`, `4. Component Stylings`, `5. Layout Principles`, `6. Depth & Elevation`, `7. Do\'s and Don\'ts`, `8. Responsive & Desktop Ergonomics`, `9. Agent Prompt Guide`).\n'
+        '4. Ne pose pas de questionnaire ("askUser": null) et ne modifie pas l’écran courant ("vibe": null) : renvoie uniquement {"message":"résumé en français du DESIGN.md généré (en précisant si le logo a été récupéré)","vibe":null} après l’exécution de `register_design_system`.';
+
+    await _runGenerationTurn(
+      displayUserText: displayUserText,
+      promptOverride: promptOverride,
+      attachments: attachments,
+    );
+  }
+
   Future<void> _submitAskUser(
     int messageIndex,
     Map<String, Object?> answers, {
@@ -2165,10 +2410,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       final summaryText = summary is String && summary.trim().isNotEmpty
           ? summary.trim()
           : null;
+      final registeredDesign = session.registeredDesignSystem;
       final fallbackText = generated.plan != null && !hasMutations
           ? 'Plan prêt — clique sur « Exécuter les lots » pour démarrer :'
           : generated.askUser != null && !hasMutations
           ? 'Précise tes préférences :'
+          : registeredDesign != null && !hasMutations
+          ? 'Design System « ${registeredDesign.name} » ajouté à la liste.'
           : 'Modifications appliquées.';
       _appendMessage(
         summaryText ?? fallbackText,
@@ -2201,6 +2449,14 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           outcome: VibeTaskOutcome.success,
           title: 'Tâche IA terminée',
           detail: detail,
+        );
+      } else if (registeredDesign != null) {
+        _notifyTaskCompletion(
+          outcome: VibeTaskOutcome.success,
+          title: 'Design System DESIGN.md ajouté',
+          detail:
+              summaryText ??
+              '« ${registeredDesign.name} » ajouté à la liste${session.registeredDesignSystemSelected ? ' et activé' : ''}.',
         );
       } else if (generated.plan case final plan?) {
         _notifyTaskCompletion(
@@ -2850,6 +3106,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       turnStartMarker: session.turnStartMarker,
       previewTracker: session.previewTracker,
       repoTransaction: session.repoTransaction,
+      customDesignSystemStore: _resolveCustomDesignSystemStore(),
+      onRegisterDesignSystem: (preset, {required select}) =>
+          _registerDesignSystemFromTool(
+            preset,
+            select: select,
+            session: session,
+          ),
     ).buildToolRegistry();
   }
 
@@ -2876,6 +3139,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           'Mise à jour de la route / sélection d’aperçu…',
         'select_editor_element' =>
           'Sélection de l’élément dans l’éditeur…',
+        'register_design_system' =>
+          'Génération et ajout du Design System DESIGN.md…',
         final other => 'Exécution de $other…',
       };
     }
@@ -5080,6 +5345,21 @@ $response
                               : () => _removePendingAttachment(index),
                         ),
                       ),
+                    ActionChip(
+                      key: const ValueKey('vibe-chat-generate-design-md'),
+                      avatar: Icon(
+                        Icons.palette_outlined,
+                        size: 16,
+                        color: scheme.primary,
+                      ),
+                      label: const Text('Générer DESIGN.md'),
+                      tooltip:
+                          'Analyser les pièces jointes pour générer et ajouter un DESIGN.md à la liste des Design Systems',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _isBusy
+                          ? null
+                          : _generateDesignSystemFromAttachments,
+                    ),
                   ],
                 ),
               ),
@@ -5229,6 +5509,8 @@ final class _LiveTurnSession {
   bool livePreviewDisabled = false;
   bool hasAppliedLivePreview = false;
   String? liveNavigatedPageId;
+  DesignSystemPreset? registeredDesignSystem;
+  bool registeredDesignSystemSelected = false;
   final List<VibeToolTrace> toolTraces = <VibeToolTrace>[];
   final VibeDebugMarker turnStartMarker = VibeDebugCapture.markNow();
   final VibePreviewStateTracker previewTracker = VibePreviewStateTracker();

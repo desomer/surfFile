@@ -18,6 +18,7 @@ import 'package:super_container_layout/ai/design_md_parser.dart';
 import 'package:super_container_layout/ai/design_system_catalog.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
+import 'package:super_container_layout/services/appearance/custom_design_system_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/design_system.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
@@ -889,5 +890,117 @@ High-contrast dark trading terminal.
         expect(cascadiaRichText.text.style?.fontFamily, 'Cascadia Mono');
       },
     );
+  });
+
+  group('DesignMdParser.composeDesignMarkdown & CustomDesignSystemStore', () {
+    test('composeDesignMarkdown et toMarkdownWithFrontmatter préservent les jetons et l’id custom:*', () {
+      final composed = DesignMdParser.composeDesignMarkdown(
+        markdown: '''
+## 1. Visual Theme & Atmosphere
+Interface cockpit sombre haute précision.
+
+## 2. Color Palette & Roles
+- Canvas `#0A0E17`
+''',
+        id: 'custom:aurora-cockpit',
+        name: 'Aurora Cockpit',
+        slug: 'custom:aurora-cockpit',
+        category: 'ai-platforms',
+        tagline: 'Cockpit IA nocturne avec verre dépoli',
+        description: 'Design system généré pour un cockpit IA.',
+        mode: 'dark',
+        accent: '#38BDF8',
+        canvasColor: '#0A0E17',
+        surfaceColor: '#111827',
+        textColor: '#F8FAFC',
+        mutedTextColor: '#94A3B8',
+        borderColor: '#1E293B',
+        cardRadius: 14,
+        surfaceSystem: 'liquidGlass',
+        fontFamily: 'Inter',
+        logo: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#38BDF8"/></svg>',
+        tags: const ['aurora', 'cockpit', 'glass'],
+      );
+
+      final parsed = DesignMdParser.parseExternal(composed);
+      expect(parsed.id, 'custom:aurora-cockpit');
+      expect(parsed.name, 'Aurora Cockpit');
+      expect(parsed.category, DesignSystemCategory.aiPlatforms);
+      expect(parsed.isCustom, isTrue);
+      expect(parsed.palette.mode, ThemeMode.dark);
+      expect(parsed.palette.accent, const Color(0xFF38BDF8));
+      expect(parsed.palette.canvas, const Color(0xFF0A0E17));
+      expect(parsed.palette.surface, const Color(0xFF111827));
+      expect(parsed.palette.textPrimary, const Color(0xFFF8FAFC));
+      expect(parsed.palette.textMuted, const Color(0xFF94A3B8));
+      expect(parsed.palette.border, const Color(0xFF1E293B));
+      expect(parsed.palette.cardRadius, 14.0);
+      expect(parsed.palette.surfaceSystem, DesignSystem.liquidGlass);
+      expect(parsed.palette.fontHint, 'Inter');
+      expect(
+        parsed.logo,
+        '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#38BDF8"/></svg>',
+      );
+      expect(parsed.tags, contains('aurora'));
+
+      final serialized = DesignMdParser.toMarkdownWithFrontmatter(parsed);
+      final reparsed = DesignMdParser.parseExternal(serialized);
+      expect(reparsed.id, parsed.id);
+      expect(reparsed.name, parsed.name);
+      expect(reparsed.category, parsed.category);
+      expect(reparsed.logo, parsed.logo);
+      expect(reparsed.palette, parsed.palette);
+    });
+
+    test('CustomDesignSystemStore sauvegarde, recharge, ignore les fichiers invalides et supprime sur disque', () async {
+      final tempDir = await Directory.systemTemp.createTemp('custom_ds_store_');
+      addTearDown(() async {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+
+      final store = CustomDesignSystemStore(tempDir);
+      expect(await store.loadAll(), isEmpty);
+
+      final preset = DesignMdParser.parseExternal(
+        DesignMdParser.composeDesignMarkdown(
+          markdown: '# Solar Paper\n\n## 1. Visual Theme & Atmosphere\nPapier chaud lumineux.',
+          id: 'custom:solar-paper',
+          name: 'Solar Paper',
+          slug: 'custom:solar-paper',
+          category: 'media-retail',
+          mode: 'light',
+          accent: '#D97706',
+          canvasColor: '#FFFBEB',
+          surfaceColor: '#FFFFFF',
+          textColor: '#1C1917',
+          mutedTextColor: '#78716C',
+          borderColor: '#FDE68A',
+          cardRadius: 10,
+          surfaceSystem: 'material',
+          fontFamily: 'Plus Jakarta Sans',
+        ),
+      );
+
+      final savedFile = await store.save(preset);
+      expect(savedFile.existsSync(), isTrue);
+      expect(savedFile.uri.pathSegments.last, 'solar-paper.md');
+
+      // Fichiers parasites ignorés sans erreur.
+      await File('${tempDir.path}${Platform.pathSeparator}empty.md').writeAsString('   ');
+      await File('${tempDir.path}${Platform.pathSeparator}notes.txt').writeAsString('ignored');
+
+      final loaded = await store.loadAll();
+      expect(loaded, hasLength(1));
+      expect(loaded.single.id, 'custom:solar-paper');
+      expect(loaded.single.name, 'Solar Paper');
+      expect(loaded.single.category, DesignSystemCategory.mediaRetail);
+      expect(loaded.single.palette.accent, const Color(0xFFD97706));
+
+      expect(await store.delete('custom:solar-paper'), isTrue);
+      expect(await store.delete('custom:solar-paper'), isFalse);
+      expect(await store.loadAll(), isEmpty);
+    });
   });
 }

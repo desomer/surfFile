@@ -11,7 +11,9 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/design_system_catalog.dart';
+import '../../../theme/container_fill.dart';
 import '../../../theme/design_system.dart';
+import '../../surfaces/surface_image_providers.dart';
 
 /// Résultat immuable renvoyé par la galerie `DesignSystemCatalogDialog` lors de la validation.
 @immutable
@@ -488,6 +490,7 @@ class DesignSystemPreviewCard extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.onInspect,
+    this.onDelete,
     this.previewHeight = 108,
     super.key,
   });
@@ -510,6 +513,9 @@ class DesignSystemPreviewCard extends StatelessWidget {
 
   /// Callback optionnel ouvrant l'inspecteur du document `DESIGN.md` associé à [preset].
   final VoidCallback? onInspect;
+
+  /// Callback optionnel supprimant ce système de design personnalisé (`preset.isCustom`).
+  final VoidCallback? onDelete;
 
   /// Hauteur de la zone [DesignSystemMiniPreview] en tête de carte.
   final double previewHeight;
@@ -619,20 +625,59 @@ class DesignSystemPreviewCard extends StatelessWidget {
                               ),
                             ),
                           ],
+                          if (currentPreset != null &&
+                              currentPreset.isCustom &&
+                              onDelete != null) ...[
+                            const SizedBox(width: 2),
+                            IconButton(
+                              key: ValueKey<String>(
+                                'design-system-delete-${currentPreset.id}',
+                              ),
+                              tooltip: 'Supprimer ce Design System importé',
+                              onPressed: onDelete,
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              iconSize: 16,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              icon: Icon(
+                                Icons.delete_outline,
+                                size: 16,
+                                color: scheme.error,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 5),
-                    // Titre du système de design.
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurface,
-                      ),
+                    // Titre du système de design (+ logo éventuel).
+                    Row(
+                      children: [
+                        if (currentPreset?.logo case final rawLogo?
+                            when rawLogo.trim().isNotEmpty)
+                          _DesignSystemLogoThumbnail(
+                            key: ValueKey<String>(
+                              'design-system-logo-${currentPreset!.id}',
+                            ),
+                            logoSource: rawLogo,
+                            borderColor: effectivePalette.border,
+                          ),
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     // Puces de catégorie et d'import personnalisé.
@@ -678,6 +723,46 @@ class DesignSystemPreviewCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesignSystemLogoThumbnail extends StatelessWidget {
+  const _DesignSystemLogoThumbnail({
+    required this.logoSource,
+    required this.borderColor,
+    super.key,
+  });
+
+  final String logoSource;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    ImageProvider<Object>? provider;
+    try {
+      provider = ContainerFill(imageUrl: logoSource).imageProvider();
+    } catch (_) {
+      provider = null;
+    }
+    if (provider == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: Container(
+        width: 18,
+        height: 18,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: borderColor.withValues(alpha: 0.7)),
+        ),
+        child: Image(
+          image: provider,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
         ),
       ),
     );

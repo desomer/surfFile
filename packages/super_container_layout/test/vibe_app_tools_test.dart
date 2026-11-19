@@ -1525,5 +1525,104 @@ void main() {
         expect(LayoutSelection.activeLeafId, isNull);
       },
     );
+
+    test(
+      'register_design_system valide, persiste sur disque via CustomDesignSystemStore et produit une trace lisible',
+      () async {
+        expect(
+          VibeAppToolRegistry.standardDeclarations.any(
+            (d) => d.name == 'register_design_system',
+          ),
+          isTrue,
+        );
+
+        final noStoreInspector = VibeAppInspector(
+          readAppearance: () => Appearance(),
+        );
+        final noStoreResult = await noStoreInspector.registerDesignSystem(
+          'ds-err',
+          'register_design_system',
+          {'name': 'Test', 'markdown': '# Test'},
+        );
+        expect(noStoreResult.isError, isTrue);
+
+        final tempDir = await Directory.systemTemp.createTemp('vibe_reg_ds_');
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final store = CustomDesignSystemStore(tempDir);
+        final inspector = VibeAppInspector(
+          readAppearance: () => Appearance(),
+          customDesignSystemStore: store,
+        );
+
+        final missingName = await inspector.registerDesignSystem(
+          'ds-1',
+          'register_design_system',
+          {'markdown': '# Sans nom'},
+        );
+        expect(missingName.isError, isTrue);
+
+        final missingMd = await inspector.registerDesignSystem(
+          'ds-2',
+          'register_design_system',
+          {'name': 'Sans markdown'},
+        );
+        expect(missingMd.isError, isTrue);
+
+        final okResult = await inspector.registerDesignSystem(
+          'ds-3',
+          'register_design_system',
+          {
+            'name': 'Cobalt Studio',
+            'slug': 'cobalt-studio',
+            'category': 'design-creative',
+            'mode': 'dark',
+            'accent': '#3B82F6',
+            'canvasColor': '#090D16',
+            'surfaceColor': '#111827',
+            'cardRadius': 10,
+            'fontFamily': 'Inter',
+            'logo': '<svg viewBox="0 0 24 24"><rect width="24" height="24" fill="#3B82F6"/></svg>',
+            'markdown': '''
+## 1. Visual Theme & Atmosphere
+Studio sombre bleu cobalt haute densité.
+
+## 2. Color Palette & Roles
+- Canvas `#090D16`
+- Surface `#111827`
+- Accent `#3B82F6`
+''',
+          },
+        );
+
+        expect(okResult.isError, isFalse);
+        expect(okResult.data['id'], 'custom:cobalt-studio');
+        expect(okResult.data['name'], 'Cobalt Studio');
+        expect(okResult.data['selected'], isTrue);
+        expect(okResult.data['hasLogo'], isTrue);
+        expect(okResult.data['logo'], contains('<svg'));
+        expect(okResult.data['totalCustomPresets'], 1);
+        expect(okResult.data['persistedPath'], isNotNull);
+
+        final loaded = await store.loadAll();
+        expect(loaded, hasLength(1));
+        expect(loaded.single.id, 'custom:cobalt-studio');
+        expect(loaded.single.palette.accent, const Color(0xFF3B82F6));
+        expect(loaded.single.logo, contains('<svg'));
+
+        final trace = VibeToolTrace.fromExecution(
+          VibeToolCall(
+            id: 'ds-3',
+            name: 'register_design_system',
+            arguments: const {'name': 'Cobalt Studio'},
+          ),
+          okResult,
+        );
+        expect(trace.summary, 'Cobalt Studio ajouté (activé)');
+      },
+    );
   });
 }

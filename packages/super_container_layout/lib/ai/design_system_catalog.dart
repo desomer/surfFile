@@ -360,6 +360,7 @@ class DesignSystemPreset {
     required this.palette,
     this.assetSlug,
     this.inlineMarkdown,
+    this.logo,
     List<String> tags = const [],
   }) : tags = List<String>.unmodifiable(tags);
 
@@ -372,7 +373,8 @@ class DesignSystemPreset {
     required this.palette,
     required String this.assetSlug,
     this.tags = const [],
-  }) : inlineMarkdown = null;
+  }) : inlineMarkdown = null,
+       logo = null;
 
   /// Identifiant unique du préréglage (ex. `'linear'` ou `'custom:mon-design'`).
   final String id;
@@ -397,6 +399,9 @@ class DesignSystemPreset {
 
   /// Contenu Markdown complet lorsqu'il s'agit d'un `DESIGN.md` importé ou collé.
   final String? inlineMarkdown;
+
+  /// Logo optionnel récupéré pour ce système (URL, Data URI `data:image/...` ou SVG inline).
+  final String? logo;
 
   /// Liste non modifiable de mots-clés facilitant la recherche dans la galerie.
   final List<String> tags;
@@ -465,6 +470,8 @@ class DesignSystemPreset {
     bool clearAssetSlug = false,
     String? inlineMarkdown,
     bool clearInlineMarkdown = false,
+    String? logo,
+    bool clearLogo = false,
     List<String>? tags,
   }) => DesignSystemPreset(
     id: id ?? this.id,
@@ -477,6 +484,7 @@ class DesignSystemPreset {
     inlineMarkdown: clearInlineMarkdown
         ? null
         : (inlineMarkdown ?? this.inlineMarkdown),
+    logo: clearLogo ? null : (logo ?? this.logo),
     tags: tags ?? this.tags,
   );
 
@@ -493,6 +501,7 @@ class DesignSystemPreset {
           palette == other.palette &&
           assetSlug == other.assetSlug &&
           inlineMarkdown == other.inlineMarkdown &&
+          logo == other.logo &&
           listEquals(tags, other.tags);
 
   /// Code de hachage cohérent avec [operator ==].
@@ -506,6 +515,7 @@ class DesignSystemPreset {
     palette,
     assetSlug,
     inlineMarkdown,
+    logo,
     Object.hashAll(tags),
   );
 }

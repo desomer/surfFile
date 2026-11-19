@@ -533,11 +533,14 @@ void main() {
     testWidgets(
       'blocks repository save when invalid and stores raw/canonical value when valid',
       (tester) async {
-        final store = JsonRepositoryStore(
-          // In-memory repository doesn't hit disk, path unused.
-          Directory.systemTemp,
-        );
-        addTearDown(store.dispose);
+        final dir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('sv-mask-repo-'),
+        ))!;
+        final store = JsonRepositoryStore(dir);
+        addTearDown(() async {
+          store.dispose();
+          if (dir.existsSync()) await dir.delete(recursive: true);
+        });
         store.registerRepository(
           RepositoryImpl(
             id: 'form_repo',
@@ -657,9 +660,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(errorTooltipOf('phone'), contains('Saisie incomplète'));
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
+            ),
+          ))!.value,
           '0612345678',
         );
 
@@ -669,9 +674,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(errorTooltipOf('phone'), isNull);
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(repositoryId: 'form_repo', path: 'phone'),
+            ),
+          ))!.value,
           '0698765432',
         );
 
@@ -681,9 +688,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(errorTooltipOf('price'), contains('1000'));
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'price'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(repositoryId: 'form_repo', path: 'price'),
+            ),
+          ))!.value,
           123.5,
         );
 
@@ -698,9 +707,11 @@ void main() {
           '250,75',
         );
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'price'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(repositoryId: 'form_repo', path: 'price'),
+            ),
+          ))!.value,
           250.75,
         );
 
@@ -714,9 +725,14 @@ void main() {
         );
         expect(errorTooltipOf('date'), contains('Date invalide'));
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'birthDate'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(
+                repositoryId: 'form_repo',
+                path: 'birthDate',
+              ),
+            ),
+          ))!.value,
           '2026-05-19',
         );
 
@@ -724,9 +740,14 @@ void main() {
         await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
         expect(
-          (await store.readAttribute(
-            const JsonTextBinding(repositoryId: 'form_repo', path: 'birthDate'),
-          )).value,
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(
+                repositoryId: 'form_repo',
+                path: 'birthDate',
+              ),
+            ),
+          ))!.value,
           '2026-06-20',
         );
       },

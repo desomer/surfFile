@@ -121,21 +121,28 @@ class JsonTextControllerBinding extends ChangeNotifier {
     String Function(String storageText)? toDisplayText,
     String? Function(String storageText, String displayText)? validateText,
   }) {
-    final wasDirty = dirty;
+    final hadDisplay = this.toDisplayText != null;
     this.toStorageText = toStorageText;
     this.toDisplayText = toDisplayText;
     this.validateText = validateText;
-    if (_ready && !wasDirty && !_disposed) {
-      final nextDisplay = _displayOf(_saved);
-      if (controller.text != nextDisplay) {
-        _applying = true;
-        controller.value = TextEditingValue(
-          text: nextDisplay,
-          selection: TextSelection.collapsed(offset: nextDisplay.length),
-        );
-        _observed = controller.text;
-        _savedDisplay = controller.text;
-        _applying = false;
+    if (!hadDisplay && toDisplayText != null && _ready && !dirty && !_disposed) {
+      final expectedDisplay = _displayOf(_saved);
+      if (controller.text != expectedDisplay) {
+        final gen = _generation;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || gen != _generation || !_ready || dirty) return;
+          final nextDisplay = _displayOf(_saved);
+          if (controller.text != nextDisplay) {
+            _applying = true;
+            controller.value = TextEditingValue(
+              text: nextDisplay,
+              selection: TextSelection.collapsed(offset: nextDisplay.length),
+            );
+            _observed = controller.text;
+            _savedDisplay = controller.text;
+            _applying = false;
+          }
+        });
       }
     }
   }

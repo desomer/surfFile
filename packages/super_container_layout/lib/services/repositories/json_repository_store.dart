@@ -431,6 +431,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     _loadedCalculatedRepos.add(repository.id);
+    _loadedSchemaRepos.add(repository.id);
     repository._registered = true;
     _documentCache[repository.id] = document;
     _idToNameCache?[repository.id] = repository.id;

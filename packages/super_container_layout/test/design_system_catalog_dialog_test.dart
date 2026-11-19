@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1005,6 +1006,345 @@ void main() {
         expect(find.text('Catalogue DESIGN.md'), findsNothing);
         expect(find.text('Design : Nebula Studio'), findsOneWidget);
         expect(appearance.value.accent, const Color(0xFF8B5CF6));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'le bouton rapide « Générer DESIGN.md » sur une pièce jointe appelle register_design_system, ajoute le DESIGN.md au catalogue, l’active et le persiste sur disque',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 860));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final tempDir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('vibe_gen_ds_'),
+        ))!;
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          await tester.runAsync(() async {
+            if (await tempDir.exists()) {
+              await tempDir.delete(recursive: true);
+            }
+          });
+        });
+        final dsStore = CustomDesignSystemStore(tempDir);
+
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        addTearDown(appearance.dispose);
+        addTearDown(registry.unbindAppearance);
+
+        final capturedPrompts = <String>[];
+        final capturedAttachments = <List<VibeChatAttachment>>[];
+        final observedPresets = <DesignSystemPreset?>[];
+        var latestCustoms = <DesignSystemPreset>[];
+        var genCall = 0;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DefaultAssetBundle(
+                bundle: _CatalogTestBundle(),
+                child: VibeChatDialog(
+                  controller: appearance,
+                  registry: registry,
+                  codec: const AppearanceCodec(),
+                  customDesignSystemStore: dsStore,
+                  initialQuestioningLevel: VibeQuestioningLevel.none,
+                  onClose: () {},
+                  onDrag: (_) {},
+                  onDesignSystemChanged: observedPresets.add,
+                  onCustomDesignSystemsChanged: (list) => latestCustoms = list,
+                  pickAttachments: () async => [
+                    VibeChatAttachment.text(
+                      name: 'aurora-theme.css',
+                      content:
+                          ':root { --bg: #0B1020; --card: #131B2E; --accent: #22D3EE; --text: #F8FAFC; }',
+                    ),
+                  ],
+                  generate: (
+                    String prompt, {
+                    List<VibeChatAttachment> attachments = const [],
+                  }) async {
+                    genCall++;
+                    capturedPrompts.add(prompt);
+                    capturedAttachments.add(attachments);
+                    if (genCall == 1) {
+                      return jsonEncode({
+                        'message': 'Extraction de la charte depuis aurora-theme.css…',
+                        'toolCalls': [
+                          {
+                            'id': 'reg-ds-1',
+                            'name': 'register_design_system',
+                            'arguments': {
+                              'name': 'Aurora Cyan',
+                              'slug': 'aurora-cyan',
+                              'category': 'ai-platforms',
+                              'tagline': 'Cyan lumineux sur nuit abyssale',
+                              'mode': 'dark',
+                              'accent': '#22D3EE',
+                              'canvasColor': '#0B1020',
+                              'surfaceColor': '#131B2E',
+                              'textColor': '#F8FAFC',
+                              'mutedTextColor': '#94A3B8',
+                              'borderColor': '#1E293B',
+                              'cardRadius': 12,
+                              'surfaceSystem': 'material',
+                              'fontFamily': 'Inter',
+                              'logo': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#22D3EE"/></svg>',
+                              'select': true,
+                              'markdown': '''
+## 1. Visual Theme & Atmosphere
+Interface nocturne inspirée de `aurora-theme.css` avec accent cyan `#22D3EE`.
+
+## 2. Color Palette & Roles
+- Canvas `#0B1020`, Surface `#131B2E`, Accent `#22D3EE`
+''',
+                            },
+                          },
+                        ],
+                        'vibe': null,
+                      });
+                    }
+                    return jsonEncode({
+                      'message':
+                          'Design System « Aurora Cyan » généré, ajouté au catalogue et activé.',
+                      'vibe': null,
+                    });
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Avant d'ajouter une pièce jointe, le bouton rapide est masqué.
+        expect(
+          find.byKey(const ValueKey('vibe-chat-generate-design-md')),
+          findsNothing,
+        );
+
+        // Ajoute la pièce jointe dans le chat.
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-attach')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('vibe-chat-generate-design-md')),
+          findsOneWidget,
+        );
+
+        // Déclenche la génération de DESIGN.md en 1 clic.
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-generate-design-md')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(genCall, 2);
+        expect(
+          capturedAttachments.first.map((a) => a.name),
+          contains('aurora-theme.css'),
+        );
+        expect(
+          capturedPrompts.first,
+          contains('register_design_system'),
+        );
+        expect(
+          capturedPrompts.first,
+          contains('RÉCUPÉRER UN LOGO'),
+        );
+        expect(find.text('Design : Aurora Cyan'), findsOneWidget);
+        expect(observedPresets.last?.id, 'custom:aurora-cyan');
+        expect(observedPresets.last?.logo, contains('<svg'));
+        expect(latestCustoms.map((p) => p.id), ['custom:aurora-cyan']);
+        expect(
+          find.text(
+            'Design System « Aurora Cyan » généré, ajouté au catalogue et activé.',
+          ),
+          findsWidgets,
+        );
+        expect(
+          find.text('1 outil utilisé : register_design_system'),
+          findsOneWidget,
+        );
+
+        // Ouvre la galerie DESIGN.md : Aurora Cyan apparaît dans la liste des choix possibles.
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('25 systèmes'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('design-system-card-custom:aurora-cyan')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('design-system-logo-custom:aurora-cyan')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('design-catalog-close')));
+        await tester.pumpAndSettle();
+
+        // Vérifie la persistance disque et le rechargement automatique dans une nouvelle instance de VibeChatDialog.
+        final reloadedFromDisk = await dsStore.loadAll();
+        expect(reloadedFromDisk, hasLength(1));
+        expect(reloadedFromDisk.single.id, 'custom:aurora-cyan');
+
+        var reloadedCustoms = <DesignSystemPreset>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DefaultAssetBundle(
+                bundle: _CatalogTestBundle(),
+                child: VibeChatDialog(
+                  key: const ValueKey('reloaded-vibe-chat'),
+                  controller: appearance,
+                  registry: registry,
+                  codec: const AppearanceCodec(),
+                  customDesignSystemStore: dsStore,
+                  onClose: () {},
+                  onDrag: (_) {},
+                  onCustomDesignSystemsChanged: (list) => reloadedCustoms = list,
+                  generate: (_) async => '{"message":"OK","vibe":null}',
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(reloadedCustoms.map((p) => p.id), ['custom:aurora-cyan']);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'permet de supprimer un Design System importé depuis sa carte ou depuis l’inspecteur et le supprime du store disque',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 860));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final tempDir = Directory.systemTemp.createTempSync('vibe_del_ds_');
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          if (tempDir.existsSync()) {
+            tempDir.deleteSync(recursive: true);
+          }
+        });
+        final dsStore = CustomDesignSystemStore(tempDir);
+
+        final acme = DesignMdParser.parseExternal(
+          _kImportedAcmeDesignMd,
+          fileName: 'acme-DESIGN.md',
+        );
+        final nebula = DesignMdParser.parseExternal(
+          _kPastedNebulaDesignMd,
+          fileName: 'nebula-DESIGN.md',
+        );
+        await dsStore.save(acme);
+        await dsStore.save(nebula);
+
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        addTearDown(appearance.dispose);
+        addTearDown(registry.unbindAppearance);
+
+        final observedPresets = <DesignSystemPreset?>[];
+        var latestCustoms = <DesignSystemPreset>[];
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DefaultAssetBundle(
+                bundle: _CatalogTestBundle(),
+                child: VibeChatDialog(
+                  controller: appearance,
+                  registry: registry,
+                  codec: const AppearanceCodec(),
+                  customDesignSystemStore: dsStore,
+                  initialDesignSystem: acme,
+                  customDesignSystems: [acme, nebula],
+                  onClose: () {},
+                  onDrag: (_) {},
+                  onDesignSystemChanged: observedPresets.add,
+                  onCustomDesignSystemsChanged: (list) => latestCustoms = list,
+                  generate: (_) async => '{"message":"OK","vibe":null}',
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Design : Acme'), findsOneWidget);
+
+        // Ouvre le catalogue : 26 systèmes (24 intégrés + 2 importés).
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('26 systèmes'), findsOneWidget);
+
+        // Aucun bouton de suppression sur un préréglage intégré.
+        expect(
+          find.byKey(const ValueKey('design-system-delete-linear')),
+          findsNothing,
+        );
+
+        // 1. Supprime 'custom:acme' (actuellement sélectionné) depuis sa carte.
+        await tester.tap(
+          find.byKey(const ValueKey('design-system-delete-custom:acme')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('25 systèmes'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('design-system-card-custom:acme')),
+          findsNothing,
+        );
+        expect(latestCustoms.map((p) => p.id), ['custom:nebula-studio']);
+        expect(observedPresets.last, isNull);
+
+        // 2. Ouvre l'inspecteur sur 'custom:nebula-studio' et le supprime depuis l'inspecteur.
+        await tester.tap(
+          find.byKey(
+            const ValueKey('design-system-inspect-custom:nebula-studio'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('design-catalog-inspector')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('design-catalog-inspector-delete')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('design-catalog-inspector')),
+          findsNothing,
+        );
+        expect(find.text('24 systèmes'), findsOneWidget);
+        expect(
+          find.byKey(
+            const ValueKey('design-system-card-custom:nebula-studio'),
+          ),
+          findsNothing,
+        );
+        expect(latestCustoms, isEmpty);
+
+        // Même en fermant via la croix, la suppression reste effective et persistée.
+        await tester.tap(find.byKey(const ValueKey('design-catalog-close')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Design : Material 3 (Défaut)'), findsOneWidget);
+        final remainingOnDisk = await dsStore.loadAll();
+        expect(remainingOnDisk, isEmpty);
         expect(tester.takeException(), isNull);
       },
     );

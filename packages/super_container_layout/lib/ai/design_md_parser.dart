@@ -52,6 +52,200 @@ abstract final class DesignMdParser {
     return stripped.isNotEmpty ? stripped : normalized;
   }
 
+  /// Construit ou met à jour un document `DESIGN.md` complet doté d'un frontmatter YAML structuré.
+  ///
+  /// Conserve les champs existants de l'éventuel frontmatter de [markdown] tout en
+  /// appliquant les métadonnées explicitement fournies (`name`, `slug`, `category`,
+  /// couleurs `#RRGGBB`, `mode`, `cardRadius`, `surfaceSystem`, `fontFamily`, `tags`).
+  static String composeDesignMarkdown({
+    required String markdown,
+    String? id,
+    String? name,
+    String? slug,
+    String? category,
+    String? tagline,
+    String? description,
+    String? mode,
+    String? accent,
+    String? canvasColor,
+    String? surfaceColor,
+    String? textColor,
+    String? mutedTextColor,
+    String? borderColor,
+    double? cardRadius,
+    String? surfaceSystem,
+    String? fontFamily,
+    String? logo,
+    List<String>? tags,
+  }) {
+    final normalized = _stripBom(markdown).trim();
+    final (:frontmatter, :body) = _splitFrontmatter(normalized);
+    final effectiveBody = body.isNotEmpty ? body : normalized;
+
+    final merged = <String, Object?>{...frontmatter};
+
+    void putString(String key, String? value) {
+      if (value == null) return;
+      final trimmed = value.trim();
+      if (trimmed.isNotEmpty) {
+        merged[key] = trimmed;
+      }
+    }
+
+    putString('id', id);
+    putString('name', name);
+    putString('slug', slug);
+    putString('category', category);
+    putString('tagline', tagline);
+    putString('description', description);
+    putString('mode', mode);
+    putString('accent', accent);
+    putString('canvasColor', canvasColor);
+    putString('surfaceColor', surfaceColor);
+    putString('textColor', textColor);
+    putString('mutedTextColor', mutedTextColor);
+    putString('borderColor', borderColor);
+    if (cardRadius != null && cardRadius.isFinite) {
+      merged['cardRadius'] = cardRadius == cardRadius.roundToDouble()
+          ? cardRadius.toInt()
+          : cardRadius;
+    }
+    putString('surfaceSystem', surfaceSystem);
+    putString('fontFamily', fontFamily);
+    putString('logo', logo);
+    if (tags != null && tags.isNotEmpty) {
+      merged['tags'] = [
+        for (final tag in tags)
+          if (tag.trim().isNotEmpty) tag.trim(),
+      ];
+    }
+
+    final resolvedTitle = _stringFromMap(merged, const ['name', 'title']);
+    final bodyWithHeading =
+        (effectiveBody.isEmpty && resolvedTitle != null)
+            ? '# $resolvedTitle — DESIGN.md'
+            : (resolvedTitle != null &&
+                    !_h1Pattern.hasMatch(effectiveBody) &&
+                    effectiveBody.isNotEmpty)
+                ? '# $resolvedTitle — DESIGN.md\n\n$effectiveBody'
+                : effectiveBody;
+
+    if (merged.isEmpty) {
+      return bodyWithHeading;
+    }
+
+    final orderedKeys = <String>[
+      'id',
+      'name',
+      'slug',
+      'category',
+      'tagline',
+      'description',
+      'mode',
+      'accent',
+      'canvasColor',
+      'surfaceColor',
+      'textColor',
+      'mutedTextColor',
+      'borderColor',
+      'cardRadius',
+      'surfaceSystem',
+      'fontFamily',
+      'logo',
+      'tags',
+    ];
+    final buffer = StringBuffer('---\n');
+    final written = <String>{};
+
+    void writeEntry(String key, Object? value) {
+      if (value == null) return;
+      if (value is num || value is bool) {
+        buffer.writeln('$key: $value');
+      } else if (value is Iterable) {
+        final items = [
+          for (final item in value)
+            if (item != null && item.toString().trim().isNotEmpty)
+              _yamlQuote(item.toString().trim()),
+        ];
+        if (items.isEmpty) return;
+        buffer.writeln('$key: [${items.join(', ')}]');
+      } else {
+        final text = value.toString().trim();
+        if (text.isEmpty) return;
+        buffer.writeln('$key: ${_yamlQuote(text)}');
+      }
+      written.add(key);
+    }
+
+    for (final key in orderedKeys) {
+      if (merged.containsKey(key)) {
+        writeEntry(key, merged[key]);
+      }
+    }
+    for (final entry in merged.entries) {
+      if (!written.contains(entry.key)) {
+        writeEntry(entry.key, entry.value);
+      }
+    }
+    buffer.writeln('---');
+    if (bodyWithHeading.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..write(bodyWithHeading);
+    }
+    return '${buffer.toString().trimRight()}\n';
+  }
+
+  /// Sérialise un [DesignSystemPreset] complet au format `DESIGN.md` avec frontmatter YAML.
+  ///
+  /// Garantit une relecture fidèle par [parseExternal] (identifiant, catégorie, palette,
+  /// rayon, système de surface, police et mots-clés).
+  static String toMarkdownWithFrontmatter(DesignSystemPreset preset) {
+    final palette = preset.palette;
+    final rawBody = extractBodyOrFull(preset.inlineMarkdown ?? '');
+    final fallbackBody = rawBody.isNotEmpty
+        ? rawBody
+        : '''
+# ${preset.name} — DESIGN.md
+
+## 1. Visual Theme & Atmosphere
+${preset.description}
+''';
+    return composeDesignMarkdown(
+      markdown: fallbackBody,
+      id: preset.id,
+      name: preset.name,
+      slug: preset.id,
+      category: preset.category.id,
+      tagline: preset.tagline,
+      description: preset.description,
+      mode: palette.isDark ? 'dark' : 'light',
+      accent: DesignSystemPalettePreview.colorToHex(palette.accent),
+      canvasColor: DesignSystemPalettePreview.colorToHex(palette.canvas),
+      surfaceColor: DesignSystemPalettePreview.colorToHex(palette.surface),
+      textColor: DesignSystemPalettePreview.colorToHex(palette.textPrimary),
+      mutedTextColor: DesignSystemPalettePreview.colorToHex(palette.textMuted),
+      borderColor: DesignSystemPalettePreview.colorToHex(palette.border),
+      cardRadius: palette.cardRadius,
+      surfaceSystem: palette.surfaceSystem.name,
+      fontFamily: palette.fontHint,
+      logo: preset.logo,
+      tags: preset.tags,
+    );
+  }
+
+  /// Normalise un libellé libre en identifiant slug kebab-case sûr pour les fichiers `.md`.
+  static String slugify(String input) => _slugify(input);
+
+  static String _yamlQuote(String value) {
+    final escaped = value
+        .replaceAll(r'\', r'\\')
+        .replaceAll('"', r'\"')
+        .replaceAll('\r', ' ')
+        .replaceAll('\n', ' ');
+    return '"$escaped"';
+  }
+
   /// Analyse un contenu `DESIGN.md` externe et construit un [DesignSystemPreset] prêt à l'emploi.
   ///
   /// Lève une [FormatException] si [markdown] est vide ou ne contient que des espaces.
@@ -218,6 +412,16 @@ abstract final class DesignMdParser {
       surfaceSystem: surfaceSystem,
     );
 
+    final logo = _resolveLogo(
+      explicitLogo: _stringFromMap(frontmatter, const [
+        'logo',
+        'logoUrl',
+        'logoSvg',
+        'brandLogo',
+      ]),
+      body: effectiveBody,
+    );
+
     return DesignSystemPreset(
       id: resolvedId,
       name: name,
@@ -237,8 +441,49 @@ abstract final class DesignMdParser {
         fontHint: fontHint,
       ),
       inlineMarkdown: cleanedMarkdown,
+      logo: logo,
       tags: tags,
     );
+  }
+
+  static final RegExp _inlineSvgPattern = RegExp(
+    r'<svg\b[^>]*>[\s\S]*?</svg>',
+    caseSensitive: false,
+  );
+
+  static String? _resolveLogo({
+    required String? explicitLogo,
+    required String body,
+  }) {
+    if (explicitLogo != null && explicitLogo.trim().isNotEmpty) {
+      return explicitLogo.trim();
+    }
+    final lines = body.split(RegExp(r'\r?\n'));
+    var inLogoSection = false;
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i].trim();
+      final lower = line.toLowerCase();
+      if (line.startsWith('#')) {
+        inLogoSection = lower.contains('logo');
+        continue;
+      }
+      if (inLogoSection || lower.contains('logo')) {
+        final svgMatch = _inlineSvgPattern.firstMatch(
+          lines.skip(i).take(20).join('\n'),
+        );
+        if (svgMatch != null) {
+          return svgMatch.group(0)!.trim();
+        }
+        final urlMatch = RegExp(
+          r'https?://[^\s`")>]+|data:image/[^\s`")>]+',
+          caseSensitive: false,
+        ).firstMatch(line);
+        if (urlMatch != null) {
+          return urlMatch.group(0)!.trim();
+        }
+      }
+    }
+    return null;
   }
 
   static String _stripBom(String input) =>
@@ -472,9 +717,12 @@ abstract final class DesignMdParser {
       return idOverride.trim();
     }
     if (explicitSlug != null && explicitSlug.trim().isNotEmpty) {
-      final cleanSlug = _slugify(
-        explicitSlug.replaceAll(_designAnalysisSuffix, ''),
-      );
+      final trimmed = explicitSlug.trim().replaceAll(_designAnalysisSuffix, '');
+      if (trimmed.toLowerCase().startsWith('custom:')) {
+        final suffix = trimmed.substring('custom:'.length);
+        return 'custom:${_slugify(suffix)}';
+      }
+      final cleanSlug = _slugify(trimmed);
       return cleanSlug;
     }
     return 'custom:${_slugify(name)}';

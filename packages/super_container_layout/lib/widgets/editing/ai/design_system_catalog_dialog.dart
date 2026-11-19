@@ -39,6 +39,7 @@ class DesignSystemCatalogDialog extends StatefulWidget {
     this.isScoped = false,
     this.pickMarkdownFiles,
     this.readClipboardText,
+    this.onDeleteCustomPreset,
     this.assetBundle,
     super.key,
   });
@@ -60,6 +61,9 @@ class DesignSystemCatalogDialog extends StatefulWidget {
   /// Lecteur personnalisé optionnel du presse-papiers texte (remplace [Clipboard.getData] en test).
   final Future<String?> Function()? readClipboardText;
 
+  /// Callback optionnel notifié immédiatement lorsqu'un système de design importé est supprimé.
+  final ValueChanged<DesignSystemPreset>? onDeleteCustomPreset;
+
   /// Bundle d'assets optionnel utilisé pour charger les fichiers `DESIGN.md` embarqués.
   final AssetBundle? assetBundle;
 
@@ -71,6 +75,7 @@ class DesignSystemCatalogDialog extends StatefulWidget {
     bool isScoped = false,
     Future<List<VibeChatAttachment>> Function()? pickMarkdownFiles,
     Future<String?> Function()? readClipboardText,
+    ValueChanged<DesignSystemPreset>? onDeleteCustomPreset,
     AssetBundle? assetBundle,
   }) {
     final effectiveBundle = assetBundle ?? DefaultAssetBundle.of(context);
@@ -88,6 +93,7 @@ class DesignSystemCatalogDialog extends StatefulWidget {
             isScoped: isScoped,
             pickMarkdownFiles: pickMarkdownFiles,
             readClipboardText: readClipboardText,
+            onDeleteCustomPreset: onDeleteCustomPreset,
             assetBundle: effectiveBundle,
           ),
         ),
@@ -235,6 +241,28 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
         _searchController.clear();
       }
     });
+  }
+
+  void _deleteCustomPreset(DesignSystemPreset preset) {
+    if (!preset.isCustom) return;
+    setState(() {
+      _customPresets.removeWhere((item) => item.id == preset.id);
+      if (_selectedPreset?.id == preset.id) {
+        _selectedPreset = null;
+      }
+      if (_inspectedPreset?.id == preset.id) {
+        _inspectedPreset = null;
+        _inspectedMarkdownFuture = null;
+        _loadedInspectedMarkdown = null;
+        _copiedTokenFeedback = null;
+      }
+      if (_selectedCategory == DesignSystemCategory.custom &&
+          _customPresets.isEmpty) {
+        _selectedCategory = null;
+      }
+      _errorMessage = null;
+    });
+    widget.onDeleteCustomPreset?.call(preset);
   }
 
   Future<void> _importFromFile() async {
@@ -672,6 +700,9 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
                   onInspect: preset == null
                       ? null
                       : () => _openInspector(preset),
+                  onDelete: preset != null && preset.isCustom
+                      ? () => _deleteCustomPreset(preset)
+                      : null,
                 );
               }, childCount: items.length),
             ),
@@ -860,6 +891,18 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
                       icon: const Icon(Icons.copy_outlined, size: 15),
                       label: const Text('Copier DESIGN.md'),
                     ),
+                    if (preset.isCustom)
+                      OutlinedButton.icon(
+                        key: const ValueKey('design-catalog-inspector-delete'),
+                        onPressed: () => _deleteCustomPreset(preset),
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: scheme.error,
+                          side: BorderSide(color: scheme.error.withValues(alpha: 0.5)),
+                        ),
+                        icon: const Icon(Icons.delete_outline, size: 15),
+                        label: const Text('Supprimer'),
+                      ),
                   ],
                 ),
               ],
