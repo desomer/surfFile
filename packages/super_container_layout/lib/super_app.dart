@@ -190,7 +190,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     final messenger = _messenger.currentState;
     if (messenger == null) return;
     if (replaceCurrent) {
-      messenger.clearSnackBars();
+      messenger
+        ..clearSnackBars()
+        ..removeCurrentSnackBar();
     }
     messenger.showSnackBar(snackBar);
   }
@@ -224,6 +226,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         replaceCurrent: true,
       );
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   PersistentAppearanceController _createAppearanceController() =>

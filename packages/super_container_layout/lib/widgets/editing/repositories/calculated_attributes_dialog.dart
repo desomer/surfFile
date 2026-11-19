@@ -17,6 +17,7 @@ import '../../components/internal_widget/code_editor.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
+import 'js_calculated_examples.dart';
 
 /// Boîte de dialogue de gestion des attributs calculés JavaScript d'un repository.
 class CalculatedAttributesDialog extends StatefulWidget {
@@ -28,7 +29,7 @@ class CalculatedAttributesDialog extends StatefulWidget {
     super.key,
   });
 
-  static const _preferredWidth = AlwaysStoppedAnimation<double>(860);
+  static const _preferredWidth = AlwaysStoppedAnimation<double>(900);
 
   /// Store porteur du repository et de ses formules persistées.
   final JsonRepositoryStore store;
@@ -95,6 +96,8 @@ class _CalculatedAttributesDialogState
   List<CalculatedAttributeDefinition> _jsDefinitions = const [];
   List<CalculatedAttributeDescriptor> _dartDescriptors = const [];
   List<String> _scopeSuggestions = const [];
+  List<String> _otherRepositoryIds = const [];
+  Object? _document;
 
   int? _selectedJsIndex;
   int? _selectedDartIndex;
@@ -143,6 +146,7 @@ class _CalculatedAttributesDialogState
       setState(() {
         _jsDefinitions = List<CalculatedAttributeDefinition>.of(jsDefs);
         _dartDescriptors = dartDefs;
+        _document = doc;
         _scopeSuggestions = suggestions;
         _loading = false;
         if (_jsDefinitions.isNotEmpty) {
@@ -153,6 +157,7 @@ class _CalculatedAttributesDialogState
           _startNew();
         }
       });
+      _loadOtherRepositories();
     } on FormatException catch (error) {
       if (mounted) {
         setState(() {
@@ -167,6 +172,22 @@ class _CalculatedAttributesDialogState
           _error = 'Erreur de fichier : ${error.message}';
         });
       }
+    }
+  }
+
+  Future<void> _loadOtherRepositories() async {
+    try {
+      final catalog = await widget.store.catalog();
+      final otherRepoIds = catalog
+          .where((entry) => entry.id != widget.repositoryId)
+          .map((entry) => entry.id)
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _otherRepositoryIds = otherRepoIds;
+      });
+    } catch (_) {
+      // Information optionnelle pour les badges inter-repositories.
     }
   }
 
@@ -242,6 +263,60 @@ class _CalculatedAttributesDialogState
       _testError = null;
       _codeConfig.repaintCode();
     });
+  }
+
+  void _applyCodeExample(String code) {
+    setState(() {
+      _codeDraft = code;
+      _testResult = null;
+      _testError = null;
+      _codeConfig.repaintCode();
+    });
+  }
+
+  List<JsCalculatedExample> _buildCurrentExamples() {
+    final currentScope = _scopeController.text.trim();
+    final sameScopeNames = <String>[
+      for (final def in _jsDefinitions)
+        if ((def.scope ?? '') == currentScope) def.name,
+    ];
+    final rootNames = <String>[
+      for (final def in _jsDefinitions)
+        if (def.scope == null) def.name,
+    ];
+    final scopedPaths = <String>[
+      for (final def in _jsDefinitions)
+        if (def.scope != null) def.path,
+    ];
+
+    for (final descriptor in _dartDescriptors) {
+      final path = descriptor.path;
+      final atIndex = path.lastIndexOf('@');
+      if (atIndex < 0) continue;
+      final name = path.substring(atIndex + 1);
+      final descriptorScope = atIndex == 0
+          ? ''
+          : path.substring(0, atIndex - 1);
+      if (descriptorScope == currentScope) {
+        sameScopeNames.add(name);
+      }
+      if (descriptorScope.isEmpty) {
+        rootNames.add(name);
+      } else {
+        scopedPaths.add(path);
+      }
+    }
+
+    final currentName = _nameController.text.trim();
+    return buildJsCalculatedExamples(
+      document: _document,
+      scope: currentScope,
+      sameScopeCalculatedNames: sameScopeNames,
+      rootCalculatedNames: rootNames,
+      scopedCalculatedPaths: scopedPaths,
+      otherRepositoryIds: _otherRepositoryIds,
+      currentAttributeName: currentName.isEmpty ? null : currentName,
+    );
   }
 
   CalculatedAttributeDefinition _buildDraftDefinition() {
@@ -566,14 +641,66 @@ class _CalculatedAttributesDialogState
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          'Formule JavaScript — paramètres : row (ligne ou racine), '
-          'ctx (ctx.get(chemin, repoId?, defaut?)), doc (document racine)',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: colors.onSurfaceVariant,
-          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Exemples JS (clic pour préremplir)',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            Text(
+              'Paramètres : row, ctx (ctx.get(chemin, repoId?, defaut?)), doc',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 4),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 108),
+          child: SingleChildScrollView(
+            child: Wrap(
+              key: const ValueKey('calculated-attr-examples'),
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final example in _buildCurrentExamples())
+                  Tooltip(
+                    message: '${example.description}\n\n${example.code}',
+                    child: ActionChip(
+                      key: ValueKey('calculated-attr-example-${example.id}'),
+                      avatar: example.isSchemaAdapted
+                          ? Icon(
+                              Icons.auto_awesome,
+                              size: 14,
+                              color: colors.primary,
+                            )
+                          : null,
+                      backgroundColor: example.isSchemaAdapted
+                          ? colors.secondaryContainer.withValues(alpha: 0.65)
+                          : null,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                      label: Text(
+                        example.label,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onPressed: _saving
+                          ? null
+                          : () => _applyCodeExample(example.code),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
         Expanded(
           child: Container(
             decoration: BoxDecoration(
@@ -662,8 +789,8 @@ class _CalculatedAttributesDialogState
       insetPadding: const EdgeInsets.all(24),
       title: EditorDialogHeader(label: 'Champs calculés (JS) — $titleSuffix'),
       content: SizedBox(
-        width: 860,
-        height: 540,
+        width: 900,
+        height: 580,
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Column(

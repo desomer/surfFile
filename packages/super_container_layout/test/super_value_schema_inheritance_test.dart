@@ -754,15 +754,15 @@ void main() {
 
       store.reportBindingError('Erreur date A');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 300));
       store.reportBindingError('Erreur date B');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 300));
       store.reportBindingError('Erreur date A');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 300));
 
-      // clearSnackBars() keeps only the latest active SnackBar instead of queueing all of them.
+      // clearSnackBars() + removeCurrentSnackBar() keeps only the latest SnackBar.
       expect(find.byType(SnackBar), findsOneWidget);
       expect(find.text('Erreur date A'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());

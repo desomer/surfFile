@@ -157,6 +157,7 @@ export 'widgets/editing/repositories/binding_save_timing_controls.dart';
 export 'widgets/editing/repositories/calculated_attributes_dialog.dart';
 export 'widgets/editing/repositories/floating_repository_editor.dart';
 export 'widgets/editing/repositories/floating_repository_shortcut.dart';
+export 'widgets/editing/repositories/js_calculated_examples.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
 export 'widgets/editing/repositories/repository_binding_fields.dart';
 export 'widgets/editing/repositories/repository_schema_dialog.dart';

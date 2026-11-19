@@ -508,7 +508,13 @@ return ht * (1 + tva);
           for (var i = 0; i < 40; i++) {
             await Future<void>.delayed(const Duration(milliseconds: 25));
             await tester.pump();
-            if (store.hasCalculatedAttribute(id, 'articles[0].@montant')) break;
+            if (store.hasCalculatedAttribute(id, 'articles[0].@montant') &&
+                find
+                    .byKey(const ValueKey('calculated-attr-delete-0'))
+                    .evaluate()
+                    .isNotEmpty) {
+              break;
+            }
           }
         });
         await tester.pump();
@@ -727,6 +733,199 @@ return ht * (1 + tva);
           )).value,
           80,
         );
+      },
+    );
+
+    test(
+      'buildJsCalculatedExamples combines schema-adapted and generic QuickJS badges',
+      () {
+        final doc = {
+          'taux': 0.2,
+          'articles': [
+            {'label': 'Audit', 'qte': 4, 'pu': 25, 'actif': true},
+          ],
+        };
+
+        final rootExamples = buildJsCalculatedExamples(
+          document: doc,
+          scope: '',
+          scopedCalculatedPaths: const ['articles[?].@montant'],
+          otherRepositoryIds: const ['cfg_repo'],
+        );
+        expect(rootExamples.length, greaterThanOrEqualTo(18));
+        expect(
+          rootExamples.any(
+            (e) =>
+                e.isSchemaAdapted &&
+                e.code.contains("articles[' + i + '].@montant"),
+          ),
+          isTrue,
+        );
+        expect(
+          rootExamples.any(
+            (e) =>
+                e.isSchemaAdapted &&
+                e.code.contains("ctx.getNum('taux', \"cfg_repo\", 0.2)"),
+          ),
+          isTrue,
+        );
+
+        final rowExamples = buildJsCalculatedExamples(
+          document: doc,
+          scope: 'articles[?]',
+          sameScopeCalculatedNames: const ['montant', 'courant'],
+          currentAttributeName: 'courant',
+        );
+        expect(
+          rowExamples.any(
+            (e) =>
+                e.isSchemaAdapted &&
+                e.code == '(row.qte ?? 0) * (row.pu ?? 0)',
+          ),
+          isTrue,
+        );
+        expect(
+          rowExamples.any(
+            (e) => e.isSchemaAdapted && e.code.contains("row['@montant']"),
+          ),
+          isTrue,
+        );
+        expect(
+          rowExamples.any((e) => e.code.contains("row['@courant']")),
+          isFalse,
+        );
+      },
+    );
+
+    testWidgets(
+      'CalculatedAttributesDialog prefills CodeEditor when clicking example Wrap badges without overwriting metadata',
+      (tester) async {
+        final id = await tester.runAsync(() async {
+          await store.create('Facturation');
+          final repoId = await store.idOf('Facturation');
+          await store.replaceDocumentById(repoId, {
+            'articles': [
+              {'qte': 4, 'pu': 25},
+            ],
+          });
+          return repoId;
+        }) as String;
+
+        await tester.binding.setSurfaceSize(const Size(1100, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        await tester.pumpWidget(
+          JsonRepositoryScope(
+            store: store,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => FilledButton(
+                    key: const ValueKey('open-calc-badges-dialog'),
+                    onPressed: () => CalculatedAttributesDialog.show(
+                      context,
+                      store: store,
+                      repositoryId: id,
+                      repositoryName: 'Facturation',
+                    ),
+                    child: const Text('Ouvrir'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('open-calc-badges-dialog')));
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 120)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('calculated-attr-examples')),
+          findsOneWidget,
+        );
+        final wrapFinder = find.byKey(const ValueKey('calculated-attr-examples'));
+        final chipCount = find
+            .descendant(of: wrapFinder, matching: find.byType(ActionChip))
+            .evaluate()
+            .length;
+        expect(chipCount, greaterThanOrEqualTo(15));
+
+        await tester.enterText(
+          find.byKey(const ValueKey('calculated-attr-name')),
+          'montant',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('calculated-attr-description')),
+          'Description conservée',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('calculated-attr-scope')),
+          'articles[?]',
+        );
+        await tester.pumpAndSettle();
+
+        final schemaProductBadge = find.byKey(
+          const ValueKey('calculated-attr-example-schema-product'),
+        );
+        expect(schemaProductBadge, findsOneWidget);
+        await tester.ensureVisible(schemaProductBadge);
+        await tester.tap(schemaProductBadge);
+        await tester.pumpAndSettle();
+
+        final codeField = find.descendant(
+          of: find.byKey(const ValueKey('calculated-attr-code')),
+          matching: find.byType(EditableText),
+        );
+        expect(
+          tester.widget<EditableText>(codeField).controller.text,
+          '(row.qte ?? 0) * (row.pu ?? 0)',
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const ValueKey('calculated-attr-name')),
+              )
+              .controller!
+              .text,
+          'montant',
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const ValueKey('calculated-attr-description')),
+              )
+              .controller!
+              .text,
+          'Description conservée',
+        );
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const ValueKey('calculated-attr-scope')),
+              )
+              .controller!
+              .text,
+          'articles[?]',
+        );
+
+        final genericBadge = find.byKey(
+          const ValueKey('calculated-attr-example-gen-ternary'),
+        );
+        await tester.ensureVisible(genericBadge);
+        await tester.tap(genericBadge);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<EditableText>(codeField).controller.text,
+          "(row.stock ?? 0) > 0 ? 'Disponible' : 'Rupture'",
+        );
+
+        await tester.tap(find.byKey(const ValueKey('calculated-attr-close')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
       },
     );
   });

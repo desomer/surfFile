@@ -164,7 +164,9 @@ class _SuperValueState extends State<SuperValue>
         config.kind.isText &&
         config.field.useRepositorySchema) {
       _lastObservedSchema = store.jsonSchemaOf(repoId);
-      if (_lastObservedSchema == null && _schemaLoadRequested.add(repoId)) {
+      if (_lastObservedSchema == null &&
+          !store.isMemoryOnlyRepository(repoId) &&
+          _schemaLoadRequested.add(repoId)) {
         unawaited(
           store.ensureSchemasLoaded().then((_) {
             if (mounted && store.jsonSchemaOf(repoId) != null) {
