@@ -545,24 +545,52 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     _requestedStaticPlaceholder = resolved.placeholder;
     _requestedStaticStore = store;
     final generation = ++_staticBindingGeneration;
+    final existingBinding = _staticBinding;
+    if (existingBinding != null) {
+      existingBinding.removeListener(_staticBindingChanged);
+      if (existingBinding.hasPendingWrite) {
+        _pendingStaticFlush = existingBinding.flush();
+      }
+      existingBinding.dispose();
+      _staticBinding = null;
+    }
+    _staticBindingError = store == null && resolved.binding != null
+        ? 'Service de repositories indisponible.'
+        : resolved.error;
+    if (resolved.error == null && resolved.binding != null && store != null) {
+      final cached = store.peekAttribute(resolved.binding!);
+      if (cached != null) {
+        if (_staticBindingText.text != cached.text) {
+          _staticBindingText.value = TextEditingValue(
+            text: cached.text,
+            selection: TextSelection.collapsed(offset: cached.text.length),
+          );
+        }
+        final parsed = int.tryParse(cached.text.trim());
+        if (parsed != null && parsed >= 0 && parsed != _selectedIndex) {
+          _selectedIndex = parsed;
+          _lastValidIndex = parsed;
+        }
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _staticBindingGeneration) return;
-      final oldBinding = _staticBinding;
-      oldBinding?.removeListener(_staticBindingChanged);
-      if (oldBinding != null) {
-        _pendingStaticFlush = oldBinding.flush();
-      }
-      oldBinding?.dispose();
-      _staticBinding = null;
       final flushed = _pendingStaticFlush;
-      if (flushed != null) await flushed;
+      if (flushed != null) {
+        await flushed;
+        if (identical(_pendingStaticFlush, flushed)) {
+          _pendingStaticFlush = null;
+        }
+      }
       if (!mounted || generation != _staticBindingGeneration) return;
+      final previousError = _staticBindingError;
+      final previousIndex = _selectedIndex;
       _staticBindingError = resolved.error;
       if (resolved.binding != null) {
         if (store == null) {
           _staticBindingError = 'Service de repositories indisponible.';
         } else {
-          _staticBinding = JsonTextControllerBinding(
+          final created = JsonTextControllerBinding(
             store: store,
             binding: resolved.binding!,
             controller: _staticBindingText,
@@ -572,9 +600,19 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
               _setStaticIndexFromBinding(text);
             },
           )..addListener(_staticBindingChanged);
+          _staticBinding = created;
+          if (!created.loading && created.error == null) {
+            _setStaticIndexFromBinding(_staticBindingText.text);
+          }
         }
       }
-      if (mounted) setState(() {});
+      if (mounted &&
+          (_staticBindingError != previousError ||
+              _selectedIndex != previousIndex ||
+              (_staticBinding?.loading ?? false) ||
+              _staticBinding?.error != null)) {
+        setState(() {});
+      }
     });
   }
 
@@ -660,6 +698,11 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         _dynamicItems = cached;
         _dynamicError = null;
         _dynamicLoading = false;
+        final selected = _dynamicSelection?.indexFor(source.parents);
+        if (selected == null && cached.isNotEmpty) {
+          final initial = _selectedIndex.clamp(0, cached.length - 1);
+          _dynamicSelection?.select(source.parents, initial);
+        }
       }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -679,18 +722,21 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     final binding = _dynamicSource?.binding;
     final store = _dynamicStore;
     if (binding == null || store == null) {
-      setState(() {
-        _dynamicItems = null;
-        _dynamicLoading = false;
-        _dynamicError =
-            _dynamicSource?.error ??
-            (store == null && _dynamicSource?.unselected == true
-                ? 'Service de repositories indisponible.'
-                : null);
-      });
+      final nextError =
+          _dynamicSource?.error ??
+          (store == null && _dynamicSource?.unselected == true
+              ? 'Service de repositories indisponible.'
+              : null);
+      if (_dynamicItems != null || _dynamicLoading || _dynamicError != nextError) {
+        setState(() {
+          _dynamicItems = null;
+          _dynamicLoading = false;
+          _dynamicError = nextError;
+        });
+      }
       return;
     }
-    if (_dynamicItems == null) {
+    if (_dynamicItems == null && !_dynamicLoading) {
       setState(() => _dynamicLoading = true);
     }
     try {
@@ -703,21 +749,33 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         final initial = _selectedIndex.clamp(0, items.length - 1);
         _dynamicSelection?.select(_dynamicSource!.parents, initial);
       }
-      setState(() {
-        _dynamicItems = items;
-        _dynamicError = null;
-      });
+      if (!JsonRepositoryStore.jsonEquals(_dynamicItems, items) ||
+          _dynamicError != null ||
+          _dynamicLoading) {
+        setState(() {
+          _dynamicItems = items;
+          _dynamicError = null;
+          _dynamicLoading = false;
+        });
+      }
     } on FormatException catch (error) {
-      if (mounted && generation == _dynamicGeneration) {
-        setState(() => _dynamicError = error.message);
+      if (mounted &&
+          generation == _dynamicGeneration &&
+          (_dynamicError != error.message || _dynamicLoading)) {
+        setState(() {
+          _dynamicError = error.message;
+          _dynamicLoading = false;
+        });
       }
     } on FileSystemException {
-      if (mounted && generation == _dynamicGeneration) {
-        setState(() => _dynamicError = 'Impossible de lire le repository lié.');
-      }
-    } finally {
-      if (mounted && generation == _dynamicGeneration) {
-        setState(() => _dynamicLoading = false);
+      const readError = 'Impossible de lire le repository lié.';
+      if (mounted &&
+          generation == _dynamicGeneration &&
+          (_dynamicError != readError || _dynamicLoading)) {
+        setState(() {
+          _dynamicError = readError;
+          _dynamicLoading = false;
+        });
       }
     }
   }

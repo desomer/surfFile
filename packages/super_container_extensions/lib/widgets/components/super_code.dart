@@ -145,7 +145,7 @@ class _SuperCodeState extends State<SuperCode> {
         }
         _listen(arrays);
         final content = _BoundCode(
-          key: ValueKey((widget.id, store, binding, errorBinding, placeholder)),
+          key: ValueKey((widget.id, placeholder)),
           config: config,
           binding: binding,
           errorBinding: errorBinding,
@@ -245,25 +245,60 @@ class _BoundCodeState extends State<_BoundCode> {
   @override
   void initState() {
     super.initState();
-    final binding = widget.binding;
-    final errorBinding = widget.errorBinding;
+    _syncBindings(oldStore: null, oldBinding: null, oldErrorBinding: null);
+  }
+
+  @override
+  void didUpdateWidget(_BoundCode oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncBindings(
+      oldStore: oldWidget.store,
+      oldBinding: oldWidget.binding,
+      oldErrorBinding: oldWidget.errorBinding,
+    );
+  }
+
+  void _syncBindings({
+    required JsonRepositoryStore? oldStore,
+    required JsonTextBinding? oldBinding,
+    required JsonTextBinding? oldErrorBinding,
+  }) {
     final store = widget.store;
-    if (errorBinding != null && store != null) {
-      _errorBinding = JsonTextControllerBinding(
-        store: store,
-        binding: errorBinding,
-        controller: _errorText,
-        componentId: widget.componentId,
-      )..addListener(_changed);
+    final storeChanged = !identical(oldStore, store);
+    if (storeChanged || oldErrorBinding != widget.errorBinding) {
+      _errorBinding?.removeListener(_changed);
+      _errorBinding?.dispose();
+      _errorBinding = null;
+      if (_errorText.text.isNotEmpty) {
+        _errorText.value = TextEditingValue.empty;
+      }
+      final errorBinding = widget.errorBinding;
+      if (errorBinding != null && store != null) {
+        _errorBinding = JsonTextControllerBinding(
+          store: store,
+          binding: errorBinding,
+          controller: _errorText,
+          componentId: widget.componentId,
+        )..addListener(_changed);
+      }
     }
-    if (binding != null && store != null) {
-      _binding = JsonTextControllerBinding(
-        store: store,
-        binding: binding,
-        controller: _text,
-        componentId: widget.componentId,
-        requireString: true,
-      )..addListener(_changed);
+    if (storeChanged || oldBinding != widget.binding) {
+      _binding?.removeListener(_changed);
+      _binding?.dispose();
+      _binding = null;
+      if (_text.text.isNotEmpty) {
+        _text.value = TextEditingValue.empty;
+      }
+      final binding = widget.binding;
+      if (binding != null && store != null) {
+        _binding = JsonTextControllerBinding(
+          store: store,
+          binding: binding,
+          controller: _text,
+          componentId: widget.componentId,
+          requireString: true,
+        )..addListener(_changed);
+      }
     }
   }
 

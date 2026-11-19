@@ -52,6 +52,7 @@ class VibeAppInspector {
     this.repositoryStore,
     this.pageRouting,
     this.readScope,
+    this.onSelectScope,
     this.fallbackContext,
     this.turnStartMarker,
     this.previewTracker,
@@ -75,6 +76,9 @@ class VibeAppInspector {
   /// Fournisseur optionnel du périmètre restreint actif dans le chat Vibe.
   final VibeChatScope? Function()? readScope;
 
+  /// Callback optionnel permettant de mettre à jour le `VibeChatScope` du chat.
+  final ValueChanged<VibeChatScope?>? onSelectScope;
+
   /// Contexte Flutter de repli (ex. celui de `VibeChatDialog`) si aucune racine `SuperApp` n'est enregistrée.
   final BuildContext? Function()? fallbackContext;
 
@@ -92,6 +96,7 @@ class VibeAppInspector {
     repositoryStore: repositoryStore,
     pageRouting: pageRouting,
     readScope: readScope,
+    onSelectScope: onSelectScope,
     turnStartMarker: turnStartMarker,
     previewTracker: previewTracker,
   );
@@ -150,6 +155,8 @@ class VibeAppInspector {
         ),
         'preview_navigation_or_selection': (call) =>
             previewNavigationOrSelection(call.id, call.name, call.arguments),
+        'select_editor_element': (call) =>
+            selectEditorElement(call.id, call.name, call.arguments),
       });
 
   /// Lit et filtre les journaux et erreurs d'exécution depuis `debugEntries`.
@@ -181,6 +188,13 @@ class VibeAppInspector {
     String toolName,
     Map<String, Object?> args,
   ) => _diagnostics.previewNavigationOrSelection(callId, toolName, args);
+
+  /// Sélectionne (ou désélectionne) à distance un élément sur le canevas du mode édition.
+  Future<VibeToolResult> selectEditorElement(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) => _diagnostics.selectEditorElement(callId, toolName, args);
 
   BuildContext? _resolvePrimaryContext() {
     final appRootCtx = slotIndex.activeAppRootKey?.currentContext;

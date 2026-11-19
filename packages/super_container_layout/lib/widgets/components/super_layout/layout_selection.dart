@@ -1132,6 +1132,26 @@ class LayoutSelection {
     }
   }
 
+  /// Efface intégralement toute sélection et tout surlignage actifs sur le canevas d'édition.
+  static void clearAll() {
+    doubleClickGlobalPosition = null;
+    _leafSuffix = const [];
+    _leafIds = const [];
+    _activeLeafId = null;
+    _leafFocus = null;
+    highlightedSlotId.value = null;
+    EditorSlotState.clearHighlightedTarget();
+    for (final owner in _reported.keys.toList()) {
+      _clears[owner]?.call();
+      _deselects[owner]?.call();
+      _removeReported(owner);
+    }
+    for (final deselect in _deselects.values.toList()) {
+      deselect();
+    }
+    _syncReported();
+  }
+
   /// La disposition [owner] déclare son chemin ; vide, elle se retire. [clear]
   /// désélectionne ses zones.
   static void report(

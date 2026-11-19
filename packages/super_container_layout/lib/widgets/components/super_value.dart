@@ -377,56 +377,78 @@ class _SuperValueState extends State<SuperValue>
     _requestedAsBool = asBool;
     _requestedAsStringList = asStringList;
     final generation = ++_bindingGeneration;
-
-    if (!external &&
+    final existingBinding = _binding;
+    final sameBindingReset =
+        resetText &&
+        !external &&
         resolved.error == null &&
         !resolved.placeholder &&
-        resolved.binding != null &&
-        store != null &&
-        _binding == null &&
-        _pendingBindingFlush == null) {
-      final cached = store.peekAttribute(
-        resolved.binding!,
-        allowStringList: asStringList,
-      );
-      if (cached != null &&
-          (!asBool || cached.value == null || cached.value is bool) &&
-          (!asStringList ||
-              cached.value == null ||
-              cached.value is String ||
-              cached.value is List)) {
-        final resolvedText = asBool
-            ? (cached.value == true ? 'true' : 'false')
-            : cached.text;
-        if (_internal.text != resolvedText) {
-          _setText(_internal, resolvedText);
+        existingBinding != null &&
+        existingBinding.binding == resolved.binding &&
+        existingBinding.asBool == asBool &&
+        existingBinding.asStringList == asStringList &&
+        identical(existingBinding.store, store);
+
+    if (!sameBindingReset) {
+      if (existingBinding != null) {
+        existingBinding.removeListener(_bindingChanged);
+        if (existingBinding.hasPendingWrite) {
+          _pendingBindingFlush = existingBinding.flush();
+        }
+        existingBinding.dispose();
+        _binding = null;
+      }
+      _bindingError = external && resolved.binding != null
+          ? 'La liaison nécessite le contrôleur interne de Value.'
+          : store == null && resolved.binding != null
+          ? 'Service de repositories indisponible.'
+          : resolved.error;
+      _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
+      if (!external) {
+        if (resolved.placeholder) {
+          final fallback = asBool ? 'false' : '';
+          if (_internal.text != fallback) _setText(_internal, fallback);
+        } else if (resetText && resolved.binding == null) {
+          final fallback = _initialTextFor(config);
+          if (_internal.text != fallback) _setText(_internal, fallback);
+        } else if (resolved.error == null &&
+            resolved.binding != null &&
+            store != null) {
+          final cached = store.peekAttribute(
+            resolved.binding!,
+            allowStringList: asStringList,
+          );
+          if (cached != null &&
+              (!asBool || cached.value == null || cached.value is bool) &&
+              (!asStringList ||
+                  cached.value == null ||
+                  cached.value is String ||
+                  cached.value is List)) {
+            final resolvedText = asBool
+                ? (cached.value == true ? 'true' : 'false')
+                : cached.text;
+            if (_internal.text != resolvedText) {
+              _setText(_internal, resolvedText);
+            }
+          } else if (existingBinding != null &&
+              existingBinding.binding != resolved.binding) {
+            final fallback = asBool ? 'false' : '';
+            if (_internal.text != fallback) _setText(_internal, fallback);
+          }
         }
       }
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
-      final oldBinding = _binding;
-      if (resetText &&
-          !external &&
-          resolved.error == null &&
-          !resolved.placeholder &&
-          oldBinding != null &&
-          oldBinding.binding == resolved.binding &&
-          oldBinding.asBool == asBool &&
-          oldBinding.asStringList == asStringList &&
-          identical(oldBinding.store, store)) {
-        await oldBinding.flush();
+      if (sameBindingReset) {
+        final active = _binding;
+        if (active == null) return;
+        await active.flush();
         if (!mounted || generation != _bindingGeneration) return;
-        await oldBinding.reload(showLoading: false);
+        await active.reload(showLoading: false);
         return;
       }
-      oldBinding?.removeListener(_bindingChanged);
-      if (oldBinding != null) {
-        _pendingBindingFlush = oldBinding.flush();
-      }
-      oldBinding?.dispose();
-      _binding = null;
       final flushed = _pendingBindingFlush;
       if (flushed != null) {
         await flushed;
@@ -435,6 +457,9 @@ class _SuperValueState extends State<SuperValue>
         }
       }
       if (!mounted || generation != _bindingGeneration) return;
+      final previousError = _bindingError;
+      final previousUnselected = _unselected;
+      final previousText = _internal.text;
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
       if (resetText && !external && resolved.binding == null) {
@@ -466,7 +491,14 @@ class _SuperValueState extends State<SuperValue>
           )..addListener(_bindingChanged);
         }
       }
-      setState(() {});
+      if (mounted &&
+          (_bindingError != previousError ||
+              _unselected != previousUnselected ||
+              _internal.text != previousText ||
+              (_binding?.loading ?? false) ||
+              _binding?.error != null)) {
+        setState(() {});
+      }
     });
   }
 

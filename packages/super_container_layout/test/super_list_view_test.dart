@@ -1550,6 +1550,118 @@ void main() {
         expect(clients[1]['vip'], isTrue);
       },
     );
+
+    testWidgets(
+      'switching selected row updates detail values, reused slave rows and bound states in a single frame without losing dirty drafts',
+      (tester) async {
+        await mount(
+          tester,
+          Column(
+            children: [
+              Expanded(child: SingleChildScrollView(child: page())),
+              SuperIndicator(
+                id: 'statusIndicator',
+                config: SuperIndicatorConfig(
+                  label: 'Aucun',
+                  states: IndicatorConfigStates(
+                    binding: JsonTextBinding(
+                      repositoryId: repository,
+                      path: 'clients[?].name',
+                    ),
+                    namedProperties: const {
+                      'Alice': {IndicatorStateProperty.textLabel},
+                      'Bob': {IndicatorStateProperty.textLabel},
+                    },
+                    named: const {
+                      'Alice': SuperIndicatorConfig(label: 'Badge Alice'),
+                      'Bob': SuperIndicatorConfig(label: 'Badge Bob'),
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        expect(find.text('Badge Alice'), findsNothing);
+        expect(find.text('Aucun'), findsOneWidget);
+
+        // Single-frame check on first selection (client 0 + order 1 'A2').
+        await tester.tap(
+          find.descendant(of: row('clients', 0), matching: find.text('A2')),
+        );
+        await tester.pump();
+        expect(selected('clients', 0), findsOneWidget);
+        expect(field(tester, 'detailName').controller!.text, 'Alice');
+        expect(field(tester, 'detailName').readOnly, isFalse);
+        expect(
+          find.descendant(
+            of: row('detailOrders', 0),
+            matching: find.text('A1'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: row('detailOrders', 1),
+            matching: find.text('A2'),
+          ),
+          findsOneWidget,
+        );
+        expect(field(tester, 'orderLabel').controller!.text, 'A2');
+        expect(find.text('Badge Alice'), findsOneWidget);
+
+        // Single-frame check when switching to client 1 ('Bob'):
+        // - detailName switches immediately to 'Bob'
+        // - reused row 0 of slave detailOrders switches immediately from 'A1' to 'B1'
+        // - orderLabel clears immediately to unselected/readOnly
+        // - statusIndicator switches immediately to 'Badge Bob'
+        await tester.tap(
+          find.descendant(of: row('clients', 1), matching: find.text('Bob')),
+        );
+        await tester.pump();
+        expect(selected('clients', 1), findsOneWidget);
+        expect(field(tester, 'detailName').controller!.text, 'Bob');
+        expect(
+          find.descendant(
+            of: row('detailOrders', 0),
+            matching: find.text('B1'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: row('detailOrders', 0),
+            matching: find.text('A1'),
+          ),
+          findsNothing,
+        );
+        expect(field(tester, 'orderLabel').controller!.text, '');
+        expect(field(tester, 'orderLabel').readOnly, isTrue);
+        expect(find.text('Badge Bob'), findsOneWidget);
+
+        // Dirty draft typed on client 1 without waiting for debounce, followed
+        // by an immediate click on client 0: client 0 displays in 1 frame while
+        // client 1's draft is preserved and flushed to row 1.
+        await tester.runAsync(() async {
+          await tester.enterText(input('detailName'), 'BobbyDraft');
+          await tester.tap(
+            find.descendant(
+              of: row('clients', 0),
+              matching: find.text('Alice'),
+            ),
+          );
+          await tester.pump();
+          expect(field(tester, 'detailName').controller!.text, 'Alice');
+          expect(find.text('Badge Alice'), findsOneWidget);
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+        });
+        await tester.pump();
+        final clients = (await document(tester))['clients'] as List;
+        expect(clients[0]['name'], 'Alice');
+        expect(clients[1]['name'], 'BobbyDraft');
+      },
+    );
   });
 
   testWidgets(

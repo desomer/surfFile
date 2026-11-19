@@ -1655,7 +1655,7 @@ La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque dem
 
 ### 6.1. Outils d'introspection runtime & auto-vérification
 
-Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 12 outils d'introspection (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
+Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 13 outils d'introspection et de sélection (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
 
 | Outil | Rôle | Paramètres principaux |
 | :--- | :--- | :--- |
@@ -1671,6 +1671,7 @@ Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA di
 | `get_theme_and_contrast` | Rôles `theme:*` résolus en `#RRGGBB` et calcul de contraste WCAG AA texte/fond des composants de l'écran. | `componentIds?: string[]`, `onlyIssues?: bool` |
 | `get_registry_and_selection` | Constructeurs/extensions enregistrés dans `Registry`, polices disponibles et sélection active `LayoutSelection`. | `includeComponents?: bool`, `includeFonts?: bool` |
 | `preview_navigation_or_selection` | Action d'aperçu réversible (annulée au rollback) : navigation vers une page de `pageCatalog` ou sélection d'une ligne `JsonArrayBinding` pour inspecter une vue Détail. | `pageId?: string`, `routePath?: string`, `repositoryId?: string`, `arrayTemplate?: string`, `index?: int`, `parentIndices?: int[]`, `clearSelection?: bool` |
+| `select_editor_element` | Sélectionne et met en évidence à distance un élément sur le canevas du mode édition (active le mode édition si besoin, défile jusqu'à l'élément, met à jour `LayoutSelection` et pulse un halo visuel). | `componentId?: string`, `zoneId?: string`, `occurrenceIndex?: int`, `enableEditMode?: bool`, `scrollIntoView?: bool`, `pulseHighlight?: bool`, `setChatScope?: bool`, `clear?: bool` |
 
 - **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, erreurs Flutter/overflow (`get_debug_entries`), liaisons ou données vides (`inspect_bindings_and_diagnostics`, `get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne/page (`preview_navigation_or_selection`) ou inspection visuelle ciblée (`capture_element_screenshot`).
 - **Quand ne pas les appeler** : modifications purement déclaratives simples dont le JSON courant suffit déjà.

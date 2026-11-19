@@ -7,6 +7,7 @@
 /// - les transactions d'édition ([EditorHistoryScope]) et l'extraction JSON ([JsonExtractableState]).
 library;
 
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/automatic_state.dart';
@@ -141,6 +142,13 @@ mixin ComponentStateResolutionMixin<W extends StatefulWidget> on State<W> {
 
   /// Planifie une reconstruction après changement d'état ou de focus.
   void onComponentStateChanged() {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      setState(() {});
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() {});
     });

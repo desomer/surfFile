@@ -341,18 +341,44 @@ class _SuperExpansibleState extends State<SuperExpansible> {
     _requestedPlaceholder = resolved.placeholder;
     _requestedStore = store;
     final generation = ++_bindingGeneration;
+    final existingBinding = _binding;
+    if (existingBinding != null) {
+      existingBinding.removeListener(_bindingChanged);
+      if (existingBinding.hasPendingWrite) {
+        _pendingBindingFlush = existingBinding.flush();
+      }
+      existingBinding.dispose();
+      _binding = null;
+    }
+    _bindingError = store == null && resolved.binding != null
+        ? 'Service de repositories indisponible.'
+        : resolved.error;
+    _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
+    if (resolved.placeholder) {
+      _setText('false');
+      _setExpanded(false, fromBinding: true);
+    } else if (resolved.error == null &&
+        resolved.binding != null &&
+        store != null) {
+      final cached = store.peekAttribute(resolved.binding!);
+      if (cached != null && (cached.value == null || cached.value is bool)) {
+        final desired = cached.value == true;
+        _setText(desired ? 'true' : 'false');
+        _setExpanded(desired, fromBinding: true);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
-      final oldBinding = _binding;
-      oldBinding?.removeListener(_bindingChanged);
-      if (oldBinding != null) {
-        _pendingBindingFlush = oldBinding.flush();
-      }
-      oldBinding?.dispose();
-      _binding = null;
       final flushed = _pendingBindingFlush;
-      if (flushed != null) await flushed;
+      if (flushed != null) {
+        await flushed;
+        if (identical(_pendingBindingFlush, flushed)) {
+          _pendingBindingFlush = null;
+        }
+      }
       if (!mounted || generation != _bindingGeneration) return;
+      final previousError = _bindingError;
+      final previousUnselected = _unselected;
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
       if (resolved.placeholder) {
@@ -363,7 +389,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
         if (store == null) {
           _bindingError = 'Service de repositories indisponible.';
         } else {
-          _binding = JsonTextControllerBinding(
+          final created = JsonTextControllerBinding(
             store: store,
             binding: resolved.binding!,
             controller: _internalText,
@@ -374,9 +400,19 @@ class _SuperExpansibleState extends State<SuperExpansible> {
               _setExpanded(text == 'true', fromBinding: true);
             },
           )..addListener(_bindingChanged);
+          _binding = created;
+          if (!created.loading && created.error == null) {
+            _setExpanded(_internalText.text == 'true', fromBinding: true);
+          }
         }
       }
-      if (mounted) setState(() {});
+      if (mounted &&
+          (_bindingError != previousError ||
+              _unselected != previousUnselected ||
+              (_binding?.loading ?? false) ||
+              _binding?.error != null)) {
+        setState(() {});
+      }
     });
   }
 

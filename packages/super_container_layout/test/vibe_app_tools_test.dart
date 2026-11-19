@@ -22,6 +22,8 @@ import 'package:super_container_layout/services/providers/http_data_provider.dar
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
@@ -1410,6 +1412,117 @@ void main() {
           'Ajusté',
         );
         expect(find.text('Débordement corrigé.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'select_editor_element active le mode édition, sélectionne l’élément à distance et met à jour le scope si demandé',
+      (tester) async {
+        addTearDown(LayoutSelection.clearAll);
+        final editMode = ValueNotifier<bool>(false);
+        addTearDown(editMode.dispose);
+        final appearance = ValueNotifier(Appearance());
+        addTearDown(appearance.dispose);
+        VibeChatScope? reportedScope;
+        var round = 0;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: StyleEditScope(
+              controller: editMode,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: Column(
+                    children: [
+                      const SizedBox(
+                        width: 200,
+                        height: 80,
+                        child: EditorSlot(
+                          id: 'target_card',
+                          label: 'Carte Cible',
+                          child: Text('Contenu'),
+                        ),
+                      ),
+                      Expanded(
+                        child: DefaultAssetBundle(
+                          bundle: _TestGuideBundle(),
+                          child: VibeChatDialog(
+                            controller: appearance,
+                            codec: const AppearanceCodec(),
+                            initialQuestioningLevel: VibeQuestioningLevel.none,
+                            onClose: () {},
+                            onDrag: (_) {},
+                            onScopeChanged: (s) => reportedScope = s,
+                            generate: (prompt) async {
+                              round++;
+                              if (round == 1) {
+                                return jsonEncode({
+                                  'message': 'Je sélectionne la carte...',
+                                  'toolCalls': [
+                                    {
+                                      'id': 'sel-1',
+                                      'name': 'select_editor_element',
+                                      'arguments': {
+                                        'componentId': 'target_card',
+                                        'setChatScope': true,
+                                      },
+                                    },
+                                  ],
+                                  'vibe': null,
+                                });
+                              }
+                              return jsonEncode({
+                                'message': 'Carte Cible sélectionnée.',
+                                'vibe': null,
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(editMode.value, isFalse);
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Sélectionne target_card dans l’éditeur',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(editMode.value, isTrue);
+        expect(
+          EditorSlotState.highlightedTarget.value?.effectiveComponentId,
+          'target_card',
+        );
+        expect(LayoutSelection.activeLeafId, 'target_card');
+        expect(reportedScope?.componentId, 'target_card');
+        expect(find.text('Carte Cible sélectionnée.'), findsOneWidget);
+        expect(
+          find.text('1 outil utilisé : select_editor_element'),
+          findsOneWidget,
+        );
+
+        // Vérifie aussi l'effacement de sélection à distance (clear: true)
+        final inspector = VibeAppInspector(
+          readAppearance: () => appearance.value,
+        );
+        final cleared = await inspector.selectEditorElement(
+          'sel-clear',
+          'select_editor_element',
+          {'clear': true},
+        );
+        expect(cleared.isError, isFalse);
+        expect(EditorSlotState.highlightedTarget.value, isNull);
+        expect(LayoutSelection.activeLeafId, isNull);
       },
     );
   });

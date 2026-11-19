@@ -1014,6 +1014,143 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     ];
   }
 
+  void _selectSlotInEditor({
+    List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
+    Offset? globalPosition,
+    List<EditorSlotState>? precomputedChain,
+  }) {
+    if (!mounted) return;
+    final chain = precomputedChain ?? _collectMenuAncestry(actions).chain;
+    final origin = targetContext ?? context;
+    final zoomController = EditorZoomScope.controllerOf(context);
+    Offset resolvedPosition = globalPosition ?? Offset.zero;
+    if (globalPosition == null) {
+      final ro = origin.findRenderObject();
+      if (ro is RenderBox && ro.attached && ro.hasSize) {
+        resolvedPosition = ro.localToGlobal(ro.size.center(Offset.zero));
+      }
+    }
+    zoomController?.beginRightClickSelection();
+    try {
+      final callbacks = <VoidCallback>[];
+      if (origin is Element) {
+        final chainSet = chain.toSet();
+        final slotStates = <EditorSlotState>[];
+        var foundSlotBoundary = false;
+
+        void visitElement(Element element) {
+          if (element is StatefulElement) {
+            final state = element.state;
+            if (state is EditorSlotState && chainSet.contains(state)) {
+              if (!foundSlotBoundary) {
+                if (state.widget.onContextMenu != null) {
+                  foundSlotBoundary = true;
+                } else {
+                  slotStates.add(state);
+                }
+              }
+              if ((StyleEditScope.maybeReadOf(state.context)?.value ?? false) &&
+                  state.widget.onContextMenu != null) {
+                final onContextMenu = state.widget.onContextMenu!;
+                callbacks.add(() => onContextMenu(resolvedPosition));
+              }
+            }
+          } else {
+            final widget = element.widget;
+            if (!foundSlotBoundary &&
+                ((widget is EditorSlotAction &&
+                        widget.enabled &&
+                        widget.onSelect != null) ||
+                    widget is LayoutSelectionScope)) {
+              foundSlotBoundary = true;
+            }
+            if (widget is EditorSlotAction &&
+                widget.enabled &&
+                widget.onSelect != null &&
+                (StyleEditScope.maybeReadOf(element)?.value ?? false)) {
+              callbacks.add(widget.onSelect!);
+            }
+          }
+        }
+
+        visitElement(origin);
+        origin.visitAncestorElements((element) {
+          visitElement(element);
+          return true;
+        });
+        for (final callback in callbacks.reversed) {
+          callback();
+        }
+        if (slotStates.length > 1) {
+          final deepestLeaf = slotStates.first;
+          final leaves = [
+            for (final state in slotStates.reversed.skip(1)) state.label,
+          ];
+          final leafIds = [
+            for (final state in slotStates.reversed.skip(1))
+              state.effectiveComponentId,
+          ];
+          LayoutSelection.setLeafSuffix(
+            leaves,
+            focusContext: deepestLeaf.context,
+            ids: leafIds,
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              zoomController?.beginRightClickSelection();
+              try {
+                LayoutSelection.setLeafSuffix(
+                  leaves,
+                  focusContext: deepestLeaf.mounted
+                      ? deepestLeaf.context
+                      : null,
+                  ids: leafIds,
+                );
+              } finally {
+                zoomController?.endRightClickSelection();
+              }
+            }
+          });
+        } else if (slotStates.length == 1) {
+          final leaf = slotStates.first;
+          if (!LayoutSelection.isSelectedSlotContext(leaf.context)) {
+            LayoutSelection.updateActiveFocus(
+              leaf.context,
+              id: leaf.effectiveComponentId,
+            );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && leaf.mounted) {
+                zoomController?.beginRightClickSelection();
+                try {
+                  LayoutSelection.updateActiveFocus(
+                    leaf.context,
+                    id: leaf.effectiveComponentId,
+                  );
+                } finally {
+                  zoomController?.endRightClickSelection();
+                }
+              }
+            });
+          }
+        }
+      } else {
+        for (final state in chain) {
+          if ((StyleEditScope.maybeReadOf(state.context)?.value ?? false) &&
+              state.widget.onContextMenu != null) {
+            final onContextMenu = state.widget.onContextMenu!;
+            callbacks.add(() => onContextMenu(resolvedPosition));
+          }
+        }
+        for (final callback in callbacks.reversed) {
+          callback();
+        }
+      }
+    } finally {
+      zoomController?.endRightClickSelection();
+    }
+  }
+
   Future<void> _openSlotMenu(
     Offset globalPosition, {
     List<EditorSlotAction>? actions,
@@ -1032,129 +1169,14 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       return;
     }
     final ancestry = _collectMenuAncestry(actions);
-    final chain = ancestry.chain;
-    final origin = targetContext ?? context;
     final zoomController = EditorZoomScope.controllerOf(context);
     if (selectTarget) {
-      zoomController?.beginRightClickSelection();
-      try {
-        final callbacks = <VoidCallback>[];
-        if (origin is Element) {
-          final chainSet = chain.toSet();
-          final slotStates = <EditorSlotState>[];
-          var foundSlotBoundary = false;
-
-          void visitElement(Element element) {
-            if (element is StatefulElement) {
-              final state = element.state;
-              if (state is EditorSlotState && chainSet.contains(state)) {
-                if (!foundSlotBoundary) {
-                  if (state.widget.onContextMenu != null) {
-                    foundSlotBoundary = true;
-                  } else {
-                    slotStates.add(state);
-                  }
-                }
-                if ((StyleEditScope.maybeReadOf(state.context)?.value ??
-                        false) &&
-                    state.widget.onContextMenu != null) {
-                  final onContextMenu = state.widget.onContextMenu!;
-                  callbacks.add(() => onContextMenu(globalPosition));
-                }
-              }
-            } else {
-              final widget = element.widget;
-              if (!foundSlotBoundary &&
-                  ((widget is EditorSlotAction &&
-                          widget.enabled &&
-                          widget.onSelect != null) ||
-                      widget is LayoutSelectionScope)) {
-                foundSlotBoundary = true;
-              }
-              if (widget is EditorSlotAction &&
-                  widget.enabled &&
-                  widget.onSelect != null &&
-                  (StyleEditScope.maybeReadOf(element)?.value ?? false)) {
-                callbacks.add(widget.onSelect!);
-              }
-            }
-          }
-
-          visitElement(origin);
-          origin.visitAncestorElements((element) {
-            visitElement(element);
-            return true;
-          });
-          for (final callback in callbacks.reversed) {
-            callback();
-          }
-          if (slotStates.length > 1) {
-            final deepestLeaf = slotStates.first;
-            final leaves = [
-              for (final state in slotStates.reversed.skip(1)) state.label,
-            ];
-            final leafIds = [
-              for (final state in slotStates.reversed.skip(1))
-                state.effectiveComponentId,
-            ];
-            LayoutSelection.setLeafSuffix(
-              leaves,
-              focusContext: deepestLeaf.context,
-              ids: leafIds,
-            );
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                zoomController?.beginRightClickSelection();
-                try {
-                  LayoutSelection.setLeafSuffix(
-                    leaves,
-                    focusContext: deepestLeaf.mounted
-                        ? deepestLeaf.context
-                        : null,
-                    ids: leafIds,
-                  );
-                } finally {
-                  zoomController?.endRightClickSelection();
-                }
-              }
-            });
-          } else if (slotStates.length == 1) {
-            final leaf = slotStates.first;
-            if (!LayoutSelection.isSelectedSlotContext(leaf.context)) {
-              LayoutSelection.updateActiveFocus(
-                leaf.context,
-                id: leaf.effectiveComponentId,
-              );
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted && leaf.mounted) {
-                  zoomController?.beginRightClickSelection();
-                  try {
-                    LayoutSelection.updateActiveFocus(
-                      leaf.context,
-                      id: leaf.effectiveComponentId,
-                    );
-                  } finally {
-                    zoomController?.endRightClickSelection();
-                  }
-                }
-              });
-            }
-          }
-        } else {
-          for (final state in chain) {
-            if ((StyleEditScope.maybeReadOf(state.context)?.value ?? false) &&
-                state.widget.onContextMenu != null) {
-              final onContextMenu = state.widget.onContextMenu!;
-              callbacks.add(() => onContextMenu(globalPosition));
-            }
-          }
-          for (final callback in callbacks.reversed) {
-            callback();
-          }
-        }
-      } finally {
-        zoomController?.endRightClickSelection();
-      }
+      _selectSlotInEditor(
+        actions: actions,
+        targetContext: targetContext,
+        globalPosition: globalPosition,
+        precomputedChain: ancestry.chain,
+      );
     }
     if (!mounted) return;
     final overlayState = Overlay.of(context);

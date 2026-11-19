@@ -5,7 +5,8 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter/material.dart' as flutter_material;
-import 'package:flutter_localizations/flutter_localizations.dart' as flutter_localizations;
+import 'package:flutter_localizations/flutter_localizations.dart'
+    as flutter_localizations;
 import 'package:flutter_code_editor/flutter_code_editor.dart';
 // ignore: implementation_imports
 import 'package:flutter_code_editor/src/code_field/actions/tab.dart';
@@ -17,16 +18,22 @@ import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
-  testWidgets('code font slider accepts an editable decimal size', (tester) async {
+  testWidgets('code font slider accepts an editable decimal size', (
+    tester,
+  ) async {
     var draft = const SuperCodeConfig();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: StatefulBuilder(
-        builder: (context, setState) => CodeAddForm(
-          draft: draft,
-          onChanged: (value) => setState(() => draft = value),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) => CodeAddForm(
+              draft: draft,
+              onChanged: (value) => setState(() => draft = value),
+            ),
+          ),
         ),
-      )),
-    ));
+      ),
+    );
     expect(find.byType(TextField), findsNothing);
     await tester.tap(find.byType(EditorNumberField));
     await tester.pumpAndSettle();
@@ -35,9 +42,12 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(draft.style.fontSize, 560.25);
-    expect(tester.widget<Slider>(
-      find.byKey(const ValueKey('super-code-font-size')),
-    ).value, 28);
+    expect(
+      tester
+          .widget<Slider>(find.byKey(const ValueKey('super-code-font-size')))
+          .value,
+      28,
+    );
     expect(SuperCodeStyle.fromJson(draft.style.toJson()).fontSize, 560.25);
     expect(tester.takeException(), isNull);
   });
@@ -511,9 +521,8 @@ void main() {
         MaterialApp(
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           // ignore: deprecated_member_use
-          builder: (context, child) => MaterialUiCompatibilityBridge(
-            child: child!,
-          ),
+          builder: (context, child) =>
+              MaterialUiCompatibilityBridge(child: child!),
           home: Scaffold(
             body: JsonRepositoryScope(
               store: store,
@@ -532,9 +541,7 @@ void main() {
       );
     });
     await tester.pumpAndSettle();
-    final editable = tester.state<EditableTextState>(
-      find.byType(EditableText),
-    );
+    final editable = tester.state<EditableTextState>(find.byType(EditableText));
     editable.requestKeyboard();
     await tester.pump();
     editable.userUpdateTextEditingValue(
@@ -615,4 +622,69 @@ void main() {
       flutter_material.Colors.transparent,
     );
   });
+
+  testWidgets(
+    'master/detail row[?] switch updates SuperCode in a single frame without remounting CodeEditor',
+    (tester) async {
+      await tester.runAsync(store.preload);
+
+      await mount(
+        tester,
+        SuperCodeConfig(
+          mode: SuperCodeMode.javascript,
+          binding: JsonTextBinding(
+            repositoryId: repository,
+            path: 'scripts[?].source',
+          ),
+        ),
+      );
+
+      final array = store.bindingOf(repository).array('scripts');
+      final initialEditorState = tester.state<CodeEditorState>(
+        find.byType(CodeEditor),
+      );
+
+      array.select(const [], 0);
+      await tester.pump();
+      expect(
+        identical(
+          tester.state<CodeEditorState>(find.byType(CodeEditor)),
+          initialEditorState,
+        ),
+        isTrue,
+      );
+      expect(initialEditorState.controller.fullText, 'const first = 1;');
+
+      // Edit row 0 without waiting for debounce, then switch immediately to row 1.
+      await tester.runAsync(() async {
+        initialEditorState.controller.fullText = 'const first = 10;';
+        await tester.pump();
+        array.select(const [], 1);
+        await tester.pump();
+
+        expect(
+          identical(
+            tester.state<CodeEditorState>(find.byType(CodeEditor)),
+            initialEditorState,
+          ),
+          isTrue,
+        );
+        expect(initialEditorState.controller.fullText, 'const second = 2;');
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      });
+
+      final firstAttr = await tester.runAsync(
+        () => store.readAttribute(
+          JsonTextBinding(repositoryId: repository, path: 'scripts[0].source'),
+        ),
+      );
+      final secondAttr = await tester.runAsync(
+        () => store.readAttribute(
+          JsonTextBinding(repositoryId: repository, path: 'scripts[1].source'),
+        ),
+      );
+      expect(firstAttr?.value, 'const first = 10;');
+      expect(secondAttr?.value, 'const second = 2;');
+    },
+  );
 }

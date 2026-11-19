@@ -75,6 +75,10 @@ class JsonTextControllerBinding extends ChangeNotifier {
   bool get dirty =>
       !isReadOnly && _ready && (controller.text != _saved || _queuedWrites > 0);
 
+  /// Vrai lorsqu'une saisie locale ou une écriture en file doit être vidée
+  /// avant de détacher ce contrôleur.
+  bool get hasPendingWrite => dirty || _queuedWrites > 0;
+
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -129,6 +133,8 @@ class JsonTextControllerBinding extends ChangeNotifier {
       error = nextError;
       _notify();
     }
+    var changed = false;
+    var failed = false;
     try {
       final result = await store.readAttribute(
         binding,
@@ -156,6 +162,8 @@ class JsonTextControllerBinding extends ChangeNotifier {
           : result.text;
       if (dirty) {
         if (!JsonRepositoryStore.jsonEquals(result.value, _expected)) {
+          failed = true;
+          loading = false;
           _failure(
             'Conflit sur l’attribut lié. Conservez votre saisie puis rechargez.',
           );
@@ -173,19 +181,29 @@ class JsonTextControllerBinding extends ChangeNotifier {
           selection: TextSelection.collapsed(offset: resolvedText.length),
         );
         onChanged?.call(resolvedText);
+        changed = true;
       }
       _observed = controller.text;
       _applying = false;
     } on FormatException catch (exception) {
-      if (!_disposed && generation == _generation) _failure(exception.message);
+      if (!_disposed && generation == _generation) {
+        failed = true;
+        loading = false;
+        _failure(exception.message);
+      }
     } on FileSystemException {
       if (!_disposed && generation == _generation) {
+        failed = true;
+        loading = false;
         _failure('Impossible de lire le repository lié.');
       }
     } finally {
-      if (!_disposed && generation == _generation) {
-        loading = false;
-        _notify();
+      if (!_disposed && generation == _generation && !failed) {
+        if (loading) {
+          loading = false;
+          changed = true;
+        }
+        if (changed) _notify();
       }
     }
   }

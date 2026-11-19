@@ -754,6 +754,13 @@ class EditorSlotState extends State<EditorSlot> {
     Offset globalPosition,
   ) => _openEditorMenuFromContext(targetContext, globalPosition);
 
+  /// Sélectionne ce slot programmatiquement sur le canevas du mode édition
+  /// (met à jour le chemin `LayoutSelection`, le focus et le contour actif).
+  void selectInEditor({
+    List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
+  }) => _selectSlotInEditor(actions: actions, targetContext: targetContext);
+
   /// Opens this slot's menu at a global pointer position.
   Future<void> openMenu(
     Offset globalPosition, {

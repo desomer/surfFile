@@ -34,8 +34,10 @@ import '../../theme/theme_color.dart';
 import '../../widgets/components/component_state_behavior.dart';
 import '../../widgets/components/super_layout/layout_selection.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
+import '../../widgets/editing/ai/vibe_work_highlight.dart';
 import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope;
-import '../../widgets/editing/slots/editor_slot.dart' show EditorSlotState;
+import '../../widgets/editing/slots/editor_slot.dart'
+    show EditorSlotState, StyleEditScope;
 import '../diagnostics/debug_entry.dart';
 import '../pages/editor_page_router.dart';
 import '../providers/http_data_provider.dart';
@@ -112,6 +114,7 @@ class VibeDiagnosticsInspector {
     this.repositoryStore,
     this.pageRouting,
     this.readScope,
+    this.onSelectScope,
     this.turnStartMarker,
     this.previewTracker,
   });
@@ -136,6 +139,9 @@ class VibeDiagnosticsInspector {
 
   /// Fournisseur optionnel du `VibeChatScope` actif.
   final VibeChatScope? Function()? readScope;
+
+  /// Callback optionnel permettant de mettre à jour le `VibeChatScope` du chat.
+  final ValueChanged<VibeChatScope?>? onSelectScope;
 
   /// Repère optionnel dans [debugEntries] capturé au début du tour courant.
   final VibeDebugMarker? turnStartMarker;
@@ -1193,6 +1199,177 @@ class VibeDiagnosticsInspector {
       data: <String, Object?>{
         ...actions,
         'mountedSlots': slotIndex.mountedSlotSummaries(limit: 30),
+      },
+    );
+  }
+
+  /// 7. Sélectionne (ou désélectionne) à distance un élément sur le canevas du mode édition.
+  Future<VibeToolResult> selectEditorElement(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) async {
+    final clear = args['clear'] == true;
+    final setChatScope = args['setChatScope'] == true;
+    if (clear) {
+      LayoutSelection.clearAll();
+      if (setChatScope) {
+        onSelectScope?.call(null);
+      }
+      return VibeToolResult(
+        callId: callId,
+        name: toolName,
+        data: <String, Object?>{
+          'cleared': true,
+          'selectionPath': LayoutSelection.path.value,
+          if (setChatScope) 'scopeCleared': true,
+        },
+      );
+    }
+
+    var componentId =
+        args['componentId'] is String &&
+                (args['componentId'] as String).trim().isNotEmpty
+            ? (args['componentId'] as String).trim()
+            : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
+                  ? (args['id'] as String).trim()
+                  : '');
+    final zoneId =
+        args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
+            ? (args['zoneId'] as String).trim()
+            : null;
+
+    if (componentId.isEmpty) {
+      final available = slotIndex.mountedSlotSummaries(limit: 25);
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Fournis "componentId" à sélectionner'
+            '${available.isEmpty ? '.' : ' (slots montés : ${available.join(', ')}).'}',
+      );
+    }
+
+    var entries = slotIndex.entriesFor(componentId, zoneId: zoneId);
+    if (entries.isEmpty) {
+      final canonical = VibeChatScope.canonicalizeId(componentId);
+      if (canonical != componentId) {
+        entries = slotIndex.entriesFor(canonical, zoneId: zoneId);
+        if (entries.isNotEmpty) {
+          componentId = canonical;
+        }
+      }
+    }
+    if (entries.isEmpty) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'Élément "$componentId"${zoneId == null ? '' : ' (zone "$zoneId")'} non monté à l’écran.',
+      );
+    }
+
+    final rawOcc = args['occurrenceIndex'];
+    final occurrenceIndex = rawOcc is num ? rawOcc.toInt() : 0;
+    if (occurrenceIndex < 0 || occurrenceIndex >= entries.length) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message:
+            'occurrenceIndex $occurrenceIndex hors limites pour "$componentId" '
+            '(${entries.length} occurrence(s) montée(s)).',
+      );
+    }
+
+    final entry = entries[occurrenceIndex];
+    final enableEditMode = args['enableEditMode'] is bool
+        ? args['enableEditMode'] as bool
+        : true;
+    final scrollIntoView = args['scrollIntoView'] is bool
+        ? args['scrollIntoView'] as bool
+        : true;
+    final pulseHighlight = args['pulseHighlight'] is bool
+        ? args['pulseHighlight'] as bool
+        : true;
+
+    final initialCtx = entry.slotContext() ?? resolvePrimaryContext();
+    var editModeActivated = false;
+    if (enableEditMode && initialCtx != null && initialCtx.mounted) {
+      final editController = StyleEditScope.controllerOf(initialCtx);
+      if (editController != null && !editController.value) {
+        editController.value = true;
+        editModeActivated = true;
+      }
+    }
+
+    if (scrollIntoView) {
+      final scrollCtx = entry.slotContext();
+      if (scrollCtx != null &&
+          scrollCtx.mounted &&
+          Scrollable.maybeOf(scrollCtx) != null) {
+        try {
+          await Scrollable.ensureVisible(
+            scrollCtx,
+            alignment: 0.5,
+            duration: Duration.zero,
+          );
+        } catch (_) {}
+      }
+    }
+
+    final slotCtx = entry.slotContext();
+    if (slotCtx == null || !slotCtx.mounted) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Contexte du slot "$componentId" indisponible.',
+      );
+    }
+
+    final EditorSlotState? slotState = entry.token is EditorSlotState
+        ? entry.token as EditorSlotState
+        : EditorSlotState.resolveFromContext(
+            slotCtx,
+            preferredId: componentId,
+          );
+    if (slotState == null || !slotState.mounted) {
+      return VibeToolResult.error(
+        callId: callId,
+        name: toolName,
+        message: 'Impossible de résoudre EditorSlotState pour "$componentId".',
+      );
+    }
+
+    slotState.selectInEditor(targetContext: slotCtx);
+    EditorSlotState.setHighlightedTarget(slotState);
+
+    if (pulseHighlight) {
+      final targetKey =
+          (slotState.widget.zoneId != null &&
+              slotState.widget.zoneId!.isNotEmpty)
+          ? '${slotState.effectiveComponentId}::${slotState.widget.zoneId}'
+          : slotState.effectiveComponentId;
+      VibeWorkHighlightController.instance.pulseTargets(
+        modifiedIds: <String>[targetKey],
+      );
+    }
+
+    if (setChatScope) {
+      onSelectScope?.call(slotState.aiScope);
+    }
+
+    return VibeToolResult(
+      callId: callId,
+      name: toolName,
+      data: <String, Object?>{
+        'selected': true,
+        'componentId': slotState.effectiveComponentId,
+        'zoneId': ?slotState.widget.zoneId,
+        'label': slotState.titleLabel,
+        'occurrenceIndex': occurrenceIndex,
+        'editModeActivated': editModeActivated,
+        'selectionPath': LayoutSelection.path.value,
+        if (setChatScope) 'scopeUpdated': slotState.aiScope.displayLabel,
       },
     );
   }

@@ -317,6 +317,15 @@ class VibeToolTrace {
           return '${sel['repositoryId']}:${sel['arrayTemplate']} → ${sel['selection'] ?? 'aucune'}';
         }
         return 'aperçu mis à jour';
+      case 'select_editor_element':
+        if (data['cleared'] == true) return 'sélection effacée';
+        final cid = data['componentId'] ?? '';
+        final zid = data['zoneId'];
+        final lbl = data['label'];
+        final base = zid is String && zid.isNotEmpty ? '$cid::$zid' : '$cid';
+        return lbl is String && lbl.isNotEmpty && lbl != cid
+            ? '$base ($lbl)'
+            : base;
     }
     return 'OK';
   }
@@ -695,6 +704,58 @@ class VibeAppToolRegistry {
             },
           },
         ),
+        VibeToolDeclaration(
+          name: 'select_editor_element',
+          description:
+              'Sélectionne et met en évidence à distance un élément monté sur le canevas du mode édition '
+              '(active le mode édition si nécessaire, fait défiler jusqu’à l’élément, met à jour le chemin '
+              'de la bannière et déclenche un halo visuel). Utile pour montrer ou cibler un composant précis.',
+          parametersSchema: <String, Object?>{
+            'type': 'object',
+            'properties': <String, Object?>{
+              'componentId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant du composant à sélectionner (requis sauf si clear=true).',
+              },
+              'zoneId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant optionnel d’une zone du conteneur (ex: west, center, header).',
+              },
+              'occurrenceIndex': <String, Object?>{
+                'type': 'integer',
+                'description':
+                    'Indice 0-based de l’occurrence à sélectionner dans une liste/table (défaut 0).',
+              },
+              'enableEditMode': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Active automatiquement le mode édition s’il est désactivé (true par défaut).',
+              },
+              'scrollIntoView': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Fait défiler jusqu’à l’élément avant sélection (true par défaut).',
+              },
+              'pulseHighlight': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Déclenche un halo visuel temporaire sur l’élément (true par défaut).',
+              },
+              'setChatScope': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Si true, restreint aussi le scope actif du chat Vibe à cet élément (false par défaut).',
+              },
+              'clear': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Si true, efface toute sélection active sur le canevas.',
+              },
+            },
+          },
+        ),
       ];
 
   /// Construit un registre avec les 5 déclarations standard liées aux [handlers] fournis.
@@ -752,7 +813,8 @@ class VibeAppToolRegistry {
       '(3) tu dois câbler ou diagnostiquer une API / recherche / CRUD (`get_datasources_and_providers`), '
       '(4) tu dois vérifier des couleurs/contrastes (`get_theme_and_contrast`), connaître les extensions/polices ou la sélection (`get_registry_and_selection`), '
       '(5) un tableau de repository est tronqué ("truncatedArrays" -> `query_repository_data`) ou une vue Détail/page secondaire doit être prévisualisée (`preview_navigation_or_selection`), '
-      '(6) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
+      '(6) l’utilisateur demande où se trouve un élément ou de le sélectionner/pointer dans l’éditeur (`select_editor_element`), '
+      '(7) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
       '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples dont le JSON courant contient déjà toute l’information.\n'
       '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
       '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'

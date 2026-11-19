@@ -232,6 +232,23 @@ class _SuperChartState extends State<SuperChart> {
         _items = cached;
         _error = null;
         _loading = false;
+        if (nextCalcPaths.isNotEmpty && cached.isNotEmpty) {
+          final seededCalc = <String, Object?>{};
+          for (var i = 0; i < cached.length; i++) {
+            for (final rel in nextCalcPaths) {
+              final attr = store.peekAttribute(
+                JsonTextBinding(
+                  repositoryId: binding.repositoryId,
+                  path: '${binding.path}[$i].$rel',
+                ),
+              );
+              if (attr != null) {
+                seededCalc['$i:$rel'] = attr.value;
+              }
+            }
+          }
+          _calculatedValues = seededCalc;
+        }
       }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -241,6 +258,20 @@ class _SuperChartState extends State<SuperChart> {
 
   static bool _setEquals(Set<String> a, Set<String> b) =>
       a.length == b.length && a.containsAll(b);
+
+  static bool _mapJsonEquals(
+    Map<String, Object?> a,
+    Map<String, Object?> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (!b.containsKey(entry.key) ||
+          !JsonRepositoryStore.jsonEquals(entry.value, b[entry.key])) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   static Set<String> _calculatedRelativePaths(SuperChartConfig config) {
     final paths = <String>{};
@@ -266,19 +297,25 @@ class _SuperChartState extends State<SuperChart> {
     final binding = _source?.binding;
     final store = _store;
     if (binding == null || store == null) {
-      setState(() {
-        _items = null;
-        _calculatedValues = const {};
-        _loading = false;
-        _error =
-            _source?.error ??
-            (store == null && _source?.unselected == true
-                ? 'Service de repositories indisponible.'
-                : null);
-      });
+      final nextError =
+          _source?.error ??
+          (store == null && _source?.unselected == true
+              ? 'Service de repositories indisponible.'
+              : null);
+      if (_items != null ||
+          _calculatedValues.isNotEmpty ||
+          _loading ||
+          _error != nextError) {
+        setState(() {
+          _items = null;
+          _calculatedValues = const {};
+          _loading = false;
+          _error = nextError;
+        });
+      }
       return;
     }
-    if (_items == null) {
+    if (_items == null && !_loading) {
       setState(() => _loading = true);
     }
     try {
@@ -315,22 +352,35 @@ class _SuperChartState extends State<SuperChart> {
       if (selected != null && selected >= items.length) {
         _selection!.clear();
       }
-      setState(() {
-        _items = items;
-        _calculatedValues = nextCalculated;
-        _error = null;
-      });
+      if (!JsonRepositoryStore.jsonEquals(_items, items) ||
+          !_mapJsonEquals(_calculatedValues, nextCalculated) ||
+          _error != null ||
+          _loading) {
+        setState(() {
+          _items = items;
+          _calculatedValues = nextCalculated;
+          _error = null;
+          _loading = false;
+        });
+      }
     } on FormatException catch (error) {
-      if (mounted && generation == _generation) {
-        setState(() => _error = error.message);
+      if (mounted &&
+          generation == _generation &&
+          (_error != error.message || _loading)) {
+        setState(() {
+          _error = error.message;
+          _loading = false;
+        });
       }
     } on FileSystemException {
-      if (mounted && generation == _generation) {
-        setState(() => _error = 'Impossible de lire le repository lié.');
-      }
-    } finally {
-      if (mounted && generation == _generation) {
-        setState(() => _loading = false);
+      const readError = 'Impossible de lire le repository lié.';
+      if (mounted &&
+          generation == _generation &&
+          (_error != readError || _loading)) {
+        setState(() {
+          _error = readError;
+          _loading = false;
+        });
       }
     }
   }

@@ -151,7 +151,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
 4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
-5. Interrogation de l'application en cours d'exécution (si des mesures ou diagnostics réels manquent) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
+5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
@@ -1176,15 +1176,19 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void _rollbackLivePreview(_LiveTurnSession session) {
     session.lastAppliedPatchRevision = 0;
     session.lastPreviewAppearance = session.baseAppearance;
-    VibeWorkHighlightController.instance.clearAll();
-    if (session.hasAppliedLivePreview ||
-        !identical(widget.controller.value, session.rawInitialAppearance)) {
+    final hadPreviewChange =
+        session.hasAppliedLivePreview ||
+        !identical(widget.controller.value, session.rawInitialAppearance);
+    if (hadPreviewChange) {
+      VibeWorkHighlightController.instance.clearAll();
       try {
         _setPreviewAppearance(session.rawInitialAppearance);
       } catch (_) {
         // Ignore en cas de contrôleur déjà disposé.
       }
       session.hasAppliedLivePreview = false;
+    } else {
+      VibeWorkHighlightController.instance.clearStreamingTargets();
     }
     if (session.liveNavigatedPageId != null ||
         session.previewTracker.hasNavigated) {
@@ -2465,6 +2469,14 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
       repositoryStore: session.repoTransaction?.store,
       pageRouting: session.pageRouting,
       readScope: () => _scope,
+      onSelectScope: (nextScope) {
+        if (mounted) {
+          setState(() => _scope = nextScope);
+        } else {
+          _scope = nextScope;
+        }
+        widget.onScopeChanged?.call(nextScope);
+      },
       fallbackContext: () => mounted ? context : null,
       turnStartMarker: session.turnStartMarker,
       previewTracker: session.previewTracker,
@@ -2490,6 +2502,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           'Lecture du registre et de la sélection…',
         'preview_navigation_or_selection' =>
           'Mise à jour de la route / sélection d’aperçu…',
+        'select_editor_element' =>
+          'Sélection de l’élément dans l’éditeur…',
         final other => 'Exécution de $other…',
       };
     }

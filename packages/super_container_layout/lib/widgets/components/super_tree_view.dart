@@ -347,20 +347,26 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     final binding = _source?.binding;
     final store = _store;
     if (binding == null || store == null) {
-      setState(() {
-        _rawNodes = null;
-        _singleRootObject = false;
-        _loading = false;
-        _error =
-            _source?.error ??
-            (store == null && _source?.unselected == true
-                ? 'Service de repositories indisponible.'
-                : null);
-        _renderRevision++;
-      });
+      final nextError =
+          _source?.error ??
+          (store == null && _source?.unselected == true
+              ? 'Service de repositories indisponible.'
+              : null);
+      if (_rawNodes != null ||
+          _singleRootObject ||
+          _loading ||
+          _error != nextError) {
+        setState(() {
+          _rawNodes = null;
+          _singleRootObject = false;
+          _loading = false;
+          _error = nextError;
+          _renderRevision++;
+        });
+      }
       return;
     }
-    if (_rawNodes == null) {
+    if (_rawNodes == null && !_loading) {
       setState(() => _loading = true);
     }
     try {
@@ -369,29 +375,38 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         binding.path,
       );
       if (!mounted || generation != _generation) return;
-      setState(() {
-        _rawNodes = loaded.nodes;
-        _singleRootObject = loaded.singleRootObject;
-        _error = null;
-        _renderRevision++;
-      });
+      if (!JsonRepositoryStore.jsonEquals(_rawNodes, loaded.nodes) ||
+          _singleRootObject != loaded.singleRootObject ||
+          _error != null ||
+          _loading) {
+        setState(() {
+          _rawNodes = loaded.nodes;
+          _singleRootObject = loaded.singleRootObject;
+          _error = null;
+          _loading = false;
+          _renderRevision++;
+        });
+      }
     } on FormatException catch (error) {
-      if (mounted && generation == _generation) {
+      if (mounted &&
+          generation == _generation &&
+          (_error != error.message || _loading)) {
         setState(() {
           _error = error.message;
+          _loading = false;
           _renderRevision++;
         });
       }
     } on FileSystemException {
-      if (mounted && generation == _generation) {
+      const readError = 'Impossible de lire le repository lié.';
+      if (mounted &&
+          generation == _generation &&
+          (_error != readError || _loading)) {
         setState(() {
-          _error = 'Impossible de lire le repository lié.';
+          _error = readError;
+          _loading = false;
           _renderRevision++;
         });
-      }
-    } finally {
-      if (mounted && generation == _generation) {
-        setState(() => _loading = false);
       }
     }
   }
