@@ -762,7 +762,9 @@ Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un 
 - Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"theme:<rôle>"` recommandé Material 3, ou `"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
 - `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}` (supporte `string` ou `List<string>` pour les choix multiples).
 - `bindingDebounceMs` (`int?`, `100..2000`) et `bindingSaveOnBlurOnly` (`bool?`) : surcharges optionnelles du délai anti-rebond (en ms, défaut global `350`) et de l'enregistrement uniquement à la perte de focus (omis par défaut pour hériter du réglage global `Appearance.bindingDebounceMs` / `Appearance.bindingSaveOnBlurOnly`).
-- `field` (`SuperTextFieldConfig`, pour `mode: "input"` et `kind: "text"`).
+- `field` (`SuperTextFieldConfig`, utilisé pour `mode: "input"` et `kind: "text"`, ainsi que pour les masques d'affichage en `mode: "display"`).
+  - Masques et formatage : `mask` (`string`, jetons `#` chiffre, `A` lettre, `U` majuscule, `L` minuscule, `*` alphanumérique, `\` échappement), `maskIncludeLiterals` (`bool`, `false` par défaut pour stocker la valeur brute), `dateFormat` (`string` `intl`, ex. `"dd/MM/yyyy"` avec conversion ISO 8601), `decimalDigits` (`int?`), `decimalSeparator` (`"."` | `","`), `thousandsSeparator` (`string`).
+  - Contraintes JSON Schema : `valueType` (`"string"` | `"integer"` | `"number"`), `required` (`bool`), `minLength` (`int?`), `maxLength` (`int?`), `validationPattern` (`string` regex complète), `format` (`"none"` | `"email"` | `"uri"` | `"uuid"` | `"date"` | `"date-time"` | `"time"` | `"ipv4"` | `"ipv6"` | `"hostname"` | `"phone"`), `minimum` / `maximum` / `exclusiveMinimum` / `exclusiveMaximum` / `multipleOf` (`number?`), `enumValues` (`List<string>`), `constValue` (`string?`), `validationMessage` (`string`). En cas de violation après modification ou perte de focus, l'erreur est affichée dans le champ, `AutomaticState.invalid` s'active et l'écriture repository est bloquée.
 - `choice` (`SuperChoiceConfig`, pour `kind: "choice"`) :
   - `variant` : `"segmented"` (2 à 5 choix uniques `SegmentedButton`), `"dropdown"` (défaut, `DropdownButton`), `"radio"` (`RadioListTile`), `"filterChip"` (choix multiples `FilterChip`), `"checkboxList"` (choix multiples `CheckboxListTile`), `"searchAnchor"` (grande liste recherchable `SearchAnchor`).
   - `options` : liste d'options statiques (`["opt1", "opt2"]` ou `[{"value": "fr", "label": "France", "icon": "flag"}]`).
@@ -1344,6 +1346,7 @@ acceptent aussi les valeurs négatives hors plage. Les opacités restent limité
 | Focus clavier | Non | `automatic.focused` (`mode: "input"`) | `automatic.focused` |
 | Désactivé | Non | `automatic.disabled` (`mode: "input"`, `enabled: false`) | `automatic.disabled` (`enabled: false`) |
 | Lecture seule | Non | `automatic.readOnly` (`mode: "input"`, `readOnly: true`) | Non |
+| Saisie invalide | Non | `automatic.invalid` (`mode: "input"`, contrainte violée après interaction) | Non |
 
 - `selected` correspond à la **sélection de données d'une ligne**, pas à la sélection d'un widget dans l'éditeur.
 - `contentHover` est fourni par le `ContentHoverScope` de l'`IterableContent` englobant (notamment celui déjà présent sur chaque ligne de `ListView`). Contrairement à `hover`, il permet de modifier un enfant dès que la souris survole la ligne, sans devoir survoler cet enfant.

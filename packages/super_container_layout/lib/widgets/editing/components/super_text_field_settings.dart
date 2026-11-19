@@ -29,7 +29,7 @@ class SuperTextFieldSettings extends StatefulWidget {
 
 /// État interne du dialogue de paramétrage d'un [SuperTextField].
 class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
-  late final Map<String, Object?> _values = widget.value.toJson();
+  late Map<String, Object?> _values = widget.value.toJson();
   late final Map<String, TextEditingController> _fields = {
     for (final key in [
       'radius',
@@ -42,10 +42,42 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
       'helperText',
       'errorText',
       'pattern',
+      'mask',
+      'dateFormat',
+      'decimalDigits',
+      'minLength',
+      'validationPattern',
+      'minimum',
+      'maximum',
+      'exclusiveMinimum',
+      'exclusiveMaximum',
+      'multipleOf',
+      'enumValues',
+      'constValue',
+      'validationMessage',
     ])
-      key: TextEditingController(text: _values[key]?.toString() ?? ''),
+      key: TextEditingController(
+        text: key == 'enumValues'
+            ? ((_values[key] as List?)?.join(', ') ?? '')
+            : (_values[key]?.toString() ?? ''),
+      ),
   };
   String? _error;
+
+  /// Synchronise les contrôleurs depuis une modification externe (ex. mode
+  /// affichage dans [SuperValueEditor]) hors phase de construction.
+  void syncValue(SuperTextFieldConfig nextValue) {
+    final next = nextValue.toJson();
+    _values = next;
+    for (final entry in _fields.entries) {
+      final formatted = entry.key == 'enumValues'
+          ? ((next[entry.key] as List?)?.join(', ') ?? '')
+          : (next[entry.key]?.toString() ?? '');
+      if (entry.value.text != formatted) {
+        entry.value.text = formatted;
+      }
+    }
+  }
 
   SuperTextFieldConfig value() {
     final values = {..._values};
@@ -64,12 +96,45 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           throw const FormatException('Dimension numérique requise.');
         }
         values[entry.key] = number;
+      } else if ([
+        'minimum',
+        'maximum',
+        'exclusiveMinimum',
+        'exclusiveMaximum',
+        'multipleOf',
+      ].contains(entry.key)) {
+        final number = text.trim().isEmpty
+            ? null
+            : double.tryParse(text.trim().replaceAll(',', '.'));
+        if (text.trim().isNotEmpty && number == null) {
+          throw const FormatException('Valeur numérique requise.');
+        }
+        values[entry.key] = number;
       } else if (entry.key == 'maxLength') {
         final number = text.trim().isEmpty ? null : int.tryParse(text.trim());
         if (text.trim().isNotEmpty && number == null) {
           throw const FormatException('Longueur maximale entière requise.');
         }
         values[entry.key] = number;
+      } else if (entry.key == 'minLength') {
+        final number = text.trim().isEmpty ? null : int.tryParse(text.trim());
+        if (text.trim().isNotEmpty && number == null) {
+          throw const FormatException('Longueur minimale entière requise.');
+        }
+        values[entry.key] = number;
+      } else if (entry.key == 'decimalDigits') {
+        final number = text.trim().isEmpty ? null : int.tryParse(text.trim());
+        if (text.trim().isNotEmpty && number == null) {
+          throw const FormatException('Nombre de décimales entier requis.');
+        }
+        values[entry.key] = number;
+      } else if (entry.key == 'enumValues') {
+        values[entry.key] = [
+          for (final part in text.split(','))
+            if (part.trim().isNotEmpty) part.trim(),
+        ];
+      } else if (entry.key == 'constValue') {
+        values[entry.key] = text.isEmpty ? null : text;
       } else {
         values[entry.key] = text;
       }
@@ -123,6 +188,9 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         ('filter', 'decimal') => Icons.numbers,
         ('filter', 'letters') => Icons.sort_by_alpha,
         ('filter', 'pattern') => Icons.code,
+        ('valueType', 'string') => Icons.text_fields,
+        ('valueType', 'integer') => Icons.pin_outlined,
+        ('valueType', 'number') => Icons.numbers,
         ('capitalization', 'none') => Icons.text_rotation_none,
         ('capitalization', 'words') => Icons.title,
         ('capitalization', 'sentences') => Icons.short_text,
@@ -196,7 +264,7 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         controller: _fields[key],
         decoration: InputDecoration(labelText: label),
         keyboardType: numeric
-            ? const TextInputType.numberWithOptions(decimal: true)
+            ? const TextInputType.numberWithOptions(decimal: true, signed: true)
             : TextInputType.text,
         onChanged: (_) => _update(key, _fields[key]!.text),
       );
@@ -380,15 +448,116 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     ),
     StyleEditorSection(
       id: 'text-field-filters',
-      title: 'Limites et filtres',
+      title: 'Masques, limites et contraintes',
       icon: Icons.filter_alt_outlined,
-      tag: 'maxLength · inputFormatters',
+      tag: 'mask · JSON Schema',
       child: _group([
+        _text('mask', 'Masque à motifs (ex. ##/##/####, UU-###-UU)'),
+        if ((_values['mask'] as String? ?? '').isNotEmpty ||
+            _fields['mask']!.text.isNotEmpty)
+          _switch(
+            'maskIncludeLiterals',
+            'Inclure les littéraux du masque dans la valeur enregistrée',
+          ),
+        const Text(
+          'Jetons : # chiffre · A lettre · U majuscule · L minuscule · * alphanumérique · \\ échappement.',
+        ),
+        _text('dateFormat', 'Format de date affiché (ex. dd/MM/yyyy)'),
+        _text(
+          'decimalDigits',
+          'Décimales affichées (0..10, vide = brut)',
+          numeric: true,
+        ),
+        EditorSegmentedField<String>(
+          buttonKey: ValueKey(
+            'text-field-setting-decimalSeparator-${_values['decimalSeparator']}',
+          ),
+          label: 'Séparateur décimal',
+          value: (_values['decimalSeparator'] as String?) ?? '.',
+          options: const [
+            EditorSegmentOption(value: '.', label: 'Point (.)'),
+            EditorSegmentOption(value: ',', label: 'Virgule (,)'),
+          ],
+          onChanged: (value) => _update('decimalSeparator', value),
+        ),
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            'text-field-setting-thousandsSeparator-${_values['thousandsSeparator']}',
+          ),
+          initialValue: (_values['thousandsSeparator'] as String?) ?? '',
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Séparateur des milliers',
+          ),
+          items: const [
+            DropdownMenuItem(value: '', child: Text('Aucun')),
+            DropdownMenuItem(value: ' ', child: Text('Espace ( )')),
+            DropdownMenuItem(value: ',', child: Text('Virgule (,)')),
+            DropdownMenuItem(value: '.', child: Text('Point (.)')),
+          ],
+          onChanged: (value) => _update('thousandsSeparator', value ?? ''),
+        ),
+        const Divider(),
+        _choice(
+          'valueType',
+          'Type JSON Schema',
+          TextFieldValueType.values,
+          labels: {
+            for (final t in TextFieldValueType.values) t.name: t.displayLabel,
+          },
+        ),
+        _switch('required', 'Champ obligatoire (required)'),
+        _text(
+          'minLength',
+          'Longueur minimale (minLength)',
+          numeric: true,
+        ),
         _text(
           'maxLength',
           'Longueur maximale (vide = illimitée)',
           numeric: true,
         ),
+        _text('validationPattern', 'Regex de validation complète (pattern)'),
+        DropdownButtonFormField<String>(
+          key: ValueKey('text-field-setting-format-${_values['format']}'),
+          initialValue: (_values['format'] as String?) ?? 'none',
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Format JSON Schema (format)',
+          ),
+          items: [
+            for (final format in TextFieldFormat.values)
+              DropdownMenuItem(
+                value: format.name,
+                child: Text(format.displayLabel),
+              ),
+          ],
+          onChanged: (value) => _update('format', value ?? 'none'),
+        ),
+        if (_values['valueType'] != 'string' ||
+            _fields['minimum']!.text.isNotEmpty ||
+            _fields['maximum']!.text.isNotEmpty ||
+            _fields['exclusiveMinimum']!.text.isNotEmpty ||
+            _fields['exclusiveMaximum']!.text.isNotEmpty ||
+            _fields['multipleOf']!.text.isNotEmpty) ...[
+          _text('minimum', 'Minimum inclusif (minimum)', numeric: true),
+          _text('maximum', 'Maximum inclusif (maximum)', numeric: true),
+          _text(
+            'exclusiveMinimum',
+            'Minimum strict (exclusiveMinimum)',
+            numeric: true,
+          ),
+          _text(
+            'exclusiveMaximum',
+            'Maximum strict (exclusiveMaximum)',
+            numeric: true,
+          ),
+          _text('multipleOf', 'Multiple de (multipleOf)', numeric: true),
+        ],
+        _text('enumValues', 'Valeurs autorisées (enum, séparées par virgules)'),
+        _text('constValue', 'Valeur exacte imposée (const)'),
+        _text('validationMessage', 'Message d’erreur de validation'),
+        const Divider(),
         _choice(
           'filter',
           'Filtre de saisie',
@@ -409,7 +578,8 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           ),
         ],
         const Text(
-          'Les filtres et limites ne modifient pas les valeurs chargées depuis le code ou un repository.',
+          'Les filtres de frappe ne modifient pas les valeurs déjà chargées ; '
+          'la validation bloque la sauvegarde repository tant que la saisie est invalide.',
         ),
       ]),
     ),

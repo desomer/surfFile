@@ -312,7 +312,8 @@ enum AutomaticState {
   contentHover('Content survolé', 'Content survolé'),
   focused('Focus', 'Focus du champ'),
   disabled('Désactivé', 'Champ désactivé'),
-  readOnly('Lecture seule', 'Champ en lecture seule');
+  readOnly('Lecture seule', 'Champ en lecture seule'),
+  invalid('Invalide', 'Saisie ne respectant pas les contraintes');
 
   const AutomaticState(this.label, this.description);
   final String label;

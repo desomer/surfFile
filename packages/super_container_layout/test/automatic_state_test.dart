@@ -24,7 +24,7 @@ void main() {
     );
     expect(decoded, config);
     expect(decoded.hashCode, config.hashCode);
-    expect(decoded.states!.automatic.length, 4);
+    expect(decoded.states!.automatic.length, AutomaticState.values.skip(2).length);
     expect(decoded.states!.order, [
       ValueConfigStates.hoverKey,
       ValueConfigStates.selectedKey,

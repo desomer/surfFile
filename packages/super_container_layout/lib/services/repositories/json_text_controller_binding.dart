@@ -28,6 +28,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
     this.requireString = false,
     Duration debounceDuration = defaultDebounceDuration,
     bool saveOnBlurOnly = false,
+    this.toStorageText,
+    this.toDisplayText,
+    this.validateText,
   }) : _debounceDuration = debounceDuration < Duration.zero
            ? Duration.zero
            : debounceDuration,
@@ -41,6 +44,11 @@ class JsonTextControllerBinding extends ChangeNotifier {
       store.addFlusher(
         flush,
         pendingError: () {
+          final validationError = _validationErrorOf(controller.text);
+          if (validationError != null &&
+              (_ready || controller.text.isNotEmpty)) {
+            return validationError;
+          }
           if (!dirty && (_ready || controller.text.isEmpty)) {
             return null;
           }
@@ -75,6 +83,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
   bool saving = false;
   Duration _debounceDuration;
   bool _saveOnBlurOnly;
+  String Function(String displayText)? toStorageText;
+  String Function(String storageText)? toDisplayText;
+  String? Function(String storageText, String displayText)? validateText;
 
   /// Temporisation anti-rebond actuelle avant écriture automatique dans le repository.
   Duration get debounceDuration => _debounceDuration;
@@ -102,6 +113,31 @@ class JsonTextControllerBinding extends ChangeNotifier {
       _timer = Timer(_debounceDuration, flush);
     }
   }
+
+  /// Met à jour dynamiquement les transformations d'affichage/stockage et le
+  /// validateur sans recréer la liaison.
+  void configureTransform({
+    String Function(String displayText)? toStorageText,
+    String Function(String storageText)? toDisplayText,
+    String? Function(String storageText, String displayText)? validateText,
+  }) {
+    this.toStorageText = toStorageText;
+    this.toDisplayText = toDisplayText;
+    this.validateText = validateText;
+  }
+
+  String _storageOf(String displayText) =>
+      toStorageText?.call(displayText) ?? displayText;
+
+  String _displayOf(String storageText) =>
+      toDisplayText?.call(storageText) ?? storageText;
+
+  String? _validationErrorOf(String displayText) {
+    final validator = validateText;
+    if (validator == null) return null;
+    return validator(_storageOf(displayText), displayText);
+  }
+
   bool _disposed = false;
   bool _applying = false;
   bool _writing = false;
@@ -109,6 +145,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   bool _wasComposing = false;
   Object? _expected;
   String _saved = '';
+  String _savedDisplay = '';
   String _queuedText = '';
   int _queuedWrites = 0;
   String _observed = '';
@@ -116,7 +153,25 @@ class JsonTextControllerBinding extends ChangeNotifier {
   int _generation = 0;
   Future<void> _writes = Future.value();
   bool get dirty =>
-      !isReadOnly && _ready && (controller.text != _saved || _queuedWrites > 0);
+      !isReadOnly &&
+      _ready &&
+      ((controller.text != _savedDisplay &&
+              _storageOf(controller.text) != _saved) ||
+          _queuedWrites > 0);
+
+  /// Met à jour le texte affiché du contrôleur (ex. reformatage au focus/blur)
+  /// sans déclencher d'écriture parasite ni modifier l'état `dirty`.
+  void syncFormattedText(TextEditingValue nextValue) {
+    if (_disposed) return;
+    final wasDirty = dirty;
+    _applying = true;
+    controller.value = nextValue;
+    _observed = controller.text;
+    if (!wasDirty) {
+      _savedDisplay = controller.text;
+    }
+    _applying = false;
+  }
 
   /// Vrai lorsqu'une saisie locale ou une écriture en file doit être vidée
   /// avant de détacher ce contrôleur.
@@ -151,16 +206,18 @@ class JsonTextControllerBinding extends ChangeNotifier {
     final resolvedText = asBool
         ? (cached.value == true ? 'true' : 'false')
         : cached.text;
+    final displayText = _displayOf(resolvedText);
     _expected = cached.value;
     _saved = resolvedText;
+    _savedDisplay = displayText;
     _queuedText = resolvedText;
     _ready = true;
     loading = false;
     _applying = true;
-    if (controller.text != resolvedText) {
+    if (controller.text != displayText) {
       controller.value = TextEditingValue(
-        text: resolvedText,
-        selection: TextSelection.collapsed(offset: resolvedText.length),
+        text: displayText,
+        selection: TextSelection.collapsed(offset: displayText.length),
       );
     }
     _observed = controller.text;
@@ -203,6 +260,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
       final resolvedText = asBool
           ? (result.value == true ? 'true' : 'false')
           : result.text;
+      final displayText = _displayOf(resolvedText);
       if (dirty) {
         if (!JsonRepositoryStore.jsonEquals(result.value, _expected)) {
           failed = true;
@@ -215,13 +273,14 @@ class JsonTextControllerBinding extends ChangeNotifier {
       }
       _expected = result.value;
       _saved = resolvedText;
+      _savedDisplay = displayText;
       _queuedText = resolvedText;
       _ready = true;
       _applying = true;
-      if (controller.text != resolvedText) {
+      if (controller.text != displayText) {
         controller.value = TextEditingValue(
-          text: resolvedText,
-          selection: TextSelection.collapsed(offset: resolvedText.length),
+          text: displayText,
+          selection: TextSelection.collapsed(offset: displayText.length),
         );
         onChanged?.call(resolvedText);
         changed = true;
@@ -274,9 +333,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
         final resolvedText = asBool
             ? (cached.value == true ? 'true' : 'false')
             : cached.text;
+        final displayText = _displayOf(resolvedText);
         if (JsonRepositoryStore.jsonEquals(cached.value, _expected) &&
-            resolvedText == _saved &&
-            controller.text == resolvedText) {
+            (resolvedText == _saved || controller.text == displayText)) {
           return;
         }
       }
@@ -286,11 +345,12 @@ class JsonTextControllerBinding extends ChangeNotifier {
 
   void _restoreReadOnlyValue() {
     _timer?.cancel();
-    if (_ready && controller.text != _saved) {
+    final displayText = _displayOf(_saved);
+    if (_ready && controller.text != displayText) {
       _applying = true;
       controller.value = TextEditingValue(
-        text: _saved,
-        selection: TextSelection.collapsed(offset: _saved.length),
+        text: displayText,
+        selection: TextSelection.collapsed(offset: displayText.length),
       );
       _applying = false;
     }
@@ -317,6 +377,10 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _timer?.cancel();
     error = null;
     if (composing) return;
+    if (_validationErrorOf(controller.text) != null) {
+      _notify();
+      return;
+    }
     if (_saveOnBlurOnly) {
       _notify();
       return;
@@ -332,10 +396,16 @@ class JsonTextControllerBinding extends ChangeNotifier {
       _restoreReadOnlyValue();
       return _writes;
     }
-    if (!_ready || (controller.text == _queuedText && error == null)) {
+    if (!_ready) {
       return _writes;
     }
-    final text = controller.text;
+    if (_validationErrorOf(controller.text) != null) {
+      return _writes;
+    }
+    final text = _storageOf(controller.text);
+    if (text == _queuedText && error == null) {
+      return _writes;
+    }
     _queuedText = text;
     _queuedWrites++;
     _writes = _writes.then((_) async {
@@ -353,6 +423,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
         );
         _expected = result.value;
         _saved = text;
+        _savedDisplay = controller.text;
         error = null;
       } on FormatException catch (exception) {
         _failure(exception.message);

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/automatic_state.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
@@ -617,4 +618,44 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'AutomaticState.invalid and field mask/constraints resolve and round-trip',
+    () {
+      const constrainedField = SuperTextFieldConfig(
+        mask: 'UU-###-UU',
+        required: true,
+        minLength: 7,
+        validationPattern: r'^[A-Z]{2}\d{3}[A-Z]{2}$',
+      );
+      final states = ValueConfigStates(
+        automatic: {
+          AutomaticState.invalid: ValueConfigOverride(
+            config: const SuperValueConfig(
+              color: Color(0xFFD32F2F),
+              field: constrainedField,
+            ),
+            properties: {
+              ValueStateProperty.color,
+              ValueStateProperty.content,
+            },
+          ),
+        },
+      );
+      final config = base.copyWith(
+        mode: SuperValueMode.input,
+        states: states,
+      );
+      final decoded = SuperValueConfig.fromJson(
+        jsonDecode(jsonEncode(config.toJson())),
+      );
+      expect(decoded, config);
+      final resolved = decoded.states!.resolve(
+        decoded,
+        activeStates: {AutomaticState.invalid},
+      );
+      expect(resolved.color, const Color(0xFFD32F2F));
+      expect(resolved.field, constrainedField);
+    },
+  );
 }

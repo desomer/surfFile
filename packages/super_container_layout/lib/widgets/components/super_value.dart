@@ -15,6 +15,7 @@ import '../../theme/theme_color.dart';
 import '../../models/automatic_state.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_choice_config.dart';
+import '../../models/super_text_field_config.dart';
 import '../../models/super_value_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
@@ -134,15 +135,37 @@ class _SuperValueState extends State<SuperValue>
   bool _hadStates = false;
   final _focusNode = FocusNode();
   bool _hadFocus = false;
+  bool _touched = false;
   Duration _requestedDebounceDuration =
       JsonTextControllerBinding.defaultDebounceDuration;
   bool _requestedSaveOnBlurOnly = false;
   Future<void>? _pendingBindingFlush;
 
-  static String _initialTextFor(SuperValueConfig config) =>
-      config.kind.isBoolean
+  static String _initialTextFor(
+    SuperValueConfig config, {
+    bool focused = false,
+  }) => config.kind.isBoolean
       ? (config.initialBool ? 'true' : 'false')
-      : (config.obscureText ? '' : config.initialText);
+      : (config.obscureText
+            ? ''
+            : config.kind.isText && config.field.hasMaskOrFormat
+            ? config.field.toDisplayText(config.initialText, focused: focused)
+            : config.initialText);
+
+  static String _displayControlledText(
+    SuperValueConfig config,
+    String text, {
+    bool focused = false,
+  }) => config.kind.isText && !config.obscureText && config.field.hasMaskOrFormat
+      ? config.field.toDisplayText(text, focused: focused)
+      : text;
+
+  static List<String> _nonInvalidStateKeys(List<String>? keys) => keys == null
+      ? const []
+      : [
+          for (final key in keys)
+            if (key != AutomaticState.invalid.key) key,
+        ];
 
   @override
   List<String> get availableComponentFontFamilies =>
@@ -170,11 +193,28 @@ class _SuperValueState extends State<SuperValue>
           behaviorDisabled || (input && !source.enabled);
       final effectiveReadOnly =
           behaviorReadOnly || (input && source.readOnly);
+      final currentDisplay = _editorText != null
+          ? _editorText!.text
+          : (_controlledText ?? _text.text);
+      final currentStorage = input && source.kind.isText
+          ? source.field.toStorageText(currentDisplay)
+          : currentDisplay;
+      final isInvalid =
+          _touched &&
+          input &&
+          source.kind.isText &&
+          source.field.validateValue(
+                currentStorage,
+                displayValue: currentDisplay,
+                obscureText: source.obscureText,
+              ) !=
+              null;
       automaticActiveStates = {
         if (contentHovered) AutomaticState.contentHover,
         if (input && _focusNode.hasFocus) AutomaticState.focused,
         if (effectiveDisabled) AutomaticState.disabled,
         if (effectiveReadOnly) AutomaticState.readOnly,
+        if (isInvalid) AutomaticState.invalid,
       };
       var config =
           saved.states?.resolve(
@@ -217,15 +257,43 @@ class _SuperValueState extends State<SuperValue>
   void initState() {
     super.initState();
     widget.config.copyWith(clearStates: true).validate();
-    _internal = TextEditingController(
-      text: _controlledText ?? _initialTextFor(widget.config),
-    );
+    final initial = _controlledText != null
+        ? _displayControlledText(widget.config, _controlledText!)
+        : _initialTextFor(widget.config);
+    _internal = TextEditingController(text: initial);
     _local = ValueNotifier(widget.config);
     _focusNode.addListener(_handleFocusChanged);
   }
 
   void _handleFocusChanged() {
     final hasFocus = _focusNode.hasFocus;
+    final current = _currentEffectiveConfig;
+    if (_hadFocus && !hasFocus) {
+      _touched = true;
+    }
+    if (current.mode == SuperValueMode.input &&
+        current.kind.isText &&
+        !current.obscureText &&
+        widget.controller == null &&
+        _editorText == null &&
+        current.field.mask.isEmpty &&
+        (current.field.hasNumericFormatting ||
+            (current.field.dateFormat.isNotEmpty && !hasFocus))) {
+      final storage = current.field.toStorageText(_internal.text);
+      final formatted = current.field.toDisplayText(storage, focused: hasFocus);
+      if (formatted != _internal.text &&
+          (!hasFocus || current.field.hasNumericFormatting)) {
+        final nextValue = TextEditingValue(
+          text: formatted,
+          selection: TextSelection.collapsed(offset: formatted.length),
+        );
+        if (_binding != null) {
+          _binding!.syncFormattedText(nextValue);
+        } else {
+          _internal.value = nextValue;
+        }
+      }
+    }
     if (_hadFocus && !hasFocus) {
       final binding = _binding;
       if (binding != null && binding.hasPendingWrite) {
@@ -256,12 +324,20 @@ class _SuperValueState extends State<SuperValue>
       _requestedAsStringList = null;
       _activeStates = null;
       _effectiveConfig = null;
+      _touched = false;
     }
     final controlled = _controlledText;
     if (widget.controller == null) {
-      if (controlled != null && controlled != _internal.text) {
-        _setText(_internal, controlled);
-      } else if (oldWidget.controller != null && controlled == null) {
+      if (controlled != null) {
+        final display = _displayControlledText(
+          _currentEffectiveConfig,
+          controlled,
+          focused: _focusNode.hasFocus,
+        );
+        if (display != _internal.text) {
+          _setText(_internal, display);
+        }
+      } else if (oldWidget.controller != null) {
         _setText(_internal, oldWidget.controller!.text);
       }
     }
@@ -284,7 +360,10 @@ class _SuperValueState extends State<SuperValue>
     }
     if (previous == null) {
       if (widget.controller == null && _controlledText == null) {
-        _setText(_internal, _initialTextFor(config));
+        _setText(
+          _internal,
+          _initialTextFor(config, focused: _focusNode.hasFocus),
+        );
       }
       return;
     }
@@ -294,14 +373,31 @@ class _SuperValueState extends State<SuperValue>
         previous.initialBool == config.initialBool &&
         previous.binding == null &&
         (!config.obscureText || previous.obscureText)) {
+      if (widget.controller == null &&
+          _controlledText == null &&
+          previous.field != config.field) {
+        final storage = previous.field.toStorageText(_internal.text);
+        final nextDisplay = _displayControlledText(
+          config,
+          storage,
+          focused: _focusNode.hasFocus,
+        );
+        if (nextDisplay != _internal.text) {
+          _setText(_internal, nextDisplay);
+        }
+      }
       return;
     }
+    _touched = false;
     final generation = ++_resetGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _resetGeneration) return;
-      final text = _initialTextFor(config);
-      if (_controlledText == null) _setText(_text, text);
-      widget.onChanged?.call(text);
+      final display = _initialTextFor(config, focused: _focusNode.hasFocus);
+      final raw = config.kind.isText && !config.obscureText
+          ? config.field.toStorageText(display)
+          : display;
+      if (_controlledText == null) _setText(_text, display);
+      widget.onChanged?.call(raw);
       if (config.kind.isBoolean) {
         widget.onBoolChanged?.call(config.initialBool);
       }
@@ -365,6 +461,39 @@ class _SuperValueState extends State<SuperValue>
     if (mounted) setState(() {});
   }
 
+  ({
+    String Function(String displayText)? toStorageText,
+    String Function(String storageText)? toDisplayText,
+    String? Function(String storageText, String displayText)? validateText,
+  })
+  _bindingTransformsFor(SuperValueConfig config) {
+    if (!config.kind.isText || config.obscureText) {
+      return (toStorageText: null, toDisplayText: null, validateText: null);
+    }
+    final field = config.field;
+    final hasTransform =
+        field.hasMaskOrFormat || field.valueType != TextFieldValueType.string;
+    final toStorage = hasTransform ? field.toStorageText : null;
+    final toDisplay = field.hasMaskOrFormat
+        ? (String s) => field.toDisplayText(
+            s,
+            focused: config.mode == SuperValueMode.input && _focusNode.hasFocus,
+          )
+        : null;
+    final validate = config.mode == SuperValueMode.input && field.hasConstraints
+        ? (String storage, String display) => field.validateValue(
+            storage,
+            displayValue: display,
+            obscureText: config.obscureText,
+          )
+        : null;
+    return (
+      toStorageText: toStorage,
+      toDisplayText: toDisplay,
+      validateText: validate,
+    );
+  }
+
   void _observeBinding(
     SuperValueConfig config,
     JsonListScope? scope,
@@ -381,6 +510,12 @@ class _SuperValueState extends State<SuperValue>
       debounceDuration: debounceDuration,
       saveOnBlurOnly: saveOnBlurOnly,
     );
+    final transforms = _bindingTransformsFor(config);
+    _binding?.configureTransform(
+      toStorageText: transforms.toStorageText,
+      toDisplayText: transforms.toDisplayText,
+      validateText: transforms.validateText,
+    );
     final external = widget.controller != null || _controlledText != null;
     final asBool = config.kind.isBoolean;
     final asStringList =
@@ -396,6 +531,9 @@ class _SuperValueState extends State<SuperValue>
         _requestedAsBool == asBool &&
         _requestedAsStringList == asStringList) {
       return;
+    }
+    if (_requestedBinding != resolved.binding || resetText) {
+      _touched = false;
     }
     _requestedBinding = resolved.binding;
     _requestedResolveError = resolved.error;
@@ -437,7 +575,10 @@ class _SuperValueState extends State<SuperValue>
           final fallback = asBool ? 'false' : '';
           if (_internal.text != fallback) _setText(_internal, fallback);
         } else if (resetText && resolved.binding == null) {
-          final fallback = _initialTextFor(config);
+          final fallback = _initialTextFor(
+            config,
+            focused: _focusNode.hasFocus,
+          );
           if (_internal.text != fallback) _setText(_internal, fallback);
         } else if (resolved.error == null &&
             resolved.binding != null &&
@@ -454,7 +595,7 @@ class _SuperValueState extends State<SuperValue>
                   cached.value is List)) {
             final resolvedText = asBool
                 ? (cached.value == true ? 'true' : 'false')
-                : cached.text;
+                : (transforms.toDisplayText?.call(cached.text) ?? cached.text);
             if (_internal.text != resolvedText) {
               _setText(_internal, resolvedText);
             }
@@ -491,7 +632,10 @@ class _SuperValueState extends State<SuperValue>
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
       if (resetText && !external && resolved.binding == null) {
-        _setText(_internal, _initialTextFor(config));
+        _setText(
+          _internal,
+          _initialTextFor(config, focused: _focusNode.hasFocus),
+        );
       }
       if (resolved.placeholder && !external) {
         _setText(_internal, asBool ? 'false' : '');
@@ -512,6 +656,9 @@ class _SuperValueState extends State<SuperValue>
             asStringList: asStringList,
             debounceDuration: _requestedDebounceDuration,
             saveOnBlurOnly: _requestedSaveOnBlurOnly,
+            toStorageText: transforms.toStorageText,
+            toDisplayText: transforms.toDisplayText,
+            validateText: transforms.validateText,
             onChanged: stateful
                 ? null
                 : (text) {
@@ -663,7 +810,11 @@ class _SuperValueState extends State<SuperValue>
                       key,
                 ];
           final transition =
-              states != null && !listEquals(_activeStates, active);
+              states != null &&
+              !listEquals(
+                _nonInvalidStateKeys(_activeStates),
+                _nonInvalidStateKeys(active),
+              );
           final removedStates = states == null && _hadStates;
           final contentChanged =
               states != null &&
@@ -731,6 +882,8 @@ class _SuperValueState extends State<SuperValue>
                     ? _text.text.trim().toLowerCase() == 'true'
                     : current.kind.isChoice && current.choice.variant.isMultiple
                     ? SuperChoiceConfig.parseSelectedValues(_text.text)
+                    : current.kind.isText
+                    ? current.field.toStorageText(_text.text)
                     : _text.text,
               };
             },
@@ -943,19 +1096,28 @@ class _SuperValueState extends State<SuperValue>
                       : null;
                   final effectiveColor =
                       style.color ?? Theme.of(context).colorScheme.onSurface;
+                  final displayText =
+                      config.mode == SuperValueMode.display &&
+                          !config.obscureText &&
+                          text.isNotEmpty
+                      ? config.field.toDisplayText(text)
+                      : text;
                   final display = buildSuperValueDisplayWithAffixes(
                     config: config,
                     valueStyle: style,
                     prefixKey: ValueKey('super-value-prefix-${widget.id}'),
                     suffixKey: ValueKey('super-value-suffix-${widget.id}'),
                     display: Text(
-                      text.isEmpty
+                      displayText.isEmpty
                           ? (config.placeholder.isNotEmpty
                                 ? config.placeholder
                                 : (previewText ?? ''))
                           : config.obscureText
-                          ? List.filled(text.runes.length, '\u2022').join()
-                          : text,
+                          ? List.filled(
+                              displayText.runes.length,
+                              '\u2022',
+                            ).join()
+                          : displayText,
                       key: ValueKey('super-value-display-${widget.id}'),
                       style: previewText != null
                           ? style.copyWith(
@@ -970,6 +1132,17 @@ class _SuperValueState extends State<SuperValue>
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
+                  final storageText = config.field.toStorageText(text);
+                  final validationError =
+                      _touched &&
+                          _editorText == null &&
+                          config.mode == SuperValueMode.input
+                      ? config.field.validateValue(
+                          storageText,
+                          displayValue: text,
+                          obscureText: config.obscureText,
+                        )
+                      : null;
                   content = config.mode == SuperValueMode.input
                       ? Listener(
                           onPointerDown: (event) {
@@ -1003,18 +1176,36 @@ class _SuperValueState extends State<SuperValue>
                                 : null,
                             enableContextMenu: !canConfigure,
                             bindingError: _bindingError ?? _binding?.error,
-                            onChanged: (text) {
+                            validationError: validationError,
+                            onChanged: (nextText) {
                               if (_editorText != null) return;
-                              widget.onChanged?.call(text);
+                              final nextStorage = config.field.toStorageText(
+                                nextText,
+                              );
+                              if (!_touched) {
+                                setState(() => _touched = true);
+                              } else if (savedConfig.states?.automatic
+                                      .containsKey(AutomaticState.invalid) ==
+                                  true) {
+                                setState(() {});
+                              }
+                              widget.onChanged?.call(nextStorage);
                               if (_controlledText != null) {
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
                                 ) {
                                   if (mounted &&
                                       widget.controller == null &&
-                                      _controlledText != null &&
-                                      _internal.text != _controlledText) {
-                                    _setText(_internal, _controlledText!);
+                                      _controlledText != null) {
+                                    final expectedDisplay =
+                                        _displayControlledText(
+                                          _currentEffectiveConfig,
+                                          _controlledText!,
+                                          focused: _focusNode.hasFocus,
+                                        );
+                                    if (_internal.text != expectedDisplay) {
+                                      _setText(_internal, expectedDisplay);
+                                    }
                                   }
                                 });
                               }

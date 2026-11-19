@@ -51,6 +51,7 @@ export 'models/super_indicator_config.dart';
 export 'models/super_separator_config.dart';
 export 'models/super_choice_config.dart';
 export 'models/super_text_field_config.dart';
+export 'models/text_field_constraints.dart';
 export 'models/json_text_binding.dart';
 export 'models/super_list_view_config.dart';
 export 'models/super_conditional_config.dart';

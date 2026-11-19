@@ -212,6 +212,45 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
         'autocorrect': '${field.autocorrect}',
       if (field.suggestions != d.suggestions)
         'suggestions': '${field.suggestions}',
+      if (field.mask != d.mask) 'mask': context.formatString(field.mask),
+      if (field.maskIncludeLiterals != d.maskIncludeLiterals)
+        'maskIncludeLiterals': '${field.maskIncludeLiterals}',
+      if (field.decimalDigits != null)
+        'decimalDigits': '${field.decimalDigits}',
+      if (field.decimalSeparator != d.decimalSeparator)
+        'decimalSeparator': context.formatString(field.decimalSeparator),
+      if (field.thousandsSeparator != d.thousandsSeparator)
+        'thousandsSeparator': context.formatString(field.thousandsSeparator),
+      if (field.dateFormat != d.dateFormat)
+        'dateFormat': context.formatString(field.dateFormat),
+      if (field.valueType != d.valueType)
+        'valueType': 'TextFieldValueType.${field.valueType.name}',
+      if (field.required != d.required) 'required': '${field.required}',
+      if (field.minLength != null) 'minLength': '${field.minLength}',
+      if (field.validationPattern != d.validationPattern)
+        'validationPattern': context.formatString(field.validationPattern),
+      if (field.format != d.format)
+        'format': 'TextFieldFormat.${field.format.name}',
+      if (field.minimum != null) 'minimum': context.formatNum(field.minimum!),
+      if (field.maximum != null) 'maximum': context.formatNum(field.maximum!),
+      if (field.exclusiveMinimum != null)
+        'exclusiveMinimum': context.formatNum(field.exclusiveMinimum!),
+      if (field.exclusiveMaximum != null)
+        'exclusiveMaximum': context.formatNum(field.exclusiveMaximum!),
+      if (field.multipleOf != null)
+        'multipleOf': context.formatNum(field.multipleOf!),
+      if (field.enumValues.isNotEmpty)
+        'enumValues': context.formatList(
+          [
+            for (final value in field.enumValues) context.formatString(value),
+          ],
+          indent: indent + 2,
+          isConst: includeConst,
+        ),
+      if (field.constValue != null)
+        'constValue': context.formatString(field.constValue!),
+      if (field.validationMessage != d.validationMessage)
+        'validationMessage': context.formatString(field.validationMessage),
     };
     final prefix = includeConst ? 'const ' : '';
     return context.formatCall(

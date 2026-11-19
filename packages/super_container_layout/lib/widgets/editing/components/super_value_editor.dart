@@ -138,6 +138,7 @@ final _valueStateAdapter =
           AutomaticState.focused,
           AutomaticState.disabled,
           AutomaticState.readOnly,
+          AutomaticState.invalid,
         },
       },
     );
@@ -781,7 +782,14 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       letterSpacing: number('letterSpacing', positive: false),
     );
     final text = _draft.obscureText ? '' : _fields['initialText']!.text;
-    if (_previewText.text != text) _previewText.text = text;
+    final formattedText =
+        !_draft.obscureText &&
+            _draft.kind.isText &&
+            text.isNotEmpty &&
+            _fieldConfig.hasMaskOrFormat
+        ? _fieldConfig.toDisplayText(text)
+        : text;
+    if (_previewText.text != formattedText) _previewText.text = formattedText;
     final min = math.max(1, int.tryParse(_fields['minLines']!.text) ?? 1);
     final max = math.max(min, int.tryParse(_fields['maxLines']!.text) ?? min);
     final label = _fields['label']!.text;
@@ -805,7 +813,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       config: previewConfig,
       valueStyle: style,
       display: Text(
-        text.isEmpty ? placeholder : text,
+        formattedText.isEmpty ? placeholder : formattedText,
         style: style,
         textAlign: _draft.textAlign,
         maxLines: _draft.obscureText ? 1 : max,
@@ -1062,7 +1070,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         onChanged: () => setState(() {}),
         child: SuperTextFieldSettings(
           key: _fieldSettings,
-          value: _draft.field,
+          value: _fieldConfig,
           onChanged: (value) => setState(() {
             _fieldConfig = value;
             _fieldError = null;
@@ -1366,6 +1374,164 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                   ]),
                 ),
                 if (_hasFieldSettings) ...fieldSections,
+                if (!_hasFieldSettings &&
+                    _draft.mode == SuperValueMode.display &&
+                    _draft.kind.isText)
+                  StyleEditorSection(
+                    id: 'value-display-format',
+                    title: 'Masque et format d’affichage',
+                    icon: Icons.pattern,
+                    tag: 'mask · format',
+                    child: _group([
+                      TextFormField(
+                        key: const ValueKey('super-value-display-mask'),
+                        initialValue: _fieldConfig.mask,
+                        decoration: const InputDecoration(
+                          labelText: 'Masque d’affichage (ex. ## ## ## ## ##)',
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          try {
+                            final next = _fieldConfig.copyWith(mask: value)
+                              ..validate();
+                            _fieldSettings.currentState?.syncValue(next);
+                            setState(() {
+                              _fieldConfig = next;
+                              _fieldError = null;
+                            });
+                          } on FormatException catch (error) {
+                            setState(() => _fieldError = error.message);
+                          }
+                        },
+                      ),
+                      TextFormField(
+                        key: const ValueKey('super-value-display-dateFormat'),
+                        initialValue: _fieldConfig.dateFormat,
+                        decoration: const InputDecoration(
+                          labelText: 'Format de date (ex. dd/MM/yyyy)',
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          try {
+                            final next = _fieldConfig.copyWith(
+                              dateFormat: value,
+                            )..validate();
+                            _fieldSettings.currentState?.syncValue(next);
+                            setState(() {
+                              _fieldConfig = next;
+                              _fieldError = null;
+                            });
+                          } on FormatException catch (error) {
+                            setState(() => _fieldError = error.message);
+                          }
+                        },
+                      ),
+                      TextFormField(
+                        key: const ValueKey('super-value-display-decimalDigits'),
+                        initialValue:
+                            _fieldConfig.decimalDigits?.toString() ?? '',
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Décimales affichées (0..10, vide = brut)',
+                          isDense: true,
+                        ),
+                        onChanged: (value) {
+                          final trimmed = value.trim();
+                          final parsed = trimmed.isEmpty
+                              ? null
+                              : int.tryParse(trimmed);
+                          if (trimmed.isNotEmpty && parsed == null) {
+                            setState(
+                              () => _fieldError =
+                                  'Nombre de décimales entier requis.',
+                            );
+                            return;
+                          }
+                          try {
+                            final next = _fieldConfig.copyWith(
+                              decimalDigits: parsed,
+                              clearDecimalDigits: trimmed.isEmpty,
+                            )..validate();
+                            _fieldSettings.currentState?.syncValue(next);
+                            setState(() {
+                              _fieldConfig = next;
+                              _fieldError = null;
+                            });
+                          } on FormatException catch (error) {
+                            setState(() => _fieldError = error.message);
+                          }
+                        },
+                      ),
+                      EditorSegmentedField<String>(
+                        buttonKey: ValueKey(
+                          'super-value-display-decimalSeparator-${_fieldConfig.decimalSeparator}',
+                        ),
+                        label: 'Séparateur décimal',
+                        value: _fieldConfig.decimalSeparator,
+                        options: const [
+                          EditorSegmentOption(value: '.', label: 'Point (.)'),
+                          EditorSegmentOption(
+                            value: ',',
+                            label: 'Virgule (,)',
+                          ),
+                        ],
+                        onChanged: (value) {
+                          try {
+                            final next = _fieldConfig.copyWith(
+                              decimalSeparator: value,
+                            )..validate();
+                            _fieldSettings.currentState?.syncValue(next);
+                            setState(() {
+                              _fieldConfig = next;
+                              _fieldError = null;
+                            });
+                          } on FormatException catch (error) {
+                            setState(() => _fieldError = error.message);
+                          }
+                        },
+                      ),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          'super-value-display-thousandsSeparator-${_fieldConfig.thousandsSeparator}',
+                        ),
+                        initialValue: _fieldConfig.thousandsSeparator,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Séparateur des milliers',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: '', child: Text('Aucun')),
+                          DropdownMenuItem(
+                            value: ' ',
+                            child: Text('Espace ( )'),
+                          ),
+                          DropdownMenuItem(
+                            value: ',',
+                            child: Text('Virgule (,)'),
+                          ),
+                          DropdownMenuItem(
+                            value: '.',
+                            child: Text('Point (.)'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          try {
+                            final next = _fieldConfig.copyWith(
+                              thousandsSeparator: value ?? '',
+                            )..validate();
+                            _fieldSettings.currentState?.syncValue(next);
+                            setState(() {
+                              _fieldConfig = next;
+                              _fieldError = null;
+                            });
+                          } on FormatException catch (error) {
+                            setState(() => _fieldError = error.message);
+                          }
+                        },
+                      ),
+                    ]),
+                  ),
                 if (_hasChoiceSettings) ...choiceSections,
               ],
             ),

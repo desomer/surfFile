@@ -10,6 +10,7 @@ import '../../theme/theme_color.dart';
 
 import '../../models/super_value_config.dart';
 import '../../models/super_text_field_config.dart';
+import '../../models/text_field_constraints.dart';
 
 /// Calcule le style typographique secondaire (« label atténué ») d'un préfixe
 /// ou suffixe d'unité d'un [SuperValue] (ex. `€`, `cm`, `kg`).
@@ -174,6 +175,7 @@ class SuperTextField extends StatefulWidget {
     this.readOnly,
     this.enableContextMenu = true,
     this.bindingError,
+    this.validationError,
     this.focusNode,
     super.key,
   });
@@ -188,6 +190,7 @@ class SuperTextField extends StatefulWidget {
   final bool? enabled, readOnly;
   final bool enableContextMenu;
   final String? bindingError;
+  final String? validationError;
   final FocusNode? focusNode;
 
   @override
@@ -294,6 +297,7 @@ class _SuperTextFieldState extends State<SuperTextField> {
     ].any((value) => value != null);
     final errorText =
         widget.bindingError ??
+        widget.validationError ??
         (field.errorText.isEmpty ? null : field.errorText);
     final fill = hasFill
         ? WidgetStateColor.resolveWith((states) {
@@ -466,7 +470,7 @@ class _SuperTextFieldState extends State<SuperTextField> {
       autocorrect: !config.obscureText && field.autocorrect,
       minLines: config.minLines,
       maxLines: config.maxLines,
-      maxLength: field.maxLength,
+      maxLength: field.mask.isNotEmpty ? null : field.maxLength,
       maxLengthEnforcement: MaxLengthEnforcement.truncateAfterCompositionEnds,
       inputFormatters: superTextInputFormatters(field),
       keyboardType: keyboard,
@@ -555,34 +559,114 @@ class _SuperTextFieldState extends State<SuperTextField> {
 }
 
 List<TextInputFormatter> superTextInputFormatters(SuperTextFieldConfig config) {
-  if (config.filter == TextFieldFilter.none) return const [];
-  final TextInputFormatter formatter;
-  switch (config.filter) {
-    case TextFieldFilter.none:
-      return const [];
-    case TextFieldFilter.digits:
-      formatter = FilteringTextInputFormatter.digitsOnly;
-    case TextFieldFilter.letters:
-      formatter = FilteringTextInputFormatter.allow(
-        RegExp(r"[\p{L}\p{M} '\u2019\u002D]", unicode: true),
-      );
-    case TextFieldFilter.pattern:
-      config.validate();
-      formatter = FilteringTextInputFormatter.allow(
-        RegExp(config.pattern, unicode: true),
-      );
-    case TextFieldFilter.decimal:
-      formatter = TextInputFormatter.withFunction(
-        (oldValue, newValue) =>
-            RegExp(r'^[+-]?[0-9]*(\.[0-9]*)?$').hasMatch(newValue.text)
-            ? newValue
-            : oldValue,
-      );
+  final formatters = <TextInputFormatter>[];
+  if (config.filter != TextFieldFilter.none) {
+    final TextInputFormatter formatter;
+    switch (config.filter) {
+      case TextFieldFilter.none:
+        formatter = FilteringTextInputFormatter.allow(RegExp('.*'));
+      case TextFieldFilter.digits:
+        formatter = FilteringTextInputFormatter.digitsOnly;
+      case TextFieldFilter.letters:
+        formatter = FilteringTextInputFormatter.allow(
+          RegExp(r"[\p{L}\p{M} '\u2019\u002D]", unicode: true),
+        );
+      case TextFieldFilter.pattern:
+        config.validate();
+        formatter = FilteringTextInputFormatter.allow(
+          RegExp(config.pattern, unicode: true),
+        );
+      case TextFieldFilter.decimal:
+        formatter = TextInputFormatter.withFunction(
+          (oldValue, newValue) =>
+              RegExp(r'^[+-]?[0-9]*(\.[0-9]*)?$').hasMatch(newValue.text)
+              ? newValue
+              : oldValue,
+        );
+    }
+    formatters.add(
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        if (!newValue.composing.isCollapsed) return newValue;
+        return formatter.formatEditUpdate(oldValue, newValue);
+      }),
+    );
   }
-  return [
-    TextInputFormatter.withFunction((oldValue, newValue) {
-      if (!newValue.composing.isCollapsed) return newValue;
-      return formatter.formatEditUpdate(oldValue, newValue);
-    }),
-  ];
+  if (config.mask.isNotEmpty) {
+    config.validate();
+    final mask = PatternMask(config.mask);
+    formatters.add(
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        if (!newValue.composing.isCollapsed) return newValue;
+        final outcome = mask.edit(
+          oldText: oldValue.text,
+          newText: newValue.text,
+          oldCursor: oldValue.selection.baseOffset,
+          newCursor: newValue.selection.baseOffset,
+          oldSelectionCollapsed: oldValue.selection.isCollapsed,
+          newSelectionCollapsed: newValue.selection.isCollapsed,
+        );
+        return TextEditingValue(
+          text: outcome.text,
+          selection: TextSelection.collapsed(offset: outcome.cursorOffset),
+        );
+      }),
+    );
+  } else if (config.filter == TextFieldFilter.none &&
+      config.dateFormat.isEmpty &&
+      (config.valueType != TextFieldValueType.string ||
+          config.hasNumericFormatting)) {
+    final allowNegative =
+        (config.minimum == null || config.minimum! < 0) &&
+        (config.exclusiveMinimum == null || config.exclusiveMinimum! < 0);
+    if (config.valueType == TextFieldValueType.integer) {
+      final pattern = allowNegative ? RegExp(r'^[+-]?[0-9]*$') : RegExp(r'^[0-9]*$');
+      formatters.add(
+        TextInputFormatter.withFunction((oldValue, newValue) {
+          if (!newValue.composing.isCollapsed) return newValue;
+          final cleaned = config.thousandsSeparator.isEmpty
+              ? newValue.text
+              : newValue.text.replaceAll(config.thousandsSeparator, '');
+          if (!pattern.hasMatch(cleaned)) return oldValue;
+          return cleaned == newValue.text
+              ? newValue
+              : TextEditingValue(
+                  text: cleaned,
+                  selection: TextSelection.collapsed(offset: cleaned.length),
+                );
+        }),
+      );
+    } else {
+      final sep = config.decimalSeparator;
+      final escapedSep = RegExp.escape(sep);
+      final pattern = config.decimalDigits == 0
+          ? RegExp(allowNegative ? r'^[+-]?[0-9]*$' : r'^[0-9]*$')
+          : RegExp(
+              allowNegative
+                  ? '^[+-]?[0-9]*(?:$escapedSep[0-9]*)?\$'
+                  : '^[0-9]*(?:$escapedSep[0-9]*)?\$',
+            );
+      formatters.add(
+        TextInputFormatter.withFunction((oldValue, newValue) {
+          if (!newValue.composing.isCollapsed) return newValue;
+          var text = newValue.text;
+          var selection = newValue.selection;
+          if (config.thousandsSeparator.isNotEmpty) {
+            final stripped = text.replaceAll(config.thousandsSeparator, '');
+            if (stripped != text) {
+              text = stripped;
+              selection = TextSelection.collapsed(offset: text.length);
+            }
+          }
+          if (sep == ',' && text.contains('.')) {
+            text = text.replaceAll('.', ',');
+          }
+          if (!pattern.hasMatch(text)) return oldValue;
+          return text == newValue.text
+              ? newValue
+              : TextEditingValue(text: text, selection: selection);
+        }),
+      );
+    }
+  }
+  return formatters.isEmpty ? const [] : List.unmodifiable(formatters);
 }

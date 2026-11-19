@@ -4,10 +4,15 @@
 /// d'alignement et de style typographique d'un champ texte.
 library;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'json_syntax.dart';
 import 'material_icon_catalog.dart';
+import 'text_field_constraints.dart';
+
+export 'text_field_constraints.dart'
+    show TextFieldFormat, TextFieldValueType;
 
 /// Style de bordure et de remplissage d'un [SuperTextField].
 enum TextFieldVariant { theme, filled, outlined, underline, borderless }
@@ -138,6 +143,25 @@ class SuperTextFieldConfig {
     this.floatingLabel,
     this.autocorrect = true,
     this.suggestions = true,
+    this.mask = '',
+    this.maskIncludeLiterals = false,
+    this.decimalDigits,
+    this.decimalSeparator = '.',
+    this.thousandsSeparator = '',
+    this.dateFormat = '',
+    this.valueType = TextFieldValueType.string,
+    this.required = false,
+    this.minLength,
+    this.validationPattern = '',
+    this.format = TextFieldFormat.none,
+    this.minimum,
+    this.maximum,
+    this.exclusiveMinimum,
+    this.exclusiveMaximum,
+    this.multipleOf,
+    this.enumValues = const [],
+    this.constValue,
+    this.validationMessage = '',
   });
 
   final TextFieldVariant variant;
@@ -160,6 +184,182 @@ class SuperTextFieldConfig {
   final TextFieldVerticalAlign verticalAlign;
   final FloatingLabelBehavior? floatingLabel;
 
+  /// Masque à motifs appliqué à la saisie et à l'affichage (`#`, `A`, `U`, `L`, `*`).
+  final String mask;
+
+  /// Inclut les littéraux du masque dans la valeur stockée/validée lorsque `true`.
+  final bool maskIncludeLiterals;
+
+  /// Nombre de décimales fixes à l'affichage numérique (hors focus / mode `display`).
+  final int? decimalDigits;
+
+  /// Séparateur décimal utilisé pour l'affichage et la saisie (`.` ou `,`).
+  final String decimalSeparator;
+
+  /// Séparateur des milliers utilisé pour l'affichage numérique (`''`, `' '`, `','`, `'.'`…).
+  final String thousandsSeparator;
+
+  /// Motif `DateFormat` (`intl`) convertissant entre stockage ISO et affichage.
+  final String dateFormat;
+
+  /// Type JSON Schema de la valeur (`string`, `integer`, `number`).
+  final TextFieldValueType valueType;
+
+  /// Contrainte JSON Schema `required` (champ non vide obligatoire).
+  final bool required;
+
+  /// Contrainte JSON Schema `minLength` (en graphèmes).
+  final int? minLength;
+
+  /// Contrainte JSON Schema `pattern` (expression régulière sur la valeur).
+  final String validationPattern;
+
+  /// Contrainte JSON Schema `format` (`email`, `uri`, `uuid`, `date`, etc.).
+  final TextFieldFormat format;
+
+  /// Contrainte JSON Schema `minimum` (borne inférieure incluse).
+  final double? minimum;
+
+  /// Contrainte JSON Schema `maximum` (borne supérieure incluse).
+  final double? maximum;
+
+  /// Contrainte JSON Schema `exclusiveMinimum` (borne inférieure stricte).
+  final double? exclusiveMinimum;
+
+  /// Contrainte JSON Schema `exclusiveMaximum` (borne supérieure stricte).
+  final double? exclusiveMaximum;
+
+  /// Contrainte JSON Schema `multipleOf` (diviseur strictement positif).
+  final double? multipleOf;
+
+  /// Contrainte JSON Schema `enum` (liste des valeurs autorisées).
+  final List<String> enumValues;
+
+  /// Contrainte JSON Schema `const` (valeur exacte imposée).
+  final String? constValue;
+
+  /// Message d'erreur personnalisé affiché lorsqu'une contrainte échoue.
+  final String validationMessage;
+
+  /// Vrai si un formatage numérique (décimales ou séparateurs) est actif.
+  bool get hasNumericFormatting =>
+      decimalDigits != null ||
+      thousandsSeparator.isNotEmpty ||
+      decimalSeparator != '.';
+
+  /// Vrai si au moins une contrainte numérique JSON Schema est définie.
+  bool get hasNumericConstraints =>
+      minimum != null ||
+      maximum != null ||
+      exclusiveMinimum != null ||
+      exclusiveMaximum != null ||
+      multipleOf != null;
+
+  /// Vrai si un masque de saisie/affichage ou formatage de date/nombre est actif.
+  bool get hasMaskOrFormat =>
+      mask.isNotEmpty || dateFormat.isNotEmpty || hasNumericFormatting;
+
+  /// Vrai si au moins une contrainte de validation JSON Schema est active.
+  bool get hasConstraints =>
+      required ||
+      minLength != null ||
+      maxLength != null ||
+      valueType != TextFieldValueType.string ||
+      hasNumericConstraints ||
+      validationPattern.isNotEmpty ||
+      format != TextFieldFormat.none ||
+      enumValues.isNotEmpty ||
+      constValue != null ||
+      mask.isNotEmpty ||
+      dateFormat.isNotEmpty;
+
+  /// Transforme une valeur stockée (brute / ISO / canonique) en texte d'affichage.
+  String toDisplayText(String storageText, {bool focused = false}) {
+    if (storageText.isEmpty) return '';
+    var text = storageText;
+    if (dateFormat.isNotEmpty) {
+      text = DateFieldFormat.formatDisplay(text, dateFormat);
+    }
+    if (mask.isNotEmpty) {
+      return PatternMask(mask).format(text);
+    }
+    if (dateFormat.isEmpty && hasNumericFormatting) {
+      return NumberFieldFormat.formatDisplay(
+        text,
+        decimalDigits: decimalDigits,
+        decimalSeparator: decimalSeparator,
+        thousandsSeparator: thousandsSeparator,
+        focused: focused,
+      );
+    }
+    return text;
+  }
+
+  /// Transforme un texte saisi/affiché en valeur brute destinée au stockage et
+  /// à la validation JSON Schema.
+  String toStorageText(String displayText) {
+    if (displayText.isEmpty) return '';
+    var text = displayText;
+    if (dateFormat.isNotEmpty) {
+      final formatted = mask.isNotEmpty
+          ? PatternMask(mask).format(text)
+          : text;
+      final iso = DateFieldFormat.tryToIso(
+        formatted,
+        dateFormat,
+        forceDateTime: format == TextFieldFormat.dateTime,
+      );
+      if (iso != null) return iso;
+      return mask.isNotEmpty && !maskIncludeLiterals
+          ? PatternMask(mask).strip(text)
+          : formatted;
+    }
+    if (mask.isNotEmpty) {
+      final maskModel = PatternMask(mask);
+      return maskIncludeLiterals
+          ? maskModel.format(text)
+          : maskModel.strip(text);
+    }
+    if (hasNumericFormatting || valueType != TextFieldValueType.string) {
+      return NumberFieldFormat.toStorage(
+        text,
+        decimalSeparator: decimalSeparator,
+        thousandsSeparator: thousandsSeparator,
+      );
+    }
+    return text;
+  }
+
+  /// Valide [storageValue] (et éventuellement [displayValue]) selon les
+  /// contraintes JSON Schema configurées. Retourne `null` si valide.
+  String? validateValue(
+    String storageValue, {
+    String? displayValue,
+    bool obscureText = false,
+  }) => TextFieldConstraintValidator.validate(
+    storageValue: storageValue,
+    displayValue: displayValue,
+    obscureText: obscureText,
+    mask: mask,
+    dateFormat: dateFormat,
+    valueType: valueType,
+    required: required,
+    minLength: minLength,
+    maxLength: maxLength,
+    validationPattern: validationPattern,
+    format: format,
+    minimum: minimum,
+    maximum: maximum,
+    exclusiveMinimum: exclusiveMinimum,
+    exclusiveMaximum: exclusiveMaximum,
+    multipleOf: multipleOf,
+    enumValues: enumValues,
+    constValue: constValue,
+    validationMessage: validationMessage,
+    decimalSeparator: decimalSeparator,
+    thousandsSeparator: thousandsSeparator,
+  );
+
   void validate() {
     for (final value in [
       radius,
@@ -173,6 +373,16 @@ class SuperTextFieldConfig {
     }
     if (maxLength != null && maxLength! < 1) {
       throw const FormatException('La longueur maximale doit être positive.');
+    }
+    if (minLength != null && minLength! < 0) {
+      throw const FormatException(
+        'La longueur minimale doit être positive ou nulle.',
+      );
+    }
+    if (minLength != null && maxLength != null && minLength! > maxLength!) {
+      throw const FormatException(
+        'La longueur minimale doit être inférieure ou égale à la longueur maximale.',
+      );
     }
     if (filter == TextFieldFilter.pattern) {
       RegExp expression;
@@ -191,6 +401,80 @@ class SuperTextFieldConfig {
         );
       }
     }
+    if (validationPattern.isNotEmpty) {
+      try {
+        RegExp(validationPattern, unicode: true);
+      } on FormatException {
+        throw const FormatException(
+          'Expression régulière de validation invalide.',
+        );
+      }
+    }
+    PatternMask.validatePattern(mask);
+    DateFieldFormat.validatePattern(dateFormat);
+    if (decimalDigits != null && (decimalDigits! < 0 || decimalDigits! > 10)) {
+      throw const FormatException(
+        'Le nombre de décimales doit être compris entre 0 et 10.',
+      );
+    }
+    if (decimalSeparator != '.' && decimalSeparator != ',') {
+      throw const FormatException(
+        'Le séparateur décimal doit être "." ou ",".',
+      );
+    }
+    if (thousandsSeparator.length > 1) {
+      throw const FormatException(
+        'Le séparateur des milliers doit contenir au plus un caractère.',
+      );
+    }
+    if (thousandsSeparator.isNotEmpty &&
+        thousandsSeparator == decimalSeparator) {
+      throw const FormatException(
+        'Le séparateur des milliers doit être différent du séparateur décimal.',
+      );
+    }
+    for (final bound in [
+      minimum,
+      maximum,
+      exclusiveMinimum,
+      exclusiveMaximum,
+      multipleOf,
+    ]) {
+      if (bound != null && !bound.isFinite) {
+        throw const FormatException('Borne numérique invalide.');
+      }
+    }
+    if (multipleOf != null && multipleOf! <= 0) {
+      throw const FormatException(
+        'Le pas multipleOf doit être strictement positif.',
+      );
+    }
+    if (minimum != null && maximum != null && minimum! > maximum!) {
+      throw const FormatException(
+        'La borne minimum doit être inférieure ou égale à maximum.',
+      );
+    }
+    if (exclusiveMinimum != null &&
+        exclusiveMaximum != null &&
+        exclusiveMinimum! >= exclusiveMaximum!) {
+      throw const FormatException(
+        'La borne exclusiveMinimum doit être strictement inférieure à exclusiveMaximum.',
+      );
+    }
+    if (minimum != null &&
+        exclusiveMaximum != null &&
+        minimum! >= exclusiveMaximum!) {
+      throw const FormatException(
+        'La borne minimum doit être strictement inférieure à exclusiveMaximum.',
+      );
+    }
+    if (exclusiveMinimum != null &&
+        maximum != null &&
+        exclusiveMinimum! >= maximum!) {
+      throw const FormatException(
+        'La borne exclusiveMinimum doit être strictement inférieure à maximum.',
+      );
+    }
   }
 
   void validateFor({required bool obscureText, required int maxLines}) {
@@ -207,6 +491,16 @@ class SuperTextFieldConfig {
     if (obscureText && keyboard == TextFieldKeyboard.multiline) {
       throw const FormatException(
         'Un mot de passe ne peut pas utiliser un clavier multiligne.',
+      );
+    }
+    if (obscureText && hasMaskOrFormat) {
+      throw const FormatException(
+        'Un mot de passe ne peut pas utiliser un masque de saisie ou un formatage.',
+      );
+    }
+    if (maxLines > 1 && hasMaskOrFormat) {
+      throw const FormatException(
+        'Un champ multiligne ne peut pas utiliser un masque de saisie ou un formatage.',
       );
     }
   }
@@ -244,6 +538,25 @@ class SuperTextFieldConfig {
     int? maxLength,
     TextFieldIcon? prefixIcon,
     TextFieldIcon? suffixIcon,
+    String? mask,
+    bool? maskIncludeLiterals,
+    int? decimalDigits,
+    String? decimalSeparator,
+    String? thousandsSeparator,
+    String? dateFormat,
+    TextFieldValueType? valueType,
+    bool? required,
+    int? minLength,
+    String? validationPattern,
+    TextFieldFormat? format,
+    double? minimum,
+    double? maximum,
+    double? exclusiveMinimum,
+    double? exclusiveMaximum,
+    double? multipleOf,
+    List<String>? enumValues,
+    String? constValue,
+    String? validationMessage,
     bool inheritFillColor = false,
     bool inheritFocusFillColor = false,
     bool inheritDisabledFillColor = false,
@@ -261,6 +574,14 @@ class SuperTextFieldConfig {
     bool clearPrefixIcon = false,
     bool clearSuffixIcon = false,
     bool inheritFloatingLabel = false,
+    bool clearDecimalDigits = false,
+    bool clearMinLength = false,
+    bool clearMinimum = false,
+    bool clearMaximum = false,
+    bool clearExclusiveMinimum = false,
+    bool clearExclusiveMaximum = false,
+    bool clearMultipleOf = false,
+    bool clearConstValue = false,
   }) => SuperTextFieldConfig(
     variant: variant ?? this.variant,
     suffix: suffix ?? this.suffix,
@@ -312,6 +633,33 @@ class SuperTextFieldConfig {
     maxLength: clearMaxLength ? null : maxLength ?? this.maxLength,
     prefixIcon: clearPrefixIcon ? null : prefixIcon ?? this.prefixIcon,
     suffixIcon: clearSuffixIcon ? null : suffixIcon ?? this.suffixIcon,
+    mask: mask ?? this.mask,
+    maskIncludeLiterals: maskIncludeLiterals ?? this.maskIncludeLiterals,
+    decimalDigits: clearDecimalDigits
+        ? null
+        : decimalDigits ?? this.decimalDigits,
+    decimalSeparator: decimalSeparator ?? this.decimalSeparator,
+    thousandsSeparator: thousandsSeparator ?? this.thousandsSeparator,
+    dateFormat: dateFormat ?? this.dateFormat,
+    valueType: valueType ?? this.valueType,
+    required: required ?? this.required,
+    minLength: clearMinLength ? null : minLength ?? this.minLength,
+    validationPattern: validationPattern ?? this.validationPattern,
+    format: format ?? this.format,
+    minimum: clearMinimum ? null : minimum ?? this.minimum,
+    maximum: clearMaximum ? null : maximum ?? this.maximum,
+    exclusiveMinimum: clearExclusiveMinimum
+        ? null
+        : exclusiveMinimum ?? this.exclusiveMinimum,
+    exclusiveMaximum: clearExclusiveMaximum
+        ? null
+        : exclusiveMaximum ?? this.exclusiveMaximum,
+    multipleOf: clearMultipleOf ? null : multipleOf ?? this.multipleOf,
+    enumValues: enumValues != null
+        ? List.unmodifiable(enumValues)
+        : this.enumValues,
+    constValue: clearConstValue ? null : constValue ?? this.constValue,
+    validationMessage: validationMessage ?? this.validationMessage,
   );
 
   Map<String, Object?> toJson() => {
@@ -347,6 +695,25 @@ class SuperTextFieldConfig {
     'floatingLabel': floatingLabel?.name,
     'autocorrect': autocorrect,
     'suggestions': suggestions,
+    'mask': mask,
+    'maskIncludeLiterals': maskIncludeLiterals,
+    'decimalDigits': decimalDigits,
+    'decimalSeparator': decimalSeparator,
+    'thousandsSeparator': thousandsSeparator,
+    'dateFormat': dateFormat,
+    'valueType': valueType.name,
+    'required': required,
+    'minLength': minLength,
+    'validationPattern': validationPattern,
+    'format': format.name,
+    'minimum': minimum,
+    'maximum': maximum,
+    'exclusiveMinimum': exclusiveMinimum,
+    'exclusiveMaximum': exclusiveMaximum,
+    'multipleOf': multipleOf,
+    'enumValues': List<String>.unmodifiable(enumValues),
+    'constValue': constValue,
+    'validationMessage': validationMessage,
   };
 
   Map<String, Object?> toCompactJson() {
@@ -391,6 +758,31 @@ class SuperTextFieldConfig {
       if (floatingLabel != null) 'floatingLabel': floatingLabel!.name,
       if (autocorrect != d.autocorrect) 'autocorrect': autocorrect,
       if (suggestions != d.suggestions) 'suggestions': suggestions,
+      if (mask.isNotEmpty) 'mask': mask,
+      if (maskIncludeLiterals != d.maskIncludeLiterals)
+        'maskIncludeLiterals': maskIncludeLiterals,
+      if (decimalDigits != null) 'decimalDigits': decimalDigits,
+      if (decimalSeparator != d.decimalSeparator)
+        'decimalSeparator': decimalSeparator,
+      if (thousandsSeparator.isNotEmpty)
+        'thousandsSeparator': thousandsSeparator,
+      if (dateFormat.isNotEmpty) 'dateFormat': dateFormat,
+      if (valueType != d.valueType) 'valueType': valueType.name,
+      if (required != d.required) 'required': required,
+      if (minLength != null) 'minLength': minLength,
+      if (validationPattern.isNotEmpty)
+        'validationPattern': validationPattern,
+      if (format != d.format) 'format': format.schemaName,
+      if (minimum != null) 'minimum': minimum,
+      if (maximum != null) 'maximum': maximum,
+      if (exclusiveMinimum != null) 'exclusiveMinimum': exclusiveMinimum,
+      if (exclusiveMaximum != null) 'exclusiveMaximum': exclusiveMaximum,
+      if (multipleOf != null) 'multipleOf': multipleOf,
+      if (enumValues.isNotEmpty)
+        'enumValues': List<String>.unmodifiable(enumValues),
+      if (constValue != null) 'constValue': constValue,
+      if (validationMessage.isNotEmpty)
+        'validationMessage': validationMessage,
     };
   }
 
@@ -441,6 +833,45 @@ class SuperTextFieldConfig {
         throw FormatException('Dimension de champ invalide : $key.');
       }
       return value.toDouble();
+    }
+
+    double? signedNumber(String key, double? defaultNum) {
+      if (!json.containsKey(key)) return defaultNum;
+      final value = json[key];
+      if (value == null) return null;
+      if (value is! num || !value.isFinite) {
+        throw FormatException('Borne numérique invalide : $key.');
+      }
+      return value.toDouble();
+    }
+
+    TextFieldFormat parseFormat(String key, TextFieldFormat fallbackVal) {
+      if (!json.containsKey(key)) return fallbackVal;
+      final raw = json[key];
+      if (raw is! String) {
+        throw FormatException('Option de champ invalide : $key.');
+      }
+      final parsed = TextFieldFormat.tryParse(raw);
+      if (parsed == null) {
+        throw FormatException('Option de champ invalide : $key.');
+      }
+      return parsed;
+    }
+
+    List<String> parseEnumValues(String key, List<String> fallbackVal) {
+      if (!json.containsKey(key)) return fallbackVal;
+      final raw = json[key];
+      if (raw is! List) {
+        throw FormatException('Option de champ invalide : $key.');
+      }
+      final items = <String>[];
+      for (final item in raw) {
+        if (item is! String && item is! num && item is! bool) {
+          throw FormatException('Option de champ invalide : $key.');
+        }
+        items.add(item.toString());
+      }
+      return List<String>.unmodifiable(items);
     }
 
     TextFieldIcon? icon(String key, TextFieldIcon? defaultIcon) {
@@ -593,6 +1024,41 @@ class SuperTextFieldConfig {
             ),
       autocorrect: field('autocorrect', fallback.autocorrect),
       suggestions: field('suggestions', fallback.suggestions),
+      mask: field('mask', fallback.mask),
+      maskIncludeLiterals: field(
+        'maskIncludeLiterals',
+        fallback.maskIncludeLiterals,
+      ),
+      decimalDigits: field<int?>('decimalDigits', fallback.decimalDigits),
+      decimalSeparator: field('decimalSeparator', fallback.decimalSeparator),
+      thousandsSeparator: field(
+        'thousandsSeparator',
+        fallback.thousandsSeparator,
+      ),
+      dateFormat: field('dateFormat', fallback.dateFormat),
+      valueType: choice(
+        'valueType',
+        TextFieldValueType.values,
+        fallback.valueType,
+      ),
+      required: field('required', fallback.required),
+      minLength: field<int?>('minLength', fallback.minLength),
+      validationPattern: field('validationPattern', fallback.validationPattern),
+      format: parseFormat('format', fallback.format),
+      minimum: signedNumber('minimum', fallback.minimum),
+      maximum: signedNumber('maximum', fallback.maximum),
+      exclusiveMinimum: signedNumber(
+        'exclusiveMinimum',
+        fallback.exclusiveMinimum,
+      ),
+      exclusiveMaximum: signedNumber(
+        'exclusiveMaximum',
+        fallback.exclusiveMaximum,
+      ),
+      multipleOf: signedNumber('multipleOf', fallback.multipleOf),
+      enumValues: parseEnumValues('enumValues', fallback.enumValues),
+      constValue: field<String?>('constValue', fallback.constValue),
+      validationMessage: field('validationMessage', fallback.validationMessage),
     );
     result.validate();
     return result;
@@ -603,7 +1069,16 @@ class SuperTextFieldConfig {
       other is SuperTextFieldConfig && _equal(toJson(), other.toJson());
   static bool _equal(Map<String, Object?> a, Map<String, Object?> b) =>
       a.length == b.length &&
-      a.entries.every((entry) => b[entry.key] == entry.value);
+      a.entries.every((entry) {
+        final otherVal = b[entry.key];
+        final selfVal = entry.value;
+        if (selfVal is List && otherVal is List) {
+          return listEquals(selfVal, otherVal);
+        }
+        return selfVal == otherVal;
+      });
   @override
-  int get hashCode => Object.hashAll(toJson().values);
+  int get hashCode => Object.hashAll(
+    toJson().values.map((v) => v is List ? Object.hashAll(v) : v),
+  );
 }
