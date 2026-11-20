@@ -53,20 +53,23 @@ abstract final class SpecPromptBuilder {
     SpecForgeProject project,
     SpecForgeStage stage,
   ) => switch (stage) {
-    SpecForgeStage.vision =>
+    SpecForgeStage.lexicon =>
       'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
-          'Analyse cette idée, pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
+          'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.',
+    SpecForgeStage.vision =>
+      'Nous passons à l’étape 2 (Cadrage & Acteurs). En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le lexique métier établi, '
+          'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
     SpecForgeStage.specifications =>
-      'Nous passons à l’étape 2 (Cahier des charges). En t’appuyant sur le cadrage et les acteurs validés, '
+      'Nous passons à l’étape 3 (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
           'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
     SpecForgeStage.businessObjects =>
-      'Nous passons à l’étape 3 (Objets métiers). En t’appuyant sur le cadrage et le cahier des charges, '
-          'pose les questions nécessaires pour modéliser les entités métiers, leurs attributs typés, leurs relations et leurs cycles de vie.',
+      'Nous passons à l’étape 4 (Objets métiers). En t’appuyant sur le lexique, le cadrage et le cahier des charges, '
+          'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.',
     SpecForgeStage.businessRules =>
-      'Nous passons à l’étape 4 (Règles de gestion). En t’appuyant sur les objets métiers et le cahier des charges, '
+      'Nous passons à l’étape 5 (Règles de gestion). En t’appuyant sur les objets métiers, le lexique et le cahier des charges, '
           'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
     SpecForgeStage.reviewExport =>
-      'Nous passons à l’étape 5 (Revue globale & Cohérence). Audite l’ensemble du projet (cadrage, cahier des charges, objets métiers et règles de gestion), '
+      'Nous passons à l’étape 6 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, objets métiers et règles de gestion), '
           'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
   };
 
@@ -102,7 +105,7 @@ abstract final class SpecPromptBuilder {
 
     final buffer = StringBuffer()
       ..writeln(
-        'ÉTAPE ACTIVE : ${stage.stepNumber}/5 — ${stage.title} (Agent : ${agent.stage.agentTitle})',
+        'ÉTAPE ACTIVE : ${stage.stepNumber}/${SpecForgeStage.values.length} — ${stage.title} (Agent : ${agent.stage.agentTitle})',
       )
       ..writeln()
       ..writeln(
@@ -135,6 +138,60 @@ abstract final class SpecPromptBuilder {
     buffer
       ..writeln()
       ..writeln('DEMANDE UTILISATEUR POUR CE TOUR :')
+      ..writeln(userInput.trim());
+
+    return buffer.toString();
+  }
+
+  /// Assemble le prompt complet du chat global de questions sur l'ensemble du projet.
+  static String buildGlobalQuestionPrompt({
+    required SpecForgeProject project,
+    required String userInput,
+    int maxHistoryEntries = 12,
+  }) {
+    final fullSnapshot = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(project.toCompactContextJson(SpecForgeStage.reviewExport));
+
+    final stageSummaries = <String>[
+      for (final s in SpecForgeStage.values)
+        if (project.stageStateFor(s).stageSummary.trim().isNotEmpty)
+          '- Étape ${s.stepNumber} (${s.title}) [${project.stageStateFor(s).status.label}] : ${project.stageStateFor(s).stageSummary.trim()}',
+    ];
+
+    final history = _buildHistory(
+      project.globalChatMessages,
+      maxEntries: maxHistoryEntries,
+    );
+
+    final buffer = StringBuffer()
+      ..writeln('MODE : CHAT GLOBAL DE QUESTIONS SUR LE PROJET')
+      ..writeln(
+        'ÉTAPE ACTIVE DU WIZARD : ${project.currentStage.stepNumber}/${SpecForgeStage.values.length} (${project.currentStage.title})',
+      );
+
+    if (stageSummaries.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('SYNTHÈSES DES ÉTAPES :')
+        ..writeln(stageSummaries.join('\n'));
+    }
+
+    buffer
+      ..writeln()
+      ..writeln('ÉTAT GLOBAL DU PROJET (JSON) :')
+      ..writeln(fullSnapshot);
+
+    if (history.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('HISTORIQUE RÉCENT DU CHAT GLOBAL :')
+        ..writeln(history);
+    }
+
+    buffer
+      ..writeln()
+      ..writeln('QUESTION UTILISATEUR :')
       ..writeln(userInput.trim());
 
     return buffer.toString();

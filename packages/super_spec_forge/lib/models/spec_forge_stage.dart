@@ -5,9 +5,20 @@ import 'package:material_ui/material_ui.dart';
 
 /// Étapes ordonnées du wizard de forge de spécifications.
 enum SpecForgeStage {
-  /// Étape 1 : Cadrage de l'idée, proposition de valeur, personas et contraintes.
-  vision(
+  /// Étape 1 : Lexique métier et langage omniprésent (termes, synonymes, sigles).
+  lexicon(
     stepNumber: 1,
+    shortLabel: 'Lexique',
+    title: 'Lexique métier',
+    agentTitle: 'Ubiquitous Language Expert',
+    agentSubtitle:
+        'Définition des termes, synonymes, sigles et vocabulaire partagé',
+    icon: Icons.menu_book_outlined,
+  ),
+
+  /// Étape 2 : Cadrage de l'idée, proposition de valeur, personas et contraintes.
+  vision(
+    stepNumber: 2,
     shortLabel: 'Cadrage',
     title: 'Cadrage & Acteurs',
     agentTitle: 'Product Strategist',
@@ -15,9 +26,9 @@ enum SpecForgeStage {
     icon: Icons.lightbulb_outline_rounded,
   ),
 
-  /// Étape 2 : Cahier des charges fonctionnel, cas d'usage et exigences non fonctionnelles.
+  /// Étape 3 : Cahier des charges fonctionnel, cas d'usage et exigences non fonctionnelles.
   specifications(
-    stepNumber: 2,
+    stepNumber: 3,
     shortLabel: 'Cahier des charges',
     title: 'Cahier des charges',
     agentTitle: 'Business Analyst',
@@ -25,9 +36,9 @@ enum SpecForgeStage {
     icon: Icons.assignment_outlined,
   ),
 
-  /// Étape 3 : Objets métiers, attributs typés, relations et cycles de vie.
+  /// Étape 4 : Objets métiers, attributs typés, relations et cycles de vie.
   businessObjects(
-    stepNumber: 3,
+    stepNumber: 4,
     shortLabel: 'Objets métiers',
     title: 'Objets métiers',
     agentTitle: 'Domain Modeler',
@@ -35,9 +46,9 @@ enum SpecForgeStage {
     icon: Icons.hub_outlined,
   ),
 
-  /// Étape 4 : Règles de gestion structurées (validations, calculs, transitions, droits).
+  /// Étape 5 : Règles de gestion structurées (validations, calculs, transitions, droits).
   businessRules(
-    stepNumber: 4,
+    stepNumber: 5,
     shortLabel: 'Règles de gestion',
     title: 'Règles de gestion',
     agentTitle: 'Rule Architect',
@@ -46,9 +57,9 @@ enum SpecForgeStage {
     icon: Icons.gavel_rounded,
   ),
 
-  /// Étape 5 : Audit de cohérence inter-étapes, revue finale et exports.
+  /// Étape 6 : Audit de cohérence inter-étapes, revue finale et exports.
   reviewExport(
-    stepNumber: 5,
+    stepNumber: 6,
     shortLabel: 'Revue & Export',
     title: 'Revue, Cohérence & Export',
     agentTitle: 'Consistency Auditor',
@@ -93,14 +104,14 @@ enum SpecForgeStage {
       ? SpecForgeStage.values[index + 1]
       : null;
 
-  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [vision].
+  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [lexicon].
   static SpecForgeStage fromJson(Object? raw) {
     if (raw is String) {
       for (final stage in SpecForgeStage.values) {
         if (stage.name == raw) return stage;
       }
     }
-    return SpecForgeStage.vision;
+    return SpecForgeStage.lexicon;
   }
 }
 

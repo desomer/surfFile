@@ -12,19 +12,42 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import 'super_spec_forge.dart';
 
-/// Lance l'application autonome `SuperSpecForge`.
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final geminiKey = await resolveGeminiApiKey();
-  if (!dotenv.isInitialized) {
-    dotenv.loadFromString(envString: '', isOptional: true);
-  }
-  if (geminiKey.isNotEmpty) {
-    unawaited(
-      const GeminiSpecAiService().warmUp(SpecForgeStage.vision),
-    );
-  }
-  runApp(const SuperSpecForgeApp());
+/// Lance l'application autonome `SuperSpecForge` en capturant les journaux et erreurs.
+void main() {
+  FlutterError.onError = (FlutterErrorDetails details) {
+    final message = '[FLUTTER ERROR] ${details.exceptionAsString()}';
+    saveError(message, details.stack);
+    FlutterError.dumpErrorToConsole(details);
+  };
+
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      final geminiKey = await resolveGeminiApiKey();
+      if (!dotenv.isInitialized) {
+        dotenv.loadFromString(envString: '', isOptional: true);
+      }
+      if (geminiKey.isNotEmpty) {
+        unawaited(
+          const GeminiSpecAiService().warmUp(SpecForgeStage.vision),
+        );
+      }
+      runApp(const SuperSpecForgeApp());
+    },
+    (error, stack) {
+      final message = '[DART ERROR] $error\n$stack';
+      saveError(message, stack);
+      FlutterError.dumpErrorToConsole(
+        FlutterErrorDetails(exception: error, stack: stack),
+      );
+    },
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {
+        saveLog(line, null);
+        parent.print(zone, line);
+      },
+    ),
+  );
 }
 
 /// Widget racine de l'application `SuperSpecForge`.
@@ -33,6 +56,10 @@ class SuperSpecForgeApp extends StatefulWidget {
   const SuperSpecForgeApp({
     this.controller,
     this.restoreLastProject = true,
+    this.pickAttachments,
+    this.pasteAttachments,
+    this.hasClipboardMedia,
+    this.pasteClipboardMedia,
     super.key,
   });
 
@@ -41,6 +68,18 @@ class SuperSpecForgeApp extends StatefulWidget {
 
   /// Indique si le dernier projet actif doit être rechargé automatiquement.
   final bool restoreLastProject;
+
+  /// Sélecteur optionnel de pièces jointes pour le chat IA.
+  final Future<List<VibeChatAttachment>> Function()? pickAttachments;
+
+  /// Lecteur optionnel du presse-papiers pour le chat IA.
+  final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
+
+  /// Prédicat optionnel indiquant la présence d'un média dans le presse-papiers.
+  final bool Function()? hasClipboardMedia;
+
+  /// Lecteur optionnel d'images/fichiers du presse-papiers sur `Ctrl+V`.
+  final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
 
   @override
   State<SuperSpecForgeApp> createState() => _SuperSpecForgeAppState();
@@ -84,7 +123,13 @@ class _SuperSpecForgeAppState extends State<SuperSpecForgeApp> {
         brightness: Brightness.dark,
       ),
       themeMode: ThemeMode.system,
-      home: SpecForgeShell(controller: _controller),
+      home: SpecForgeShell(
+        controller: _controller,
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
+      ),
     );
   }
 }

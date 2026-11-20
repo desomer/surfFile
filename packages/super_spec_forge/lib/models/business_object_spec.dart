@@ -3,6 +3,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'json_schema_constraints.dart';
+
 /// Type de donnée d'un attribut d'objet métier.
 enum BusinessAttributeType {
   string('string', 'Texte'),
@@ -16,6 +18,7 @@ enum BusinessAttributeType {
   url('url', 'URL'),
   enumeration('enum', 'Énumération'),
   reference('ref', 'Référence'),
+  object('object', 'Sous-objet'),
   json('json', 'JSON libre');
 
   /// Construit un type d'attribut métier.
@@ -66,8 +69,13 @@ enum BusinessAttributeType {
         case 'ref':
         case 'reference':
           return BusinessAttributeType.reference;
-        case 'json':
         case 'object':
+        case 'subobject':
+        case 'sub_object':
+        case 'sous-objet':
+        case 'struct':
+          return BusinessAttributeType.object;
+        case 'json':
         case 'any':
           return BusinessAttributeType.json;
       }
@@ -106,7 +114,7 @@ enum BusinessRelationCardinality {
   }
 }
 
-/// Attribut typé d'un [BusinessObjectSpec].
+/// Attribut typé d'un [BusinessObjectSpec] (pouvant contenir des sous-attributs imbriqués).
 @immutable
 class BusinessAttribute {
   /// Construit un attribut immuable.
@@ -118,17 +126,41 @@ class BusinessAttribute {
     this.nullable = false,
     this.unique = false,
     this.isArray = false,
+    this.estimatedMaxRows,
     this.defaultValue,
     List<String> enumValues = const <String>[],
     this.referenceObjectId = '',
     this.description = '',
     this.constraints = '',
-  }) : enumValues = List<String>.unmodifiable(enumValues);
+    JsonSchemaConstraints? schemaConstraints,
+    List<BusinessAttribute> children = const <BusinessAttribute>[],
+  }) : enumValues = List<String>.unmodifiable(enumValues),
+       schemaConstraints = schemaConstraints ?? JsonSchemaConstraints.empty,
+       children = List<BusinessAttribute>.unmodifiable(children);
 
   /// Identifiant technique stable.
   final String id;
 
-  /// Nom technique de l'attribut (camelCase ou snake_case, sans `.[]? ` ni `@` en tête).
+  /// Expression régulière stricte des identifiants DSL compatibles `Yaml2JsonSchemasParser` / `JsonAttributePath`.
+  static final RegExp validDslIdentifierPattern = RegExp(
+    r'^[A-Za-z_][A-Za-z0-9_-]*$',
+  );
+
+  /// Indique si [candidate] est un identifiant ASCII valide pour le DSL YAML et `JsonAttributePath`.
+  static bool isValidDslIdentifier(String candidate) =>
+      validDslIdentifierPattern.hasMatch(candidate);
+
+  /// Transcrit les diacritiques latins/français courants en ASCII puis normalise en identifiant DSL valide.
+  static String normalizeDslIdentifier(
+    String input, {
+    String fallback = 'champ',
+  }) => _sanitizeIdentifier(input, fallback: fallback);
+
+  /// Convertit un libellé lisible en `PascalCase` ASCII valide (ex. `Relevé Kilométrique` → `ReleveKilometrique`).
+  static String toPascalCaseDslIdentifier(String input) =>
+      _toPascalCase(input);
+
+  /// Nom technique de l'attribut (camelCase ou snake_case ASCII, sans accent, espace, `.[]?` ni `@`).
   final String name;
 
   /// Type métier de l'attribut.
@@ -146,6 +178,9 @@ class BusinessAttribute {
   /// Indique si l'attribut est une collection.
   final bool isArray;
 
+  /// Nombre maximal fonctionnel de lignes attendu lorsque [isArray] vaut `true` (plafond 200).
+  final int? estimatedMaxRows;
+
   /// Valeur par défaut éventuelle.
   final String? defaultValue;
 
@@ -158,10 +193,20 @@ class BusinessAttribute {
   /// Description fonctionnelle.
   final String description;
 
-  /// Contraintes complémentaires (ex. `min >= 0`, `max 120 caractères`).
+  /// Contraintes complémentaires en texte libre (ex. `min >= 0`, `max 120 caractères`).
   final String constraints;
 
-  /// Vérifie les invariants de l'attribut.
+  /// Contraintes structurées complètes du standard JSON Schema Draft 7 / 2020-12.
+  final JsonSchemaConstraints schemaConstraints;
+
+  /// Sous-attributs imbriqués lorsque [type] vaut [BusinessAttributeType.object].
+  final List<BusinessAttribute> children;
+
+  /// Nombre total récursif d'attributs (cet attribut + tous ses sous-attributs).
+  int get totalAttributeCount =>
+      1 + children.fold<int>(0, (sum, child) => sum + child.totalAttributeCount);
+
+  /// Vérifie les invariants de l'attribut, ses contraintes JSON Schema et ses sous-attributs.
   void validate() {
     if (id.trim().isEmpty) {
       throw const FormatException('BusinessAttribute.id ne peut pas être vide.');
@@ -171,15 +216,26 @@ class BusinessAttribute {
         'BusinessAttribute.name ne peut pas être vide.',
       );
     }
-    if (name.startsWith('@') ||
-        name.contains('.') ||
-        name.contains('[') ||
-        name.contains(']') ||
-        name.contains('?') ||
-        name.contains(' ')) {
+    if (!validDslIdentifierPattern.hasMatch(name)) {
       throw FormatException(
-        'Nom d\'attribut métier incompatible avec JsonAttributePath : $name',
+        'Nom d\'attribut métier incompatible avec JsonAttributePath : $name '
+        '(utilisez uniquement des caractères ASCII [A-Za-z_][A-Za-z0-9_-]*, sans accent ni espace).',
       );
+    }
+    if (estimatedMaxRows != null && estimatedMaxRows! < 0) {
+      throw FormatException(
+        'estimatedMaxRows doit être positif sur « $name ».',
+      );
+    }
+    schemaConstraints.validate();
+    final childNames = <String>{};
+    for (final child in children) {
+      child.validate();
+      if (!childNames.add(child.name)) {
+        throw FormatException(
+          'Sous-attribut dupliqué « ${child.name} » dans « $name ».',
+        );
+      }
     }
   }
 
@@ -192,12 +248,16 @@ class BusinessAttribute {
     bool? nullable,
     bool? unique,
     bool? isArray,
+    int? estimatedMaxRows,
+    bool clearEstimatedMaxRows = false,
     String? defaultValue,
     bool clearDefaultValue = false,
     List<String>? enumValues,
     String? referenceObjectId,
     String? description,
     String? constraints,
+    JsonSchemaConstraints? schemaConstraints,
+    List<BusinessAttribute>? children,
   }) => BusinessAttribute(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -206,6 +266,9 @@ class BusinessAttribute {
     nullable: nullable ?? this.nullable,
     unique: unique ?? this.unique,
     isArray: isArray ?? this.isArray,
+    estimatedMaxRows: clearEstimatedMaxRows
+        ? null
+        : (estimatedMaxRows ?? this.estimatedMaxRows),
     defaultValue: clearDefaultValue
         ? null
         : (defaultValue ?? this.defaultValue),
@@ -213,6 +276,8 @@ class BusinessAttribute {
     referenceObjectId: referenceObjectId ?? this.referenceObjectId,
     description: description ?? this.description,
     constraints: constraints ?? this.constraints,
+    schemaConstraints: schemaConstraints ?? this.schemaConstraints,
+    children: children ?? this.children,
   );
 
   /// Sérialise l'attribut en JSON.
@@ -224,11 +289,16 @@ class BusinessAttribute {
     'nullable': nullable,
     'unique': unique,
     'isArray': isArray,
+    if (estimatedMaxRows != null) 'estimatedMaxRows': estimatedMaxRows,
     if (defaultValue != null) 'defaultValue': defaultValue,
     'enumValues': enumValues,
     'referenceObjectId': referenceObjectId,
     'description': description,
     'constraints': constraints,
+    if (schemaConstraints.isNotEmpty)
+      'schemaConstraints': schemaConstraints.toJson(),
+    if (children.isNotEmpty)
+      'children': [for (final c in children) c.toJson()],
   };
 
   /// Désérialise un attribut depuis JSON.
@@ -238,22 +308,47 @@ class BusinessAttribute {
         'BusinessAttribute doit être un objet JSON.',
       );
     }
-    final rawName = (raw['name'] as String?)?.trim() ?? 'attribut';
-    final sanitizedName = _sanitizeIdentifier(rawName);
+    final rawName = (raw['name'] as String?)?.trim() ?? '';
+    final effectiveName = rawName.isEmpty ? 'attribut' : rawName;
     final rawId = (raw['id'] as String?)?.trim() ?? '';
+    final rawMaxRows = raw['estimatedMaxRows'];
+    final int? parsedMaxRows = switch (rawMaxRows) {
+      int v => v,
+      num v => v.toInt(),
+      String v => int.tryParse(v.trim()),
+      _ => null,
+    };
+    final rawChildren = raw['children'];
+    final parsedChildren = rawChildren is List
+        ? [for (final item in rawChildren) BusinessAttribute.fromJson(item)]
+        : const <BusinessAttribute>[];
+    final resolvedType = BusinessAttributeType.fromJson(raw['type']);
+    final effectiveType =
+        (parsedChildren.isNotEmpty && resolvedType == BusinessAttributeType.json)
+            ? BusinessAttributeType.object
+            : resolvedType;
+
+    final rawSchemaConstraints = raw['schemaConstraints'];
+    final parsedSchemaConstraints = rawSchemaConstraints != null
+        ? JsonSchemaConstraints.fromJson(rawSchemaConstraints)
+        : JsonSchemaConstraints.fromJson(raw);
+
     final attr = BusinessAttribute(
-      id: rawId.isEmpty ? 'attr_${sanitizedName.hashCode.abs()}' : rawId,
-      name: sanitizedName,
-      type: BusinessAttributeType.fromJson(raw['type']),
+      id: rawId.isEmpty ? 'attr_${effectiveName.hashCode.abs()}' : rawId,
+      name: effectiveName,
+      type: effectiveType,
       required: raw['required'] == true,
       nullable: raw['nullable'] == true,
       unique: raw['unique'] == true,
       isArray: raw['isArray'] == true,
+      estimatedMaxRows: parsedMaxRows,
       defaultValue: raw['defaultValue']?.toString(),
       enumValues: _stringList(raw['enumValues']),
       referenceObjectId: (raw['referenceObjectId'] as String?)?.trim() ?? '',
       description: (raw['description'] as String?)?.trim() ?? '',
       constraints: (raw['constraints'] as String?)?.trim() ?? '',
+      schemaConstraints: parsedSchemaConstraints,
+      children: parsedChildren,
     );
     attr.validate();
     return attr;
@@ -270,11 +365,14 @@ class BusinessAttribute {
           other.nullable == nullable &&
           other.unique == unique &&
           other.isArray == isArray &&
+          other.estimatedMaxRows == estimatedMaxRows &&
           other.defaultValue == defaultValue &&
           listEquals(other.enumValues, enumValues) &&
           other.referenceObjectId == referenceObjectId &&
           other.description == description &&
-          other.constraints == constraints;
+          other.constraints == constraints &&
+          other.schemaConstraints == schemaConstraints &&
+          listEquals(other.children, children);
 
   @override
   int get hashCode => Object.hash(
@@ -285,11 +383,14 @@ class BusinessAttribute {
     nullable,
     unique,
     isArray,
+    estimatedMaxRows,
     defaultValue,
     Object.hashAll(enumValues),
     referenceObjectId,
     description,
     constraints,
+    schemaConstraints,
+    Object.hashAll(children),
   );
 }
 
@@ -336,6 +437,12 @@ class BusinessRelation {
     if (name.trim().isEmpty) {
       throw const FormatException(
         'BusinessRelation.name ne peut pas être vide.',
+      );
+    }
+    if (!BusinessAttribute.isValidDslIdentifier(name)) {
+      throw FormatException(
+        'Nom de relation métier incompatible avec le DSL YAML : $name '
+        '(utilisez uniquement des caractères ASCII [A-Za-z_][A-Za-z0-9_-]*, sans accent ni espace).',
       );
     }
     if (targetObjectId.trim().isEmpty) {
@@ -620,6 +727,12 @@ class BusinessObjectSpec {
          lifecycleTransitions,
        );
 
+  /// Plafond strict d'attributs (directs + sous-objets) par objet métier.
+  static const int maxAttributesPerObject = 200;
+
+  /// Plafond strict de lignes pour tout tableau imbriqué dans un objet métier.
+  static const int maxEmbeddedArrayRows = 200;
+
   /// Identifiant unique de l'objet (ex. `obj_commande`).
   final String id;
 
@@ -647,7 +760,11 @@ class BusinessObjectSpec {
   /// Transitions autorisées entre états.
   final List<LifecycleTransition> lifecycleTransitions;
 
-  /// Vérifie les invariants de l'objet métier.
+  /// Nombre total récursif d'attributs (directs + sous-attributs imbriqués).
+  int get totalAttributeCount =>
+      attributes.fold<int>(0, (sum, attr) => sum + attr.totalAttributeCount);
+
+  /// Vérifie les invariants de l'objet métier et les règles de dimensionnement (≤ 200).
   void validate() {
     if (id.trim().isEmpty) {
       throw const FormatException('BusinessObjectSpec.id ne peut pas être vide.');
@@ -655,6 +772,18 @@ class BusinessObjectSpec {
     if (name.trim().isEmpty) {
       throw const FormatException(
         'BusinessObjectSpec.name ne peut pas être vide.',
+      );
+    }
+    if (!BusinessAttribute.isValidDslIdentifier(technicalName)) {
+      throw FormatException(
+        'Nom technique d’objet métier incompatible avec le DSL YAML : $technicalName '
+        '(utilisez uniquement des caractères ASCII [A-Za-z_][A-Za-z0-9_-]*, sans accent ni espace).',
+      );
+    }
+    final totalAttrs = totalAttributeCount;
+    if (totalAttrs > maxAttributesPerObject) {
+      throw FormatException(
+        'L’objet métier « $name » contient $totalAttrs attributs, ce qui dépasse la limite de $maxAttributesPerObject attributs. Scindez-le en plusieurs objets métiers.',
       );
     }
     final attrNames = <String>{};
@@ -665,9 +794,24 @@ class BusinessObjectSpec {
           'Attribut dupliqué « ${attr.name} » sur l\'objet « $name ».',
         );
       }
+      _validateArrayRowBounds(attr);
     }
     for (final rel in relations) {
       rel.validate();
+    }
+  }
+
+  void _validateArrayRowBounds(BusinessAttribute attr) {
+    final effectiveMaxRows = attr.estimatedMaxRows ?? attr.schemaConstraints.maxItems;
+    if (attr.isArray &&
+        effectiveMaxRows != null &&
+        effectiveMaxRows > maxEmbeddedArrayRows) {
+      throw FormatException(
+        'Le tableau imbriqué « ${attr.name} » de l’objet « $name » prévoit $effectiveMaxRows lignes (> $maxEmbeddedArrayRows). Modélisez-le comme un objet métier dédié relié par référence.',
+      );
+    }
+    for (final child in attr.children) {
+      _validateArrayRowBounds(child);
     }
   }
 
@@ -785,17 +929,87 @@ List<String> _stringList(Object? raw) {
   ];
 }
 
-String _sanitizeIdentifier(String input) {
-  final cleaned = input
-      .trim()
-      .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
-      .replaceAll(RegExp(r'^@+'), '');
-  return cleaned.isEmpty ? 'champ' : cleaned;
+String _foldLatinAccents(String input) {
+  const map = <String, String>{
+    'à': 'a',
+    'á': 'a',
+    'â': 'a',
+    'ã': 'a',
+    'ä': 'a',
+    'å': 'a',
+    'æ': 'ae',
+    'ç': 'c',
+    'è': 'e',
+    'é': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'ì': 'i',
+    'í': 'i',
+    'î': 'i',
+    'ï': 'i',
+    'ñ': 'n',
+    'ò': 'o',
+    'ó': 'o',
+    'ô': 'o',
+    'õ': 'o',
+    'ö': 'o',
+    'ø': 'o',
+    'œ': 'oe',
+    'ù': 'u',
+    'ú': 'u',
+    'û': 'u',
+    'ü': 'u',
+    'ý': 'y',
+    'ÿ': 'y',
+    'À': 'A',
+    'Á': 'A',
+    'Â': 'A',
+    'Ã': 'A',
+    'Ä': 'A',
+    'Å': 'A',
+    'Æ': 'AE',
+    'Ç': 'C',
+    'È': 'E',
+    'É': 'E',
+    'Ê': 'E',
+    'Ë': 'E',
+    'Ì': 'I',
+    'Í': 'I',
+    'Î': 'I',
+    'Ï': 'I',
+    'Ñ': 'N',
+    'Ò': 'O',
+    'Ó': 'O',
+    'Ô': 'O',
+    'Õ': 'O',
+    'Ö': 'O',
+    'Ø': 'O',
+    'Œ': 'OE',
+    'Ù': 'U',
+    'Ú': 'U',
+    'Û': 'U',
+    'Ü': 'U',
+    'Ý': 'Y',
+    'Ÿ': 'Y',
+  };
+  final buf = StringBuffer();
+  for (var i = 0; i < input.length; i++) {
+    final ch = input[i];
+    buf.write(map[ch] ?? ch);
+  }
+  return buf.toString();
+}
+
+String _sanitizeIdentifier(String input, {String fallback = 'champ'}) {
+  final folded = _foldLatinAccents(input.trim());
+  var cleaned = folded.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  cleaned = cleaned.replaceAll(RegExp(r'^[^A-Za-z_]+'), '');
+  return cleaned.isEmpty ? fallback : cleaned;
 }
 
 String _toPascalCase(String input) {
-  final words = input
-      .trim()
+  final folded = _foldLatinAccents(input.trim());
+  final words = folded
       .split(RegExp(r'[^A-Za-z0-9]+'))
       .where((w) => w.isNotEmpty)
       .toList();

@@ -13,7 +13,58 @@ abstract final class SpecCoherenceAnalyzer {
   static List<SpecCoherenceIssue> analyze(SpecForgeProject project) {
     final issues = <SpecCoherenceIssue>[];
 
-    // 1. Contrôles de cadrage (Étape 1)
+    // 0. Contrôles du lexique métier (Étape 1)
+    if (project.lexicon.terms.isEmpty) {
+      issues.add(
+        const SpecCoherenceIssue(
+          id: 'coh_no_lexicon',
+          severity: CoherenceSeverity.info,
+          stage: SpecForgeStage.lexicon,
+          code: 'COH-LEX-001',
+          title: 'Lexique métier vide',
+          description:
+              'Aucun terme métier canonique n’est encore défini dans le lexique.',
+          suggestion:
+              'Définissez les termes clés dès l’étape 1 pour unifier le vocabulaire du cahier des charges et des objets.',
+        ),
+      );
+    } else {
+      final seenTerms = <String>{};
+      for (final term in project.lexicon.terms) {
+        if (!seenTerms.add(term.term.trim().toLowerCase())) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_lex_dup_${term.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.lexicon,
+              code: 'COH-LEX-002',
+              title: 'Terme dupliqué dans le lexique : ${term.term}',
+              description:
+                  'Le terme « ${term.term} » apparaît plusieurs fois dans le lexique métier.',
+              targetRef: term.id,
+              suggestion: 'Fusionnez les entrées ou précisez leurs synonymes.',
+            ),
+          );
+        }
+        if (term.definition.trim().isEmpty) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_lex_def_${term.id}',
+              severity: CoherenceSeverity.info,
+              stage: SpecForgeStage.lexicon,
+              code: 'COH-LEX-003',
+              title: 'Définition manquante : ${term.term}',
+              description:
+                  'Le terme « ${term.term} » ne possède pas encore de définition métier.',
+              targetRef: term.id,
+              suggestion: 'Ajoutez une définition univoque.',
+            ),
+          );
+        }
+      }
+    }
+
+    // 1. Contrôles de cadrage (Étape 2)
     if (project.vision.personas.isEmpty) {
       issues.add(
         const SpecCoherenceIssue(
@@ -142,44 +193,152 @@ abstract final class SpecCoherenceAnalyzer {
         );
       }
 
-      for (final attr in obj.attributes) {
-        if (attr.type == BusinessAttributeType.enumeration &&
-            attr.enumValues.isEmpty) {
-          issues.add(
-            SpecCoherenceIssue(
-              id: 'coh_attr_enum_${obj.id}_${attr.id}',
-              severity: CoherenceSeverity.warning,
-              stage: SpecForgeStage.businessObjects,
-              code: 'COH-OBJ-003',
-              title: 'Énumération vide : ${obj.technicalName}.${attr.name}',
-              description:
-                  'L’attribut « ${attr.name} » est de type énumération mais aucune valeur n’est définie.',
-              targetRef: '${obj.id}.${attr.name}',
-              suggestion: 'Listez les valeurs autorisées dans enumValues.',
-            ),
-          );
-        }
-        if (attr.type == BusinessAttributeType.reference &&
-            attr.referenceObjectId.isNotEmpty &&
-            !objectsByAnyKey.containsKey(
-              attr.referenceObjectId.toLowerCase(),
-            )) {
-          issues.add(
-            SpecCoherenceIssue(
-              id: 'coh_attr_ref_${obj.id}_${attr.id}',
-              severity: CoherenceSeverity.error,
-              stage: SpecForgeStage.businessObjects,
-              code: 'COH-OBJ-004',
-              title:
-                  'Référence cassée : ${obj.technicalName}.${attr.name}',
-              description:
-                  'L’attribut « ${attr.name} » référence l’objet inconnu « ${attr.referenceObjectId} ».',
-              targetRef: '${obj.id}.${attr.name}',
-              suggestion: 'Créez l’objet cible ou corrigez referenceObjectId.',
-            ),
-          );
+      final totalAttrs = obj.totalAttributeCount;
+      if (totalAttrs > BusinessObjectSpec.maxAttributesPerObject) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_obj_max_attrs_${obj.id}',
+            severity: CoherenceSeverity.error,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-OBJ-008',
+            title: 'Limite de 200 attributs dépassée : ${obj.name}',
+            description:
+                'L’objet « ${obj.name} » totalise $totalAttrs attributs (max ${BusinessObjectSpec.maxAttributesPerObject}).',
+            targetRef: obj.id,
+            suggestion: 'Scindez cet objet en plusieurs objets métiers distincts.',
+          ),
+        );
+      } else if (totalAttrs >= 160) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_obj_warn_attrs_${obj.id}',
+            severity: CoherenceSeverity.warning,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-OBJ-008',
+            title: 'Objet proche du plafond de 200 attributs : ${obj.name}',
+            description:
+                'L’objet « ${obj.name} » contient déjà $totalAttrs/${BusinessObjectSpec.maxAttributesPerObject} attributs.',
+            targetRef: obj.id,
+            suggestion: 'Envisagez de déléguer certains sous-objets vers un objet métier séparé.',
+          ),
+        );
+      }
+
+      void checkAttributes(List<BusinessAttribute> attrs, String prefix) {
+        for (final attr in attrs) {
+          final qualified = '$prefix.${attr.name}';
+          if (attr.type == BusinessAttributeType.enumeration &&
+              attr.enumValues.isEmpty) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_attr_enum_${obj.id}_${attr.id}',
+                severity: CoherenceSeverity.warning,
+                stage: SpecForgeStage.businessObjects,
+                code: 'COH-OBJ-003',
+                title: 'Énumération vide : $qualified',
+                description:
+                    'L’attribut « ${attr.name} » est de type énumération mais aucune valeur n’est définie.',
+                targetRef: '${obj.id}.${attr.name}',
+                suggestion: 'Listez les valeurs autorisées dans enumValues.',
+              ),
+            );
+          }
+          if (attr.type == BusinessAttributeType.reference &&
+              attr.referenceObjectId.isNotEmpty &&
+              !objectsByAnyKey.containsKey(
+                attr.referenceObjectId.toLowerCase(),
+              )) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_attr_ref_${obj.id}_${attr.id}',
+                severity: CoherenceSeverity.error,
+                stage: SpecForgeStage.businessObjects,
+                code: 'COH-OBJ-004',
+                title: 'Référence cassée : $qualified',
+                description:
+                    'L’attribut « ${attr.name} » référence l’objet inconnu « ${attr.referenceObjectId} ».',
+                targetRef: '${obj.id}.${attr.name}',
+                suggestion: 'Créez l’objet cible ou corrigez referenceObjectId.',
+              ),
+            );
+          }
+          if (attr.type == BusinessAttributeType.object &&
+              attr.children.isEmpty) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_attr_empty_obj_${obj.id}_${attr.id}',
+                severity: CoherenceSeverity.warning,
+                stage: SpecForgeStage.businessObjects,
+                code: 'COH-OBJ-010',
+                title: 'Sous-objet vide : $qualified',
+                description:
+                    'Le sous-objet « ${attr.name} » ne contient aucun sous-attribut.',
+                targetRef: '${obj.id}.${attr.name}',
+                suggestion: 'Ajoutez ses champs ou passez son type en json libre.',
+              ),
+            );
+          }
+          if (attr.isArray) {
+            if (attr.estimatedMaxRows != null &&
+                attr.estimatedMaxRows! >
+                    BusinessObjectSpec.maxEmbeddedArrayRows) {
+              issues.add(
+                SpecCoherenceIssue(
+                  id: 'coh_attr_rows_${obj.id}_${attr.id}',
+                  severity: CoherenceSeverity.error,
+                  stage: SpecForgeStage.businessObjects,
+                  code: 'COH-OBJ-009',
+                  title: 'Tableau imbriqué > 200 lignes : $qualified',
+                  description:
+                      'Le tableau « ${attr.name} » prévoit ${attr.estimatedMaxRows} lignes (> ${BusinessObjectSpec.maxEmbeddedArrayRows}).',
+                  targetRef: '${obj.id}.${attr.name}',
+                  suggestion:
+                      'Extrayez ce tableau en objet métier dédié relié par référence.',
+                ),
+              );
+            } else if (attr.type == BusinessAttributeType.object &&
+                attr.estimatedMaxRows == null) {
+              issues.add(
+                SpecCoherenceIssue(
+                  id: 'coh_attr_rows_missing_${obj.id}_${attr.id}',
+                  severity: CoherenceSeverity.info,
+                  stage: SpecForgeStage.businessObjects,
+                  code: 'COH-OBJ-009',
+                  title: 'Volumétrie non bornée : $qualified',
+                  description:
+                      'Précisez estimatedMaxRows (<= 200) sur le tableau imbriqué « ${attr.name} » ou extrayez-le en objet métier séparé s’il dépasse 200 lignes.',
+                  targetRef: '${obj.id}.${attr.name}',
+                  suggestion: 'Renseignez estimatedMaxRows ou extrayez en objet séparé.',
+                ),
+              );
+            }
+          }
+          if (attr.schemaConstraints.hasConst &&
+              attr.enumValues.isNotEmpty &&
+              !attr.enumValues.contains(
+                attr.schemaConstraints.constValue?.toString(),
+              )) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_attr_const_${obj.id}_${attr.id}',
+                severity: CoherenceSeverity.error,
+                stage: SpecForgeStage.businessObjects,
+                code: 'COH-OBJ-011',
+                title: 'Conflit const / enum : $qualified',
+                description:
+                    'La valeur constante « ${attr.schemaConstraints.constValue} » ne fait pas partie des valeurs énumérées.',
+                targetRef: '${obj.id}.${attr.name}',
+                suggestion: 'Ajustez const ou enumValues.',
+              ),
+            );
+          }
+          if (attr.children.isNotEmpty) {
+            checkAttributes(attr.children, qualified);
+          }
         }
       }
+
+      checkAttributes(obj.attributes, obj.technicalName);
 
       for (final rel in obj.relations) {
         if (!objectIds.contains(rel.targetObjectId) &&

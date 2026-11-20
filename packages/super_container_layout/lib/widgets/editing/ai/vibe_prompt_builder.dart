@@ -51,17 +51,22 @@ Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la 
 - Reproduis tous les textes exacts du DOM (Section 3) avec "type": "value" (mode "display" par défaut, "input" pour les champs de saisie), et "type": "action" pour les boutons/liens (variant, backgroundColor, color, radius, horizontalPadding, verticalPadding et states.hover d’après la Section 4 CSS).
 - Respecte toutes les contraintes du moteur : JSON strict valide, ordre Top-Down ("styles" puis "components" parent -> enfants puis "usages"), "slotLabels" non vide sur le parent pour chaque nouveau composant, et "usages" renseigné pour chaque composant sans binding.''';
 
-  /// Consigne de planification automatique en lots (Phase 1 du mode « Reproduire à l'identique »).
-  static const String reproduceExactPlanningDirective = '''
-PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
-- Avant de générer des composants "vibe", découpe la reproduction complète de la source en un plan ordonné de lots cohérents et autonomes afin de ne jamais dépasser la limite de sortie JSON ni dégrader la précision :
-  - Lot 1 : Thème global ("mode", "accent", "styles['background']"), architecture de scroll/navigation, en-tête (header) et section Hero.
-  - Lots intermédiaires : 1 à x sections visuelles, blocs fonctionnels par lot (avec toutes leurs URLs exactes).
-  - Dernier lot : Pied de page (footer), bandeaux finaux et finitions.
-  - (Si la page source est courte/simple, un plan à 1 seul lot suffit.)
-- Renvoie UNIQUEMENT un objet JSON de la forme :
-  {"message":"courte présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"détail précis des sections, textes, styles et images à inclure"}]},"vibe":null}
-- Ne génère PAS encore de patch "vibe" sur ce tour.''';
+  /// Consigne de planification automatique en lots (Phase 1 du mode « Plan »).
+  static const String planModePlanningDirective = '''
+PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
+- Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents et autonomes afin de structurer la construction et ne jamais dépasser la limite de sortie JSON :
+  - Lot 1 : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, et architecture globale de navigation/shell/en-tête.
+  - Lots intermédiaires : 1 à x sections visuelles, vues ou blocs fonctionnels par lot.
+  - Dernier lot : Pages secondaires, pied de page et finitions.
+  - (Si la demande est courte/simple, un plan à 1 seul lot suffit.)
+- Si le NIVEAU DE QUESTIONNEMENT autorise "askUser" sur ce tour et que des choix structurants restent ambigus, pose d’abord tes questions via {"message":"...","askUser":{...},"vibe":null} (sans "plan").
+- Sinon (ou dès que les réponses sont fournies), renvoie UNIQUEMENT un objet JSON de la forme :
+  {"message":"courte présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"détail précis des sections, données/repositories, textes, styles et actions à inclure"}]},"vibe":null}
+- Ne génère PAS encore de patch "vibe" ni "repositories" sur ce tour.''';
+
+  /// Alias historique conservé pour compatibilité ; préférer [planModePlanningDirective].
+  static const String reproduceExactPlanningDirective =
+      planModePlanningDirective;
 
   /// Conserve la fenêtre récente de conversation et l'erreur précédente utile.
   static String buildConversationHistory(
@@ -95,8 +100,9 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
   }
 
   /// Assemble le prompt à partir d'un instantané compact, du contexte optionnel
-  /// des repositories JSON ([repositoriesContext]), de la portée choisie ([scope])
-  /// et du mode de reproduction exacte ([reproduceExactMode]).
+  /// des repositories JSON ([repositoriesContext]), de la portée choisie ([scope]),
+  /// du mode de planification ([planMode]) et du mode de reproduction exacte
+  /// ([reproduceExactMode]).
   static String buildTurnPrompt({
     required String questioningDirective,
     required String conversation,
@@ -106,6 +112,7 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
+    bool planMode = false,
     bool reproduceExactMode = false,
   }) {
     final trimmedRepositories = repositoriesContext?.trim() ?? '';
@@ -115,8 +122,9 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE :
               ? trimmedRepositories
               : 'REPOSITORIES DISPONIBLES (JSON) :\n$trimmedRepositories');
     final exactSection = reproduceExactMode
-        ? '$reproduceExactCommonDirective\n\n$reproduceExactPlanningDirective'
+        ? reproduceExactCommonDirective
         : null;
+    final planSection = planMode ? planModePlanningDirective : null;
     final mountedHint = mountedSlotSummaries.isEmpty
         ? null
         : 'Slots montés actuellement à l’écran (utilisables avec get_component_geometry / capture_screenshot) : '
@@ -148,6 +156,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
       return [
         questioningDirective,
         ?exactSection,
+        ?planSection,
         scopeDirective,
         ?mountedHint,
         ?repositoriesSection,
@@ -163,6 +172,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     return [
       questioningDirective,
       ?exactSection,
+      ?planSection,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les modifications à ces composants ou aux pages déclarées ; '
@@ -196,13 +206,15 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     final mountedHint = mountedSlotSummaries.isEmpty
         ? null
         : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
+    final effectiveExact = plan.reproduceExact;
+    final exactSection = effectiveExact ? reproduceExactCommonDirective : null;
     final lotDirective = '''
 PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
 ${plan.formatLotContextPrompt(lotIndex)}
 
 RÈGLES D’EXÉCUTION DU LOT :
-- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé","vibe":{...}} (avec "plan": null et "askUser": null).
-- PRÉSERVATION OBLIGATOIRE DES LOTS PRÉCÉDENTS : lorsque tu modifies "placements" ou "regions" d’un conteneur existant ("root", "mainLayout", etc.), réémets INTÉGRALEMENT tous les placements existants à conserver dans l’ordre (y compris ceux déjà construits par les lots précédents et "scaffold:body"), en ajoutant uniquement les nouvelles sections de ce lot.
+- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null).
+${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DESIGN.md sélectionné) et les règles d’atomicité GenUI.\n'}- PRÉSERVATION OBLIGATOIRE DES LOTS PRÉCÉDENTS : lorsque tu modifies "placements" ou "regions" d’un conteneur existant ("root", "mainLayout", etc.), réémets INTÉGRALEMENT tous les placements existants à conserver dans l’ordre (y compris ceux déjà construits par les lots précédents et "scaffold:body"), en ajoutant uniquement les nouvelles sections de ce lot.
 - Renseigne systématiquement "slotLabels" sur le parent et "usages" pour chaque nouveau composant sans liaison.''';
 
     final attachmentsSummary = sourceAttachments.isEmpty
@@ -210,7 +222,9 @@ RÈGLES D’EXÉCUTION DU LOT :
         : '\nPièces jointes de référence fournies : '
               '${sourceAttachments.map((a) => '"${a.name}"').join(', ')}.';
     final effectiveRequest = sourcePrompt.trim().isEmpty
-        ? 'Reproduis à l’identique la source jointe.'
+        ? (effectiveExact
+              ? 'Reproduis à l’identique la source jointe.'
+              : 'Réalise la demande décrite dans le plan.')
         : sourcePrompt.trim();
     final sourceSection =
         'DEMANDE INITIALE DE RÉFÉRENCE :\n$effectiveRequest$attachmentsSummary';
@@ -225,7 +239,7 @@ RÈGLES D’EXÉCUTION DU LOT :
           ? parentList
           : targetIdsList;
       return [
-        reproduceExactCommonDirective,
+        ?exactSection,
         lotDirective,
         '''RESTRICTION STRICTE DE SCOPE :
 Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).''',
@@ -242,7 +256,7 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
       codec: codec,
     );
     return [
-      reproduceExactCommonDirective,
+      ?exactSection,
       lotDirective,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '

@@ -122,6 +122,8 @@ class VibeChatDialog extends StatefulWidget {
     this.onSpeedModeChanged,
     this.initialQuestioningLevel = VibeQuestioningLevel.balanced,
     this.onQuestioningLevelChanged,
+    this.initialPlanMode = false,
+    this.onPlanModeChanged,
     this.initialReproduceExactMode = false,
     this.onReproduceExactModeChanged,
     this.scope,
@@ -170,7 +172,7 @@ Renvoie uniquement un objet JSON en plaçant impérativement la clé "message" E
 1. Création ou modification directe de l'écran : renvoie {"message":"résumé bref en français","vibe":{...}}. Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "behaviors", "usages", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
 2. Question pure ou demande d'information sans modification de l'écran : renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 3. Clarification interactive ("askUser") selon le NIVEAU DE QUESTIONNEMENT indiqué dans le contexte du tour : renvoie {"message":"courte introduction en français","askUser":{"questions":[{"id":"...","title":"...","type":"single|multi|boolean|text","options":["..."],"default":...}]},"vibe":null}.
-4. Planification en lots (mode « Reproduire à l’identique ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
+4. Planification en lots (mode « Plan ») : renvoie {"message":"présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"..."}]},"vibe":null}.
 5. Interrogation et sélection dans l'application en cours d'exécution (si des mesures, diagnostics ou pointages visuels sont utiles) : tu peux appeler les outils (`get_viewport_and_route`, `get_component_geometry`, `get_runtime_tree`, `query_repository_data`, `manage_repository_json_schema`, `capture_element_screenshot`, `capture_screenshot`, `get_debug_entries`, `get_datasources_and_providers`, `inspect_bindings_and_diagnostics`, `get_theme_and_contrast`, `get_registry_and_selection`, `preview_navigation_or_selection`, `select_editor_element`, `register_design_system`) soit via le Function Calling natif (à privilégier), soit en renvoyant {"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}. Utilise `manage_repository_json_schema` pour lire, inférer, valider, créer, modifier ou dissocier le JSON Schema d'un repository existant. Utilise `register_design_system` dès que l'utilisateur demande de générer, extraire ou ajouter un `DESIGN.md` / Design System dans la liste des choix possibles (notamment à partir des pièces jointes du chat), en essayant systématiquement de récupérer ou reconstruire le logo de la marque (URL exacte ou Data URI issue des pièces jointes, `<svg>` joint ou extrait, ou `<svg>` vectoriel simple fidèle au logo visible sans inventer d'URL) dans le champ `logo` et dans le document `DESIGN.md`. Préfère systématiquement `capture_element_screenshot` à `capture_screenshot` pour capturer un composant, une carte, une zone ou une ligne isolée sans toute la page, et utilise `select_editor_element` pour sélectionner/montrer un élément sur le canevas en mode édition. Appelle `get_debug_entries` et `inspect_bindings_and_diagnostics` en cas d'erreur Flutter/RenderFlex, de message d'erreur de repository/validation, de conflit schéma/masque/données ou de données vides, et `get_datasources_and_providers` avant de câbler une recherche/CRUD ; si `get_debug_entries` ou `inspect_bindings_and_diagnostics` révèle des données existantes incompatibles avec le JSON Schema ou un conflit de masque/date, propose le correctif exact et demande confirmation via `"askUser"` avant d'écraser les données ou le schéma. Pour une modification déclarative simple dont le JSON courant suffit, réponds directement sans outil. Tu peux ajouter "verifyRender": true avec "vibe" pour inspecter l'écran juste après l'aperçu.
 Ordre d'émission obligatoire dans "vibe" pour la construction de l'IHM en streaming live :
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et "usages".
@@ -259,7 +261,13 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   /// Callback optionnel notifié lorsque l'utilisateur ajuste le niveau de questionnement via le slider.
   final ValueChanged<VibeQuestioningLevel>? onQuestioningLevelChanged;
 
-  /// Active par défaut le mode « Reproduire à l'identique » (planification et exécution par lots automatiques).
+  /// Active par défaut le mode « Plan » (planification et exécution par lots validés).
+  final bool initialPlanMode;
+
+  /// Callback optionnel notifié lorsque le mode « Plan » change.
+  final ValueChanged<bool>? onPlanModeChanged;
+
+  /// Active par défaut le mode « Reproduire à l'identique » (pixel-perfect).
   final bool initialReproduceExactMode;
 
   /// Callback optionnel notifié lorsque le mode « Reproduire à l'identique » change.
@@ -799,6 +807,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
   late VibeQuestioningLevel _questioningLevel = widget.initialReproduceExactMode
       ? VibeQuestioningLevel.none
       : widget.initialQuestioningLevel;
+  late bool _planMode = widget.initialPlanMode;
   late bool _reproduceExactMode = widget.initialReproduceExactMode;
   late VibeQuestioningLevel? _questioningLevelBeforeExactMode =
       widget.initialReproduceExactMode ? widget.initialQuestioningLevel : null;
@@ -1137,6 +1146,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         !_reproduceExactMode) {
       _questioningLevel = widget.initialQuestioningLevel;
     }
+    if (oldWidget.initialPlanMode != widget.initialPlanMode) {
+      _setPlanMode(widget.initialPlanMode, notifyCallback: false);
+    }
     if (oldWidget.initialReproduceExactMode !=
         widget.initialReproduceExactMode) {
       _setReproduceExactMode(
@@ -1209,6 +1221,14 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     if (_reproduceExactMode || _questioningLevel == level || _isBusy) return;
     setState(() => _questioningLevel = level);
     widget.onQuestioningLevelChanged?.call(level);
+  }
+
+  void _setPlanMode(bool enabled, {bool notifyCallback = true}) {
+    if (_planMode == enabled || _isBusy) return;
+    setState(() => _planMode = enabled);
+    if (notifyCallback) {
+      widget.onPlanModeChanged?.call(enabled);
+    }
   }
 
   void _setReproduceExactMode(bool enabled, {bool notifyCallback = true}) {
@@ -2079,7 +2099,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     if ((request.isEmpty && attachments.isEmpty) || _isBusy) return;
     _input.clear();
     if (_questioningLevel == VibeQuestioningLevel.none &&
-        !_reproduceExactMode) {
+        !_reproduceExactMode &&
+        !_planMode) {
       _setExpanded(false);
     }
     _stopStaleActivePlan();
@@ -2180,6 +2201,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     final promptReply = request.formatPromptReply(
       normalizedAnswers,
       usedDefaults: usedDefaults,
+      planMode: _planMode,
     );
     await _runGenerationTurn(
       displayUserText: displaySummary,
@@ -2285,6 +2307,52 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       return false;
     }
     return true;
+  }
+
+  ({String prompt, List<VibeChatAttachment> attachments})
+  _collectPlanSourceContext({
+    required String currentPrompt,
+    required List<VibeChatAttachment> currentAttachments,
+  }) {
+    final userTurnEntries = <VibeChatMessage>[];
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final msg = _messages[i];
+      if (msg.isUser) {
+        userTurnEntries.add(msg);
+        continue;
+      }
+      final isPendingClarificationOrRetry =
+          msg.askUser != null || msg.failedResponse != null;
+      if (!isPendingClarificationOrRetry) {
+        break;
+      }
+    }
+    if (userTurnEntries.length <= 1) {
+      return (prompt: currentPrompt, attachments: currentAttachments);
+    }
+    final orderedUsers = userTurnEntries.reversed.toList();
+    final promptParts = <String>[];
+    final mergedAttachments = <VibeChatAttachment>[];
+    for (var i = 0; i < orderedUsers.length; i++) {
+      final msg = orderedUsers[i];
+      final isLast = i == orderedUsers.length - 1;
+      final body = isLast
+          ? currentPrompt
+          : (msg.promptText ??
+                (msg.text.isEmpty && msg.attachments.isNotEmpty
+                    ? 'Analyse les fichiers joints et applique les modifications correspondantes.'
+                    : msg.text));
+      if (body.trim().isNotEmpty) {
+        promptParts.add(body.trim());
+      }
+      mergedAttachments.addAll(msg.attachments);
+    }
+    return (
+      prompt: promptParts.isEmpty ? currentPrompt : promptParts.join('\n\n'),
+      attachments: mergedAttachments.isEmpty
+          ? currentAttachments
+          : List<VibeChatAttachment>.unmodifiable(mergedAttachments),
+    );
   }
 
   Future<void> _runGenerationTurn({
@@ -2420,18 +2488,20 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           : registeredDesign != null && !hasMutations
           ? 'Design System « ${registeredDesign.name} » ajouté à la liste.'
           : 'Modifications appliquées.';
+      final planSource = !hasMutations && generated.plan != null
+          ? _collectPlanSourceContext(
+              currentPrompt: promptOverride ?? displayUserText,
+              currentAttachments: attachments,
+            )
+          : null;
       _appendMessage(
         summaryText ?? fallbackText,
         askUser: !hasMutations && generated.plan == null
             ? generated.askUser
             : null,
         plan: !hasMutations ? generated.plan : null,
-        planSourcePrompt: !hasMutations && generated.plan != null
-            ? (promptOverride ?? displayUserText)
-            : null,
-        planSourceAttachments: !hasMutations && generated.plan != null
-            ? attachments
-            : const [],
+        planSourcePrompt: planSource?.prompt,
+        planSourceAttachments: planSource?.attachments ?? const [],
         toolTraces: List<VibeToolTrace>.unmodifiable(session.toolTraces),
       );
       if (!hasMutations && generated.plan != null && mounted) {
@@ -2895,10 +2965,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         final detail = skipped == 0
             ? '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
             : '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).';
+        final completionPrefix = completedPlan.reproduceExact
+            ? 'Reproduction terminée'
+            : 'Plan terminé';
         _appendMessage(
           skipped == 0
-              ? 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
-              : 'Reproduction terminée : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).',
+              ? '$completionPrefix : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
+              : '$completionPrefix : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).',
         );
         _notifyTaskCompletion(
           outcome: VibeTaskOutcome.success,
@@ -3959,7 +4032,10 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         }
         final rawAskUser = VibeAskUserRequest.tryFromJson(result['askUser']);
         final rawPlan = allowPlan
-            ? VibeExecutionPlan.tryFromJson(result['plan'])
+            ? VibeExecutionPlan.tryFromJson(
+                result['plan'],
+                reproduceExact: _reproduceExactMode,
+              )
             : null;
         if (_isForceFollowUpQuestions) {
           final followUpAskUser = rawAskUser?.truncate(
@@ -4710,6 +4786,7 @@ $response
       questioningDirective: _questioningLevel.promptDirective(
         afterAskUserReply: _isAfterAskUserReply,
         forceFollowUpQuestions: _isForceFollowUpQuestions,
+        planMode: _planMode,
       ),
       conversation: _buildConversationHistory(),
       appearance: appearanceOverride ?? _currentAppearance,
@@ -4720,6 +4797,7 @@ $response
       mountedSlotSummaries: VibeMountedSlotIndex.instance
           .mountedSlotSummaries(),
       repositoriesContext: repositoriesContext,
+      planMode: _planMode,
       reproduceExactMode: _reproduceExactMode,
     );
   }
@@ -5044,6 +5122,12 @@ $response
                                       ),
                                     ],
                                     const SizedBox(width: 6),
+                                    VibePlanModeChip(
+                                      selected: _planMode,
+                                      enabled: !_isBusy,
+                                      onToggle: () => _setPlanMode(!_planMode),
+                                    ),
+                                    const SizedBox(width: 6),
                                     VibeReproduceExactChip(
                                       selected: _reproduceExactMode,
                                       enabled: !_isBusy,
@@ -5176,7 +5260,9 @@ $response
                                         const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
-                                            'Style fidèle à la source (Design System ignoré) • Plan & lots auto',
+                                            _planMode
+                                                ? 'Style fidèle à la source (Design System ignoré) • Plan & lots auto'
+                                                : 'Style fidèle à la source (Design System ignoré)',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
@@ -5441,6 +5527,8 @@ $response
                             ? 'Transcription en cours…'
                             : _reproduceExactMode
                             ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
+                            : _planMode
+                            ? 'Décris l’écran ou les changements à planifier par lots…'
                             : 'Décris l’écran souhaité…',
                         border: const OutlineInputBorder(),
                         isDense: true,
@@ -5494,7 +5582,7 @@ $response
                 const SizedBox(width: 4),
                 IconButton.filled(
                   key: const ValueKey('vibe-chat-send'),
-                  tooltip: _reproduceExactMode
+                  tooltip: _planMode
                       ? 'Analyser et préparer le plan par lots'
                       : 'Générer et appliquer',
                   onPressed: _isBusy ? null : _send,

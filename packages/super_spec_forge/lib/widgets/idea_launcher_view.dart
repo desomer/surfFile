@@ -3,6 +3,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../models/spec_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
 import '../services/spec_project_store.dart';
 
@@ -108,7 +109,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Transformez une idée brute en cahier des charges, objets métiers et règles de gestion via un wizard de 5 agents IA spécialisés.',
+                          'Transformez une idée brute en lexique métier, cahier des charges, objets métiers et règles de gestion via un wizard de ${SpecForgeStage.values.length} agents IA spécialisés.',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -203,7 +204,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                                   )
                                 : const Icon(Icons.arrow_forward_rounded),
                             label: const Text(
-                              'Démarrer le wizard (Étape 1 : Cadrage)',
+                              'Démarrer le wizard (Étape 1 : Lexique métier)',
                             ),
                           ),
                         ],
@@ -274,7 +275,7 @@ class _RecentProjectTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          'Étape ${summary.currentStage.stepNumber}/5 (${summary.currentStage.shortLabel}) · '
+          'Étape ${summary.currentStage.stepNumber}/${SpecForgeStage.values.length} (${summary.currentStage.shortLabel}) · '
           '${summary.objectCount} objet(s) · ${summary.ruleCount} règle(s)\n${summary.initialIdea}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,

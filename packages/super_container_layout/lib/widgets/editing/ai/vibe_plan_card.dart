@@ -1,5 +1,5 @@
 /// Carte interactive d'affichage et de pilotage d'un plan par lots ([VibePlanCard])
-/// pour le mode « Reproduire à l'identique » du chat Vibe IA.
+/// pour le mode « Plan » (et sa combinaison avec « Reproduire à l'identique ») du chat Vibe IA.
 library;
 
 import 'package:material_ui/material_ui.dart';

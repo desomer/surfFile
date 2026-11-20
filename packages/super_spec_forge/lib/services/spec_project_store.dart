@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/business_object_spec.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 
@@ -85,18 +86,32 @@ class SpecProjectStore {
     project.validate();
     final file = _projectFile(project.id);
     await file.parent.create(recursive: true);
-    final encoded = const JsonEncoder.withIndent('  ').convert(project.toJson());
+    final encoded = const JsonEncoder.withIndent('  ')
+        .convert(project.toJson());
     await file.writeAsString(encoded, flush: true);
     await setLastActiveProjectId(project.id);
   }
 
   /// Charge un projet depuis son [projectId], ou retourne `null` s'il est introuvable.
+  ///
+  /// Migre automatiquement les anciens projets sauvegardés dont certains
+  /// identifiants techniques contenaient des accents (ex. `statutCohérence`).
   Future<SpecForgeProject?> loadProject(String projectId) async {
     final file = _projectFile(projectId);
     if (!await file.exists()) return null;
     final raw = await file.readAsString();
     final decoded = jsonDecode(raw);
-    return SpecForgeProject.fromJson(decoded);
+    try {
+      return SpecForgeProject.fromJson(decoded);
+    } on FormatException {
+      if (decoded is! Map) rethrow;
+      final migratedJson = _migrateLegacyDslIdentifiers(decoded);
+      final migrated = SpecForgeProject.fromJson(migratedJson);
+      final encoded = const JsonEncoder.withIndent('  ')
+          .convert(migrated.toJson());
+      await file.writeAsString(encoded, flush: true);
+      return migrated;
+    }
   }
 
   /// Supprime définitivement un projet du disque.
@@ -117,14 +132,19 @@ class SpecProjectStore {
     final summaries = <SpecProjectSummary>[];
     await for (final entity in _projectsDir.list(followLinks: false)) {
       if (entity is! Directory) continue;
-      final file = File(
-        '${entity.path}${Platform.pathSeparator}project.json',
-      );
+      final file = File('${entity.path}${Platform.pathSeparator}project.json');
       if (!await file.exists()) continue;
       try {
-        final project = SpecForgeProject.fromJson(
-          jsonDecode(await file.readAsString()),
-        );
+        final decoded = jsonDecode(await file.readAsString());
+        SpecForgeProject project;
+        try {
+          project = SpecForgeProject.fromJson(decoded);
+        } on FormatException {
+          if (decoded is! Map) rethrow;
+          project = SpecForgeProject.fromJson(
+            _migrateLegacyDslIdentifiers(decoded),
+          );
+        }
         summaries.add(
           SpecProjectSummary(
             id: project.id,
@@ -165,5 +185,101 @@ class SpecProjectStore {
       const JsonEncoder.withIndent('  ').convert(payload),
       flush: true,
     );
+  }
+
+  static Map<String, Object?> _migrateLegacyDslIdentifiers(
+    Map<dynamic, dynamic> rawProject,
+  ) {
+    final copy = <String, Object?>{
+      for (final entry in rawProject.entries) entry.key.toString(): entry.value,
+    };
+    final rawObjects = copy['businessObjects'];
+    if (rawObjects is List) {
+      copy['businessObjects'] = [
+        for (final item in rawObjects)
+          item is Map ? _migrateLegacyBusinessObject(item) : item,
+      ];
+    }
+    return copy;
+  }
+
+  static Map<String, Object?> _migrateLegacyBusinessObject(
+    Map<dynamic, dynamic> rawObj,
+  ) {
+    final copy = <String, Object?>{
+      for (final entry in rawObj.entries) entry.key.toString(): entry.value,
+    };
+    final rawTech = (copy['technicalName'] as String?)?.trim() ?? '';
+    if (rawTech.isNotEmpty &&
+        !BusinessAttribute.isValidDslIdentifier(rawTech)) {
+      copy['technicalName'] = BusinessAttribute.toPascalCaseDslIdentifier(
+        rawTech,
+      );
+    }
+    final rawAttrs = copy['attributes'];
+    if (rawAttrs is List) {
+      copy['attributes'] = _migrateLegacyAttributeList(rawAttrs);
+    }
+    final rawRels = copy['relations'];
+    if (rawRels is List) {
+      final usedRelNames = <String>{};
+      copy['relations'] = [
+        for (final rel in rawRels)
+          if (rel is Map)
+            () {
+              final r = <String, Object?>{
+                for (final e in rel.entries) e.key.toString(): e.value,
+              };
+              final rawName = (r['name'] as String?)?.trim() ?? 'relation';
+              var nextName = BusinessAttribute.isValidDslIdentifier(rawName)
+                  ? rawName
+                  : BusinessAttribute.normalizeDslIdentifier(
+                      rawName,
+                      fallback: 'relation',
+                    );
+              var suffix = 2;
+              while (!usedRelNames.add(nextName)) {
+                nextName = '${nextName}_$suffix';
+                suffix++;
+              }
+              r['name'] = nextName;
+              return r;
+            }()
+          else
+            rel,
+      ];
+    }
+    return copy;
+  }
+
+  static List<Object?> _migrateLegacyAttributeList(List<dynamic> rawAttrs) {
+    final usedNames = <String>{};
+    return [
+      for (final item in rawAttrs)
+        if (item is Map)
+          () {
+            final a = <String, Object?>{
+              for (final e in item.entries) e.key.toString(): e.value,
+            };
+            final rawName = (a['name'] as String?)?.trim() ?? 'attribut';
+            final baseName = BusinessAttribute.isValidDslIdentifier(rawName)
+                ? rawName
+                : BusinessAttribute.normalizeDslIdentifier(rawName);
+            var candidate = baseName;
+            var suffix = 2;
+            while (!usedNames.add(candidate)) {
+              candidate = '${baseName}_$suffix';
+              suffix++;
+            }
+            a['name'] = candidate;
+            final children = a['children'];
+            if (children is List) {
+              a['children'] = _migrateLegacyAttributeList(children);
+            }
+            return a;
+          }()
+        else
+          item,
+    ];
   }
 }

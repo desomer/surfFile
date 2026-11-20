@@ -1,8 +1,8 @@
 /// Modèles immuables de planification par lots ([VibeExecutionPlan], [VibePlanLot])
-/// pour le mode « Reproduire à l'identique » du chat Vibe IA.
+/// pour le mode « Plan » (et sa combinaison avec « Reproduire à l'identique ») du chat Vibe IA.
 ///
-/// Représente le découpage d'un écran complexe en lots séquentiels validés par
-/// l'utilisateur avant exécution automatique, ainsi que le suivi de statut
+/// Représente le découpage d'une demande ou d'un écran complexe en lots séquentiels
+/// validés par l'utilisateur avant exécution automatique, ainsi que le suivi de statut
 /// individuel de chaque lot et la gestion de pause/reprise sur erreur.
 library;
 
@@ -158,6 +158,7 @@ class VibeExecutionPlan {
     required this.title,
     required List<VibePlanLot> lots,
     this.status = VibePlanStatus.awaitingConfirmation,
+    this.reproduceExact = false,
   }) : lots = List<VibePlanLot>.unmodifiable(lots);
 
   /// Titre global du plan affiché en tête de carte.
@@ -168,6 +169,9 @@ class VibeExecutionPlan {
 
   /// État courant d'exécution du plan.
   final VibePlanStatus status;
+
+  /// Indique si ce plan a été généré en mode « À l’identique » (pixel-perfect).
+  final bool reproduceExact;
 
   /// Nombre de lots terminés avec succès.
   int get doneCount =>
@@ -190,7 +194,10 @@ class VibeExecutionPlan {
   );
 
   /// Analyse l'objet JSON `"plan"` retourné par l'IA, ou retourne `null` s'il est invalide/vide.
-  static VibeExecutionPlan? tryFromJson(Object? raw) {
+  static VibeExecutionPlan? tryFromJson(
+    Object? raw, {
+    bool reproduceExact = false,
+  }) {
     if (raw is! Map) return null;
     final rawLots = raw['lots'] ?? raw['steps'];
     if (rawLots is! List || rawLots.isEmpty) return null;
@@ -212,17 +219,26 @@ class VibeExecutionPlan {
     }
     if (parsedLots.isEmpty) return null;
 
+    final rawExact = raw['reproduceExact'];
+    final effectiveExact = rawExact is bool ? rawExact : reproduceExact;
     final rawTitle = raw['title'] ?? raw['name'];
     final title = rawTitle is String && rawTitle.trim().isNotEmpty
         ? rawTitle.trim()
-        : 'Plan de reproduction à l’identique';
-    return VibeExecutionPlan(title: title, lots: parsedLots);
+        : effectiveExact
+        ? 'Plan de reproduction à l’identique'
+        : 'Plan d’exécution par lots';
+    return VibeExecutionPlan(
+      title: title,
+      lots: parsedLots,
+      reproduceExact: effectiveExact,
+    );
   }
 
   /// Sérialise ce plan en JSON.
   Map<String, Object?> toJson() => <String, Object?>{
     'title': title,
     'status': status.name,
+    if (reproduceExact) 'reproduceExact': true,
     'lots': [for (final lot in lots) lot.toJson()],
   };
 
@@ -231,10 +247,12 @@ class VibeExecutionPlan {
     String? title,
     List<VibePlanLot>? lots,
     VibePlanStatus? status,
+    bool? reproduceExact,
   }) => VibeExecutionPlan(
     title: title ?? this.title,
     lots: lots ?? this.lots,
     status: status ?? this.status,
+    reproduceExact: reproduceExact ?? this.reproduceExact,
   );
 
   /// Retourne une copie du plan après mise à jour du lot situé à [index].
@@ -280,8 +298,10 @@ class VibeExecutionPlan {
       other is VibeExecutionPlan &&
           other.title == title &&
           other.status == status &&
+          other.reproduceExact == reproduceExact &&
           listEquals(other.lots, lots);
 
   @override
-  int get hashCode => Object.hash(title, status, Object.hashAll(lots));
+  int get hashCode =>
+      Object.hash(title, status, reproduceExact, Object.hashAll(lots));
 }

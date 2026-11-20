@@ -9,10 +9,11 @@ import 'business_rule_spec.dart';
 import 'spec_cahier_des_charges.dart';
 import 'spec_coherence_issue.dart';
 import 'spec_forge_stage.dart';
+import 'spec_lexicon.dart';
 import 'spec_stage_chat.dart';
 import 'spec_vision.dart';
 
-/// Projet complet de spécification construit au fil des 5 étapes du wizard IA.
+/// Projet complet de spécification construit au fil des 6 étapes du wizard IA.
 @immutable
 class SpecForgeProject {
   /// Construit un projet immuable de spécification.
@@ -22,21 +23,27 @@ class SpecForgeProject {
     required this.initialIdea,
     required this.createdAt,
     required this.updatedAt,
-    this.currentStage = SpecForgeStage.vision,
+    this.currentStage = SpecForgeStage.lexicon,
+    SpecLexicon? lexicon,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue> coherenceIssues = const <SpecCoherenceIssue>[],
-  }) : vision = vision ?? SpecVision.empty,
+    List<SpecChatMessage> globalChatMessages = const <SpecChatMessage>[],
+  }) : lexicon = lexicon ?? SpecLexicon.empty,
+       vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
        businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
        stageStates = Map<SpecForgeStage, SpecStageState>.unmodifiable(
          _normalizeStageStates(stageStates),
        ),
-       coherenceIssues = List<SpecCoherenceIssue>.unmodifiable(coherenceIssues);
+       coherenceIssues = List<SpecCoherenceIssue>.unmodifiable(coherenceIssues),
+       globalChatMessages = List<SpecChatMessage>.unmodifiable(
+         globalChatMessages,
+       );
 
   /// Crée un nouveau projet à partir d'une idée initiale saisie par l'utilisateur.
   factory SpecForgeProject.fromIdea({
@@ -61,13 +68,14 @@ class SpecForgeProject {
       initialIdea: trimmedIdea,
       createdAt: now,
       updatedAt: now,
-      currentStage: SpecForgeStage.vision,
+      currentStage: SpecForgeStage.lexicon,
+      lexicon: SpecLexicon.empty,
       vision: SpecVision(ideaSummary: trimmedIdea),
       stageStates: <SpecForgeStage, SpecStageState>{
         for (final stage in SpecForgeStage.values)
           stage: SpecStageState(
             stage: stage,
-            status: stage == SpecForgeStage.vision
+            status: stage == SpecForgeStage.lexicon
                 ? SpecStageStatus.inProgress
                 : SpecStageStatus.notStarted,
           ),
@@ -93,7 +101,10 @@ class SpecForgeProject {
   /// Étape actuellement sélectionnée dans le wizard.
   final SpecForgeStage currentStage;
 
-  /// Livrable de l'étape 1 (Cadrage & Acteurs).
+  /// Livrable de l'étape 1 (Lexique métier).
+  final SpecLexicon lexicon;
+
+  /// Livrable de l'étape 2 (Cadrage & Acteurs).
   final SpecVision vision;
 
   /// Livrable de l'étape 2 (Cahier des charges fonctionnel et non fonctionnel).
@@ -110,6 +121,9 @@ class SpecForgeProject {
 
   /// Diagnostics de cohérence relevés (locaux et/ou IA).
   final List<SpecCoherenceIssue> coherenceIssues;
+
+  /// Historique des échanges du chat global de questions sur le projet.
+  final List<SpecChatMessage> globalChatMessages;
 
   /// Retourne l'état d'une étape donnée (garanti non nul).
   SpecStageState stageStateFor(SpecForgeStage stage) =>
@@ -175,6 +189,7 @@ class SpecForgeProject {
         'SpecForgeProject.initialIdea ne peut pas être vide.',
       );
     }
+    lexicon.validate();
     vision.validate();
     cahierDesCharges.validate();
 
@@ -201,7 +216,9 @@ class SpecForgeProject {
         'projectName': name,
         'initialIdea': initialIdea,
         'currentStage': stage.name,
-        'vision': vision.toJson(),
+        'lexicon': lexicon.toJson(),
+        if (stage.index >= SpecForgeStage.vision.index || vision.hasContent)
+          'vision': vision.toJson(),
         if (stage.index >= SpecForgeStage.specifications.index ||
             cahierDesCharges.hasContent)
           'cahierDesCharges': cahierDesCharges.toJson(),
@@ -223,12 +240,14 @@ class SpecForgeProject {
     DateTime? createdAt,
     DateTime? updatedAt,
     SpecForgeStage? currentStage,
+    SpecLexicon? lexicon,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec>? businessObjects,
     List<BusinessRuleSpec>? businessRules,
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue>? coherenceIssues,
+    List<SpecChatMessage>? globalChatMessages,
   }) => SpecForgeProject(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -236,12 +255,14 @@ class SpecForgeProject {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? DateTime.now().toUtc(),
     currentStage: currentStage ?? this.currentStage,
+    lexicon: lexicon ?? this.lexicon,
     vision: vision ?? this.vision,
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
     businessObjects: businessObjects ?? this.businessObjects,
     businessRules: businessRules ?? this.businessRules,
     stageStates: stageStates ?? this.stageStates,
     coherenceIssues: coherenceIssues ?? this.coherenceIssues,
+    globalChatMessages: globalChatMessages ?? this.globalChatMessages,
   );
 
   /// Sérialise le projet complet en JSON.
@@ -254,6 +275,7 @@ class SpecForgeProject {
     'createdAt': createdAt.toUtc().toIso8601String(),
     'updatedAt': updatedAt.toUtc().toIso8601String(),
     'currentStage': currentStage.name,
+    'lexicon': lexicon.toJson(),
     'vision': vision.toJson(),
     'cahierDesCharges': cahierDesCharges.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
@@ -263,6 +285,8 @@ class SpecForgeProject {
         entry.key.name: entry.value.toJson(),
     },
     'coherenceIssues': [for (final i in coherenceIssues) i.toJson()],
+    if (globalChatMessages.isNotEmpty)
+      'globalChatMessages': [for (final m in globalChatMessages) m.toJson()],
   };
 
   /// Désérialise et valide un projet depuis JSON.
@@ -298,6 +322,7 @@ class SpecForgeProject {
       createdAt: createdAt,
       updatedAt: updatedAt,
       currentStage: SpecForgeStage.fromJson(raw['currentStage']),
+      lexicon: SpecLexicon.fromJson(raw['lexicon']),
       vision: SpecVision.fromJson(raw['vision']),
       cahierDesCharges: SpecCahierDesCharges.fromJson(raw['cahierDesCharges']),
       businessObjects: [
@@ -315,6 +340,11 @@ class SpecForgeProject {
         if (raw['coherenceIssues'] is List)
           for (final item in raw['coherenceIssues'] as List)
             SpecCoherenceIssue.fromJson(item),
+      ],
+      globalChatMessages: [
+        if (raw['globalChatMessages'] is List)
+          for (final item in raw['globalChatMessages'] as List)
+            SpecChatMessage.fromJson(item),
       ],
     );
     project.validate();
@@ -349,12 +379,14 @@ class SpecForgeProject {
           other.createdAt == createdAt &&
           other.updatedAt == updatedAt &&
           other.currentStage == currentStage &&
+          other.lexicon == lexicon &&
           other.vision == vision &&
           other.cahierDesCharges == cahierDesCharges &&
           listEquals(other.businessObjects, businessObjects) &&
           listEquals(other.businessRules, businessRules) &&
           mapEquals(other.stageStates, stageStates) &&
-          listEquals(other.coherenceIssues, coherenceIssues);
+          listEquals(other.coherenceIssues, coherenceIssues) &&
+          listEquals(other.globalChatMessages, globalChatMessages);
 
   @override
   int get hashCode => Object.hash(
@@ -364,11 +396,13 @@ class SpecForgeProject {
     createdAt,
     updatedAt,
     currentStage,
+    lexicon,
     vision,
     cahierDesCharges,
     Object.hashAll(businessObjects),
     Object.hashAll(businessRules),
     Object.hashAll(stageStates.values),
     Object.hashAll(coherenceIssues),
+    Object.hashAll(globalChatMessages),
   );
 }

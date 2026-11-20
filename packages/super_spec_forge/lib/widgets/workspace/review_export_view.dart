@@ -4,24 +4,39 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/exporters/spec_json_exporter.dart';
+import '../../services/exporters/spec_json_schema_html_builder.dart';
 import '../../services/exporters/spec_markdown_exporter.dart';
+import '../../services/exporters/spec_markdown_html_builder.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
 import '../../services/spec_coherence_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
+import 'json_schema_viewer_dialog.dart';
+import 'markdown_viewer_dialog.dart';
 
 /// Vue de revue globale, audit de cohérence et export multi-formats.
 class ReviewExportView extends StatelessWidget {
   /// Crée la vue connectée au [controller].
-  const ReviewExportView({required this.controller, super.key});
+  const ReviewExportView({
+    required this.controller,
+    this.markdownViewerSurfaceBuilder,
+    this.markdownBrowserLauncher,
+    super.key,
+  });
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
+  final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
+
+  /// Lanceur navigateur optionnel pour l'ouverture du `.html` généré (tests).
+  final SpecMarkdownBrowserLauncher? markdownBrowserLauncher;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +113,43 @@ class ReviewExportView extends StatelessWidget {
                   content: markdown,
                   filename: '${_safeName(project.name)}_cdc.md',
                   colors: colors,
+                  extraActions: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('spec-review-open-md-viewer'),
+                      onPressed: () => showSpecMarkdownViewerDialog(
+                        context,
+                        markdown: markdown,
+                        title: 'Cahier des charges — ${project.name}',
+                        filenameStem: '${_safeName(project.name)}_cdc',
+                        exportDirectory: Directory(
+                          '${controller.store.rootDirectory.path}${Platform.pathSeparator}exports${Platform.pathSeparator}${_safeName(project.id)}',
+                        ),
+                        openInBrowser: markdownBrowserLauncher,
+                        surfaceBuilder: markdownViewerSurfaceBuilder,
+                      ),
+                      icon: const Icon(Icons.preview_rounded, size: 16),
+                      label: const Text('Ouvrir le visualisateur'),
+                    ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('spec-review-open-md-browser'),
+                      onPressed: () async {
+                        final isDark =
+                            Theme.of(context).brightness == Brightness.dark;
+                        final file = await writeStandaloneMarkdownHtmlFile(
+                          markdown: markdown,
+                          title: 'Cahier des charges — ${project.name}',
+                          filenameStem: '${_safeName(project.name)}_cdc',
+                          darkMode: isDark,
+                        );
+                        final launcher =
+                            markdownBrowserLauncher ??
+                            openHtmlFileInSystemBrowser;
+                        await launcher(file);
+                      },
+                      icon: const Icon(Icons.open_in_browser_rounded, size: 16),
+                      label: const Text('Navigateur'),
+                    ),
+                  ],
                 ),
                 _ExportCodeTab(
                   content: yamlSchema,
@@ -108,6 +160,44 @@ class ReviewExportView extends StatelessWidget {
                   content: bundlePreview,
                   filename: '${_safeName(project.name)}_repositories.json',
                   colors: colors,
+                  extraActions: [
+                    FilledButton.tonalIcon(
+                      key: const ValueKey('spec-review-open-schema-viewer'),
+                      onPressed: () => showSpecJsonSchemaViewerDialog(
+                        context,
+                        bundle: bundle,
+                        title: 'JSON Schema & Seed — ${project.name}',
+                        filenameStem: '${_safeName(project.name)}_repositories_schema',
+                        exportDirectory: Directory(
+                          '${controller.store.rootDirectory.path}${Platform.pathSeparator}exports${Platform.pathSeparator}${_safeName(project.id)}',
+                        ),
+                        openInBrowser: markdownBrowserLauncher,
+                        htmlSurfaceBuilder: markdownViewerSurfaceBuilder,
+                      ),
+                      icon: const Icon(Icons.schema_outlined, size: 16),
+                      label: const Text('Ouvrir le visualisateur'),
+                    ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('spec-review-open-schema-browser'),
+                      onPressed: () async {
+                        final isDark =
+                            Theme.of(context).brightness == Brightness.dark;
+                        final file = await writeStandaloneJsonSchemaHtmlFile(
+                          bundle: bundle,
+                          title: 'JSON Schema & Seed — ${project.name}',
+                          filenameStem:
+                              '${_safeName(project.name)}_repositories_schema',
+                          darkMode: isDark,
+                        );
+                        final launcher =
+                            markdownBrowserLauncher ??
+                            openHtmlFileInSystemBrowser;
+                        await launcher(file);
+                      },
+                      icon: const Icon(Icons.open_in_browser_rounded, size: 16),
+                      label: const Text('Navigateur'),
+                    ),
+                  ],
                 ),
                 _ExportCodeTab(
                   content: fullJson,
@@ -188,6 +278,21 @@ class ReviewExportView extends StatelessWidget {
       final sep = Platform.pathSeparator;
       await File('$dir${sep}cahier_des_charges.md')
           .writeAsString(markdown, flush: true);
+      final htmlAssets = await SpecMarkdownHtmlBuilder.loadAssets();
+      final html = SpecMarkdownHtmlBuilder.buildHtml(
+        markdown: markdown,
+        title: 'Cahier des charges — ${project.name}',
+        assets: htmlAssets,
+      );
+      await File('$dir${sep}cahier_des_charges.html')
+          .writeAsString(html, flush: true);
+      final schemaDocHtml = SpecJsonSchemaHtmlBuilder.buildHtml(
+        bundle: SpecSuperDesignerExporter.toBundle(project),
+        title: 'JSON Schema & Seed — ${project.name}',
+        assets: htmlAssets,
+      );
+      await File('$dir${sep}repositories_schema_doc.html')
+          .writeAsString(schemaDocHtml, flush: true);
       await File('$dir${sep}schema_light.yaml')
           .writeAsString(yamlSchema, flush: true);
       await File('$dir${sep}specification_complete.json')
@@ -261,12 +366,18 @@ class _CoherenceTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final issue = issues[index];
         final (icon, tint) = switch (issue.severity) {
-          CoherenceSeverity.error => (Icons.error_outline_rounded, colors.error),
+          CoherenceSeverity.error => (
+            Icons.error_outline_rounded,
+            colors.error,
+          ),
           CoherenceSeverity.warning => (
             Icons.warning_amber_rounded,
             colors.tertiary,
           ),
-          CoherenceSeverity.info => (Icons.info_outline_rounded, colors.primary),
+          CoherenceSeverity.info => (
+            Icons.info_outline_rounded,
+            colors.primary,
+          ),
         };
         return Card(
           elevation: 0,
@@ -313,11 +424,13 @@ class _ExportCodeTab extends StatelessWidget {
     required this.content,
     required this.filename,
     required this.colors,
+    this.extraActions = const <Widget>[],
   });
 
   final String content;
   final String filename;
   final ColorScheme colors;
+  final List<Widget> extraActions;
 
   @override
   Widget build(BuildContext context) {
@@ -327,29 +440,38 @@ class _ExportCodeTab extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           color: colors.surfaceContainerLow,
-          child: Row(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  filename,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
+              Text(
+                filename,
+                style: Theme.of(context).textTheme.labelMedium
+                    ?.copyWith(color: colors.onSurfaceVariant),
               ),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: content));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Copié dans le presse-papiers'),
-                      ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.copy_rounded, size: 16),
-                label: const Text('Copier'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  ...extraActions,
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: content));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Copié dans le presse-papiers'),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Copier'),
+                  ),
+                ],
               ),
             ],
           ),

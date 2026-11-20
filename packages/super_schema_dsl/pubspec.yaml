@@ -1,0 +1,19 @@
+name: super_schema_dsl
+description: DSL YAML « JSON Schemas Light », navigateur JSON à identifiants stables (JsonNode/JsonModel) et modèle de synchronisation de schéma partagé entre super_designer et super_spec_forge.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=3.47.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shortid: 0.1.2
+  yaml: ^3.1.4
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

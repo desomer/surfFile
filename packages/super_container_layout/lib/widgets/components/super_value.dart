@@ -124,7 +124,7 @@ class _SuperValueState extends State<SuperValue>
   int _bindingGeneration = 0;
   String? _bindingError;
 
-  /// A `[?]` resolved by a selection has no selected row: empty and read-only.
+  /// A `[?]` resolved by a selection has no selected row: empty and disabled/read-only.
   bool _unselected = false;
 
   /// Selections the binding path depends on.
@@ -265,6 +265,7 @@ class _SuperValueState extends State<SuperValue>
     bool contentHovered, {
     bool behaviorDisabled = false,
     bool behaviorReadOnly = false,
+    bool unselected = false,
   }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
@@ -274,7 +275,7 @@ class _SuperValueState extends State<SuperValue>
       final source = _applySchemaConstraints(rawSource, scope, store);
       final input = source.mode == SuperValueMode.input;
       final effectiveDisabled =
-          behaviorDisabled || (input && !source.enabled);
+          behaviorDisabled || (input && (unselected || !source.enabled));
       final effectiveReadOnly =
           behaviorReadOnly || (input && source.readOnly);
       final currentDisplay = _editorText != null
@@ -310,7 +311,9 @@ class _SuperValueState extends State<SuperValue>
           ) ??
           saved;
       config = _applySchemaConstraints(config, scope, store);
-      if (behaviorDisabled && config.enabled) {
+      if ((behaviorDisabled ||
+              (unselected && config.mode == SuperValueMode.input)) &&
+          config.enabled) {
         config = config.copyWith(enabled: false);
       }
       if (behaviorReadOnly && !config.readOnly) {
@@ -328,7 +331,9 @@ class _SuperValueState extends State<SuperValue>
       scope,
       store,
     );
-    if (behaviorDisabled && fallback.enabled) {
+    if ((behaviorDisabled ||
+            (unselected && fallback.mode == SuperValueMode.input)) &&
+        fallback.enabled) {
       fallback = fallback.copyWith(enabled: false);
     }
     if (behaviorReadOnly && !fallback.readOnly) {
@@ -879,6 +884,14 @@ class _SuperValueState extends State<SuperValue>
         valueListenable: configuration,
         builder: (context, savedConfig, _) {
           _syncSchemaStoreListener(repositories, savedConfig, listScope);
+          final initialResolution = _resolve(
+            savedConfig,
+            listScope,
+            repositories,
+          );
+          final isUnselected =
+              initialResolution.placeholder &&
+              !(listScope?.placeholder ?? false);
           final effective = _resolveStates(
             savedConfig,
             listScope,
@@ -886,6 +899,7 @@ class _SuperValueState extends State<SuperValue>
             ContentHoverScope.maybeOf(context)?.hovered == true,
             behaviorDisabled: behaviorDisabled,
             behaviorReadOnly: behaviorReadOnly,
+            unselected: isUnselected,
           );
           final states = savedConfig.states;
           final active = states == null
@@ -1133,6 +1147,7 @@ class _SuperValueState extends State<SuperValue>
                 } else if (config.kind.isChoice) {
                   final choiceEnabled =
                       config.enabled &&
+                      !_unselected &&
                       !(config.binding != null && _binding?.loading == true);
                   content = Listener(
                     onPointerDown: (event) {
@@ -1264,6 +1279,7 @@ class _SuperValueState extends State<SuperValue>
                             style: style,
                             enabled:
                                 config.enabled &&
+                                !_unselected &&
                                 !(config.binding != null &&
                                     _binding?.loading == true),
                             readOnly: _unselected || bindingReadOnly

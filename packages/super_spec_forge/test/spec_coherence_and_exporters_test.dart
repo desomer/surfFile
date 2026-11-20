@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,17 @@ void main() {
       name: 'B2B Orders',
     );
     return base.copyWith(
+      lexicon: SpecLexicon(
+        terms: [
+          LexiconTerm(
+            id: 't_cmd',
+            term: 'Commande',
+            definition: 'Demande d’achat validée par un acheteur B2B.',
+            synonyms: const ['BC'],
+            domain: 'Ventes',
+          ),
+        ],
+      ),
       vision: base.vision.copyWith(
         problemStatement: 'Commandes saisies par email sans contrôle.',
         valueProposition: 'Portail unifié avec validation automatique.',
@@ -148,6 +160,8 @@ void main() {
     test('SpecMarkdownExporter génère les sections, Mermaid et RG-001', () {
       final md = SpecMarkdownExporter.export(buildSampleProject());
       expect(md, contains('# Cahier des charges — B2B Orders'));
+      expect(md, contains('## 1. Lexique métier'));
+      expect(md, contains('Demande d’achat validée'));
       expect(md, contains('erDiagram'));
       expect(md, contains('stateDiagram-v2'));
       expect(md, contains('RG-001 — Validation commande'));
@@ -214,11 +228,247 @@ void main() {
 
         await store.deleteProject(project.id);
         expect(await store.listProjects(), isEmpty);
+
+        // Migration automatique d'un ancien fichier JSON contenant un attribut accentué.
+        final legacyProject = buildSampleProject();
+        final legacyJson = legacyProject.toJson();
+        final objs = (legacyJson['businessObjects'] as List).cast<Map<String, Object?>>();
+        final attrs = (objs.first['attributes'] as List).cast<Map<String, Object?>>();
+        attrs.add({
+          'id': 'a_legacy_accent',
+          'name': 'statutCohérence',
+          'type': 'string',
+          'required': true,
+        });
+        final legacyFile = File(
+          '${tempDir.path}${Platform.pathSeparator}projects${Platform.pathSeparator}${legacyProject.id}${Platform.pathSeparator}project.json',
+        );
+        await legacyFile.parent.create(recursive: true);
+        await legacyFile.writeAsString(jsonEncode(legacyJson));
+
+        final migrated = await store.loadProject(legacyProject.id);
+        expect(migrated, isNotNull);
+        expect(
+          migrated!.businessObjects.first.attributes.last.name,
+          'statutCoherence',
+        );
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);
         }
       }
+    });
+    test('SpecSuperDesignerExporter supporte les sous-objets imbriqués dans JSON Schema', () {
+      final base = buildSampleProject();
+      final structuredProject = base.copyWith(
+        businessObjects: [
+          base.businessObjects.single.copyWith(
+            attributes: [
+              ...base.businessObjects.single.attributes,
+              BusinessAttribute(
+                id: 'a_adr',
+                name: 'adresseLivraison',
+                type: BusinessAttributeType.object,
+                required: true,
+                children: [
+                  BusinessAttribute(
+                    id: 'a_ville',
+                    name: 'ville',
+                    type: BusinessAttributeType.string,
+                    required: true,
+                  ),
+                ],
+              ),
+              BusinessAttribute(
+                id: 'a_lignes',
+                name: 'lignes',
+                type: BusinessAttributeType.object,
+                isArray: true,
+                estimatedMaxRows: 50,
+                children: [
+                  BusinessAttribute(
+                    id: 'a_qte',
+                    name: 'quantite',
+                    type: BusinessAttributeType.integer,
+                    required: true,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final bundle = SpecSuperDesignerExporter.toBundle(structuredProject);
+      final schema = bundle.repositoriesJsonSchemas['commande']!;
+      final seed = bundle.repositoriesSeedData['commande']!;
+      expect(JsonSchemaValidator.validate(seed, schema).isValid, isTrue);
+      final itemProps =
+          ((schema['properties'] as Map)['commandes'] as Map)['items'] as Map;
+      final props = itemProps['properties'] as Map;
+      expect((props['adresseLivraison'] as Map)['type'], 'object');
+      expect((props['lignes'] as Map)['maxItems'], 50);
+    });
+
+    test('SpecSuperDesignerExporter exporte toutes les contraintes JSON Schema et valide le document', () {
+      final base = buildSampleProject();
+      final constrained = base.copyWith(
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_produit',
+            name: 'Produit',
+            technicalName: 'Produit',
+            attributes: [
+              BusinessAttribute(
+                id: 'a_sku',
+                name: 'sku',
+                type: BusinessAttributeType.string,
+                required: true,
+                schemaConstraints: JsonSchemaConstraints(
+                  minLength: 4,
+                  maxLength: 20,
+                  pattern: r'^[A-Z0-9-]+$',
+                  examples: const ['PRD-001'],
+                ),
+              ),
+              BusinessAttribute(
+                id: 'a_prix',
+                name: 'prixHt',
+                type: BusinessAttributeType.number,
+                required: true,
+                schemaConstraints: JsonSchemaConstraints(
+                  minimum: 1,
+                  maximum: 100000,
+                  multipleOf: 0.5,
+                ),
+              ),
+              BusinessAttribute(
+                id: 'a_tags',
+                name: 'tags',
+                type: BusinessAttributeType.string,
+                isArray: true,
+                estimatedMaxRows: 10,
+                schemaConstraints: JsonSchemaConstraints(
+                  minItems: 2,
+                  maxItems: 10,
+                  uniqueItems: true,
+                  minLength: 2,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final bundle = SpecSuperDesignerExporter.toBundle(constrained);
+      final schema = bundle.repositoriesJsonSchemas['produit']!;
+      final seed = bundle.repositoriesSeedData['produit']!;
+      final validation = JsonSchemaValidator.validate(seed, schema);
+      expect(validation.isValid, isTrue, reason: validation.formatSummary());
+
+      final props = ((schema['properties'] as Map)['produits'] as Map)['items']['properties'] as Map;
+      expect((props['sku'] as Map)['pattern'], r'^[A-Z0-9-]+$');
+      expect((props['prixHt'] as Map)['multipleOf'], 0.5);
+      final tagsSchema = props['tags'] as Map;
+      expect(tagsSchema['minItems'], 2);
+      expect(tagsSchema['uniqueItems'], isTrue);
+      expect((tagsSchema['items'] as Map)['minLength'], 2);
+
+      // Conflit const / enum détecté par SpecCoherenceAnalyzer (COH-OBJ-011)
+      final badConstProject = constrained.copyWith(
+        businessObjects: [
+          constrained.businessObjects.single.copyWith(
+            attributes: [
+              BusinessAttribute(
+                id: 'a_etat',
+                name: 'etat',
+                type: BusinessAttributeType.enumeration,
+                enumValues: const ['actif', 'archive'],
+                schemaConstraints: JsonSchemaConstraints(
+                  hasConst: true,
+                  constValue: 'inconnu',
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+      final issues = SpecCoherenceAnalyzer.analyze(badConstProject);
+      expect(issues.any((i) => i.code == 'COH-OBJ-011'), isTrue);
+    });
+
+    test('SpecMarkdownHtmlBuilder charge les assets hors-ligne et génère HTML Mermaid/TOC/KaTeX/Print sécurisé', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final assets = await SpecMarkdownHtmlBuilder.loadAssets();
+      expect(assets.hasOfflineScripts, isTrue);
+      expect(assets.highlightJs, isNotEmpty);
+      expect(assets.katexJs, isNotEmpty);
+      expect(assets.katexCss, isNot(contains('@font-face')));
+
+      final md = '''
+# Titre <script>alert(1)</script>
+
+> [!NOTE]
+> Contenu avec formule \$E = mc^2\$
+
+```mermaid
+erDiagram
+  COMMANDE ||--o{ LIGNE : contient
+```
+''';
+      final html = SpecMarkdownHtmlBuilder.buildHtml(
+        markdown: md,
+        title: 'Doc <script>',
+        assets: assets,
+        darkMode: true,
+        showToc: false,
+      );
+
+      expect(html, contains('data-theme="dark"'));
+      expect(html, contains('ssf-toc-hidden'));
+      expect(html, contains('&lt;script&gt;'));
+      expect(html, isNot(contains('alert(1)</script>')));
+      // Vérifie que la balise fermante </script> du markdown est bien échappée dans le JSON.
+      expect(html, contains(r'<\/script>'));
+      expect(html, contains('ssf-mermaid-card'));
+      expect(html, contains('ssf-toc-list'));
+      expect(html, contains('renderMathInElement'));
+      expect(html, contains('@media print'));
+    });
+
+    test('SpecJsonSchemaHtmlBuilder génère la doc HTML5 interactive avec statut JsonSchemaValidator', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      final assets = await SpecMarkdownHtmlBuilder.loadAssets();
+      final project = buildSampleProject();
+      final bundle = SpecSuperDesignerExporter.toBundle(project);
+
+      final html = SpecJsonSchemaHtmlBuilder.buildHtml(
+        bundle: bundle,
+        title: 'Schémas <script>',
+        assets: assets,
+        darkMode: true,
+      );
+      expect(html, contains('data-theme="dark"'));
+      expect(html, contains('&lt;script&gt;'));
+      expect(html, contains('"isValid":true'));
+      expect(html, contains('ssf-repos-data'));
+      expect(html, contains('@media print'));
+
+      // Cas invalide : seed ne respectant pas minItems/required.
+      final invalidBundle = SuperDesignerExportBundle(
+        yamlLightSchema: bundle.yamlLightSchema,
+        repositoriesJsonSchemas: bundle.repositoriesJsonSchemas,
+        repositoriesSeedData: {
+          for (final k in bundle.repositoriesSeedData.keys)
+            k: const <String, Object?>{},
+        },
+      );
+      final invalidHtml = SpecJsonSchemaHtmlBuilder.buildHtml(
+        bundle: invalidBundle,
+        title: 'Schémas KO',
+        assets: assets,
+      );
+      expect(invalidHtml, contains('"isValid":false'));
     });
   });
 }

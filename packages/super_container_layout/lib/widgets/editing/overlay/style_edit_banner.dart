@@ -77,6 +77,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   VibeChatScope? _chatScope;
   VibeAiSpeedMode _chatSpeedMode = VibeAiSpeedMode.fast;
   VibeQuestioningLevel _chatQuestioningLevel = VibeQuestioningLevel.balanced;
+  bool _chatPlanMode = false;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
@@ -129,6 +130,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       }
       if (questioningLevel != null) {
         _chatQuestioningLevel = questioningLevel;
+        _chatPlanMode = false;
       }
       if (!_chatOpen) {
         _chatOpen = true;
@@ -499,6 +501,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                             _chatSpeedMode = VibeAiSpeedMode.fast;
                             _chatQuestioningLevel =
                                 VibeQuestioningLevel.balanced;
+                            _chatPlanMode = false;
                             if (_chatOpen) {
                               _chatExpanded = true;
                               _expandedChatPosition = null;
@@ -709,6 +712,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     initialQuestioningLevel: _chatQuestioningLevel,
                     onQuestioningLevelChanged: (level) =>
                         setState(() => _chatQuestioningLevel = level),
+                    initialPlanMode: _chatPlanMode,
+                    onPlanModeChanged: (enabled) =>
+                        setState(() => _chatPlanMode = enabled),
                     initialDesignSystem: _selectedDesignSystem,
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),
@@ -744,6 +750,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                       _chatScope = null;
                       _chatSpeedMode = VibeAiSpeedMode.fast;
                       _chatQuestioningLevel = VibeQuestioningLevel.balanced;
+                      _chatPlanMode = false;
                     }),
                     onDrag: (delta) => setState(() {
                       final nextPosition = _chatLayout.resolvedPosition + delta;

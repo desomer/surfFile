@@ -77,6 +77,7 @@ enum VibeQuestioningLevel {
   String promptDirective({
     required bool afterAskUserReply,
     bool forceFollowUpQuestions = false,
+    bool planMode = false,
   }) {
     if (forceFollowUpQuestions) {
       return 'NIVEAU DE QUESTIONNEMENT : + de questions demandé '
@@ -86,37 +87,49 @@ enum VibeQuestioningLevel {
           'pour approfondir la demande ou affiner l’écran actuel, et renvoie "vibe": null sur ce tour.';
     }
     if (afterAskUserReply) {
-      return 'NIVEAU DE QUESTIONNEMENT : Réponses déjà fournies — '
-          'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
-          'Génère directement le patch "vibe" correspondant.';
+      return planMode
+          ? 'NIVEAU DE QUESTIONNEMENT : Réponses déjà fournies — '
+                'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
+                'Génère directement le plan par lots ("plan") correspondant sans patch "vibe".'
+          : 'NIVEAU DE QUESTIONNEMENT : Réponses déjà fournies — '
+                'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
+                'Génère directement le patch "vibe" correspondant.';
     }
+    final targetAction = planMode
+        ? 'de proposer le plan par lots ("plan")'
+        : 'de générer "vibe"';
     return switch (this) {
       VibeQuestioningLevel.none =>
-        'NIVEAU DE QUESTIONNEMENT : 0/4 (Aucun) — '
-            'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
-            'Génère directement le patch "vibe" en faisant des hypothèses raisonnables '
-            '(ou réponds par "message" si c’est une pure question).',
+        planMode
+            ? 'NIVEAU DE QUESTIONNEMENT : 0/4 (Aucun) — '
+                  'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
+                  'Génère directement le plan par lots ("plan") en faisant des hypothèses raisonnables sans patch "vibe" '
+                  '(ou réponds par "message" si c’est une pure question).'
+            : 'NIVEAU DE QUESTIONNEMENT : 0/4 (Aucun) — '
+                  'INTERDICTION d’utiliser "askUser" sur ce tour ("askUser": null obligatoire). '
+                  'Génère directement le patch "vibe" en faisant des hypothèses raisonnables '
+                  '(ou réponds par "message" si c’est une pure question).',
       VibeQuestioningLevel.light =>
         'NIVEAU DE QUESTIONNEMENT : 1/4 (Léger, max 2 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 1 à 2 questions courtes avec "default" via "askUser" pour clarifier la demande '
-            'avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
+            'avant $targetAction (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.balanced =>
         'NIVEAU DE QUESTIONNEMENT : 2/4 (Équilibré, max 4 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 2 à 4 questions courtes avec "default" via "askUser" pour clarifier les choix '
-            'fonctionnels, de disposition ou de style avant de générer "vibe" (ou réponds par "message" si c’est une pure question d’information).',
+            'fonctionnels, de disposition ou de style avant $targetAction (ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.thorough =>
         'NIVEAU DE QUESTIONNEMENT : 3/4 (Approfondi, 4 à 6 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 4 à 6 questions structurées avec "default" via "askUser" (couvrant disposition, '
-            'données/champs, style visuel et interactions) pour cadrer le besoin avant de générer "vibe" '
+            'données/champs, style visuel et interactions) pour cadrer le besoin avant $targetAction '
             '(ou réponds par "message" si c’est une pure question d’information).',
       VibeQuestioningLevel.exhaustive =>
         'NIVEAU DE QUESTIONNEMENT : 4/4 (Exhaustif, 6 à 10 questions) — '
             'Quelle que soit l’étape (création initiale, ajout ou modification), utilise ce niveau du slider : '
             'pose 6 à 10 questions complètes et structurées avec "default" via "askUser" (couvrant architecture, '
-            'données/liaisons, hiérarchie visuelle, états de surface, actions et cas limites) avant de générer "vibe" '
+            'données/liaisons, hiérarchie visuelle, états de surface, actions et cas limites) avant $targetAction '
             '(ou réponds par "message" si c’est une pure question d’information).',
     };
   }
@@ -777,13 +790,18 @@ class VibeAskUserRequest {
   String formatPromptReply(
     Map<String, Object?> answers, {
     bool usedDefaults = false,
+    bool planMode = false,
   }) {
     final summary = formatDisplaySummary(answers, usedDefaults: usedDefaults);
+    final action = planMode
+        ? 'Génère maintenant directement le plan par lots ("plan") correspondant '
+              'sans patch "vibe" et sans poser de nouvelles questions ("askUser": null).'
+        : 'Génère maintenant directement le patch "vibe" correspondant '
+              'sans poser de nouvelles questions ("askUser": null).';
     return 'Réponses aux questions de clarification'
         '${usedDefaults ? ' (valeurs par défaut retenues)' : ''} :\n'
         '$summary\n'
-        'Génère maintenant directement le patch "vibe" correspondant '
-        'sans poser de nouvelles questions ("askUser": null).';
+        '$action';
   }
 
   /// Formate le message structuré demandant une série complémentaire de questions après validation de [answers].

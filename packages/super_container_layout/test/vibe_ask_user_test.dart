@@ -521,6 +521,34 @@ void main() {
           '+ de questions demandé (2 à 4 questions complémentaires OBLIGATOIRES)',
         ),
       );
+      expect(
+        VibeQuestioningLevel.none.promptDirective(
+          afterAskUserReply: false,
+          planMode: true,
+        ),
+        contains('Génère directement le plan par lots ("plan")'),
+      );
+      expect(
+        VibeQuestioningLevel.balanced.promptDirective(
+          afterAskUserReply: false,
+          planMode: true,
+        ),
+        contains('avant de proposer le plan par lots ("plan")'),
+      );
+      expect(
+        VibeQuestioningLevel.balanced.promptDirective(
+          afterAskUserReply: true,
+          planMode: true,
+        ),
+        contains('Génère directement le plan par lots ("plan") correspondant'),
+      );
+      expect(
+        sampleRequest.formatPromptReply(
+          const <String, Object?>{'layout': '1 colonne'},
+          planMode: true,
+        ),
+        contains('Génère maintenant directement le plan par lots ("plan")'),
+      );
 
       expect(sampleRequest.truncate(0), isNull);
       final truncated2 = sampleRequest.truncate(2);

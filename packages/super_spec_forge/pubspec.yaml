@@ -11,10 +11,15 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_dotenv: ^6.0.1
+  highlight: ^0.7.0
   material_ui: ^1.5.0
   shortid: 0.1.2
   super_container_layout:
     path: ../super_container_layout
+  super_schema_dsl:
+    path: ../super_schema_dsl
+  webview_flutter: ^4.14.1
+  webview_flutter_windows: ^1.3.1
   yaml: ^3.1.4
 
 dev_dependencies:
@@ -25,4 +30,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/markdown_viewer/
 

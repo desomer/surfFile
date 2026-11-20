@@ -22,6 +22,7 @@ abstract final class SpecMarkdownExporter {
       ..writeln(project.initialIdea)
       ..writeln();
 
+    _writeLexicon(buf, project);
     _writeVision(buf, project);
     _writeCahierDesCharges(buf, project);
     _writeBusinessObjects(buf, project);
@@ -31,12 +32,52 @@ abstract final class SpecMarkdownExporter {
     return buf.toString();
   }
 
+  static void _writeLexicon(StringBuffer buf, SpecForgeProject project) {
+    final lex = project.lexicon;
+    buf
+      ..writeln('---')
+      ..writeln()
+      ..writeln('## 1. Lexique métier (Ubiquitous Language)')
+      ..writeln();
+    if (!lex.hasContent) {
+      buf
+        ..writeln('_Aucun terme métier défini._')
+        ..writeln();
+      return;
+    }
+    if (lex.terms.isNotEmpty) {
+      buf
+        ..writeln('| Terme | Définition | Synonymes / Variantes | Domaine |')
+        ..writeln('|---|---|---|---|');
+      for (final t in lex.terms) {
+        buf.writeln(
+          '| **${_esc(t.term)}** | ${_esc(t.definition.isEmpty ? '—' : t.definition)} | ${_esc(t.synonyms.isEmpty ? '—' : t.synonyms.join(', '))} | ${_esc(t.domain.isEmpty ? '—' : t.domain)} |',
+        );
+      }
+      buf.writeln();
+    }
+    if (lex.conventions.isNotEmpty) {
+      buf.writeln('### Conventions de vocabulaire & unités');
+      for (final c in lex.conventions) {
+        buf.writeln('- $c');
+      }
+      buf.writeln();
+    }
+    if (lex.ambiguousTerms.isNotEmpty) {
+      buf.writeln('### Points d’ambiguïté levés');
+      for (final a in lex.ambiguousTerms) {
+        buf.writeln('- $a');
+      }
+      buf.writeln();
+    }
+  }
+
   static void _writeVision(StringBuffer buf, SpecForgeProject project) {
     final v = project.vision;
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 1. Cadrage & Acteurs')
+      ..writeln('## 2. Cadrage & Acteurs')
       ..writeln();
     if (v.ideaSummary.isNotEmpty) {
       buf
@@ -101,11 +142,11 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 2. Cahier des charges fonctionnel & non fonctionnel')
+      ..writeln('## 3. Cahier des charges fonctionnel & non fonctionnel')
       ..writeln();
 
     if (cdc.modules.isNotEmpty) {
-      buf.writeln('### 2.1 Modules fonctionnels');
+      buf.writeln('### 3.1 Modules fonctionnels');
       for (final m in cdc.modules) {
         buf.writeln(
           '- **${m.name}** (`${m.id}`)${m.description.isEmpty ? '' : ' : ${m.description}'}',
@@ -116,7 +157,7 @@ abstract final class SpecMarkdownExporter {
 
     if (cdc.functionalRequirements.isNotEmpty) {
       buf
-        ..writeln('### 2.2 Exigences fonctionnelles')
+        ..writeln('### 3.2 Exigences fonctionnelles')
         ..writeln()
         ..writeln('| Code | Priorité | Exigence | Module | Critères d’acceptation |')
         ..writeln('|---|---|---|---|---|');
@@ -135,7 +176,7 @@ abstract final class SpecMarkdownExporter {
     }
 
     if (cdc.useCases.isNotEmpty) {
-      buf.writeln('### 2.3 Cas d’usage clés');
+      buf.writeln('### 3.3 Cas d’usage clés');
       for (final uc in cdc.useCases) {
         buf.writeln('#### ${uc.title}');
         if (uc.actorId.isNotEmpty) {
@@ -165,7 +206,7 @@ abstract final class SpecMarkdownExporter {
 
     if (cdc.nonFunctionalRequirements.isNotEmpty) {
       buf
-        ..writeln('### 2.4 Exigences non fonctionnelles')
+        ..writeln('### 3.4 Exigences non fonctionnelles')
         ..writeln()
         ..writeln('| Code | Catégorie | Exigence | Indicateur cible |')
         ..writeln('|---|---|---|---|');
@@ -188,7 +229,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 3. Objets métiers')
+      ..writeln('## 4. Objets métiers')
       ..writeln();
 
     if (project.businessObjects.isEmpty) {
@@ -233,22 +274,37 @@ abstract final class SpecMarkdownExporter {
       buf.writeln();
       if (obj.attributes.isNotEmpty) {
         buf
+          ..writeln(
+            '_Volumétrie schéma : ${obj.totalAttributeCount} / ${BusinessObjectSpec.maxAttributesPerObject} attributs_',
+          )
+          ..writeln()
           ..writeln('| Attribut | Type | Obligatoire | Contraintes / Valeurs | Description |')
           ..writeln('|---|---|---|---|---|');
-        for (final attr in obj.attributes) {
-          final typeLabel = attr.isArray
-              ? '${attr.type.dslKeyword}[]'
-              : attr.type.dslKeyword;
-          final constraints = <String>[
-            if (attr.unique) 'unique',
-            if (attr.enumValues.isNotEmpty)
-              'enum(${attr.enumValues.join(', ')})',
-            if (attr.constraints.isNotEmpty) attr.constraints,
-          ].join(' ; ');
-          buf.writeln(
-            '| `${attr.name}` | `$typeLabel` | ${attr.required ? 'Oui' : 'Non'} | ${_esc(constraints.isEmpty ? '—' : constraints)} | ${_esc(attr.description.isEmpty ? '—' : attr.description)} |',
-          );
+        void writeRows(List<BusinessAttribute> attrs, String prefix) {
+          for (final attr in attrs) {
+            final fullName = prefix.isEmpty ? attr.name : '$prefix.${attr.name}';
+            final typeLabel = attr.isArray
+                ? '${attr.type.dslKeyword}[]'
+                : attr.type.dslKeyword;
+            final constraints = <String>[
+              if (attr.unique) 'unique',
+              if (attr.isArray && attr.estimatedMaxRows != null)
+                'max ${attr.estimatedMaxRows} lignes',
+              if (attr.enumValues.isNotEmpty)
+                'enum(${attr.enumValues.join(', ')})',
+              if (attr.schemaConstraints.isNotEmpty)
+                attr.schemaConstraints.formatSummary(),
+              if (attr.constraints.isNotEmpty) attr.constraints,
+            ].join(' ; ');
+            buf.writeln(
+              '| `$fullName` | `$typeLabel` | ${attr.required ? 'Oui' : 'Non'} | ${_esc(constraints.isEmpty ? '—' : constraints)} | ${_esc(attr.description.isEmpty ? '—' : attr.description)} |',
+            );
+            if (attr.children.isNotEmpty) {
+              writeRows(attr.children, attr.isArray ? '$fullName[]' : fullName);
+            }
+          }
         }
+        writeRows(obj.attributes, '');
         buf.writeln();
       }
       if (obj.relations.isNotEmpty) {
@@ -302,7 +358,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 4. Règles de gestion')
+      ..writeln('## 5. Règles de gestion')
       ..writeln();
 
     if (project.businessRules.isEmpty) {
@@ -318,7 +374,7 @@ abstract final class SpecMarkdownExporter {
           .toList();
       if (rules.isEmpty) continue;
       buf
-        ..writeln('### 4.${category.index + 1} ${category.label}')
+        ..writeln('### 5.${category.index + 1} ${category.label}')
         ..writeln();
       for (final rule in rules) {
         buf.writeln(
@@ -366,7 +422,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 5. Points de vigilance & Cohérence')
+      ..writeln('## 6. Points de vigilance & Cohérence')
       ..writeln();
     for (final issue in all) {
       final prefix = switch (issue.severity) {

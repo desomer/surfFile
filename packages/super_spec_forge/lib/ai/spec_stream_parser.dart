@@ -45,6 +45,7 @@ class SpecAgentResponse {
     required this.message,
     this.askUser,
     this.specPatch,
+    this.toolCalls = const <VibeToolCall>[],
     this.stageSummary = '',
     this.stageReadyToAdvance = false,
     this.rawJson = '',
@@ -58,6 +59,9 @@ class SpecAgentResponse {
 
   /// Patch structuré à appliquer sur le [SpecForgeProject].
   final Map<String, Object?>? specPatch;
+
+  /// Appels d'outils éventuels émis via le repli JSON `"toolCalls"`.
+  final List<VibeToolCall> toolCalls;
 
   /// Synthèse optionnelle de l'étape.
   final String stageSummary;
@@ -100,6 +104,8 @@ class SpecAgentResponse {
           }
         : null;
 
+    final toolCalls = VibeToolCall.tryListFromJson(map['toolCalls']);
+
     final rawSummary = map['stageSummary'];
     final stageSummary = rawSummary is String ? rawSummary.trim() : '';
 
@@ -107,6 +113,7 @@ class SpecAgentResponse {
       message: message,
       askUser: askUser,
       specPatch: specPatch,
+      toolCalls: toolCalls,
       stageSummary: stageSummary,
       stageReadyToAdvance: map['stageReadyToAdvance'] == true,
       rawJson: cleaned,

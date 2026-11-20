@@ -1,6 +1,8 @@
 /// Modèles immuables de conversation et d'état par étape du wizard ([SpecChatMessage], [SpecStageState]).
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
@@ -15,6 +17,8 @@ class SpecChatMessage {
     required this.isUser,
     required this.text,
     this.promptText,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    List<VibeToolTrace> toolTraces = const <VibeToolTrace>[],
     this.askUser,
     Map<String, Object?>? askUserAnswers,
     this.askUserUsedDefaults = false,
@@ -25,7 +29,9 @@ class SpecChatMessage {
     this.stageReadyToAdvance = false,
     this.failedResponse,
     DateTime? timestamp,
-  }) : askUserAnswers = askUserAnswers == null
+  }) : attachments = List<VibeChatAttachment>.unmodifiable(attachments),
+       toolTraces = List<VibeToolTrace>.unmodifiable(toolTraces),
+       askUserAnswers = askUserAnswers == null
            ? null
            : Map<String, Object?>.unmodifiable(askUserAnswers),
        timestamp = timestamp ?? DateTime.now().toUtc();
@@ -41,6 +47,12 @@ class SpecChatMessage {
 
   /// Texte détaillé envoyé au modèle (ex. réponses formatées d'un questionnaire).
   final String? promptText;
+
+  /// Pièces jointes (images, documents texte/JSON/YAML/Markdown) associées à ce message.
+  final List<VibeChatAttachment> attachments;
+
+  /// Appels d'outils IA exécutés pour produire cette réponse.
+  final List<VibeToolTrace> toolTraces;
 
   /// Questionnaire interactif éventuel proposé par l'agent IA.
   final VibeAskUserRequest? askUser;
@@ -75,7 +87,10 @@ class SpecChatMessage {
   /// Formate ce message pour l'historique envoyé au LLM.
   String toConversationEntry() {
     if (isUser) {
-      return 'Utilisateur: ${(promptText ?? text).trim()}';
+      final base = (promptText ?? text).trim();
+      if (attachments.isEmpty) return 'Utilisateur: $base';
+      final names = attachments.map((a) => a.name).join(', ');
+      return 'Utilisateur [Pièces jointes : $names]: $base';
     }
     if (failedResponse != null && failedResponse!.trim().isNotEmpty) {
       return 'Assistant (réponse précédente rejetée : $text): $failedResponse';
@@ -98,6 +113,8 @@ class SpecChatMessage {
     bool? isUser,
     String? text,
     String? promptText,
+    List<VibeChatAttachment>? attachments,
+    List<VibeToolTrace>? toolTraces,
     VibeAskUserRequest? askUser,
     Map<String, Object?>? askUserAnswers,
     bool? askUserUsedDefaults,
@@ -113,6 +130,8 @@ class SpecChatMessage {
     isUser: isUser ?? this.isUser,
     text: text ?? this.text,
     promptText: promptText ?? this.promptText,
+    attachments: attachments ?? this.attachments,
+    toolTraces: toolTraces ?? this.toolTraces,
     askUser: askUser ?? this.askUser,
     askUserAnswers: askUserAnswers ?? this.askUserAnswers,
     askUserUsedDefaults: askUserUsedDefaults ?? this.askUserUsedDefaults,
@@ -132,6 +151,18 @@ class SpecChatMessage {
     'isUser': isUser,
     'text': text,
     if (promptText != null) 'promptText': promptText,
+    if (attachments.isNotEmpty)
+      'attachments': [for (final a in attachments) _attachmentToJson(a)],
+    if (toolTraces.isNotEmpty)
+      'toolTraces': [
+        for (final t in toolTraces)
+          <String, Object?>{
+            'name': t.name,
+            'arguments': t.arguments,
+            'isError': t.isError,
+            'summary': t.summary,
+          },
+      ],
     if (askUser != null)
       'askUser': <String, Object?>{
         'questions': [for (final q in askUser!.questions) q.toJson()],
@@ -157,6 +188,30 @@ class SpecChatMessage {
     final askUser = rawAskUser == null
         ? null
         : VibeAskUserRequest.tryFromJson(rawAskUser);
+    final rawAttachments = raw['attachments'];
+    final attachments = <VibeChatAttachment>[
+      if (rawAttachments is List)
+        for (final item in rawAttachments)
+          if (_attachmentFromJson(item) case final VibeChatAttachment parsed)
+            parsed,
+    ];
+    final rawTraces = raw['toolTraces'];
+    final toolTraces = <VibeToolTrace>[
+      if (rawTraces is List)
+        for (final item in rawTraces)
+          if (item is Map && item['name'] is String)
+            VibeToolTrace(
+              name: item['name'] as String,
+              arguments: item['arguments'] is Map
+                  ? <String, Object?>{
+                      for (final e in (item['arguments'] as Map).entries)
+                        if (e.key is String) e.key as String: e.value,
+                    }
+                  : const <String, Object?>{},
+              isError: item['isError'] == true,
+              summary: (item['summary'] as String?) ?? '',
+            ),
+    ];
     final rawAnswers = raw['askUserAnswers'];
     final answers = rawAnswers is Map
         ? <String, Object?>{
@@ -171,6 +226,8 @@ class SpecChatMessage {
       isUser: raw['isUser'] == true,
       text: (raw['text'] as String?) ?? '',
       promptText: raw['promptText'] as String?,
+      attachments: attachments,
+      toolTraces: toolTraces,
       askUser: askUser,
       askUserAnswers: answers,
       askUserUsedDefaults: raw['askUserUsedDefaults'] == true,
@@ -184,6 +241,53 @@ class SpecChatMessage {
     );
   }
 
+  static Map<String, Object?> _attachmentToJson(VibeChatAttachment a) =>
+      <String, Object?>{
+        'name': a.name,
+        'mimeType': a.mimeType,
+        if (a.path != null) 'path': a.path,
+        if (a.textContent != null)
+          'textContent': a.textContent
+        else if (a.bytes.length <= 2 * 1024 * 1024)
+          'bytesBase64': base64Encode(a.bytes),
+      };
+
+  static VibeChatAttachment? _attachmentFromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final name = raw['name'];
+    final mimeType = raw['mimeType'];
+    if (name is! String || name.isEmpty || mimeType is! String) return null;
+    final path = raw['path'] is String ? raw['path'] as String : null;
+    final textContent = raw['textContent'];
+    if (textContent is String) {
+      return VibeChatAttachment.text(
+        name: name,
+        content: textContent,
+        mimeType: mimeType,
+        path: path,
+      );
+    }
+    final bytesBase64 = raw['bytesBase64'];
+    if (bytesBase64 is String && bytesBase64.isNotEmpty) {
+      try {
+        return VibeChatAttachment(
+          name: name,
+          mimeType: mimeType,
+          bytes: Uint8List.fromList(base64Decode(bytesBase64)),
+          path: path,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+    return VibeChatAttachment(
+      name: name,
+      mimeType: mimeType,
+      bytes: Uint8List(0),
+      path: path,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -192,6 +296,8 @@ class SpecChatMessage {
           other.isUser == isUser &&
           other.text == text &&
           other.promptText == promptText &&
+          _attachmentsEqual(other.attachments, attachments) &&
+          listEquals(other.toolTraces, toolTraces) &&
           other.askUser == askUser &&
           mapEquals(other.askUserAnswers, askUserAnswers) &&
           other.askUserUsedDefaults == askUserUsedDefaults &&
@@ -209,6 +315,8 @@ class SpecChatMessage {
     isUser,
     text,
     promptText,
+    attachments.length,
+    Object.hashAll(toolTraces),
     askUser,
     askUserAnswers == null ? null : Object.hashAll(askUserAnswers!.keys),
     askUserUsedDefaults,
@@ -220,6 +328,23 @@ class SpecChatMessage {
     failedResponse,
     timestamp,
   );
+
+  static bool _attachmentsEqual(
+    List<VibeChatAttachment> a,
+    List<VibeChatAttachment> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].name != b[i].name ||
+          a[i].mimeType != b[i].mimeType ||
+          a[i].textContent != b[i].textContent ||
+          !listEquals(a[i].bytes, b[i].bytes)) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 /// État conversationnel et avancement d'une étape du wizard.

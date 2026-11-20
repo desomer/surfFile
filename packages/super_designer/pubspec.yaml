@@ -18,6 +18,8 @@ dependencies:
     path: ../super_container_extensions
   super_container_layout:
     path: ../super_container_layout
+  super_schema_dsl:
+    path: ../super_schema_dsl
   yaml: 3.1.4
 
 dev_dependencies:

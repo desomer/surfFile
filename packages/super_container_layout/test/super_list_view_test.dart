@@ -1333,7 +1333,10 @@ void main() {
     ) async {
       await mount(tester, page());
       expect(field(tester, 'detailName').controller!.text, '');
+      expect(field(tester, 'detailName').enabled, isFalse);
       expect(field(tester, 'detailName').readOnly, isTrue);
+      expect(field(tester, 'orderLabel').enabled, isFalse);
+      expect(field(tester, 'orderLabel').readOnly, isTrue);
       expect(find.text('Aucune ligne sélectionnée.'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('super-value-detailName-error')),
@@ -1347,6 +1350,7 @@ void main() {
       expect(selected('clients', 1), findsOneWidget);
       expect(selected('clients', 0), findsNothing);
       expect(field(tester, 'detailName').controller!.text, 'Bob');
+      expect(field(tester, 'detailName').enabled, isTrue);
       expect(field(tester, 'detailName').readOnly, isFalse);
       expect(row('detailOrders', 0), findsOneWidget);
       expect(row('detailOrders', 1), findsNothing);
@@ -1355,6 +1359,7 @@ void main() {
         findsOneWidget,
       );
       expect(field(tester, 'orderLabel').controller!.text, '');
+      expect(field(tester, 'orderLabel').enabled, isFalse);
 
       await select(
         tester,
@@ -1367,6 +1372,7 @@ void main() {
       expect(selected('orders', 1), findsOneWidget);
       expect(selected('detailOrders', 1), findsOneWidget);
       expect(field(tester, 'orderLabel').controller!.text, 'A2');
+      expect(field(tester, 'orderLabel').enabled, isTrue);
 
       // Selecting in the outside list updates the order binding.
       await select(
@@ -1382,6 +1388,7 @@ void main() {
         find.descendant(of: row('clients', 1), matching: find.text('Bob')),
       );
       expect(field(tester, 'orderLabel').controller!.text, '');
+      expect(field(tester, 'orderLabel').enabled, isFalse);
       expect(field(tester, 'orderLabel').readOnly, isTrue);
 
       // The outside binding writes the selected element; the master follows.
@@ -1444,6 +1451,7 @@ void main() {
         save: true,
       );
       expect(selected('clients', 0), findsNothing);
+      expect(field(tester, 'detailName').enabled, isFalse);
       expect(field(tester, 'detailName').readOnly, isTrue);
     });
 
@@ -1471,8 +1479,101 @@ void main() {
         save: true,
       );
       expect(store.bindingOf(repository).array('clients').selection, isNull);
+      expect(field(tester, 'detailName').enabled, isFalse);
       expect(field(tester, 'detailName').readOnly, isTrue);
     });
+
+    testWidgets(
+      'unselected bound SuperValue choice and automatic disabled state disable input until row selection',
+      (tester) async {
+        await mount(
+          tester,
+          Column(
+            children: [
+              SizedBox(
+                height: 180,
+                child: SuperListView(
+                  id: 'clients',
+                  config: SuperListViewConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: repository,
+                      path: 'clients',
+                    ),
+                    itemExtent: 64,
+                  ),
+                  template: center(['name']),
+                  slots: [text('name', 'clients[?].name')],
+                ),
+              ),
+              SuperValue(
+                id: 'detailChoice',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.choice,
+                  binding: JsonTextBinding(
+                    repositoryId: repository,
+                    path: 'clients[?].name',
+                  ),
+                  choice: const SuperChoiceConfig(
+                    variant: ChoiceVariant.segmented,
+                    options: [
+                      SuperChoiceOption(value: 'Alice', label: 'Alice Opt'),
+                      SuperChoiceOption(value: 'Bob', label: 'Bob Opt'),
+                    ],
+                  ),
+                ),
+              ),
+              SuperValue(
+                id: 'detailAutoDisabled',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  binding: JsonTextBinding(
+                    repositoryId: repository,
+                    path: 'clients[?].name',
+                  ),
+                  states: ValueConfigStates(
+                    automatic: {
+                      AutomaticState.disabled: ValueConfigOverride(
+                        config: const SuperValueConfig(color: Colors.grey),
+                        properties: const {ValueStateProperty.color},
+                      ),
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        final segFinder = find.descendant(
+          of: find.byKey(const ValueKey('super-value-choice-detailChoice')),
+          matching: find.byType(SegmentedButton<String>),
+        );
+        expect(
+          tester.widget<SegmentedButton<String>>(segFinder).onSelectionChanged,
+          isNull,
+        );
+        expect(field(tester, 'detailAutoDisabled').enabled, isFalse);
+        expect(
+          field(tester, 'detailAutoDisabled').style?.color?.toARGB32(),
+          Colors.grey.toARGB32(),
+        );
+
+        await select(
+          tester,
+          find.descendant(of: row('clients', 1), matching: find.text('Bob')),
+        );
+        expect(
+          tester.widget<SegmentedButton<String>>(segFinder).onSelectionChanged,
+          isNotNull,
+        );
+        expect(field(tester, 'detailAutoDisabled').enabled, isTrue);
+        expect(
+          field(tester, 'detailAutoDisabled').style?.color?.toARGB32(),
+          isNot(Colors.grey.toARGB32()),
+        );
+      },
+    );
 
     testWidgets(
       'boolean checkbox and switch follow row selection in master/detail',

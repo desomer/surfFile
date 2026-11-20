@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../models/business_object_spec.dart';
+import '../../models/json_schema_constraints.dart';
 import '../../models/spec_forge_project.dart';
 
 /// Bundle généré pour intégration directe dans `super_designer` / `super_container_layout`.
@@ -50,7 +51,7 @@ abstract final class SpecSuperDesignerExporter {
         buf.writeln('  id: uuid!');
       } else {
         for (final attr in obj.attributes) {
-          buf.writeln('  ${attr.name}: ${_formatDslType(project, attr)}');
+          _writeDslAttribute(buf, project, attr, indent: '  ');
         }
         for (final rel in obj.relations) {
           final target = project.findBusinessObject(rel.targetObjectId);
@@ -162,6 +163,24 @@ abstract final class SpecSuperDesignerExporter {
     return manifest;
   }
 
+  static void _writeDslAttribute(
+    StringBuffer buf,
+    SpecForgeProject project,
+    BusinessAttribute attr, {
+    required String indent,
+  }) {
+    if (attr.type == BusinessAttributeType.object && attr.children.isNotEmpty) {
+      final arraySuffix = attr.isArray ? '[]' : '';
+      final reqSuffix = attr.required ? '!' : (attr.nullable ? '?' : '');
+      buf.writeln('$indent${attr.name}$arraySuffix$reqSuffix:');
+      for (final child in attr.children) {
+        _writeDslAttribute(buf, project, child, indent: '$indent  ');
+      }
+      return;
+    }
+    buf.writeln('$indent${attr.name}: ${_formatDslType(project, attr)}');
+  }
+
   static String _formatDslType(
     SpecForgeProject project,
     BusinessAttribute attr,
@@ -170,6 +189,7 @@ abstract final class SpecSuperDesignerExporter {
       BusinessAttributeType.enumeration when attr.enumValues.isNotEmpty =>
         'enum(${attr.enumValues.join(', ')})',
       BusinessAttributeType.enumeration => 'string(enum)',
+      BusinessAttributeType.object => 'json',
       BusinessAttributeType.reference =>
         project.findBusinessObject(attr.referenceObjectId)?.technicalName ??
             (attr.referenceObjectId.isNotEmpty
@@ -192,6 +212,12 @@ abstract final class SpecSuperDesignerExporter {
     return base;
   }
 
+  /// Construit le sous-schéma JSON Schema Draft 2020-12 complet d'un [BusinessObjectSpec].
+  static Map<String, Object?> objectToJsonSchema(
+    SpecForgeProject project,
+    BusinessObjectSpec obj,
+  ) => _objectToJsonSchema(project, obj, visited: {obj.id});
+
   static Map<String, Object?> _objectToJsonSchema(
     SpecForgeProject project,
     BusinessObjectSpec obj, {
@@ -201,7 +227,7 @@ abstract final class SpecSuperDesignerExporter {
     final required = <String>[];
 
     for (final attr in obj.attributes) {
-      properties[attr.name] = _attributeToJsonSchema(attr);
+      properties[attr.name] = attributeToJsonSchema(attr);
       if (attr.required) required.add(attr.name);
     }
 
@@ -234,7 +260,18 @@ abstract final class SpecSuperDesignerExporter {
     };
   }
 
-  static Map<String, Object?> _attributeToJsonSchema(BusinessAttribute attr) {
+  static const Set<String> _arrayOnlyKeywords = <String>{
+    'minItems',
+    'maxItems',
+    'uniqueItems',
+    'contains',
+    'minContains',
+    'maxContains',
+    'prefixItems',
+  };
+
+  /// Construit le sous-schéma JSON Schema Draft 2020-12 complet d'un [BusinessAttribute].
+  static Map<String, Object?> attributeToJsonSchema(BusinessAttribute attr) {
     final schema = switch (attr.type) {
       BusinessAttributeType.string => <String, Object?>{'type': 'string'},
       BusinessAttributeType.integer => <String, Object?>{'type': 'integer'},
@@ -265,13 +302,48 @@ abstract final class SpecSuperDesignerExporter {
         if (attr.enumValues.isNotEmpty) 'enum': attr.enumValues,
       },
       BusinessAttributeType.reference => <String, Object?>{'type': 'string'},
+      BusinessAttributeType.object when attr.children.isNotEmpty =>
+        <String, Object?>{
+          'type': 'object',
+          if (attr.children.any((c) => c.required))
+            'required': [
+              for (final c in attr.children)
+                if (c.required) c.name,
+            ],
+          'properties': <String, Object?>{
+            for (final c in attr.children) c.name: attributeToJsonSchema(c),
+          },
+        },
+      BusinessAttributeType.object => <String, Object?>{'type': 'object'},
       BusinessAttributeType.json => <String, Object?>{'type': 'object'},
     };
     if (attr.description.isNotEmpty) {
       schema['description'] = attr.description;
     }
+
+    final constraintMap = attr.schemaConstraints.toSchemaMap();
+    final arrayConstraints = <String, Object?>{};
+    for (final entry in constraintMap.entries) {
+      if (attr.isArray && _arrayOnlyKeywords.contains(entry.key)) {
+        arrayConstraints[entry.key] = entry.value;
+      } else if (!_arrayOnlyKeywords.contains(entry.key)) {
+        schema[entry.key] = entry.value;
+      }
+    }
+
+    if (attr.nullable && schema['type'] is String) {
+      schema['type'] = <String>[schema['type'] as String, 'null'];
+    }
+
     if (attr.isArray) {
-      return <String, Object?>{'type': 'array', 'items': schema};
+      final effectiveMaxItems =
+          arrayConstraints['maxItems'] ?? attr.estimatedMaxRows;
+      return <String, Object?>{
+        'type': 'array',
+        ...arrayConstraints,
+        'maxItems': ?effectiveMaxItems,
+        'items': schema,
+      };
     }
     return schema;
   }
@@ -283,8 +355,16 @@ abstract final class SpecSuperDesignerExporter {
   }) {
     final record = <String, Object?>{};
     for (final attr in obj.attributes) {
-      final sample = _sampleValueForAttribute(attr);
-      record[attr.name] = attr.isArray ? [sample] : sample;
+      if (attr.isArray) {
+        final minItems = attr.schemaConstraints.minItems ?? 1;
+        final count = minItems < 1 ? 1 : (minItems > 5 ? 5 : minItems);
+        record[attr.name] = [
+          for (var i = 0; i < count; i++)
+            _sampleValueForAttribute(attr, index: i),
+        ];
+      } else {
+        record[attr.name] = _sampleValueForAttribute(attr);
+      }
     }
     for (final rel in obj.relations) {
       final target = project.findBusinessObject(rel.targetObjectId);
@@ -303,25 +383,104 @@ abstract final class SpecSuperDesignerExporter {
     return record;
   }
 
-  static Object _sampleValueForAttribute(BusinessAttribute attr) {
-    if (attr.defaultValue != null && attr.defaultValue!.trim().isNotEmpty) {
+  static Object? _sampleValueForAttribute(
+    BusinessAttribute attr, {
+    int index = 0,
+  }) {
+    final sc = attr.schemaConstraints;
+    if (sc.hasConst) {
+      return sc.constValue;
+    }
+    if (sc.examples.isNotEmpty && index < sc.examples.length) {
+      return sc.examples[index];
+    }
+    if (attr.type == BusinessAttributeType.object && attr.children.isNotEmpty) {
+      return <String, Object?>{
+        for (final child in attr.children)
+          child.name: child.isArray
+              ? [_sampleValueForAttribute(child, index: index)]
+              : _sampleValueForAttribute(child, index: index),
+      };
+    }
+    if (index == 0 &&
+        attr.defaultValue != null &&
+        attr.defaultValue!.trim().isNotEmpty) {
       return attr.defaultValue!.trim();
     }
     return switch (attr.type) {
-      BusinessAttributeType.string => 'Exemple ${attr.name}',
-      BusinessAttributeType.integer => 1,
-      BusinessAttributeType.number => 100.0,
-      BusinessAttributeType.boolean => true,
-      BusinessAttributeType.date => '2026-01-15',
-      BusinessAttributeType.datetime => '2026-01-15T10:30:00Z',
-      BusinessAttributeType.uuid => '00000000-0000-4000-8000-000000000001',
-      BusinessAttributeType.email => 'contact@exemple.fr',
-      BusinessAttributeType.url => 'https://exemple.fr',
-      BusinessAttributeType.enumeration =>
-        attr.enumValues.isNotEmpty ? attr.enumValues.first : 'valeur',
-      BusinessAttributeType.reference => 'ref_001',
-      BusinessAttributeType.json => <String, Object?>{},
+      BusinessAttributeType.string => _sampleString(attr, index: index),
+      BusinessAttributeType.integer => _sampleInt(sc, index: index),
+      BusinessAttributeType.number => _sampleDouble(sc, index: index),
+      BusinessAttributeType.boolean => index.isEven,
+      BusinessAttributeType.date => '2026-01-${(15 + (index % 14)).toString().padLeft(2, '0')}',
+      BusinessAttributeType.datetime => '2026-01-${(15 + (index % 14)).toString().padLeft(2, '0')}T10:30:00Z',
+      BusinessAttributeType.uuid =>
+        '00000000-0000-4000-8000-${(index + 1).toString().padLeft(12, '0')}',
+      BusinessAttributeType.email =>
+        index == 0 ? 'contact@exemple.fr' : 'contact$index@exemple.fr',
+      BusinessAttributeType.url =>
+        index == 0 ? 'https://exemple.fr' : 'https://exemple.fr/$index',
+      BusinessAttributeType.enumeration => attr.enumValues.isNotEmpty
+          ? attr.enumValues[index % attr.enumValues.length]
+          : 'valeur_${index + 1}',
+      BusinessAttributeType.reference => 'ref_${(index + 1).toString().padLeft(3, '0')}',
+      BusinessAttributeType.object => <String, Object?>{
+        if (index > 0) 'index': index,
+      },
+      BusinessAttributeType.json => <String, Object?>{
+        if (index > 0) 'index': index,
+      },
     };
+  }
+
+  static String _sampleString(BusinessAttribute attr, {int index = 0}) {
+    final minLen = attr.schemaConstraints.minLength ?? 0;
+    final maxLen = attr.schemaConstraints.maxLength;
+    var base = index == 0 ? 'Exemple ${attr.name}' : 'Exemple ${attr.name} ${index + 1}';
+    if (minLen > base.length) {
+      base = base.padRight(minLen, 'x');
+    }
+    if (maxLen != null && base.length > maxLen) {
+      final suffix = index == 0 ? '' : '${index + 1}';
+      if (suffix.isNotEmpty && maxLen > suffix.length) {
+        base =
+            '${base.substring(0, maxLen - suffix.length)}$suffix';
+      } else {
+        base = base.substring(0, maxLen);
+      }
+    }
+    return base;
+  }
+
+  static int _sampleInt(JsonSchemaConstraints sc, {int index = 0}) {
+    final low = sc.minimum?.ceil() ??
+        (sc.exclusiveMinimum != null ? sc.exclusiveMinimum!.floor() + 1 : 1);
+    final mult = sc.multipleOf?.round();
+    if (mult != null && mult > 0) {
+      final rem = low % mult;
+      final aligned = rem == 0 ? low : low + (mult - rem);
+      final candidate = aligned + (index * mult);
+      if (sc.maximum != null && candidate > sc.maximum!) {
+        return aligned;
+      }
+      return candidate;
+    }
+    final candidate = low + index;
+    if (sc.maximum != null && candidate > sc.maximum!) {
+      return low;
+    }
+    return candidate;
+  }
+
+  static double _sampleDouble(JsonSchemaConstraints sc, {int index = 0}) {
+    final low = sc.minimum?.toDouble() ??
+        (sc.exclusiveMinimum != null ? sc.exclusiveMinimum!.toDouble() + 1.0 : 10.0);
+    final step = sc.multipleOf?.toDouble() ?? 1.0;
+    final candidate = low + (index * step);
+    if (sc.maximum != null && candidate > sc.maximum!) {
+      return low;
+    }
+    return candidate;
   }
 
   static String _toSnakeCase(String input) {

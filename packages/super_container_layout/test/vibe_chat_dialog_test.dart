@@ -4337,12 +4337,22 @@ void main() {
       });
       expect(plan, isNotNull);
       expect(plan!.title, 'Landing page test');
+      expect(plan.reproduceExact, isFalse);
       expect(plan.lots.map((l) => l.id).toList(), ['lot-1', 'lot-1_2']);
       expect(plan.status, VibePlanStatus.awaitingConfirmation);
       expect(
         plan.formatLotContextPrompt(1),
         contains('>>> À EXÉCUTER MAINTENANT'),
       );
+
+      final exactPlan = VibeExecutionPlan.tryFromJson({
+        'lots': [
+          {'id': 'lot-1', 'title': 'Header'},
+        ],
+      }, reproduceExact: true);
+      expect(exactPlan, isNotNull);
+      expect(exactPlan!.reproduceExact, isTrue);
+      expect(exactPlan.title, 'Plan de reproduction à l’identique');
     });
 
     test('VibeIncrementalStreamParser détecte hasPlanObject en streaming', () {
@@ -4357,9 +4367,13 @@ void main() {
     });
 
     testWidgets(
-      'activer À l’identique verrouille Questions sur Aucun, masque Design System et injecte les directives exactes',
+      'activer À l’identique seul verrouille Questions sur Aucun, masque Design System et génère en 1 passe sans Phase 1 Plan',
       (tester) async {
+        final registry = Registry()..bootstrap();
         final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
         addTearDown(appearance.dispose);
         final prompts = <String>[];
 
@@ -4372,6 +4386,7 @@ void main() {
                   bundle: _GuideBundle(),
                   child: VibeChatDialog(
                     controller: appearance,
+                    registry: registry,
                     codec: const AppearanceCodec(),
                     initialQuestioningLevel: VibeQuestioningLevel.balanced,
                     onClose: () {},
@@ -4379,14 +4394,27 @@ void main() {
                     generate: (prompt) async {
                       prompts.add(prompt);
                       return jsonEncode({
-                        'message': 'Plan généré.',
-                        'plan': {
-                          'title': 'Page test',
-                          'lots': [
-                            {'id': 'lot-1', 'title': 'Header'},
-                          ],
+                        'message': 'Reproduction directe appliquée.',
+                        'vibe': {
+                          'components': {
+                            'mainLayout': {
+                              'type': 'layout',
+                              'slotLabels': {'exact-val': 'Exact'},
+                              'placements': {
+                                'center': [
+                                  {'id': 'exact-val', 'type': 'registry:Value'},
+                                ],
+                              },
+                            },
+                            'exact-val': {'type': 'value', 'text': 'Exact'},
+                          },
+                          'usages': {
+                            'exact-val': {
+                              'kind': 'explanation',
+                              'translationKey': 'exactVal',
+                            },
+                          },
                         },
-                        'vibe': null,
                       });
                     },
                   ),
@@ -4427,9 +4455,15 @@ void main() {
 
         expect(prompts, hasLength(1));
         expect(prompts.single, contains('MODE « REPRODUIRE À L’IDENTIQUE »'));
-        expect(prompts.single, contains('PHASE 1 — PLANIFICATION EN LOTS'));
-        expect(find.byKey(const ValueKey('vibe-plan-card')), findsOneWidget);
-        expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
+        expect(
+          prompts.single,
+          isNot(contains('PHASE 1 — PLANIFICATION EN LOTS')),
+        );
+        expect(find.byKey(const ValueKey('vibe-plan-card')), findsNothing);
+        expect(
+          appearance.value.valueComponent('exact-val').initialText,
+          'Exact',
+        );
 
         // Désactiver le mode restaure le niveau de questionnement précédent.
         await tester.tap(
@@ -4441,6 +4475,304 @@ void main() {
           find.byKey(const ValueKey('vibe-chat-design-system-button')),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'affiche la puce Plan à côté de Précis, autorise askUser avant le plan et exécute les lots avec Design System et repositories',
+      (tester) async {
+        final tempDir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('vibe_plan_repo_'),
+        ))!;
+        final repoStore = JsonRepositoryStore(tempDir);
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          repoStore.dispose();
+          await tester.runAsync(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            if (await tempDir.exists()) {
+              await tempDir.delete(recursive: true);
+            }
+          });
+        });
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final mdAttachment = VibeChatAttachment.text(
+          name: 'cahier.md',
+          content: '# Cahier CRM\nListe clients + statut',
+        );
+        final prompts = <String>[];
+        final attachmentsPerCall = <List<VibeChatAttachment>>[];
+        final planModeChanges = <bool>[];
+        var callCount = 0;
+
+        await tester.pumpWidget(
+          JsonRepositoryScope(
+            store: repoStore,
+            child: AppearanceScope(
+              controller: appearance,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: DefaultAssetBundle(
+                    bundle: _GuideBundle(),
+                    child: VibeChatDialog(
+                      controller: appearance,
+                      registry: registry,
+                      repositoryStore: repoStore,
+                      codec: const AppearanceCodec(),
+                      initialQuestioningLevel: VibeQuestioningLevel.balanced,
+                      onPlanModeChanged: planModeChanges.add,
+                      pickAttachments: () async => [mdAttachment],
+                      onClose: () {},
+                      onDrag: (_) {},
+                      generate: (prompt) async {
+                        fail('generate ne doit pas être appelé quand streamGenerate est fourni');
+                      },
+                      streamGenerate:
+                          (
+                            prompt, {
+                            systemInstruction,
+                            staticGuide,
+                            attachments = const [],
+                            speedMode = VibeAiSpeedMode.fast,
+                          }) async* {
+                            callCount++;
+                            prompts.add(prompt);
+                            attachmentsPerCall.add(attachments);
+                            late final String payload;
+                            if (callCount == 1) {
+                              payload = jsonEncode({
+                                'message': 'Précisons d’abord le CRM :',
+                                'askUser': {
+                                  'questions': [
+                                    {
+                                      'id': 'density',
+                                      'title': 'Densité souhaitée ?',
+                                      'type': 'single',
+                                      'options': ['Compact', 'Aéré'],
+                                      'default': 'Compact',
+                                    },
+                                  ],
+                                },
+                                'vibe': null,
+                              });
+                            } else if (callCount == 2) {
+                              payload = jsonEncode({
+                                'message': 'Voici le plan en 2 lots.',
+                                'plan': {
+                                  'title': 'Plan CRM',
+                                  'lots': [
+                                    {
+                                      'id': 'lot-1',
+                                      'title': 'Repository & En-tête',
+                                      'description': 'Créer le repo clients et le titre',
+                                    },
+                                    {
+                                      'id': 'lot-2',
+                                      'title': 'Détail',
+                                      'description': 'Ajouter le sous-titre',
+                                    },
+                                  ],
+                                },
+                                'vibe': null,
+                              });
+                            } else if (callCount == 3) {
+                              payload = jsonEncode({
+                                'message': 'Lot 1 terminé.',
+                                'repositories': {
+                                  'crm_clients': {
+                                    'name': 'Clients CRM',
+                                    'mode': 'merge',
+                                    'data': {
+                                      'title': 'Portefeuille Clients',
+                                    },
+                                  },
+                                },
+                                'vibe': {
+                                  'components': {
+                                    'mainLayout': {
+                                      'type': 'layout',
+                                      'slotLabels': {'crm-title': 'Titre CRM'},
+                                      'placements': {
+                                        'center': [
+                                          {
+                                            'id': 'crm-title',
+                                            'type': 'registry:Value',
+                                          },
+                                        ],
+                                      },
+                                    },
+                                    'crm-title': {
+                                      'type': 'value',
+                                      'binding': 'crm_clients:title',
+                                    },
+                                  },
+                                  'usages': {
+                                    'crm-title': {'kind': 'dynamicData'},
+                                  },
+                                },
+                              });
+                            } else {
+                              payload = jsonEncode({
+                                'message': 'Lot 2 terminé.',
+                                'vibe': {
+                                  'components': {
+                                    'mainLayout': {
+                                      'type': 'layout',
+                                      'slotLabels': {
+                                        'crm-title': 'Titre CRM',
+                                        'crm-sub': 'Sous-titre',
+                                      },
+                                      'placements': {
+                                        'center': [
+                                          {
+                                            'id': 'crm-title',
+                                            'type': 'registry:Value',
+                                          },
+                                          {
+                                            'id': 'crm-sub',
+                                            'type': 'registry:Value',
+                                          },
+                                        ],
+                                      },
+                                    },
+                                    'crm-sub': {
+                                      'type': 'value',
+                                      'text': 'Vue consolidée',
+                                    },
+                                  },
+                                  'usages': {
+                                    'crm-sub': {
+                                      'kind': 'explanation',
+                                      'translationKey': 'crmSub',
+                                    },
+                                  },
+                                },
+                              });
+                            }
+                            yield GeminiStreamEvent(
+                              deltaText: payload,
+                              accumulatedText: payload,
+                              isDone: true,
+                              usedContextCache: false,
+                            );
+                          },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Vérifie la position de la puce « Plan » juste à droite de « Précis » et avant « À l’identique ».
+        final reasoningRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-speed-reasoning')),
+        );
+        final planRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-plan-mode')),
+        );
+        final exactRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-reproduce-exact')),
+        );
+        expect(planRect.left, greaterThan(reasoningRect.left));
+        expect(exactRect.left, greaterThan(planRect.left));
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-plan-mode')));
+        await tester.pumpAndSettle();
+        expect(planModeChanges, [true]);
+
+        // Le Design System et le curseur Questions restent actifs en mode Plan seul.
+        expect(
+          find.byKey(const ValueKey('vibe-chat-design-system-button')),
+          findsOneWidget,
+        );
+        expect(find.text('Équilibré'), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-attach')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Crée un écran CRM',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await pumpRealAsync(
+          tester,
+          until: () =>
+              find.byKey(const ValueKey('vibe-ask-user-card')).evaluate().isNotEmpty,
+        );
+        await tester.pumpAndSettle();
+
+        // Tour 1 : askUser posé en amont du plan.
+        expect(callCount, 1);
+        expect(prompts[0], contains('PHASE 1 — PLANIFICATION EN LOTS'));
+        expect(
+          prompts[0],
+          isNot(contains('MODE « REPRODUIRE À L’IDENTIQUE »')),
+        );
+        expect(prompts[0], contains('de proposer le plan par lots ("plan")'));
+        expect(find.byKey(const ValueKey('vibe-ask-user-card')), findsOneWidget);
+
+        // Validation du questionnaire -> Tour 2 produit le plan.
+        await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
+        await pumpRealAsync(
+          tester,
+          until: () =>
+              find.byKey(const ValueKey('vibe-plan-start')).evaluate().isNotEmpty,
+        );
+        await tester.pumpAndSettle();
+
+        expect(callCount, 2);
+        expect(
+          prompts[1],
+          contains('Génère directement le plan par lots ("plan") correspondant'),
+        );
+        expect(find.byKey(const ValueKey('vibe-plan-card')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
+
+        // Exécution des lots -> conserve demande initiale + réponses askUser + pièce jointe,
+        // et n'injecte PAS le mode pixel-perfect.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await pumpRealAsync(
+          tester,
+          until: () => find
+              .text('Plan terminé : 2/2 lots appliqués.')
+              .evaluate()
+              .isNotEmpty,
+        );
+        await tester.pumpAndSettle();
+
+        expect(callCount, 4);
+        expect(
+          prompts[2],
+          isNot(contains('MODE « REPRODUIRE À L’IDENTIQUE »')),
+        );
+        expect(prompts[2], contains('Crée un écran CRM'));
+        expect(prompts[2], contains('Densité souhaitée'));
+        expect(attachmentsPerCall[2], [mdAttachment]);
+        expect(attachmentsPerCall[3], [mdAttachment]);
+
+        var catalogDone = false;
+        List<JsonRepositoryEntry> catalog = const [];
+        unawaited(
+          repoStore.catalog().then((entries) {
+            catalog = entries;
+            catalogDone = true;
+          }),
+        );
+        await pumpRealAsync(tester, until: () => catalogDone);
+        expect(catalog, hasLength(1));
+        expect(
+          appearance.value.valueComponent('crm-sub').initialText,
+          'Vue consolidée',
+        );
+        expect(find.text('Plan terminé : 2/2 lots appliqués.'), findsOneWidget);
       },
     );
 
@@ -4485,6 +4817,7 @@ void main() {
                         controller: appearance,
                         registry: registry,
                         codec: const AppearanceCodec(),
+                        initialPlanMode: true,
                         initialReproduceExactMode: true,
                         pickAttachments: () async => [mdAttachment],
                         onClose: () {},
@@ -4689,6 +5022,7 @@ void main() {
                         controller: appearance,
                         registry: registry,
                         codec: const AppearanceCodec(),
+                        initialPlanMode: true,
                         initialReproduceExactMode: true,
                         onClose: () {},
                         onDrag: (_) {},
@@ -4894,6 +5228,7 @@ void main() {
                     controller: appearance,
                     registry: registry,
                     codec: const AppearanceCodec(),
+                    initialPlanMode: true,
                     initialReproduceExactMode: true,
                     onClose: () {},
                     onDrag: (_) {},

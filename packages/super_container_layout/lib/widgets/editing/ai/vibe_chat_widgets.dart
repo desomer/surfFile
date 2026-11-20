@@ -718,7 +718,88 @@ class VibeSpeedModeChip extends StatelessWidget {
   }
 }
 
-/// Sélecteur activant ou désactivant le mode « Reproduire à l'identique » (plan & lots automatiques).
+/// Sélecteur activant ou désactivant le mode « Plan » (découpage en lots validé avant exécution).
+class VibePlanModeChip extends StatelessWidget {
+  /// Crée une puce bascule pour le mode « Plan ».
+  const VibePlanModeChip({
+    required this.selected,
+    required this.enabled,
+    required this.onToggle,
+    super.key,
+  });
+
+  /// Indique si le mode Plan est actif.
+  final bool selected;
+
+  /// Indique si le basculement est autorisé (désactivé pendant la génération).
+  final bool enabled;
+
+  /// Callback appelé au clic.
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.secondaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onSecondaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.secondary : scheme.outlineVariant;
+    return Tooltip(
+      message:
+          'Mode Plan : découpe d’abord la demande en un plan par lots '
+          'validé avant exécution séquentielle (cumulable avec Éclair/Rapide/Précis)',
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: 'Plan',
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-plan-mode'),
+            onTap: enabled ? onToggle : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.playlist_play_rounded,
+                    size: 15,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Plan',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Sélecteur activant ou désactivant le mode « Reproduire à l'identique » (pixel-perfect).
 class VibeReproduceExactChip extends StatelessWidget {
   /// Crée une puce bascule pour le mode « Reproduire à l'identique ».
   const VibeReproduceExactChip({
@@ -749,8 +830,8 @@ class VibeReproduceExactChip extends StatelessWidget {
     final borderColor = selected ? scheme.tertiary : scheme.outlineVariant;
     return Tooltip(
       message:
-          'Mode pixel-perfect : ignore le Design System générique et les questions, '
-          'découpe la source en un plan par lots puis exécute les lots en automatique',
+          'Mode pixel-perfect : ignore le Design System générique et les questions '
+          '(activer aussi « Plan » pour découper en lots)',
       child: Semantics(
         button: true,
         selected: selected,
