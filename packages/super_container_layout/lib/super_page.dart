@@ -7,6 +7,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'models/responsive_layout_config.dart';
 import 'models/scaffold_page_config.dart';
 import 'widgets/components/super_component.dart';
 import 'widgets/editing/overlay/editor_zoom.dart';
@@ -37,6 +38,7 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
     this.primary,
     this.scrollPadding,
     this.clipBehavior,
+    this.responsiveLayout,
     this.maxAutoZoomExtent = EditorZoom.defaultMaxAutoZoomExtent,
     super.behaviours,
     super.key,
@@ -76,6 +78,9 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
   final bool? primary;
   final double? scrollPadding;
   final Clip? clipBehavior;
+
+  /// Configuration responsive explicite (remplace la résolution via [Appearance]).
+  final ResponsiveLayoutConfig? responsiveLayout;
 
   /// Taille (px) à partir de laquelle une sélection n'est plus zoomée en mode édition.
   final double maxAutoZoomExtent;
@@ -147,6 +152,7 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
         bottomNavigationBar: bottomNavigationBar ?? bottomBar,
         floatingActionButton: floatingActionButton,
         bottomSheet: bottomSheet,
+        responsiveLayout: responsiveLayout,
       ),
     );
   }

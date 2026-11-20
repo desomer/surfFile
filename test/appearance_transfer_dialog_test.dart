@@ -263,6 +263,8 @@ void main() {
       ),
     );
     expect(find.byKey(const ValueKey('appearance-transfer')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-settings')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-transfer')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('appearance-transfer')), findsOneWidget);

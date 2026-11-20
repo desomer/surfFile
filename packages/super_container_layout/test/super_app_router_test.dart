@@ -184,6 +184,8 @@ void main() {
     final context = tester.element(find.text('Home'));
     StyleEditScope.controllerOf(context)!.value = true;
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-settings')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-transfer')));
     await tester.pumpAndSettle();
 
@@ -221,6 +223,8 @@ void main() {
     final context = tester.element(find.text('Shell content'));
     expect(SuperApp.of(context).router, same(router));
     StyleEditScope.controllerOf(context)!.value = true;
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-settings')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-transfer')));
     await tester.pumpAndSettle();

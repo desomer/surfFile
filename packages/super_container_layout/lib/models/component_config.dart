@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import 'a4_page_config.dart';
 import 'json_text_binding.dart';
 import 'native_component_config.dart';
 import 'scaffold_page_config.dart';
@@ -49,6 +50,10 @@ abstract final class ComponentConfigCatalog {
     'scaffold': ComponentConfigCodec<ScaffoldPageConfig>(
       type: 'scaffold',
       fromJson: ScaffoldPageConfig.fromJson,
+    ),
+    'a4Document': ComponentConfigCodec<A4PageConfig>(
+      type: 'a4Document',
+      fromJson: A4PageConfig.fromJson,
     ),
     'value': ComponentConfigCodec<SuperValueConfig>(
       type: 'value',

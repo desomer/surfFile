@@ -5,6 +5,80 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart' show IconData, Icons;
+
+import 'json_numbers.dart';
+import 'responsive_layout_config.dart';
+
+/// Type d'une page déclarée dans [EditorPageCatalog].
+enum EditorPageType {
+  /// Page applicative classique rendue dans un `Scaffold` ([SuperPage]).
+  standard(
+    'Écran',
+    'Page applicative plein écran avec Scaffold',
+    Icons.web_asset_outlined,
+  ),
+
+  /// Page document au format A4 multi-feuilles destinée à l'aperçu et à l'export PDF.
+  a4Document(
+    'PDF A4',
+    'Document multi-feuilles A4 exportable en PDF',
+    Icons.description_outlined,
+  ),
+
+  /// Fenêtre modale centrée affichée par-dessus la page courante.
+  dialog(
+    'Dialogue',
+    'Fenêtre modale centrée au-dessus de l’écran',
+    Icons.picture_in_picture_alt_outlined,
+  ),
+
+  /// Panneau modal glissant depuis le bas de l'écran.
+  bottomSheet(
+    'Panneau bas',
+    'Feuille modale glissant depuis le bas (BottomSheet)',
+    Icons.vertical_align_bottom_outlined,
+  ),
+
+  /// Panneau modal latéral glissant depuis le bord droit.
+  sideSheet(
+    'Panneau latéral',
+    'Volet modal glissant depuis le bord droit',
+    Icons.view_sidebar_outlined,
+  );
+
+  const EditorPageType(this.label, this.description, this.icon);
+
+  /// Libellé court affiché dans l'interface d'édition.
+  final String label;
+
+  /// Description concise du rendu associé.
+  final String description;
+
+  /// Icône représentative dans le sélecteur de type de page.
+  final IconData icon;
+
+  /// Indique si ce type de page utilise une structure `Scaffold` ([SuperPage]).
+  bool get usesScaffold => this != EditorPageType.a4Document;
+
+  /// Indique si ce type de page est présenté sous forme de superposition modale.
+  bool get isModal => switch (this) {
+    EditorPageType.dialog ||
+    EditorPageType.bottomSheet ||
+    EditorPageType.sideSheet => true,
+    EditorPageType.standard || EditorPageType.a4Document => false,
+  };
+
+  /// Décode un [EditorPageType] depuis son nom JSON.
+  static EditorPageType fromJson(Object? value) => switch (value) {
+    null || 'standard' || 'screen' || 'ecran' => EditorPageType.standard,
+    'a4Document' || 'a4' || 'documentA4' || 'pdf' => EditorPageType.a4Document,
+    'dialog' || 'modal' => EditorPageType.dialog,
+    'bottomSheet' || 'sheet' => EditorPageType.bottomSheet,
+    'sideSheet' || 'drawer' => EditorPageType.sideSheet,
+    _ => throw FormatException('Type de page éditeur invalide : $value.'),
+  };
+}
 
 /// A visually authored page with an identity independent of its route.
 @immutable
@@ -13,6 +87,10 @@ class EditorPageConfig {
     required this.id,
     required this.name,
     required this.path,
+    this.pageType = EditorPageType.standard,
+    this.modalWidth,
+    this.modalHeight,
+    this.layoutOverride,
     Map<String, String> defaultParameters = const {},
   }) : defaultParameters = Map.unmodifiable(defaultParameters) {
     validate();
@@ -21,6 +99,18 @@ class EditorPageConfig {
   final String id;
   final String name;
   final String path;
+
+  /// Nature de la page (`standard`, `a4Document`, `dialog`, `bottomSheet`, `sideSheet`).
+  final EditorPageType pageType;
+
+  /// Largeur optionnelle (px) pour les pages modales (`dialog`, `sideSheet`).
+  final double? modalWidth;
+
+  /// Hauteur optionnelle (px) pour les pages modales (`dialog`, `bottomSheet`).
+  final double? modalHeight;
+
+  /// Surcharge responsive optionnelle de cette page (mode conteneur, max-width, gutters).
+  final ResponsiveLayoutOverride? layoutOverride;
   final Map<String, String> defaultParameters;
 
   /// Route syntax and parameter constraints are validated by the router.
@@ -36,17 +126,41 @@ class EditorPageConfig {
     if (defaultParameters.keys.any((key) => key.trim().isEmpty)) {
       throw ArgumentError('Editor page parameter names must not be empty.');
     }
+    if (modalWidth != null &&
+        (!modalWidth!.isFinite || modalWidth! < 120 || modalWidth! > 4000)) {
+      throw ArgumentError('Editor page modalWidth must be between 120 and 4000.');
+    }
+    if (modalHeight != null &&
+        (!modalHeight!.isFinite || modalHeight! < 120 || modalHeight! > 4000)) {
+      throw ArgumentError(
+        'Editor page modalHeight must be between 120 and 4000.',
+      );
+    }
+    layoutOverride?.validate();
   }
 
   EditorPageConfig copyWith({
     String? id,
     String? name,
     String? path,
+    EditorPageType? pageType,
+    double? modalWidth,
+    bool clearModalWidth = false,
+    double? modalHeight,
+    bool clearModalHeight = false,
+    ResponsiveLayoutOverride? layoutOverride,
+    bool clearLayoutOverride = false,
     Map<String, String>? defaultParameters,
   }) => EditorPageConfig(
     id: id ?? this.id,
     name: name ?? this.name,
     path: path ?? this.path,
+    pageType: pageType ?? this.pageType,
+    modalWidth: clearModalWidth ? null : modalWidth ?? this.modalWidth,
+    modalHeight: clearModalHeight ? null : modalHeight ?? this.modalHeight,
+    layoutOverride: clearLayoutOverride
+        ? null
+        : (layoutOverride ?? this.layoutOverride),
     defaultParameters: defaultParameters ?? this.defaultParameters,
   );
 
@@ -54,20 +168,47 @@ class EditorPageConfig {
     'id': id,
     'name': name,
     'path': path,
+    if (pageType != EditorPageType.standard) 'pageType': pageType.name,
+    if (modalWidth != null) 'modalWidth': JsonNumbers.round(modalWidth!),
+    if (modalHeight != null) 'modalHeight': JsonNumbers.round(modalHeight!),
+    if (layoutOverride != null && !layoutOverride!.isEmpty)
+      'layoutOverride': layoutOverride!.toJson(),
     'defaultParameters': defaultParameters,
   };
 
   factory EditorPageConfig.fromJson(Object? value) {
     if (value is! Map<String, dynamic> ||
         value.keys.any(
-          (key) =>
-              !const {'id', 'name', 'path', 'defaultParameters'}.contains(key),
+          (key) => !const {
+            'id',
+            'name',
+            'path',
+            'pageType',
+            'modalWidth',
+            'modalHeight',
+            'layoutOverride',
+            'defaultParameters',
+          }.contains(key),
         ) ||
         value['id'] is! String ||
         value['name'] is! String ||
         value['path'] is! String) {
       throw const FormatException('Invalid editor page configuration.');
     }
+    final pageType = value.containsKey('pageType')
+        ? (value['pageType'] is String
+              ? EditorPageType.fromJson(value['pageType'])
+              : throw const FormatException('Invalid editor page type.'))
+        : EditorPageType.standard;
+    final rawModalWidth = value['modalWidth'];
+    final rawModalHeight = value['modalHeight'];
+    if ((value.containsKey('modalWidth') && rawModalWidth is! num?) ||
+        (value.containsKey('modalHeight') && rawModalHeight is! num?)) {
+      throw const FormatException('Invalid editor page modal dimensions.');
+    }
+    final layoutOverride = value.containsKey('layoutOverride')
+        ? ResponsiveLayoutOverride.fromJson(value['layoutOverride'])
+        : null;
     final parameters = value.containsKey('defaultParameters')
         ? value['defaultParameters']
         : const <String, String>{};
@@ -82,6 +223,10 @@ class EditorPageConfig {
         id: value['id'] as String,
         name: value['name'] as String,
         path: value['path'] as String,
+        pageType: pageType,
+        modalWidth: (rawModalWidth as num?)?.toDouble(),
+        modalHeight: (rawModalHeight as num?)?.toDouble(),
+        layoutOverride: layoutOverride,
         defaultParameters: Map<String, String>.from(parameters),
       );
     } on ArgumentError catch (error) {

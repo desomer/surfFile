@@ -912,6 +912,7 @@ class LayoutSelection {
   static void deselectDescendants(Object owner) {
     _leafSuffix = const [];
     _leafIds = const [];
+    _activeLeafId = null;
     _leafFocus = null;
     var removedReported = false;
     for (final entry in _targets.entries.toList()) {
@@ -931,6 +932,7 @@ class LayoutSelection {
   static void activate(Object owner) {
     _leafSuffix = const [];
     _leafIds = const [];
+    _activeLeafId = null;
     _leafFocus = null;
     _activeOwner = owner;
     var changed = false;
@@ -989,6 +991,7 @@ class LayoutSelection {
       if (_leafIds.length > newLen) {
         _leafIds = _leafIds.sublist(0, newLen);
       }
+      _activeLeafId = _leafIds.isNotEmpty ? _leafIds.last : null;
       _leafFocus = null;
       _syncReported();
       return;
@@ -998,7 +1001,15 @@ class LayoutSelection {
       if (listEquals(entry.value, prefix)) active = entry.key;
     }
     final target = _targets[active];
-    if (target == null) return;
+    if (target == null) {
+      if (active != null) {
+        _clears[active]?.call();
+        _deselects[active]?.call();
+        _removeReported(active);
+        _syncReported();
+      }
+      return;
+    }
     if (prefix.length > target.path.length) {
       select(prefix.sublist(0, prefix.length - 1));
     } else if (target.delegateToParent &&
@@ -1020,6 +1031,7 @@ class LayoutSelection {
     final savedLeafIds = _leafIds;
     _leafSuffix = const [];
     _leafIds = const [];
+    _activeLeafId = null;
     _leafFocus = null;
     Object? active;
     var depth = -1;
@@ -1170,6 +1182,7 @@ class LayoutSelection {
       if (identical(_activeOwner, owner)) {
         _leafSuffix = const [];
         _leafIds = const [];
+        _activeLeafId = null;
         _leafFocus = null;
         _preserveLeafOnNextReport = false;
       }

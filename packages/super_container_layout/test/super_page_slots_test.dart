@@ -785,13 +785,13 @@ void main() {
       }
       await mouse.moveTo(
         tester.getCenter(
-          find.byKey(const ValueKey('style-edit-banner-transfer')),
+          find.byKey(const ValueKey('style-edit-banner-settings')),
         ),
       );
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
       expect(
-        find.text('Importer / exporter le style et la disposition'),
+        find.text('Paramètres'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

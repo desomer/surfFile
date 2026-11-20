@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import '../../models/a4_page_config.dart';
 import '../../models/component_config.dart';
 import '../../models/component_usage.dart';
 import '../../models/json_numbers.dart';
@@ -37,7 +38,10 @@ class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'super_container_layout.appearance';
   static TransferGroup _groupOf(String key) =>
-      key == 'components' || key == 'pageCatalog' || key == 'usages'
+      key == 'components' ||
+          key == 'pageCatalog' ||
+          key == 'usages' ||
+          key == 'responsiveLayout'
       ? TransferGroup.layouts
       : TransferGroup.styles;
 
@@ -442,6 +446,8 @@ class AppearanceTransfer {
           record(parentId, native.slotTypes);
         case final ScaffoldPageConfig scaffold:
           record(parentId, scaffold.native.slotTypes);
+        case final A4PageConfig a4:
+          record(parentId, a4.childSlots);
         default:
           break;
       }
@@ -514,6 +520,7 @@ class AppearanceTransfer {
         final SuperTableConfig table => table.slotTypes,
         final NativeComponentConfig native => native.slotTypes,
         final ScaffoldPageConfig scaffold => scaffold.native.slotTypes,
+        final A4PageConfig a4 => a4.childSlots,
         _ => const <String, String>{},
       };
       for (final entry in slotTypes.entries) {

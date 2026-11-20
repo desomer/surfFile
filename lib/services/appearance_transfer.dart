@@ -14,6 +14,7 @@ class AppearanceTransfer {
     'components',
     'usages',
     'pageCatalog',
+    'responsiveLayout',
   };
   static String export(
     Appearance value,

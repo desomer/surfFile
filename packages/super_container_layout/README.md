@@ -1474,9 +1474,12 @@ selection est active : vers le haut pour zoomer, vers le bas pour dezoomer
 retrouve sa position normale ; le cadrage se rapproche progressivement de la
 selection jusqu'au centrage a x3. Le cadrage automatique des dialogues peut
 toujours descendre sous x1 pour laisser le composant visible. L'appui sur la
-touche Échap en mode édition annule l'effet du zoom et du panoramique et
-ramène la vue à la normale (100 %, sans décalage) tout en conservant la
-sélection courante ; lorsqu'un menu contextuel, un popup de saisie ou une
+touche Échap en mode édition annule d'abord en priorité l'effet du zoom et du
+panoramique et ramène la vue à la normale (100 %, sans décalage) tout en
+conservant la sélection courante ; si aucun dézoom n'est à réaliser, Échap
+désélectionne le composant sélectionné en remontant d'un niveau dans la
+hiérarchie (composant → zone → disposition → vide) tout en restant à 100 %.
+Lorsqu'un menu contextuel, un popup de saisie ou une
 boîte de dialogue est ouvert, Échap le ferme d'abord. Une nouvelle
 selection ou la sortie du mode edition retablit le cadrage automatique.
 Les zones defilantes gardent la priorite pour leur propre defilement.

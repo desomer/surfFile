@@ -72,7 +72,7 @@ Limite chaque écran à **4 niveaux typographiques nets** et **au plus 3 tailles
 
 ### 4.1. Échelle d'espacement stricte
 Utilise exclusivement les valeurs de l'échelle **`4, 8, 12, 16, 20, 24, 32`** pour `padding`, `spacing` et `margin` des conteneurs de contenu :
-- **Fond global (`styles["background"].padding`)** : **`0` par défaut** — ne mets **pas** de `padding` (ni `paddingInsets`) sur `styles["background"]` par défaut (sauf demande explicite). Avec les composants Flutter (`Scaffold`, `ApplicationBar`, `NavigationRail`, `BottomAppBar`, `SuperLayout`), aucun padding sur le fond n'est nécessaire ; applique plutôt les marges dans `zoneFlows.<zone>.padding` du `layout` (`12` ou `16`) ou sur les `Card`.
+- **Fond global (`styles["background"].padding`)** : **`0` par défaut** — ne mets **pas** de `padding` (ni `paddingInsets`) sur `styles["background"]` par défaut (sauf demande explicite). Avec les composants Flutter (`Scaffold`, `ApplicationBar`, `NavigationRail`, `BottomAppBar`, `SuperLayout`), aucun padding sur le fond n'est nécessaire ; applique plutôt les marges dans `zoneFlows.<zone>.padding` du `layout` (`12` ou `16`), sur les `Card`, ou via **`responsiveLayout`** (mode `"constrained"` à `maxWidth: 1440` et gutters `24px` mobile / `32px` desktop pour les sites et portails web centrés, en conservant `"fullPage"` par défaut pour les applications desktop plein écran).
 - **Espacement entre zones/cartes sœurs (`zoneFlows.*.spacing` / `zoneFlows.*.padding`)** : `12` ou `16`.
 - **Padding intérieur d'une `Card` principale (`styles[cardId].padding`)** : `16` ou `20` (`24` pour un formulaire pleine page aéré).
 - **Espacement interne entre champs ou lignes d'un groupe (`spacing`)** : `8` à `12`.

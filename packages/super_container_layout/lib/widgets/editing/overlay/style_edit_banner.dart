@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
+import 'package:super_container_layout/models/responsive_layout_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/super_app.dart';
@@ -21,6 +22,7 @@ import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 
 import '../../appearance/appearance_scope.dart';
+import 'editor_viewport_preview.dart';
 
 /// Pastille déplaçable, initialement en haut au centre par défaut.
 ///
@@ -425,6 +427,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                         icon: const Icon(Icons.web_stories_outlined),
                         onPressed: widget.onManagePages,
                       ),
+                    if (EditorViewportPreviewScope.controllerOf(context)
+                        case final viewportPreview?)
+                      _ViewportPreviewButton(
+                        controller: viewportPreview,
+                        responsiveLayout:
+                            appearance?.value.responsiveLayout ??
+                            const ResponsiveLayoutConfig(),
+                        foregroundColor: scheme.onPrimary,
+                      ),
                     IconButton(
                       key: const ValueKey('style-edit-banner-repository'),
                       tooltip: 'Repository',
@@ -492,31 +503,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                           });
                         },
                       ),
-                    if (AppearanceScope.controllerOf(context)
-                        case final appearance?) ...[
-                      IconButton(
-                        key: const ValueKey('style-edit-banner-transfer'),
-                        tooltip:
-                            'Importer / exporter le style et la disposition',
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 18,
-                        color: scheme.onPrimary,
-                        icon: const Icon(Icons.import_export),
-                        onPressed: () {
+                    if (appearance != null)
+                      _BannerSettingsButton(
+                        foregroundColor: scheme.onPrimary,
+                        onOpenTransfer: () {
                           final target =
                               widget.navigatorKey?.currentContext ?? context;
                           if (Navigator.maybeOf(target) == null) return;
                           AppearanceTransferDialog.show(target, appearance);
                         },
-                      ),
-                      IconButton(
-                        key: const ValueKey('style-edit-banner-save-timing'),
-                        tooltip: 'Délai d’enregistrement des saisies',
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 18,
-                        color: scheme.onPrimary,
-                        icon: const Icon(Icons.timer_outlined),
-                        onPressed: () {
+                        onOpenSaveTiming: () {
                           final target =
                               widget.navigatorKey?.currentContext ?? context;
                           if (Navigator.maybeOf(target) != null) {
@@ -526,7 +522,6 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                           }
                         },
                       ),
-                    ],
 
                     // Dispositions et zones sélectionnées : parent > ... > enfant.
                     Flexible(
@@ -1411,6 +1406,180 @@ class _PathSegment extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Bouton paramètres regroupant l'import/export et le réglage du délai
+/// d'enregistrement des saisies dans [StyleEditBanner].
+class _BannerSettingsButton extends StatelessWidget {
+  const _BannerSettingsButton({
+    required this.foregroundColor,
+    required this.onOpenTransfer,
+    required this.onOpenSaveTiming,
+  });
+
+  final Color foregroundColor;
+  final VoidCallback onOpenTransfer;
+  final VoidCallback onOpenSaveTiming;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MenuAnchor(
+      menuChildren: [
+        MenuItemButton(
+          key: const ValueKey('style-edit-banner-transfer'),
+          leadingIcon: Icon(
+            Icons.import_export,
+            size: 18,
+            color: scheme.onSurfaceVariant,
+          ),
+          onPressed: onOpenTransfer,
+          child: const Text('Importer / exporter le style et la disposition'),
+        ),
+        MenuItemButton(
+          key: const ValueKey('style-edit-banner-save-timing'),
+          leadingIcon: Icon(
+            Icons.timer_outlined,
+            size: 18,
+            color: scheme.onSurfaceVariant,
+          ),
+          onPressed: onOpenSaveTiming,
+          child: const Text('Délai d’enregistrement des saisies'),
+        ),
+      ],
+      builder: (context, menuController, child) => IconButton(
+        key: const ValueKey('style-edit-banner-settings'),
+        tooltip: 'Paramètres',
+        visualDensity: VisualDensity.compact,
+        iconSize: 18,
+        color: foregroundColor,
+        icon: const Icon(Icons.settings_outlined),
+        onPressed: () {
+          if (menuController.isOpen) {
+            menuController.close();
+          } else {
+            menuController.open();
+          }
+        },
+      ),
+    );
+  }
+}
+
+/// Bouton de sélection d'aperçu responsive (Auto ou breakpoint fixe) dans [StyleEditBanner].
+class _ViewportPreviewButton extends StatelessWidget {
+  const _ViewportPreviewButton({
+    required this.controller,
+    required this.responsiveLayout,
+    required this.foregroundColor,
+  });
+
+  final ValueNotifier<ResponsiveBreakpoint?> controller;
+  final ResponsiveLayoutConfig responsiveLayout;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final breakpoints = responsiveLayout.breakpoints;
+    return ValueListenableBuilder<ResponsiveBreakpoint?>(
+      valueListenable: controller,
+      builder: (context, active, _) {
+        final activeWidth = active == null
+            ? null
+            : breakpoints.previewWidthFor(active).round();
+        final scheme = Theme.of(context).colorScheme;
+        return MenuAnchor(
+          menuChildren: [
+            MenuItemButton(
+              key: const ValueKey('viewport-preview-auto'),
+              leadingIcon: Icon(
+                Icons.fullscreen,
+                size: 18,
+                color: active == null
+                    ? scheme.primary
+                    : scheme.onSurfaceVariant,
+              ),
+              trailingIcon: active == null
+                  ? Icon(Icons.check, size: 16, color: scheme.primary)
+                  : null,
+              onPressed: () => controller.value = null,
+              child: Text(
+                'Auto (Fenêtre)',
+                style: TextStyle(
+                  fontWeight:
+                      active == null ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            for (final bp in ResponsiveBreakpoint.values)
+              MenuItemButton(
+                key: ValueKey('viewport-preview-${bp.name}'),
+                leadingIcon: Icon(
+                  EditorViewportPreviewFrame.iconFor(bp),
+                  size: 18,
+                  color: active == bp
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+                trailingIcon: active == bp
+                    ? Icon(Icons.check, size: 16, color: scheme.primary)
+                    : null,
+                onPressed: () => controller.value = bp,
+                child: Text(
+                  '${bp.label} (${breakpoints.previewWidthFor(bp).round()} px)'
+                  '${responsiveLayout.containerMode == PageContainerMode.constrained ? ' • Gutter ${responsiveLayout.gutters.gutterFor(bp).round()} px' : ''}',
+                  style: TextStyle(
+                    fontWeight:
+                        active == bp ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+          ],
+          builder: (context, menuController, child) => Tooltip(
+            message: active == null
+                ? 'Aperçu responsive (Auto)'
+                : 'Aperçu ${active.label} ($activeWidth px)',
+            child: InkWell(
+              key: const ValueKey('style-edit-banner-viewport'),
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                if (menuController.isOpen) {
+                  menuController.close();
+                } else {
+                  menuController.open();
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      EditorViewportPreviewFrame.iconFor(active),
+                      size: 18,
+                      color: foregroundColor,
+                    ),
+                    if (activeWidth != null) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '${activeWidth}px',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: foregroundColor,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

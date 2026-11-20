@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import '../services/events/super_event_bus.dart';
 import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
+import 'behaviours/generate_pdf_action.dart';
 import 'behaviours/go_to_page_action.dart';
 import 'behaviours/search_provider_action.dart';
 import 'behaviours/state_binding_action.dart';
@@ -27,6 +28,7 @@ import 'behaviours/zone_size_binding_action.dart';
 
 export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
+export 'behaviours/generate_pdf_action.dart';
 export 'behaviours/go_to_page_action.dart';
 export 'behaviours/search_provider_action.dart';
 export 'behaviours/state_binding_action.dart';
@@ -101,6 +103,7 @@ abstract final class BehaviorActionCatalog {
     'onTooltip': TooltipAction.fromJson,
     'searchProvider': SearchProviderAction.fromJson,
     'datasource': DatasourceAction.fromJson,
+    'generatePdf': GeneratePdfAction.fromJson,
   };
 
   static void register(
@@ -178,6 +181,14 @@ class ComponentBehavior {
       if (!BehaviorTrigger.gestures.contains(trigger)) {
         throw const FormatException(
           'datasource exige le déclencheur click ou doubleClick.',
+        );
+      }
+    }
+    if (action case final GeneratePdfAction pdf) {
+      pdf.validate();
+      if (!BehaviorTrigger.gestures.contains(trigger)) {
+        throw const FormatException(
+          'generatePdf exige le déclencheur click ou doubleClick.',
         );
       }
     }
@@ -343,8 +354,20 @@ abstract final class BehaviorCatalog {
     actionType: 'datasource',
   );
 
+  /// Génère un PDF A4 depuis la page A4 courante ou une page A4 du catalogue.
+  static const generatePdf = BehaviorCatalogItem(
+    id: 'generate_pdf',
+    title: 'Générer un PDF (A4)',
+    description:
+        'Exporter une page Document A4 au format PDF (aperçu/impression ou fichier)',
+    icon: Icons.picture_as_pdf_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'generatePdf',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
+    generatePdf,
     emitEvent,
     zoneSize,
     bindState,

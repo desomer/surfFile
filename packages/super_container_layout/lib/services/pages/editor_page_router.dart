@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -13,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../super_page.dart';
+import '../../widgets/components/a4_document_page.dart';
 
 /// A route declared in the application's code, exposed for navigation only.
 class EditorCodedRoute {
@@ -111,15 +113,53 @@ class EditorPageRouter {
       final route = GoRoute(
         path: page.path,
         name: _routeName(page.id),
-        builder: (context, state) {
-          final Widget child = SuperPage(
-            key: ValueKey('editor-page-${page.id}'),
-            id: page.id,
-            label: page.name,
-            pageConfig: ScaffoldPageConfig(),
-          );
-          return pageWrapper?.call(context, state, child) ?? child;
-        },
+        pageBuilder: page.pageType.isModal
+            ? (context, state) {
+                final child = SuperPage(
+                  key: ValueKey('editor-page-${page.id}'),
+                  id: page.id,
+                  label: page.name,
+                  pageConfig: ScaffoldPageConfig(),
+                );
+                return switch (page.pageType) {
+                  EditorPageType.dialog => _EditorDialogPage(
+                    key: state.pageKey,
+                    width: page.modalWidth,
+                    height: page.modalHeight,
+                    child: child,
+                  ),
+                  EditorPageType.bottomSheet => _EditorBottomSheetPage(
+                    key: state.pageKey,
+                    height: page.modalHeight,
+                    child: child,
+                  ),
+                  EditorPageType.sideSheet => _EditorSideSheetPage(
+                    key: state.pageKey,
+                    width: page.modalWidth,
+                    child: child,
+                  ),
+                  _ => MaterialPage<void>(key: state.pageKey, child: child),
+                };
+              }
+            : null,
+        builder: page.pageType.isModal
+            ? null
+            : (context, state) {
+                final Widget child = switch (page.pageType) {
+                  EditorPageType.a4Document => A4DocumentPage(
+                    key: ValueKey('editor-page-${page.id}'),
+                    id: page.id,
+                    label: page.name,
+                  ),
+                  _ => SuperPage(
+                    key: ValueKey('editor-page-${page.id}'),
+                    id: page.id,
+                    label: page.name,
+                    pageConfig: ScaffoldPageConfig(),
+                  ),
+                };
+                return pageWrapper?.call(context, state, child) ?? child;
+              },
       );
       final parameters = _parameters(route);
       if (parameters.toSet().length != parameters.length) {
@@ -498,4 +538,146 @@ class EditorPageRouter {
     router.dispose();
     _routing.dispose();
   }
+}
+
+Widget _wrapWithModalClose(BuildContext context, Widget child) => Stack(
+  children: [
+    Positioned.fill(child: child),
+    Positioned(
+      top: 8,
+      right: 8,
+      child: Material(
+        type: MaterialType.transparency,
+        child: IconButton(
+          key: const ValueKey('editor-modal-page-close'),
+          tooltip: 'Fermer',
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              GoRouter.maybeOf(context)?.go('/');
+            }
+          },
+          icon: const Icon(Icons.close, size: 20),
+        ),
+      ),
+    ),
+  ],
+);
+
+class _EditorDialogPage extends Page<void> {
+  const _EditorDialogPage({
+    required this.child,
+    this.width,
+    this.height,
+    super.key,
+  });
+
+  final Widget child;
+  final double? width;
+  final double? height;
+
+  @override
+  Route<void> createRoute(BuildContext context) => DialogRoute<void>(
+    context: context,
+    settings: this,
+    barrierDismissible: true,
+    builder: (dialogContext) {
+      final viewport = MediaQuery.sizeOf(dialogContext);
+      final targetWidth = math.min(width ?? 640.0, math.max(240.0, viewport.width - 48));
+      final targetHeight = math.min(height ?? 520.0, math.max(220.0, viewport.height - 48));
+      return Dialog(
+        key: const ValueKey('editor-dialog-page-container'),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: targetWidth,
+          height: targetHeight,
+          child: _wrapWithModalClose(dialogContext, child),
+        ),
+      );
+    },
+  );
+}
+
+class _EditorBottomSheetPage extends Page<void> {
+  const _EditorBottomSheetPage({
+    required this.child,
+    this.height,
+    super.key,
+  });
+
+  final Widget child;
+  final double? height;
+
+  @override
+  Route<void> createRoute(BuildContext context) => ModalBottomSheetRoute<void>(
+    settings: this,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    clipBehavior: Clip.antiAlias,
+    builder: (sheetContext) {
+      final viewportHeight = MediaQuery.sizeOf(sheetContext).height;
+      final targetHeight = math.min(
+        height ?? viewportHeight * 0.72,
+        math.max(220.0, viewportHeight - 48),
+      );
+      return SizedBox(
+        key: const ValueKey('editor-bottom-sheet-page-container'),
+        height: targetHeight,
+        child: _wrapWithModalClose(sheetContext, child),
+      );
+    },
+  );
+}
+
+class _EditorSideSheetPage extends Page<void> {
+  const _EditorSideSheetPage({
+    required this.child,
+    this.width,
+    super.key,
+  });
+
+  final Widget child;
+  final double? width;
+
+  @override
+  Route<void> createRoute(BuildContext context) => RawDialogRoute<void>(
+    settings: this,
+    barrierDismissible: true,
+    barrierColor: Colors.black54,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    transitionDuration: const Duration(milliseconds: 220),
+    pageBuilder: (sheetContext, _, _) {
+      final viewportWidth = MediaQuery.sizeOf(sheetContext).width;
+      final targetWidth = math.min(
+        width ?? 420.0,
+        math.max(240.0, viewportWidth - 32),
+      );
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Material(
+          key: const ValueKey('editor-side-sheet-page-container'),
+          elevation: 16,
+          clipBehavior: Clip.antiAlias,
+          borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+          child: SizedBox(
+            width: targetWidth,
+            height: double.infinity,
+            child: _wrapWithModalClose(sheetContext, child),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (_, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(1, 0),
+        end: Offset.zero,
+      ).animate(
+        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      ),
+      child: child,
+    ),
+  );
 }

@@ -10,6 +10,7 @@ import 'package:shortid/shortid.dart';
 
 import '../../../models/component_behavior.dart';
 import '../../../models/datasources/datasource_config.dart';
+import '../../../models/editor_page_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
@@ -161,6 +162,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool _stateMaintainSize = false;
   String? _selectedProviderId;
   DatasourceActionDraft _datasourceDraft = DatasourceActionSettings.empty;
+  String? _pdfPageId;
+  String? _pdfPageName;
+  PdfOutputMode _pdfOutputMode = PdfOutputMode.exportDialog;
+  final _pdfFileNameController = TextEditingController();
 
   @override
   void initState() {
@@ -189,6 +194,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     _customPathController.dispose();
     _durationController.dispose();
     _tooltipMessage.dispose();
+    _pdfFileNameController.dispose();
     super.dispose();
   }
 
@@ -214,6 +220,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool get _isSearchProvider =>
       _selectedCatalogItem.actionType == 'searchProvider';
   bool get _isDatasource => _selectedCatalogItem.actionType == 'datasource';
+  bool get _isGeneratePdf => _selectedCatalogItem.actionType == 'generatePdf';
 
   DatasourceConfig? get _selectedDatasource {
     final id = _datasourceDraft.datasourceId;
@@ -301,6 +308,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           ? _selectedProviderId != null
           : _isDatasource
           ? _datasourceAction != null
+          : _isGeneratePdf
+          ? true
           : _isBindState
           ? _stateBinding != null
           : _isZoneSize
@@ -341,6 +350,15 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ? SearchProviderAction(providerId: _selectedProviderId!)
         : _isDatasource
         ? _datasourceAction!
+        : _isGeneratePdf
+        ? GeneratePdfAction(
+            pageId: _pdfPageId,
+            pageName: _pdfPageName,
+            fileName: _pdfFileNameController.text.trim().isEmpty
+                ? null
+                : _pdfFileNameController.text.trim(),
+            outputMode: _pdfOutputMode,
+          )
         : _isBindState
         ? StateBindingAction(
             state: _boundState,
@@ -721,6 +739,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     if (_isTooltip) return _buildTooltipSettings(context);
     if (_isSearchProvider) return _buildSearchProviderSettings();
     if (_isDatasource) return _buildDatasourceSettings();
+    if (_isGeneratePdf) return _buildGeneratePdfSettings(context);
     if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
@@ -952,6 +971,29 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                       label: 'Commande',
                       value: _datasourceCommandSummary,
                     ),
+                  ] else if (_isGeneratePdf) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.description_outlined,
+                      label: 'Page A4 cible',
+                      value: _pdfPageName ?? _pdfPageId ?? 'Page A4 courante',
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.picture_as_pdf_outlined,
+                      label: 'Mode de sortie',
+                      value: _pdfOutputMode.label,
+                    ),
+                    if (_pdfFileNameController.text.trim().isNotEmpty) ...[
+                      const Divider(height: 16),
+                      _summaryRow(
+                        context,
+                        icon: Icons.insert_drive_file_outlined,
+                        label: 'Fichier',
+                        value: _pdfFileNameController.text.trim(),
+                      ),
+                    ],
                   ] else if (_isBindState) ...[
                     _summaryRow(
                       context,
@@ -1132,6 +1174,96 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeneratePdfSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final a4Pages = [
+      for (final page in appearance?.pageCatalog.pages ?? const <EditorPageConfig>[])
+        if (page.pageType == EditorPageType.a4Document) page,
+    ];
+    final currentValue = a4Pages.any((p) => p.id == _pdfPageId)
+        ? _pdfPageId
+        : null;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Page Document A4 cible',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String?>(
+            key: const ValueKey('behavior-pdf-page-dropdown'),
+            isExpanded: true,
+            initialValue: currentValue,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Source A4',
+            ),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('Page A4 courante (ou unique page A4)'),
+              ),
+              for (final page in a4Pages)
+                DropdownMenuItem<String?>(
+                  value: page.id,
+                  child: Text(
+                    '${page.name} (${page.path})',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (value) {
+              final page = value == null
+                  ? null
+                  : a4Pages.where((p) => p.id == value).firstOrNull;
+              setState(() {
+                _pdfPageId = value;
+                _pdfPageName = page?.name;
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Mode de sortie',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<PdfOutputMode>(
+            key: const ValueKey('behavior-pdf-output-mode'),
+            segments: [
+              for (final mode in PdfOutputMode.values)
+                ButtonSegment(value: mode, label: Text(mode.label)),
+            ],
+            selected: {_pdfOutputMode},
+            onSelectionChanged: (set) =>
+                setState(() => _pdfOutputMode = set.first),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            key: const ValueKey('behavior-pdf-filename'),
+            controller: _pdfFileNameController,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Nom de fichier PDF (optionnel)',
+              hintText: 'Laisser vide pour utiliser celui de la page A4',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
         ],
       ),
     );

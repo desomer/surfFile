@@ -10,6 +10,7 @@ enum EditorConfigKind {
   component,
   nativeComponent,
   scaffoldPage,
+  a4Page,
   value,
   action,
   indicator,
@@ -33,6 +34,7 @@ class EditorConfigRef {
     : kind = EditorConfigKind.nativeComponent;
   const EditorConfigRef.scaffoldPage(this.id)
     : kind = EditorConfigKind.scaffoldPage;
+  const EditorConfigRef.a4Page(this.id) : kind = EditorConfigKind.a4Page;
   const EditorConfigRef.value(this.id) : kind = EditorConfigKind.value;
   const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
   const EditorConfigRef.indicator(this.id) : kind = EditorConfigKind.indicator;

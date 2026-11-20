@@ -6,6 +6,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/a4_page_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/theme/appearance.dart';
@@ -96,6 +97,8 @@ class Registry {
   final Map<String, ValueNotifier<ComponentConfig>> componentConfigById = {};
   final Map<String, ValueNotifier<ScaffoldPageConfig>> scaffoldPageConfigById =
       {};
+  final Map<String, ValueNotifier<A4PageConfig>> a4PageConfigById = {};
+  final Map<String, A4PageConfig> _a4PageDefaults = {};
   final Map<String, ValueNotifier<NativeComponentConfig>>
   nativeComponentConfigById = {};
   ValueNotifier<Appearance>? _appearance;
@@ -135,6 +138,8 @@ class Registry {
   Set<String> get instantiatedComponentIds => {
     ...superLayoutConfigById.keys,
     ...componentConfigById.keys,
+    ...scaffoldPageConfigById.keys,
+    ...a4PageConfigById.keys,
     ...nativeComponentConfigById.keys,
     ...valueConfigById.keys,
     ...actionConfigById.keys,
@@ -156,6 +161,8 @@ class Registry {
       for (final entry in componentConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in nativeComponentConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in a4PageConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in valueConfigById.entries) entry.key: entry.value.value,
       for (final entry in actionConfigById.entries)
@@ -207,6 +214,10 @@ class Registry {
     }
     for (final entry in scaffoldPageConfigById.entries.toList()) {
       scaffoldPageController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in a4PageConfigById.entries.toList()) {
+      _a4PageDefaults[entry.key] = entry.value.value;
+      a4PageController(entry.key, fallback: entry.value.value);
     }
     for (final entry in nativeComponentConfigById.entries.toList()) {
       nativeComponentController(entry.key, fallback: entry.value.value);
@@ -279,6 +290,7 @@ class Registry {
       ...containerStyleById.values,
       ...componentConfigById.values,
       ...scaffoldPageConfigById.values,
+      ...a4PageConfigById.values,
       ...nativeComponentConfigById.values,
       ...valueConfigById.values,
       ...actionConfigById.values,
@@ -461,6 +473,12 @@ class Registry {
         entry.value.value = appearance.tableComponent(
           entry.key,
           fallback: _tableDefaults[entry.key]!,
+        );
+      }
+      for (final entry in a4PageConfigById.entries) {
+        entry.value.value = appearance.a4Page(
+          entry.key,
+          fallback: _a4PageDefaults[entry.key]!,
         );
       }
     } finally {
@@ -656,6 +674,19 @@ class Registry {
     controllers: tableConfigById,
     read: (a, k, f) => a.tableComponent(k, fallback: f),
     write: (a, k, v) => a.withTableComponent(k, v),
+    validate: (v) => v.validate(),
+  );
+
+  ValueNotifier<A4PageConfig> a4PageController(
+    String id, {
+    A4PageConfig? fallback,
+  }) => _bindTypedController(
+    id,
+    fallback: fallback ?? A4PageConfig.initialForPage(id),
+    defaults: _a4PageDefaults,
+    controllers: a4PageConfigById,
+    read: (a, k, f) => a.a4Page(k, fallback: f),
+    write: (a, k, v) => a.withA4Page(k, v),
     validate: (v) => v.validate(),
   );
 

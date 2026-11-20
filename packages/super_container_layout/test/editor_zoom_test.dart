@@ -1527,6 +1527,33 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(screenRect(tester, target), initialTargetRect);
+      expect(
+        LayoutSelection.path.value,
+        ['Page', 'Corps', 'Zoom target', 'Centre', 'Second'],
+      );
+
+      // 4. When no zoom/pan reset is needed, Escape steps up the selection
+      // hierarchy (component -> zone -> layout -> empty) without re-zooming.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        LayoutSelection.path.value,
+        ['Page', 'Corps', 'Zoom target', 'Centre'],
+      );
+      expect(screenRect(tester, target), initialTargetRect);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(
+        LayoutSelection.path.value,
+        ['Page', 'Corps', 'Zoom target'],
+      );
+      expect(screenRect(tester, target), initialTargetRect);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, isEmpty);
+      expect(screenRect(tester, target), initialTargetRect);
       expect(tester.takeException(), isNull);
     },
   );

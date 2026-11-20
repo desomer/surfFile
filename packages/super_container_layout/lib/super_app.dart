@@ -24,6 +24,7 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
 import 'models/registry.dart';
+import 'models/responsive_layout_config.dart';
 
 import 'services/appearance/appearance_store.dart';
 import 'services/events/super_event_bus.dart';
@@ -42,6 +43,7 @@ import 'widgets/editing/repositories/floating_repository_shortcut.dart';
 import 'widgets/components/super_layout/layout_reset_shortcut.dart';
 import 'widgets/surfaces/neon_surface.dart';
 import 'widgets/surfaces/styled_surface.dart';
+import 'widgets/editing/overlay/editor_viewport_preview.dart';
 import 'widgets/editing/overlay/style_edit_banner.dart';
 import 'widgets/editing/slots/editor_slot.dart';
 import 'widgets/appearance/appearance_scope.dart';
@@ -130,6 +132,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   late EditorHistoryController _editorHistory;
   late JsonRepositoryStore _repositories;
   final _styleEditMode = ValueNotifier(false);
+  final _viewportPreview = ValueNotifier<ResponsiveBreakpoint?>(null);
   final _appearanceToolbarPosition = ValueNotifier<Offset?>(null);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   final _appRootBoundaryKey = GlobalKey();
@@ -145,6 +148,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _styleEditMode.addListener(_handleEditModeChanged);
     VibeDebugCapture.attachAppListener();
     VibeMountedSlotIndex.instance.registerAppRoot(_appRootBoundaryKey);
     _checkPageRouting();
@@ -393,11 +397,18 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     });
   }
 
+  void _handleEditModeChanged() {
+    if (!_styleEditMode.value && _viewportPreview.value != null) {
+      _viewportPreview.value = null;
+    }
+  }
+
   @override
   void dispose() {
     VibeMountedSlotIndex.instance.unregisterAppRoot(_appRootBoundaryKey);
     VibeDebugCapture.detachAppListener();
     WidgetsBinding.instance.removeObserver(this);
+    _styleEditMode.removeListener(_handleEditModeChanged);
     widget.registry?.unbindAppearance();
     _editorHistory.dispose();
     _appearance
@@ -405,6 +416,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       ..removeListener(_pagesChanged)
       ..dispose();
     _styleEditMode.dispose();
+    _viewportPreview.dispose();
     _appearanceToolbarPosition.dispose();
     _repositories.errors.removeListener(_repositoryFailed);
     if (widget.repositoryStore == null) _repositories.dispose();
@@ -433,11 +445,14 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                 history: _editorHistory,
                 child: EditorHistoryScope(
                   controller: _editorHistory,
-                  child: StyleEditScope(
-                    controller: _styleEditMode,
-                    child: ValueListenableBuilder<Appearance>(
-                      valueListenable: _appearance,
-                      builder: (context, value, _) => _buildApp(value),
+                  child: EditorViewportPreviewScope(
+                    controller: _viewportPreview,
+                    child: StyleEditScope(
+                      controller: _styleEditMode,
+                      child: ValueListenableBuilder<Appearance>(
+                        valueListenable: _appearance,
+                        builder: (context, value, _) => _buildApp(value),
+                      ),
                     ),
                   ),
                 ),
@@ -469,9 +484,18 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       builder: (context, child) => MaterialCompatibilityBridge(
         child: _buildShell(
           context,
-          RepaintBoundary(
-            key: _appRootBoundaryKey,
-            child: _buildContent(child!),
+          ValueListenableBuilder<ResponsiveBreakpoint?>(
+            valueListenable: _viewportPreview,
+            builder: (context, previewBp, content) => EditorViewportPreviewFrame(
+              breakpoint: previewBp,
+              breakpointsConfig: value.responsiveLayout.breakpoints,
+              onReset: () => _viewportPreview.value = null,
+              child: content!,
+            ),
+            child: RepaintBoundary(
+              key: _appRootBoundaryKey,
+              child: _buildContent(child!),
+            ),
           ),
           value,
           router.routerDelegate.navigatorKey,

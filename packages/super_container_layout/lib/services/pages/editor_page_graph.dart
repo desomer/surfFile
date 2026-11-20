@@ -6,6 +6,7 @@ library;
 
 import 'package:shortid/shortid.dart';
 
+import '../../models/a4_page_config.dart';
 import '../../models/component_behavior.dart';
 import '../../models/component_config.dart';
 import '../../models/editor_page_config.dart';
@@ -153,6 +154,7 @@ abstract final class EditorPageGraph {
         page != null ||
         registryType == 'Page' ||
         config is ScaffoldPageConfig ||
+        config is A4PageConfig ||
         (componentId == 'root' && config is NativeComponentConfig);
 
     String? inferred(String id) => switch (snapshot.components[id]) {
@@ -399,6 +401,11 @@ abstract final class EditorPageGraph {
               id: rootId,
               name: page?.name ?? componentId,
               path: page?.path ?? '/export',
+              pageType:
+                  page?.pageType ??
+                  (config is A4PageConfig
+                      ? EditorPageType.a4Document
+                      : EditorPageType.standard),
             ),
           ],
         ),
@@ -410,6 +417,7 @@ abstract final class EditorPageGraph {
   static List<EditorConfigRef> _roots(String pageId) => [
     EditorConfigRef.nativeComponent(pageId),
     EditorConfigRef.scaffoldPage(pageId),
+    EditorConfigRef.a4Page(pageId),
   ];
 
   /// Copies the graph of [sourcePageId] under [targetPageId] with new,
@@ -825,6 +833,7 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.scaffoldPage => appearance.tryComponent<ScaffoldPageConfig>(
     ref.id,
   ),
+  EditorConfigKind.a4Page => appearance.tryComponent<A4PageConfig>(ref.id),
   EditorConfigKind.value => appearance.tryComponent<SuperValueConfig>(ref.id),
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
   EditorConfigKind.indicator => appearance.tryComponent<SuperIndicatorConfig>(
@@ -849,6 +858,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.component => value is ComponentConfig,
   EditorConfigKind.nativeComponent => value is NativeComponentConfig,
   EditorConfigKind.scaffoldPage => value is ScaffoldPageConfig,
+  EditorConfigKind.a4Page => value is A4PageConfig,
   EditorConfigKind.value => value is SuperValueConfig,
   EditorConfigKind.action => value is SuperActionConfig,
   EditorConfigKind.indicator => value is SuperIndicatorConfig,
@@ -867,6 +877,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       SuperLayoutConfig() => [EditorConfigRef.layout(entry.key)],
       NativeComponentConfig() => [EditorConfigRef.nativeComponent(entry.key)],
       ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(entry.key)],
+      A4PageConfig() => [EditorConfigRef.a4Page(entry.key)],
       SuperValueConfig() => [EditorConfigRef.value(entry.key)],
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
       SuperIndicatorConfig() => [EditorConfigRef.indicator(entry.key)],

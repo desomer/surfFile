@@ -20,6 +20,7 @@ import '../models/super_separator_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/super_conditional_config.dart';
 import '../models/editor_page_config.dart';
+import '../models/responsive_layout_config.dart';
 import 'appearance.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
@@ -65,6 +66,7 @@ class DefaultAppearance extends Appearance {
     super.behaviors,
     super.usages,
     super.pageCatalog,
+    super.responsiveLayout,
     this.cardHeight = defaultCardHeight,
     this.cardWidth = defaultCardWidth,
     this.rowHeight = defaultRowHeight,
@@ -172,6 +174,10 @@ class DefaultAppearance extends Appearance {
       copyWith(pageCatalog: value);
 
   @override
+  DefaultAppearance withResponsiveLayout(ResponsiveLayoutConfig value) =>
+      copyWith(responsiveLayout: value);
+
+  @override
   DefaultAppearance resetLayouts() => copyWith(
     components: const {},
     usages: const {},
@@ -186,6 +192,7 @@ class DefaultAppearance extends Appearance {
     Map<String, List<ComponentBehavior>>? behaviors,
     Map<String, ComponentUsage>? usages,
     EditorPageCatalog? pageCatalog,
+    ResponsiveLayoutConfig? responsiveLayout,
     ThemeMode? mode,
     Color? accent,
     double? backgroundOpacity,
@@ -218,6 +225,7 @@ class DefaultAppearance extends Appearance {
       behaviors: behaviors ?? this.behaviors,
       usages: usages ?? this.usages,
       pageCatalog: pageCatalog ?? this.pageCatalog,
+      responsiveLayout: responsiveLayout ?? this.responsiveLayout,
       mode: mode ?? this.mode,
       accent: accent ?? this.accent,
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,

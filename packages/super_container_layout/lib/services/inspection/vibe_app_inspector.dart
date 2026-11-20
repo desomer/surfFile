@@ -308,6 +308,12 @@ class VibeAppInspector {
         : null;
     final scope = readScope?.call();
     final activePage = _resolveActivePage(appearance);
+    final effectiveResponsive = activePage != null
+        ? appearance.effectiveResponsiveLayoutForPage(activePage.id)
+        : appearance.responsiveLayout;
+    final resolvedResponsive = media != null
+        ? effectiveResponsive.resolveForWidth(media.size.width)
+        : null;
 
     String? currentLocation;
     try {
@@ -341,6 +347,15 @@ class VibeAppInspector {
           },
         'homePageId': appearance.pageCatalog.homePageId,
         'pageCount': appearance.pageCatalog.pages.length,
+      },
+      'responsive': <String, Object?>{
+        'containerMode': effectiveResponsive.containerMode.name,
+        if (resolvedResponsive != null) ...<String, Object?>{
+          'breakpoint': resolvedResponsive.breakpoint.name,
+          'gutter': _round2(resolvedResponsive.gutter),
+          if (resolvedResponsive.maxWidth != null)
+            'maxWidth': _round2(resolvedResponsive.maxWidth!),
+        },
       },
       'editMode': ?editMode,
       if (scope != null)

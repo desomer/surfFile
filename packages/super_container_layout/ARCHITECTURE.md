@@ -184,6 +184,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/component_usage.dart` | `ComponentUsageKind`, `ComponentUsage` : usage déclaré d'une instance (8 types, saisi dans Renommer ou proposé par l'IA pour les composants sans liaison) avec clé de traduction ARB obligatoire pour `explanation`, validation stricte et suggestion lowerCamelCase depuis le nom. |
 | `models/behaviours/datasource_action.dart` | `DatasourceAction` : lance une commande de datasource (recherche, pagination, tri, CRUD) au clic ou double-clic (`datasource`). |
 | `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` (`click`, `doubleClick`). |
+| `models/behaviours/generate_pdf_action.dart` | `GeneratePdfAction`, `PdfOutputMode` : génération d'un document PDF hybride depuis une page A4 (`generatePdf`, `click` / `doubleClick`). |
 | `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
 | `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement (`searchProvider`). |
 | `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`binding`). |
@@ -202,7 +203,13 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/component_tooltip.dart` | `ComponentTooltip` : info-bulle fixe ou liée pour tout composant identifié, box/sliver, priorité, déduplication et conservation des configurations explicites. |
 | `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. `referencedBindings` liste toutes les liaisons d'une configuration (états compris) ; non vide = composant lié. |
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |
-| `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageCatalog` : configuration d'une page routée (id, nom, chemin, `scaffoldId`, `layoutId`) et catalogue complet des pages. |
+| `models/a4_page_config.dart` | `A4PageConfig`, `A4SheetConfig`, `A4Orientation` : configuration persistée d'une page document A4 multi-feuilles (orientation, marges, en-tête/pied répétés, guides et nom de fichier PDF). |
+| `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageType`, `EditorPageCatalog` : configuration d'une page routée (`standard` ou `a4Document`) et catalogue complet des pages. |
+| `services/pdf/a4_pdf_generator.dart` | `A4PdfGenerator`, `A4PdfResult` : orchestration de la génération PDF multi-feuilles au format A4. |
+| `services/pdf/pdf_component_translator.dart` | `PdfComponentTranslator` : traduction vectorielle des composants GenUI (`SuperLayout`, `Card`, `SuperValue`, `SuperTable`, `SuperListView`, etc.) vers `package:pdf`. |
+| `services/pdf/pdf_font_resolver.dart` | `PdfFontResolver` : chargement et cache des polices TrueType embarquées pour le rendu vectoriel PDF. |
+| `services/pdf/pdf_raster_fallback.dart` | `PdfRasterFallback` : capture PNG haute résolution des extensions (`SuperChart`, `SuperCode`) et effets visuels complexes. |
+| `widgets/components/a4_document_page.dart` | `A4DocumentPage` : éditeur et moteur d'affichage WYSIWYG multi-feuilles A4 sous `EditorZoom`. |
 | `models/grid_layout_config.dart` | `GridLayoutConfig`, `GridTrackSize`, `GridPlacement` : configuration du mode Grille CSS-like (pistes `fr`/`px`/`auto`, placement ligne/colonne/span). |
 | `models/json_syntax.dart` | `JsonColor`, `JsonComponentType`, `JsonDimension`, `JsonFontWeight`, `JsonSize`, `JsonPlacementEntry` : parseurs et formateurs compacts "AI-friendly". |
 | `models/json_numbers.dart` | `JsonNumbers` : arrondi à deux décimales et copie normalisée des documents JSON UI, sans mutation des sources. |

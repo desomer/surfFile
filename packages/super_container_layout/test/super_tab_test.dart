@@ -1381,4 +1381,132 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'SuperTab labelColor and unselectedLabelColor apply to SuperAction tab text and icon while respecting explicit states.selected and filled contrast',
+    (tester) async {
+      Color? resolvedTextColor(String actionId) {
+        final richText = tester.widget<RichText>(
+          find.descendant(
+            of: find.byKey(ValueKey('super-action-label-$actionId')),
+            matching: find.byType(RichText),
+          ),
+        );
+        return richText.text.style?.color;
+      }
+
+      Color? resolvedIconColor(String actionId) {
+        final richText = tester.widget<RichText>(
+          find.descendant(
+            of: find.byKey(ValueKey('super-action-icon-$actionId')),
+            matching: find.byType(RichText),
+          ),
+        );
+        return richText.text.style?.color;
+      }
+
+      const activeColor = Color(0xFF10B981);
+      const inactiveColor = Color(0xFF64748B);
+      const overrideTextColor = Color(0xFFF59E0B);
+      const overrideIconColor = Color(0xFFEF4444);
+
+      final registry = Registry()..bootstrap();
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'tab-colors',
+            config: SuperTabConfig(
+              labelColor: activeColor,
+              unselectedLabelColor: inactiveColor,
+              placements: const {
+                'tabs': ['tab-c1', 'tab-c2', 'tab-c3'],
+                'content:tab-c1': ['vc-1'],
+                'content:tab-c2': ['vc-2'],
+                'content:tab-c3': ['vc-3'],
+              },
+            ),
+            tabs: [
+              const SuperAction(
+                id: 'tab-c1',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  label: 'Accueil',
+                  icon: 'home',
+                ),
+              ),
+              SuperAction(
+                id: 'tab-c2',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  label: 'Réglages',
+                  icon: 'settings',
+                  states: ActionConfigStates(
+                    selected: ActionConfigOverride(
+                      config: const SuperActionConfig(
+                        color: overrideTextColor,
+                        iconColor: overrideIconColor,
+                      ),
+                      properties: const {
+                        ActionStateProperty.color,
+                        ActionStateProperty.iconColor,
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              const SuperAction(
+                id: 'tab-c3',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  variant: SuperActionVariant.filled,
+                  label: 'Plein',
+                  icon: 'star',
+                ),
+              ),
+            ],
+            slots: [
+              BuilderSlot(
+                id: 'vc-1',
+                label: 'V1',
+                builder: (_) => const Text('Vue 1'),
+              ),
+              BuilderSlot(
+                id: 'vc-2',
+                label: 'V2',
+                builder: (_) => const Text('Vue 2'),
+              ),
+              BuilderSlot(
+                id: 'vc-3',
+                label: 'V3',
+                builder: (_) => const Text('Vue 3'),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      final scheme = Theme.of(
+        tester.element(find.byType(SuperTab)),
+      ).colorScheme;
+
+      // Onglet 1 sélectionné -> hérite de labelColor ; onglet 2 -> unselectedLabelColor ; onglet 3 (filled) -> onPrimary
+      expect(resolvedTextColor('tab-c1'), activeColor);
+      expect(resolvedIconColor('tab-c1'), activeColor);
+      expect(resolvedTextColor('tab-c2'), inactiveColor);
+      expect(resolvedIconColor('tab-c2'), inactiveColor);
+      expect(resolvedTextColor('tab-c3'), scheme.onPrimary);
+      expect(resolvedIconColor('tab-c3'), scheme.onPrimary);
+
+      // Sélection de l'onglet 2 -> tab-c1 passe à unselectedLabelColor, tab-c2 applique states.selected
+      await tester.tap(find.text('Réglages'));
+      await tester.pumpAndSettle();
+
+      expect(resolvedTextColor('tab-c1'), inactiveColor);
+      expect(resolvedIconColor('tab-c1'), inactiveColor);
+      expect(resolvedTextColor('tab-c2'), overrideTextColor);
+      expect(resolvedIconColor('tab-c2'), overrideIconColor);
+    },
+  );
 }

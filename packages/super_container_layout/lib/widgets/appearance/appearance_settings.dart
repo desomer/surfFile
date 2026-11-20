@@ -7,10 +7,12 @@ library;
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/responsive_layout_config.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../theme/appearance.dart';
 import '../../theme/appearance_slot.dart';
 import '../../theme/default_appearance.dart';
+import '../editing/components/shared/editor_number_field.dart';
 import 'appearance_style_section.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/dialogs/editor_dialog.dart';
@@ -132,6 +134,12 @@ class AppearanceSettings extends StatelessWidget {
           const SizedBox(height: 16),
           _window(context),
         ]),
+      ),
+      AppearanceSettingsSection(
+        id: 'responsive',
+        label: 'Conteneur & Breakpoints',
+        icon: Icons.aspect_ratio_outlined,
+        builder: _responsiveLayout,
       ),
       if (a is DefaultAppearance) ...[
         AppearanceSettingsSection(
@@ -403,6 +411,172 @@ Widget _scrollFade(BuildContext context) {
           c.value = _defaultAppearance(context)
               .copyWith(scrollFadeEnabled: true, scrollFadeExtent: 28),
       child: const Text('Réinitialiser le fondu'),
+    ),
+  ]);
+}
+
+Widget _responsiveLayout(BuildContext context) {
+  final appearance = AppearanceScope.of(context);
+  final controller = AppearanceScope.controllerOf(context)!;
+  final config = appearance.responsiveLayout;
+  final scheme = Theme.of(context).colorScheme;
+
+  void update(ResponsiveLayoutConfig next) {
+    next.validate();
+    controller.value = controller.value.withResponsiveLayout(next);
+  }
+
+  Widget numberRow({
+    required Key fieldKey,
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        Expanded(child: Text(label)),
+        EditorNumberField(
+          key: fieldKey,
+          label: label,
+          value: value,
+          min: min,
+          max: max,
+          integer: true,
+          unit: 'px',
+          onChanged: onChanged,
+        ),
+      ],
+    ),
+  );
+
+  return _controls([
+    SegmentedButton<PageContainerMode>(
+      key: const ValueKey('responsive-container-mode'),
+      segments: const [
+        ButtonSegment(
+          value: PageContainerMode.fullPage,
+          label: Text('Pleine page'),
+          icon: Icon(Icons.fullscreen),
+        ),
+        ButtonSegment(
+          value: PageContainerMode.constrained,
+          label: Text('Conteneur centré'),
+          icon: Icon(Icons.view_column_outlined),
+        ),
+      ],
+      selected: {config.containerMode},
+      onSelectionChanged: (modes) =>
+          update(config.copyWith(containerMode: modes.single)),
+    ),
+    const SizedBox(height: 8),
+    Text(
+      config.containerMode.description,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+    ),
+    const SizedBox(height: 16),
+    if (config.containerMode == PageContainerMode.constrained) ...[
+      Text(
+        'Conteneur & Gutters du body',
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
+      const SizedBox(height: 8),
+      numberRow(
+        fieldKey: const ValueKey('responsive-max-width'),
+        label: 'Largeur maximale (max-width)',
+        value: config.maxWidth,
+        min: ResponsiveLayoutConfig.minMaxWidth,
+        max: ResponsiveLayoutConfig.maxMaxWidth,
+        onChanged: (v) => update(config.copyWith(maxWidth: v)),
+      ),
+      numberRow(
+        fieldKey: const ValueKey('responsive-gutter-mobile'),
+        label: 'Gutter Mobile / Tablette',
+        value: config.gutters.mobile,
+        min: 0,
+        max: ResponsiveGuttersConfig.maxGutter,
+        onChanged: (v) =>
+            update(config.copyWith(gutters: config.gutters.copyWith(mobile: v))),
+      ),
+      numberRow(
+        fieldKey: const ValueKey('responsive-gutter-desktop'),
+        label: 'Gutter Desktop / Large Desktop',
+        value: config.gutters.desktop,
+        min: 0,
+        max: ResponsiveGuttersConfig.maxGutter,
+        onChanged: (v) => update(
+          config.copyWith(gutters: config.gutters.copyWith(desktop: v)),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ],
+    Text(
+      'Seuils des Breakpoints',
+      style: Theme.of(context).textTheme.titleSmall,
+    ),
+    const SizedBox(height: 8),
+    numberRow(
+      fieldKey: const ValueKey('responsive-bp-mobile'),
+      label: 'Mobile (aperçu)',
+      value: config.breakpoints.mobileWidth,
+      min: 200,
+      max: config.breakpoints.tabletMinWidth - 1,
+      onChanged: (v) => update(
+        config.copyWith(
+          breakpoints: config.breakpoints.copyWith(mobileWidth: v),
+        ),
+      ),
+    ),
+    numberRow(
+      fieldKey: const ValueKey('responsive-bp-tablet'),
+      label: 'Tablette (seuil min)',
+      value: config.breakpoints.tabletMinWidth,
+      min: config.breakpoints.mobileWidth + 1,
+      max: config.breakpoints.desktopMinWidth - 1,
+      onChanged: (v) => update(
+        config.copyWith(
+          breakpoints: config.breakpoints.copyWith(tabletMinWidth: v),
+        ),
+      ),
+    ),
+    numberRow(
+      fieldKey: const ValueKey('responsive-bp-desktop'),
+      label: 'Desktop (seuil min)',
+      value: config.breakpoints.desktopMinWidth,
+      min: config.breakpoints.tabletMinWidth + 1,
+      max: config.breakpoints.largeDesktopMinWidth - 1,
+      onChanged: (v) => update(
+        config.copyWith(
+          breakpoints: config.breakpoints.copyWith(desktopMinWidth: v),
+        ),
+      ),
+    ),
+    numberRow(
+      fieldKey: const ValueKey('responsive-bp-large-desktop'),
+      label: 'Large Desktop (seuil min)',
+      value: config.breakpoints.largeDesktopMinWidth,
+      min: config.breakpoints.desktopMinWidth + 1,
+      max: 10000,
+      onChanged: (v) => update(
+        config.copyWith(
+          breakpoints: config.breakpoints.copyWith(largeDesktopMinWidth: v),
+        ),
+      ),
+    ),
+    const SizedBox(height: 12),
+    Align(
+      alignment: Alignment.centerRight,
+      child: TextButton(
+        key: const ValueKey('responsive-reset'),
+        onPressed: config.isDefault
+            ? null
+            : () => update(const ResponsiveLayoutConfig()),
+        child: const Text('Réinitialiser'),
+      ),
     ),
   ]);
 }

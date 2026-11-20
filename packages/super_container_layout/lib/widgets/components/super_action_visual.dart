@@ -377,14 +377,15 @@ Widget buildSuperActionTabVisual({
     SuperActionVariant.text ||
     SuperActionVariant.icon => Colors.transparent,
   };
-  final defaultFg = switch (variant) {
+  final Color? defaultFg = switch (variant) {
     SuperActionVariant.filled || SuperActionVariant.surface => scheme.onPrimary,
     SuperActionVariant.tonal => scheme.onSecondaryContainer,
-    SuperActionVariant.elevated ||
-    SuperActionVariant.outlined => scheme.onSurface,
-    SuperActionVariant.text =>
-      isSelected ? scheme.onSurface : scheme.onSurfaceVariant,
-    SuperActionVariant.icon => scheme.onSurfaceVariant,
+    SuperActionVariant.elevated => scheme.onSurface,
+    // Laisse les variantes transparentes hériter de DefaultTextStyle/IconTheme
+    // propagés par TabBar (labelColor / unselectedLabelColor) sauf fond propre.
+    SuperActionVariant.outlined ||
+    SuperActionVariant.text ||
+    SuperActionVariant.icon => null,
   };
   final rawBg = config.backgroundColor ?? config.style.color;
   final contrastingBgFg =
@@ -424,7 +425,9 @@ Widget buildSuperActionTabVisual({
   final textWidget = Text(
     config.label,
     key: ValueKey('super-action-label-$componentId'),
-    style: typographyOnlyStyle.copyWith(color: fg),
+    style: fg != null
+        ? typographyOnlyStyle.copyWith(color: fg)
+        : typographyOnlyStyle,
     textAlign: config.textAlign,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,

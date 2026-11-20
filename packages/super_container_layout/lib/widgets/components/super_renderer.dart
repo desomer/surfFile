@@ -4,10 +4,12 @@ library;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/a4_page_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../models/super_renderer_config.dart';
+import 'a4_document_page.dart';
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../services/appearance/appearance_transfer.dart';
@@ -268,9 +270,17 @@ class _RendererDocumentState extends State<_RendererDocument> {
         final config = appearance.components[id];
         final isPage =
             config is ScaffoldPageConfig ||
+            config is A4PageConfig ||
             appearance.pageCatalog.pages.any((page) => page.id == id) ||
             id == 'root';
         if (isPage) {
+          if (config is A4PageConfig) {
+            return A4DocumentPage(
+              key: ValueKey(id),
+              id: id,
+              pageConfig: config,
+            );
+          }
           return SuperPage(
             key: ValueKey(id),
             id: id,

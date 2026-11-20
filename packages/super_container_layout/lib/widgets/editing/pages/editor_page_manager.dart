@@ -6,8 +6,10 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
+import '../../../models/a4_page_config.dart';
 import '../../../models/editor_page_config.dart';
 import '../../../models/registry.dart';
+import '../../../models/responsive_layout_config.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../theme/appearance.dart';
@@ -94,6 +96,10 @@ class _PageManagerState extends State<_PageManager> {
               : duplicate
               ? '/copie${page.path}'
               : page.path,
+          pageType: page?.pageType ?? EditorPageType.standard,
+          modalWidth: page?.modalWidth,
+          modalHeight: page?.modalHeight,
+          layoutOverride: page?.layoutOverride,
           defaultParameters: page?.defaultParameters ?? const {},
         ),
       ),
@@ -104,12 +110,32 @@ class _PageManagerState extends State<_PageManager> {
   Future<void> _add() async {
     final page = await _details();
     if (page == null || !mounted) return;
+    if (page.pageType == EditorPageType.a4Document) {
+      _draft = _draft.withA4Page(
+        page.id,
+        A4PageConfig.initialForPage(page.id),
+      );
+    }
     _catalogChanged(_catalog.copyWith(pages: [..._catalog.pages, page]));
   }
 
   Future<void> _edit(EditorPageConfig page) async {
     final result = await _details(page: page);
     if (result == null || !mounted) return;
+    if (result.pageType.usesScaffold != page.pageType.usesScaffold) {
+      final removed = EditorPageGraph.removal(
+        appearance: _draft,
+        registry: widget.registry,
+        pageId: page.id,
+      );
+      _draft = removed.appearance;
+      if (result.pageType == EditorPageType.a4Document) {
+        _draft = _draft.withA4Page(
+          result.id,
+          A4PageConfig.initialForPage(result.id),
+        );
+      }
+    }
     _catalogChanged(
       _catalog.copyWith(
         pages: [
@@ -432,9 +458,35 @@ class _PageManagerState extends State<_PageManager> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            page.name,
-                            style: Theme.of(context).textTheme.titleMedium,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  page.name,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
+                                ),
+                              ),
+                              Chip(
+                                label: Text(page.pageType.label),
+                                avatar: Icon(page.pageType.icon, size: 16),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              if (page.layoutOverride case final override?
+                                  when !override.isEmpty) ...[
+                                const SizedBox(width: 6),
+                                Chip(
+                                  label: Text(
+                                    override.containerMode ==
+                                            PageContainerMode.fullPage
+                                        ? 'Pleine page'
+                                        : 'Conteneur ${(override.maxWidth ?? ResponsiveLayoutConfig.defaultMaxWidth).round()}px',
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ],
                           ),
                           Text(page.path),
                           Wrap(
@@ -528,6 +580,24 @@ class _PageDetailsState extends State<_PageDetails> {
   final _form = GlobalKey<FormState>();
   late final _name = TextEditingController(text: widget.page.name);
   late final _path = TextEditingController(text: widget.page.path);
+  late final _modalWidth = TextEditingController(
+    text: widget.page.modalWidth?.round().toString() ?? '',
+  );
+  late final _modalHeight = TextEditingController(
+    text: widget.page.modalHeight?.round().toString() ?? '',
+  );
+  late final _overrideMaxWidth = TextEditingController(
+    text: widget.page.layoutOverride?.maxWidth?.round().toString() ?? '',
+  );
+  late final _overrideMobileGutter = TextEditingController(
+    text: widget.page.layoutOverride?.mobileGutter?.round().toString() ?? '',
+  );
+  late final _overrideDesktopGutter = TextEditingController(
+    text: widget.page.layoutOverride?.desktopGutter?.round().toString() ?? '',
+  );
+  late EditorPageType _pageType = widget.page.pageType;
+  late PageContainerMode? _overrideMode =
+      widget.page.layoutOverride?.containerMode;
   final Map<String, TextEditingController> _parameters = {};
   String? _error;
 
@@ -535,21 +605,78 @@ class _PageDetailsState extends State<_PageDetails> {
   void dispose() {
     _name.dispose();
     _path.dispose();
+    _modalWidth.dispose();
+    _modalHeight.dispose();
+    _overrideMaxWidth.dispose();
+    _overrideMobileGutter.dispose();
+    _overrideDesktopGutter.dispose();
     for (final field in _parameters.values) {
       field.dispose();
     }
     super.dispose();
   }
 
-  EditorPageConfig _page() => EditorPageConfig(
-    id: widget.page.id,
-    name: _name.text.trim(),
-    path: _path.text.trim(),
-    defaultParameters: {
-      for (final entry in _parameters.entries)
-        if (entry.value.text.isNotEmpty) entry.key: entry.value.text,
-    },
-  );
+  double? _parseOptionalDimension(
+    TextEditingController controller, {
+    String label = 'Dimension modale',
+  }) {
+    final raw = controller.text.trim();
+    if (raw.isEmpty) return null;
+    final parsed = double.tryParse(raw);
+    if (parsed == null) {
+      throw FormatException('$label invalide (nombre requis).');
+    }
+    return parsed;
+  }
+
+  ResponsiveLayoutOverride? _buildLayoutOverride() {
+    if (_pageType != EditorPageType.standard) return null;
+    final forceFull = _overrideMode == PageContainerMode.fullPage;
+    final override = ResponsiveLayoutOverride(
+      containerMode: _overrideMode,
+      maxWidth: forceFull
+          ? null
+          : _parseOptionalDimension(
+              _overrideMaxWidth,
+              label: 'Largeur maximale',
+            ),
+      mobileGutter: forceFull
+          ? null
+          : _parseOptionalDimension(
+              _overrideMobileGutter,
+              label: 'Gutter mobile',
+            ),
+      desktopGutter: forceFull
+          ? null
+          : _parseOptionalDimension(
+              _overrideDesktopGutter,
+              label: 'Gutter desktop',
+            ),
+    );
+    return override.isEmpty ? null : override;
+  }
+
+  EditorPageConfig _page() {
+    final showWidth =
+        _pageType == EditorPageType.dialog ||
+        _pageType == EditorPageType.sideSheet;
+    final showHeight =
+        _pageType == EditorPageType.dialog ||
+        _pageType == EditorPageType.bottomSheet;
+    return EditorPageConfig(
+      id: widget.page.id,
+      name: _name.text.trim(),
+      path: _path.text.trim(),
+      pageType: _pageType,
+      modalWidth: showWidth ? _parseOptionalDimension(_modalWidth) : null,
+      modalHeight: showHeight ? _parseOptionalDimension(_modalHeight) : null,
+      layoutOverride: _buildLayoutOverride(),
+      defaultParameters: {
+        for (final entry in _parameters.entries)
+          if (entry.value.text.isNotEmpty) entry.key: entry.value.text,
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -602,6 +729,175 @@ class _PageDetailsState extends State<_PageDetails> {
                   validator: (value) =>
                       (value ?? '').isEmpty ? 'Chemin requis.' : null,
                 ),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Type de page',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  key: const ValueKey('editor-page-type'),
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final type in EditorPageType.values)
+                      ChoiceChip(
+                        key: ValueKey('editor-page-type-${type.name}'),
+                        avatar: Icon(type.icon, size: 18),
+                        label: Text(type.label),
+                        tooltip: type.description,
+                        selected: _pageType == type,
+                        onSelected: (selected) {
+                          if (selected) setState(() => _pageType = type);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _pageType.description,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                if (widget.originalId != null &&
+                    _pageType.usesScaffold !=
+                        widget.page.pageType.usesScaffold) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Attention : passer entre Document A4 et un type basé sur '
+                    'Scaffold réinitialise la structure racine de la page.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                if (_pageType.isModal) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (_pageType == EditorPageType.dialog ||
+                          _pageType == EditorPageType.sideSheet)
+                        Expanded(
+                          child: TextFormField(
+                            key: const ValueKey('editor-page-modal-width'),
+                            controller: _modalWidth,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Largeur (px)',
+                              hintText: _pageType == EditorPageType.dialog
+                                  ? '640'
+                                  : '420',
+                            ),
+                          ),
+                        ),
+                      if (_pageType == EditorPageType.dialog)
+                        const SizedBox(width: 12),
+                      if (_pageType == EditorPageType.dialog ||
+                          _pageType == EditorPageType.bottomSheet)
+                        Expanded(
+                          child: TextFormField(
+                            key: const ValueKey('editor-page-modal-height'),
+                            controller: _modalHeight,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Hauteur (px)',
+                              hintText: _pageType == EditorPageType.dialog
+                                  ? '520'
+                                  : 'Auto',
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+                if (_pageType == EditorPageType.standard) ...[
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Conteneur & Gutters (body)',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    key: const ValueKey('editor-page-container-mode'),
+                    segments: const [
+                      ButtonSegment(
+                        value: 'inherit',
+                        label: Text('Hériter'),
+                      ),
+                      ButtonSegment(
+                        value: 'fullPage',
+                        label: Text('Pleine page'),
+                      ),
+                      ButtonSegment(
+                        value: 'constrained',
+                        label: Text('Centré'),
+                      ),
+                    ],
+                    selected: {_overrideMode?.name ?? 'inherit'},
+                    onSelectionChanged: (modes) => setState(() {
+                      final selected = modes.single;
+                      _overrideMode = selected == 'inherit'
+                          ? null
+                          : PageContainerMode.fromJson(selected);
+                      _error = null;
+                    }),
+                  ),
+                  if (_overrideMode != PageContainerMode.fullPage) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            key: const ValueKey('editor-page-max-width'),
+                            controller: _overrideMaxWidth,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Max-width (px)',
+                              hintText: '1440',
+                            ),
+                            onChanged: (_) => setState(() => _error = null),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            key: const ValueKey('editor-page-gutter-mobile'),
+                            controller: _overrideMobileGutter,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Gutter mobile',
+                              hintText: '24',
+                            ),
+                            onChanged: (_) => setState(() => _error = null),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            key: const ValueKey('editor-page-gutter-desktop'),
+                            controller: _overrideDesktopGutter,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Gutter desktop',
+                              hintText: '32',
+                            ),
+                            onChanged: (_) => setState(() => _error = null),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
                 for (final key in keys)
                   TextFormField(
                     controller: _parameters[key],

@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'theme_color.dart';
 
+import '../models/a4_page_config.dart';
 import '../models/component_config.dart';
 import '../models/component_behavior.dart';
 import '../models/component_usage.dart';
@@ -26,6 +27,7 @@ import '../models/super_tab_config.dart';
 import '../models/super_table_config.dart';
 import '../models/super_tree_view_config.dart';
 import '../models/editor_page_config.dart';
+import '../models/responsive_layout_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'neon_style.dart';
@@ -61,6 +63,7 @@ class Appearance {
     Map<String, List<ComponentBehavior>> behaviors = const {},
     Map<String, ComponentUsage> usages = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
+    this.responsiveLayout = const ResponsiveLayoutConfig(),
   }) : styles = Map.unmodifiable(styles),
        components = Map.unmodifiable(_mergeComponents(components, layouts)),
        behaviors = Map.unmodifiable({
@@ -84,6 +87,7 @@ class Appearance {
     required this.behaviors,
     required this.usages,
     required this.pageCatalog,
+    required this.responsiveLayout,
   }) {
     _validateInvariants();
   }
@@ -105,6 +109,7 @@ class Appearance {
         'bindingDebounceMs',
       );
     }
+    responsiveLayout.validate();
   }
 
   static SuperLayoutConfig _freezeLayout(SuperLayoutConfig l) => l.copyWith(
@@ -173,6 +178,20 @@ class Appearance {
   final Map<String, ComponentUsage> usages;
   final EditorPageCatalog pageCatalog;
 
+  /// Configuration responsive globale (mode conteneur, max-width, gutters, breakpoints).
+  final ResponsiveLayoutConfig responsiveLayout;
+
+  /// Résout la configuration responsive effective pour la page [pageId].
+  ResponsiveLayoutConfig effectiveResponsiveLayoutForPage(String pageId) {
+    for (final page in pageCatalog.pages) {
+      if (page.id == pageId) {
+        return page.layoutOverride?.applyOn(responsiveLayout) ??
+            responsiveLayout;
+      }
+    }
+    return responsiveLayout;
+  }
+
   /// Usage déclaré pour l'instance [id], ou `null` s'il n'est pas défini.
   ComponentUsage? usageFor(String id) => usages[id];
 
@@ -199,6 +218,7 @@ class Appearance {
       behaviors: behaviors,
       usages: Map.unmodifiable(next),
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
   }
 
@@ -225,6 +245,7 @@ class Appearance {
       behaviors: Map.unmodifiable(next),
       usages: usages,
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
   }
 
@@ -281,6 +302,7 @@ class Appearance {
         behaviors: behaviors,
         usages: usages,
         pageCatalog: pageCatalog,
+        responsiveLayout: responsiveLayout,
       );
     }
     value.validate();
@@ -300,6 +322,7 @@ class Appearance {
       behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
   }
 
@@ -416,6 +439,13 @@ class Appearance {
         final NativeComponentConfig n => ScaffoldPageConfig.fromNative(n),
         _ => fallback ?? ScaffoldPageConfig(),
       };
+  A4PageConfig a4Page(String id, {A4PageConfig? fallback}) =>
+      component<A4PageConfig>(
+        id,
+        fallback: fallback ?? A4PageConfig.initialForPage(id),
+      );
+  Appearance withA4Page(String id, A4PageConfig value) =>
+      withComponent(id, value);
   ContainerStyle get backgroundStyle => style('background');
 
   /// Resolves the optional variant [id] (a selected state, for instance) of
@@ -461,6 +491,7 @@ class Appearance {
     Map<String, List<ComponentBehavior>>? behaviors,
     Map<String, ComponentUsage>? usages,
     EditorPageCatalog? pageCatalog,
+    ResponsiveLayoutConfig? responsiveLayout,
   }) {
     final nextStyles = backgroundStyle == null
         ? (styles == null ? this.styles : Map<String, ContainerStyle>.unmodifiable(styles))
@@ -505,6 +536,7 @@ class Appearance {
       behaviors: nextBehaviors,
       usages: nextUsages,
       pageCatalog: pageCatalog ?? this.pageCatalog,
+      responsiveLayout: responsiveLayout ?? this.responsiveLayout,
     );
   }
 
@@ -525,6 +557,7 @@ class Appearance {
         behaviors: behaviors,
         usages: usages,
         pageCatalog: pageCatalog,
+        responsiveLayout: responsiveLayout,
       );
     }
     if (styles[id] == value) return this;
@@ -542,6 +575,7 @@ class Appearance {
       behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
   }
 
@@ -555,6 +589,8 @@ class Appearance {
       };
   Appearance withPageCatalog(EditorPageCatalog value) =>
       copyWith(pageCatalog: value);
+  Appearance withResponsiveLayout(ResponsiveLayoutConfig value) =>
+      copyWith(responsiveLayout: value);
   Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
       withNativeComponent(id, value.native);
   Appearance withNativeComponent(String id, NativeComponentConfig value) =>

@@ -1045,6 +1045,26 @@ void main() {
       await pumpWithAppearance(tester, mode, appearance);
       await tester.pumpAndSettle();
 
+      final settingsButton = find.byKey(
+        const ValueKey('style-edit-banner-settings'),
+      );
+      expect(settingsButton, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-transfer')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-save-timing')),
+        findsNothing,
+      );
+
+      await tester.tap(settingsButton);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-transfer')),
+        findsOneWidget,
+      );
       final button = find.byKey(
         const ValueKey('style-edit-banner-save-timing'),
       );

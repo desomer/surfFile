@@ -319,6 +319,9 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
                   s.widget.selected,
             )
             .lastOrNull;
+        if (identical(_lastBase, this)) {
+          _lastBase = _selected;
+        }
       }
       _scheduleRefreshHover();
     }

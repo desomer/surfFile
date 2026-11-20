@@ -91,12 +91,19 @@ class _EditorZoomState extends State<EditorZoom>
   bool _isSecondaryZooming = false;
   BuildContext? _lastFocusContext;
   bool _focusFromRightClick = false;
+  bool _escapeDeselectPending = false;
+  BuildContext? _unzoomedEscapeFocus;
   ({double scale, Offset offset})? _preRightClickTransform;
   ({double scale, Offset offset})? _preDialogTransform;
   EditorZoomOptions _lastOptions = const EditorZoomOptions();
 
   void _onFocusChanged() {
     final nextFocus = LayoutSelection.focus.value?.context;
+    if (_escapeDeselectPending) {
+      _unzoomedEscapeFocus = nextFocus;
+    } else if (!identical(nextFocus, _lastFocusContext)) {
+      _unzoomedEscapeFocus = null;
+    }
     if (_controller.isSelectingFromRightClick ||
         _controller.openContextMenus.value > 0) {
       _focusFromRightClick = true;
@@ -399,13 +406,48 @@ class _EditorZoomState extends State<EditorZoom>
       return false;
     }
     const normal = (scale: 1.0, offset: Offset.zero);
-    if (_current == normal && _to == normal && !_animation.isAnimating) {
+    if (_current != normal || _to != normal || _animation.isAnimating) {
+      if (_isSecondaryDown) {
+        _isSecondaryPanning = true;
+      }
+      _resetZoom(animate: true);
+      return true;
+    }
+    return _deselectOnEscape();
+  }
+
+  bool _deselectOnEscape() {
+    final hasSelection =
+        LayoutSelection.path.value.isNotEmpty ||
+        LayoutSelection.focus.value != null;
+    final hasHighlight =
+        EditorSlotState.highlightedTarget.value != null ||
+        LayoutSelection.highlightedSlotId.value != null;
+    if (!hasSelection && !hasHighlight) {
       return false;
     }
-    if (_isSecondaryDown) {
-      _isSecondaryPanning = true;
+    if (hasHighlight) {
+      LayoutSelection.highlightNode(null);
+      _debouncedHighlight = null;
+      _lastHoverTarget = null;
     }
-    _resetZoom(animate: true);
+    if (!hasSelection) {
+      return true;
+    }
+    _escapeDeselectPending = true;
+    if (LayoutSelection.path.value.isNotEmpty) {
+      LayoutSelection.toggle(LayoutSelection.path.value);
+    } else {
+      LayoutSelection.clearAll();
+      LayoutSelection.focus.value = null;
+    }
+    _unzoomedEscapeFocus = LayoutSelection.focus.value?.context;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _unzoomedEscapeFocus = LayoutSelection.focus.value?.context;
+      _escapeDeselectPending = false;
+      _frameSelection();
+    });
     return true;
   }
 
@@ -537,6 +579,8 @@ class _EditorZoomState extends State<EditorZoom>
         _manualScale = null;
         _manualOffset = null;
         _focusFromRightClick = false;
+        _escapeDeselectPending = false;
+        _unzoomedEscapeFocus = null;
         _preRightClickTransform = null;
         _preDialogTransform = null;
       } else if (exitingEditorDialog &&
@@ -556,6 +600,11 @@ class _EditorZoomState extends State<EditorZoom>
           _manualScale ??= _current.scale;
           _manualOffset ??= _current.offset;
         }
+      } else if (_escapeDeselectPending ||
+          (focus != null && identical(focus, _unzoomedEscapeFocus))) {
+        _manualScale = 1.0;
+        _manualOffset = Offset.zero;
+        _unzoomedEscapeFocus = null;
       } else {
         _manualScale = null;
         _manualOffset = null;

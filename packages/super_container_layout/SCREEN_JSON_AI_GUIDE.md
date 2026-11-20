@@ -109,6 +109,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"layout"` (`SuperLayoutConfig`)
    - `"native"` (`NativeComponentConfig`)
    - `"scaffold"` (`ScaffoldPageConfig`)
+   - `"a4Document"` (`A4PageConfig`, page document A4 multi-feuilles pour l'aperçu et la génération PDF)
    - `"value"` (`SuperValueConfig`)
    - `"action"` (`SuperActionConfig`)
    - `"indicator"` (`SuperIndicatorConfig`, icône d'état et badge optionnel pilotés par `states`)
@@ -121,8 +122,9 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
-4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
-5. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
+4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`). Chaque page déclare `id`, `name`, `path`, et optionnellement `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
+5. **`responsiveLayout`** (optionnel à la racine) : configuration responsive globale du `body` des pages (`containerMode`: `"fullPage"` par défaut ou `"constrained"`, `maxWidth`: `1440` par défaut, `gutters`: `{"mobile": 24, "desktop": 32}`, `breakpoints`: `{"mobileWidth": 375, "tabletMinWidth": 768, "desktopMinWidth": 1280, "largeDesktopMinWidth": 1440}`).
+6. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
    indexé par l'ID du composant (`"explanation"` avec `translationKey` ARB,
    `"dynamicData"`, `"staticData"`, `"userInput"`, `"action"`, `"layout"`,
    `"decoration"`, `"feedback"`). Lis les usages existants et renseigne
@@ -1515,6 +1517,11 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
     - `pageId` (optionnel) : Identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
     - `pageName` (optionnel) : Nom lisible de la page cible (ex. `"Détails"`).
+  - `"generatePdf"` (`GeneratePdfAction`, déclencheur `"click"` ou `"doubleClick"`) : Génère un PDF depuis une page de type `"a4Document"` (`pageCatalog.pages[*].pageType: "a4Document"`) en combinant traduction vectorielle et fallback raster haute résolution.
+    - `pageId` (optionnel) : Identifiant de la page A4 cible ; omis ou `null` utilise la page A4 courante (ou l'unique page A4 du catalogue).
+    - `pageName` (optionnel) : Nom lisible de la page A4 cible.
+    - `fileName` (optionnel) : Nom de fichier `.pdf` suggéré (sinon utilise `defaultFileName` de la `A4PageConfig`).
+    - `outputMode` (optionnel, défaut `"exportDialog"`) : `"exportDialog"` (boîte d'export en fichier `.pdf`) ou `"saveFile"` (enregistrement direct dans le dossier par défaut).
   - `"emitEvent"` (`EmitEventAction`) : Publie sur le bus interne fourni a `SuperApp`.
     - `eventId` : Identifiant non vide, sans espaces de debut/fin, filtre par egalite exacte.
     - `custom` (optionnel) : Objet JSON statique, distinct des donnees automatiques.

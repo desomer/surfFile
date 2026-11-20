@@ -3,14 +3,19 @@
 /// Monte les régions `appBar`, `body`, `bottomNavigationBar`, `drawer`, `endDrawer` et `bottomSheet`.
 library;
 
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../super_component.dart';
 
+import '../../../models/responsive_layout_config.dart';
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/component_tag_filter.dart';
 import '../../../super_app.dart';
+import '../../appearance/appearance_scope.dart';
 import '../../editing/components/native_component_editor.dart';
+import '../responsive_page_container.dart';
 import '../super_layout/slot_implementation.dart';
 
 /// Native Scaffold adapter; editing behavior lives in [NativeComponentEditor].
@@ -28,6 +33,7 @@ class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
     required this.bottomNavigationBar,
     required this.floatingActionButton,
     required this.bottomSheet,
+    this.responsiveLayout,
     super.behaviours,
     super.key,
   });
@@ -46,6 +52,9 @@ class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
   final Widget? bottomNavigationBar;
   final Widget? floatingActionButton;
   final Widget? bottomSheet;
+
+  /// Configuration responsive explicite ; `null` résout depuis [AppearanceScope].
+  final ResponsiveLayoutConfig? responsiveLayout;
 
   @override
   State<ScaffoldPageLayout> createState() => _ScaffoldPageLayoutState();
@@ -203,7 +212,26 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     return Drawer(child: content);
   }
 
-  Widget _body(ScaffoldPageConfig config, NativeComponentEditorState editor) {
+  ResponsiveLayoutConfig _resolveResponsiveLayout(BuildContext context) {
+    if (widget.responsiveLayout != null) return widget.responsiveLayout!;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    if (appearance == null) return const ResponsiveLayoutConfig();
+    for (final page in appearance.pageCatalog.pages) {
+      if (page.id == widget.id && page.pageType.isModal) {
+        return appearance.responsiveLayout.copyWith(
+          containerMode: PageContainerMode.fullPage,
+        );
+      }
+    }
+    return appearance.effectiveResponsiveLayoutForPage(widget.id);
+  }
+
+  Widget _body(
+    BuildContext context,
+    ScaffoldPageConfig config,
+    NativeComponentEditorState editor,
+    ResponsiveLayoutConfig responsiveConfig,
+  ) {
     final scrollAxis = config.scrollDirection;
     final paddingValue = config.scrollPadding;
     final padding = paddingValue != null && paddingValue > 0
@@ -211,7 +239,10 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
         : EdgeInsets.zero;
     return switch (config.bodyMode) {
       ScaffoldBodyMode.standard => SizedBox.expand(
-        child: editor.region('body'),
+        child: ResponsiveBodyContainer(
+          config: responsiveConfig,
+          child: editor.region('body'),
+        ),
       ),
       ScaffoldBodyMode.singleChildScrollView => SizedBox.expand(
         child: ScrollViewportHost(
@@ -223,41 +254,105 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
             primary: config.primary,
             padding: padding == EdgeInsets.zero ? null : padding,
             clipBehavior: config.clipBehavior ?? Clip.hardEdge,
-            child: SlotContentFitScope(
-              fitWidth: scrollAxis == Axis.horizontal,
-              fitHeight: scrollAxis == Axis.vertical,
-              child: editor.region('body'),
+            child: ResponsiveBodyContainer(
+              config: responsiveConfig,
+              scrollable: true,
+              scrollDirection: scrollAxis,
+              child: SlotContentFitScope(
+                fitWidth: scrollAxis == Axis.horizontal,
+                fitHeight: scrollAxis == Axis.vertical,
+                child: editor.region('body'),
+              ),
             ),
           ),
         ),
       ),
       ScaffoldBodyMode.customScrollView => () {
-        final bodySliver = editor.sliverRegion(
+        final rawBodySliver = editor.sliverRegion(
           'body',
           scrollDirection: scrollAxis,
           fillWhenEmpty: true,
         );
+        final bodySliver = responsiveConfig.containerMode ==
+                PageContainerMode.fullPage
+            ? (padding != EdgeInsets.zero
+                  ? SliverPadding(padding: padding, sliver: rawBodySliver)
+                  : rawBodySliver)
+            : SliverLayoutBuilder(
+                builder: (context, sliverConstraints) {
+                  final resolved = responsiveConfig.resolveForWidth(
+                    sliverConstraints.crossAxisExtent,
+                  );
+                  if (!resolved.isConstrained ||
+                      scrollAxis != Axis.vertical) {
+                    final effectivePadding = scrollAxis == Axis.horizontal
+                        ? padding +
+                              EdgeInsets.symmetric(horizontal: resolved.gutter)
+                        : padding;
+                    return effectivePadding != EdgeInsets.zero
+                        ? SliverPadding(
+                            padding: effectivePadding,
+                            sliver: rawBodySliver,
+                          )
+                        : rawBodySliver;
+                  }
+                  final availableWidth = sliverConstraints.crossAxisExtent;
+                  final containerWidth = math.min(
+                    availableWidth,
+                    resolved.maxWidth!,
+                  );
+                  final outerMargin = math.max(
+                    0.0,
+                    (availableWidth - containerWidth) / 2,
+                  );
+                  final safeGutter = math.min(
+                    resolved.gutter,
+                    math.max(0.0, containerWidth / 2),
+                  );
+                  final horizontalInset = outerMargin + safeGutter;
+                  return SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      padding.left + horizontalInset,
+                      padding.top,
+                      padding.right + horizontalInset,
+                      padding.bottom,
+                    ),
+                    sliver: rawBodySliver,
+                  );
+                },
+              );
         return SizedBox.expand(
-          child: ScrollViewportHost(
-            padding: padding,
-            child: editor.regionOverlay(
-              'body',
-              child: CustomScrollView(
-                key: const ValueKey('scaffold-page-custom-scroll-view'),
-                scrollDirection: scrollAxis,
-                reverse: config.reverse,
-                primary: config.primary,
-                clipBehavior: config.clipBehavior ?? Clip.hardEdge,
-                slivers: [
-                  if (editor.visible('appBar'))
-                    editor.sliverRegion('appBar', scrollDirection: scrollAxis),
-                  if (padding != EdgeInsets.zero)
-                    SliverPadding(padding: padding, sliver: bodySliver)
-                  else
-                    bodySliver,
-                ],
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : MediaQuery.sizeOf(context).width;
+              return ResponsiveBreakpointScope(
+                layout: responsiveConfig.resolveForWidth(width),
+                viewportWidth: width,
+                child: ScrollViewportHost(
+                  padding: padding,
+                  child: editor.regionOverlay(
+                    'body',
+                    child: CustomScrollView(
+                      key: const ValueKey('scaffold-page-custom-scroll-view'),
+                      scrollDirection: scrollAxis,
+                      reverse: config.reverse,
+                      primary: config.primary,
+                      clipBehavior: config.clipBehavior ?? Clip.hardEdge,
+                      slivers: [
+                        if (editor.visible('appBar'))
+                          editor.sliverRegion(
+                            'appBar',
+                            scrollDirection: scrollAxis,
+                          ),
+                        bodySliver,
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         );
       }(),
@@ -338,7 +433,12 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
               appBar: config.bodyMode == ScaffoldBodyMode.customScrollView
                   ? null
                   : _appBar(editor),
-              body: _body(config, editor),
+              body: _body(
+                context,
+                config,
+                editor,
+                _resolveResponsiveLayout(context),
+              ),
               drawer: _drawer('drawer', editor, widget.drawer),
               endDrawer: _drawer('endDrawer', editor, widget.endDrawer),
               bottomNavigationBar: editor.visible('bottomNavigationBar')

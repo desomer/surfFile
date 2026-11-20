@@ -13,6 +13,7 @@ import 'package:super_container_layout/models/component_usage.dart';
 import 'package:super_container_layout/models/component_config.dart';
 import 'package:super_container_layout/models/automatic_state.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
+import 'package:super_container_layout/models/responsive_layout_config.dart';
 import 'package:super_container_layout/models/json_syntax.dart';
 import 'package:super_container_layout/models/native_component_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
@@ -126,6 +127,7 @@ class AppearanceCodec {
       for (final entry in a.usages.entries) entry.key: entry.value.toJson(),
     },
     'pageCatalog': a.pageCatalog.toJson(),
+    'responsiveLayout': a.responsiveLayout.toJson(),
   };
 
   /// Sérialise une représentation compacte de [a] en omettant les valeurs par défaut.
@@ -165,6 +167,8 @@ class AppearanceCodec {
             entry.key: entry.value.toCompactJson(),
         },
       if (a.pageCatalog.pages.isNotEmpty) 'pageCatalog': a.pageCatalog.toJson(),
+      if (!a.responsiveLayout.isDefault)
+        'responsiveLayout': a.responsiveLayout.toCompactJson(),
     };
   }
 
@@ -262,6 +266,7 @@ class AppearanceCodec {
       'behaviors',
       'usages',
       'pageCatalog',
+      'responsiveLayout',
       ...additionalKeys,
     };
     if (json.keys.any((key) => !known.contains(key))) {
@@ -370,6 +375,9 @@ class AppearanceCodec {
       pageCatalog: json.containsKey('pageCatalog')
           ? EditorPageCatalog.fromJson(json['pageCatalog'])
           : const EditorPageCatalog.empty(),
+      responsiveLayout: json.containsKey('responsiveLayout')
+          ? ResponsiveLayoutConfig.fromJson(json['responsiveLayout'])
+          : const ResponsiveLayoutConfig(),
     );
   }
 
@@ -473,6 +481,7 @@ class AppearanceCodec {
       'behaviors',
       'usages',
       'pageCatalog',
+      'responsiveLayout',
       'vibe',
       'merge',
       ...additionalKeys,
@@ -735,6 +744,13 @@ class AppearanceCodec {
       pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
     }
 
+    var responsiveLayout = current.responsiveLayout;
+    if (patch.containsKey('responsiveLayout')) {
+      responsiveLayout = patch['responsiveLayout'] == null
+          ? const ResponsiveLayoutConfig()
+          : current.responsiveLayout.patchFromJson(patch['responsiveLayout']);
+    }
+
     final behaviors = Map<String, List<ComponentBehavior>>.of(current.behaviors)
       ..removeWhere(
         (id, _) =>
@@ -827,6 +843,7 @@ class AppearanceCodec {
       behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
   }
 
@@ -850,6 +867,7 @@ class AppearanceCodec {
       'behaviors',
       'usages',
       'pageCatalog',
+      'responsiveLayout',
       'vibe',
       'merge',
       ...additionalKeys,
@@ -1218,6 +1236,25 @@ class AppearanceCodec {
       }
     }
 
+    var responsiveLayout = current.responsiveLayout;
+    if (patch.containsKey('responsiveLayout')) {
+      try {
+        responsiveLayout = patch['responsiveLayout'] == null
+            ? const ResponsiveLayoutConfig()
+            : current.responsiveLayout.patchFromJson(patch['responsiveLayout']);
+        applied['responsiveLayout'] = patch['responsiveLayout'];
+      } on FormatException catch (error) {
+        rejected.add(
+          PatchRejectedEntry(
+            section: 'responsiveLayout',
+            key: 'responsiveLayout',
+            message: error.message,
+            rawValue: patch['responsiveLayout'],
+          ),
+        );
+      }
+    }
+
     final behaviors = Map<String, List<ComponentBehavior>>.of(current.behaviors)
       ..removeWhere(
         (id, _) =>
@@ -1349,6 +1386,7 @@ class AppearanceCodec {
       behaviors: behaviors,
       usages: usages,
       pageCatalog: pageCatalog,
+      responsiveLayout: responsiveLayout,
     );
     return PartialPatchResult(
       appearance: nextAppearance,
