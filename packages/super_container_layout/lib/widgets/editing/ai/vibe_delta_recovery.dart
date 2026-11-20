@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import '../../../models/a4_page_config.dart';
 import '../../../models/component_behavior.dart';
 import '../../../models/component_config.dart';
 import '../../../models/component_usage.dart';
@@ -744,6 +745,10 @@ abstract final class VibeDeltaRecovery {
               childId,
               () => scaffold.native.slotTypeOf(childId),
             );
+          }
+        case final A4PageConfig a4:
+          for (final entry in a4.childSlots.entries) {
+            result.putIfAbsent(entry.key, () => entry.value);
           }
         default:
           break;

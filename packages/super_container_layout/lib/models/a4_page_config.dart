@@ -142,19 +142,34 @@ class A4SheetConfig {
       'rootSlotType',
       'backgroundColor',
     };
-    if (value.keys.any((k) => k is! String || !allowedKeys.contains(k))) {
-      throw const FormatException('Clé inconnue dans A4SheetConfig.');
+    final unknownKeys = value.keys
+        .where((k) => k is! String || !allowedKeys.contains(k))
+        .toList();
+    if (unknownKeys.isNotEmpty) {
+      throw FormatException(
+        'Clé inconnue dans A4SheetConfig : ${unknownKeys.join(', ')}. '
+        'Clés autorisées : id, label, rootSlotId, rootSlotType, backgroundColor.',
+      );
     }
-    final id = value['id'];
-    final label = value['label'];
+    final rawId = value['id'];
+    final rawLabel = value['label'];
     final rootSlotId = value['rootSlotId'];
     final rootSlotType = value['rootSlotType'];
-    if (id is! String ||
-        label is! String ||
-        rootSlotId is! String ||
+    if (rootSlotId is! String ||
+        rootSlotId.trim().isEmpty ||
+        (rawId != null && rawId is! String) ||
+        (rawLabel != null && rawLabel is! String) ||
         (rootSlotType != null && rootSlotType is! String)) {
-      throw const FormatException('Champs requis manquants dans A4SheetConfig.');
+      throw const FormatException(
+        'Champs requis manquants dans A4SheetConfig (rootSlotId requis).',
+      );
     }
+    final id = (rawId as String?)?.trim().isNotEmpty == true
+        ? (rawId as String).trim()
+        : 'sheet-1';
+    final label = (rawLabel as String?)?.trim().isNotEmpty == true
+        ? (rawLabel as String).trim()
+        : 'Feuille 1';
     try {
       return A4SheetConfig(
         id: id,
@@ -495,8 +510,29 @@ class A4PageConfig extends ComponentConfig {
       'showPageGuides',
       'defaultFileName',
     };
-    if (value.keys.any((k) => k is! String || !allowedKeys.contains(k))) {
-      throw const FormatException('Clé inconnue dans A4PageConfig.');
+    final unknownKeys = value.keys
+        .where((k) => k is! String || !allowedKeys.contains(k))
+        .toList();
+    if (unknownKeys.isNotEmpty) {
+      if (unknownKeys.any(
+        (k) => const {'placements', 'regions', 'body', 'content', 'slotLabels'}
+            .contains(k),
+      )) {
+        throw FormatException(
+          'Un composant "a4Document" n’utilise pas "${unknownKeys.join('", "')}" '
+          '(réservés à "scaffold"/"native"). Utilise "sheets": '
+          '[{"id": "sheet-1", "label": "Feuille 1", "rootSlotId": "<layoutId>", '
+          '"rootSlotType": "registry:Layout"}] et place le contenu de la feuille '
+          'dans components["<layoutId>"] ("type": "layout").',
+        );
+      }
+      throw FormatException(
+        'Clé inconnue dans A4PageConfig : ${unknownKeys.join(', ')}. '
+        'Clés autorisées : orientation, marginTop, marginRight, marginBottom, '
+        'marginLeft, margins, sheets, headerSlotId, headerSlotType, headerHeight, '
+        'footerSlotId, footerSlotType, footerHeight, showPageNumbers, '
+        'showPageGuides, defaultFileName.',
+      );
     }
 
     double? uniformMargin;
@@ -527,12 +563,14 @@ class A4PageConfig extends ComponentConfig {
     }
 
     final rawSheets = value['sheets'];
-    if (rawSheets is! List) {
+    final List<A4SheetConfig>? sheets;
+    if (rawSheets == null) {
+      sheets = null;
+    } else if (rawSheets is List) {
+      sheets = [for (final entry in rawSheets) A4SheetConfig.fromJson(entry)];
+    } else {
       throw const FormatException('sheets doit être une liste.');
     }
-    final sheets = [
-      for (final entry in rawSheets) A4SheetConfig.fromJson(entry),
-    ];
 
     final headerSlotId = value['headerSlotId'];
     final headerSlotType = value['headerSlotType'];

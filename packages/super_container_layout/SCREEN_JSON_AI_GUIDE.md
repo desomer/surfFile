@@ -739,6 +739,64 @@ Propriétés communes dans `components[id]` pour `"native"` :
   - `regionSizes` (`Map<regionId, number>`) : hauteur/taille fixe en pixels de la région (omettre pour la taille automatique).
 - `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>` — toujours indexé par l'`id` du slot enfant placé, jamais un objet `SlotSizeConstraints` direct sans clé de slot), `slotLabels` (`Map<childSlotId, string>`, au même niveau que `placements` dans la configuration native).
 
+### 4.2 bis. `"a4Document"` (`A4PageConfig`) — Page Document A4 multi-feuilles (PDF)
+
+Utilisé pour toute page du `pageCatalog` dont `"pageType"` vaut `"a4Document"` (`components[<pageId>]` a obligatoirement `"type": "a4Document"`).
+- **Règle stricte de structure** : `"a4Document"` **n'utilise jamais** `"placements"`, `"regions"`, `"body"` ni `"slotLabels"` (ces champs sont réservés à `"scaffold"` / `"native"`). Chaque feuille du document est déclarée dans `"sheets"` et pointe vers un composant racine distinct dans `components[<rootSlotId>]` (généralement `"type": "layout"`).
+- **Propriétés de `A4PageConfig`** :
+  - `orientation` : `"portrait"` (`595.28 × 841.89 pt`, défaut) ou `"landscape"` (`841.89 × 595.28 pt`).
+  - `margins` (nombre uniforme) ou `marginTop`, `marginRight`, `marginBottom`, `marginLeft` (`0`..`250` pt, défaut `36`).
+  - `sheets` (`List<A4SheetConfig>`) : liste ordonnée des feuilles A4 explicites :
+    - `id` (`string`, ex. `"sheet-1"`), `label` (`string`, ex. `"Feuille 1"`), `rootSlotId` (`string`, ID du composant racine de la feuille dans `components`), `rootSlotType` (défaut `"registry:Layout"`), `backgroundColor` (optionnel, blanc papier par défaut).
+  - `headerSlotId` / `headerSlotType` / `headerHeight` (`16`..`240`, défaut `48`) et `footerSlotId` / `footerSlotType` / `footerHeight` (`16`..`240`, défaut `36`) : en-tête et pied de page optionnels répétés sur chaque feuille.
+  - `showPageNumbers` (`bool`, défaut `false`), `showPageGuides` (`bool`, défaut `true`), `defaultFileName` (`string`, défaut `"document.pdf"`).
+- **Export PDF** : place un bouton `"action"` sur l'écran appelant (ou dans le document) avec un comportement `"generatePdf"` (`"pageId": "<pageId>"`).
+
+```json
+{
+  "pageCatalog": {
+    "pages": [
+      {
+        "id": "page-facture-a4",
+        "name": "Facture A4",
+        "path": "/facture-a4",
+        "pageType": "a4Document"
+      }
+    ]
+  },
+  "components": {
+    "page-facture-a4": {
+      "type": "a4Document",
+      "orientation": "portrait",
+      "margins": 36,
+      "showPageNumbers": true,
+      "defaultFileName": "facture.pdf",
+      "sheets": [
+        {
+          "id": "sheet-1",
+          "label": "Feuille 1",
+          "rootSlotId": "facture-sheet-1",
+          "rootSlotType": "registry:Layout"
+        }
+      ]
+    },
+    "facture-sheet-1": {
+      "type": "layout",
+      "slotLabels": { "facture-titre": "Titre facture" },
+      "placements": {
+        "center": [{ "id": "facture-titre", "type": "registry:Value" }]
+      }
+    },
+    "facture-titre": {
+      "type": "value",
+      "text": "FACTURE",
+      "fontSize": 22,
+      "fontWeight": "bold"
+    }
+  }
+}
+```
+
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un sélecteur de choix :
 - **Règle d'atomicité obligatoire (`1 attribut métier = 1 SuperValue`, `label` natif en visualisation & respect des `usages` — priorité absolue)** :

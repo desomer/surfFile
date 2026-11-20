@@ -125,6 +125,27 @@ void main() {
         () => A4PageConfig(marginLeft: 300, marginRight: 300),
         throwsArgumentError,
       );
+
+      final minimal = ComponentConfig.fromJson({
+        'type': 'a4Document',
+        'defaultFileName': 'minimal.pdf',
+      }) as A4PageConfig;
+      expect(minimal.sheets.length, 1);
+      expect(minimal.defaultFileName, 'minimal.pdf');
+
+      expect(
+        () => ComponentConfig.fromJson({
+          'type': 'a4Document',
+          'placements': {'body': []},
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('sheets'),
+          ),
+        ),
+      );
     });
 
     test('GeneratePdfAction serializes and validates via BehaviorActionCatalog', () {

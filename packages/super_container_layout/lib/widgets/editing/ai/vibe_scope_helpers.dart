@@ -4,6 +4,7 @@ library;
 
 import 'dart:convert';
 
+import '../../../models/a4_page_config.dart';
 import '../../../models/component_config.dart';
 import '../../../models/json_numbers.dart';
 import '../../../models/native_component_config.dart';
@@ -309,6 +310,7 @@ abstract final class VibeScopeHelpers {
         final ScaffoldPageConfig scaffold => scaffold.native.slotsOf(
           onlyZoneId,
         ),
+        final A4PageConfig a4 => a4.childSlots.keys,
         _ => const <String>[],
       };
     }
@@ -324,6 +326,7 @@ abstract final class VibeScopeHelpers {
       ),
       final ScaffoldPageConfig scaffold =>
         scaffold.native.placements.values.expand((ids) => ids),
+      final A4PageConfig a4 => a4.childSlots.keys,
       _ => const <String>[],
     };
   }
@@ -414,6 +417,20 @@ abstract final class VibeScopeHelpers {
       yield* fromPlacementsMap(
         row.containsKey('placements') ? row['placements'] : row['zones'],
       );
+    }
+    if (map['sheets'] is List) {
+      for (final sheet in map['sheets'] as List) {
+        if (sheet is Map && sheet['rootSlotId'] is String) {
+          final id = (sheet['rootSlotId'] as String).trim();
+          if (id.isNotEmpty) yield id;
+        }
+      }
+    }
+    for (final slotKey in const ['headerSlotId', 'footerSlotId']) {
+      if (map[slotKey] is String) {
+        final id = (map[slotKey] as String).trim();
+        if (id.isNotEmpty) yield id;
+      }
     }
     if (onlyZoneId == null || onlyZoneId == 'tabs') {
       if (map['tabs'] is List) {
