@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../services/appearance/appearance_store.dart';
+import '../../../services/pages/editor_page_graph.dart';
 import '../../../theme/appearance.dart';
 import '../../../models/json_numbers.dart';
 import '../components/shared/editor_number_field.dart';
@@ -245,6 +247,15 @@ class EditorHistoryController extends ChangeNotifier {
   void _appearanceChanged() {
     final next = _appearance.value;
     if (identical(next, _current)) return;
+    if (_appearance case final PersistentAppearanceController persistent
+        when persistent.isHydrating) {
+      _current = next;
+      final slice = persistent.activeHydrationSlice;
+      if (slice != null && !slice.isEmpty) {
+        _injectHydratedSliceIntoSnapshots(slice);
+      }
+      return;
+    }
     final before = _current;
     _current = next;
     if (_applying) return;
@@ -259,6 +270,26 @@ class EditorHistoryController extends ChangeNotifier {
       _redo.clear();
     }
     notifyListeners();
+  }
+
+  void _injectHydratedSliceIntoSnapshots(EditorPageAppearanceSlice slice) {
+    for (var i = 0; i < _undo.length; i++) {
+      final entry = _undo[i];
+      _undo[i] = _HistoryEntry(
+        appearance: slice.mergeInto(entry.appearance),
+        sideEffects: entry.sideEffects,
+      );
+    }
+    for (var i = 0; i < _redo.length; i++) {
+      final entry = _redo[i];
+      _redo[i] = _HistoryEntry(
+        appearance: slice.mergeInto(entry.appearance),
+        sideEffects: entry.sideEffects,
+      );
+    }
+    if (_transactionStart != null) {
+      _transactionStart = slice.mergeInto(_transactionStart!);
+    }
   }
 
   void _applyAppearance(Appearance value) {

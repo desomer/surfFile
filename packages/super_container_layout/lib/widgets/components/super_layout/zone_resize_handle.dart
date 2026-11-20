@@ -23,18 +23,90 @@ class _ZoneResizeHandle extends StatefulWidget {
 }
 
 class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
+  static const double _lineThickness = 2.0;
+  static const Duration _doubleClickTimeout = Duration(milliseconds: 300);
+  static const double _tapMovementSlop = 4.0;
+  static const double _doubleClickSlop = 18.0;
+
   _RenderZoneLayout? _layout;
   Offset? _start;
   double _extent = 0;
   bool _reportedBlocked = false;
-  bool _borderHovered = false;
-  bool _controlsHovered = false;
+  bool _hovered = false;
+  bool _dragging = false;
 
-  bool get _hovered => _borderHovered || _controlsHovered;
+  int? _activePointer;
+  Offset? _pointerDownPos;
+  bool _pointerMoved = false;
+  Offset? _lastTapPos;
+  Timer? _doubleClickTimer;
+
+  bool get _active => _hovered || _dragging;
 
   bool get _vertical =>
       widget.zone == SuperLayoutZone.north ||
       widget.zone == SuperLayoutZone.south;
+
+  @override
+  void dispose() {
+    _doubleClickTimer?.cancel();
+    super.dispose();
+  }
+
+  void _clearPendingDoubleClick() {
+    _doubleClickTimer?.cancel();
+    _doubleClickTimer = null;
+    _lastTapPos = null;
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (event.buttons != kPrimaryButton) return;
+    _activePointer = event.pointer;
+    _pointerDownPos = event.position;
+    _pointerMoved = false;
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (event.pointer != _activePointer || _pointerDownPos == null) return;
+    if ((event.position - _pointerDownPos!).distance > _tapMovementSlop) {
+      _pointerMoved = true;
+      _clearPendingDoubleClick();
+    }
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    if (event.pointer != _activePointer) return;
+    final downPos = _pointerDownPos;
+    final moved = _pointerMoved;
+    _activePointer = null;
+    _pointerDownPos = null;
+    _pointerMoved = false;
+    if (moved || downPos == null) return;
+    if ((event.position - downPos).distance > _tapMovementSlop) return;
+
+    final previousPos = _lastTapPos;
+    if ((_doubleClickTimer?.isActive ?? false) &&
+        previousPos != null &&
+        (event.position - previousPos).distance <= _doubleClickSlop) {
+      _clearPendingDoubleClick();
+      _toggleCollapse();
+      return;
+    }
+
+    _doubleClickTimer?.cancel();
+    _lastTapPos = event.position;
+    _doubleClickTimer = Timer(_doubleClickTimeout, () {
+      _doubleClickTimer = null;
+      _lastTapPos = null;
+    });
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePointer) return;
+    _activePointer = null;
+    _pointerDownPos = null;
+    _pointerMoved = false;
+  }
 
   void _begin(DragStartDetails details) {
     EditorHistoryScope.controllerOf(context)?.beginTransaction();
@@ -44,9 +116,11 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
     _start = layout.globalToLocal(details.globalPosition);
     _extent = _vertical ? rect.height : rect.width;
     _reportedBlocked = false;
+    if (!_dragging) setState(() => _dragging = true);
   }
 
   void _drag(DragUpdateDetails details) {
+    _clearPendingDoubleClick();
     final layout = _layout;
     final start = _start;
     if (layout == null || start == null || !layout.attached) return;
@@ -72,13 +146,24 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
   void _finish() {
     _layout = null;
     _start = null;
+    if (mounted && _dragging) setState(() => _dragging = false);
     EditorHistoryScope.controllerOf(context)?.commitTransaction();
   }
 
-  void _collapse() {
+  void _toggleCollapse() {
     final layout = context.findAncestorRenderObjectOfType<_RenderZoneLayout>()!;
-    final rect = layout.rects[widget.zone]!;
-    widget.onCollapse(_vertical ? rect.height : rect.width);
+    final restore = widget.restoreSize;
+    if (restore == null) {
+      final rect = layout.rects[widget.zone]!;
+      widget.onCollapse(_vertical ? rect.height : rect.width);
+      return;
+    }
+    final bounds = _limits(layout);
+    if (bounds.max < bounds.min) {
+      _reportBlocked();
+      return;
+    }
+    widget.onResize(restore.clamp(bounds.min, bounds.max));
   }
 
   ({double min, double max}) _limits(_RenderZoneLayout layout) {
@@ -109,182 +194,61 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
     }
   }
 
-  void _expand() {
-    final layout = context.findAncestorRenderObjectOfType<_RenderZoneLayout>()!;
-    final bounds = _limits(layout);
-    if (bounds.max < bounds.min) {
-      _reportBlocked();
-      return;
-    }
-    widget.onResize(
-      (widget.restoreSize ?? bounds.max).clamp(bounds.min, bounds.max),
-    );
+  Alignment get _lineAlignment {
+    if (widget.restoreSize == null) return Alignment.center;
+    return switch (widget.zone) {
+      SuperLayoutZone.north => Alignment.topCenter,
+      SuperLayoutZone.south => Alignment.bottomCenter,
+      SuperLayoutZone.west => Alignment.centerLeft,
+      _ => Alignment.centerRight,
+    };
   }
-
-  Widget _button(String action, IconData icon, VoidCallback? onTap) => SizedBox(
-    width: 15,
-    height: 15,
-    child: Tooltip(
-      message: action == 'collapse'
-          ? 'Réduire ${widget.label}'
-          : widget.restoreSize != null
-          ? 'Restaurer ${widget.label}'
-          : 'Agrandir ${widget.label} au maximum',
-      child: GestureDetector(
-        key: ValueKey('super-layout-$action-${widget.zone.name}'),
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: MouseRegion(
-          cursor: onTap == null
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
-          child: Icon(
-            icon,
-            size: 15,
-            color: onTap == null
-                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: .38)
-                : _hovered
-                ? Theme.of(context).colorScheme.onPrimaryContainer
-                : Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
-    ),
-  );
-
-  Widget _draggable(Widget child, {Key? key}) => GestureDetector(
-    key: key,
-    behavior: HitTestBehavior.opaque,
-    dragStartBehavior: DragStartBehavior.down,
-    onVerticalDragStart: _vertical ? _begin : null,
-    onVerticalDragUpdate: _vertical ? _drag : null,
-    onVerticalDragEnd: _vertical ? (_) => _finish() : null,
-    onHorizontalDragStart: !_vertical ? _begin : null,
-    onHorizontalDragUpdate: !_vertical ? _drag : null,
-    onHorizontalDragEnd: !_vertical ? (_) => _finish() : null,
-    onVerticalDragCancel: _vertical ? _finish : null,
-    onHorizontalDragCancel: !_vertical ? _finish : null,
-    child: child,
-  );
 
   @override
   Widget build(BuildContext context) => EditorOverlay(
-    child: Stack(
-      children: [
-        Align(
-          alignment: switch (widget.restoreSize != null
-              ? widget.zone.opposite
-              : widget.zone) {
-            SuperLayoutZone.north => Alignment.bottomCenter,
-            SuperLayoutZone.south => Alignment.topCenter,
-            SuperLayoutZone.west => Alignment.centerRight,
-            _ => Alignment.centerLeft,
-          },
-          child: MouseRegion(
-            onEnter: (_) => setState(() => _borderHovered = true),
-            onExit: (_) => setState(() => _borderHovered = false),
-            cursor: _vertical
-                ? SystemMouseCursors.resizeUpDown
-                : SystemMouseCursors.resizeLeftRight,
-            child: _draggable(
-              SizedBox(
-                width: _vertical ? double.infinity : 5,
-                height: _vertical ? 5 : double.infinity,
-                key: ValueKey('super-layout-resize-${widget.zone.name}'),
-                child: ColoredBox(
-                  color: _hovered
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.outlineVariant
-                            .withAlpha(128),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Center(
-          child: Transform.translate(
-            offset: getOffsetZoneAction(
-              widget.zone == SuperLayoutZone.north ||
-                  widget.zone == SuperLayoutZone.west,
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: MouseRegion(
-                onEnter: (_) => setState(() => _controlsHovered = true),
-                onExit: (_) => setState(() => _controlsHovered = false),
-                cursor: _vertical
-                    ? SystemMouseCursors.resizeUpDown
-                    : SystemMouseCursors.resizeLeftRight,
-                child: _draggable(
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _hovered
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context)
-                                .colorScheme
-                                .surfaceContainerHighest
-                                .withAlpha(128),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Flex(
-                      direction: _vertical ? Axis.horizontal : Axis.vertical,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _button('collapse', switch (widget.zone) {
-                          SuperLayoutZone.north => Icons.arrow_drop_up,
-                          SuperLayoutZone.south => Icons.arrow_drop_down,
-                          SuperLayoutZone.west => Icons.arrow_left,
-                          _ => Icons.arrow_right,
-                        }, widget.restoreSize == null ? _collapse : null),
-                        SizedBox(
-                          width: _vertical ? 8 : 0,
-                          height: _vertical ? 0 : 8,
-                        ),
-                        for (var index = 0; index < 3; index++)
-                          Padding(
-                            padding: _vertical
-                                ? const EdgeInsets.symmetric(horizontal: 2)
-                                : const EdgeInsets.symmetric(vertical: 2),
-                            child: SizedBox(
-                              width: 3,
-                              height: 3,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          ),
-                        SizedBox(
-                          width: _vertical ? 8 : 0,
-                          height: _vertical ? 0 : 8,
-                        ),
-                        _button('expand', switch (widget.zone) {
-                          SuperLayoutZone.north => Icons.arrow_drop_down,
-                          SuperLayoutZone.south => Icons.arrow_drop_up,
-                          SuperLayoutZone.west => Icons.arrow_right,
-                          _ => Icons.arrow_left,
-                        }, _expand),
-                      ],
-                    ),
+    child: MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: _vertical
+          ? SystemMouseCursors.resizeUpDown
+          : SystemMouseCursors.resizeLeftRight,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: _handlePointerDown,
+        onPointerMove: _handlePointerMove,
+        onPointerUp: _handlePointerUp,
+        onPointerCancel: _handlePointerCancel,
+        child: GestureDetector(
+          key: ValueKey('super-layout-resize-${widget.zone.name}'),
+          behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
+          onVerticalDragStart: _vertical ? _begin : null,
+          onVerticalDragUpdate: _vertical ? _drag : null,
+          onVerticalDragEnd: _vertical ? (_) => _finish() : null,
+          onHorizontalDragStart: !_vertical ? _begin : null,
+          onHorizontalDragUpdate: !_vertical ? _drag : null,
+          onHorizontalDragEnd: !_vertical ? (_) => _finish() : null,
+          onVerticalDragCancel: _vertical ? _finish : null,
+          onHorizontalDragCancel: !_vertical ? _finish : null,
+          child: SizedBox.expand(
+            child: Align(
+              alignment: _lineAlignment,
+              child: AnimatedOpacity(
+                opacity: _active ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 120),
+                curve: Curves.easeOut,
+                child: SizedBox(
+                  width: _vertical ? double.infinity : _lineThickness,
+                  height: _vertical ? _lineThickness : double.infinity,
+                  child: ColoredBox(
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ],
+      ),
     ),
   );
-  Offset getOffsetZoneAction(bool isNorW) {
-    if (widget.restoreSize != null) return Offset.zero;
-    if (isNorW) {
-      return Offset(_vertical ? 0 : 10, _vertical ? 10 : 0);
-    } else {
-      return Offset(_vertical ? 0 : -10, _vertical ? -10 : 0);
-    }
-  }
 }

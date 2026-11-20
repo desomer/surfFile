@@ -87,6 +87,7 @@ class AppearanceTransferDialog extends StatefulWidget {
 
 class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   bool _importing = false;
+  bool _loadingAllPages = false;
   ExportFormat _exportFormat = ExportFormat.json;
   late bool _decomposeComponents = widget.initialDecomposeComponents;
   var _exportGroups = {...TransferGroup.values};
@@ -117,7 +118,36 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   void initState() {
     super.initState();
     _importing = !widget.allowExport;
-    if (widget.allowExport) _refreshExport();
+    if (widget.allowExport) {
+      _refreshExport();
+      _ensureAllPagesLoadedForExport();
+    }
+  }
+
+  void _ensureAllPagesLoadedForExport() {
+    final controller = widget.controller;
+    if (controller is! PersistentAppearanceController) return;
+    final hasUnloaded = controller.value.pageCatalog.pages.any(
+      (page) => !controller.isPageLoaded(page.id),
+    );
+    if (!hasUnloaded) return;
+    _loadingAllPages = true;
+    controller
+        .ensureAllPagesLoaded()
+        .then((_) {
+          if (!mounted) return;
+          setState(() {
+            _loadingAllPages = false;
+            _refreshExport();
+          });
+        })
+        .catchError((Object error) {
+          if (!mounted) return;
+          setState(() {
+            _loadingAllPages = false;
+            _status = 'Chargement partiel des pages : $error';
+          });
+        });
   }
 
   @override
@@ -382,6 +412,10 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         }, keyPrefix: 'transfer-export'),
         const SizedBox(height: 12),
       ],
+      if (_loadingAllPages) ...[
+        const LinearProgressIndicator(),
+        const SizedBox(height: 8),
+      ],
       TextField(
         key: const ValueKey('transfer-export-text'),
         controller: _exportText,
@@ -395,13 +429,13 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
       _fileRow([
         OutlinedButton(
           key: const ValueKey('transfer-copy'),
-          onPressed: _copy,
+          onPressed: _loadingAllPages ? null : _copy,
           child: const Text('Copier'),
         ),
         const SizedBox(width: 8),
         FilledButton(
           key: const ValueKey('transfer-save'),
-          onPressed: _save,
+          onPressed: _loadingAllPages ? null : _save,
           child: const Text('Enregistrer'),
         ),
       ]),

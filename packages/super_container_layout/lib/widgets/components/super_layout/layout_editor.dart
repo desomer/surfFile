@@ -156,7 +156,8 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Redimensionner tous les côtés par glisser'),
             subtitle: const Text(
-              'Bord intérieur de 5 px, même hors du mode édition. '
+              'Séparateur discret de 5 px (glisser pour redimensionner, '
+              'double-clic pour réduire/restaurer), même hors du mode édition. '
               'Le glisser désactive la taille automatique du côté.',
             ),
             value: SuperLayoutEditor._sides.every(config.canResize),

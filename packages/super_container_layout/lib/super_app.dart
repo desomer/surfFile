@@ -27,6 +27,8 @@ import 'models/registry.dart';
 import 'models/responsive_layout_config.dart';
 
 import 'services/appearance/appearance_store.dart';
+import 'services/appearance/custom_design_system_store.dart';
+import 'services/appearance/paged_file_appearance_store.dart';
 import 'services/events/super_event_bus.dart';
 import 'services/inspection/vibe_debug_capture.dart';
 import 'services/inspection/vibe_mounted_slot_index.dart';
@@ -65,6 +67,7 @@ class SuperApp extends StatefulWidget {
     this.editorBannerAlignment,
     this.customDesignGuide,
     this.replaceDefaultDesignGuide = false,
+    this.customDesignSystemStore,
   });
 
   final GoRouter router;
@@ -81,6 +84,9 @@ class SuperApp extends StatefulWidget {
 
   /// Lorsque `true` et que [customDesignGuide] est renseigné, remplace le guide de design par défaut.
   final bool replaceDefaultDesignGuide;
+
+  /// Magasin global ou personnalisé de systèmes de design `DESIGN.md` transmis à [StyleEditBanner].
+  final CustomDesignSystemStore? customDesignSystemStore;
 
   /// Application-owned event bus; this widget never closes it.
   final SuperEventBus? eventBus;
@@ -233,15 +239,20 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  PersistentAppearanceController _createAppearanceController() =>
-      PersistentAppearanceController(
-          widget.appearanceStore ?? AppearanceStore(),
-          _saveFailed,
-          validateAppearance: (value) =>
-              widget.pageRouting?.validate(value.pageCatalog),
-        )
-        ..addListener(_updateWindow)
-        ..addListener(_pagesChanged);
+  PersistentAppearanceController _createAppearanceController() {
+    final store = widget.appearanceStore ?? AppearanceStore();
+    if (store is PagedFileAppearanceStore) {
+      store.bindRegistry(widget.registry);
+    }
+    return PersistentAppearanceController(
+        store,
+        _saveFailed,
+        validateAppearance: (value) =>
+            widget.pageRouting?.validate(value.pageCatalog),
+      )
+      ..addListener(_updateWindow)
+      ..addListener(_pagesChanged);
+  }
 
   void _pagesChanged() {
     if (_pagesScheduled || widget.pageRouting == null || _loading) return;
@@ -282,6 +293,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       widget.registry?.bindAppearance(_appearance);
       _restore();
     } else if (oldWidget.registry != widget.registry) {
+      if (_appearance.store case final PagedFileAppearanceStore paged) {
+        paged.bindRegistry(widget.registry);
+      }
       oldWidget.registry?.unbindAppearance();
       widget.registry?.bindAppearance(_appearance);
     }
@@ -363,6 +377,20 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _preloadInitialPageIfNeeded() async {
+    final routing = widget.pageRouting;
+    if (routing == null) return;
+    final catalog = _appearance.value.pageCatalog;
+    if (catalog.pages.isEmpty) return;
+    final uri = routing.router.routeInformationProvider.value.uri;
+    final matched = routing.pageAt(uri, catalog: catalog);
+    final targetId =
+        matched?.id ?? (uri.path == '/' ? catalog.homePageId : null);
+    if (targetId != null) {
+      await _appearance.ensurePageLoaded(targetId);
+    }
+  }
+
   Future<void> _restore() async {
     setState(() {
       _loading = true;
@@ -370,6 +398,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     });
     try {
       await _appearance.restore();
+      if (!mounted) return;
+      await _preloadInitialPageIfNeeded();
       if (!mounted) return;
       widget.pageRouting?.synchronize(_appearance.value.pageCatalog);
       _editorHistory.clear();
@@ -570,6 +600,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
               initialAlignment: widget.editorBannerAlignment,
               customDesignGuide: widget.customDesignGuide,
               replaceDefaultDesignGuide: widget.replaceDefaultDesignGuide,
+              customDesignSystemStore: widget.customDesignSystemStore,
               validateAppearance: (appearance) =>
                   widget.pageRouting?.validate(appearance.pageCatalog),
               onManagePages:

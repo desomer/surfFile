@@ -1,7 +1,7 @@
 /// Point d'entrée public du sous-système `super_layout`.
 library;
 
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:io' show FileSystemException;
 import 'dart:ui' show lerpDouble;
 
@@ -11,7 +11,7 @@ import 'package:flutter/rendering.dart';
 
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart' show DragStartBehavior, kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../editing/history/editor_history.dart';

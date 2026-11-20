@@ -45,37 +45,66 @@ void main() {
     ),
   );
 
-  testWidgets('resize handle highlights on border and controls hover', (
-    tester,
-  ) async {
-    await pump(tester);
-    final border = handle(SuperLayoutZone.north);
-    Color borderColor() => tester
-        .widget<ColoredBox>(
-          find.descendant(of: border, matching: find.byType(ColoredBox)),
-        )
-        .color;
-    final normalColor = borderColor();
-    final colors = Theme.of(tester.element(border)).colorScheme;
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getRect(border).topLeft + const Offset(10, 2));
-    await tester.pump();
-    expect(borderColor(), colors.primary);
-    final expand = find.byKey(const ValueKey('super-layout-expand-north'));
-    await mouse.moveTo(tester.getCenter(expand));
-    await tester.pump();
-    expect(borderColor(), colors.primary);
-    final icon = tester.widget<Icon>(
-      find.descendant(of: expand, matching: find.byType(Icon)),
-    );
-    expect(icon.color, colors.onPrimaryContainer);
-    await mouse.moveTo(Offset.zero);
-    await tester.pump();
-    expect(borderColor(), normalColor);
-    expect(layoutKey.currentState!.config, enabled);
-    await mouse.removePointer();
-  });
+  Future<void> doubleTap(WidgetTester tester, Finder target) async {
+    await tester.tap(target);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(target);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'resize handle is transparent at rest and highlights on hover and drag',
+    (tester) async {
+      await pump(tester);
+      final sash = handle(SuperLayoutZone.north);
+      expect(
+        find.byKey(const ValueKey('super-layout-collapse-north')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('super-layout-expand-north')),
+        findsNothing,
+      );
+
+      AnimatedOpacity lineOpacity() => tester.widget<AnimatedOpacity>(
+        find.descendant(of: sash, matching: find.byType(AnimatedOpacity)),
+      );
+      ColoredBox lineBox() => tester.widget<ColoredBox>(
+        find.descendant(of: sash, matching: find.byType(ColoredBox)),
+      );
+
+      expect(lineOpacity().opacity, 0.0);
+      expect(
+        tester.getSize(
+          find.descendant(of: sash, matching: find.byType(ColoredBox)),
+        ).height,
+        2.0,
+      );
+
+      final colors = Theme.of(tester.element(sash)).colorScheme;
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(sash));
+      await tester.pumpAndSettle();
+      expect(lineOpacity().opacity, 1.0);
+      expect(lineBox().color, colors.primary);
+
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(lineOpacity().opacity, 0.0);
+      expect(layoutKey.currentState!.config, enabled);
+      await mouse.removePointer();
+
+      final drag = await tester.startGesture(tester.getCenter(sash));
+      await drag.moveBy(const Offset(0, 30));
+      await tester.pump();
+      expect(lineOpacity().opacity, 1.0);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(lineOpacity().opacity, 0.0);
+      expect(layoutKey.currentState!.config.northSize, 110);
+    },
+  );
 
   for (final side in [
     SuperLayoutZone.north,
@@ -83,27 +112,12 @@ void main() {
     SuperLayoutZone.west,
     SuperLayoutZone.east,
   ]) {
-    testWidgets('${side.name} collapses, restores and maximizes', (
+    testWidgets('${side.name} collapses and restores on double tap', (
       tester,
     ) async {
       await pump(tester);
-      for (final action in ['collapse', 'expand']) {
-        final button = find.byKey(
-          ValueKey('super-layout-$action-${side.name}'),
-        );
-        expect(tester.getSize(button), const Size(15, 15));
-        final iconFinder = find.descendant(
-          of: button,
-          matching: find.byType(Icon),
-        );
-        expect(tester.widget<Icon>(iconFinder).size, 15);
-        expect(tester.getSize(iconFinder), const Size(15, 15));
-      }
       final original = enabled.sizeOf(side);
-      await tester.tap(
-        find.byKey(ValueKey('super-layout-collapse-${side.name}')),
-      );
-      await tester.pump();
+      await doubleTap(tester, handle(side));
       final rect = layoutKey.currentState!.config.resolve(
         const Size(600, 400),
       )[side]!;
@@ -128,32 +142,13 @@ void main() {
         default:
           fail('Not a side');
       }
-      final expandRect = tester.getRect(
-        find.byKey(ValueKey('super-layout-expand-${side.name}')),
-      );
-      expect(layoutRect.contains(expandRect.topLeft), isTrue);
-      expect(expandRect.right <= layoutRect.right, isTrue);
-      expect(expandRect.bottom <= layoutRect.bottom, isTrue);
       expect(
         SuperLayoutConfig.fromJson(layoutKey.currentState!.config.toJson()),
         layoutKey.currentState!.config,
       );
-      await tester.tap(
-        find.byKey(ValueKey('super-layout-expand-${side.name}')),
-      );
-      await tester.pump();
+      await doubleTap(tester, handle(side));
       expect(layoutKey.currentState!.config.collapsedSides, isEmpty);
       expect(layoutKey.currentState!.config.sizeOf(side), original);
-      await tester.tap(
-        find.byKey(ValueKey('super-layout-expand-${side.name}')),
-      );
-      await tester.pump();
-      expect(
-        layoutKey.currentState!.config.sizeOf(side),
-        side == SuperLayoutZone.north || side == SuperLayoutZone.south
-            ? 300
-            : 400,
-      );
     });
   }
 
@@ -184,8 +179,7 @@ void main() {
       ],
     );
     expect(find.text('Saved panel'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('super-layout-expand-west')));
-    await tester.pump();
+    await doubleTap(tester, handle(SuperLayoutZone.west));
     expect(layoutKey.currentState!.config.westSize, 60);
     expect(find.text('Saved panel'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -279,27 +273,18 @@ void main() {
           ),
         ],
       );
-      final collapse = find.byKey(
-        const ValueKey('super-layout-collapse-north'),
-      );
-      final expand = find.byKey(const ValueKey('super-layout-expand-north'));
-      await tester.tap(collapse);
-      await tester.pump();
+      await doubleTap(tester, handle(SuperLayoutZone.north));
       expect(find.text('Content'), findsNothing);
       expect(find.text('Content', skipOffstage: false), findsOneWidget);
       expect(
         tester.getSize(find.byKey(const ValueKey('super-layout-north'))).height,
         0,
       );
-      await tester.tap(expand);
-      await tester.pump();
+      await doubleTap(tester, handle(SuperLayoutZone.north));
       expect(find.text('Content'), findsOneWidget);
       expect(layoutKey.currentState!.config.northSize, 50);
-      await tester.tap(expand);
-      await tester.pump();
-      expect(layoutKey.currentState!.config.northSize, 100);
-      await tester.tap(collapse);
-      await tester.pump();
+      await doubleTap(tester, handle(SuperLayoutZone.north));
+      expect(find.text('Content'), findsNothing);
       await tester.drag(handle(SuperLayoutZone.north), const Offset(0, 10));
       await tester.pump();
       expect(layoutKey.currentState!.config.northSize, 40);

@@ -47,6 +47,7 @@ import '../../../services/inspection/vibe_app_inspector.dart';
 import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/inspection/vibe_diagnostics_inspector.dart';
 import '../../../services/inspection/vibe_mounted_slot_index.dart';
+import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -3085,6 +3086,42 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     return generator(prompt);
   }
 
+  Future<void> _ensureSessionPageLoaded(
+    _LiveTurnSession session,
+    String pageId,
+  ) async {
+    final controller = widget.controller;
+    if (controller is! PersistentAppearanceController) return;
+    final before = controller.value;
+    await controller.ensurePageLoaded(pageId);
+    final after = controller.value;
+    if (identical(before, after)) return;
+    final slice = EditorPageAppearanceSlice(
+      styles: {
+        for (final entry in after.styles.entries)
+          if (!before.styles.containsKey(entry.key)) entry.key: entry.value,
+      },
+      components: {
+        for (final entry in after.components.entries)
+          if (!before.components.containsKey(entry.key)) entry.key: entry.value,
+      },
+      behaviors: {
+        for (final entry in after.behaviors.entries)
+          if (!before.behaviors.containsKey(entry.key)) entry.key: entry.value,
+      },
+      usages: {
+        for (final entry in after.usages.entries)
+          if (!before.usages.containsKey(entry.key)) entry.key: entry.value,
+      },
+    );
+    session.rawInitialAppearance = slice.mergeInto(session.rawInitialAppearance);
+    session.baseAppearance = slice.mergeInto(session.baseAppearance);
+    session.checkpointAppearance = slice.mergeInto(session.checkpointAppearance);
+    session.lastPreviewAppearance = slice.mergeInto(
+      session.lastPreviewAppearance,
+    );
+  }
+
   VibeAppToolRegistry _resolveToolRegistry(_LiveTurnSession session) {
     final explicit = widget.toolRegistry;
     if (explicit != null) return explicit;
@@ -3093,6 +3130,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       registry: widget.registry,
       repositoryStore: session.repoTransaction?.store,
       pageRouting: session.pageRouting,
+      ensurePageLoaded: (pageId) => _ensureSessionPageLoaded(session, pageId),
       readScope: () => _scope,
       onSelectScope: (nextScope) {
         if (mounted) {
@@ -5488,8 +5526,8 @@ final class _LiveTurnSession {
   }) : checkpointAppearance = baseAppearance,
        lastPreviewAppearance = baseAppearance;
 
-  final Appearance rawInitialAppearance;
-  final Appearance baseAppearance;
+  Appearance rawInitialAppearance;
+  Appearance baseAppearance;
   final Set<String>? initialInstantiatedIds;
   final EditorPageRouter? pageRouting;
   final String? initialRouteLocation;

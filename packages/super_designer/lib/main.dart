@@ -86,6 +86,9 @@ class SuperDesignerApp extends StatefulWidget {
     super.key,
     this.persistRepository = false,
     this.repositoryDirectory,
+    this.applicationDirectory,
+    this.applicationStore,
+    this.pickDirectory,
   });
 
   /// Active la restauration et l'enregistrement automatique du repository.
@@ -94,12 +97,23 @@ class SuperDesignerApp extends StatefulWidget {
   /// Dossier du store ; `null` utilise le dossier utilisateur par défaut.
   final Directory? repositoryDirectory;
 
+  /// Dossier initial de l'application sandboxée ; `null` ouvre la dernière
+  /// application active (ou l'application par défaut) lorsque [persistRepository]
+  /// est activé et que [repositoryDirectory] est absent.
+  final Directory? applicationDirectory;
+
+  /// Gestionnaire optionnel de dossiers d'applications sandboxées.
+  final SandboxedApplicationStore? applicationStore;
+
+  /// Sélecteur de dossier personnalisable (principalement utilisé pour les tests).
+  final DirectoryPickerCallback? pickDirectory;
+
   @override
   State<SuperDesignerApp> createState() => _SuperDesignerAppState();
 }
 
 class _SuperDesignerAppState extends State<SuperDesignerApp> {
-  final _registry = createSuperDesignerRegistry();
+  Registry _registry = createSuperDesignerRegistry();
   final _eventBus = SuperEventBus();
   late final StreamSubscription<SuperComponentEvent> _eventSubscription;
 
@@ -112,9 +126,17 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     repositoryId: _repositoryId,
     path: 'source',
   );
-  late final _repositoryStore = widget.repositoryDirectory == null
-      ? JsonRepositoryStore.defaultStore()
-      : JsonRepositoryStore(widget.repositoryDirectory!);
+
+  late final SandboxedApplicationStore _applicationStore =
+      widget.applicationStore ?? SandboxedApplicationStore();
+  late final CustomDesignSystemStore? _globalDesignSystemStore =
+      CustomDesignSystemStore.tryDefaultStore();
+
+  late JsonRepositoryStore _repositoryStore;
+  FileAppearanceStore? _appearanceStore;
+  Directory? _currentAppDir;
+  String? _currentAppName;
+  int _appSessionGeneration = 0;
 
   late final _schemaModel = RepositorySchemaModel(Yaml2JsonSchemasParser());
 
@@ -280,13 +302,96 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   }
 
   /// Déclare la page d'entrée de l'éditeur SuperDesigner.
-  late final EditorPageRouter _pageRouting;
+  late EditorPageRouter _pageRouting;
   GoRouter get _router => _pageRouting.router;
+
+  bool get _usesSandboxedAppMode =>
+      widget.repositoryDirectory == null &&
+      (widget.persistRepository || widget.applicationDirectory != null);
+
+  EditorPageRouter _createPageRouting(Registry registry) => EditorPageRouter(
+    pageWrapper: (context, state, child) => wrapPageWithAppearanceShell(child),
+    baseConfig: RoutingConfig(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => getRootWidget(registry),
+        ),
+      ],
+    ),
+  );
+
+  RepositoryImpl _createPanModelRepository() {
+    final repository = RepositoryImpl(
+      id: _repositoryId,
+      onChanged: _onRepositoryChanged,
+      json: {
+        'source': '',
+        'estSize': 300,
+        'yamlError': '',
+        'nodes': <Object?>[],
+      },
+    );
+
+    repository.addCalculatedAttribute('total', (ctx) {
+      final articles = ctx.sync.getValue('articles')! as List;
+      return articles.fold<num>(
+        0,
+        (sum, article) => sum + ((article as Map)['prix'] as num),
+      );
+    });
+    return repository;
+  }
+
+  Future<void> _initializeSandboxedSession() async {
+    final requestedDir = widget.applicationDirectory;
+    final Directory targetDir;
+    final SandboxedApplicationManifest manifest;
+    if (requestedDir != null) {
+      final inspection = await _applicationStore.inspectDirectory(requestedDir);
+      if (!inspection.exists) {
+        manifest = await _applicationStore.createApplication(
+          requestedDir,
+          name: SandboxedApplicationStore.fallbackNameForDirectory(
+            requestedDir,
+          ),
+        );
+      } else {
+        manifest = await _applicationStore.openApplication(
+          requestedDir,
+          initializeNonEmpty: true,
+        );
+      }
+      targetDir = Directory(
+        SandboxedApplicationStore.normalizePath(requestedDir.path),
+      );
+    } else {
+      targetDir = await _applicationStore.ensureDefaultApplication();
+      final inspection = await _applicationStore.inspectDirectory(targetDir);
+      manifest =
+          inspection.manifest ??
+          SandboxedApplicationManifest(
+            name: SandboxedApplicationStore.fallbackNameForDirectory(targetDir),
+            createdAt: DateTime.now().toUtc(),
+            updatedAt: DateTime.now().toUtc(),
+          );
+    }
+    if (!mounted) return;
+    _repositoryStore.dispose();
+    _currentAppDir = targetDir;
+    _currentAppName = manifest.name;
+    _appearanceStore = SandboxedApplicationStore.appearanceStoreFor(
+      targetDir,
+      registry: _registry,
+    );
+    _repositoryStore = SandboxedApplicationStore.repositoryStoreFor(targetDir);
+    await _initializePersistentRepository(_createPanModelRepository());
+  }
 
   @override
   void initState() {
     super.initState();
-    if (widget.persistRepository) {
+    if (widget.persistRepository || widget.applicationDirectory != null) {
       // Annule la fermeture si des saisies ou leur sauvegarde échouent.
       _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
     }
@@ -318,61 +423,185 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
           );
         });
 
-    final repository = RepositoryImpl(
-      id: _repositoryId,
-      onChanged: _onRepositoryChanged,
-      json: {
-        'source': '',
-        'estSize': 300,
-        'yamlError': '',
-        'nodes': <Object?>[],
-      },
-    );
+    SuperDesignerRegistry(_registry).addRegistry();
+    _pageRouting = _createPageRouting(_registry);
+    _repositoryStore = widget.repositoryDirectory == null
+        ? JsonRepositoryStore.defaultStore()
+        : JsonRepositoryStore(widget.repositoryDirectory!);
 
-    repository.addCalculatedAttribute('total', (ctx) {
-      final articles = ctx.sync.getValue('articles')! as List;
-      return articles.fold<num>(
-        0,
-        (sum, article) => sum + ((article as Map)['prix'] as num),
+    if (_usesSandboxedAppMode) {
+      _repositoryInitialization = _initializeSandboxedSession();
+    } else if (widget.persistRepository) {
+      _repositoryInitialization = _initializePersistentRepository(
+        _createPanModelRepository(),
       );
-    });
-
-    if (widget.persistRepository) {
-      _repositoryInitialization = _initializePersistentRepository(repository);
     } else {
-      _repositoryStore.registerRepository(repository);
+      _repositoryStore.registerRepository(_createPanModelRepository());
       _repositoryInitialization = null;
       _queueValidation();
     }
-
-    SuperDesignerRegistry(_registry).addRegistry();
-
-    _pageRouting = EditorPageRouter(
-      pageWrapper: (context, state, child) => wrapPageWithAppearanceShell(child),
-      baseConfig: RoutingConfig(
-        routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => getRootWidget(_registry),
-          ),
-        ],
-      ),
-    );
   }
+
+  /// Enregistre les modifications d'apparence et de repositories en attente.
+  Future<void> _flushActiveApplication(BuildContext? appContext) async {
+    final navContext =
+        appContext ?? _pageRouting.router.routerDelegate.navigatorKey.currentContext;
+    if (navContext != null && navContext.mounted) {
+      final controller = AppearanceScope.controllerOf(navContext);
+      if (controller is PersistentAppearanceController) {
+        await controller.flush();
+      }
+      if (_currentAppDir != null &&
+          controller != null &&
+          !SandboxedApplicationStore.appearanceFileFor(
+            _currentAppDir!,
+          ).existsSync()) {
+        await _appearanceStore?.save(controller.value);
+      }
+    }
+    if (_repositoryStore.isRegisteredRepository(_repositoryId)) {
+      await _repositoryStore.flushBindings();
+      final pending = _validationQueue;
+      if (pending != null) await pending;
+      if (_repositoryStore.isPersistentRepository(_repositoryId)) {
+        await _repositoryStore.saveRepository(_repositoryId);
+      }
+    }
+  }
+
+  /// Bascule à chaud toute l'application vers le dossier [targetDir].
+  Future<void> _activateApplicationDirectory(
+    Directory targetDir,
+    SandboxedApplicationManifest manifest,
+  ) async {
+    if (!mounted) return;
+    _lifecycle ??= AppLifecycleListener(onExitRequested: _onExitRequested);
+
+    final previousRegistry = _registry;
+    final previousPageRouting = _pageRouting;
+    final previousRepositoryStore = _repositoryStore;
+
+    LayoutSelection.clearAll();
+    _validationQueue = null;
+    _validationFailure = null;
+    _validationFailureStack = null;
+    _schemaModelReady = false;
+
+    final nextRegistry = createSuperDesignerRegistry();
+    SuperDesignerRegistry(nextRegistry).addRegistry();
+    final nextRepositoryStore = SandboxedApplicationStore.repositoryStoreFor(
+      targetDir,
+    );
+    final nextAppearanceStore = SandboxedApplicationStore.appearanceStoreFor(
+      targetDir,
+      registry: nextRegistry,
+    );
+    final nextPageRouting = _createPageRouting(nextRegistry);
+
+    _registry = nextRegistry;
+    _repositoryStore = nextRepositoryStore;
+    _appearanceStore = nextAppearanceStore;
+    _pageRouting = nextPageRouting;
+    _currentAppDir = targetDir;
+    _currentAppName = manifest.name;
+    _appSessionGeneration++;
+
+    _repositoryInitialization = _initializePersistentRepository(
+      _createPanModelRepository(),
+    );
+    setState(() {});
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      previousPageRouting.dispose();
+      previousRepositoryStore.dispose();
+      previousRegistry.dispose();
+    });
+
+    await _repositoryInitialization;
+  }
+
+  Future<void> _switchToApplication(
+    BuildContext appContext,
+    Directory targetDir, {
+    required bool initializeNonEmpty,
+  }) async {
+    final normalized = Directory(
+      SandboxedApplicationStore.normalizePath(targetDir.path),
+    );
+    await _flushActiveApplication(appContext);
+    final manifest = await _applicationStore.openApplication(
+      normalized,
+      initializeNonEmpty: initializeNonEmpty,
+    );
+    await _activateApplicationDirectory(normalized, manifest);
+  }
+
+  Future<void> _createAndSwitchApplication(
+    BuildContext appContext,
+    Directory targetDir, {
+    required String name,
+    required bool cloneCurrent,
+  }) async {
+    final normalized = Directory(
+      SandboxedApplicationStore.normalizePath(targetDir.path),
+    );
+    await _flushActiveApplication(appContext);
+    final manifest = await _applicationStore.createApplication(
+      normalized,
+      name: name,
+      cloneFromDirectory: cloneCurrent ? _currentAppDir : null,
+    );
+    await _activateApplicationDirectory(normalized, manifest);
+  }
+
+  Future<void> _openApplicationSelector(BuildContext appContext) =>
+      ApplicationSelectorDialog.show(
+        appContext,
+        store: _applicationStore,
+        currentDirectory: _currentAppDir,
+        currentName: _currentAppName,
+        canCloneCurrent: _currentAppDir != null,
+        pickDirectory: widget.pickDirectory,
+        onSelectDirectory: (directory, {required initializeNonEmpty}) =>
+            _switchToApplication(
+              appContext,
+              directory,
+              initializeNonEmpty: initializeNonEmpty,
+            ),
+        onCreateApplication: (
+          directory, {
+          required name,
+          required cloneCurrent,
+        }) => _createAndSwitchApplication(
+          appContext,
+          directory,
+          name: name,
+          cloneCurrent: cloneCurrent,
+        ),
+      );
 
   /// Attend l'initialisation, les saisies et validations en attente avant
   /// d'enregistrer un dernier état cohérent sur disque.
   Future<AppExitResponse> _onExitRequested() async {
     final initialization = _repositoryInitialization;
-    if (initialization == null) return AppExitResponse.exit;
-    try {
-      await initialization;
-    } catch (error, stack) {
-      _reportRepositoryFailure(error, stack);
-      return AppExitResponse.exit;
+    if (initialization != null) {
+      try {
+        await initialization;
+      } catch (error, stack) {
+        _reportRepositoryFailure(error, stack);
+        return AppExitResponse.exit;
+      }
     }
     if (!mounted) return AppExitResponse.exit;
     try {
+      final navContext =
+          _pageRouting.router.routerDelegate.navigatorKey.currentContext;
+      if (navContext != null && navContext.mounted) {
+        final controller = AppearanceScope.controllerOf(navContext);
+        if (controller is PersistentAppearanceController) {
+          await controller.flush();
+        }
+      }
       while (true) {
         await _repositoryStore.flushBindings();
         if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
@@ -453,11 +682,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
   /// Construit l'application hôte avec le routeur et le repository partagés.
   Widget _buildApp() => SuperApp(
+    key: ValueKey('super-app-$_appSessionGeneration'),
     router: _router,
     pageRouting: _pageRouting,
     title: 'SURF UI by Desomer Gauthier',
     registry: _registry,
+    appearanceStore: _appearanceStore,
     repositoryStore: _repositoryStore,
+    customDesignSystemStore: _globalDesignSystemStore,
     eventBus: _eventBus,
     editorBannerAlignment: Alignment.bottomCenter,
   );
@@ -481,8 +713,15 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       child: Stack(
         children: [
           Positioned.fill(child: page),
-          const Positioned.fill(
-            child: RepaintBoundary(child: FloatingAppearanceToolbar()),
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: Builder(
+                builder: (toolbarContext) => FloatingAppearanceToolbar(
+                  onOpenApplications: () =>
+                      _openApplicationSelector(toolbarContext),
+                ),
+              ),
+            ),
           ),
         ],
       ),

@@ -115,6 +115,7 @@ class VibeDiagnosticsInspector {
     this.registry,
     this.repositoryStore,
     this.pageRouting,
+    this.ensurePageLoaded,
     this.readScope,
     this.onSelectScope,
     this.turnStartMarker,
@@ -138,6 +139,9 @@ class VibeDiagnosticsInspector {
 
   /// Routeur GoRouter dynamique optionnel.
   final EditorPageRouter? pageRouting;
+
+  /// Callback optionnel chargeant à la demande une page avant navigation d'aperçu.
+  final Future<void> Function(String pageId)? ensurePageLoaded;
 
   /// Fournisseur optionnel du `VibeChatScope` actif.
   final VibeChatScope? Function()? readScope;
@@ -1228,6 +1232,7 @@ class VibeDiagnosticsInspector {
       }
       routing.synchronize(appearance.pageCatalog);
       String? targetLocation;
+      String? targetPageId;
       if (pageId.isNotEmpty) {
         final page = appearance.pageCatalog.pages
             .where((p) => p.id == pageId)
@@ -1239,6 +1244,7 @@ class VibeDiagnosticsInspector {
             message: 'Page "$pageId" introuvable dans pageCatalog.',
           );
         }
+        targetPageId = page.id;
         targetLocation = routing.locationFor(page, page.defaultParameters);
       } else {
         if (!routePath.startsWith('/')) {
@@ -1249,6 +1255,12 @@ class VibeDiagnosticsInspector {
           );
         }
         targetLocation = routePath;
+        targetPageId = routing
+            .pageAt(Uri.parse(routePath), catalog: appearance.pageCatalog)
+            ?.id;
+      }
+      if (targetPageId != null && ensurePageLoaded != null) {
+        await ensurePageLoaded!(targetPageId);
       }
       previewTracker?.markNavigated();
       routing.router.go(targetLocation);

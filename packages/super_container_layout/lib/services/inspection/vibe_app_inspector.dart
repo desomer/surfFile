@@ -60,6 +60,7 @@ class VibeAppInspector {
     this.registry,
     this.repositoryStore,
     this.pageRouting,
+    this.ensurePageLoaded,
     this.readScope,
     this.onSelectScope,
     this.fallbackContext,
@@ -87,6 +88,9 @@ class VibeAppInspector {
 
   /// Routeur GoRouter dynamique optionnel.
   final EditorPageRouter? pageRouting;
+
+  /// Callback optionnel chargeant à la demande une page avant navigation d'aperçu.
+  final Future<void> Function(String pageId)? ensurePageLoaded;
 
   /// Fournisseur optionnel du périmètre restreint actif dans le chat Vibe.
   final VibeChatScope? Function()? readScope;
@@ -120,6 +124,7 @@ class VibeAppInspector {
     registry: registry,
     repositoryStore: repositoryStore,
     pageRouting: pageRouting,
+    ensurePageLoaded: ensurePageLoaded,
     readScope: readScope,
     onSelectScope: onSelectScope,
     turnStartMarker: turnStartMarker,

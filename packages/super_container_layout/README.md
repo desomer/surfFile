@@ -1987,27 +1987,22 @@ L'editeur propose une activation du glisser separee pour chaque cote et un
 interrupteur pour tous les cotes, desactives par defaut. Les reglages sont
 persistes dans `SuperLayoutConfig.sideResizing` ; sans reglage individuel,
 `resizeSides` reste utilise pour les anciennes configurations.
-Une fois active, le bord interieur
-de 5 px des zones Nord, Sud, Ouest et Est devient une poignee de type SplitView,
+Une fois active, le bord de 5 px separant les zones Nord, Sud, Ouest et Est
+du centre devient une gouttiere discrete de type VS Code (sash),
 y compris hors du mode edition. Les coins et le centre n'ont pas de poignee ;
 les dispositions non editables n'en affichent pas. Le glisser part de la
 taille effectivement affichee, passe le cote en taille fixe et transmet les
 modifications par `onChanged`. Les tailles sont limitees a 20–400 px et
 conservent au moins 20 px pour le centre lorsque l'espace le permet.
 L'option et les tailles sont conservees lors d'une sauvegarde ou d'un export.
-Chaque poignee affiche trois petits points et deux triangles.
-La bordure et les boutons sont mis en surbrillance au survol avec les couleurs
-du theme et retrouvent leur couleur normale lorsque la souris sort.
-Le triangle est affiche a 15 px dans une zone cliquable de 15 x 15 px sur fond contraste,
-sans elargir la bordure de glissement de 5 px. Le triangle
-dirige vers l'exterieur reduit la zone a zero, meme si ses composants ont un
-minimum. Le separateur reste accessible et le contenu conserve son etat.
-Lorsque la zone est reduite, sa bordure est alignee sur le bord du SuperLayout
-sans decalage ; les boutons restent a l'interieur pour permettre la restauration.
-L'autre triangle restaure la taille precedente si la zone est reduite, sinon
-il l'agrandit au maximum autorise par les contraintes et l'espace disponible.
-La restauration respecte les limites actuelles. L'etat reduit et la taille
-a restaurer sont sauvegardes dans `SuperLayoutConfig.collapsedSides`.
+La gouttiere reste completement transparente au repos ; au survol ou pendant le
+glisser, une fine ligne d'accentuation de 2 px (`colorScheme.primary`) apparait
+en fondu et disparait des la sortie du pointeur. Un double-clic sur la gouttiere
+reduit la zone a zero (meme si ses composants ont un minimum) ou restaure sa
+taille precedente dans la limite des contraintes et de l'espace disponible.
+Lorsque la zone est reduite, le separateur reste accessible le long du bord
+exterieur du SuperLayout et le contenu conserve son etat. L'etat reduit et la
+taille a restaurer sont sauvegardes dans `SuperLayoutConfig.collapsedSides`.
 Les min/max renseignes dans `slotSizeConstraints` des composants visibles de
 la zone limitent aussi le glisser : somme sur l'axe d'empilement, intersection
 sur l'axe transversal. Un maximum absent dans une pile laisse son maximum

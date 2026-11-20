@@ -4,11 +4,13 @@
 /// dupliquer profondément un sous-graphe ou supprimer un composant sans laisser d'orphelins.
 library;
 
+import 'package:flutter/foundation.dart' show immutable, listEquals, mapEquals;
 import 'package:shortid/shortid.dart';
 
 import '../../models/a4_page_config.dart';
 import '../../models/component_behavior.dart';
 import '../../models/component_config.dart';
+import '../../models/component_usage.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
@@ -62,6 +64,116 @@ class EditorPageRemoval {
 
   /// Data whose ownership is unknown and was therefore kept.
   final List<String> limitations;
+}
+
+/// Tranche d'apparence spécifique à une page du catalogue ([EditorPageGraph.partitionForPages]).
+@immutable
+class EditorPageAppearanceSlice {
+  /// Crée une tranche contenant les styles, composants, comportements et usages propres à une page.
+  EditorPageAppearanceSlice({
+    Map<String, ContainerStyle> styles = const {},
+    Map<String, ComponentConfig> components = const {},
+    Map<String, List<ComponentBehavior>> behaviors = const {},
+    Map<String, ComponentUsage> usages = const {},
+  }) : styles = Map.unmodifiable(styles),
+       components = Map.unmodifiable(components),
+       behaviors = Map.unmodifiable({
+         for (final entry in behaviors.entries)
+           entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
+       }),
+       usages = Map.unmodifiable(usages);
+
+  /// Tranche vide.
+  const EditorPageAppearanceSlice.empty()
+    : styles = const {},
+      components = const {},
+      behaviors = const {},
+      usages = const {};
+
+  /// Styles exclusifs à la page.
+  final Map<String, ContainerStyle> styles;
+
+  /// Composants exclusifs à la page.
+  final Map<String, ComponentConfig> components;
+
+  /// Comportements exclusifs à la page.
+  final Map<String, List<ComponentBehavior>> behaviors;
+
+  /// Usages déclarés exclusifs à la page.
+  final Map<String, ComponentUsage> usages;
+
+  /// Indique si la tranche ne contient aucune entrée.
+  bool get isEmpty =>
+      styles.isEmpty &&
+      components.isEmpty &&
+      behaviors.isEmpty &&
+      usages.isEmpty;
+
+  /// Fusionne cette tranche dans [base] sans écraser les entrées déjà présentes en mémoire
+  /// (sauf si [overwriteExisting] vaut `true`).
+  Appearance mergeInto(Appearance base, {bool overwriteExisting = false}) {
+    if (isEmpty) return base;
+    return base.copyWith(
+      styles: overwriteExisting
+          ? {...base.styles, ...styles}
+          : {...styles, ...base.styles},
+      components: overwriteExisting
+          ? {...base.components, ...components}
+          : {...components, ...base.components},
+      behaviors: overwriteExisting
+          ? {...base.behaviors, ...behaviors}
+          : {...behaviors, ...base.behaviors},
+      usages: overwriteExisting
+          ? {...base.usages, ...usages}
+          : {...usages, ...base.usages},
+    );
+  }
+
+  static bool _behaviorMapsEqual(
+    Map<String, List<ComponentBehavior>> a,
+    Map<String, List<ComponentBehavior>> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      final other = b[entry.key];
+      if (other == null || !listEquals(entry.value, other)) return false;
+    }
+    return true;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EditorPageAppearanceSlice &&
+          mapEquals(other.styles, styles) &&
+          mapEquals(other.components, components) &&
+          _behaviorMapsEqual(other.behaviors, behaviors) &&
+          mapEquals(other.usages, usages);
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAllUnordered(styles.entries.map((e) => Object.hash(e.key, e.value))),
+    Object.hashAllUnordered(components.entries.map((e) => Object.hash(e.key, e.value))),
+    Object.hashAllUnordered(behaviors.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value)))),
+    Object.hashAllUnordered(usages.entries.map((e) => Object.hash(e.key, e.value))),
+  );
+}
+
+/// Résultat du partitionnement d'une [Appearance] entre le document global et les tranches par page.
+@immutable
+class EditorPagePartition {
+  /// Crée le résultat du partitionnement.
+  EditorPagePartition({
+    required this.global,
+    Map<String, EditorPageAppearanceSlice> pages = const {},
+  }) : pages = Map.unmodifiable(pages);
+
+  /// Apparence globale (`appearance.json`) : thème, catalogue, page `'/'` et éléments partagés.
+  final Appearance global;
+
+  /// Tranches exclusives par identifiant de page chargée.
+  final Map<String, EditorPageAppearanceSlice> pages;
 }
 
 /// Ownership and traversal of the persisted design graph of an editor page.
@@ -568,6 +680,195 @@ abstract final class EditorPageGraph {
     );
   }
 
+  /// Partitionne [appearance] entre un document global (`appearance.json`) et
+  /// des tranches exclusives par page pour les pages chargées ([loadedPageIds]).
+  ///
+  /// Les styles/composants/comportements/usages atteignables depuis une seule
+  /// page chargée (et non partagés avec `root`, `mainLayout`, d'autres pages
+  /// ou des composants hors catalogue) sont placés dans la tranche de cette
+  /// page. Tant que toutes les pages de `appearance.pageCatalog` ne sont pas
+  /// dans [loadedPageIds], les identifiants listés dans [globalProtectedIds]
+  /// restent protégés dans le document global afin de préserver les éventuels
+  /// partages avec des pages non encore chargées.
+  static EditorPagePartition partitionForPages({
+    required Appearance appearance,
+    Registry? registry,
+    required Set<String> loadedPageIds,
+    Set<String> globalProtectedIds = const {},
+    Set<String> globalRootIds = const {'root', 'mainLayout'},
+  }) {
+    final catalogPageIds = <String>{
+      for (final page in appearance.pageCatalog.pages) page.id,
+    };
+    final activeLoadedPageIds = <String>[
+      for (final page in appearance.pageCatalog.pages)
+        if (loadedPageIds.contains(page.id)) page.id,
+    ];
+    final allCatalogLoaded = catalogPageIds.every(loadedPageIds.contains);
+
+    Set<String> collectFromRoots(Iterable<String> startIds) {
+      final reachable = <String>{};
+      final stack = <String>{};
+
+      void addAuxiliaries(String id, ComponentConfig? config) {
+        reachable.add('$id:item');
+        reachable.add('$id:layout');
+        if (config is SuperListViewConfig && config.itemId != null) {
+          reachable.add(config.itemId!);
+        } else if (config is SuperTreeViewConfig && config.itemId != null) {
+          reachable.add(config.itemId!);
+        } else if (config is SuperTableConfig && config.itemId != null) {
+          reachable.add(config.itemId!);
+        }
+      }
+
+      void visitId(String id) {
+        final isNew = reachable.add(id);
+        final config = appearance.components[id];
+        if (isNew) {
+          addAuxiliaries(id, config);
+        }
+        if (config == null || !stack.add(id)) return;
+        final kind = switch (config) {
+          SuperLayoutConfig() || SuperListViewConfig() => EditorConfigKind.layout,
+          _ => EditorConfigKind.nativeComponent,
+        };
+        final slots = _slots(kind, config);
+        for (final entry in slots.entries) {
+          final childId = entry.key;
+          if (registry != null) {
+            final contract = _resolve(registry, entry.value, kind).contract;
+            if (contract != null) {
+              for (final owned in contract.ownedConfigs(childId)) {
+                reachable.add(owned.id);
+                addAuxiliaries(owned.id, appearance.components[owned.id]);
+              }
+            }
+          }
+          visitId(childId);
+        }
+        stack.remove(id);
+      }
+
+      for (final rootId in startIds) {
+        visitId(rootId);
+      }
+      return reachable;
+    }
+
+    final pageReachable = <String, Set<String>>{
+      for (final pageId in activeLoadedPageIds)
+        pageId: collectFromRoots([pageId]),
+    };
+    final anyPageReachable = <String>{
+      for (final ids in pageReachable.values) ...ids,
+    };
+
+    final effectiveGlobalRoots = <String>{
+      for (final id in globalRootIds)
+        if (!catalogPageIds.contains(id)) id,
+      for (final id in appearance.components.keys)
+        if (!catalogPageIds.contains(id) && !anyPageReachable.contains(id)) id,
+    };
+    final globalReachable = collectFromRoots(effectiveGlobalRoots)
+      ..add('background');
+
+    if (!allCatalogLoaded && globalProtectedIds.isNotEmpty) {
+      globalReachable.addAll(globalProtectedIds);
+    }
+
+    final ownerById = <String, String?>{};
+    String? resolveOwner(String id) {
+      if (ownerById.containsKey(id)) return ownerById[id];
+      if (globalReachable.contains(id)) {
+        return ownerById[id] = null;
+      }
+      String? singleOwner;
+      for (final pageId in activeLoadedPageIds) {
+        if (pageReachable[pageId]!.contains(id)) {
+          if (singleOwner != null) {
+            return ownerById[id] = null;
+          }
+          singleOwner = pageId;
+        }
+      }
+      return ownerById[id] = singleOwner;
+    }
+
+    final pageStyles = <String, Map<String, ContainerStyle>>{
+      for (final pageId in activeLoadedPageIds) pageId: {},
+    };
+    final pageComponents = <String, Map<String, ComponentConfig>>{
+      for (final pageId in activeLoadedPageIds) pageId: {},
+    };
+    final pageBehaviors = <String, Map<String, List<ComponentBehavior>>>{
+      for (final pageId in activeLoadedPageIds) pageId: {},
+    };
+    final pageUsages = <String, Map<String, ComponentUsage>>{
+      for (final pageId in activeLoadedPageIds) pageId: {},
+    };
+
+    final globalStyles = <String, ContainerStyle>{};
+    for (final entry in appearance.styles.entries) {
+      final owner = resolveOwner(entry.key);
+      if (owner == null) {
+        globalStyles[entry.key] = entry.value;
+      } else {
+        pageStyles[owner]![entry.key] = entry.value;
+      }
+    }
+
+    final globalComponents = <String, ComponentConfig>{};
+    for (final entry in appearance.components.entries) {
+      final owner = resolveOwner(entry.key);
+      if (owner == null) {
+        globalComponents[entry.key] = entry.value;
+      } else {
+        pageComponents[owner]![entry.key] = entry.value;
+      }
+    }
+
+    final globalBehaviors = <String, List<ComponentBehavior>>{};
+    for (final entry in appearance.behaviors.entries) {
+      final owner = resolveOwner(entry.key);
+      if (owner == null) {
+        globalBehaviors[entry.key] = entry.value;
+      } else {
+        pageBehaviors[owner]![entry.key] = entry.value;
+      }
+    }
+
+    final globalUsages = <String, ComponentUsage>{};
+    for (final entry in appearance.usages.entries) {
+      final owner = resolveOwner(entry.key);
+      if (owner == null) {
+        globalUsages[entry.key] = entry.value;
+      } else {
+        pageUsages[owner]![entry.key] = entry.value;
+      }
+    }
+
+    final slices = <String, EditorPageAppearanceSlice>{
+      for (final pageId in activeLoadedPageIds)
+        pageId: EditorPageAppearanceSlice(
+          styles: pageStyles[pageId]!,
+          components: pageComponents[pageId]!,
+          behaviors: pageBehaviors[pageId]!,
+          usages: pageUsages[pageId]!,
+        ),
+    };
+
+    return EditorPagePartition(
+      global: appearance.copyWith(
+        styles: globalStyles,
+        components: globalComponents,
+        behaviors: globalBehaviors,
+        usages: globalUsages,
+      ),
+      pages: slices,
+    );
+  }
+
   /// Removes the configurations exclusively owned by [pageId].
   static Appearance remove({
     required Appearance appearance,
@@ -966,6 +1267,9 @@ Map<String, String> _slots(EditorConfigKind kind, Object value) {
       })
         id: value.slotTypeOf(id),
     };
+  }
+  if (value is SuperListViewConfig) {
+    return _slots(EditorConfigKind.layout, value.template);
   }
   if (value is ComponentConfig) {
     return value.childSlots;

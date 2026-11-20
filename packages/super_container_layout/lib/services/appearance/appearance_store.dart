@@ -13,7 +13,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/json_numbers.dart';
 import '../../theme/appearance.dart';
+import '../pages/editor_page_graph.dart';
 import 'appearance_codec.dart';
+import 'paged_file_appearance_store.dart';
 
 
 Map<String, dynamic> _decodeJsonMapInIsolate(String text) {
@@ -183,7 +185,76 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
   /// enregistrement différé par debounce.
   Future<void> get saved => flush();
   bool _restoring = false;
+  bool _hydrating = false;
+  EditorPageAppearanceSlice? _activeHydrationSlice;
+  int _epoch = 0;
+  final Map<String, Future<void>> _inFlightPageLoads = <String, Future<void>>{};
+
+  /// Indique si une hydratation passive de page à la demande est en cours.
+  bool get isHydrating => _hydrating;
+
+  /// Tranche en cours d'hydratation (utilisée par l'historique pour enrichir les snapshots sans créer d'étape Undo).
+  EditorPageAppearanceSlice? get activeHydrationSlice => _activeHydrationSlice;
+
+  /// Indique si la page [pageId] est déjà chargée en mémoire (toujours `true` pour les stores monolithiques).
+  bool isPageLoaded(String pageId) => switch (store) {
+    final PagedFileAppearanceStore paged => paged.isPageLoaded(pageId),
+    _ => true,
+  };
+
+  /// Charge à la demande les données persistées de [pageId] sans déclencher d'écriture disque.
+  Future<void> ensurePageLoaded(String pageId) {
+    final currentStore = store;
+    if (currentStore is! PagedFileAppearanceStore) {
+      return Future<void>.value();
+    }
+    final trimmed = pageId.trim();
+    if (trimmed.isEmpty || currentStore.isPageLoaded(trimmed)) {
+      return Future<void>.value();
+    }
+    final inFlight = _inFlightPageLoads[trimmed];
+    if (inFlight != null) return inFlight;
+
+    final future = _hydratePage(currentStore, trimmed, _epoch);
+    _inFlightPageLoads[trimmed] = future;
+    return future.whenComplete(() {
+      if (identical(_inFlightPageLoads[trimmed], future)) {
+        _inFlightPageLoads.remove(trimmed);
+      }
+    });
+  }
+
+  Future<void> _hydratePage(
+    PagedFileAppearanceStore paged,
+    String pageId,
+    int epoch,
+  ) async {
+    final slice = await paged.loadPage(pageId);
+    if (_disposed || epoch != _epoch || slice.isEmpty) return;
+    _hydrating = true;
+    _activeHydrationSlice = slice;
+    try {
+      final merged = store.codec.prepare(slice.mergeInto(value));
+      validateAppearance?.call(merged);
+      super.value = merged;
+    } finally {
+      _activeHydrationSlice = null;
+      _hydrating = false;
+    }
+  }
+
+  /// Charge à la demande toutes les pages déclarées dans `value.pageCatalog`.
+  Future<void> ensureAllPagesLoaded() async {
+    if (store is! PagedFileAppearanceStore) return;
+    final ids = [for (final page in value.pageCatalog.pages) page.id];
+    for (final id in ids) {
+      await ensurePageLoaded(id);
+    }
+  }
+
   Future<void> restore() async {
+    _epoch++;
+    _inFlightPageLoads.clear();
     _restoring = true;
     _debounceTimer?.cancel();
     _debounceTimer = null;
@@ -214,6 +285,8 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
   }
 
   void reset() {
+    _epoch++;
+    _inFlightPageLoads.clear();
     store.codec.resetAdditional();
     value = store.codec.defaults;
   }

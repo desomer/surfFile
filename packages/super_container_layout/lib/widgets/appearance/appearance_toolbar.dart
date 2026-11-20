@@ -72,16 +72,50 @@ class StyleEditModeButton extends StatelessWidget {
   }
 }
 
+/// Portée `InheritedWidget` exposant une action d'ouverture du sélecteur
+/// d'application sandboxée à [FloatingAppearanceToolbar].
+class ApplicationSelectorScope extends InheritedWidget {
+  const ApplicationSelectorScope({
+    required this.onOpenApplications,
+    this.tooltip = 'Applications',
+    required super.child,
+    super.key,
+  });
+
+  /// Action déclenchée lors du clic sur l'icône d'applications (`3×3` points).
+  final VoidCallback? onOpenApplications;
+
+  /// Info-bulle affichée sur le bouton d'applications.
+  final String tooltip;
+
+  /// Retourne la portée la plus proche si présente dans [context].
+  static ApplicationSelectorScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ApplicationSelectorScope>();
+
+  @override
+  bool updateShouldNotify(ApplicationSelectorScope oldWidget) =>
+      onOpenApplications != oldWidget.onOpenApplications ||
+      tooltip != oldWidget.tooltip;
+}
+
 /// Draggable floating toolbar exposing style-edit mode and appearance settings.
 class FloatingAppearanceToolbar extends StatefulWidget {
   const FloatingAppearanceToolbar({
     this.initialPosition,
     this.onOpenSettings,
+    this.onOpenApplications,
+    this.applicationsTooltip,
     super.key,
   });
 
   final Offset? initialPosition;
   final VoidCallback? onOpenSettings;
+
+  /// Action optionnelle ouvrant la sélection d'application sandboxée (`Icons.apps`).
+  final VoidCallback? onOpenApplications;
+
+  /// Info-bulle du bouton d'applications.
+  final String? applicationsTooltip;
 
   @override
   State<FloatingAppearanceToolbar> createState() =>
@@ -127,6 +161,13 @@ class _FloatingAppearanceToolbarState extends State<FloatingAppearanceToolbar> {
           child: Builder(
             builder: (context) {
               if (StyleEditScope.controllerOf(context) != null) {
+                final appScope = ApplicationSelectorScope.maybeOf(context);
+                final openApplications =
+                    widget.onOpenApplications ?? appScope?.onOpenApplications;
+                final appsTooltip =
+                    widget.applicationsTooltip ??
+                    appScope?.tooltip ??
+                    'Applications';
                 return Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -165,6 +206,13 @@ class _FloatingAppearanceToolbarState extends State<FloatingAppearanceToolbar> {
                           widget.onOpenSettings ??
                           () => AppearanceSettings.show(context),
                     ),
+                    if (openApplications != null)
+                      SuperToolbarIconButton(
+                        key: const ValueKey('appearance-applications'),
+                        tooltip: appsTooltip,
+                        icon: Icons.apps,
+                        onPressed: openApplications,
+                      ),
                   ],
                 );
               }

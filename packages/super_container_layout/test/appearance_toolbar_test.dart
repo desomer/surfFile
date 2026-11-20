@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -114,5 +116,125 @@ void main() {
     expect(toolbar(tester).right, lessThanOrEqualTo(360));
     expect(toolbar(tester).bottom, lessThanOrEqualTo(240));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('apps button is hidden by default and shown when configured', (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    expect(find.byKey(const ValueKey('appearance-applications')), findsNothing);
+
+    var opened = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StyleEditScope(
+            controller: ValueNotifier(false),
+            child: ApplicationSelectorScope(
+              onOpenApplications: () => opened++,
+              child: const FloatingAppearanceToolbar(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final appsButton = find.byKey(const ValueKey('appearance-applications'));
+    expect(appsButton, findsOneWidget);
+    expect(find.byIcon(Icons.apps), findsOneWidget);
+    await tester.tap(appsButton);
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  testWidgets('ApplicationSelectorDialog opens folders and creates empty/cloned apps', (
+    tester,
+  ) async {
+    late Directory tempDir;
+    late Directory appA;
+    late Directory appB;
+    final store = SandboxedApplicationStore();
+    await tester.runAsync(() async {
+      tempDir = await Directory.systemTemp.createTemp('app-dialog-test-');
+      appA = Directory('${tempDir.path}${Platform.pathSeparator}alpha');
+      appB = Directory('${tempDir.path}${Platform.pathSeparator}beta');
+      await store.createApplication(appA, name: 'Alpha');
+    });
+    addTearDown(() async {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    Directory? selectedDir;
+    Directory? createdDir;
+    String? createdName;
+    bool? createdClone;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => ApplicationSelectorDialog.show(
+                  context,
+                  store: store,
+                  currentDirectory: appA,
+                  currentName: 'Alpha',
+                  pickDirectory: (_) async => appB.path,
+                  onSelectDirectory: (dir, {required initializeNonEmpty}) async {
+                    selectedDir = dir;
+                  },
+                  onCreateApplication: (
+                    dir, {
+                    required name,
+                    required cloneCurrent,
+                  }) async {
+                    createdDir = dir;
+                    createdName = name;
+                    createdClone = cloneCurrent;
+                  },
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('application-selector-dialog')), findsOneWidget);
+    expect(find.text('Alpha'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey('application-selector-new')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('application-create-name-input')),
+      'Gamma',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('application-create-path-input')),
+      '${tempDir.path}${Platform.pathSeparator}gamma',
+    );
+    await tester.tap(find.text('Application vide'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('application-create-submit')));
+    await tester.pumpAndSettle();
+
+    expect(createdName, 'Gamma');
+    expect(createdClone, isFalse);
+    expect(createdDir?.path, '${tempDir.path}${Platform.pathSeparator}gamma');
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('application-selector-open-folder')));
+    await tester.pumpAndSettle();
+    expect(selectedDir?.path, appB.path);
   });
 }

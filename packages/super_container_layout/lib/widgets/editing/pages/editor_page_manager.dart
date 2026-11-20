@@ -10,6 +10,7 @@ import '../../../models/a4_page_config.dart';
 import '../../../models/editor_page_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/responsive_layout_config.dart';
+import '../../../services/appearance/appearance_store.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../theme/appearance.dart';
@@ -71,6 +72,38 @@ class _PageManagerState extends State<_PageManager> {
     _error = error is FormatException ? error.message : error.toString();
   });
 
+  Future<void> _ensurePageLoaded(String pageId) async {
+    final notifier = widget.appearance;
+    if (notifier is! PersistentAppearanceController) return;
+    final before = notifier.value;
+    await notifier.ensurePageLoaded(pageId);
+    final after = notifier.value;
+    if (identical(before, after) || !mounted) return;
+    final slice = EditorPageAppearanceSlice(
+      styles: {
+        for (final entry in after.styles.entries)
+          if (!before.styles.containsKey(entry.key)) entry.key: entry.value,
+      },
+      components: {
+        for (final entry in after.components.entries)
+          if (!before.components.containsKey(entry.key)) entry.key: entry.value,
+      },
+      behaviors: {
+        for (final entry in after.behaviors.entries)
+          if (!before.behaviors.containsKey(entry.key)) entry.key: entry.value,
+      },
+      usages: {
+        for (final entry in after.usages.entries)
+          if (!before.usages.containsKey(entry.key)) entry.key: entry.value,
+      },
+    );
+    setState(() {
+      final wasDirty = _dirty;
+      _base = after;
+      _draft = wasDirty ? slice.mergeInto(_draft) : after;
+    });
+  }
+
   Future<EditorPageConfig?> _details({
     EditorPageConfig? page,
     bool duplicate = false,
@@ -123,6 +156,8 @@ class _PageManagerState extends State<_PageManager> {
     final result = await _details(page: page);
     if (result == null || !mounted) return;
     if (result.pageType.usesScaffold != page.pageType.usesScaffold) {
+      await _ensurePageLoaded(page.id);
+      if (!mounted) return;
       final removed = EditorPageGraph.removal(
         appearance: _draft,
         registry: widget.registry,
@@ -150,6 +185,8 @@ class _PageManagerState extends State<_PageManager> {
     final result = await _details(page: page, duplicate: true);
     if (result == null || !mounted) return;
     try {
+      await _ensurePageLoaded(page.id);
+      if (!mounted) return;
       final copied = EditorPageGraph.duplicate(
         appearance: _draft,
         registry: widget.registry,
@@ -188,6 +225,8 @@ class _PageManagerState extends State<_PageManager> {
     );
     if (confirmed != true || !mounted) return;
     try {
+      await _ensurePageLoaded(page.id);
+      if (!mounted) return;
       final removed = EditorPageGraph.removal(
         appearance: _draft,
         registry: widget.registry,

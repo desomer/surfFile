@@ -489,29 +489,43 @@ class _RenderZoneLayout extends RenderBox
       var rect = rects[zone] ?? Rect.zero;
       final data = child.parentData! as _ZoneParentData;
       if (data.resizeHandle) {
+        const hitExtent = 5.0;
+        const half = hitExtent / 2;
         rect = switch (zone) {
           SuperLayoutZone.north => Rect.fromLTWH(
             rect.left,
-            (rect.bottom - 24).clamp(0, size.height),
+            (rect.bottom - half).clamp(
+              0.0,
+              math.max(0.0, size.height - hitExtent),
+            ),
             rect.width,
-            24,
+            math.min(hitExtent, size.height),
           ),
           SuperLayoutZone.south => Rect.fromLTWH(
             rect.left,
-            rect.top.clamp(0, (size.height - 24).clamp(0, size.height)),
+            (rect.top - half).clamp(
+              0.0,
+              math.max(0.0, size.height - hitExtent),
+            ),
             rect.width,
-            24,
+            math.min(hitExtent, size.height),
           ),
           SuperLayoutZone.west => Rect.fromLTWH(
-            (rect.right - 24).clamp(0, size.width),
+            (rect.right - half).clamp(
+              0.0,
+              math.max(0.0, size.width - hitExtent),
+            ),
             rect.top,
-            24,
+            math.min(hitExtent, size.width),
             rect.height,
           ),
           _ => Rect.fromLTWH(
-            rect.left.clamp(0, (size.width - 24).clamp(0, size.width)),
+            (rect.left - half).clamp(
+              0.0,
+              math.max(0.0, size.width - hitExtent),
+            ),
             rect.top,
-            24,
+            math.min(hitExtent, size.width),
             rect.height,
           ),
         };

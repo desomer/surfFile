@@ -37,6 +37,7 @@ class StyleEditBanner extends StatefulWidget {
     this.validateAppearance,
     this.customDesignGuide,
     this.replaceDefaultDesignGuide = false,
+    this.customDesignSystemStore,
     this.initialAlignment,
     super.key,
   });
@@ -53,6 +54,9 @@ class StyleEditBanner extends StatefulWidget {
 
   /// Indique si [customDesignGuide] remplace le guide de design par défaut au lieu de le compléter.
   final bool replaceDefaultDesignGuide;
+
+  /// Magasin optionnel de systèmes de design `DESIGN.md` transmis à [VibeChatDialog].
+  final CustomDesignSystemStore? customDesignSystemStore;
 
   /// Position initiale dans l'espace disponible ; `null` conserve le haut.
   final Alignment? initialAlignment;
@@ -709,6 +713,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),
                     customDesignSystems: _customDesignSystems,
+                    customDesignSystemStore:
+                        widget.customDesignSystemStore ??
+                        SuperApp.maybeOf(context)?.customDesignSystemStore,
                     onCustomDesignSystemsChanged: (list) =>
                         setState(() => _customDesignSystems = list),
                     customDesignGuide:

@@ -14,7 +14,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../super_page.dart';
+import '../../widgets/appearance/appearance_scope.dart';
 import '../../widgets/components/a4_document_page.dart';
+import '../appearance/appearance_store.dart';
 
 /// A route declared in the application's code, exposed for navigation only.
 class EditorCodedRoute {
@@ -44,6 +46,8 @@ class EditorPageRouter {
   EditorPageRouter({
     required this.baseConfig,
     this.pageWrapper,
+    this.isPageLoaded,
+    this.loadPage,
     String? initialLocation,
     GlobalKey<NavigatorState>? navigatorKey,
     List<NavigatorObserver>? observers,
@@ -89,6 +93,12 @@ class EditorPageRouter {
   /// Wrapper optionnel appliqué autour de chaque [SuperPage] générée hors code.
   final EditorPageWrapper? pageWrapper;
 
+  /// Prédicat optionnel indiquant si la page [pageId] est déjà chargée en mémoire.
+  final bool Function(String pageId)? isPageLoaded;
+
+  /// Callback optionnel chargeant à la demande les données persistées de [pageId].
+  final Future<void> Function(String pageId)? loadPage;
+
   late final ValueNotifier<RoutingConfig> _routing;
   late final GoRouter router;
   late final Uri _initialUri;
@@ -115,11 +125,16 @@ class EditorPageRouter {
         name: _routeName(page.id),
         pageBuilder: page.pageType.isModal
             ? (context, state) {
-                final child = SuperPage(
-                  key: ValueKey('editor-page-${page.id}'),
-                  id: page.id,
-                  label: page.name,
-                  pageConfig: ScaffoldPageConfig(),
+                final child = _OnDemandEditorPage(
+                  pageId: page.id,
+                  isPageLoaded: isPageLoaded,
+                  loadPage: loadPage,
+                  builder: (_) => SuperPage(
+                    key: ValueKey('editor-page-${page.id}'),
+                    id: page.id,
+                    label: page.name,
+                    pageConfig: ScaffoldPageConfig(),
+                  ),
                 );
                 return switch (page.pageType) {
                   EditorPageType.dialog => _EditorDialogPage(
@@ -145,19 +160,24 @@ class EditorPageRouter {
         builder: page.pageType.isModal
             ? null
             : (context, state) {
-                final Widget child = switch (page.pageType) {
-                  EditorPageType.a4Document => A4DocumentPage(
-                    key: ValueKey('editor-page-${page.id}'),
-                    id: page.id,
-                    label: page.name,
-                  ),
-                  _ => SuperPage(
-                    key: ValueKey('editor-page-${page.id}'),
-                    id: page.id,
-                    label: page.name,
-                    pageConfig: ScaffoldPageConfig(),
-                  ),
-                };
+                final Widget child = _OnDemandEditorPage(
+                  pageId: page.id,
+                  isPageLoaded: isPageLoaded,
+                  loadPage: loadPage,
+                  builder: (_) => switch (page.pageType) {
+                    EditorPageType.a4Document => A4DocumentPage(
+                      key: ValueKey('editor-page-${page.id}'),
+                      id: page.id,
+                      label: page.name,
+                    ),
+                    _ => SuperPage(
+                      key: ValueKey('editor-page-${page.id}'),
+                      id: page.id,
+                      label: page.name,
+                      pageConfig: ScaffoldPageConfig(),
+                    ),
+                  },
+                );
                 return pageWrapper?.call(context, state, child) ?? child;
               },
       );
@@ -537,6 +557,138 @@ class EditorPageRouter {
   void dispose() {
     router.dispose();
     _routing.dispose();
+  }
+}
+
+class _OnDemandEditorPage extends StatefulWidget {
+  const _OnDemandEditorPage({
+    required this.pageId,
+    required this.builder,
+    this.isPageLoaded,
+    this.loadPage,
+  });
+
+  final String pageId;
+  final WidgetBuilder builder;
+  final bool Function(String pageId)? isPageLoaded;
+  final Future<void> Function(String pageId)? loadPage;
+
+  @override
+  State<_OnDemandEditorPage> createState() => _OnDemandEditorPageState();
+}
+
+class _OnDemandEditorPageState extends State<_OnDemandEditorPage> {
+  bool _loading = false;
+  Object? _error;
+  int _requestToken = 0;
+
+  PersistentAppearanceController? _controller() {
+    final notifier = context
+        .getInheritedWidgetOfExactType<AppearanceScope>()
+        ?.notifier;
+    return notifier is PersistentAppearanceController ? notifier : null;
+  }
+
+  bool _isLoaded() {
+    if (widget.loadPage != null) {
+      return widget.isPageLoaded?.call(widget.pageId) ?? false;
+    }
+    final controller = _controller();
+    if (controller == null) return true;
+    return controller.isPageLoaded(widget.pageId);
+  }
+
+  Future<void> Function()? _resolveLoader() {
+    if (widget.loadPage != null) {
+      return () => widget.loadPage!(widget.pageId);
+    }
+    final controller = _controller();
+    if (controller == null) return null;
+    return () => controller.ensurePageLoaded(widget.pageId);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _ensureLoaded();
+  }
+
+  @override
+  void didUpdateWidget(_OnDemandEditorPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pageId != widget.pageId ||
+        oldWidget.loadPage != widget.loadPage ||
+        oldWidget.isPageLoaded != widget.isPageLoaded) {
+      _requestToken++;
+      _loading = false;
+      _error = null;
+      _ensureLoaded();
+    }
+  }
+
+  void _ensureLoaded() {
+    if (_loading || _error != null || _isLoaded()) return;
+    final loader = _resolveLoader();
+    if (loader == null) return;
+    final token = ++_requestToken;
+    _loading = true;
+    _error = null;
+    unawaited(
+      loader()
+          .then((_) {
+            if (!mounted || token != _requestToken) return;
+            setState(() => _loading = false);
+          })
+          .catchError((Object error, StackTrace _) {
+            if (!mounted || token != _requestToken) return;
+            setState(() {
+              _loading = false;
+              _error = error;
+            });
+          }),
+    );
+  }
+
+  void _retry() {
+    setState(() {
+      _error = null;
+      _ensureLoaded();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_error != null) {
+      return Material(
+        type: MaterialType.transparency,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Impossible de charger la page : $_error',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _retry,
+                  child: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (_loading || !_isLoaded()) {
+      return const Material(
+        type: MaterialType.transparency,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return widget.builder(context);
   }
 }
 
