@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:super_container_layout/super_container_layout.dart';
 
+import '../../models/business_object_model_preferences.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/json_schema_constraints.dart';
 import '../../models/spec_forge_project.dart';
@@ -74,19 +75,29 @@ abstract final class SpecSuperDesignerExporter {
     final schemas = <String, Map<String, Object?>>{};
     final seeds = <String, Map<String, Object?>>{};
 
+    final prefs = project.businessObjectModelPreferences;
+    final strictObjects = prefs.schemaStrictness == JsonSchemaStrictness.strict;
+    final locale = prefs.localeProfile;
+
     final roots = project.businessObjects.where((o) => o.aggregateRoot).toList();
     final objects = roots.isNotEmpty ? roots : project.businessObjects;
 
     for (final obj in objects) {
       final repoAlias = _toSnakeCase(obj.technicalName);
       final collectionKey = _pluralizeSnake(repoAlias);
-      final itemSchema = _objectToJsonSchema(project, obj, visited: {obj.id});
+      final itemSchema = _objectToJsonSchema(
+        project,
+        obj,
+        visited: {obj.id},
+        strictObjects: strictObjects,
+      );
 
       schemas[repoAlias] = <String, Object?>{
         r'$schema': 'https://json-schema.org/draft/2020-12/schema',
         'title': obj.name,
         'description': obj.description,
         'type': 'object',
+        if (strictObjects) 'additionalProperties': false,
         'required': [collectionKey],
         'properties': <String, Object?>{
           collectionKey: <String, Object?>{
@@ -98,7 +109,12 @@ abstract final class SpecSuperDesignerExporter {
 
       seeds[repoAlias] = <String, Object?>{
         collectionKey: [
-          _buildSampleRecord(project, obj, visited: {obj.id}),
+          _buildSampleRecord(
+            project,
+            obj,
+            visited: {obj.id},
+            localeProfile: locale,
+          ),
         ],
       };
     }
@@ -216,18 +232,29 @@ abstract final class SpecSuperDesignerExporter {
   static Map<String, Object?> objectToJsonSchema(
     SpecForgeProject project,
     BusinessObjectSpec obj,
-  ) => _objectToJsonSchema(project, obj, visited: {obj.id});
+  ) => _objectToJsonSchema(
+    project,
+    obj,
+    visited: {obj.id},
+    strictObjects:
+        project.businessObjectModelPreferences.schemaStrictness ==
+        JsonSchemaStrictness.strict,
+  );
 
   static Map<String, Object?> _objectToJsonSchema(
     SpecForgeProject project,
     BusinessObjectSpec obj, {
     required Set<String> visited,
+    required bool strictObjects,
   }) {
     final properties = <String, Object?>{};
     final required = <String>[];
 
     for (final attr in obj.attributes) {
-      properties[attr.name] = attributeToJsonSchema(attr);
+      properties[attr.name] = attributeToJsonSchema(
+        attr,
+        strictObjects: strictObjects,
+      );
       if (attr.required) required.add(attr.name);
     }
 
@@ -242,6 +269,7 @@ abstract final class SpecSuperDesignerExporter {
           project,
           target,
           visited: {...visited, target.id},
+          strictObjects: strictObjects,
         );
       } else {
         itemOrRefSchema = <String, Object?>{'type': 'string'};
@@ -255,6 +283,7 @@ abstract final class SpecSuperDesignerExporter {
     return <String, Object?>{
       'type': 'object',
       if (obj.description.isNotEmpty) 'description': obj.description,
+      if (strictObjects) 'additionalProperties': false,
       if (required.isNotEmpty) 'required': required,
       'properties': properties,
     };
@@ -271,7 +300,10 @@ abstract final class SpecSuperDesignerExporter {
   };
 
   /// Construit le sous-schéma JSON Schema Draft 2020-12 complet d'un [BusinessAttribute].
-  static Map<String, Object?> attributeToJsonSchema(BusinessAttribute attr) {
+  static Map<String, Object?> attributeToJsonSchema(
+    BusinessAttribute attr, {
+    bool strictObjects = false,
+  }) {
     final schema = switch (attr.type) {
       BusinessAttributeType.string => <String, Object?>{'type': 'string'},
       BusinessAttributeType.integer => <String, Object?>{'type': 'integer'},
@@ -305,16 +337,21 @@ abstract final class SpecSuperDesignerExporter {
       BusinessAttributeType.object when attr.children.isNotEmpty =>
         <String, Object?>{
           'type': 'object',
+          if (strictObjects) 'additionalProperties': false,
           if (attr.children.any((c) => c.required))
             'required': [
               for (final c in attr.children)
                 if (c.required) c.name,
             ],
           'properties': <String, Object?>{
-            for (final c in attr.children) c.name: attributeToJsonSchema(c),
+            for (final c in attr.children)
+              c.name: attributeToJsonSchema(c, strictObjects: strictObjects),
           },
         },
-      BusinessAttributeType.object => <String, Object?>{'type': 'object'},
+      BusinessAttributeType.object => <String, Object?>{
+        'type': 'object',
+        if (strictObjects) 'additionalProperties': false,
+      },
       BusinessAttributeType.json => <String, Object?>{'type': 'object'},
     };
     if (attr.description.isNotEmpty) {
@@ -352,6 +389,7 @@ abstract final class SpecSuperDesignerExporter {
     SpecForgeProject project,
     BusinessObjectSpec obj, {
     required Set<String> visited,
+    ModelLocaleProfile localeProfile = ModelLocaleProfile.frEur,
   }) {
     final record = <String, Object?>{};
     for (final attr in obj.attributes) {
@@ -360,10 +398,17 @@ abstract final class SpecSuperDesignerExporter {
         final count = minItems < 1 ? 1 : (minItems > 5 ? 5 : minItems);
         record[attr.name] = [
           for (var i = 0; i < count; i++)
-            _sampleValueForAttribute(attr, index: i),
+            _sampleValueForAttribute(
+              attr,
+              index: i,
+              localeProfile: localeProfile,
+            ),
         ];
       } else {
-        record[attr.name] = _sampleValueForAttribute(attr);
+        record[attr.name] = _sampleValueForAttribute(
+          attr,
+          localeProfile: localeProfile,
+        );
       }
     }
     for (final rel in obj.relations) {
@@ -376,6 +421,7 @@ abstract final class SpecSuperDesignerExporter {
               project,
               target,
               visited: {...visited, target.id},
+              localeProfile: localeProfile,
             )
           : 'ref_1';
       record[rel.name] = isList ? [value] : value;
@@ -386,6 +432,7 @@ abstract final class SpecSuperDesignerExporter {
   static Object? _sampleValueForAttribute(
     BusinessAttribute attr, {
     int index = 0,
+    ModelLocaleProfile localeProfile = ModelLocaleProfile.frEur,
   }) {
     final sc = attr.schemaConstraints;
     if (sc.hasConst) {
@@ -398,8 +445,18 @@ abstract final class SpecSuperDesignerExporter {
       return <String, Object?>{
         for (final child in attr.children)
           child.name: child.isArray
-              ? [_sampleValueForAttribute(child, index: index)]
-              : _sampleValueForAttribute(child, index: index),
+              ? [
+                  _sampleValueForAttribute(
+                    child,
+                    index: index,
+                    localeProfile: localeProfile,
+                  ),
+                ]
+              : _sampleValueForAttribute(
+                  child,
+                  index: index,
+                  localeProfile: localeProfile,
+                ),
       };
     }
     if (index == 0 &&
@@ -407,6 +464,10 @@ abstract final class SpecSuperDesignerExporter {
         attr.defaultValue!.trim().isNotEmpty) {
       return attr.defaultValue!.trim();
     }
+    final emailParts = localeProfile.sampleEmail.split('@');
+    final sampleEmail = index == 0
+        ? localeProfile.sampleEmail
+        : '${emailParts.first}$index@${emailParts.last}';
     return switch (attr.type) {
       BusinessAttributeType.string => _sampleString(attr, index: index),
       BusinessAttributeType.integer => _sampleInt(sc, index: index),
@@ -416,10 +477,9 @@ abstract final class SpecSuperDesignerExporter {
       BusinessAttributeType.datetime => '2026-01-${(15 + (index % 14)).toString().padLeft(2, '0')}T10:30:00Z',
       BusinessAttributeType.uuid =>
         '00000000-0000-4000-8000-${(index + 1).toString().padLeft(12, '0')}',
-      BusinessAttributeType.email =>
-        index == 0 ? 'contact@exemple.fr' : 'contact$index@exemple.fr',
+      BusinessAttributeType.email => sampleEmail,
       BusinessAttributeType.url =>
-        index == 0 ? 'https://exemple.fr' : 'https://exemple.fr/$index',
+        index == 0 ? localeProfile.sampleUrl : '${localeProfile.sampleUrl}/$index',
       BusinessAttributeType.enumeration => attr.enumValues.isNotEmpty
           ? attr.enumValues[index % attr.enumValues.length]
           : 'valeur_${index + 1}',

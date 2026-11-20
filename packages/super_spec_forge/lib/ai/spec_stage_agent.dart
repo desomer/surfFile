@@ -218,11 +218,13 @@ Ta mission pour l'étape 3 (Objets métiers structurés JSON Schema) :
    - RÈGLE 1 — MAX 200 ATTRIBUTS : un objet métier ne doit JAMAIS dépasser 200 attributs au total (somme récursive des attributs directs et de tous les sous-attributs imbriqués). Scinde tout objet trop vaste en plusieurs objets cohérents.
    - RÈGLE 2 — MAX 200 LIGNES PAR TABLEAU IMBRIQUÉ : tout tableau imbriqué ("isArray": true dans un objet métier) est strictement limité à 200 lignes maximum (ex. lignes d’une commande, échéancier, pièces jointes). Renseigne systématiquement "estimatedMaxRows" (entier <= 200).
    - RÈGLE 3 — OBJET MÉTIER DÉDIÉ SI > 200 LIGNES : si un tableau doit fonctionnellement contenir beaucoup plus de 200 lignes (ex. catalogue produits, historique de mouvements, journal d’audit, factures, clients), il est STRICTEMENT INTERDIT de l’imbriquer comme tableau dans l’objet parent ; modélise-le obligatoirement comme un objet métier séparé relié par référence ("type": "reference" ou relation 1:N).
-4. Respecte impérativement la compatibilité `JsonAttributePath`, `Yaml2JsonSchemasParser` et `super_designer` :
-   - Les noms d'attributs (`name`), sous-attributs, relations et `technicalName` doivent être des identifiants ASCII stricts correspondant à `^[A-Za-z_][A-Za-z0-9_-]*\$` : camelCase ou snake_case **SANS ACCENT** (ex. `statutCoherence`, jamais `statutCohérence`), sans espace, ni `.`, `[`, `]`, `?`, et ne JAMAIS commencer par `@`.
+4. Respecte impérativement la compatibilité `JsonAttributePath`, `Yaml2JsonSchemasParser` et `super_designer`, ainsi que le bloc **PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS** fourni dans le prompt du tour :
+   - Applique la langue et la casse demandées pour les attributs/relations (`camelCase`, `snake_case`, `PascalCase`, `kebab-case`, `SCREAMING_SNAKE_CASE`), la casse des `enumValues`/états, la stratégie d'identifiant primaire, le style de clés étrangères, les champs d'audit, la rigueur JSON Schema, la politique de nullabilité, le style de relations, le profil régional/monétaire et les consignes libres d'équipe.
+   - Les noms d'attributs (`name`), sous-attributs, relations et `technicalName` doivent être des identifiants ASCII stricts correspondant à `^[A-Za-z_][A-Za-z0-9_-]*\$` : **SANS ACCENT**, sans espace, ni `.`, `[`, `]`, `?`, et ne JAMAIS commencer par `@`.
    - Types d'attributs autorisés : string, integer, number, boolean, date, datetime, uuid, email, url, enumeration, reference, object, json.
    - Utilise "type": "object" avec "children": [...] pour les sous-objets structurés (ex. adresse, coordonnées, lignes bornées <= 200).
    - Renseigne "schemaConstraints" avec les mots-clés JSON Schema Draft 7 / 2020-12 pertinents : minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, minLength, maxLength, pattern, format, contentMediaType, contentEncoding, minItems, maxItems, uniqueItems, contains, minContains, maxContains, prefixItems, minProperties, maxProperties, additionalProperties, patternProperties, propertyNames, dependentRequired, dependentSchemas, const, examples, readOnly, writeOnly, deprecated, oneOf, anyOf, allOf, not, if/then/else, et extensions x-mask / x-dateFormat.
+   - EXEMPLES JSON SCHEMA OBLIGATOIRES : sur chaque attribut scalaire (racine comme sous-attributs dans "children"), renseigne systématiquement `"schemaConstraints": { ..., "examples": [...] }` avec 1 à 3 valeurs d'exemple réalistes, typées (ex. nombre pour `number`/`integer`, booléen pour `boolean`, chaîne conforme pour `string`/`date`/`email`/`uuid`) et strictement conformes aux contraintes (`pattern`, `format`, `minimum`/`maximum`, `minLength`/`maxLength`, `enumValues`), dans la langue des exemples (`contentLanguage`) et le profil régional (`localeProfile`) demandés.
    - Si type == "enumeration", renseigne impérativement "enumValues".
    - Si l'objet possède un statut évolutif, modélise "lifecycleStates" (avec au moins un "isInitial": true) et "lifecycleTransitions".
 $_commonJsonRules''',
@@ -251,7 +253,7 @@ SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
             "minLength": 13,
             "maxLength": 13,
             "pattern": "^CMD-\\d{4}-\\d{4}\$",
-            "examples": ["CMD-2026-0001"]
+            "examples": ["CMD-2026-0001", "CMD-2026-0042"]
           }
         },
         {
@@ -265,9 +267,9 @@ SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
             "minProperties": 3
           },
           "children": [
-            {"id": "attr_cmd_rue", "name": "rue", "type": "string", "required": true, "schemaConstraints": {"minLength": 2, "maxLength": 150}},
-            {"id": "attr_cmd_cp", "name": "codePostal", "type": "string", "required": true, "schemaConstraints": {"pattern": "^\\d{5}\$"}},
-            {"id": "attr_cmd_ville", "name": "ville", "type": "string", "required": true}
+            {"id": "attr_cmd_rue", "name": "rue", "type": "string", "required": true, "schemaConstraints": {"minLength": 2, "maxLength": 150, "examples": ["12 rue de la Paix"]}},
+            {"id": "attr_cmd_cp", "name": "codePostal", "type": "string", "required": true, "schemaConstraints": {"pattern": "^\\d{5}\$", "examples": ["75001"]}},
+            {"id": "attr_cmd_ville", "name": "ville", "type": "string", "required": true, "schemaConstraints": {"examples": ["Paris"]}}
           ]
         },
         {
@@ -280,9 +282,9 @@ SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
           "description": "Tableau imbriqué borné (<= 200 lignes max)",
           "schemaConstraints": {"minItems": 1, "maxItems": 100, "uniqueItems": false},
           "children": [
-            {"id": "attr_lig_ref", "name": "produitId", "type": "reference", "referenceObjectId": "obj_produit", "required": true},
-            {"id": "attr_lig_qte", "name": "quantite", "type": "integer", "required": true, "schemaConstraints": {"minimum": 1, "maximum": 10000}},
-            {"id": "attr_lig_pu", "name": "prixUnitaire", "type": "number", "required": true, "schemaConstraints": {"minimum": 0, "multipleOf": 0.01}}
+            {"id": "attr_lig_ref", "name": "produitId", "type": "reference", "referenceObjectId": "obj_produit", "required": true, "schemaConstraints": {"examples": ["prod_001"]}},
+            {"id": "attr_lig_qte", "name": "quantite", "type": "integer", "required": true, "schemaConstraints": {"minimum": 1, "maximum": 10000, "examples": [2, 5]}},
+            {"id": "attr_lig_pu", "name": "prixUnitaire", "type": "number", "required": true, "schemaConstraints": {"minimum": 0, "multipleOf": 0.01, "examples": [49.90]}}
           ]
         },
         {
@@ -292,7 +294,8 @@ SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
           "required": true,
           "enumValues": ["brouillon", "validee", "expediee", "annulee"],
           "defaultValue": "brouillon",
-          "description": "État courant dans le cycle de vie"
+          "description": "État courant dans le cycle de vie",
+          "schemaConstraints": {"examples": ["validee"]}
         }
       ],
       "relations": [

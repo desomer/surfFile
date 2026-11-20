@@ -489,6 +489,7 @@ class _BusinessAttributeEditorDialogState
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final screen = MediaQuery.sizeOf(context);
     final title = widget.existing == null
         ? (widget.isSubAttribute
               ? 'Nouveau sous-attribut'
@@ -496,10 +497,11 @@ class _BusinessAttributeEditorDialogState
         : 'Modifier ${widget.existing!.name}';
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.all(20),
       title: Text(title),
       content: SizedBox(
-        width: 620,
-        height: 520,
+        width: (screen.width * 0.72).clamp(620.0, 940.0),
+        height: (screen.height * 0.76).clamp(460.0, 720.0),
         child: DefaultTabController(
           length: 3,
           child: Column(
@@ -642,6 +644,17 @@ class _BusinessAttributeEditorDialogState
             maxLines: 2,
             decoration: const InputDecoration(
               labelText: 'Description',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            key: const ValueKey('spec-attr-examples-field'),
+            controller: _examplesCtrl,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Exemples JSON Schema (un exemple par ligne)',
+              hintText: 'Ex.\nCMD-2026-0001\nCMD-2026-0042',
               border: OutlineInputBorder(),
             ),
           ),
@@ -1025,15 +1038,6 @@ class _BusinessAttributeEditorDialogState
             controller: _commentCtrl,
             decoration: const InputDecoration(
               labelText: r'$comment (commentaire développeur)',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _examplesCtrl,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'examples (un exemple par ligne)',
               border: OutlineInputBorder(),
             ),
           ),

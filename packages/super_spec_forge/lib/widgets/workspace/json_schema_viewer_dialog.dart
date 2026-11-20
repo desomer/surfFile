@@ -88,7 +88,56 @@ Future<void> showSpecJsonSchemaViewerDialog(
   ),
 );
 
-class _SpecJsonSchemaViewerDialog extends StatefulWidget {
+/// Panneau autonome de visualisation « JSON Schema & Seed » (Inspecteur natif + Doc HTML),
+/// utilisable aussi bien en fenêtre modale qu'intégré dans un onglet d'atelier.
+class SpecJsonSchemaViewerView extends StatefulWidget {
+  /// Crée le visualisateur pour le [bundle] fourni.
+  const SpecJsonSchemaViewerView({
+    required this.bundle,
+    required this.title,
+    this.filenameStem = 'repositories_schema_doc',
+    this.initialMode = SpecJsonSchemaViewerMode.nativeInspector,
+    this.exportDirectory,
+    this.openInBrowser,
+    this.htmlSurfaceBuilder,
+    this.showTitle = true,
+    this.onClose,
+    super.key,
+  });
+
+  /// Bundle JSON Schema + Seed généré.
+  final SuperDesignerExportBundle bundle;
+
+  /// Titre affiché dans la barre d'outils et dans la documentation HTML.
+  final String title;
+
+  /// Préfixe de nom de fichier pour l'export `.html`.
+  final String filenameStem;
+
+  /// Mode d'affichage initial (`nativeInspector` ou `htmlDoc`).
+  final SpecJsonSchemaViewerMode initialMode;
+
+  /// Dossier cible par défaut pour l'export `.html`.
+  final Directory? exportDirectory;
+
+  /// Lanceur navigateur optionnel (utilisé notamment par les tests).
+  final SpecMarkdownBrowserLauncher? openInBrowser;
+
+  /// Constructeur optionnel de surface HTML pour remplacer la WebView (tests).
+  final SpecMarkdownViewerSurfaceBuilder? htmlSurfaceBuilder;
+
+  /// Affiche ou masque le titre dans la barre d'outils (masqué en vue intégrée).
+  final bool showTitle;
+
+  /// Callback optionnel affichant le bouton de fermeture (fenêtre modale).
+  final VoidCallback? onClose;
+
+  @override
+  State<SpecJsonSchemaViewerView> createState() =>
+      _SpecJsonSchemaViewerViewState();
+}
+
+class _SpecJsonSchemaViewerDialog extends StatelessWidget {
   const _SpecJsonSchemaViewerDialog({
     required this.bundle,
     required this.title,
@@ -108,15 +157,37 @@ class _SpecJsonSchemaViewerDialog extends StatefulWidget {
   final SpecMarkdownViewerSurfaceBuilder? htmlSurfaceBuilder;
 
   @override
-  State<_SpecJsonSchemaViewerDialog> createState() =>
-      _SpecJsonSchemaViewerDialogState();
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(
+        width: (screen.width * 0.92).clamp(680.0, 1420.0),
+        height: (screen.height * 0.92).clamp(500.0, 960.0),
+        child: SpecJsonSchemaViewerView(
+          bundle: bundle,
+          title: title,
+          filenameStem: filenameStem,
+          initialMode: initialMode,
+          exportDirectory: exportDirectory,
+          openInBrowser: openInBrowser,
+          htmlSurfaceBuilder: htmlSurfaceBuilder,
+          showTitle: true,
+          onClose: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
 }
 
-class _SpecJsonSchemaViewerDialogState
-    extends State<_SpecJsonSchemaViewerDialog> {
+class _SpecJsonSchemaViewerViewState extends State<SpecJsonSchemaViewerView>
+    with AutomaticKeepAliveClientMixin {
   late SpecJsonSchemaViewerMode _mode;
-  late final List<String> _aliases;
+  List<String> _aliases = const <String>[];
   String? _selectedAlias;
+  String _bundleSignature = '';
 
   final GlobalKey _splitRowKey = GlobalKey();
   double _repoPaneFraction = 0.27;
@@ -145,23 +216,13 @@ class _SpecJsonSchemaViewerDialogState
   Future<void> Function(String js)? _jsRunner;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     _mode = widget.initialMode;
-    _aliases = <String>{
-      ...widget.bundle.repositoriesJsonSchemas.keys,
-      ...widget.bundle.repositoriesSeedData.keys,
-    }.toList()..sort();
-    _selectedAlias = _aliases.isNotEmpty ? _aliases.first : null;
-
-    for (final alias in _aliases) {
-      final seed =
-          widget.bundle.repositoriesSeedData[alias] ??
-          const <String, Object?>{};
-      final encoded = '${const JsonEncoder.withIndent('  ').convert(seed)}\n';
-      _seedDraftsByAlias[alias] = encoded;
-      _validateAliasSeed(alias, encoded, notify: false);
-    }
+    _syncFromBundle(widget.bundle, notify: false);
 
     _seedEditorConfig = CodeEditorConfig(
       mode: json_lang.json,
@@ -195,6 +256,57 @@ class _SpecJsonSchemaViewerDialogState
       notifError: _schemaErrorNotifier,
       useLargeTextViewer: false,
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant SpecJsonSchemaViewerView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final changed = _syncFromBundle(widget.bundle, notify: false);
+    if (changed) {
+      _seedEditorConfig.repaintCode();
+      _schemaEditorConfig.repaintCode();
+      _htmlFile = null;
+      if (_mode == SpecJsonSchemaViewerMode.htmlDoc) {
+        unawaited(_prepareHtmlViewer());
+      }
+    }
+  }
+
+  bool _syncFromBundle(
+    SuperDesignerExportBundle bundle, {
+    required bool notify,
+  }) {
+    final signature = jsonEncode(<String, Object?>{
+      'schemas': bundle.repositoriesJsonSchemas,
+      'seeds': bundle.repositoriesSeedData,
+    });
+    if (signature == _bundleSignature) {
+      return false;
+    }
+    _bundleSignature = signature;
+
+    final nextAliases = <String>{
+      ...bundle.repositoriesJsonSchemas.keys,
+      ...bundle.repositoriesSeedData.keys,
+    }.toList()..sort();
+
+    _aliases = nextAliases;
+    if (_selectedAlias == null || !_aliases.contains(_selectedAlias)) {
+      _selectedAlias = _aliases.isNotEmpty ? _aliases.first : null;
+    }
+
+    _seedDraftsByAlias.removeWhere((k, _) => !_aliases.contains(k));
+    _validationByAlias.removeWhere((k, _) => !_aliases.contains(k));
+    _syntaxErrorByAlias.removeWhere((k, _) => !_aliases.contains(k));
+
+    for (final alias in _aliases) {
+      final seed =
+          bundle.repositoriesSeedData[alias] ?? const <String, Object?>{};
+      final encoded = '${const JsonEncoder.withIndent('  ').convert(seed)}\n';
+      _seedDraftsByAlias[alias] = encoded;
+      _validateAliasSeed(alias, encoded, notify: notify);
+    }
+    return true;
   }
 
   @override
@@ -458,29 +570,20 @@ class _SpecJsonSchemaViewerDialogState
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final screen = MediaQuery.sizeOf(context);
 
-    return Dialog(
-      insetPadding: const EdgeInsets.all(20),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: SizedBox(
-        width: (screen.width * 0.92).clamp(680.0, 1420.0),
-        height: (screen.height * 0.92).clamp(500.0, 960.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildToolbar(theme, colors),
-            Expanded(
-              child: _mode == SpecJsonSchemaViewerMode.nativeInspector
-                  ? _buildNativeInspector(theme, colors)
-                  : _buildHtmlBody(theme, colors),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildToolbar(theme, colors),
+        Expanded(
+          child: _mode == SpecJsonSchemaViewerMode.nativeInspector
+              ? _buildNativeInspector(theme, colors)
+              : _buildHtmlBody(theme, colors),
         ),
-      ),
+      ],
     );
   }
 
@@ -500,22 +603,28 @@ class _SpecJsonSchemaViewerDialogState
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.data_object_rounded, size: 20, color: colors.primary),
-              const SizedBox(width: 8),
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  child: Text(
-                    widget.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
+              if (widget.showTitle) ...[
+                Icon(
+                  Icons.data_object_rounded,
+                  size: 20,
+                  color: colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               SegmentedButton<SpecJsonSchemaViewerMode>(
                 key: const ValueKey('spec-schema-viewer-mode-switch'),
                 showSelectedIcon: false,
@@ -572,12 +681,13 @@ class _SpecJsonSchemaViewerDialogState
                 icon: const Icon(Icons.print_outlined, size: 16),
                 label: const Text('Imprimer / PDF'),
               ),
-              IconButton(
-                key: const ValueKey('spec-schema-viewer-close'),
-                tooltip: 'Fermer',
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close_rounded),
-              ),
+              if (widget.onClose != null)
+                IconButton(
+                  key: const ValueKey('spec-schema-viewer-close'),
+                  tooltip: 'Fermer',
+                  onPressed: widget.onClose,
+                  icon: const Icon(Icons.close_rounded),
+                ),
             ],
           ),
         ],

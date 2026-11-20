@@ -631,5 +631,113 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('BusinessObjectModelPreferences : sérialisation, rétrocompatibilité et injection IA', () {
+      final base = SpecForgeProject.fromIdea(
+        idea: 'Suivi de chantier',
+        name: 'ChantierApp',
+      );
+      expect(base.businessObjectModelPreferences.isDefault, isTrue);
+      expect(base.businessObjectModelPreferences.attributeLanguage, 'en');
+      expect(base.businessObjectModelPreferences.enumLanguage, 'en');
+      expect(base.businessObjectModelPreferences.contentLanguage, 'fr');
+
+      final updated = base.copyWith(
+        businessObjectModelPreferences: const BusinessObjectModelPreferences(
+          attributeLanguage: 'en',
+          enumLanguage: 'fr',
+          contentLanguage: 'fr',
+          attributeCase: AttributeNamingCase.snakeCase,
+          enumCase: EnumValueNamingCase.screamingSnakeCase,
+          idStrategy: PrimaryIdStrategy.ulid,
+          foreignKeyStyle: ForeignKeyNamingStyle.prefixId,
+          auditPreset: AuditFieldsPreset.timestamps,
+          schemaStrictness: JsonSchemaStrictness.strict,
+          nullabilityStyle: NullabilityStyle.explicitNullable,
+          relationStyle: RelationModelingStyle.normalizedRefs,
+          localeProfile: ModelLocaleProfile.usUsd,
+          currencyStyle: CurrencyRepresentation.integerCents,
+          customInstructions: 'Prefix booleans with is',
+        ),
+      );
+      final decoded = SpecForgeProject.fromJson(updated.toJson());
+      expect(decoded.businessObjectModelPreferences, equals(updated.businessObjectModelPreferences));
+
+      // Rétrocompatibilité clé JSON `businessObjectLanguageSettings`.
+      final legacyJson = updated.toJson();
+      legacyJson['businessObjectLanguageSettings'] =
+          legacyJson.remove('businessObjectModelPreferences');
+      final decodedLegacy = SpecForgeProject.fromJson(legacyJson);
+      expect(
+        decodedLegacy.businessObjectLanguageSettings.attributeCase,
+        AttributeNamingCase.snakeCase,
+      );
+
+      expect(
+        AttributeNamingCase.snakeCase.formatIdentifier('adresseLivraison'),
+        'adresse_livraison',
+      );
+      expect(
+        AttributeNamingCase.camelCase.formatIdentifier('delivery_address'),
+        'deliveryAddress',
+      );
+      expect(
+        AttributeNamingCase.pascalCase.formatIdentifier('delivery_address'),
+        'DeliveryAddress',
+      );
+      expect(
+        AttributeNamingCase.kebabCase.formatIdentifier('adresseLivraison'),
+        'adresse-livraison',
+      );
+      expect(
+        AttributeNamingCase.screamingSnakeCase.formatIdentifier('adresseLivraison'),
+        'ADRESSE_LIVRAISON',
+      );
+      expect(
+        EnumValueNamingCase.screamingSnakeCase.formatValue('enAttente'),
+        'EN_ATTENTE',
+      );
+
+      final kickoff = SpecPromptBuilder.buildStageKickoffPrompt(
+        decoded,
+        SpecForgeStage.businessObjects,
+      );
+      expect(kickoff, contains('PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS'));
+      expect(kickoff, contains('English (en)'));
+      expect(kickoff, contains('snake_case'));
+      expect(kickoff, contains('SCREAMING_SNAKE_CASE'));
+      expect(kickoff, contains('ULID'));
+      expect(kickoff, contains('additionalProperties: false'));
+      expect(kickoff, contains('Prefix booleans with is'));
+
+      final turnPrompt = SpecPromptBuilder.buildTurnPrompt(
+        project: decoded,
+        stage: SpecForgeStage.businessObjects,
+        userInput: 'Modélise Chantier',
+        questioningLevel: VibeQuestioningLevel.balanced,
+        afterAskUserReply: false,
+      );
+      expect(
+        turnPrompt,
+        contains('PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS'),
+      );
+      expect(turnPrompt, contains('English (en)'));
+      expect(turnPrompt, contains('snake_case'));
+      expect(turnPrompt, contains('Français (fr)'));
+      expect(turnPrompt, contains('"attributeLanguage": "en"'));
+      expect(turnPrompt, contains('"enumLanguage": "fr"'));
+      expect(turnPrompt, contains('"attributeCase": "snakeCase"'));
+      expect(turnPrompt, contains('"schemaStrictness": "strict"'));
+      expect(turnPrompt, contains('schemaConstraints.examples'));
+
+      final objectsAgent = SpecStageAgent.forStage(
+        SpecForgeStage.businessObjects,
+      );
+      expect(
+        objectsAgent.systemInstruction,
+        contains('EXEMPLES JSON SCHEMA OBLIGATOIRES'),
+      );
+      expect(objectsAgent.patchSchemaGuide, contains('"examples": [2, 5]'));
+    });
   });
 }

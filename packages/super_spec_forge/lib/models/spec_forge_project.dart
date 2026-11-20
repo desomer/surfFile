@@ -4,6 +4,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:shortid/shortid.dart';
 
+import 'business_object_model_preferences.dart';
 import 'business_object_spec.dart';
 import 'business_rule_spec.dart';
 import 'spec_cahier_des_charges.dart';
@@ -29,6 +30,8 @@ class SpecForgeProject {
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
+    BusinessObjectModelPreferences? businessObjectModelPreferences,
+    BusinessObjectModelPreferences? businessObjectLanguageSettings,
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue> coherenceIssues = const <SpecCoherenceIssue>[],
     List<SpecChatMessage> globalChatMessages = const <SpecChatMessage>[],
@@ -37,6 +40,10 @@ class SpecForgeProject {
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
        businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
+       businessObjectModelPreferences =
+           businessObjectModelPreferences ??
+           businessObjectLanguageSettings ??
+           BusinessObjectModelPreferences.defaults,
        stageStates = Map<SpecForgeStage, SpecStageState>.unmodifiable(
          _normalizeStageStates(stageStates),
        ),
@@ -116,6 +123,13 @@ class SpecForgeProject {
   /// Livrable de l'étape 4 (Règles de gestion structurées).
   final List<BusinessRuleSpec> businessRules;
 
+  /// Préférences unifiées de modélisation (langues, casse, clés/audit, rigueur JSON Schema, profil régional).
+  final BusinessObjectModelPreferences businessObjectModelPreferences;
+
+  /// Alias rétrocompatible vers [businessObjectModelPreferences].
+  BusinessObjectModelPreferences get businessObjectLanguageSettings =>
+      businessObjectModelPreferences;
+
   /// Historique et statut de chaque étape du wizard.
   final Map<SpecForgeStage, SpecStageState> stageStates;
 
@@ -192,6 +206,7 @@ class SpecForgeProject {
     lexicon.validate();
     vision.validate();
     cahierDesCharges.validate();
+    businessObjectModelPreferences.validate();
 
     final objIds = <String>{};
     for (final obj in businessObjects) {
@@ -225,6 +240,10 @@ class SpecForgeProject {
         if (stage.index >= SpecForgeStage.businessObjects.index ||
             businessObjects.isNotEmpty)
           'businessObjects': [for (final o in businessObjects) o.toJson()],
+        if (stage.index >= SpecForgeStage.businessObjects.index ||
+            !businessObjectModelPreferences.isDefault)
+          'businessObjectModelPreferences':
+              businessObjectModelPreferences.toJson(),
         if (stage.index >= SpecForgeStage.businessRules.index ||
             businessRules.isNotEmpty)
           'businessRules': [for (final r in businessRules) r.toJson()],
@@ -245,6 +264,8 @@ class SpecForgeProject {
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec>? businessObjects,
     List<BusinessRuleSpec>? businessRules,
+    BusinessObjectModelPreferences? businessObjectModelPreferences,
+    BusinessObjectModelPreferences? businessObjectLanguageSettings,
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue>? coherenceIssues,
     List<SpecChatMessage>? globalChatMessages,
@@ -260,6 +281,10 @@ class SpecForgeProject {
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
     businessObjects: businessObjects ?? this.businessObjects,
     businessRules: businessRules ?? this.businessRules,
+    businessObjectModelPreferences:
+        businessObjectModelPreferences ??
+        businessObjectLanguageSettings ??
+        this.businessObjectModelPreferences,
     stageStates: stageStates ?? this.stageStates,
     coherenceIssues: coherenceIssues ?? this.coherenceIssues,
     globalChatMessages: globalChatMessages ?? this.globalChatMessages,
@@ -280,6 +305,8 @@ class SpecForgeProject {
     'cahierDesCharges': cahierDesCharges.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
     'businessRules': [for (final r in businessRules) r.toJson()],
+    if (!businessObjectModelPreferences.isDefault)
+      'businessObjectModelPreferences': businessObjectModelPreferences.toJson(),
     'stageStates': <String, Object?>{
       for (final entry in stageStates.entries)
         entry.key.name: entry.value.toJson(),
@@ -335,6 +362,11 @@ class SpecForgeProject {
           for (final item in raw['businessRules'] as List)
             BusinessRuleSpec.fromJson(item),
       ],
+      businessObjectModelPreferences:
+          BusinessObjectModelPreferences.fromJson(
+            raw['businessObjectModelPreferences'] ??
+                raw['businessObjectLanguageSettings'],
+          ),
       stageStates: parsedStageStates,
       coherenceIssues: [
         if (raw['coherenceIssues'] is List)
@@ -384,6 +416,8 @@ class SpecForgeProject {
           other.cahierDesCharges == cahierDesCharges &&
           listEquals(other.businessObjects, businessObjects) &&
           listEquals(other.businessRules, businessRules) &&
+          other.businessObjectModelPreferences ==
+              businessObjectModelPreferences &&
           mapEquals(other.stageStates, stageStates) &&
           listEquals(other.coherenceIssues, coherenceIssues) &&
           listEquals(other.globalChatMessages, globalChatMessages);
@@ -401,6 +435,7 @@ class SpecForgeProject {
     cahierDesCharges,
     Object.hashAll(businessObjects),
     Object.hashAll(businessRules),
+    businessObjectModelPreferences,
     Object.hashAll(stageStates.values),
     Object.hashAll(coherenceIssues),
     Object.hashAll(globalChatMessages),

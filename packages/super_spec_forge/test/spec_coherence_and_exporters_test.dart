@@ -470,5 +470,58 @@ erDiagram
       );
       expect(invalidHtml, contains('"isValid":false'));
     });
+
+    test('SpecSuperDesignerExporter applique schemaStrictness.strict et localeProfile US/USD', () {
+      final base = buildSampleProject();
+      final strictProject = base.copyWith(
+        businessObjectModelPreferences: const BusinessObjectModelPreferences(
+          schemaStrictness: JsonSchemaStrictness.strict,
+          localeProfile: ModelLocaleProfile.usUsd,
+        ),
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_account',
+            name: 'Account',
+            technicalName: 'Account',
+            attributes: [
+              BusinessAttribute(
+                id: 'a_email',
+                name: 'email',
+                type: BusinessAttributeType.email,
+                required: true,
+              ),
+              BusinessAttribute(
+                id: 'a_profile',
+                name: 'profile',
+                type: BusinessAttributeType.object,
+                children: [
+                  BusinessAttribute(
+                    id: 'a_site',
+                    name: 'website',
+                    type: BusinessAttributeType.url,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final bundle = SpecSuperDesignerExporter.toBundle(strictProject);
+      final schema = bundle.repositoriesJsonSchemas['account']!;
+      final seed = bundle.repositoriesSeedData['account']!;
+      expect(schema['additionalProperties'], isFalse);
+
+      final itemSchema =
+          ((schema['properties'] as Map)['accounts'] as Map)['items'] as Map;
+      expect(itemSchema['additionalProperties'], isFalse);
+      final profileSchema = (itemSchema['properties'] as Map)['profile'] as Map;
+      expect(profileSchema['additionalProperties'], isFalse);
+
+      final seedRow = ((seed['accounts'] as List).single as Map);
+      expect(seedRow['email'], 'contact@example.com');
+      expect((seedRow['profile'] as Map)['website'], 'https://example.com');
+      expect(JsonSchemaValidator.validate(seed, schema).isValid, isTrue);
+    });
   });
 }

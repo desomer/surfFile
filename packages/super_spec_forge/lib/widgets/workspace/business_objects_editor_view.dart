@@ -3,6 +3,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:highlight/languages/yaml.dart' as yaml_lang;
@@ -11,6 +12,7 @@ import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
+import '../../models/business_object_model_preferences.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
@@ -18,14 +20,29 @@ import '../../services/spec_forge_controller.dart';
 import '../../services/spec_schema_dsl_bridge.dart';
 import '../spec_split_handle.dart';
 import 'attribute_constraints_editor.dart';
+import 'json_schema_viewer_dialog.dart';
+import 'markdown_viewer_dialog.dart';
+import 'model_preferences_dialog.dart';
 
-/// Vue structurée à 2 onglets (« Arbre & Inspecteur » et « Source YAML » via [CodeEditor]).
+/// Vue structurée à 3 onglets (« Arbre & Inspecteur », « Source YAML » via [CodeEditor],
+/// et « JSON Schema & Seed » avec [SpecJsonSchemaViewerView]).
 class BusinessObjectsEditorView extends StatefulWidget {
   /// Crée la vue connectée au [controller].
-  const BusinessObjectsEditorView({required this.controller, super.key});
+  const BusinessObjectsEditorView({
+    required this.controller,
+    this.schemaViewerSurfaceBuilder,
+    this.schemaBrowserLauncher,
+    super.key,
+  });
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Constructeur optionnel pour remplacer la WebView dans l'onglet « JSON Schema & Seed » (tests).
+  final SpecMarkdownViewerSurfaceBuilder? schemaViewerSurfaceBuilder;
+
+  /// Lanceur navigateur optionnel pour l'ouverture du `.html` généré (tests).
+  final SpecMarkdownBrowserLauncher? schemaBrowserLauncher;
 
   @override
   State<BusinessObjectsEditorView> createState() =>
@@ -215,38 +232,56 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     return JsonRepositoryScope(
       store: _treeRepoStore,
       child: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-              child: Row(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Objets métiers (${objects.length})',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Objets métiers (${objects.length})',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
-                        Text(
-                          'Règles : max 200 attributs/objet · max 200 lignes/tableau imbriqué · objet dédié au-delà',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
+                      ),
+                      Text(
+                        'Règles : max 200 attributs/objet · max 200 lignes/tableau imbriqué · objet dédié au-delà',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  FilledButton.tonalIcon(
-                    key: const ValueKey('spec-objects-add-root'),
-                    onPressed: () => _editObjectDialog(context, project),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Nouvel objet'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        key: const ValueKey('spec-objects-prefs-btn'),
+                        onPressed: () =>
+                            _editModelPreferencesDialog(context, project),
+                        icon: const Icon(Icons.tune_rounded, size: 16),
+                        label: Text(
+                          'Préférences du modèle (${project.businessObjectModelPreferences.formatCompactButtonSummary()})',
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('spec-objects-add-root'),
+                        onPressed: () => _editObjectDialog(context, project),
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('Nouvel objet'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -255,6 +290,10 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
               tabs: [
                 Tab(text: 'Arbre & Inspecteur'),
                 Tab(text: 'Source YAML'),
+                Tab(
+                  key: ValueKey('spec-objects-schema-tab'),
+                  text: 'JSON Schema & Seed',
+                ),
               ],
             ),
             Expanded(
@@ -262,6 +301,7 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                 children: [
                   _buildTreeAndInspectorTab(context, project, colors, theme),
                   _buildYamlSourceTab(context, project, colors, theme),
+                  _buildJsonSchemaAndSeedTab(project),
                 ],
               ),
             ),
@@ -777,6 +817,33 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     );
   }
 
+  Widget _buildJsonSchemaAndSeedTab(SpecForgeProject project) {
+    final bundle = SpecSuperDesignerExporter.toBundle(project);
+    final safeProject = _safeFileSlug(project.name);
+    final safeId = _safeFileSlug(project.id);
+    return SpecJsonSchemaViewerView(
+      key: const ValueKey('spec-objects-schema-viewer'),
+      bundle: bundle,
+      title: 'JSON Schema & Seed — ${project.name}',
+      filenameStem: '${safeProject}_repositories_schema',
+      exportDirectory: Directory(
+        '${widget.controller.store.rootDirectory.path}${Platform.pathSeparator}exports${Platform.pathSeparator}$safeId',
+      ),
+      openInBrowser: widget.schemaBrowserLauncher,
+      htmlSurfaceBuilder: widget.schemaViewerSurfaceBuilder,
+      showTitle: false,
+    );
+  }
+
+  static String _safeFileSlug(String raw) {
+    final s = raw
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return s.isEmpty ? 'spec_forge' : s;
+  }
+
   BusinessAttribute? _findAttributeByPath(
     List<BusinessAttribute> attrs,
     List<String> pathIds,
@@ -1151,6 +1218,104 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     return '${pascal[0].toLowerCase()}${pascal.substring(1)}';
   }
 
+  Future<void> _editModelPreferencesDialog(
+    BuildContext context,
+    SpecForgeProject project,
+  ) async {
+    final current = project.businessObjectModelPreferences;
+    final saved = await showBusinessObjectModelPreferencesDialog(
+      context,
+      initialPreferences: current,
+      hasExistingObjects: project.businessObjects.isNotEmpty,
+    );
+    if (saved == null) return;
+
+    var updatedObjects = project.businessObjects;
+    if (saved.applyAttributeCaseToExisting || saved.applyEnumCaseToExisting) {
+      updatedObjects = _convertBusinessObjectCases(
+        project.businessObjects,
+        attributeCase: saved.applyAttributeCaseToExisting
+            ? saved.preferences.attributeCase
+            : null,
+        enumCase: saved.applyEnumCaseToExisting
+            ? saved.preferences.enumCase
+            : null,
+      );
+    }
+    if (saved.preferences != current ||
+        updatedObjects != project.businessObjects) {
+      await widget.controller.updateProject(
+        project.copyWith(
+          businessObjectModelPreferences: saved.preferences,
+          businessObjects: updatedObjects,
+        ),
+      );
+    }
+  }
+
+  List<BusinessObjectSpec> _convertBusinessObjectCases(
+    List<BusinessObjectSpec> objects, {
+    AttributeNamingCase? attributeCase,
+    EnumValueNamingCase? enumCase,
+  }) {
+    List<BusinessAttribute> convertAttrs(List<BusinessAttribute> list) {
+      final used = <String>{};
+      return [
+        for (final attr in list)
+          () {
+            final base = attributeCase != null
+                ? attributeCase.formatIdentifier(attr.name)
+                : attr.name;
+            var candidate = base;
+            var suffix = 2;
+            while (!used.add(candidate)) {
+              candidate = '${base}_$suffix';
+              suffix++;
+            }
+            final nextEnumValues =
+                enumCase != null && attr.enumValues.isNotEmpty
+                ? [for (final v in attr.enumValues) enumCase.formatValue(v)]
+                : attr.enumValues;
+            return attr.copyWith(
+              name: candidate,
+              enumValues: nextEnumValues,
+              children: attr.children.isEmpty
+                  ? const []
+                  : convertAttrs(attr.children),
+            );
+          }(),
+      ];
+    }
+
+    return [
+      for (final obj in objects)
+        obj.copyWith(
+          attributes: convertAttrs(obj.attributes),
+          relations: attributeCase == null
+              ? obj.relations
+              : [
+                  for (final rel in obj.relations)
+                    rel.copyWith(name: attributeCase.formatIdentifier(rel.name)),
+                ],
+          lifecycleStates: enumCase == null
+              ? obj.lifecycleStates
+              : [
+                  for (final st in obj.lifecycleStates)
+                    st.copyWith(name: enumCase.formatValue(st.name)),
+                ],
+          lifecycleTransitions: enumCase == null
+              ? obj.lifecycleTransitions
+              : [
+                  for (final tr in obj.lifecycleTransitions)
+                    tr.copyWith(
+                      fromState: enumCase.formatValue(tr.fromState),
+                      toState: enumCase.formatValue(tr.toState),
+                    ),
+                ],
+        ),
+    ];
+  }
+
   Future<void> _normalizeAllIdentifiers(SpecForgeProject project) async {
     List<BusinessAttribute> normAttrs(List<BusinessAttribute> list) {
       final used = <String>{};
@@ -1517,9 +1682,27 @@ class _BusinessObjectInspectorPane extends StatelessWidget {
                       ),
                   ],
                 ),
-                subtitle: attr.description.isEmpty
+                subtitle: (attr.description.isEmpty &&
+                        attr.schemaConstraints.examples.isEmpty)
                     ? null
-                    : Text(attr.description),
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (attr.description.isNotEmpty)
+                            Text(attr.description),
+                          if (attr.schemaConstraints.examples.isNotEmpty)
+                            Text(
+                              'Exemples : ${attr.schemaConstraints.examples.map(_formatExampleValue).join(', ')}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colors.primary,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                        ],
+                      ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1699,6 +1882,37 @@ class _AttributeInspectorPane extends StatelessWidget {
           Text(
             'Valeurs énumérées : ${attribute.enumValues.join(', ')}',
             style: theme.textTheme.bodySmall,
+          ),
+        ],
+        if (attribute.schemaConstraints.examples.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Exemples',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            key: const ValueKey('spec-attr-inspector-examples'),
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final ex in attribute.schemaConstraints.examples)
+                Chip(
+                  avatar: Icon(
+                    Icons.lightbulb_outline_rounded,
+                    size: 15,
+                    color: colors.primary,
+                  ),
+                  label: Text(
+                    _formatExampleValue(ex),
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
           ),
         ],
         if (attribute.referenceObjectId.isNotEmpty) ...[
@@ -2013,6 +2227,38 @@ class _TreeNodeTooltipCard extends StatelessWidget {
             ),
           ),
         ],
+        if (attr.schemaConstraints.examples.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Exemples',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colors.secondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            key: const ValueKey('spec-tree-tooltip-examples'),
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final ex in attr.schemaConstraints.examples.take(5))
+                _TooltipPill(
+                  label: _formatExampleValue(ex),
+                  bgColor: colors.secondaryContainer.withValues(alpha: 0.65),
+                  fgColor: colors.onSecondaryContainer,
+                  borderColor: colors.secondary.withValues(alpha: 0.35),
+                ),
+              if (attr.schemaConstraints.examples.length > 5)
+                _TooltipPill(
+                  label: '+${attr.schemaConstraints.examples.length - 5}',
+                  bgColor: colors.surfaceContainerLow,
+                  fgColor: colors.onSurfaceVariant,
+                  borderColor: colors.outlineVariant,
+                ),
+            ],
+          ),
+        ],
         if (schemaBadges.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
@@ -2246,4 +2492,9 @@ class _TooltipPill extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatExampleValue(Object? value) {
+  if (value is String) return value;
+  return jsonEncode(value);
 }

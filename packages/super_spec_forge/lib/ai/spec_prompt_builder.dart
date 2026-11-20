@@ -48,6 +48,14 @@ abstract final class SpecPromptBuilder {
     };
   }
 
+  /// Construit la directive complète des préférences du modèle pour l'IA.
+  static String businessObjectPreferencesDirective(SpecForgeProject project) =>
+      project.businessObjectModelPreferences.toPromptDirective();
+
+  /// Alias rétrocompatible vers [businessObjectPreferencesDirective].
+  static String businessObjectLanguageDirective(SpecForgeProject project) =>
+      businessObjectPreferencesDirective(project);
+
   /// Construit le prompt automatique d'amorce lorsqu'on entre dans une étape sans historique.
   static String buildStageKickoffPrompt(
     SpecForgeProject project,
@@ -64,7 +72,8 @@ abstract final class SpecPromptBuilder {
           'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
     SpecForgeStage.businessObjects =>
       'Nous passons à l’étape 4 (Objets métiers). En t’appuyant sur le lexique, le cadrage et le cahier des charges, '
-          'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.',
+          'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
+          '${businessObjectLanguageDirective(project)}',
     SpecForgeStage.businessRules =>
       'Nous passons à l’étape 5 (Règles de gestion). En t’appuyant sur les objets métiers, le lexique et le cahier des charges, '
           'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
@@ -115,6 +124,14 @@ abstract final class SpecPromptBuilder {
           forceFollowUpQuestions: forceFollowUpQuestions,
         ),
       );
+
+    if (stage == SpecForgeStage.businessObjects ||
+        (stage.index > SpecForgeStage.businessObjects.index &&
+            !project.businessObjectLanguageSettings.isDefault)) {
+      buffer
+        ..writeln()
+        ..writeln(businessObjectLanguageDirective(project));
+    }
 
     if (previousSummaries.isNotEmpty) {
       buffer

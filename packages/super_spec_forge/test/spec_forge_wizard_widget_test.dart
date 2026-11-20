@@ -67,6 +67,7 @@ class _MemorySpecProjectStore extends SpecProjectStore {
 
 class _FakeSpecAiService implements SpecAiService {
   final List<SpecForgeStage> calledStages = [];
+  final List<String> receivedPrompts = [];
   final List<List<VibeChatAttachment>> receivedAttachments = [];
   int _lexiconTurn = 0;
 
@@ -90,6 +91,7 @@ class _FakeSpecAiService implements SpecAiService {
     String? staticGuideOverride,
   }) async* {
     calledStages.add(stage);
+    receivedPrompts.add(prompt);
     receivedAttachments.add(attachments);
 
     late final Map<String, Object?> payload;
@@ -928,9 +930,24 @@ Facture:
         findsOneWidget,
       );
 
-      // 2. Ouvre le dialogue d'édition d'attribut.
+      // 2. Ouvre le dialogue d'édition d'attribut (agrandi + exemples dans Général sous Description).
       await tester.tap(find.byTooltip('Modifier'));
       await tester.pumpAndSettle();
+
+      final dialogBoxSize = tester.getSize(find.byType(AlertDialog));
+      expect(dialogBoxSize.width, greaterThan(800));
+      expect(dialogBoxSize.height, greaterThan(600));
+
+      final descField = find.widgetWithText(TextField, 'Description');
+      final examplesField = find.byKey(
+        const ValueKey('spec-attr-examples-field'),
+      );
+      expect(examplesField, findsOneWidget);
+      expect(
+        tester.getTopLeft(examplesField).dy,
+        greaterThan(tester.getBottomLeft(descField).dy),
+      );
+      await tester.enterText(examplesField, 'ARTONE\nARTTWO');
 
       // 3. Onglet Contraintes JSON Schema : minLength=3, maxLength=20, pattern.
       await tester.tap(find.text('Contraintes JSON Schema'));
@@ -961,12 +978,19 @@ Facture:
       await tester.pumpAndSettle();
 
       final savedAttr = controller.project!.businessObjects.single.attributes.single;
+      expect(savedAttr.schemaConstraints.examples, ['ARTONE', 'ARTTWO']);
       expect(savedAttr.schemaConstraints.minLength, 3);
       expect(savedAttr.schemaConstraints.maxLength, 20);
       expect(savedAttr.schemaConstraints.pattern, r'^[A-Z]+$');
       expect(savedAttr.schemaConstraints.extraKeywords['x-mask'], 'AAA-###');
 
-      // 5. Déplie l'aperçu JSON Schema dans l'inspecteur.
+      // 5. Les exemples sont visibles dans l'inspecteur d'attribut puis déplie l'aperçu JSON Schema.
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-examples')),
+        findsOneWidget,
+      );
+      expect(find.text('ARTONE'), findsAtLeastNWidgets(1));
+      expect(find.text('ARTTWO'), findsAtLeastNWidgets(1));
       await tester.tap(find.byKey(const ValueKey('spec-attr-toggle-json-schema')));
       await tester.pumpAndSettle();
       expect(
@@ -1159,6 +1183,7 @@ Facture:
                     minLength: 4,
                     maxLength: 20,
                     pattern: r'^[A-Z0-9-]+$',
+                    examples: const ['SKU-2026-AB', 'PRD-0099'],
                   ),
                 ),
               ],
@@ -1200,6 +1225,12 @@ Facture:
       expect(find.text('Obligatoire (!)'), findsAtLeastNWidgets(1));
       expect(find.text('Unique'), findsAtLeastNWidgets(1));
       expect(find.text('Contraintes JSON Schema'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('spec-tree-tooltip-examples')),
+        findsOneWidget,
+      );
+      expect(find.text('SKU-2026-AB'), findsAtLeastNWidgets(1));
+      expect(find.text('PRD-0099'), findsAtLeastNWidgets(1));
     },
   );
 
@@ -1568,6 +1599,398 @@ Facture:
         find.byKey(const ValueKey('spec-schema-html-mock-surface')),
         findsNothing,
       );
+    },
+  );
+
+  testWidgets(
+    'Wizard Objets métiers : paramétrage de langue des attributs et des textes/exemples transmis à l’IA',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeAi = _FakeSpecAiService();
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        aiService: fakeAi,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion de flotte',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_vehicule',
+              name: 'Véhicule',
+              technicalName: 'Vehicule',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_date',
+                  name: 'dateMiseEnService',
+                  type: BusinessAttributeType.date,
+                ),
+                BusinessAttribute(
+                  id: 'a_statut',
+                  name: 'statut',
+                  type: BusinessAttributeType.enumeration,
+                  enumValues: const ['enCours', 'archive'],
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      final prefsBtn = find.byKey(const ValueKey('spec-objects-prefs-btn'));
+      expect(prefsBtn, findsOneWidget);
+      expect(
+        find.text('Préférences du modèle (EN · camel / FR · Std)'),
+        findsOneWidget,
+      );
+
+      await tester.tap(prefsBtn);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-objects-prefs-dialog')),
+        findsOneWidget,
+      );
+
+      // Par défaut : attributs en anglais (`en`) et valeurs d'enum en anglais (`en`).
+      expect(
+        controller.project!.businessObjectModelPreferences.attributeLanguage,
+        'en',
+      );
+      expect(
+        controller.project!.businessObjectModelPreferences.enumLanguage,
+        'en',
+      );
+      expect(
+        find.byKey(const ValueKey('spec-objects-enum-lang-dropdown')),
+        findsOneWidget,
+      );
+
+      // Onglet 1 : Langues & Nommage
+      final namingScrollable = find.descendant(
+        of: find.descendant(
+          of: find.byKey(const ValueKey('spec-objects-prefs-dialog')),
+          matching: find.byType(ListView),
+        ),
+        matching: find.byType(Scrollable),
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-attr-case-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('snake_case (ex. delivery_address)').last);
+      await tester.pumpAndSettle();
+
+      final enumCaseDropdown = find.byKey(
+        const ValueKey('spec-objects-enum-case-dropdown'),
+      );
+      await tester.drag(namingScrollable, const Offset(0, -180));
+      await tester.pumpAndSettle();
+      await tester.tap(enumCaseDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('SCREAMING_SNAKE_CASE (ex. PENDING_APPROVAL)').last,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.drag(namingScrollable, const Offset(0, -340));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-apply-case-existing')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-apply-enum-case-existing')),
+      );
+      await tester.pumpAndSettle();
+
+      // Onglet 2 : Clés & Audit
+      await tester.tap(find.text('Clés & Audit'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-id-strategy-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ULID (26 car.)').last);
+      await tester.pumpAndSettle();
+
+      // Onglet 3 : Schéma & Relations
+      await tester.tap(find.text('Schéma & Relations'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-schema-strictness-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Strict (additionalProperties: false)').last);
+      await tester.pumpAndSettle();
+
+      // Onglet 4 : Régional & Consignes
+      await tester.tap(find.text('Régional & Consignes'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-objects-custom-instructions-field')),
+        'Prefix booleans with is',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-objects-prefs-prompt-preview')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-prefs-save')),
+      );
+      await tester.pumpAndSettle();
+
+      final savedPrefs = controller.project!.businessObjectModelPreferences;
+      expect(savedPrefs.attributeLanguage, 'en');
+      expect(savedPrefs.enumLanguage, 'en');
+      expect(savedPrefs.attributeCase, AttributeNamingCase.snakeCase);
+      expect(savedPrefs.enumCase, EnumValueNamingCase.screamingSnakeCase);
+      expect(savedPrefs.idStrategy, PrimaryIdStrategy.ulid);
+      expect(savedPrefs.schemaStrictness, JsonSchemaStrictness.strict);
+      expect(savedPrefs.customInstructions, 'Prefix booleans with is');
+      expect(
+        controller.project!.businessObjects.single.attributes.first.name,
+        'date_mise_en_service',
+      );
+      expect(
+        controller.project!.businessObjects.single.attributes[1].enumValues,
+        ['EN_COURS', 'ARCHIVE'],
+      );
+      expect(
+        find.text('Préférences du modèle (EN · snake / FR · Strict)'),
+        findsOneWidget,
+      );
+
+      // Lancement de l'échange IA sur Objets métiers -> reçoit toutes les préférences.
+      await tester.tap(find.byKey(const ValueKey('spec-stage-start-ai')));
+      await tester.pumpAndSettle();
+
+      expect(fakeAi.calledStages, [SpecForgeStage.businessObjects]);
+      expect(fakeAi.receivedPrompts.single, contains('English (en)'));
+      expect(fakeAi.receivedPrompts.single, contains('snake_case'));
+      expect(fakeAi.receivedPrompts.single, contains('SCREAMING_SNAKE_CASE'));
+      expect(fakeAi.receivedPrompts.single, contains('ULID'));
+      expect(
+        fakeAi.receivedPrompts.single,
+        contains('additionalProperties: false'),
+      );
+      expect(
+        fakeAi.receivedPrompts.single,
+        contains('Prefix booleans with is'),
+      );
+    },
+  );
+
+  testWidgets(
+    'Wizard Objets métiers : sous-onglet JSON Schema & Seed identique au visualisateur (inspecteur natif, validateur live, synchronisation et Doc HTML)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion des devis',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_devis',
+              name: 'Devis',
+              technicalName: 'Devis',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_code',
+                  name: 'code',
+                  type: BusinessAttributeType.string,
+                  required: true,
+                  schemaConstraints: JsonSchemaConstraints(minLength: 3),
+                ),
+                BusinessAttribute(
+                  id: 'a_montant',
+                  name: 'totalAmount',
+                  type: BusinessAttributeType.number,
+                  required: true,
+                  schemaConstraints: JsonSchemaConstraints(minimum: 10),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final executedJs = <String>[];
+      final launchedFiles = <File>[];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: controller,
+              builder: (context, _) => BusinessObjectsEditorView(
+                controller: controller,
+                schemaBrowserLauncher: (file) async {
+                  launchedFiles.add(file);
+                },
+                schemaViewerSurfaceBuilder: (context, htmlFile, registerJs) {
+                  registerJs((js) async {
+                    executedJs.add(js);
+                  });
+                  return Center(
+                    key: const ValueKey('spec-objects-schema-html-mock'),
+                    child: Text('Doc HTML : ${htmlFile.path}'),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Le sous-onglet « JSON Schema & Seed » est présent dans BusinessObjectsEditorView.
+      final schemaTab = find.byKey(const ValueKey('spec-objects-schema-tab'));
+      expect(schemaTab, findsOneWidget);
+      await tester.tap(schemaTab);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-objects-schema-viewer')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-schema-viewer-mode-switch')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-schema-viewer-close')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-schema-repo-tile-devis')),
+        findsOneWidget,
+      );
+      expect(find.text('Arbre du Schéma'), findsOneWidget);
+      expect(find.text('totalAmount'), findsAtLeastNWidgets(1));
+
+      // 2. Onglet Seed & Validateur live : validation conforme puis erreur puis reset.
+      await tester.tap(find.text('Seed & Validateur live'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Document Seed conforme au JSON Schema'),
+        findsOneWidget,
+      );
+
+      final seedEditorFinder = find.byKey(
+        const ValueKey('spec-schema-seed-editor-devis'),
+      );
+      final seedEditorState = tester.state<CodeEditorState>(seedEditorFinder);
+      seedEditorState.controller.fullText =
+          '{"devis": [{"code": "A", "totalAmount": 2}]}';
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('erreur(s) de validation JSON Schema'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('spec-schema-reset-seed')));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Document Seed conforme au JSON Schema'),
+        findsOneWidget,
+      );
+
+      // 3. Synchronisation dynamique quand un nouvel objet métier est ajouté au projet.
+      await controller.updateProject(
+        controller.project!.copyWith(
+          businessObjects: [
+            ...controller.project!.businessObjects,
+            BusinessObjectSpec(
+              id: 'obj_client',
+              name: 'Client',
+              technicalName: 'Client',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_nom',
+                  name: 'companyName',
+                  type: BusinessAttributeType.string,
+                  required: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-schema-repo-tile-client')),
+        findsOneWidget,
+      );
+
+      // 4. Bascule vers le mode « Doc HTML » (WebView2) + Thème + Print + Navigateur.
+      await tester.tap(find.text('Doc HTML'));
+      await tester.pump();
+      for (var i = 0; i < 40; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 25)),
+        );
+        await tester.pump(const Duration(milliseconds: 25));
+        if (find
+            .byKey(const ValueKey('spec-objects-schema-html-mock'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-objects-schema-html-mock')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('spec-schema-viewer-toggle-theme')),
+      );
+      await tester.pumpAndSettle();
+      expect(executedJs.last, contains("setTheme('dark')"));
+
+      await tester.tap(find.byKey(const ValueKey('spec-schema-viewer-print')));
+      await tester.pumpAndSettle();
+      expect(executedJs.last, 'window.print();');
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-schema-viewer-open-browser')),
+      );
+      await tester.pump();
+      for (var i = 0; i < 30 && launchedFiles.isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(launchedFiles.length, 1);
     },
   );
 }
