@@ -38,6 +38,17 @@ _decodeAndNormalizePagedMapInIsolate(String encoded) {
   return (raw: decoded, normalized: normalized);
 }
 
+Future<Map<String, dynamic>> _runDecodePagedJsonMapInIsolate(String text) =>
+    Isolate.run(() => _decodePagedJsonMapInIsolate(text));
+
+Future<String> _runNormalizeAndEncodePagedMapInIsolate(
+  Map<String, Object?> rawJson,
+) => Isolate.run(() => _normalizeAndEncodePagedMapInIsolate(rawJson));
+
+Future<({Map<String, dynamic> raw, String normalized})>
+_runDecodeAndNormalizePagedMapInIsolate(String encoded) =>
+    Isolate.run(() => _decodeAndNormalizePagedMapInIsolate(encoded));
+
 /// Magasin d'apparence persistant l'état global dans [file] (`appearance.json`)
 /// et chaque page du catalogue dans un fichier individuel sous [pagesDirectory] (`pages/<pageId>.json`).
 class PagedFileAppearanceStore extends FileAppearanceStore {
@@ -249,12 +260,10 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
 
     final Appearance result;
     if (stored.length >= isolateThresholdBytes) {
-      final decoded = await Isolate.run(
-        () => _decodePagedJsonMapInIsolate(stored),
-      );
+      final decoded = await _runDecodePagedJsonMapInIsolate(stored);
       result = codec.fromJson(decoded);
-      _persistedGlobalEncoded = await Isolate.run(
-        () => _normalizeAndEncodePagedMapInIsolate(decoded),
+      _persistedGlobalEncoded = await _runNormalizeAndEncodePagedMapInIsolate(
+        decoded,
       );
     } else {
       final decoded = _decodePagedJsonMapInIsolate(stored);
@@ -308,7 +317,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
 
     final Map<String, dynamic> decoded;
     if (rawText.length >= isolateThresholdBytes) {
-      decoded = await Isolate.run(() => _decodePagedJsonMapInIsolate(rawText));
+      decoded = await _runDecodePagedJsonMapInIsolate(rawText);
     } else {
       decoded = _decodePagedJsonMapInIsolate(rawText);
     }
@@ -410,7 +419,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
         appearance.behaviors.length;
     if (entryCount >= isolateThresholdEntries) {
       final rawJson = codec.toJson(appearance);
-      return Isolate.run(() => _normalizeAndEncodePagedMapInIsolate(rawJson));
+      return _runNormalizeAndEncodePagedMapInIsolate(rawJson);
     }
     return codec.encode(appearance);
   }
@@ -423,7 +432,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
     final entryCount =
         slice.styles.length + slice.components.length + slice.behaviors.length;
     if (entryCount >= isolateThresholdEntries) {
-      return Isolate.run(() => _normalizeAndEncodePagedMapInIsolate(rawJson));
+      return _runNormalizeAndEncodePagedMapInIsolate(rawJson);
     }
     return jsonEncode(JsonNumbers.normalizeMap(rawJson));
   }
@@ -505,9 +514,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   Future<void> saveEncoded(String encoded) async {
     final Appearance decoded;
     if (encoded.length >= isolateThresholdBytes) {
-      final parsed = await Isolate.run(
-        () => _decodeAndNormalizePagedMapInIsolate(encoded),
-      );
+      final parsed = await _runDecodeAndNormalizePagedMapInIsolate(encoded);
       decoded = codec.fromJson(parsed.raw);
     } else {
       final raw = _decodePagedJsonMapInIsolate(encoded);

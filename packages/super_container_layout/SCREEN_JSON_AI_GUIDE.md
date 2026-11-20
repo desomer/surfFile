@@ -287,7 +287,7 @@ avec les composants Flutter).
   "styles": {
     "background": { "color": "theme:surfaceContainerLowest", "padding": 0 },
     "card-detail": { "color": "theme:surface", "radius": 16, "padding": 20, "borderWidth": 1, "borderColor": "theme:outlineVariant" },
-    "list-clients:item": { "color": "theme:surfaceContainerLow", "radius": 10, "hoverEffect": true }
+    "list-clients:item": { "color": "theme:surfaceContainerLow", "radius": 10, "paddingInsets": [10, 38, 10, 12], "hoverEffect": true }
   },
   "behaviors": {
     "list-clients:item": [
@@ -893,6 +893,7 @@ Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
   - `itemWidth` (`160`), `itemExtent` (`56`) : `number` entre **`16` et `2000`**.
   - `spacing` (`0`) : `number` entre **`0` et `200`**.
   - `allowAdd` (`false`), `allowRemove` (`false`) : `bool` (génère automatiquement le bouton `+` d'ajout et l'icône de suppression sur chaque ligne : inutile de créer des boutons `Action` manuels pour ajouter/supprimer une ligne).
+    - **Règle obligatoire si `allowRemove: true` (anti-superposition)** : le bouton natif de suppression est superposé en haut à droite (`top: 0, right: 0`) de chaque ligne (`IterableContent`). Renseigne **systématiquement** `"paddingInsets": [top, right, bottom, left]` avec **`right >= 38`** (ex. `[12, 38, 12, 12]` ou `[10, 38, 10, 14]`) dans `styles["<listId>:item"]` (ou `styles["<itemId>"]`) afin que le contenu de droite (texte long, montant, badge, zone `east`) ne soit jamais recouvert par l'icône de suppression.
   - `emptyText` : `string` (`"Aucun élément"`).
   - `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes, y compris ses propres `placements` et `slotLabels` pour nommer les composants de chaque ligne (chemin JSON : `components[<listId>].template.slotLabels[<childId>]`).
   - `itemId` : identifiant personnalisé optionnel pour l'élément de ligne (si non renseigné, vaut par défaut `"<listId>:item"`).
@@ -1714,7 +1715,7 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 | Contexte | Ce qui est déjà fourni par défaut | Comment le configurer (sans le recréer) |
 | :--- | :--- | :--- |
 | **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"mainLayout"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["mainLayout"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
-| **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`), et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
+| **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`) — avec `"paddingInsets": [top, 38, bottom, left]` (`right >= 38`) dès que `"allowRemove": true` — et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
 | **Barre d'onglets d'un `SuperTab` (`<tabId>`)** | La `TabBar` est déjà enveloppée dans une surface stylisable via `components["<tabId>"].tabBarStyle`, et en mode `"dynamic"`, les boutons `+` (`allowAdd`) et `×` (`allowRemove`) sont générés nativement. | Configure directement `tabBarStyle` dans `components["<tabId>"]` et active `allowAdd` / `allowRemove` en mode `"dynamic"` sans créer de boutons d'ajout/suppression supplémentaires. |
 | **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |
 

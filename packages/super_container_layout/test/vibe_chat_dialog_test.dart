@@ -2546,6 +2546,30 @@ void main() {
     expect(content, contains('westSize'));
     expect(content, contains('eastSize'));
     expect(content, contains('expandSlots: true'));
+    expect(content, contains('right >= 38'));
+  });
+
+  test('AI guides and system instruction require right padding >= 38px when SuperListView allowRemove is true', () {
+    final jsonGuideFile = File('SCREEN_JSON_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_JSON_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md');
+    final designGuideFile = File('SCREEN_DESIGN_AI_GUIDE.md').existsSync()
+        ? File('SCREEN_DESIGN_AI_GUIDE.md')
+        : File('packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md');
+    expect(jsonGuideFile.existsSync(), isTrue);
+    expect(designGuideFile.existsSync(), isTrue);
+
+    final jsonGuide = jsonGuideFile.readAsStringSync();
+    final designGuide = designGuideFile.readAsStringSync();
+    const sysInstruction = VibeChatDialog.defaultSystemInstruction;
+
+    expect(jsonGuide, contains('allowRemove: true'));
+    expect(jsonGuide, contains('paddingInsets'));
+    expect(jsonGuide, contains('38'));
+    expect(designGuide, contains('allowRemove: true'));
+    expect(designGuide, contains('38'));
+    expect(sysInstruction, contains('allowRemove'));
+    expect(sysInstruction, contains('38'));
   });
 
   test('AI guides and system instruction enforce strict key/value SuperValue atomicity and forbid multiline textarea summaries', () {

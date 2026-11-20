@@ -31,6 +31,13 @@ _decodeAndNormalizeFileAppearanceInIsolate(String encoded) {
   return (raw: decoded, normalized: normalized);
 }
 
+Future<Map<String, dynamic>> _runDecodeFileAppearanceInIsolate(String text) =>
+    Isolate.run(() => _decodeFileAppearanceInIsolate(text));
+
+Future<({Map<String, dynamic> raw, String normalized})>
+_runDecodeAndNormalizeFileAppearanceInIsolate(String encoded) =>
+    Isolate.run(() => _decodeAndNormalizeFileAppearanceInIsolate(encoded));
+
 /// Magasin d'apparence persistant le document JSON dans un [File] local.
 class FileAppearanceStore extends AppearanceStore {
   /// Crée un magasin lisant et écrivant l'apparence dans [file].
@@ -149,9 +156,7 @@ class FileAppearanceStore extends AppearanceStore {
 
     final Appearance result;
     if (stored.length >= isolateThresholdBytes) {
-      final decoded = await Isolate.run(
-        () => _decodeFileAppearanceInIsolate(stored),
-      );
+      final decoded = await _runDecodeFileAppearanceInIsolate(stored);
       result = codec.fromJson(decoded);
     } else {
       result = codec.decode(stored);
@@ -167,8 +172,8 @@ class FileAppearanceStore extends AppearanceStore {
   Future<void> saveEncoded(String encoded) async {
     final String normalized;
     if (encoded.length >= isolateThresholdBytes) {
-      final parsed = await Isolate.run(
-        () => _decodeAndNormalizeFileAppearanceInIsolate(encoded),
+      final parsed = await _runDecodeAndNormalizeFileAppearanceInIsolate(
+        encoded,
       );
       codec.fromJson(parsed.raw);
       normalized = parsed.normalized;

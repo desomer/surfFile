@@ -11,6 +11,7 @@ import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/providers/http_provider_config.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/diagnostics/debug_entry.dart';
@@ -22,6 +23,7 @@ import 'package:super_container_layout/services/providers/http_data_provider.dar
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
@@ -1267,6 +1269,78 @@ void main() {
 
         final regInfo = await inspector.getRegistryAndSelection(const {});
         expect(regInfo['registeredBuilderCount'], greaterThan(5));
+      },
+    );
+
+    test(
+      'inspect_bindings_and_diagnostics signale allowRemove=true sans marge droite >= 38 px sur la ligne et valide paddingInsets >= 38',
+      () async {
+        final registry = Registry()..bootstrap();
+        final baseList = SuperListViewConfig(
+          binding: const JsonTextBinding(repositoryId: 'crm', path: 'clients'),
+          allowRemove: true,
+          template: SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['row_nom'],
+            },
+          ),
+        );
+
+        final riskyAppearance = Appearance(
+          styles: {
+            'list_clients:item': const ContainerStyle(padding: 12),
+          },
+          components: {
+            'mainLayout': SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['list_clients'],
+              },
+            ),
+            'list_clients': baseList,
+            'row_nom': const SuperValueConfig(
+              binding: JsonTextBinding(path: 'clients[?].nom'),
+            ),
+          },
+        );
+
+        final riskyInspector = VibeAppInspector(
+          readAppearance: () => riskyAppearance,
+          registry: registry,
+        );
+        final riskyAudit = await riskyInspector.inspectBindingsAndDiagnostics(
+          const {},
+        );
+        final riskyIssues = riskyAudit['issues'] as List;
+        expect(
+          riskyIssues.any(
+            (i) =>
+                (i as Map)['kind'] == 'list_remove_button_overlap_risk' &&
+                i['componentId'] == 'list_clients' &&
+                i['location'] == 'styles[list_clients:item].paddingInsets',
+          ),
+          isTrue,
+        );
+
+        final safeAppearance = riskyAppearance.withStyle(
+          'list_clients:item',
+          const ContainerStyle(
+            paddingInsets: Quad(12, 38, 12, 12),
+          ),
+        );
+        final safeInspector = VibeAppInspector(
+          readAppearance: () => safeAppearance,
+          registry: registry,
+        );
+        final safeAudit = await safeInspector.inspectBindingsAndDiagnostics(
+          const {},
+        );
+        final safeIssues = safeAudit['issues'] as List;
+        expect(
+          safeIssues.any(
+            (i) => (i as Map)['kind'] == 'list_remove_button_overlap_risk',
+          ),
+          isFalse,
+        );
       },
     );
 

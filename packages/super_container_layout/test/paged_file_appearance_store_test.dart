@@ -288,6 +288,33 @@ void main() {
         'Texte Page A',
       );
     });
+
+    test('load, loadPage and save offload large payloads in Isolate without capturing store futures', () async {
+      final appDir = Directory('${tempDir.path}${Platform.pathSeparator}app_iso');
+      final store = PagedFileAppearanceStore(
+        SandboxedApplicationStore.appearanceFileFor(appDir),
+        pagesDirectory: SandboxedApplicationStore.pagesDirectoryFor(appDir),
+        isolateThresholdBytes: 1,
+        isolateThresholdEntries: 1,
+      );
+
+      await store.save(_twoPagesAppearance());
+
+      final reload = PagedFileAppearanceStore(
+        SandboxedApplicationStore.appearanceFileFor(appDir),
+        pagesDirectory: SandboxedApplicationStore.pagesDirectoryFor(appDir),
+        isolateThresholdBytes: 1,
+        isolateThresholdEntries: 1,
+      );
+      final loaded = await reload.load();
+      expect(loaded.pageCatalog.pages, hasLength(2));
+
+      final sliceA = await reload.loadPage('page-a');
+      expect(
+        (sliceA.components['val-a'] as SuperValueConfig).initialText,
+        'Texte Page A',
+      );
+    });
   });
 
   group('PersistentAppearanceController & EditorHistoryController hydration', () {

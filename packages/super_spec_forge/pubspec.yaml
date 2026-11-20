@@ -1,0 +1,28 @@
+name: super_spec_forge
+description: Application et bibliothèque de forge de cahier des charges, objets métiers et règles de gestion par wizard de chat IA spécialisé.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=3.47.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_dotenv: ^6.0.1
+  material_ui: ^1.5.0
+  shortid: 0.1.2
+  super_container_layout:
+    path: ../super_container_layout
+  yaml: ^3.1.4
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  shared_preferences: ^2.5.5
+
+flutter:
+  uses-material-design: true
+

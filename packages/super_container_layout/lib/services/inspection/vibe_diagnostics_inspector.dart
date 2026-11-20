@@ -24,6 +24,7 @@ import '../../models/json_text_binding.dart';
 import '../../models/registry.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_conditional_config.dart';
+import '../../models/super_layout_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
@@ -163,6 +164,9 @@ class VibeDiagnosticsInspector {
   static final RegExp _pureEnvPlaceholder = RegExp(
     r'^(?:Bearer\s+)?\{\{env\.[A-Za-z0-9_]+\}\}$',
   );
+
+  /// Marge droite minimale recommandée sur `<listId>:item` lorsque `allowRemove` est actif.
+  static const double _minListRemoveRightPadding = 38.0;
 
   /// 1. Lit et filtre les journaux et erreurs d'exécution depuis [debugEntries].
   Future<Map<String, Object?>> getDebugEntries(
@@ -773,6 +777,48 @@ class VibeDiagnosticsInspector {
             inheritedWildcards: inheritedWildcards,
             inTreeScope: inTreeScope,
           );
+          if (l.allowRemove &&
+              !JsonTextBinding.isCalculatedPath(l.binding?.path ?? '') &&
+              (requestedIds.isEmpty || requestedIds.contains(id))) {
+            final rowId = (l.itemId != null && l.itemId!.trim().isNotEmpty)
+                ? l.itemId!.trim()
+                : '$id:item';
+            final rowStyle = appearance.styles[rowId] ?? appearance.styles[id];
+            final baseRightPadding =
+                (rowStyle?.contentPadding.right ?? 0.0) +
+                (l.itemSize?.contentPadding.right ?? 0.0);
+            final hasEast =
+                l.template.east &&
+                l.template.placementsOf(SuperLayoutZone.east).isNotEmpty;
+            final rightEdgeZones = <SuperLayoutZone>[
+              if (hasEast)
+                SuperLayoutZone.east
+              else if (l.template.placementsOf(SuperLayoutZone.center).isNotEmpty)
+                SuperLayoutZone.center,
+              if (l.template.north &&
+                  l.template.placementsOf(SuperLayoutZone.north).isNotEmpty &&
+                  (!l.template.east || l.template.ne != CornerMerge.column))
+                SuperLayoutZone.north,
+            ];
+            final minZoneRightPadding = rightEdgeZones.isEmpty
+                ? 0.0
+                : rightEdgeZones
+                      .map((z) => l.template.flowOf(z).contentPadding.right)
+                      .reduce(math.min);
+            final effectiveRightPadding =
+                baseRightPadding + minZoneRightPadding;
+            if (effectiveRightPadding < _minListRemoveRightPadding) {
+              issues.add(<String, Object?>{
+                'componentId': id,
+                'location': 'styles[$rowId].paddingInsets',
+                'kind': 'list_remove_button_overlap_risk',
+                'effectiveRightPadding': effectiveRightPadding,
+                'recommendedMinRightPadding': _minListRemoveRightPadding,
+                'message':
+                    'Cette ListView active allowRemove=true alors que la marge droite effective de la ligne ($effectiveRightPadding px) est inférieure à $_minListRemoveRightPadding px : le bouton supprimer superposé en haut à droite risque de recouvrir le contenu. Définis "paddingInsets": [top, 38, bottom, left] sur styles["$rowId"].',
+              });
+            }
+          }
           final r = l.binding?.repositoryId?.trim() ?? '';
           if (r.isNotEmpty) childInheritedRepo = r;
           childWildcards = inheritedWildcards + 1;

@@ -86,6 +86,7 @@ Un composant enfant ne doit jamais avoir un rayon d'arrondi supérieur à celui 
 
 ### 4.3. Calibrage Desktop des collections
 - **`ListView`** : `itemExtent: 44` (liste compacte 1 ligne) ou `52`–`64` (ligne riche titre + sous-titre), `spacing: 4` à `6`.
+  - **Dégagement du bouton supprimer (`allowRemove: true`)** : lorsque `allowRemove` vaut `true`, l'icône native de suppression flotte en haut à droite de la ligne (`top: 0, right: 0`). Configure **toujours** `styles["<listId>:item"].paddingInsets` avec une marge droite d'au moins **`38` px** (ex. `[12, 38, 12, 12]` ou `[10, 38, 10, 14]`) au lieu d'un `padding` uniforme `12`, pour éviter toute superposition avec le contenu droit (`east` / `center`).
 - **`Table`** : `headerRowHeight: 38`, `rowHeight: 36` à `40`, au moins une colonne principale extensible (`fillPercent: 100`) et colonnes numériques/statuts à largeur fixe (`90`–`140`).
 - **`TreeView`** : `rowHeight: 32` à `36`, `indent: 18` à `20`, `headerSize: 220` à `280`.
 
@@ -168,6 +169,7 @@ Toute ligne interactive (`styles["<listId>:item"]` ou `IterableContent`) doit of
 - **Arc-en-ciel de couleurs hex saturées** : ne colorie pas chaque carte ou chaque bouton d'une couleur vive différente (`#FF0000`, `#00FF00`, `#0000FF`).
 - **Texte collé aux bordures** : ne crée jamais une `Card` ou surface de contenu visible contenant du texte avec `padding: 0` (ni dans son style, ni dans son layout enfant ; cette règle ne s'applique pas à `styles["background"]`, dont le `padding` doit rester à `0` par défaut).
 - **Double boîte dans `ListView`** : n'ajoute jamais de `"registry:Card"` ni `"registry:IterableContent"` dans `list.template.placements` (chaque ligne possède déjà sa propre surface `<listId>:item`).
+- **Contenu chevauchant l'icône supprimer d'une `ListView`** : n'active jamais `"allowRemove": true` sur une `ListView` sans réserver au moins `38` px de marge droite dans `styles["<listId>:item"].paddingInsets` (ex. `[12, 38, 12, 12]`).
 - **Concurrence d'actions primaires** : ne place jamais 2 ou 3 boutons `variant: "filled"` côte à côte dans la même barre d'actions.
 - **`SuperValue` fourre-tout multi-notions ou bloc `textarea` de récapitulatif** : ne concatène jamais plusieurs données ou un couple « libellé + valeur » dans un seul `SuperValue` (ex: `"CA : 128 k€ • +12 %"`), et ne remplace jamais une liste ou synthèse métier (affaires, contrats, interlocuteurs, « résumé », « notes ») par un placeholder texte libre multiligne (`maxLines > 1`) au lieu de cartes, champs unitaires atomiques ou `SuperTable`.
 - **Surcharge typographique** : n'utilise pas l'italique ou le tout-majuscule sur de longs textes, ni des tailles `< 11` illisibles sur Desktop.

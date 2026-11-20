@@ -36,6 +36,17 @@ _decodeAndNormalizeJsonMapInIsolate(String encoded) {
   return (raw: decoded, normalized: normalized);
 }
 
+Future<Map<String, dynamic>> _runDecodeJsonMapInIsolate(String text) =>
+    Isolate.run(() => _decodeJsonMapInIsolate(text));
+
+Future<String> _runNormalizeAndEncodeJsonMapInIsolate(
+  Map<String, Object?> rawJson,
+) => Isolate.run(() => _normalizeAndEncodeJsonMapInIsolate(rawJson));
+
+Future<({Map<String, dynamic> raw, String normalized})>
+_runDecodeAndNormalizeJsonMapInIsolate(String encoded) =>
+    Isolate.run(() => _decodeAndNormalizeJsonMapInIsolate(encoded));
+
 /// Service de lecture et d'écriture persistante du document d'apparence dans `SharedPreferences`.
 class AppearanceStore {
   AppearanceStore({
@@ -74,9 +85,7 @@ class AppearanceStore {
 
     final Appearance result;
     if (stored.length >= isolateThresholdBytes) {
-      final decoded = await Isolate.run(
-        () => _decodeJsonMapInIsolate(stored),
-      );
+      final decoded = await _runDecodeJsonMapInIsolate(stored);
       result = codec.fromJson(decoded);
     } else {
       result = codec.decode(stored);
@@ -94,9 +103,7 @@ class AppearanceStore {
     final String encoded;
     if (entryCount >= isolateThresholdEntries) {
       final rawJson = codec.toJson(appearance);
-      encoded = await Isolate.run(
-        () => _normalizeAndEncodeJsonMapInIsolate(rawJson),
-      );
+      encoded = await _runNormalizeAndEncodeJsonMapInIsolate(rawJson);
     } else {
       encoded = codec.encode(appearance);
     }
@@ -110,9 +117,7 @@ class AppearanceStore {
   Future<void> saveEncoded(String encoded) async {
     final String normalized;
     if (encoded.length >= isolateThresholdBytes) {
-      final parsed = await Isolate.run(
-        () => _decodeAndNormalizeJsonMapInIsolate(encoded),
-      );
+      final parsed = await _runDecodeAndNormalizeJsonMapInIsolate(encoded);
       codec.fromJson(parsed.raw);
       normalized = parsed.normalized;
     } else {
