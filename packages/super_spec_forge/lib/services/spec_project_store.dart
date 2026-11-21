@@ -1,11 +1,15 @@
-/// Persistance locale multi-projets sur disque pour `super_spec_forge` ([SpecProjectStore]).
+/// Persistance locale multi-projets adaptée à Git pour `super_spec_forge` ([SpecProjectStore]).
 ///
-/// Chaque projet est persisté sous `<rootDirectory>/projects/<projectId>/` selon
-/// un découpage modulaire par domaine et conversations :
-/// - `manifest.json` : métadonnées légères et compteurs lus par [SpecProjectStore.listProjects] ;
-/// - `spec/*.json` : domaines métier (lexique, cadrage, cahier des charges, objets, règles, préférences, cohérence) ;
+/// Chaque projet est persisté sous `<rootDirectory>/projects/<project-slug>/` :
+/// - `project.json` : métadonnées légères du projet ;
+/// - `spec/*.json` : domaines (lexique, cadrage, cahier des charges, préférences, cohérence) ;
+/// - `spec/business_objects/<slug>.json` : 1 fichier par objet métier (+ `_order.json`) ;
+/// - `spec/business_rules/<slug>.json` : 1 fichier par règle de gestion (+ `_order.json`) ;
 /// - `chats/*.json` : historique des conversations par étape et chat global ;
 /// - `attachments/*` : contenu texte ou binaire des pièces jointes externalisées.
+///
+/// L'état local machine (dernier projet actif) est stocké dans
+/// `<rootDirectory>/.local/state.json` (ignoré par Git).
 library;
 
 import 'dart:async';
@@ -25,6 +29,8 @@ import '../models/spec_forge_stage.dart';
 import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/spec_vision.dart';
+import 'spec_storage_slug.dart';
+import 'spec_workspace_store.dart';
 
 /// Métadonnées légères d'un projet sauvegardé sur disque.
 @immutable
@@ -38,6 +44,7 @@ class SpecProjectSummary {
     required this.updatedAt,
     required this.objectCount,
     required this.ruleCount,
+    this.folderName,
   });
 
   /// Identifiant unique du projet.
@@ -60,63 +67,71 @@ class SpecProjectSummary {
 
   /// Nombre de règles de gestion formalisées.
   final int ruleCount;
+
+  /// Nom du dossier slug sous `projects/`, si disponible sur disque.
+  final String? folderName;
 }
 
-/// Magasin disque persistant les projets [SpecForgeProject] en fichiers JSON modulaires.
+/// Magasin disque persistant les projets [SpecForgeProject] en fichiers JSON
+/// modulaires et découpés par entité pour faciliter le suivi Git.
 class SpecProjectStore {
   /// Crée un store ancré sur [rootDirectory] (ou `~/.super_spec_forge` par défaut).
   SpecProjectStore([Directory? rootDirectory])
     : rootDirectory = rootDirectory ?? defaultRootDirectory();
 
-  /// Identifiant de format du manifeste projet (`manifest.json`).
-  static const String manifestFormat = 'super_spec_forge.manifest';
+  /// Identifiant de format du manifeste projet (`project.json`).
+  static const String manifestFormat = 'super_spec_forge.project_manifest';
 
-  /// Version courante du format multi-fichiers.
-  static const int storageVersion = 2;
+  /// Identifiant de format d'un fichier objet métier unitaire.
+  static const String businessObjectFormat = 'super_spec_forge.business_object';
 
-  static const JsonEncoder _prettyEncoder = JsonEncoder.withIndent('  ');
+  /// Identifiant de format d'un fichier règle de gestion unitaire.
+  static const String businessRuleFormat = 'super_spec_forge.business_rule';
+
+  /// Identifiant de format d'un fichier d'ordre `_order.json`.
+  static const String orderFormat = 'super_spec_forge.order';
+
+  /// Version courante du format par dossier.
+  static const int storageVersion = 3;
+
   static final RegExp _safeStorageFileRegex = RegExp(r'^[A-Za-z0-9._-]+$');
 
-  /// Dossier racine du magasin.
+  /// Dossier racine du workspace.
   final Directory rootDirectory;
 
   final Map<String, SpecForgeProject> _persistedSnapshots =
       <String, SpecForgeProject>{};
+  final Map<String, Directory> _projectDirsById = <String, Directory>{};
   final Map<String, Future<void>> _writeQueues = <String, Future<void>>{};
   String? _cachedLastActiveProjectId;
   int _tmpCounter = 0;
 
   /// Dossier par défaut sous le répertoire utilisateur (`~/.super_spec_forge`).
-  static Directory defaultRootDirectory() {
-    final home =
-        Platform.environment['USERPROFILE'] ??
-        Platform.environment['HOME'] ??
-        Directory.current.path;
-    final sep = Platform.pathSeparator;
-    final cleanHome = home.endsWith(sep) && home.length > 1
-        ? home.substring(0, home.length - 1)
-        : home;
-    return Directory('$cleanHome$sep.super_spec_forge');
-  }
+  static Directory defaultRootDirectory() =>
+      SpecWorkspaceStore.defaultRootDirectory();
 
   Directory get _projectsDir =>
       Directory('${rootDirectory.path}${Platform.pathSeparator}projects');
 
-  File get _indexFile =>
-      File('${rootDirectory.path}${Platform.pathSeparator}index.json');
+  Directory get _localStateDir =>
+      Directory('${rootDirectory.path}${Platform.pathSeparator}.local');
 
-  String _safeProjectId(String projectId) =>
-      projectId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  File get _localStateFile =>
+      File('${_localStateDir.path}${Platform.pathSeparator}state.json');
 
-  Directory _projectDir(String projectId) => Directory(
-    '${_projectsDir.path}${Platform.pathSeparator}${_safeProjectId(projectId)}',
-  );
-
-  File _manifestFile(Directory projectDir) =>
-      File('${projectDir.path}${Platform.pathSeparator}manifest.json');
+  File _projectManifestFile(Directory projectDir) =>
+      File('${projectDir.path}${Platform.pathSeparator}project.json');
 
   Directory _specDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}spec');
+
+  Directory _businessObjectsDir(Directory projectDir) => Directory(
+    '${_specDir(projectDir).path}${Platform.pathSeparator}business_objects',
+  );
+
+  Directory _businessRulesDir(Directory projectDir) => Directory(
+    '${_specDir(projectDir).path}${Platform.pathSeparator}business_rules',
+  );
 
   Directory _chatsDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}chats');
@@ -132,14 +147,6 @@ class SpecProjectStore {
 
   File _cahierDesChargesFile(Directory projectDir) => File(
     '${_specDir(projectDir).path}${Platform.pathSeparator}cahier_des_charges.json',
-  );
-
-  File _businessObjectsFile(Directory projectDir) => File(
-    '${_specDir(projectDir).path}${Platform.pathSeparator}business_objects.json',
-  );
-
-  File _businessRulesFile(Directory projectDir) => File(
-    '${_specDir(projectDir).path}${Platform.pathSeparator}business_rules.json',
   );
 
   File _modelPreferencesFile(Directory projectDir) => File(
@@ -176,12 +183,78 @@ class SpecProjectStore {
     });
   }
 
-  /// Sauvegarde incrémentalement et atomiquement les partitions modifiées de [project],
-  /// puis mémorise [project] comme dernier projet actif.
+  Future<Directory?> _findExistingProjectDir(String projectId) async {
+    final cached = _projectDirsById[projectId];
+    if (cached != null && await _projectManifestFile(cached).exists()) {
+      try {
+        final raw = jsonDecode(await _projectManifestFile(cached).readAsString());
+        if (raw is Map && (raw['id'] as String?)?.trim() == projectId) {
+          return cached;
+        }
+      } catch (_) {}
+      _projectDirsById.remove(projectId);
+    }
+    if (!await _projectsDir.exists()) return null;
+    await for (final entity in _projectsDir.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final manifest = _projectManifestFile(entity);
+      if (!await manifest.exists()) continue;
+      try {
+        final raw = jsonDecode(await manifest.readAsString());
+        if (raw is Map && (raw['id'] as String?)?.trim() == projectId) {
+          _projectDirsById[projectId] = entity;
+          return entity;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Future<Directory> _resolveOrAllocateProjectDir(
+    SpecForgeProject project,
+  ) async {
+    final existing = await _findExistingProjectDir(project.id);
+    if (existing != null) return existing;
+
+    final baseSlug = SpecStorageSlug.slugify(
+      project.name,
+      fallback: 'project',
+      separator: '-',
+    );
+    var candidateName = baseSlug;
+    var candidateDir = Directory(
+      '${_projectsDir.path}${Platform.pathSeparator}$candidateName',
+    );
+    var counter = 2;
+    while (await candidateDir.exists()) {
+      final manifest = _projectManifestFile(candidateDir);
+      if (!await manifest.exists()) {
+        final isEmpty = await candidateDir.list(followLinks: false).isEmpty;
+        if (isEmpty) break;
+      } else {
+        try {
+          final raw = jsonDecode(await manifest.readAsString());
+          if (raw is Map && (raw['id'] as String?)?.trim() == project.id) {
+            break;
+          }
+        } catch (_) {}
+      }
+      candidateName = '$baseSlug-$counter';
+      candidateDir = Directory(
+        '${_projectsDir.path}${Platform.pathSeparator}$candidateName',
+      );
+      counter++;
+    }
+    _projectDirsById[project.id] = candidateDir;
+    return candidateDir;
+  }
+
+  /// Sauvegarde incrémentalement et atomiquement les fichiers modifiés de [project],
+  /// puis mémorise [project] comme dernier projet actif dans `.local/state.json`.
   Future<void> saveProject(SpecForgeProject project) {
     project.validate();
     return _enqueueProjectOp(project.id, () async {
-      final projectDir = _projectDir(project.id);
+      final projectDir = await _resolveOrAllocateProjectDir(project);
       final prev = _persistedSnapshots[project.id];
 
       final writes = <Future<void>>[];
@@ -192,21 +265,16 @@ class SpecProjectStore {
           prev.initialIdea != project.initialIdea ||
           prev.createdAt != project.createdAt ||
           prev.updatedAt != project.updatedAt ||
-          prev.currentStage != project.currentStage ||
-          prev.businessObjects.length != project.businessObjects.length ||
-          prev.businessRules.length != project.businessRules.length;
+          prev.currentStage != project.currentStage;
       if (manifestChanged) {
         writes.add(
-          _writeJsonAtomically(
-            _manifestFile(projectDir),
-            _manifestToJson(project),
-          ),
+          _writeJson(_projectManifestFile(projectDir), _manifestToJson(project)),
         );
       }
 
       if (prev == null || prev.lexicon != project.lexicon) {
         writes.add(
-          _writeJsonAtomically(_lexiconFile(projectDir), <String, Object?>{
+          _writeJson(_lexiconFile(projectDir), <String, Object?>{
             'format': 'super_spec_forge.lexicon',
             'version': storageVersion,
             'data': project.lexicon.toJson(),
@@ -216,7 +284,7 @@ class SpecProjectStore {
 
       if (prev == null || prev.vision != project.vision) {
         writes.add(
-          _writeJsonAtomically(_visionFile(projectDir), <String, Object?>{
+          _writeJson(_visionFile(projectDir), <String, Object?>{
             'format': 'super_spec_forge.vision',
             'version': storageVersion,
             'data': project.vision.toJson(),
@@ -226,71 +294,44 @@ class SpecProjectStore {
 
       if (prev == null || prev.cahierDesCharges != project.cahierDesCharges) {
         writes.add(
-          _writeJsonAtomically(
-            _cahierDesChargesFile(projectDir),
-            <String, Object?>{
-              'format': 'super_spec_forge.cahier_des_charges',
-              'version': storageVersion,
-              'data': project.cahierDesCharges.toJson(),
-            },
-          ),
+          _writeJson(_cahierDesChargesFile(projectDir), <String, Object?>{
+            'format': 'super_spec_forge.cahier_des_charges',
+            'version': storageVersion,
+            'data': project.cahierDesCharges.toJson(),
+          }),
         );
       }
 
       if (prev == null ||
           !listEquals(prev.businessObjects, project.businessObjects)) {
-        writes.add(
-          _writeJsonAtomically(
-            _businessObjectsFile(projectDir),
-            <String, Object?>{
-              'format': 'super_spec_forge.business_objects',
-              'version': storageVersion,
-              'items': [for (final o in project.businessObjects) o.toJson()],
-            },
-          ),
-        );
+        writes.add(_syncBusinessObjects(projectDir, project.businessObjects));
       }
 
       if (prev == null ||
           !listEquals(prev.businessRules, project.businessRules)) {
-        writes.add(
-          _writeJsonAtomically(
-            _businessRulesFile(projectDir),
-            <String, Object?>{
-              'format': 'super_spec_forge.business_rules',
-              'version': storageVersion,
-              'items': [for (final r in project.businessRules) r.toJson()],
-            },
-          ),
-        );
+        writes.add(_syncBusinessRules(projectDir, project.businessRules));
       }
 
       if (prev == null ||
           prev.businessObjectModelPreferences !=
               project.businessObjectModelPreferences) {
         writes.add(
-          _writeJsonAtomically(
-            _modelPreferencesFile(projectDir),
-            <String, Object?>{
-              'format': 'super_spec_forge.model_preferences',
-              'version': storageVersion,
-              'data': project.businessObjectModelPreferences.toJson(),
-            },
-          ),
+          _writeJson(_modelPreferencesFile(projectDir), <String, Object?>{
+            'format': 'super_spec_forge.model_preferences',
+            'version': storageVersion,
+            'data': project.businessObjectModelPreferences.toJson(),
+          }),
         );
       }
 
       if (prev == null ||
           !listEquals(prev.coherenceIssues, project.coherenceIssues)) {
         writes.add(
-          _writeJsonAtomically(
-            _coherenceIssuesFile(projectDir),
-            <String, Object?>{
-              'format': 'super_spec_forge.coherence_issues',
-              'version': storageVersion,
-              'items': [for (final i in project.coherenceIssues) i.toJson()],
-            },
-          ),
+          _writeJson(_coherenceIssuesFile(projectDir), <String, Object?>{
+            'format': 'super_spec_forge.coherence_issues',
+            'version': storageVersion,
+            'items': [for (final i in project.coherenceIssues) i.toJson()],
+          }),
         );
       }
 
@@ -313,20 +354,17 @@ class SpecProjectStore {
               _serializeChatMessage(msg, attachmentsToWrite),
           ];
           writes.add(
-            _writeJsonAtomically(
-              _stageChatFile(projectDir, stage),
-              <String, Object?>{
-                'format': 'super_spec_forge.stage_chat',
-                'version': storageVersion,
-                'data': <String, Object?>{
-                  'stage': state.stage.name,
-                  'status': state.status.name,
-                  'messages': serializedMessages,
-                  'stageSummary': state.stageSummary,
-                  'readyToAdvance': state.readyToAdvance,
-                },
+            _writeJson(_stageChatFile(projectDir, stage), <String, Object?>{
+              'format': 'super_spec_forge.stage_chat',
+              'version': storageVersion,
+              'data': <String, Object?>{
+                'stage': state.stage.name,
+                'status': state.status.name,
+                'messages': serializedMessages,
+                'stageSummary': state.stageSummary,
+                'readyToAdvance': state.readyToAdvance,
               },
-            ),
+            }),
           );
         }
 
@@ -336,14 +374,11 @@ class SpecProjectStore {
               _serializeChatMessage(msg, attachmentsToWrite),
           ];
           writes.add(
-            _writeJsonAtomically(
-              _globalChatFile(projectDir),
-              <String, Object?>{
-                'format': 'super_spec_forge.global_chat',
-                'version': storageVersion,
-                'items': serializedGlobal,
-              },
-            ),
+            _writeJson(_globalChatFile(projectDir), <String, Object?>{
+              'format': 'super_spec_forge.global_chat',
+              'version': storageVersion,
+              'items': serializedGlobal,
+            }),
           );
         }
 
@@ -371,16 +406,107 @@ class SpecProjectStore {
     });
   }
 
+  Future<void> _syncBusinessObjects(
+    Directory projectDir,
+    List<BusinessObjectSpec> objects,
+  ) async {
+    final dir = _businessObjectsDir(projectDir);
+    final fileMap = SpecStorageSlug.assignUniqueJsonFiles<BusinessObjectSpec>(
+      objects,
+      labelFor: (o) =>
+          o.technicalName.trim().isNotEmpty ? o.technicalName : o.name,
+      idFor: (o) => o.id,
+      fallback: 'object',
+      separator: '_',
+    );
+
+    final writes = <Future<void>>[];
+    final keepFiles = <String>{...fileMap.keys};
+    final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
+    if (objects.isNotEmpty) {
+      keepFiles.add('_order.json');
+      writes.add(
+        _writeJson(orderFile, <String, Object?>{
+          'format': orderFormat,
+          'version': storageVersion,
+          'ids': [for (final o in objects) o.id],
+        }),
+      );
+    }
+
+    for (final entry in fileMap.entries) {
+      writes.add(
+        _writeJson(
+          File('${dir.path}${Platform.pathSeparator}${entry.key}'),
+          <String, Object?>{
+            'format': businessObjectFormat,
+            'version': storageVersion,
+            'data': entry.value.toJson(),
+          },
+        ),
+      );
+    }
+
+    await Future.wait(writes);
+    await SpecStorageIo.pruneUnexpectedFiles(dir, keepFiles);
+  }
+
+  Future<void> _syncBusinessRules(
+    Directory projectDir,
+    List<BusinessRuleSpec> rules,
+  ) async {
+    final dir = _businessRulesDir(projectDir);
+    final fileMap = SpecStorageSlug.assignUniqueJsonFiles<BusinessRuleSpec>(
+      rules,
+      labelFor: (r) =>
+          r.code.trim().isNotEmpty ? '${r.code} ${r.title}' : r.title,
+      idFor: (r) => r.id,
+      fallback: 'rule',
+      separator: '-',
+    );
+
+    final writes = <Future<void>>[];
+    final keepFiles = <String>{...fileMap.keys};
+    final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
+    if (rules.isNotEmpty) {
+      keepFiles.add('_order.json');
+      writes.add(
+        _writeJson(orderFile, <String, Object?>{
+          'format': orderFormat,
+          'version': storageVersion,
+          'ids': [for (final r in rules) r.id],
+        }),
+      );
+    }
+
+    for (final entry in fileMap.entries) {
+      writes.add(
+        _writeJson(
+          File('${dir.path}${Platform.pathSeparator}${entry.key}'),
+          <String, Object?>{
+            'format': businessRuleFormat,
+            'version': storageVersion,
+            'data': entry.value.toJson(),
+          },
+        ),
+      );
+    }
+
+    await Future.wait(writes);
+    await SpecStorageIo.pruneUnexpectedFiles(dir, keepFiles);
+  }
+
   /// Charge un projet depuis son [projectId], ou retourne `null` s'il est introuvable.
   Future<SpecForgeProject?> loadProject(String projectId) {
     return _enqueueProjectOp(projectId, () async {
-      final projectDir = _projectDir(projectId);
-      final manifestFile = _manifestFile(projectDir);
+      final projectDir = await _findExistingProjectDir(projectId);
+      if (projectDir == null) return null;
+      final manifestFile = _projectManifestFile(projectDir);
       if (!await manifestFile.exists()) return null;
 
       final manifestRaw = jsonDecode(await manifestFile.readAsString());
       if (manifestRaw is! Map) {
-        throw const FormatException('manifest.json doit être un objet JSON.');
+        throw const FormatException('project.json doit être un objet JSON.');
       }
 
       final id = (manifestRaw['id'] as String?)?.trim() ?? '';
@@ -396,10 +522,16 @@ class SpecProjectStore {
       final lexiconFuture = _readOptionalJsonMap(_lexiconFile(projectDir));
       final visionFuture = _readOptionalJsonMap(_visionFile(projectDir));
       final cdcFuture = _readOptionalJsonMap(_cahierDesChargesFile(projectDir));
-      final objectsFuture = _readOptionalJsonMap(
-        _businessObjectsFile(projectDir),
+      final objectsFuture = _loadSplitEntities<BusinessObjectSpec>(
+        _businessObjectsDir(projectDir),
+        parseItem: BusinessObjectSpec.fromJson,
+        idOf: (o) => o.id,
       );
-      final rulesFuture = _readOptionalJsonMap(_businessRulesFile(projectDir));
+      final rulesFuture = _loadSplitEntities<BusinessRuleSpec>(
+        _businessRulesDir(projectDir),
+        parseItem: BusinessRuleSpec.fromJson,
+        idOf: (r) => r.id,
+      );
       final prefsFuture = _readOptionalJsonMap(
         _modelPreferencesFile(projectDir),
       );
@@ -429,8 +561,8 @@ class SpecProjectStore {
       final lexiconMap = results[0] as Map<dynamic, dynamic>?;
       final visionMap = results[1] as Map<dynamic, dynamic>?;
       final cdcMap = results[2] as Map<dynamic, dynamic>?;
-      final objectsMap = results[3] as Map<dynamic, dynamic>?;
-      final rulesMap = results[4] as Map<dynamic, dynamic>?;
+      final businessObjects = results[3] as List<BusinessObjectSpec>;
+      final businessRules = results[4] as List<BusinessRuleSpec>;
       final prefsMap = results[5] as Map<dynamic, dynamic>?;
       final issuesMap = results[6] as Map<dynamic, dynamic>?;
       final globalChatMap = results[7] as Map<dynamic, dynamic>?;
@@ -462,8 +594,6 @@ class SpecProjectStore {
         ).then((msgs) => globalChatMessages = msgs),
       ]);
 
-      final rawObjects = objectsMap?['items'];
-      final rawRules = rulesMap?['items'];
       final rawIssues = issuesMap?['items'];
 
       final project = SpecForgeProject(
@@ -476,14 +606,8 @@ class SpecProjectStore {
         lexicon: SpecLexicon.fromJson(lexiconMap?['data']),
         vision: SpecVision.fromJson(visionMap?['data']),
         cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
-        businessObjects: [
-          if (rawObjects is List)
-            for (final item in rawObjects) BusinessObjectSpec.fromJson(item),
-        ],
-        businessRules: [
-          if (rawRules is List)
-            for (final item in rawRules) BusinessRuleSpec.fromJson(item),
-        ],
+        businessObjects: businessObjects,
+        businessRules: businessRules,
         businessObjectModelPreferences: BusinessObjectModelPreferences.fromJson(
           prefsMap?['data'],
         ),
@@ -500,12 +624,77 @@ class SpecProjectStore {
     });
   }
 
+  Future<List<T>> _loadSplitEntities<T>(
+    Directory dir, {
+    required T Function(Object? raw) parseItem,
+    required String Function(T item) idOf,
+  }) async {
+    if (!await dir.exists()) return const [];
+    final files = <File>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = SpecStorageIo.fileNameOf(entity.path);
+      if (name.contains('.tmp.') || !name.toLowerCase().endsWith('.json')) {
+        continue;
+      }
+      if (name == '_order.json') continue;
+      files.add(entity);
+    }
+    files.sort(
+      (a, b) => SpecStorageIo.fileNameOf(a.path)
+          .toLowerCase()
+          .compareTo(SpecStorageIo.fileNameOf(b.path).toLowerCase()),
+    );
+
+    final parsedByFile = await Future.wait<T>(
+      files.map((file) async {
+        final decoded = jsonDecode(await file.readAsString());
+        final payload = (decoded is Map && decoded['data'] is Map)
+            ? decoded['data']
+            : decoded;
+        return parseItem(payload);
+      }),
+    );
+
+    final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
+    if (!await orderFile.exists()) {
+      return parsedByFile;
+    }
+    try {
+      final rawOrder = jsonDecode(await orderFile.readAsString());
+      final ids = rawOrder is Map ? rawOrder['ids'] : null;
+      if (ids is! List) return parsedByFile;
+
+      final byId = <String, T>{
+        for (final item in parsedByFile) idOf(item): item,
+      };
+      final ordered = <T>[];
+      final placed = <String>{};
+      for (final rawId in ids) {
+        if (rawId is! String) continue;
+        final item = byId[rawId];
+        if (item != null && placed.add(rawId)) {
+          ordered.add(item);
+        }
+      }
+      for (final item in parsedByFile) {
+        if (placed.add(idOf(item))) {
+          ordered.add(item);
+        }
+      }
+      return ordered;
+    } catch (_) {
+      return parsedByFile;
+    }
+  }
+
   /// Supprime définitivement un projet du disque.
   Future<void> deleteProject(String projectId) {
     return _enqueueProjectOp(projectId, () async {
       _persistedSnapshots.remove(projectId);
-      final dir = _projectDir(projectId);
-      if (await dir.exists()) {
+      final dir = await _findExistingProjectDir(projectId);
+      _projectDirsById.remove(projectId);
+      if (dir != null && await dir.exists()) {
         await dir.delete(recursive: true);
       }
       final activeId = await getLastActiveProjectId();
@@ -515,14 +704,15 @@ class SpecProjectStore {
     });
   }
 
-  /// Liste tous les projets valides présents sur disque en ne lisant que leur `manifest.json`,
+  /// Liste tous les projets valides présents sur disque en lisant `project.json`
+  /// et en comptant les fichiers sous `spec/business_objects/` et `spec/business_rules/`,
   /// triés du plus récent au plus ancien.
   Future<List<SpecProjectSummary>> listProjects() async {
     if (!await _projectsDir.exists()) return const <SpecProjectSummary>[];
     final summaries = <SpecProjectSummary>[];
     await for (final entity in _projectsDir.list(followLinks: false)) {
       if (entity is! Directory) continue;
-      final manifest = _manifestFile(entity);
+      final manifest = _projectManifestFile(entity);
       if (!await manifest.exists()) continue;
       try {
         final decoded = jsonDecode(await manifest.readAsString());
@@ -531,12 +721,16 @@ class SpecProjectStore {
         final name = (decoded['name'] as String?)?.trim() ?? '';
         final initialIdea = (decoded['initialIdea'] as String?)?.trim() ?? '';
         if (id.isEmpty || name.isEmpty || initialIdea.isEmpty) continue;
+        _projectDirsById[id] = entity;
+
         final updatedAt =
             _parseDateTime(decoded['updatedAt']) ??
             _parseDateTime(decoded['createdAt']) ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final objectCount = (decoded['objectCount'] as num?)?.toInt() ?? 0;
-        final ruleCount = (decoded['ruleCount'] as num?)?.toInt() ?? 0;
+        final counts = await Future.wait<int>([
+          _countJsonEntityFiles(_businessObjectsDir(entity)),
+          _countJsonEntityFiles(_businessRulesDir(entity)),
+        ]);
         summaries.add(
           SpecProjectSummary(
             id: id,
@@ -544,8 +738,9 @@ class SpecProjectStore {
             initialIdea: initialIdea,
             currentStage: SpecForgeStage.fromJson(decoded['currentStage']),
             updatedAt: updatedAt,
-            objectCount: objectCount < 0 ? 0 : objectCount,
-            ruleCount: ruleCount < 0 ? 0 : ruleCount,
+            objectCount: counts[0],
+            ruleCount: counts[1],
+            folderName: SpecStorageIo.fileNameOf(entity.path),
           ),
         );
       } catch (_) {
@@ -556,11 +751,27 @@ class SpecProjectStore {
     return List<SpecProjectSummary>.unmodifiable(summaries);
   }
 
-  /// Lit l'identifiant du dernier projet ouvert, ou `null`.
+  Future<int> _countJsonEntityFiles(Directory dir) async {
+    if (!await dir.exists()) return 0;
+    var count = 0;
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = SpecStorageIo.fileNameOf(entity.path);
+      if (name == '_order.json' ||
+          name.contains('.tmp.') ||
+          !name.toLowerCase().endsWith('.json')) {
+        continue;
+      }
+      count++;
+    }
+    return count;
+  }
+
+  /// Lit l'identifiant du dernier projet ouvert depuis `.local/state.json`, ou `null`.
   Future<String?> getLastActiveProjectId() async {
-    if (!await _indexFile.exists()) return null;
+    if (!await _localStateFile.exists()) return null;
     try {
-      final decoded = jsonDecode(await _indexFile.readAsString());
+      final decoded = jsonDecode(await _localStateFile.readAsString());
       if (decoded is Map && decoded['lastActiveProjectId'] is String) {
         final id = (decoded['lastActiveProjectId'] as String).trim();
         final resolved = id.isEmpty ? null : id;
@@ -571,13 +782,14 @@ class SpecProjectStore {
     return null;
   }
 
-  /// Mémorise l'identifiant du dernier projet actif dans `index.json`.
+  /// Mémorise l'identifiant du dernier projet actif dans `.local/state.json`.
   Future<void> setLastActiveProjectId(String? projectId) async {
-    if (_cachedLastActiveProjectId == projectId && await _indexFile.exists()) {
+    if (_cachedLastActiveProjectId == projectId &&
+        await _localStateFile.exists()) {
       return;
     }
     final payload = <String, Object?>{'lastActiveProjectId': projectId};
-    await _writeJsonAtomically(_indexFile, payload);
+    await _writeJson(_localStateFile, payload);
     _cachedLastActiveProjectId = projectId;
   }
 
@@ -591,8 +803,6 @@ class SpecProjectStore {
         'createdAt': project.createdAt.toUtc().toIso8601String(),
         'updatedAt': project.updatedAt.toUtc().toIso8601String(),
         'currentStage': project.currentStage.name,
-        'objectCount': project.businessObjects.length,
-        'ruleCount': project.businessRules.length,
       };
 
   Future<Map<dynamic, dynamic>?> _readOptionalJsonMap(File file) async {
@@ -794,9 +1004,17 @@ class SpecProjectStore {
   ) async {
     if (await targetFile.exists()) return;
     if (pending.isText && pending.textContent != null) {
-      await _writeStringAtomically(targetFile, pending.textContent!);
+      await SpecStorageIo.writeTextAtomicallyIfChanged(
+        targetFile,
+        SpecStorageIo.normalizeLf(pending.textContent!, trailingNewline: false),
+        nextTmpId: () => _tmpCounter++,
+      );
     } else {
-      await _writeBytesAtomically(targetFile, pending.bytes);
+      await SpecStorageIo.writeBytesAtomically(
+        targetFile,
+        pending.bytes,
+        nextTmpId: () => _tmpCounter++,
+      );
     }
   }
 
@@ -807,9 +1025,7 @@ class SpecProjectStore {
     if (!await attachmentsDir.exists()) return;
     await for (final entity in attachmentsDir.list(followLinks: false)) {
       if (entity is! File) continue;
-      final name = entity.uri.pathSegments.isEmpty
-          ? entity.path.split(Platform.pathSeparator).last
-          : entity.uri.pathSegments.last;
+      final name = SpecStorageIo.fileNameOf(entity.path);
       if (name.contains('.tmp.')) continue;
       if (!referencedFiles.contains(name)) {
         try {
@@ -842,24 +1058,12 @@ class SpecProjectStore {
     return 'att_${bytes.length}_${hex32(h0)}${hex32(h1)}${hex32(h2)}${hex32(h3)}.$ext';
   }
 
-  Future<void> _writeJsonAtomically(
-    File target,
-    Map<String, Object?> payload,
-  ) => _writeStringAtomically(target, _prettyEncoder.convert(payload));
-
-  Future<void> _writeStringAtomically(File target, String content) async {
-    await target.parent.create(recursive: true);
-    final tmp = File('${target.path}.tmp.${_tmpCounter++}');
-    await tmp.writeAsString(content, flush: true);
-    await tmp.rename(target.path);
-  }
-
-  Future<void> _writeBytesAtomically(File target, Uint8List bytes) async {
-    await target.parent.create(recursive: true);
-    final tmp = File('${target.path}.tmp.${_tmpCounter++}');
-    await tmp.writeAsBytes(bytes, flush: true);
-    await tmp.rename(target.path);
-  }
+  Future<bool> _writeJson(File target, Object? payload) =>
+      SpecStorageIo.writeJsonAtomicallyIfChanged(
+        target,
+        payload,
+        nextTmpId: () => _tmpCounter++,
+      );
 
   static DateTime? _parseDateTime(Object? raw) {
     if (raw is! String || raw.trim().isEmpty) return null;

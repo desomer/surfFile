@@ -11,6 +11,36 @@ Application Flutter Desktop et bibliothèque Dart de conception de cahier des ch
 5. **Règles de gestion** (`Rule Architect`) : règles `RG-xxx` de validation, calcul, transition d'état, permission et déclencheur (`Quand / Si / Alors`).
 6. **Revue & Export** (`Consistency Auditor`) : analyse de cohérence inter-étapes et export en Markdown (`.md`), JSON (`.json`), YAML « JSON Schemas Light » (`super_designer`) et dossier d'application sandboxée (`super_container_layout`).
 
+## Persistance par dossier & intégration Git
+
+Les données sont stockées dans un **dossier Workspace sélectionnable** (par défaut `~/.super_spec_forge`, ou tout dépôt Git choisi via le sélecteur de workspace dans la barre d'application) :
+
+```text
+<workspace>/
+├── .gitignore                          # Généré si absent (.local/, exports/, *.tmp.*)
+├── workspace.json                      # Métadonnées du workspace
+├── .local/state.json                   # Dernier projet actif sur cette machine (ignoré par Git)
+├── glossary/
+│   ├── glossary.json                   # Conventions & ambiguïtés
+│   ├── chat.json                       # Historique du chat IA du glossaire
+│   └── terms/<slug>.json               # 1 fichier par terme
+├── dictionary/
+│   ├── preferences.json                # Préférences globales de modélisation
+│   └── rules/<slug>.json               # 1 fichier par règle technique
+└── projects/<project-slug>/
+    ├── project.json                    # Métadonnées du projet
+    ├── spec/
+    │   ├── lexicon.json
+    │   ├── vision.json
+    │   ├── cahier_des_charges.json
+    │   ├── model_preferences.json
+    │   ├── coherence_issues.json
+    │   ├── business_objects/<slug>.json
+    │   └── business_rules/<slug>.json
+    ├── chats/                          # Historiques IA par étape et chat global
+    └── attachments/                    # Pièces jointes dédupliquées
+```
+
 ## Lancement & Validation
 
 ```powershell

@@ -257,9 +257,13 @@ void main() {
 
         await store.saveProject(project);
 
-        final projPath = '${tempDir.path}${sep}projects$sep${project.id}';
-        expect(await File('$projPath${sep}project.json').exists(), isFalse);
-        expect(await File('$projPath${sep}manifest.json').exists(), isTrue);
+        final projPath = '${tempDir.path}${sep}projects${sep}b2b-orders';
+        expect(await File('$projPath${sep}project.json').exists(), isTrue);
+        expect(await File('$projPath${sep}manifest.json').exists(), isFalse);
+        expect(
+          await File('${tempDir.path}$sep.local${sep}state.json').exists(),
+          isTrue,
+        );
         expect(
           await File('$projPath${sep}spec${sep}lexicon.json').exists(),
           isTrue,
@@ -272,12 +276,24 @@ void main() {
           await File('$projPath${sep}spec${sep}cahier_des_charges.json').exists(),
           isTrue,
         );
+        final orderObjectFile = File(
+          '$projPath${sep}spec${sep}business_objects${sep}commande.json',
+        );
+        final ruleFile = File(
+          '$projPath${sep}spec${sep}business_rules${sep}rg-001-validation-commande.json',
+        );
+        expect(await orderObjectFile.exists(), isTrue);
+        expect(await ruleFile.exists(), isTrue);
         expect(
-          await File('$projPath${sep}spec${sep}business_objects.json').exists(),
+          await File(
+            '$projPath${sep}spec${sep}business_objects${sep}_order.json',
+          ).exists(),
           isTrue,
         );
         expect(
-          await File('$projPath${sep}spec${sep}business_rules.json').exists(),
+          await File(
+            '$projPath${sep}spec${sep}business_rules${sep}_order.json',
+          ).exists(),
           isTrue,
         );
         expect(
@@ -297,6 +313,11 @@ void main() {
           isTrue,
         );
 
+        // Vérifie les fins de ligne LF et saut de ligne final sur les fichiers JSON.
+        final orderRaw = await orderObjectFile.readAsString();
+        expect(orderRaw.contains('\r\n'), isFalse);
+        expect(orderRaw.endsWith('\n'), isTrue);
+
         // Vérifie l'externalisation des pièces jointes dans attachments/.
         final attachmentsDir = Directory('$projPath${sep}attachments');
         expect(await attachmentsDir.exists(), isTrue);
@@ -309,10 +330,11 @@ void main() {
         expect(stageChatRaw, isNot(contains('"bytesBase64"')));
         expect(stageChatRaw, isNot(contains('Contenu détaillé en UTF-8.')));
 
-        // listProjects() fonctionne uniquement via manifest.json.
+        // listProjects() fonctionne uniquement via project.json et comptage des fichiers.
         final list = await store.listProjects();
         expect(list.length, 1);
         expect(list.single.name, 'B2B Orders');
+        expect(list.single.folderName, 'b2b-orders');
         expect(list.single.objectCount, 1);
         expect(list.single.ruleCount, 1);
 
@@ -320,17 +342,15 @@ void main() {
         expect(loaded, equals(project));
         expect(await store.getLastActiveProjectId(), project.id);
 
-        // Sauvegarde incrémentale : seul lexique + manifeste doivent être réécrits.
+        // Sauvegarde incrémentale : seul lexique + project.json doivent être réécrits.
         final pastTime = DateTime(2020, 1, 1);
         final lexiconFile = File('$projPath${sep}spec${sep}lexicon.json');
         final visionFile = File('$projPath${sep}spec${sep}vision.json');
-        final objectsFile = File(
-          '$projPath${sep}spec${sep}business_objects.json',
-        );
         final globalChatFile = File('$projPath${sep}chats${sep}global_chat.json');
         lexiconFile.setLastModifiedSync(pastTime);
         visionFile.setLastModifiedSync(pastTime);
-        objectsFile.setLastModifiedSync(pastTime);
+        orderObjectFile.setLastModifiedSync(pastTime);
+        ruleFile.setLastModifiedSync(pastTime);
         globalChatFile.setLastModifiedSync(pastTime);
 
         final updatedLexicon = project.copyWith(
@@ -349,7 +369,8 @@ void main() {
 
         expect(lexiconFile.lastModifiedSync().isAfter(pastTime), isTrue);
         expect(visionFile.lastModifiedSync(), equals(pastTime));
-        expect(objectsFile.lastModifiedSync(), equals(pastTime));
+        expect(orderObjectFile.lastModifiedSync(), equals(pastTime));
+        expect(ruleFile.lastModifiedSync(), equals(pastTime));
         expect(globalChatFile.lastModifiedSync(), equals(pastTime));
 
         // Nettoyage des pièces jointes orphelines après suppression du message binaire.
@@ -371,12 +392,12 @@ void main() {
         final remainingAttachments = await attachmentsDir.list().toList();
         expect(remainingAttachments.length, 1);
 
-        // listProjects() reste opérationnel même avec un dossier ne contenant que manifest.json.
+        // listProjects() reste opérationnel avec un dossier ne contenant que project.json.
         final manifestOnlyDir = Directory(
-          '${tempDir.path}${sep}projects${sep}proj_manifest_only',
+          '${tempDir.path}${sep}projects${sep}proj-manifest-only',
         );
         await manifestOnlyDir.create(recursive: true);
-        await File('${manifestOnlyDir.path}${sep}manifest.json').writeAsString(
+        await File('${manifestOnlyDir.path}${sep}project.json').writeAsString(
           jsonEncode({
             'format': SpecProjectStore.manifestFormat,
             'version': SpecProjectStore.storageVersion,
@@ -386,8 +407,6 @@ void main() {
             'createdAt': '2026-01-01T00:00:00.000Z',
             'updatedAt': '2026-01-02T00:00:00.000Z',
             'currentStage': 'vision',
-            'objectCount': 4,
-            'ruleCount': 7,
           }),
         );
         final twoProjects = await store.listProjects();
@@ -395,8 +414,8 @@ void main() {
         final manifestOnlySummary = twoProjects.firstWhere(
           (p) => p.id == 'proj_manifest_only',
         );
-        expect(manifestOnlySummary.objectCount, 4);
-        expect(manifestOnlySummary.ruleCount, 7);
+        expect(manifestOnlySummary.objectCount, 0);
+        expect(manifestOnlySummary.ruleCount, 0);
 
         await store.deleteProject(project.id);
         await store.deleteProject('proj_manifest_only');

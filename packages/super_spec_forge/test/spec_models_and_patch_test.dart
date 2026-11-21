@@ -473,14 +473,21 @@ void main() {
 
       SpecForgeStage? navigatedStage;
       String? focusedObj;
+      List<String> focusedAttrPath = const <String>[];
+      String appliedFilter = '';
       final registry = SpecForgeToolRegistry.build(
         readProject: () => current,
         onUpdateProject: (updated) async => current = updated,
         onNavigateStage: (s) async => navigatedStage = s,
         onFocusObject: (id) => focusedObj = id,
+        onFocusSelection: ({objectId, attributePath = const <String>[]}) {
+          focusedObj = objectId;
+          focusedAttrPath = attributePath;
+        },
+        onFilterBusinessObjects: (q) => appliedFilter = q,
       );
 
-      expect(registry.declarations.length, 9);
+      expect(registry.declarations.length, 10);
 
       final lexRes = await registry.execute(
         VibeToolCall(id: '1', name: 'get_lexicon_and_synonyms', arguments: const {'query': 'chiffrage'}),
@@ -555,12 +562,28 @@ void main() {
         VibeToolCall(
           id: '10',
           name: 'focus_stage_or_object',
-          arguments: const {'stage': 'businessObjects', 'objectId': 'obj_devis'},
+          arguments: const {
+            'stage': 'businessObjects',
+            'objectId': 'obj_devis',
+            'attributePath': 'numero',
+          },
         ),
       );
       expect(focusRes.isError, isFalse);
       expect(navigatedStage, SpecForgeStage.businessObjects);
       expect(focusedObj, 'obj_devis');
+      expect(focusedAttrPath, ['a1']);
+
+      final filterRes = await registry.execute(
+        VibeToolCall(
+          id: '11',
+          name: 'filter_business_objects',
+          arguments: const {'query': 'numero'},
+        ),
+      );
+      expect(filterRes.isError, isFalse);
+      expect(appliedFilter, 'numero');
+      expect(filterRes.data['matchingObjectCount'], 1);
     });
 
     test('JsonSchemaConstraints : validation complète, sérialisation, bornes et mots-clés avancés', () {

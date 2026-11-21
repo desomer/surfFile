@@ -591,6 +591,12 @@ class JsonSchemaConstraints {
     if (not != null) badges.add('not');
     if (ifSchema != null) badges.add('if/then/else');
     for (final key in extraKeywords.keys) {
+      if (key == 'x-searchable' || key == 'x-database-index') {
+        if (extraKeywords[key] == true) {
+          badges.add(key);
+        }
+        continue;
+      }
       if (key == 'x-enumNames' || key == 'x-enumDescriptions') {
         final raw = extraKeywords[key];
         if (raw is List) {

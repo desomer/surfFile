@@ -32,10 +32,11 @@ OUTILS D'INTROSPECTION, VALIDATION ET ACTION DISPONIBLES :
 6. `run_coherence_audit` : exécute l'analyse de cohérence inter-étapes et signale références cassées ou dépassements > 200.
 7. `validate_yaml_light_schema` : valide un bloc YAML Light via Yaml2JsonSchemasParser et vérifie les règles <= 200 attributs / <= 200 lignes/tableau.
 8. `extract_array_to_business_object` : extrait un tableau imbriqué vers un nouvel objet métier dédié relié en 1:N.
-9. `focus_stage_or_object` : bascule l'interface sur une étape du wizard et sélectionne éventuellement un objet métier cible.
+9. `focus_stage_or_object` : bascule l'interface sur une étape du wizard et sélectionne éventuellement un objet métier cible et/ou un attribut précis (`attributePath`, ex. `statut` ou `adresseLivraison.codePostal`).
+10. `filter_business_objects` : filtre les objets métiers et attributs affichés dans « Arbre & Inspecteur » (ou efface le filtre avec `query: ""`).
 Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vérifier des détails, valider un schéma ou auditer la cohérence.''';
 
-  /// Déclarations statiques des 9 outils exposés au modèle Gemini.
+  /// Déclarations statiques des 10 outils exposés au modèle Gemini.
   static const List<VibeToolDeclaration> declarations = <VibeToolDeclaration>[
     VibeToolDeclaration(
       name: 'get_lexicon_and_synonyms',
@@ -177,7 +178,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     VibeToolDeclaration(
       name: 'focus_stage_or_object',
       description:
-          'Positionne l’interface du wizard sur une étape donnée et sélectionne éventuellement un objet métier.',
+          'Positionne l’interface du wizard sur une étape donnée et sélectionne éventuellement un objet métier ainsi qu’un attribut (ou sous-attribut) dans l’inspecteur.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -187,10 +188,29 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
           },
           'objectId': <String, Object?>{
             'type': 'string',
-            'description': 'Identifiant ou nom technique de l’objet à sélectionner (optionnel).',
+            'description': 'Identifiant, nom technique ou nom métier de l’objet à sélectionner (optionnel).',
+          },
+          'attributePath': <String, Object?>{
+            'type': 'string',
+            'description': 'Nom ou chemin pointé de l’attribut à sélectionner dans l’objet (ex. "statut" ou "adresseLivraison.codePostal").',
           },
         },
         'required': <String>['stage'],
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'filter_business_objects',
+      description:
+          'Filtre l’arbre des objets métiers et attributs dans « Arbre & Inspecteur » selon une requête texte, ou efface le filtre si query est vide.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'query': <String, Object?>{
+            'type': 'string',
+            'description': 'Mot-clé de filtre sur nom d’objet, alias, nom d’attribut ou type (chaîne vide pour tout réafficher).',
+          },
+        },
+        'required': <String>['query'],
       },
     ),
   ];
@@ -201,6 +221,9 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     required Future<void> Function(SpecForgeProject updated) onUpdateProject,
     required Future<void> Function(SpecForgeStage stage) onNavigateStage,
     required void Function(String? objectId) onFocusObject,
+    void Function({String? objectId, List<String> attributePath})?
+    onFocusSelection,
+    void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
   }) {
@@ -613,13 +636,71 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
           );
         }
         final stageName = (call.arguments['stage'] as String?)?.trim() ?? '';
-        final stage = SpecForgeStage.fromJson(stageName);
+        final stage = stageName.isEmpty
+            ? project.currentStage
+            : SpecForgeStage.fromJson(stageName);
         await onNavigateStage(stage);
         final objKey = (call.arguments['objectId'] as String?)?.trim() ?? '';
+        final attrQuery =
+            (call.arguments['attributePath'] as String?)?.trim() ?? '';
         String? resolvedId;
+        BusinessObjectSpec? targetObj;
         if (objKey.isNotEmpty) {
-          resolvedId = project.findBusinessObject(objKey)?.id;
-          onFocusObject(resolvedId);
+          targetObj = project.findBusinessObject(objKey);
+          if (targetObj == null) {
+            return VibeToolResult.error(
+              callId: call.id,
+              name: call.name,
+              message: 'Objet métier introuvable : $objKey',
+            );
+          }
+          resolvedId = targetObj.id;
+        }
+        var resolvedAttrPath = const <String>[];
+        String? resolvedAttrDotPath;
+        if (attrQuery.isNotEmpty) {
+          if (targetObj != null) {
+            final match = _resolveAttributePath(targetObj.attributes, attrQuery);
+            if (match == null) {
+              return VibeToolResult.error(
+                callId: call.id,
+                name: call.name,
+                message:
+                    'Attribut "$attrQuery" introuvable sur ${targetObj.technicalName}.',
+              );
+            }
+            resolvedAttrPath = match.ids;
+            resolvedAttrDotPath = '${targetObj.technicalName}.${match.names.join('.')}';
+          } else {
+            for (final candidate in project.businessObjects) {
+              final match = _resolveAttributePath(candidate.attributes, attrQuery);
+              if (match != null) {
+                targetObj = candidate;
+                resolvedId = candidate.id;
+                resolvedAttrPath = match.ids;
+                resolvedAttrDotPath =
+                    '${candidate.technicalName}.${match.names.join('.')}';
+                break;
+              }
+            }
+            if (resolvedAttrPath.isEmpty) {
+              return VibeToolResult.error(
+                callId: call.id,
+                name: call.name,
+                message: 'Attribut "$attrQuery" introuvable dans le modèle.',
+              );
+            }
+          }
+        }
+        if (resolvedId != null) {
+          if (onFocusSelection != null) {
+            onFocusSelection(
+              objectId: resolvedId,
+              attributePath: resolvedAttrPath,
+            );
+          } else {
+            onFocusObject(resolvedId);
+          }
         }
         return VibeToolResult(
           callId: call.id,
@@ -627,6 +708,45 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
           data: <String, Object?>{
             'stage': stage.name,
             'focusedObjectId': ?resolvedId,
+            if (resolvedAttrPath.isNotEmpty)
+              'focusedAttributePath': resolvedAttrPath,
+            'focusedAttribute': ?resolvedAttrDotPath,
+          },
+        );
+      },
+      'filter_business_objects': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final query = (call.arguments['query'] as String?)?.trim() ?? '';
+        onFilterBusinessObjects?.call(query);
+        final lower = query.toLowerCase();
+        var matchingObjects = 0;
+        var matchingAttributes = 0;
+        for (final obj in project.businessObjects) {
+          final objMatches =
+              lower.isEmpty ||
+              obj.name.toLowerCase().contains(lower) ||
+              obj.technicalName.toLowerCase().contains(lower) ||
+              obj.description.toLowerCase().contains(lower);
+          final attrHits = _countMatchingAttributes(obj.attributes, lower);
+          if (objMatches || attrHits > 0) {
+            matchingObjects++;
+            matchingAttributes += attrHits;
+          }
+        }
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'query': query,
+            'matchingObjectCount': matchingObjects,
+            'matchingAttributeCount': matchingAttributes,
           },
         );
       },
@@ -672,9 +792,90 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
       case 'extract_array_to_business_object':
         return 'Extrait vers ${data['technicalName'] ?? 'objet dédié'}';
       case 'focus_stage_or_object':
+        if (data['focusedAttribute'] is String) {
+          return 'Sélection : ${data['focusedAttribute']}';
+        }
         return 'Focus sur ${data['stage'] ?? 'étape'}';
+      case 'filter_business_objects':
+        final q = (data['query'] as String?) ?? '';
+        if (q.isEmpty) return 'Filtre réinitialisé';
+        return 'Filtre "$q" (${data['matchingObjectCount'] ?? 0} obj.)';
     }
     return 'OK';
+  }
+
+  static ({List<String> ids, List<String> names})? _resolveAttributePath(
+    List<BusinessAttribute> attrs,
+    String rawQuery,
+  ) {
+    final segments = rawQuery
+        .split('.')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (segments.isEmpty) return null;
+
+    ({List<String> ids, List<String> names})? matchPath(
+      List<BusinessAttribute> list,
+      List<String> remaining,
+    ) {
+      final headLower = remaining.first.toLowerCase();
+      for (final a in list) {
+        if (a.id.toLowerCase() == headLower ||
+            a.name.toLowerCase() == headLower) {
+          if (remaining.length == 1) {
+            return (ids: [a.id], names: [a.name]);
+          }
+          final child = matchPath(a.children, remaining.sublist(1));
+          if (child != null) {
+            return (ids: [a.id, ...child.ids], names: [a.name, ...child.names]);
+          }
+        }
+      }
+      return null;
+    }
+
+    final exact = matchPath(attrs, segments);
+    if (exact != null) return exact;
+
+    if (segments.length == 1) {
+      final needle = segments.first.toLowerCase();
+      ({List<String> ids, List<String> names})? searchRec(
+        List<BusinessAttribute> list,
+      ) {
+        for (final a in list) {
+          if (a.id.toLowerCase() == needle || a.name.toLowerCase() == needle) {
+            return (ids: [a.id], names: [a.name]);
+          }
+          final sub = searchRec(a.children);
+          if (sub != null) {
+            return (ids: [a.id, ...sub.ids], names: [a.name, ...sub.names]);
+          }
+        }
+        return null;
+      }
+
+      return searchRec(attrs);
+    }
+    return null;
+  }
+
+  static int _countMatchingAttributes(
+    List<BusinessAttribute> attrs,
+    String lowerQuery,
+  ) {
+    var count = 0;
+    for (final a in attrs) {
+      final matches =
+          lowerQuery.isEmpty ||
+          a.name.toLowerCase().contains(lowerQuery) ||
+          a.type.name.toLowerCase().contains(lowerQuery) ||
+          a.type.dslKeyword.toLowerCase().contains(lowerQuery) ||
+          a.description.toLowerCase().contains(lowerQuery);
+      if (matches) count++;
+      count += _countMatchingAttributes(a.children, lowerQuery);
+    }
+    return count;
   }
 
   static String _singularizePascal(String raw) {

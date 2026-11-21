@@ -14,6 +14,7 @@ class IdeaLauncherView extends StatefulWidget {
     required this.controller,
     this.onBack,
     this.onProjectActivated,
+    this.onSelectWorkspace,
     super.key,
   });
 
@@ -25,6 +26,9 @@ class IdeaLauncherView extends StatefulWidget {
 
   /// Callback optionnel appelé après création ou ouverture d'un projet.
   final VoidCallback? onProjectActivated;
+
+  /// Callback optionnel pour changer le dossier Workspace Git actif.
+  final VoidCallback? onSelectWorkspace;
 
   @override
   State<IdeaLauncherView> createState() => _IdeaLauncherViewState();
@@ -264,11 +268,26 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
               ),
               if (recents.isNotEmpty) ...[
                 const SizedBox(height: 28),
-                Text(
-                  'Projets récents (${recents.length})',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Projets récents (${recents.length})',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (widget.onSelectWorkspace != null)
+                      TextButton.icon(
+                        onPressed: widget.onSelectWorkspace,
+                        icon: const Icon(Icons.folder_copy_outlined, size: 16),
+                        label: Text(
+                          widget.controller.workspaceDirectory.path,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 for (final summary in recents)
@@ -361,7 +380,8 @@ class _RecentProjectTile extends StatelessWidget {
         ),
         subtitle: Text(
           'Étape ${summary.currentStage.stepNumber}/${SpecForgeStage.values.length} (${summary.currentStage.shortLabel}) · '
-          '${summary.objectCount} objet(s) · ${summary.ruleCount} règle(s)\n${summary.initialIdea}',
+          '${summary.objectCount} objet(s) · ${summary.ruleCount} règle(s)'
+          '${summary.folderName != null ? ' · projects/${summary.folderName}' : ''}\n${summary.initialIdea}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),

@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:highlight/languages/yaml.dart' as yaml_lang;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
@@ -23,8 +24,8 @@ import 'attribute_constraints_editor.dart';
 import 'json_schema_viewer_dialog.dart';
 import 'markdown_viewer_dialog.dart';
 
-/// Vue structurée à 3 onglets (« Arbre & Inspecteur », « Source YAML » via [CodeEditor],
-/// et « JSON Schema & Seed » avec [SpecJsonSchemaViewerView]).
+/// Vue structurée à 3 onglets (« Objet métier », « Repository » avec [SpecJsonSchemaViewerView],
+/// et « DSL » via [CodeEditor]).
 class BusinessObjectsEditorView extends StatefulWidget {
   /// Crée la vue connectée au [controller].
   const BusinessObjectsEditorView({
@@ -56,15 +57,19 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
   int _nextRepoSeq = 0;
   final ValueNotifier<String> _yamlErrorNotifier = ValueNotifier<String>('');
   late final CodeEditorConfig _codeEditorConfig;
+  late final TextEditingController _filterCtrl;
 
   String _yamlText = '';
   String? _lastSyncedProjectId;
   String? _lastFocusedObjectId;
+  List<String> _lastFocusedAttrPath = const <String>[];
+  String _lastSyncedFilter = '';
   List<BusinessObjectSpec>? _lastSyncedObjects;
   List<_RepoTreeEntry> _repoEntries = const <_RepoTreeEntry>[];
   final Set<String> _expandedObjectIds = <String>{};
   String? _selectedObjectId;
   String? _selectedNodePath;
+  bool _showFilterBar = false;
   bool _yamlDirty = false;
   String? _treeBuildError;
   double _treePaneFraction = 5 / 11;
@@ -76,6 +81,10 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
   @override
   void initState() {
     super.initState();
+    _filterCtrl = TextEditingController(
+      text: widget.controller.businessObjectFilter,
+    );
+    _showFilterBar = widget.controller.businessObjectFilter.trim().isNotEmpty;
     _codeEditorConfig = CodeEditorConfig(
       mode: yaml_lang.yaml,
       type: 'yaml',
@@ -110,6 +119,7 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
 
   @override
   void dispose() {
+    _filterCtrl.dispose();
     _yamlErrorNotifier.dispose();
     _treeRepoStore.dispose();
     super.dispose();
@@ -124,27 +134,89 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     }
   }
 
+  void _selectTreeNodeInStore(String repoId, String? nodePath) {
+    if (!_registeredRepoIds.contains(repoId)) return;
+    final binding = _treeRepoStore.bindingOf(repoId).array('nodes');
+    if (nodePath == null || nodePath.isEmpty) {
+      binding.clear();
+      return;
+    }
+    final match = RegExp(r'^nodes\[(\d+)\]').firstMatch(nodePath);
+    final rootIndex = match != null ? int.parse(match.group(1)!) : 0;
+    binding.select(const [], rootIndex, nodePath: nodePath);
+  }
+
+  static List<Map<String, Object?>> _filterTreeNodes(
+    List<Map<String, Object?>> nodes,
+    String lowerQuery,
+  ) {
+    if (lowerQuery.isEmpty) return nodes;
+    final result = <Map<String, Object?>>[];
+    for (final node in nodes) {
+      final name = ((node['displayName'] as String?) ?? '').toLowerCase();
+      final type = ((node['displayType'] as String?) ?? '').toLowerCase();
+      final attrType = ((node['attrType'] as String?) ?? '').toLowerCase();
+      final selfMatches =
+          name.contains(lowerQuery) ||
+          type.contains(lowerQuery) ||
+          attrType.contains(lowerQuery);
+      final rawChildren = node['children'];
+      final children = rawChildren is List
+          ? [
+              for (final c in rawChildren)
+                if (c is Map<String, Object?>) c,
+            ]
+          : const <Map<String, Object?>>[];
+      final filteredChildren = _filterTreeNodes(children, lowerQuery);
+      if (selfMatches) {
+        result.add(node);
+      } else if (filteredChildren.isNotEmpty) {
+        result.add(<String, Object?>{
+          ...node,
+          'children': filteredChildren,
+        });
+      }
+    }
+    return result;
+  }
+
   void _syncFromProject(SpecForgeProject? project, {bool forceYaml = false}) {
     if (project == null) return;
     final projectChanged = _lastSyncedProjectId != project.id;
     final focusedId = widget.controller.focusedObjectId;
+    final focusedAttrPath = widget.controller.focusedAttributePath;
+    final rawFilter = widget.controller.businessObjectFilter;
+    final filterChanged = rawFilter != _lastSyncedFilter;
     final focusChanged =
-        focusedId != null &&
-        focusedId.isNotEmpty &&
-        focusedId != _lastFocusedObjectId;
+        (focusedId != null &&
+            focusedId.isNotEmpty &&
+            focusedId != _lastFocusedObjectId) ||
+        !listEquals(focusedAttrPath, _lastFocusedAttrPath);
 
     if (!forceYaml &&
         !projectChanged &&
         !focusChanged &&
+        !filterChanged &&
         identical(_lastSyncedObjects, project.businessObjects)) {
       return;
     }
 
     _lastSyncedProjectId = project.id;
     _lastSyncedObjects = project.businessObjects;
+    _lastSyncedFilter = rawFilter;
+    if (_filterCtrl.text != rawFilter) {
+      _filterCtrl.text = rawFilter;
+      _filterCtrl.selection = TextSelection.collapsed(
+        offset: rawFilter.length,
+      );
+    }
+    if (rawFilter.trim().isNotEmpty) {
+      _showFilterBar = true;
+    }
     if (focusedId != null && focusedId.isNotEmpty) {
       _lastFocusedObjectId = focusedId;
     }
+    _lastFocusedAttrPath = List<String>.unmodifiable(focusedAttrPath);
 
     List<Map<String, Object?>> rootNodes = const <Map<String, Object?>>[];
     try {
@@ -163,18 +235,46 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
       }
     }
 
+    final lowerFilter = rawFilter.trim().toLowerCase();
     final entries = <_RepoTreeEntry>[];
     for (var i = 0; i < project.businessObjects.length; i++) {
       final obj = project.businessObjects[i];
+      final preview = SpecSuperDesignerExporter.buildRepositoryPreview(
+        project,
+        obj,
+        modelPreferencesOverride: widget.controller.modelPreferences,
+      );
+
       final rootNode =
           rootByObjectId[obj.id] ?? (i < rootNodes.length ? rootNodes[i] : null);
       final rawChildren = rootNode?['children'];
-      final children = rawChildren is List
+      final allChildren = rawChildren is List
           ? [
               for (final child in rawChildren)
                 if (child is Map<String, Object?>) child,
             ]
           : const <Map<String, Object?>>[];
+
+      final objMatchesFilter =
+          lowerFilter.isEmpty ||
+          obj.name.toLowerCase().contains(lowerFilter) ||
+          obj.technicalName.toLowerCase().contains(lowerFilter) ||
+          preview.alias.toLowerCase().contains(lowerFilter) ||
+          obj.description.toLowerCase().contains(lowerFilter);
+
+      final filteredChildren = lowerFilter.isEmpty
+          ? allChildren
+          : _filterTreeNodes(allChildren, lowerFilter);
+
+      if (lowerFilter.isNotEmpty &&
+          !objMatchesFilter &&
+          filteredChildren.isEmpty) {
+        continue;
+      }
+
+      final children = (lowerFilter.isNotEmpty && filteredChildren.isNotEmpty)
+          ? filteredChildren
+          : allChildren;
 
       final targets = <String, _TreeNodeSelectionTarget>{};
       void indexNode(Map<String, Object?> node, String nodePath) {
@@ -212,11 +312,6 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
         indexNode(children[c], 'nodes[$c]');
       }
 
-      final preview = SpecSuperDesignerExporter.buildRepositoryPreview(
-        project,
-        obj,
-        modelPreferencesOverride: widget.controller.modelPreferences,
-      );
       var isSchemaValid = true;
       var schemaIssueCount = 0;
       try {
@@ -281,15 +376,44 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
         focusedId.isNotEmpty &&
         validObjectIds.contains(focusedId)) {
       _selectedObjectId = focusedId;
-      _selectedNodePath = null;
       if (singleExpanded) {
         _expandedObjectIds.clear();
       }
       _expandedObjectIds.add(focusedId);
+
+      final focusedEntry = entries
+          .where((e) => e.object.id == focusedId)
+          .firstOrNull;
+      if (focusedAttrPath.isNotEmpty && focusedEntry != null) {
+        final matched = focusedEntry.targetsByNodePath.entries
+            .where((e) => listEquals(e.value.attributePath, focusedAttrPath))
+            .firstOrNull;
+        _selectedNodePath = matched?.key;
+        _clearTreeSelections(exceptObjectId: focusedId);
+        if (matched != null) {
+          _selectTreeNodeInStore(focusedEntry.repoId, matched.key);
+        }
+      } else {
+        _selectedNodePath = null;
+        _clearTreeSelections();
+      }
     } else if (_expandedObjectIds.isEmpty && entries.isNotEmpty) {
       _expandedObjectIds.add(
         _selectedObjectId ?? entries.first.object.id,
       );
+    }
+    if (lowerFilter.isNotEmpty && entries.isNotEmpty) {
+      if (singleExpanded) {
+        if (_expandedObjectIds.isEmpty) {
+          _expandedObjectIds.add(entries.first.object.id);
+        }
+      } else {
+        for (final entry in entries) {
+          if (entry.childNodes.isNotEmpty) {
+            _expandedObjectIds.add(entry.object.id);
+          }
+        }
+      }
     }
     if (singleExpanded && _expandedObjectIds.length > 1) {
       final keepId = (_selectedObjectId != null &&
@@ -419,20 +543,20 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
             ),
             const TabBar(
               tabs: [
-                Tab(text: 'Arbre & Inspecteur'),
-                Tab(text: 'Source YAML'),
+                Tab(text: 'Objets'),
                 Tab(
                   key: ValueKey('spec-objects-schema-tab'),
-                  text: 'JSON Schema & Seed',
+                  text: 'Repositories',
                 ),
+                Tab(text: 'DSL'),
               ],
             ),
             Expanded(
               child: TabBarView(
                 children: [
                   _buildTreeAndInspectorTab(context, project, colors, theme),
-                  _buildYamlSourceTab(context, project, colors, theme),
                   _buildJsonSchemaAndSeedTab(project),
+                  _buildYamlSourceTab(context, project, colors, theme),
                 ],
               ),
             ),
@@ -559,11 +683,47 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                         children: [
                           Expanded(
                             child: Text(
-                              'Repositories (${_repoEntries.length})',
+                              widget.controller.businessObjectFilter.trim().isEmpty
+                                  ? 'Objets métiers (${_repoEntries.length})'
+                                  : 'Objets métiers (${_repoEntries.length}/${project.businessObjects.length})',
                               style: theme.textTheme.labelMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: colors.onSurfaceVariant,
                               ),
+                            ),
+                          ),
+                          IconButton(
+                            key: const ValueKey('spec-objects-filter-toggle'),
+                            tooltip: 'Filtrer objets et attributs',
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 18,
+                            color: (_showFilterBar ||
+                                    widget.controller.businessObjectFilter
+                                        .trim()
+                                        .isNotEmpty)
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                            onPressed: () {
+                              setState(() {
+                                if (_showFilterBar &&
+                                    widget.controller.businessObjectFilter
+                                        .trim()
+                                        .isNotEmpty) {
+                                  _filterCtrl.clear();
+                                  widget.controller.setBusinessObjectFilter('');
+                                  _showFilterBar = false;
+                                } else {
+                                  _showFilterBar = !_showFilterBar;
+                                }
+                              });
+                            },
+                            icon: Icon(
+                              (_showFilterBar ||
+                                      widget.controller.businessObjectFilter
+                                          .trim()
+                                          .isNotEmpty)
+                                  ? Icons.filter_alt_rounded
+                                  : Icons.search_rounded,
                             ),
                           ),
                           if (!widget
@@ -599,22 +759,100 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                         ],
                       ),
                     ),
-                    Expanded(
-                      child: CustomScrollView(
-                        key: const ValueKey('spec-objects-repo-listview'),
-                        slivers: [
-                          for (final entry in _repoEntries)
-                            ..._buildRepositorySlivers(
-                              context,
-                              project,
-                              entry,
-                              treeWidth: treeWidth,
-                              theme: theme,
-                              colors: colors,
+                    if (_showFilterBar ||
+                        widget.controller.businessObjectFilter
+                            .trim()
+                            .isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                        child: TextField(
+                          key: const ValueKey('spec-objects-filter-field'),
+                          controller: _filterCtrl,
+                          onChanged: (value) {
+                            widget.controller.setBusinessObjectFilter(value);
+                          },
+                          style: theme.textTheme.bodySmall,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
                             ),
-                          const SliverToBoxAdapter(child: SizedBox(height: 6)),
-                        ],
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              size: 16,
+                            ),
+                            suffixIcon: widget.controller.businessObjectFilter
+                                    .isNotEmpty
+                                ? IconButton(
+                                    key: const ValueKey(
+                                      'spec-objects-filter-clear',
+                                    ),
+                                    tooltip: 'Effacer le filtre',
+                                    iconSize: 16,
+                                    onPressed: () {
+                                      _filterCtrl.clear();
+                                      widget.controller
+                                          .setBusinessObjectFilter('');
+                                    },
+                                    icon: const Icon(Icons.close_rounded),
+                                  )
+                                : null,
+                            hintText: 'Filtrer objet, alias ou attribut…',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
                       ),
+                    Expanded(
+                      child: _repoEntries.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Aucun objet ou attribut ne correspond à « ${widget.controller.businessObjectFilter.trim()} ».',
+                                      textAlign: TextAlign.center,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextButton.icon(
+                                      onPressed: () {
+                                        _filterCtrl.clear();
+                                        widget.controller
+                                            .setBusinessObjectFilter('');
+                                      },
+                                      icon: const Icon(
+                                        Icons.clear_rounded,
+                                        size: 15,
+                                      ),
+                                      label: const Text('Effacer le filtre'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : CustomScrollView(
+                              key: const ValueKey('spec-objects-repo-listview'),
+                              slivers: [
+                                for (final entry in _repoEntries)
+                                  ..._buildRepositorySlivers(
+                                    context,
+                                    project,
+                                    entry,
+                                    treeWidth: treeWidth,
+                                    theme: theme,
+                                    colors: colors,
+                                  ),
+                                const SliverToBoxAdapter(
+                                  child: SizedBox(height: 6),
+                                ),
+                              ],
+                            ),
                     ),
                   ],
                 ),
@@ -670,6 +908,11 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                       attributePath: target.attributePath,
                       onBackToObject: () {
                         _clearTreeSelections();
+                        _lastFocusedObjectId = selectedObject.id;
+                        _lastFocusedAttrPath = const <String>[];
+                        widget.controller.focusBusinessSelection(
+                          objectId: selectedObject.id,
+                        );
                         setState(() => _selectedNodePath = null);
                       },
                       onEditAttribute: () => _editAttributeDialog(
@@ -777,6 +1020,9 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                 colors: colors,
                 onSelectObject: () {
                   _clearTreeSelections();
+                  _lastFocusedObjectId = obj.id;
+                  _lastFocusedAttrPath = const <String>[];
+                  widget.controller.focusBusinessSelection(objectId: obj.id);
                   setState(() {
                     _selectedObjectId = obj.id;
                     _selectedNodePath = null;
@@ -874,6 +1120,17 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                             ),
                             onNodeSelected: (nodePath) {
                               _clearTreeSelections(exceptObjectId: obj.id);
+                              final meta = entry.targetsByNodePath[nodePath];
+                              final attrPath =
+                                  meta?.attributePath ?? const <String>[];
+                              _lastFocusedObjectId = obj.id;
+                              _lastFocusedAttrPath = List<String>.unmodifiable(
+                                attrPath,
+                              );
+                              widget.controller.focusBusinessSelection(
+                                objectId: obj.id,
+                                attributePath: attrPath,
+                              );
                               setState(() {
                                 _selectedObjectId = obj.id;
                                 _selectedNodePath = nodePath;
@@ -2342,35 +2599,25 @@ class _AttributeInspectorPane extends StatelessWidget {
                 avatar: Icon(Icons.password_rounded, size: 15, color: colors.primary),
                 label: Text('x-mask: ${attribute.schemaConstraints.xMask}'),
               ),
-            if (attribute.schemaConstraints.xSearchable != null)
+            if (attribute.schemaConstraints.xSearchable == true)
               Chip(
                 key: const ValueKey('spec-attr-inspector-x-searchable'),
                 avatar: Icon(
-                  attribute.schemaConstraints.xSearchable!
-                      ? Icons.search_rounded
-                      : Icons.search_off_rounded,
+                  Icons.search_rounded,
                   size: 15,
-                  color: attribute.schemaConstraints.xSearchable!
-                      ? colors.primary
-                      : colors.onSurfaceVariant,
+                  color: colors.primary,
                 ),
-                label: Text(
-                  'x-searchable: ${attribute.schemaConstraints.xSearchable}',
-                ),
+                label: const Text('x-searchable'),
               ),
-            if (attribute.schemaConstraints.xDatabaseIndex != null)
+            if (attribute.schemaConstraints.xDatabaseIndex == true)
               Chip(
                 key: const ValueKey('spec-attr-inspector-x-database-index'),
                 avatar: Icon(
                   Icons.storage_rounded,
                   size: 15,
-                  color: attribute.schemaConstraints.xDatabaseIndex!
-                      ? colors.primary
-                      : colors.onSurfaceVariant,
+                  color: colors.primary,
                 ),
-                label: Text(
-                  'x-database-index: ${attribute.schemaConstraints.xDatabaseIndex}',
-                ),
+                label: const Text('x-database-index'),
               ),
           ],
         ),

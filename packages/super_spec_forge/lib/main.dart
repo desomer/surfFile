@@ -60,6 +60,7 @@ class SuperSpecForgeApp extends StatefulWidget {
     this.pasteAttachments,
     this.hasClipboardMedia,
     this.pasteClipboardMedia,
+    this.pickDirectory,
     super.key,
   });
 
@@ -80,6 +81,9 @@ class SuperSpecForgeApp extends StatefulWidget {
 
   /// Lecteur optionnel d'images/fichiers du presse-papiers sur `Ctrl+V`.
   final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
+
+  /// Sélecteur de dossier personnalisable pour le choix du workspace Git.
+  final DirectoryPickerCallback? pickDirectory;
 
   @override
   State<SuperSpecForgeApp> createState() => _SuperSpecForgeAppState();
@@ -129,6 +133,7 @@ class _SuperSpecForgeAppState extends State<SuperSpecForgeApp> {
         pasteAttachments: widget.pasteAttachments,
         hasClipboardMedia: widget.hasClipboardMedia,
         pasteClipboardMedia: widget.pasteClipboardMedia,
+        pickDirectory: widget.pickDirectory,
       ),
     );
   }

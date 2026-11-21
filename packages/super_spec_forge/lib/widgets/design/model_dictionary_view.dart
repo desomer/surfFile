@@ -367,7 +367,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
     required bool compact,
   }) {
     return Container(
-      width: compact ? 76 : 236,
+      key: const ValueKey('model-dict-section-nav'),
+      width: compact ? 76 : 310,
       color: colors.surfaceContainerLow.withValues(alpha: 0.65),
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -420,7 +421,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                               ),
                               Text(
                                 sec.subtitle,
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: _section == sec

@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:super_container_layout/super_container_layout.dart';
 
 import '../models/business_object_model_preferences.dart';
+import '../models/business_object_spec.dart';
 import '../models/company_glossary.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
@@ -105,6 +106,9 @@ abstract final class SpecPromptBuilder {
     int maxHistoryEntries = 10,
     CompanyGlossary? companyGlossary,
     BusinessObjectModelPreferences? modelPreferencesOverride,
+    String? focusedObjectId,
+    List<String> focusedAttributePath = const <String>[],
+    String businessObjectFilter = '',
   }) {
     final agent = SpecStageAgent.forStage(stage);
     final stageState = project.stageStateFor(stage);
@@ -178,6 +182,18 @@ abstract final class SpecPromptBuilder {
       ..writeln('ÉTAT COURANT DU PROJET (JSON) :')
       ..writeln(contextJson);
 
+    final focusBlock = _buildFocusScopeBlock(
+      project: project,
+      focusedObjectId: focusedObjectId,
+      focusedAttributePath: focusedAttributePath,
+      businessObjectFilter: businessObjectFilter,
+    );
+    if (focusBlock.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(focusBlock);
+    }
+
     if (history.isNotEmpty) {
       buffer
         ..writeln()
@@ -191,6 +207,76 @@ abstract final class SpecPromptBuilder {
       ..writeln(userInput.trim());
 
     return buffer.toString();
+  }
+
+  static String _buildFocusScopeBlock({
+    required SpecForgeProject project,
+    required String? focusedObjectId,
+    required List<String> focusedAttributePath,
+    required String businessObjectFilter,
+  }) {
+    final buf = StringBuffer();
+    final trimmedFilter = businessObjectFilter.trim();
+    final focusedObj = (focusedObjectId != null && focusedObjectId.isNotEmpty)
+        ? project.findBusinessObject(focusedObjectId)
+        : null;
+
+    if (focusedObj == null && trimmedFilter.isEmpty) {
+      return '';
+    }
+
+    buf.writeln('FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION) :');
+    if (focusedObj != null) {
+      buf.writeln(
+        '- Objet métier sélectionné : ${focusedObj.name} (${focusedObj.technicalName}, id: ${focusedObj.id})',
+      );
+      final resolvedAttr = _resolveAttributeChain(
+        focusedObj.attributes,
+        focusedAttributePath,
+      );
+      if (resolvedAttr != null) {
+        final dotPath = resolvedAttr.names.join('.');
+        final attrJson = const JsonEncoder.withIndent(
+          '  ',
+        ).convert(resolvedAttr.attribute.toJson());
+        buf
+          ..writeln(
+            '- Attribut sélectionné : ${focusedObj.technicalName}.$dotPath (id: ${resolvedAttr.attribute.id}, type: ${resolvedAttr.attribute.type.name})',
+          )
+          ..writeln('- Détail JSON de l’attribut sélectionné :')
+          ..writeln(attrJson)
+          ..writeln(
+            '- Consigne scope ciblé : si l’utilisateur fait référence à « cet attribut », « celui sélectionné », « modifie-le », etc., applique la modification directement sur cet attribut en conservant son `id` (${resolvedAttr.attribute.id}).',
+          );
+      } else {
+        buf.writeln(
+          '- Attribut sélectionné : aucun sous-attribut ciblé (l’objet métier entier est sélectionné).',
+        );
+      }
+    }
+    if (trimmedFilter.isNotEmpty) {
+      buf.writeln('- Filtre actif dans « Arbre & Inspecteur » : "$trimmedFilter"');
+    }
+    return buf.toString().trimRight();
+  }
+
+  static ({BusinessAttribute attribute, List<String> names})?
+  _resolveAttributeChain(
+    List<BusinessAttribute> roots,
+    List<String> pathIds,
+  ) {
+    if (pathIds.isEmpty) return null;
+    var current = roots;
+    final names = <String>[];
+    BusinessAttribute? last;
+    for (final id in pathIds) {
+      final found = current.where((a) => a.id == id).firstOrNull;
+      if (found == null) return null;
+      names.add(found.name);
+      last = found;
+      current = found.children;
+    }
+    return last == null ? null : (attribute: last, names: names);
   }
 
   /// Assemble le prompt complet du chat global de questions sur l'ensemble du projet.

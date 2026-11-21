@@ -564,8 +564,19 @@ void main() {
       await tester.pumpAndSettle();
 
       // 1. La ListView des repositories affiche Facture dépliée avec son SuperTreeView aligné en haut.
-      expect(find.text('Arbre & Inspecteur'), findsOneWidget);
+      expect(find.text('Objet métier'), findsOneWidget);
+      expect(find.text('Repository'), findsOneWidget);
+      expect(find.text('DSL'), findsOneWidget);
+      expect(find.text('Arbre & Inspecteur'), findsNothing);
       expect(find.text('Arbre & Inspecteur (SuperTreeView)'), findsNothing);
+      expect(
+        tester.getTopLeft(find.text('Objet métier')).dx,
+        lessThan(tester.getTopLeft(find.text('Repository')).dx),
+      );
+      expect(
+        tester.getTopLeft(find.text('Repository')).dx,
+        lessThan(tester.getTopLeft(find.text('DSL')).dx),
+      );
       expect(
         find.byKey(const ValueKey('spec-objects-repo-listview')),
         findsOneWidget,
@@ -574,7 +585,7 @@ void main() {
         find.byKey(const ValueKey('spec-objects-repo-tile-obj_facture')),
         findsOneWidget,
       );
-      expect(find.text('Repositories (1)'), findsOneWidget);
+      expect(find.text('Objets métiers (1)'), findsNWidgets(2));
       expect(find.text('Agrégat'), findsOneWidget);
       expect(find.text('Valide'), findsOneWidget);
       expect(find.byType(SuperTreeView), findsOneWidget);
@@ -614,8 +625,8 @@ void main() {
       );
       expect(controller.project!.businessObjects[1].technicalName, 'Ligne');
 
-      // 3. Onglet Source YAML (CodeEditor) : édition manuelle et application.
-      await tester.tap(find.text('Source YAML'));
+      // 3. Onglet DSL (CodeEditor) : édition manuelle et application.
+      await tester.tap(find.text('DSL'));
       await tester.pumpAndSettle();
 
       final codeEditorFinder = find.byKey(
@@ -2638,7 +2649,7 @@ Facture:
       await tester.pumpAndSettle();
 
       // 1. Les deux repositories apparaissent avec leurs alias et badges Agrégat / Entité liée.
-      expect(find.text('Repositories (2)'), findsOneWidget);
+      expect(find.text('Objets métiers (2)'), findsNWidgets(2));
       expect(
         find.byKey(const ValueKey('spec-objects-repo-tile-obj_commande')),
         findsOneWidget,
@@ -3135,14 +3146,289 @@ Facture:
         find.byKey(const ValueKey('spec-attr-inspector-x-searchable')),
         findsOneWidget,
       );
-      expect(find.text('x-searchable: true'), findsAtLeastNWidgets(1));
+      expect(find.text('x-searchable'), findsAtLeastNWidgets(1));
       expect(
         find.byKey(const ValueKey('spec-attr-inspector-x-database-index')),
         findsOneWidget,
       );
-      expect(find.text('x-database-index: true'), findsAtLeastNWidgets(1));
+      expect(find.text('x-database-index'), findsAtLeastNWidgets(1));
+
+      // Lorsqu'ils valent false, ils ne sont pas affichés dans la visu des propriétés.
+      await tester.tap(find.byTooltip('Modifier'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Contraintes JSON Schema'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('spec-attr-x-searchable-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-attr-x-searchable-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Non recherchable (false)').last);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('spec-attr-x-database-index-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-attr-x-database-index-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Non indexé (false)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-attr-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-x-searchable')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-x-database-index')),
+        findsNothing,
+      );
+      expect(find.text('x-searchable: false'), findsNothing);
+      expect(find.text('x-database-index: false'), findsNothing);
     },
   );
+
+  testWidgets(
+    'Objets métiers : filtre IHM/IA, sélection d’attribut par l’IA et injection du scope sélectionné dans le prompt',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final aiService = _ObjectScopeAndFilterAiService();
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: aiService,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion commandes',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_article',
+              name: 'Article',
+              technicalName: 'Article',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_prix',
+                  name: 'prixUnitaire',
+                  type: BusinessAttributeType.number,
+                ),
+              ],
+            ),
+            BusinessObjectSpec(
+              id: 'obj_client',
+              name: 'Client',
+              technicalName: 'Client',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_adr',
+                  name: 'adresse',
+                  type: BusinessAttributeType.object,
+                  children: [
+                    BusinessAttribute(
+                      id: 'a_cp',
+                      name: 'codePostal',
+                      type: BusinessAttributeType.string,
+                      required: true,
+                    ),
+                    BusinessAttribute(
+                      id: 'a_ville',
+                      name: 'ville',
+                      type: BusinessAttributeType.string,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      // 1. Filtre IHM via l'icône loupe/filtre : filtre sur un attribut imbriqué (`codePostal`).
+      expect(find.text('Objets métiers (2)'), findsNWidgets(2));
+      await tester.tap(find.byKey(const ValueKey('spec-objects-filter-toggle')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-objects-filter-field')),
+        'codePostal',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Objets métiers (1/2)'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_client')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_article')),
+        findsNothing,
+      );
+      expect(find.text('codePostal'), findsAtLeastNWidgets(1));
+      expect(find.text('ville'), findsNothing);
+
+      // Effacement du filtre IHM.
+      await tester.tap(find.byKey(const ValueKey('spec-objects-filter-clear')));
+      await tester.pumpAndSettle();
+      expect(find.text('Objets métiers (2)'), findsNWidgets(2));
+
+      // 2. Demande au chat IA de sélectionner `adresse.codePostal` sur `Client` -> outil focus_stage_or_object.
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-chat-input')),
+        'Sélectionne l’attribut codePostal de Client',
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(controller.focusedObjectId, 'obj_client');
+      expect(controller.focusedAttributePath, ['a_adr', 'a_cp']);
+      // L'inspecteur affiche maintenant l'attribut sélectionné `codePostal`.
+      expect(find.text('Client'), findsAtLeastNWidgets(1));
+      expect(find.text('codePostal'), findsAtLeastNWidgets(2));
+
+      // 3. Nouvelle demande ciblée -> le prompt transmis à l'IA inclut le scope de l'attribut sélectionné.
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-chat-input')),
+        'Modifie cet attribut',
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(
+        aiService.prompts.last,
+        contains('FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION)'),
+      );
+      expect(
+        aiService.prompts.last,
+        contains('Client.adresse.codePostal (id: a_cp'),
+      );
+
+      // 4. L'IA peut aussi filtrer les objets & attributs via `filter_business_objects`.
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-chat-input')),
+        'Filtre sur prixUnitaire',
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(controller.businessObjectFilter, 'prixUnitaire');
+      expect(find.text('Objets métiers (1/2)'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_article')),
+        findsOneWidget,
+      );
+    },
+  );
+}
+
+class _ObjectScopeAndFilterAiService implements SpecAiService {
+  final List<String> prompts = <String>[];
+
+  @override
+  Future<void> warmUp(
+    SpecForgeStage stage, {
+    VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+  }) async {}
+
+  @override
+  Stream<GeminiStreamEvent> streamTurn({
+    required SpecForgeStage stage,
+    required String prompt,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<Map<String, Object?>>? conversationContents,
+    bool enforceJsonResponse = true,
+    String? systemInstructionOverride,
+    String? staticGuideOverride,
+  }) async* {
+    final hasFunctionResponse =
+        conversationContents != null &&
+        conversationContents.length >= 3 &&
+        (conversationContents.last['parts'] is List) &&
+        (conversationContents.last['parts'] as List).any(
+          (p) => p is Map && p.containsKey('functionResponse'),
+        );
+
+    if (!hasFunctionResponse) {
+      prompts.add(prompt);
+      final currentTurnRequest =
+          prompt.split('DEMANDE UTILISATEUR POUR CE TOUR :').last;
+      if (currentTurnRequest.contains('Sélectionne l’attribut codePostal')) {
+        yield GeminiStreamEvent(
+          deltaText: '',
+          accumulatedText: '',
+          isDone: true,
+          usedContextCache: false,
+          functionCalls: [
+            VibeToolCall(
+              id: 'call_select_attr',
+              name: 'focus_stage_or_object',
+              arguments: const <String, Object?>{
+                'stage': 'businessObjects',
+                'objectId': 'Client',
+                'attributePath': 'adresse.codePostal',
+              },
+            ),
+          ],
+        );
+        return;
+      }
+      if (currentTurnRequest.contains('Filtre sur prixUnitaire')) {
+        yield GeminiStreamEvent(
+          deltaText: '',
+          accumulatedText: '',
+          isDone: true,
+          usedContextCache: false,
+          functionCalls: [
+            VibeToolCall(
+              id: 'call_filter',
+              name: 'filter_business_objects',
+              arguments: const <String, Object?>{'query': 'prixUnitaire'},
+            ),
+          ],
+        );
+        return;
+      }
+    }
+
+    final json = jsonEncode({
+      'message': 'Action effectuée.',
+      'askUser': null,
+      'specPatch': null,
+      'stageReadyToAdvance': false,
+    });
+    yield GeminiStreamEvent(
+      deltaText: json,
+      accumulatedText: json,
+      isDone: true,
+      usedContextCache: false,
+    );
+  }
 }
 
 class _CompanyGlossaryFakeAiService implements SpecAiService {

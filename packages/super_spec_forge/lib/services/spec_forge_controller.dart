@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shortid/shortid.dart';
@@ -29,6 +30,7 @@ import 'company_glossary_store.dart';
 import 'model_dictionary_store.dart';
 import 'spec_coherence_analyzer.dart';
 import 'spec_project_store.dart';
+import 'spec_workspace_store.dart';
 
 /// Orchestre l'état du projet actif, l'historique Undo/Redo, la persistance et les échanges IA.
 class SpecForgeController extends ChangeNotifier {
@@ -38,17 +40,23 @@ class SpecForgeController extends ChangeNotifier {
   /// Nombre maximal de tours d'appels d'outils par tentative IA.
   static const int maxToolRounds = 6;
 
-  /// Crée un contrôleur avec store, stores globaux, service IA et registre d'outils injectables.
+  /// Crée un contrôleur avec workspace, stores, service IA et registre d'outils injectables.
   SpecForgeController({
     SpecProjectStore? store,
     CompanyGlossaryStore? glossaryStore,
     ModelDictionaryStore? modelDictionaryStore,
+    SpecWorkspaceStore? workspaceStore,
     SpecAiService? aiService,
     VibeAppToolRegistry? toolRegistry,
     VibeAiSpeedMode initialSpeedMode = VibeAiSpeedMode.fast,
     VibeQuestioningLevel initialQuestioningLevel =
         VibeQuestioningLevel.balanced,
-  }) : _store = store ?? SpecProjectStore(),
+  }) : _hasCustomStores =
+           store != null ||
+           glossaryStore != null ||
+           modelDictionaryStore != null,
+       _workspaceStore = workspaceStore ?? SpecWorkspaceStore(),
+       _store = store ?? SpecProjectStore(),
        _glossaryStore =
            glossaryStore ??
            CompanyGlossaryStore((store ?? SpecProjectStore()).rootDirectory),
@@ -60,11 +68,16 @@ class SpecForgeController extends ChangeNotifier {
        _speedMode = initialSpeedMode,
        _questioningLevel = initialQuestioningLevel;
 
-  final SpecProjectStore _store;
-  final CompanyGlossaryStore _glossaryStore;
-  final ModelDictionaryStore _modelDictionaryStore;
+  final bool _hasCustomStores;
+  final SpecWorkspaceStore _workspaceStore;
+  SpecProjectStore _store;
+  CompanyGlossaryStore _glossaryStore;
+  ModelDictionaryStore _modelDictionaryStore;
   final SpecAiService _aiService;
   final VibeAppToolRegistry? _customToolRegistry;
+
+  SpecWorkspaceMetadata? _workspaceMetadata;
+  List<SpecWorkspaceEntry> _recentWorkspaces = const <SpecWorkspaceEntry>[];
 
   SpecForgeProject? _project;
   List<SpecProjectSummary> _recentProjects = const <SpecProjectSummary>[];
@@ -94,6 +107,8 @@ class SpecForgeController extends ChangeNotifier {
   String _streamingStatus = '';
   List<VibeToolTrace> _streamingToolTraces = const <VibeToolTrace>[];
   String? _focusedObjectId;
+  List<String> _focusedAttributePath = const <String>[];
+  String _businessObjectFilter = '';
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -116,6 +131,18 @@ class SpecForgeController extends ChangeNotifier {
     }
     super.dispose();
   }
+
+  /// Gestionnaire de dossiers Workspace Git.
+  SpecWorkspaceStore get workspaceStore => _workspaceStore;
+
+  /// Dossier racine du workspace actif.
+  Directory get workspaceDirectory => _store.rootDirectory;
+
+  /// Métadonnées du workspace actif (`workspace.json`), ou `null` en mode mémoire.
+  SpecWorkspaceMetadata? get workspaceMetadata => _workspaceMetadata;
+
+  /// Liste locale des workspaces récemment ouverts.
+  List<SpecWorkspaceEntry> get recentWorkspaces => _recentWorkspaces;
 
   /// Magasin disque associé.
   SpecProjectStore get store => _store;
@@ -183,10 +210,35 @@ class SpecForgeController extends ChangeNotifier {
   /// Identifiant d'objet métier ciblé par un outil IA ou l'interface.
   String? get focusedObjectId => _focusedObjectId;
 
-  /// Met à jour l'objet métier focalisé dans l'atelier.
-  void focusBusinessObject(String? objectId) {
-    if (_focusedObjectId == objectId) return;
+  /// Chemin d'IDs d'attribut focalisé dans l'objet métier courant (vide = objet racine).
+  List<String> get focusedAttributePath => _focusedAttributePath;
+
+  /// Filtre texte courant sur les objets métiers et attributs dans « Arbre & Inspecteur ».
+  String get businessObjectFilter => _businessObjectFilter;
+
+  /// Met à jour l'objet métier focalisé dans l'atelier (en réinitialisant l'attribut).
+  void focusBusinessObject(String? objectId) =>
+      focusBusinessSelection(objectId: objectId);
+
+  /// Met à jour la sélection courante (objet métier + éventuel chemin d'attribut).
+  void focusBusinessSelection({
+    String? objectId,
+    List<String> attributePath = const <String>[],
+  }) {
+    final normalizedPath = List<String>.unmodifiable(attributePath);
+    if (_focusedObjectId == objectId &&
+        listEquals(_focusedAttributePath, normalizedPath)) {
+      return;
+    }
     _focusedObjectId = objectId;
+    _focusedAttributePath = normalizedPath;
+    notifyListeners();
+  }
+
+  /// Met à jour le filtre recherche sur les objets métiers et attributs.
+  void setBusinessObjectFilter(String query) {
+    if (_businessObjectFilter == query) return;
+    _businessObjectFilter = query;
     notifyListeners();
   }
 
@@ -204,6 +256,102 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Charge la liste des projets récents, les référentiels globaux et restaure optionnellement le dernier projet actif.
   Future<void> initialize({bool restoreLastProject = true}) async {
+    if (!_hasCustomStores) {
+      var targetDir = await _workspaceStore.resolveInitialWorkspaceDirectory();
+      try {
+        _workspaceMetadata = await _workspaceStore.openWorkspace(targetDir);
+      } on NonEmptyNonWorkspaceException {
+        targetDir = _workspaceStore.effectiveFallbackRootDirectory;
+        _workspaceMetadata = await _workspaceStore.openWorkspace(
+          targetDir,
+          initializeNonEmpty: true,
+        );
+      }
+      _bindStoresForDirectory(targetDir);
+      _recentWorkspaces = await _workspaceStore.listRecentWorkspaces();
+    }
+    await _loadWorkspaceState(restoreLastProject: restoreLastProject);
+  }
+
+  /// Ouvre un dossier Workspace Git différent et recharge tous les projets et référentiels.
+  Future<void> switchWorkspace(
+    Directory directory, {
+    bool initializeNonEmpty = false,
+    String? defaultName,
+    bool restoreLastProject = true,
+  }) async {
+    if (_isSending) {
+      throw StateError(
+        'Impossible de changer de workspace pendant une génération IA en cours.',
+      );
+    }
+    final metadata = await _workspaceStore.openWorkspace(
+      directory,
+      initializeNonEmpty: initializeNonEmpty,
+      defaultName: defaultName,
+    );
+    _resetInMemoryState();
+    _workspaceMetadata = metadata;
+    _bindStoresForDirectory(directory);
+    _recentWorkspaces = await _workspaceStore.listRecentWorkspaces();
+    await _loadWorkspaceState(restoreLastProject: restoreLastProject);
+  }
+
+  /// Crée ou réinitialise un nouveau dossier Workspace Git nommé [name] et l'active.
+  Future<void> createWorkspace(
+    Directory directory, {
+    required String name,
+    bool allowNonEmpty = true,
+    bool restoreLastProject = true,
+  }) async {
+    if (_isSending) {
+      throw StateError(
+        'Impossible de créer un workspace pendant une génération IA en cours.',
+      );
+    }
+    final metadata = await _workspaceStore.createWorkspace(
+      directory,
+      name: name,
+      allowNonEmpty: allowNonEmpty,
+    );
+    _resetInMemoryState();
+    _workspaceMetadata = metadata;
+    _bindStoresForDirectory(directory);
+    _recentWorkspaces = await _workspaceStore.listRecentWorkspaces();
+    await _loadWorkspaceState(restoreLastProject: restoreLastProject);
+  }
+
+  /// Rafraîchit la liste locale des workspaces récents.
+  Future<void> refreshRecentWorkspaces() async {
+    _recentWorkspaces = await _workspaceStore.listRecentWorkspaces();
+    notifyListeners();
+  }
+
+  void _bindStoresForDirectory(Directory directory) {
+    _store = SpecProjectStore(directory);
+    _glossaryStore = CompanyGlossaryStore(directory);
+    _modelDictionaryStore = ModelDictionaryStore(directory);
+  }
+
+  void _resetInMemoryState() {
+    _project = null;
+    _recentProjects = const <SpecProjectSummary>[];
+    _undoStack.clear();
+    _redoStack.clear();
+    _companyGlossary = CompanyGlossary.empty;
+    _glossaryChatMessages = const <SpecChatMessage>[];
+    _glossaryUndoStack.clear();
+    _glossaryRedoStack.clear();
+    _modelPreferences = BusinessObjectModelPreferences.defaults;
+    _modelPrefsUndoStack.clear();
+    _modelPrefsRedoStack.clear();
+    _focusedObjectId = null;
+    _focusedAttributePath = const <String>[];
+    _businessObjectFilter = '';
+    _lastError = null;
+  }
+
+  Future<void> _loadWorkspaceState({required bool restoreLastProject}) async {
     _recentProjects = await _store.listProjects();
     try {
       _companyGlossary = await _glossaryStore.loadGlossary();
@@ -260,6 +408,9 @@ class SpecForgeController extends ChangeNotifier {
     final created = SpecForgeProject.fromIdea(idea: idea, name: name);
     _undoStack.clear();
     _redoStack.clear();
+    _focusedObjectId = null;
+    _focusedAttributePath = const <String>[];
+    _businessObjectFilter = '';
     _lastError = null;
     _project = created;
     await _persistProject(created);
@@ -276,6 +427,9 @@ class SpecForgeController extends ChangeNotifier {
     if (loaded == null) return;
     _undoStack.clear();
     _redoStack.clear();
+    _focusedObjectId = null;
+    _focusedAttributePath = const <String>[];
+    _businessObjectFilter = '';
     _lastError = null;
     _project = loaded;
     await _store.setLastActiveProjectId(loaded.id);
@@ -287,6 +441,9 @@ class SpecForgeController extends ChangeNotifier {
     _project = null;
     _undoStack.clear();
     _redoStack.clear();
+    _focusedObjectId = null;
+    _focusedAttributePath = const <String>[];
+    _businessObjectFilter = '';
     _lastError = null;
     await refreshRecentProjects();
     notifyListeners();
@@ -660,6 +817,8 @@ class SpecForgeController extends ChangeNotifier {
             notifyListeners();
           },
           onFocusObject: focusBusinessObject,
+          onFocusSelection: focusBusinessSelection,
+          onFilterBusinessObjects: setBusinessObjectFilter,
         );
 
     try {
@@ -946,6 +1105,9 @@ class SpecForgeController extends ChangeNotifier {
       forceFollowUpQuestions: forceFollowUpQuestions,
       companyGlossary: _companyGlossary,
       modelPreferencesOverride: _modelPreferences,
+      focusedObjectId: _focusedObjectId,
+      focusedAttributePath: _focusedAttributePath,
+      businessObjectFilter: _businessObjectFilter,
     );
 
     final priorCauses = <String>[];
@@ -973,6 +1135,8 @@ class SpecForgeController extends ChangeNotifier {
             notifyListeners();
           },
           onFocusObject: focusBusinessObject,
+          onFocusSelection: focusBusinessSelection,
+          onFilterBusinessObjects: setBusinessObjectFilter,
         );
 
     try {
@@ -1264,6 +1428,9 @@ class SpecForgeController extends ChangeNotifier {
               forceFollowUpQuestions: forceFollowUpQuestions,
               companyGlossary: _companyGlossary,
               modelPreferencesOverride: _modelPreferences,
+              focusedObjectId: _focusedObjectId,
+              focusedAttributePath: _focusedAttributePath,
+              businessObjectFilter: _businessObjectFilter,
             );
             currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
               refreshedTurnPrompt: refreshedTurnPrompt,

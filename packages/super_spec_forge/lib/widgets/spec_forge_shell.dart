@@ -15,6 +15,7 @@ import 'idea_launcher_view.dart';
 import 'spec_links_view.dart';
 import 'spec_split_handle.dart';
 import 'spec_wizard_stepper.dart';
+import 'spec_workspace_selector_dialog.dart';
 import 'stage_ai_chat_pane.dart';
 import 'workspace/business_objects_editor_view.dart';
 import 'workspace/business_rules_editor_view.dart';
@@ -33,6 +34,7 @@ class SpecForgeShell extends StatefulWidget {
     this.pasteAttachments,
     this.hasClipboardMedia,
     this.pasteClipboardMedia,
+    this.pickDirectory,
     super.key,
   });
 
@@ -50,6 +52,9 @@ class SpecForgeShell extends StatefulWidget {
 
   /// Lecteur optionnel d'images/fichiers du presse-papiers sur `Ctrl+V`.
   final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
+
+  /// Sélecteur de dossier personnalisable pour le choix du workspace Git.
+  final DirectoryPickerCallback? pickDirectory;
 
   @override
   State<SpecForgeShell> createState() => _SpecForgeShellState();
@@ -75,6 +80,20 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     });
   }
 
+  Future<void> _openWorkspaceSelector(BuildContext context) async {
+    final changed = await SpecWorkspaceSelectorDialog.show(
+      context,
+      controller: widget.controller,
+      pickDirectory: widget.pickDirectory,
+    );
+    if (!changed || !mounted) return;
+    setState(() {
+      if (_activeSpecLinkId == 'wizard' && widget.controller.project == null) {
+        _activeSpecLinkId = 'projects';
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -82,6 +101,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       builder: (context, _) {
         final project = widget.controller.project;
         final colors = Theme.of(context).colorScheme;
+        final workspaceLabel =
+            widget.controller.workspaceMetadata?.name ??
+            widget.controller.workspaceDirectory.path;
 
         return Scaffold(
           appBar: AppBar(
@@ -108,6 +130,25 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
               ],
             ),
             actions: [
+              Tooltip(
+                message:
+                    'Workspace Git actif : ${widget.controller.workspaceDirectory.path}',
+                child: TextButton.icon(
+                  key: const ValueKey('spec-workspace-selector-btn'),
+                  onPressed: widget.controller.isSending
+                      ? null
+                      : () => _openWorkspaceSelector(context),
+                  icon: const Icon(Icons.folder_copy_outlined, size: 16),
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: Text(
+                      workspaceLabel,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               _SpeedModeSelector(
                 mode: widget.controller.speedMode,
                 onChanged: widget.controller.setSpeedMode,
@@ -277,6 +318,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         controller: widget.controller,
         onBack: () => setState(() => _activeSpecLinkId = null),
         onProjectActivated: () => setState(() => _activeSpecLinkId = 'wizard'),
+        onSelectWorkspace: () => _openWorkspaceSelector(context),
       );
     }
     if (_activeSpecLinkId == 'wizard' && project != null) {
