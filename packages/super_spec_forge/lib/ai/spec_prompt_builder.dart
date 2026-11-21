@@ -5,6 +5,8 @@ import 'dart:convert';
 
 import 'package:super_container_layout/super_container_layout.dart';
 
+import '../models/business_object_model_preferences.dart';
+import '../models/company_glossary.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
@@ -49,18 +51,28 @@ abstract final class SpecPromptBuilder {
   }
 
   /// Construit la directive complète des préférences du modèle pour l'IA.
-  static String businessObjectPreferencesDirective(SpecForgeProject project) =>
-      project.businessObjectModelPreferences.toPromptDirective();
+  static String businessObjectPreferencesDirective(
+    SpecForgeProject project, {
+    BusinessObjectModelPreferences? modelPreferencesOverride,
+  }) =>
+      (modelPreferencesOverride ?? project.businessObjectModelPreferences)
+          .toPromptDirective();
 
   /// Alias rétrocompatible vers [businessObjectPreferencesDirective].
-  static String businessObjectLanguageDirective(SpecForgeProject project) =>
-      businessObjectPreferencesDirective(project);
+  static String businessObjectLanguageDirective(
+    SpecForgeProject project, {
+    BusinessObjectModelPreferences? modelPreferencesOverride,
+  }) => businessObjectPreferencesDirective(
+    project,
+    modelPreferencesOverride: modelPreferencesOverride,
+  );
 
   /// Construit le prompt automatique d'amorce lorsqu'on entre dans une étape sans historique.
   static String buildStageKickoffPrompt(
     SpecForgeProject project,
-    SpecForgeStage stage,
-  ) => switch (stage) {
+    SpecForgeStage stage, {
+    BusinessObjectModelPreferences? modelPreferencesOverride,
+  }) => switch (stage) {
     SpecForgeStage.lexicon =>
       'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
           'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.',
@@ -73,7 +85,7 @@ abstract final class SpecPromptBuilder {
     SpecForgeStage.businessObjects =>
       'Nous passons à l’étape 4 (Objets métiers). En t’appuyant sur le lexique, le cadrage et le cahier des charges, '
           'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
-          '${businessObjectLanguageDirective(project)}',
+          '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
     SpecForgeStage.businessRules =>
       'Nous passons à l’étape 5 (Règles de gestion). En t’appuyant sur les objets métiers, le lexique et le cahier des charges, '
           'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
@@ -91,9 +103,13 @@ abstract final class SpecPromptBuilder {
     required bool afterAskUserReply,
     bool forceFollowUpQuestions = false,
     int maxHistoryEntries = 10,
+    CompanyGlossary? companyGlossary,
+    BusinessObjectModelPreferences? modelPreferencesOverride,
   }) {
     final agent = SpecStageAgent.forStage(stage);
     final stageState = project.stageStateFor(stage);
+    final effectivePrefs =
+        modelPreferencesOverride ?? project.businessObjectModelPreferences;
     final contextJson = const JsonEncoder.withIndent(
       '  ',
     ).convert(project.toCompactContextJson(stage));
@@ -127,10 +143,27 @@ abstract final class SpecPromptBuilder {
 
     if (stage == SpecForgeStage.businessObjects ||
         (stage.index > SpecForgeStage.businessObjects.index &&
-            !project.businessObjectLanguageSettings.isDefault)) {
+            !effectivePrefs.isDefault)) {
       buffer
         ..writeln()
-        ..writeln(businessObjectLanguageDirective(project));
+        ..writeln(
+          businessObjectPreferencesDirective(
+            project,
+            modelPreferencesOverride: modelPreferencesOverride,
+          ),
+        );
+    }
+
+    if (companyGlossary != null && companyGlossary.hasContent) {
+      final glossaryJson = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(companyGlossary.toPromptContextJson());
+      buffer
+        ..writeln()
+        ..writeln(
+          'GLOSSAIRE D’ENTREPRISE (RÉFÉRENTIEL PRIORITAIRE — respecte les termes validés et évite les "forbiddenTerms") :',
+        )
+        ..writeln(glossaryJson);
     }
 
     if (previousSummaries.isNotEmpty) {
@@ -165,6 +198,7 @@ abstract final class SpecPromptBuilder {
     required SpecForgeProject project,
     required String userInput,
     int maxHistoryEntries = 12,
+    CompanyGlossary? companyGlossary,
   }) {
     final fullSnapshot = const JsonEncoder.withIndent(
       '  ',
@@ -192,6 +226,16 @@ abstract final class SpecPromptBuilder {
         ..writeln()
         ..writeln('SYNTHÈSES DES ÉTAPES :')
         ..writeln(stageSummaries.join('\n'));
+    }
+
+    if (companyGlossary != null && companyGlossary.hasContent) {
+      final glossaryJson = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(companyGlossary.toPromptContextJson());
+      buffer
+        ..writeln()
+        ..writeln('GLOSSAIRE D’ENTREPRISE GLOBAL :')
+        ..writeln(glossaryJson);
     }
 
     buffer

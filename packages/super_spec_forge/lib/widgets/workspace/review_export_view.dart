@@ -43,7 +43,11 @@ class ReviewExportView extends StatelessWidget {
     final project = controller.project;
     if (project == null) return const SizedBox.shrink();
 
-    final localIssues = SpecCoherenceAnalyzer.analyze(project);
+    final localIssues = SpecCoherenceAnalyzer.analyze(
+      project,
+      companyGlossary: controller.companyGlossary,
+      modelPreferences: controller.modelPreferences,
+    );
     final aiIssues = project.coherenceIssues
         .where((i) => i.source == 'ai')
         .toList();
@@ -51,7 +55,10 @@ class ReviewExportView extends StatelessWidget {
 
     final markdown = SpecMarkdownExporter.export(project);
     final yamlSchema = SpecSuperDesignerExporter.toYamlLightSchema(project);
-    final bundle = SpecSuperDesignerExporter.toBundle(project);
+    final bundle = SpecSuperDesignerExporter.toBundle(
+      project,
+      modelPreferencesOverride: controller.modelPreferences,
+    );
     final bundlePreview = const JsonEncoder.withIndent('  ').convert({
       'repositoriesJsonSchemas': bundle.repositoriesJsonSchemas,
       'repositoriesSeedData': bundle.repositoriesSeedData,

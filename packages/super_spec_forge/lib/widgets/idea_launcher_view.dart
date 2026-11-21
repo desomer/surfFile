@@ -10,10 +10,21 @@ import '../services/spec_project_store.dart';
 /// Vue d'amorçage d'un nouveau cahier des charges à partir d'une idée brute.
 class IdeaLauncherView extends StatefulWidget {
   /// Crée l'écran d'accueil connecté au [controller].
-  const IdeaLauncherView({required this.controller, super.key});
+  const IdeaLauncherView({
+    required this.controller,
+    this.onBack,
+    this.onProjectActivated,
+    super.key,
+  });
 
   /// Contrôleur principal de forge.
   final SpecForgeController controller;
+
+  /// Callback optionnel de retour vers le menu Spec.
+  final VoidCallback? onBack;
+
+  /// Callback optionnel appelé après création ou ouverture d'un projet.
+  final VoidCallback? onProjectActivated;
 
   @override
   State<IdeaLauncherView> createState() => _IdeaLauncherViewState();
@@ -40,6 +51,36 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
       idea:
           'Outil de support client multi-équipes avec portail client, SLA par niveau de contrat, escalade automatique, base de connaissances et suivi des interventions terrain.',
     ),
+    (
+      title: 'CRM B2B',
+      idea:
+          'Plateforme CRM B2B pour équipes commerciales : gestion des comptes clients et contacts multi-sites, suivi des pistes et opportunités dans un pipeline par étapes, devis et relances automatisées, prévisions de chiffre d’affaires et historique des interactions.',
+    ),
+    (
+      title: 'Comptabilité',
+      idea:
+          'Application de comptabilité générale et analytique pour PME : gestion du plan comptable, saisie et validation des écritures par journaux, rapprochement bancaire, suivi des factures clients/fournisseurs, déclarations de TVA et clôture périodique avec piste d’audit.',
+    ),
+    (
+      title: 'Gestion RH & Paie',
+      idea:
+          'SIRH de gestion des ressources humaines et de préparation de la paie : dossiers collaborateurs, contrats et avenants, demandes de congés et absences avec circuit d’approbation, suivi des temps, variables de paie, notes de frais et entretiens annuels.',
+    ),
+    (
+      title: 'E-commerce & Stocks',
+      idea:
+          'Plateforme e-commerce omnicanale et gestion des stocks : catalogue produits avec variantes et tarifs B2C/B2B, panier et commandes en ligne, réservation multi-entrepôts, réapprovisionnement sur seuils, préparation des expéditions et gestion des retours.',
+    ),
+    (
+      title: 'Gestion de projets & Facturation temps',
+      idea:
+          'Outil de pilotage de projets pour sociétés de services : découpage en jalons et tâches, affectation des consultants et plan de charge, saisie des feuilles de temps et frais, suivi de rentabilité forfait/régie et génération automatique de la facturation client.',
+    ),
+    (
+      title: 'Gestion de budget IT',
+      idea:
+          'Application de pilotage du budget IT d’une entreprise : construction budgétaire annuelle par direction et enveloppes CAPEX/OPEX, demandes d’engagement et workflows d’approbation, suivi des licences SaaS et contrats fournisseurs, rapprochement prévisionnel/engagé/réalisé et refacturation analytique interne.',
+    ),
   ];
 
   @override
@@ -60,10 +101,18 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
             ? null
             : _nameController.text.trim(),
       );
+      widget.onProjectActivated?.call();
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
       }
+    }
+  }
+
+  Future<void> _openProject(String projectId) async {
+    await widget.controller.openProject(projectId);
+    if (mounted && widget.controller.project != null) {
+      widget.onProjectActivated?.call();
     }
   }
 
@@ -73,7 +122,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
     final colors = theme.colorScheme;
     final recents = widget.controller.recentProjects;
 
-    return Center(
+    final body = Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
         child: ConstrainedBox(
@@ -225,7 +274,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                 for (final summary in recents)
                   _RecentProjectTile(
                     summary: summary,
-                    onOpen: () => widget.controller.openProject(summary.id),
+                    onOpen: () => _openProject(summary.id),
                     onDelete: () => widget.controller.deleteProject(summary.id),
                   ),
               ],
@@ -233,6 +282,42 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
           ),
         ),
       ),
+    );
+
+    if (widget.onBack == null) {
+      return body;
+    }
+
+    return Column(
+      key: const ValueKey('spec-projects-view'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          color: colors.surfaceContainerLow,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('spec-subview-back-btn'),
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text('Spec'),
+              ),
+              const SizedBox(width: 14),
+              Icon(Icons.folder_open_rounded, size: 22, color: colors.primary),
+              const SizedBox(width: 10),
+              Text(
+                'Projets',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, thickness: 1),
+        Expanded(child: body),
+      ],
     );
   }
 }

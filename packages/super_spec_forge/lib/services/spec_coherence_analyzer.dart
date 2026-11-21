@@ -1,16 +1,23 @@
 /// Analyseur déterministe de cohérence inter-étapes ([SpecCoherenceAnalyzer]).
 library;
 
+import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/company_glossary.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 
 /// Vérifie la cohérence référentielle et la complétude d'un [SpecForgeProject].
 abstract final class SpecCoherenceAnalyzer {
-  /// Exécute tous les contrôles statiques sur [project] et retourne les diagnostics triés.
-  static List<SpecCoherenceIssue> analyze(SpecForgeProject project) {
+  /// Exécute tous les contrôles statiques sur [project] (et optionnellement contre [companyGlossary]
+  /// et [modelPreferences]) et retourne les diagnostics triés.
+  static List<SpecCoherenceIssue> analyze(
+    SpecForgeProject project, {
+    CompanyGlossary? companyGlossary,
+    BusinessObjectModelPreferences? modelPreferences,
+  }) {
     final issues = <SpecCoherenceIssue>[];
 
     // 0. Contrôles du lexique métier (Étape 1)
@@ -58,6 +65,83 @@ abstract final class SpecCoherenceAnalyzer {
                   'Le terme « ${term.term} » ne possède pas encore de définition métier.',
               targetRef: term.id,
               suggestion: 'Ajoutez une définition univoque.',
+            ),
+          );
+        }
+      }
+    }
+
+    // 0 bis. Contrôles croisés avec le glossaire d'entreprise global
+    if (companyGlossary != null && companyGlossary.terms.isNotEmpty) {
+      final forbiddenMap = <String, CompanyGlossaryTerm>{};
+      final deprecatedMap = <String, CompanyGlossaryTerm>{};
+      for (final cgTerm in companyGlossary.terms) {
+        if (cgTerm.status == CompanyGlossaryStatus.deprecated) {
+          deprecatedMap[cgTerm.term.trim().toLowerCase()] = cgTerm;
+        } else {
+          for (final forbidden in cgTerm.forbiddenTerms) {
+            final key = forbidden.trim().toLowerCase();
+            if (key.isNotEmpty) {
+              forbiddenMap[key] = cgTerm;
+            }
+          }
+        }
+      }
+
+      for (final lexTerm in project.lexicon.terms) {
+        final key = lexTerm.term.trim().toLowerCase();
+        final forbiddenHit = forbiddenMap[key];
+        if (forbiddenHit != null) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_cg_forbidden_lex_${lexTerm.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.lexicon,
+              code: 'COH-LEX-004',
+              title: 'Terme proscrit par l’entreprise : ${lexTerm.term}',
+              description:
+                  'Le terme « ${lexTerm.term} » du lexique projet est proscrit par le glossaire d’entreprise au profit de « ${forbiddenHit.term} ».',
+              targetRef: lexTerm.id,
+              suggestion:
+                  'Remplacez-le par le terme canonique « ${forbiddenHit.term} » et conservez « ${lexTerm.term} » en synonyme si utile.',
+            ),
+          );
+        }
+        final deprecatedHit = deprecatedMap[key];
+        if (deprecatedHit != null) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_cg_deprecated_lex_${lexTerm.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.lexicon,
+              code: 'COH-LEX-005',
+              title: 'Terme d’entreprise déprécié : ${lexTerm.term}',
+              description:
+                  'Le terme « ${lexTerm.term} » est marqué comme déprécié dans le glossaire d’entreprise.',
+              targetRef: lexTerm.id,
+              suggestion:
+                  'Vérifiez le terme de remplacement recommandé dans le glossaire d’entreprise.',
+            ),
+          );
+        }
+      }
+
+      for (final obj in project.businessObjects) {
+        final key = obj.name.trim().toLowerCase();
+        final forbiddenHit = forbiddenMap[key];
+        if (forbiddenHit != null) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_cg_forbidden_obj_${obj.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.businessObjects,
+              code: 'COH-LEX-004',
+              title: 'Objet nommé avec un terme proscrit : ${obj.name}',
+              description:
+                  'L’objet métier « ${obj.name} » utilise un terme proscrit par le glossaire d’entreprise (terme officiel : « ${forbiddenHit.term} »).',
+              targetRef: obj.id,
+              suggestion:
+                  'Renommez l’objet en « ${forbiddenHit.term} »${forbiddenHit.technicalNameHint.isNotEmpty ? ' (${forbiddenHit.technicalNameHint})' : ''}.',
             ),
           );
         }
@@ -335,6 +419,15 @@ abstract final class SpecCoherenceAnalyzer {
           if (attr.children.isNotEmpty) {
             checkAttributes(attr.children, qualified);
           }
+          if (modelPreferences != null) {
+            _checkTechnicalModelingRules(
+              issues: issues,
+              obj: obj,
+              attr: attr,
+              qualified: qualified,
+              prefs: modelPreferences,
+            );
+          }
         }
       }
 
@@ -485,5 +578,99 @@ abstract final class SpecCoherenceAnalyzer {
 
     issues.sort((a, b) => a.severity.index.compareTo(b.severity.index));
     return List<SpecCoherenceIssue>.unmodifiable(issues);
+  }
+
+  static void _checkTechnicalModelingRules({
+    required List<SpecCoherenceIssue> issues,
+    required BusinessObjectSpec obj,
+    required BusinessAttribute attr,
+    required String qualified,
+    required BusinessObjectModelPreferences prefs,
+  }) {
+    final name = attr.name.trim();
+    final lower = name.toLowerCase();
+
+    if (prefs.booleanPrefixPolicy == BooleanPrefixPolicy.strictIsHasCan &&
+        attr.type == BusinessAttributeType.boolean) {
+      final hasPrefix = RegExp(
+        r'^(is|has|can|est|a|peut)([A-Z_-]|$)',
+      ).hasMatch(name);
+      if (!hasPrefix) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_mod_bool_${obj.id}_${attr.id}',
+            severity: CoherenceSeverity.info,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-MOD-001',
+            title: 'Préfixe booléen recommandé : $qualified',
+            description:
+                'L’attribut booléen « $name » ne commence pas par un préfixe actif (is*, has*, can*).',
+            targetRef: '${obj.id}.$name',
+            suggestion:
+                'Renommez-le avec un préfixe explicite (ex. is${name.isEmpty ? '' : '${name[0].toUpperCase()}${name.substring(1)}'}).',
+          ),
+        );
+      }
+    }
+
+    if (prefs.dateTimeSuffixPolicy == DateTimeSuffixPolicy.strictAtAndDate) {
+      if (attr.type == BusinessAttributeType.datetime &&
+          lower.endsWith('date') &&
+          !lower.endsWith('at')) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_mod_dt_${obj.id}_${attr.id}',
+            severity: CoherenceSeverity.info,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-MOD-002',
+            title: 'Suffixe *At attendu pour un horodatage : $qualified',
+            description:
+                'L’attribut « $name » est typé dateTime mais se termine par « Date » au lieu de « At ».',
+            targetRef: '${obj.id}.$name',
+            suggestion:
+                'Utilisez le suffixe *At pour les instants UTC ou passez le type en `date` calendaire.',
+          ),
+        );
+      } else if (attr.type == BusinessAttributeType.date &&
+          RegExp(r'(^|_)at$|[a-z0-9]At$').hasMatch(name)) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_mod_date_${obj.id}_${attr.id}',
+            severity: CoherenceSeverity.info,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-MOD-003',
+            title: 'Suffixe *Date attendu pour une date calendaire : $qualified',
+            description:
+                'L’attribut « $name » est typé `date` (sans heure) mais porte le suffixe « At ».',
+            targetRef: '${obj.id}.$name',
+            suggestion:
+                'Passez le type en `dateTime` UTC ou renommez avec le suffixe *Date.',
+          ),
+        );
+      }
+    }
+
+    if (prefs.enforceIdRefCodeNumberDistinction) {
+      final endsWithNumber =
+          lower.endsWith('number') || lower.endsWith('_number');
+      if (endsWithNumber &&
+          (attr.type == BusinessAttributeType.uuid ||
+              attr.type == BusinessAttributeType.reference)) {
+        issues.add(
+          SpecCoherenceIssue(
+            id: 'coh_mod_num_${obj.id}_${attr.id}',
+            severity: CoherenceSeverity.warning,
+            stage: SpecForgeStage.businessObjects,
+            code: 'COH-MOD-004',
+            title: 'Confusion *Number / *Id sur $qualified',
+            description:
+                'L’attribut « $name » porte le suffixe *Number mais est typé en ${attr.type.name}.',
+            targetRef: '${obj.id}.$name',
+            suggestion:
+                'Réservez *Id aux clés techniques/références (UUID) et *Number aux numéros séquentiels métier (string).',
+          ),
+        );
+      }
+    }
   }
 }

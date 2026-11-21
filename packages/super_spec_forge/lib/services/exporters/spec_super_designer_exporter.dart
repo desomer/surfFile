@@ -71,11 +71,15 @@ abstract final class SpecSuperDesignerExporter {
   }
 
   /// Génère le JSON Schema Draft 2020-12 et les données de démarrage pour chaque agrégat racine.
-  static SuperDesignerExportBundle toBundle(SpecForgeProject project) {
+  static SuperDesignerExportBundle toBundle(
+    SpecForgeProject project, {
+    BusinessObjectModelPreferences? modelPreferencesOverride,
+  }) {
     final schemas = <String, Map<String, Object?>>{};
     final seeds = <String, Map<String, Object?>>{};
 
-    final prefs = project.businessObjectModelPreferences;
+    final prefs =
+        modelPreferencesOverride ?? project.businessObjectModelPreferences;
     final strictObjects = prefs.schemaStrictness == JsonSchemaStrictness.strict;
     final locale = prefs.localeProfile;
 

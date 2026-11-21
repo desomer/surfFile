@@ -10,6 +10,46 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_spec_forge/main.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
 
+class _MemoryModelDictionaryStore extends ModelDictionaryStore {
+  _MemoryModelDictionaryStore() : super(Directory('memory_store'));
+
+  BusinessObjectModelPreferences _prefs =
+      BusinessObjectModelPreferences.defaults;
+
+  @override
+  Future<BusinessObjectModelPreferences> load() async => _prefs;
+
+  @override
+  Future<void> save(BusinessObjectModelPreferences preferences) async {
+    preferences.validate();
+    _prefs = preferences;
+  }
+}
+
+class _MemoryCompanyGlossaryStore extends CompanyGlossaryStore {
+  _MemoryCompanyGlossaryStore() : super(Directory('memory_store'));
+
+  CompanyGlossary _glossary = CompanyGlossary.empty;
+  List<SpecChatMessage> _chat = const <SpecChatMessage>[];
+
+  @override
+  Future<CompanyGlossary> loadGlossary() async => _glossary;
+
+  @override
+  Future<void> saveGlossary(CompanyGlossary glossary) async {
+    glossary.validate();
+    _glossary = glossary;
+  }
+
+  @override
+  Future<List<SpecChatMessage>> loadChatMessages() async => _chat;
+
+  @override
+  Future<void> saveChatMessages(List<SpecChatMessage> messages) async {
+    _chat = List<SpecChatMessage>.unmodifiable(messages);
+  }
+}
+
 class _MemorySpecProjectStore extends SpecProjectStore {
   _MemorySpecProjectStore() : super(Directory('memory_store'));
 
@@ -173,7 +213,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. Saisie de l'idée sur l'écran d'accueil.
+      // 0. Ouverture de Projets depuis le menu Spec.
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
+      await tester.pumpAndSettle();
+
+      // 1. Saisie de l'idée sur l'écran Projets.
       expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
       await tester.enterText(
         find.byType(TextField).at(1),
@@ -181,9 +229,12 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(
-        find.text('Démarrer le wizard (Étape 1 : Lexique métier)'),
+      final startWizardButton = find.text(
+        'Démarrer le wizard (Étape 1 : Lexique métier)',
       );
+      await tester.ensureVisible(startWizardButton);
+      await tester.pumpAndSettle();
+      await tester.tap(startWizardButton);
       await tester.pumpAndSettle();
 
       // 2. Aucun échange IA n'a encore démarré : le bouton « Commencer » est affiché.
@@ -308,6 +359,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
       // 1. Bouton joindre un fichier -> puce en attente.
       await tester.tap(find.byKey(const ValueKey('spec-chat-attach')));
       await tester.pumpAndSettle();
@@ -390,6 +444,9 @@ void main() {
       await tester.pumpWidget(
         SuperSpecForgeApp(controller: controller, restoreLastProject: false),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
       // 1. Scénario de reprise automatique : tentative 1 invalide (@bad) -> reprise delta -> tentative 2 OK.
@@ -503,6 +560,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
       // 1. SuperTreeView affiche l'objet racine et ses sous-nœuds alignés en haut.
       expect(find.text('Arbre & Inspecteur'), findsOneWidget);
       expect(find.text('Arbre & Inspecteur (SuperTreeView)'), findsNothing);
@@ -578,13 +638,15 @@ Facture:
   );
 
   testWidgets(
-    'NavigationRail gauche : Spec affiche le contenu actuel, Design affiche la page de liens et Build reste vide',
+    'NavigationRail gauche : Spec affiche le menu Spec (Projets et Wizard), Design affiche la page de liens et Build reste vide',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final controller = SpecForgeController(
         store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
         aiService: _FakeSpecAiService(),
       );
       addTearDown(controller.dispose);
@@ -598,9 +660,139 @@ Facture:
       expect(find.text('Spec'), findsOneWidget);
       expect(find.text('Design'), findsOneWidget);
       expect(find.text('Build'), findsOneWidget);
-      expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
 
-      // Onglet Design accessible même sans projet ouvert.
+      // Onglet Spec : affiche d'abord la section « Entreprise » puis « Spécification & Projets ».
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+      expect(find.text('Entreprise'), findsOneWidget);
+      expect(find.text('Spécification & Projets'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('spec-section-header-enterprise')),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('spec-section-header-spec_workspace')),
+              )
+              .dy,
+        ),
+      );
+      expect(find.text('Projets'), findsOneWidget);
+      expect(find.text('Wizard de spécification'), findsOneWidget);
+      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+      expect(find.text('Aucun projet actif'), findsOneWidget);
+
+      // Replier puis déplier « Entreprise » vérifie que Glossaire d'entreprise en fait bien partie.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-section-header-enterprise')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Glossaire d’entreprise'), findsNothing);
+      expect(find.text('Projets'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-section-header-enterprise')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+
+      // Clic sur Glossaire d'entreprise depuis Spec -> sous-vue puis retour via spec-subview-back-btn.
+      await tester.tap(find.byKey(const ValueKey('spec-link-company_glossary')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('company-glossary-view')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+
+      // Le bouton Projets n'est pas dans l'AppBar.
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Projets'),
+        ),
+        findsNothing,
+      );
+
+      // Clic sur Wizard sans projet actif -> SnackBar d'invitation.
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Aucun projet actif — ouvrez ou créez un projet dans Projets',
+        ),
+        findsOneWidget,
+      );
+
+      // Clic sur Projets -> ouvre IdeaLauncherView avec bouton retour, puis retour au menu Spec.
+      await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
+      await tester.pumpAndSettle();
+      expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+
+      // Création d'un projet : le bouton Projets reste absent de l'AppBar et Spec garde le menu d'abord.
+      await controller.createProjectFromIdea(
+        idea: 'Gestion des devis',
+        name: 'DevisApp',
+        autoKickoff: false,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Projets'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+      expect(find.text('DevisApp'), findsOneWidget);
+
+      // Ouverture du Wizard -> bouton retour Spec présent et fonctionnel.
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('spec-subview-back-btn')), findsOneWidget);
+
+      // Re-clic sur l'item Spec actif dans le rail ramène au menu Spec.
+      await tester.tap(find.text('Spec').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+
+      // Ouvrir Projets puis revenir ne ferme pas le projet actif.
+      await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
+      await tester.pumpAndSettle();
+      expect(controller.project?.name, 'DevisApp');
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('spec-subview-back-btn')), findsOneWidget);
+
+      // Onglet Design accessible même avec ou sans projet ouvert.
       await tester.tap(find.text('Design'));
       await tester.pumpAndSettle();
       expect(
@@ -609,10 +801,44 @@ Facture:
       );
       expect(find.text('Nouvelle forge à partir d’une idée'), findsNothing);
 
-      // Vérifie les deux sections et les 9 liens en français.
-      expect(find.text('Pour le concepteur backend'), findsOneWidget);
+      // Vérifie les deux sections (urbaniste & architecte en premier) et les 10 liens de Design.
       expect(find.text('Pour l’urbaniste & architecte'), findsOneWidget);
-      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+      expect(find.text('Pour le concepteur backend'), findsOneWidget);
+      expect(find.text('Glossaire d’entreprise'), findsNothing);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(
+                const ValueKey('design-section-header-urban_planner_architect'),
+              ),
+            )
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(
+                  const ValueKey('design-section-header-backend_designer'),
+                ),
+              )
+              .dy,
+        ),
+      );
+      expect(find.text('Gestion des domaines'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('design-link-domain_management')),
+            )
+            .dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('design-link-systems_services')),
+              )
+              .dx,
+        ),
+      );
+      expect(find.text('Dictionnaire technique & Modèle'), findsOneWidget);
       expect(find.text('Modèles & Contrats'), findsOneWidget);
       expect(find.text('Mapping sortant'), findsOneWidget);
       expect(find.text('Cas d’usage & orchestration'), findsOneWidget);
@@ -622,29 +848,47 @@ Facture:
       expect(find.text('Cartes des flux système'), findsOneWidget);
       expect(find.text('Discuter avec l’IA experte'), findsOneWidget);
 
-      // Clic sur un lien : affiche le retour visuel.
+      // Clic sur un lien non encore implémenté : affiche le retour visuel.
       await tester.tap(
-        find.byKey(const ValueKey('design-link-company_glossary')),
+        find.byKey(const ValueKey('design-link-domain_management')),
       );
       await tester.pumpAndSettle();
       expect(
-        find.text('Glossaire d’entreprise — bientôt disponible'),
+        find.text('Gestion des domaines — bientôt disponible'),
         findsOneWidget,
       );
 
-      // Replier puis déplier la première section.
+      // Clic sur « Dictionnaire technique & Modèle » : ouvre la sous-vue dédiée, puis retour.
+      await tester.tap(
+        find.byKey(const ValueKey('design-link-modeling_dictionary')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('model-dictionary-view')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('design-subview-back-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-design-view')),
+        findsOneWidget,
+      );
+
+      // Replier puis déplier la section concepteur backend.
       await tester.tap(
         find.byKey(const ValueKey('design-section-header-backend_designer')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Glossaire d’entreprise'), findsNothing);
+      expect(find.text('Dictionnaire technique & Modèle'), findsNothing);
       expect(find.text('Systèmes & Services'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('design-section-header-backend_designer')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+      expect(find.text('Dictionnaire technique & Modèle'), findsOneWidget);
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
@@ -655,7 +899,11 @@ Facture:
 
       await tester.tap(find.text('Spec'));
       await tester.pumpAndSettle();
-      expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('spec-subview-back-btn')), findsOneWidget);
     },
   );
 
@@ -690,6 +938,9 @@ Facture:
       await tester.pumpWidget(
         SuperSpecForgeApp(controller: controller, restoreLastProject: false),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
       unawaited(controller.sendUserMessage('Analyse le vocabulaire'));
@@ -761,6 +1012,9 @@ Facture:
       await tester.pumpWidget(
         SuperSpecForgeApp(controller: controller, restoreLastProject: false),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
       await controller.sendUserMessage('Vérifie le lexique et lance un audit');
@@ -928,6 +1182,9 @@ Facture:
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
       // 0. Redimensionnement SplitView entre SuperTreeView et l'inspecteur.
       final treePaneFinder = find.byKey(
         const ValueKey('spec-objects-tree-pane'),
@@ -1060,6 +1317,9 @@ Facture:
       );
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
       final chatPaneFinder = find.byKey(const ValueKey('spec-chat-pane'));
       final cycleBtnFinder = find.byKey(
         const ValueKey('spec-chat-cycle-size-btn'),
@@ -1153,10 +1413,12 @@ Facture:
         ),
       );
       await controller.openProject(controller.project!.id);
-
       await tester.pumpWidget(
         SuperSpecForgeApp(controller: controller, restoreLastProject: false),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
       // Aucune exception de build ; carte d'erreur et bouton de correction affichés.
@@ -1233,6 +1495,9 @@ Facture:
       await tester.pumpWidget(
         SuperSpecForgeApp(controller: controller, restoreLastProject: false),
       );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
       final rowFinder = find.byKey(
@@ -1649,6 +1914,8 @@ Facture:
       final fakeAi = _FakeSpecAiService();
       final controller = SpecForgeController(
         store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
         aiService: fakeAi,
       );
       addTearDown(controller.dispose);
@@ -1688,112 +1955,129 @@ Facture:
       );
       await tester.pumpAndSettle();
 
-      final prefsBtn = find.byKey(const ValueKey('spec-objects-prefs-btn'));
-      expect(prefsBtn, findsOneWidget);
-      expect(
-        find.text('Préférences du modèle (EN · camel / FR · Std)'),
-        findsOneWidget,
-      );
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
 
-      await tester.tap(prefsBtn);
+      // Le bouton « Préférences du modèle » a bien été retiré de Spec > Objets métiers.
+      expect(find.byKey(const ValueKey('spec-objects-prefs-btn')), findsNothing);
+
+      // Navigation vers Design -> Dictionnaire technique & Modèle.
+      await tester.tap(find.text('Design'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('design-link-modeling_dictionary')),
+      );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('spec-objects-prefs-dialog')),
+        find.byKey(const ValueKey('model-dictionary-view')),
         findsOneWidget,
       );
-
-      // Par défaut : attributs en anglais (`en`) et valeurs d'enum en anglais (`en`).
       expect(
-        controller.project!.businessObjectModelPreferences.attributeLanguage,
-        'en',
-      );
-      expect(
-        controller.project!.businessObjectModelPreferences.enumLanguage,
-        'en',
-      );
-      expect(
-        find.byKey(const ValueKey('spec-objects-enum-lang-dropdown')),
+        find.byKey(const ValueKey('model-dict-live-json-preview')),
         findsOneWidget,
       );
+      expect(find.text('*Number'), findsOneWidget);
+      expect(find.text('*Ref'), findsOneWidget);
 
-      // Onglet 1 : Langues & Nommage
-      final namingScrollable = find.descendant(
-        of: find.descendant(
-          of: find.byKey(const ValueKey('spec-objects-prefs-dialog')),
-          matching: find.byType(ListView),
-        ),
-        matching: find.byType(Scrollable),
-      );
-
+      // Section 2 : Identifiants (ULID)
       await tester.tap(
-        find.byKey(const ValueKey('spec-objects-attr-case-dropdown')),
+        find.byKey(const ValueKey('model-dict-id-strategy-dropdown')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ULID (26 car.)').last);
+      await tester.pumpAndSettle();
+
+      // Section 1 : Langues & Nommage (snake_case + SCREAMING_SNAKE_CASE)
+      await tester.tap(
+        find.byKey(const ValueKey('model-dict-section-naming')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('model-dict-enum-lang-dropdown')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('model-dict-attr-case-dropdown')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('snake_case (ex. delivery_address)').last);
       await tester.pumpAndSettle();
 
-      final enumCaseDropdown = find.byKey(
-        const ValueKey('spec-objects-enum-case-dropdown'),
+      await tester.tap(
+        find.byKey(const ValueKey('model-dict-enum-case-dropdown')),
       );
-      await tester.drag(namingScrollable, const Offset(0, -180));
-      await tester.pumpAndSettle();
-      await tester.tap(enumCaseDropdown);
       await tester.pumpAndSettle();
       await tester.tap(
         find.text('SCREAMING_SNAKE_CASE (ex. PENDING_APPROVAL)').last,
       );
       await tester.pumpAndSettle();
 
-      await tester.drag(namingScrollable, const Offset(0, -340));
-      await tester.pumpAndSettle();
+      // Section 5 : Contraintes JSON Schema (Strict)
       await tester.tap(
-        find.byKey(const ValueKey('spec-objects-apply-case-existing')),
+        find.byKey(const ValueKey('model-dict-section-schema')),
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('spec-objects-apply-enum-case-existing')),
-      );
-      await tester.pumpAndSettle();
-
-      // Onglet 2 : Clés & Audit
-      await tester.tap(find.text('Clés & Audit'));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('spec-objects-id-strategy-dropdown')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('ULID (26 car.)').last);
-      await tester.pumpAndSettle();
-
-      // Onglet 3 : Schéma & Relations
-      await tester.tap(find.text('Schéma & Relations'));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('spec-objects-schema-strictness-dropdown')),
+        find.byKey(const ValueKey('model-dict-schema-strictness-dropdown')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Strict (additionalProperties: false)').last);
       await tester.pumpAndSettle();
 
-      // Onglet 4 : Régional & Consignes
-      await tester.tap(find.text('Régional & Consignes'));
+      // Section 6 : Dictionnaire des règles -> ajout d'une règle technique
+      await tester.tap(
+        find.byKey(const ValueKey('model-dict-section-rules')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('model-dict-add-rule-btn')));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('spec-objects-custom-instructions-field')),
+        find.byKey(const ValueKey('model-dict-rule-field-name')),
+        'Suffixe *Token',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('model-dict-rule-field-pattern')),
+        '*Token',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('model-dict-rule-field-when')),
+        'Jeton technique opaque à durée de vie limitée.',
+      );
+      await tester.tap(find.byKey(const ValueKey('model-dict-rule-save-btn')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('model-dict-rules-search')),
+        'Token',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Suffixe *Token'), findsOneWidget);
+
+      // Section 7 : Régional & Consignes IA
+      await tester.tap(
+        find.byKey(const ValueKey('model-dict-section-locale')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('model-dict-custom-instructions-field')),
         'Prefix booleans with is',
       );
       await tester.pumpAndSettle();
+
+      // Onglet Aperçu Prompt IA
+      await tester.tap(find.text('Prompt IA'));
+      await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('spec-objects-prefs-prompt-preview')),
+        find.byKey(const ValueKey('model-dict-live-prompt-preview')),
         findsOneWidget,
       );
 
+      // Application de la casse au projet actif
       await tester.tap(
-        find.byKey(const ValueKey('spec-objects-prefs-save')),
+        find.byKey(const ValueKey('model-dict-apply-case-project-btn')),
       );
       await tester.pumpAndSettle();
 
-      final savedPrefs = controller.project!.businessObjectModelPreferences;
+      final savedPrefs = controller.modelPreferences;
       expect(savedPrefs.attributeLanguage, 'en');
       expect(savedPrefs.enumLanguage, 'en');
       expect(savedPrefs.attributeCase, AttributeNamingCase.snakeCase);
@@ -1802,6 +2086,10 @@ Facture:
       expect(savedPrefs.schemaStrictness, JsonSchemaStrictness.strict);
       expect(savedPrefs.customInstructions, 'Prefix booleans with is');
       expect(
+        savedPrefs.technicalRules.any((r) => r.suffixOrPattern == '*Token'),
+        isTrue,
+      );
+      expect(
         controller.project!.businessObjects.single.attributes.first.name,
         'date_mise_en_service',
       );
@@ -1809,12 +2097,10 @@ Facture:
         controller.project!.businessObjects.single.attributes[1].enumValues,
         ['EN_COURS', 'ARCHIVE'],
       );
-      expect(
-        find.text('Préférences du modèle (EN · snake / FR · Strict)'),
-        findsOneWidget,
-      );
 
-      // Lancement de l'échange IA sur Objets métiers -> reçoit toutes les préférences.
+      // Retour dans Spec > Objets métiers et lancement de l'IA -> reçoit les règles globales.
+      await tester.tap(find.text('Spec'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-stage-start-ai')));
       await tester.pumpAndSettle();
 
@@ -1823,6 +2109,7 @@ Facture:
       expect(fakeAi.receivedPrompts.single, contains('snake_case'));
       expect(fakeAi.receivedPrompts.single, contains('SCREAMING_SNAKE_CASE'));
       expect(fakeAi.receivedPrompts.single, contains('ULID'));
+      expect(fakeAi.receivedPrompts.single, contains('*Token'));
       expect(
         fakeAi.receivedPrompts.single,
         contains('additionalProperties: false'),
@@ -2031,6 +2318,310 @@ Facture:
       expect(launchedFiles.length, 1);
     },
   );
+
+  testWidgets(
+    'Écran d’accueil : exemples d’idées (CRM B2B, Comptabilité, Budget IT, etc.) pré-remplissent le formulaire',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
+      await tester.pumpAndSettle();
+
+      for (final expectedTitle in const [
+        'Gestion de flotte automobile',
+        'Location & maintenance matériels',
+        'Portail SAV & tickets clients',
+        'CRM B2B',
+        'Comptabilité',
+        'Gestion RH & Paie',
+        'E-commerce & Stocks',
+        'Gestion de projets & Facturation temps',
+        'Gestion de budget IT',
+      ]) {
+        expect(find.text(expectedTitle), findsOneWidget);
+      }
+
+      await tester.tap(find.text('CRM B2B'));
+      await tester.pumpAndSettle();
+
+      final nameField = tester.widget<TextField>(find.byType(TextField).at(0));
+      final ideaField = tester.widget<TextField>(find.byType(TextField).at(1));
+      expect(nameField.controller!.text, 'CRM B2B');
+      expect(ideaField.controller!.text, contains('pipeline'));
+
+      final budgetItChip = find.text('Gestion de budget IT');
+      await tester.ensureVisible(budgetItChip);
+      await tester.pumpAndSettle();
+      await tester.tap(budgetItChip);
+      await tester.pumpAndSettle();
+      expect(nameField.controller!.text, 'Gestion de budget IT');
+      expect(ideaField.controller!.text, contains('CAPEX/OPEX'));
+
+      final startWizardButton = find.text(
+        'Démarrer le wizard (Étape 1 : Lexique métier)',
+      );
+      await tester.ensureVisible(startWizardButton);
+      await tester.pumpAndSettle();
+      await tester.tap(startWizardButton);
+      await tester.pumpAndSettle();
+
+      expect(controller.project, isNotNull);
+      expect(controller.project!.name, 'Gestion de budget IT');
+      expect(find.byKey(const ValueKey('spec-stage-start-ai')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Spec -> Glossaire d’entreprise : CRUD, filtres, import CSV, assistant IA et passerelle Étape 1',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final glossaryAi = _CompanyGlossaryFakeAiService();
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        aiService: glossaryAi,
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Accès au Glossaire d'entreprise depuis le menu Spec (sans projet actif).
+      await tester.tap(
+        find.byKey(const ValueKey('spec-link-company_glossary')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('company-glossary-view')),
+        findsOneWidget,
+      );
+
+      // 2. Ajout manuel d'un terme d'entreprise avec statut, domaine et termes à proscrire.
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-add-term-btn')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-field-term')),
+        'Bon de livraison',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-field-domain')),
+        'Logistique',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-field-tech')),
+        'DeliveryNote',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-field-definition')),
+        'Preuve de remise des marchandises.',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-field-forbidden')),
+        'Ticket sortie',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-save-term-btn')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bon de livraison'), findsOneWidget);
+      expect(find.text('DeliveryNote'), findsOneWidget);
+      expect(find.text('Ticket sortie'), findsOneWidget);
+
+      final blTerm = controller.companyGlossary.terms.firstWhere(
+        (t) => t.term == 'Bon de livraison',
+      );
+      expect(blTerm.createdAt, isNotNull);
+      expect(blTerm.updatedAt, isNotNull);
+      expect(
+        find.byKey(ValueKey('company-glossary-dates-${blTerm.id}')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Ajouté le '), findsAtLeastNWidgets(1));
+      expect(find.textContaining('Modifié le '), findsAtLeastNWidgets(1));
+
+      // Vérifie le sélecteur de tri (Modifiés récemment / Ajoutés récemment).
+      await tester.tap(find.byKey(const ValueKey('company-glossary-sort')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Modifiés récemment').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Bon de livraison'), findsOneWidget);
+
+      // 3. Import CSV via la modale Importer / Exporter.
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-import-export-btn')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Importer (JSON / CSV)'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-import-text-input')),
+        'term,status,domain,definition\nFacture,draft,Finance,Pièce comptable',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('+1 ajout(s)'),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-apply-import')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Facture'), findsOneWidget);
+
+      // 4. Filtrage par statut Brouillon.
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-filter-draft')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Facture'), findsOneWidget);
+      expect(find.text('Bon de livraison'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-filter-all')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Bon de livraison'), findsOneWidget);
+
+      // 5. Assistant IA du glossaire (VibeAskUserCard -> patch appliqué).
+      await tester.enterText(
+        find.byKey(const ValueKey('company-glossary-chat-input')),
+        'Ajoute le terme Commande client',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('company-glossary-chat-send')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(VibeAskUserCard), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
+      await tester.pumpAndSettle();
+      expect(find.text('Commande client'), findsOneWidget);
+
+      // 6. Passerelle avec l'étape 1 d'un projet (Import + Promotion).
+      await controller.createProjectFromIdea(
+        idea: 'Gestion commerciale',
+        autoKickoff: false,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-lexicon-import-company-glossary')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-lexicon-confirm-company-import')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        controller.project!.lexicon.terms.any(
+          (t) => t.term == 'Bon de livraison',
+        ),
+        isTrue,
+      );
+
+      // Promotion d'un terme projet vers le glossaire d'entreprise.
+      final importedBl = controller.project!.lexicon.terms.firstWhere(
+        (t) => t.term == 'Bon de livraison',
+      );
+      await tester.tap(
+        find.byKey(ValueKey('spec-lexicon-promote-${importedBl.id}')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('« Bon de livraison » mis à jour dans le glossaire d’entreprise.'),
+        findsOneWidget,
+      );
+    },
+  );
+}
+
+class _CompanyGlossaryFakeAiService implements SpecAiService {
+  int _turn = 0;
+
+  @override
+  Future<void> warmUp(
+    SpecForgeStage stage, {
+    VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+  }) async {}
+
+  @override
+  Stream<GeminiStreamEvent> streamTurn({
+    required SpecForgeStage stage,
+    required String prompt,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<Map<String, Object?>>? conversationContents,
+    bool enforceJsonResponse = true,
+    String? systemInstructionOverride,
+    String? staticGuideOverride,
+  }) async* {
+    _turn++;
+    final payload = _turn == 1
+        ? {
+            'message': 'Quel statut attribuer à Commande client ?',
+            'askUser': {
+              'questions': [
+                {
+                  'id': 'q_status',
+                  'title': 'Statut initial de Commande client ?',
+                  'type': 'single',
+                  'options': ['Validé', 'Brouillon'],
+                  'default': 'Validé',
+                },
+              ],
+            },
+            'specPatch': null,
+          }
+        : {
+            'message': 'Terme Commande client ajouté au glossaire.',
+            'askUser': null,
+            'specPatch': {
+              'terms': [
+                {
+                  'id': 'cg_commande_client',
+                  'term': 'Commande client',
+                  'definition': 'Engagement ferme d’achat.',
+                  'domain': 'Ventes',
+                  'status': 'approved',
+                },
+              ],
+            },
+          };
+
+    final encoded = jsonEncode(payload);
+    yield GeminiStreamEvent(
+      deltaText: encoded,
+      accumulatedText: encoded,
+      isDone: true,
+      usedContextCache: false,
+    );
+  }
 }
 
 class _GlobalQuestionAiService implements SpecAiService {

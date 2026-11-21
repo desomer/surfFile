@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
+import '../ai/company_glossary_ai.dart';
 import '../ai/spec_ai_service.dart';
 import '../ai/spec_app_tools.dart';
 import '../ai/spec_delta_recovery.dart';
@@ -15,10 +16,17 @@ import '../ai/spec_patch_applier.dart';
 import '../ai/spec_prompt_builder.dart';
 import '../ai/spec_stage_agent.dart';
 import '../ai/spec_stream_parser.dart';
+import '../models/business_object_model_preferences.dart';
+import '../models/business_object_spec.dart';
+import '../models/company_glossary.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
+import '../models/technical_modeling_rule.dart';
+import 'company_glossary_store.dart';
+import 'model_dictionary_store.dart';
 import 'spec_coherence_analyzer.dart';
 import 'spec_project_store.dart';
 
@@ -30,21 +38,31 @@ class SpecForgeController extends ChangeNotifier {
   /// Nombre maximal de tours d'appels d'outils par tentative IA.
   static const int maxToolRounds = 6;
 
-  /// Crée un contrôleur avec store, service IA et registre d'outils injectables.
+  /// Crée un contrôleur avec store, stores globaux, service IA et registre d'outils injectables.
   SpecForgeController({
     SpecProjectStore? store,
+    CompanyGlossaryStore? glossaryStore,
+    ModelDictionaryStore? modelDictionaryStore,
     SpecAiService? aiService,
     VibeAppToolRegistry? toolRegistry,
     VibeAiSpeedMode initialSpeedMode = VibeAiSpeedMode.fast,
     VibeQuestioningLevel initialQuestioningLevel =
         VibeQuestioningLevel.balanced,
   }) : _store = store ?? SpecProjectStore(),
+       _glossaryStore =
+           glossaryStore ??
+           CompanyGlossaryStore((store ?? SpecProjectStore()).rootDirectory),
+       _modelDictionaryStore =
+           modelDictionaryStore ??
+           ModelDictionaryStore((store ?? SpecProjectStore()).rootDirectory),
        _aiService = aiService ?? const GeminiSpecAiService(),
        _customToolRegistry = toolRegistry,
        _speedMode = initialSpeedMode,
        _questioningLevel = initialQuestioningLevel;
 
   final SpecProjectStore _store;
+  final CompanyGlossaryStore _glossaryStore;
+  final ModelDictionaryStore _modelDictionaryStore;
   final SpecAiService _aiService;
   final VibeAppToolRegistry? _customToolRegistry;
 
@@ -53,11 +71,24 @@ class SpecForgeController extends ChangeNotifier {
   final List<SpecForgeProject> _undoStack = <SpecForgeProject>[];
   final List<SpecForgeProject> _redoStack = <SpecForgeProject>[];
 
+  CompanyGlossary _companyGlossary = CompanyGlossary.empty;
+  List<SpecChatMessage> _glossaryChatMessages = const <SpecChatMessage>[];
+  final List<CompanyGlossary> _glossaryUndoStack = <CompanyGlossary>[];
+  final List<CompanyGlossary> _glossaryRedoStack = <CompanyGlossary>[];
+
+  BusinessObjectModelPreferences _modelPreferences =
+      BusinessObjectModelPreferences.defaults;
+  final List<BusinessObjectModelPreferences> _modelPrefsUndoStack =
+      <BusinessObjectModelPreferences>[];
+  final List<BusinessObjectModelPreferences> _modelPrefsRedoStack =
+      <BusinessObjectModelPreferences>[];
+
   VibeAiSpeedMode _speedMode;
   VibeQuestioningLevel _questioningLevel;
 
   bool _isSending = false;
   bool _sendingGlobalQuestion = false;
+  bool _sendingGlossary = false;
   SpecForgeStage? _sendingStage;
   String? _streamingMessage;
   String _streamingStatus = '';
@@ -88,6 +119,36 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Magasin disque associé.
   SpecProjectStore get store => _store;
+
+  /// Magasin disque du glossaire d'entreprise.
+  CompanyGlossaryStore get glossaryStore => _glossaryStore;
+
+  /// Glossaire terminologique d'entreprise global.
+  CompanyGlossary get companyGlossary => _companyGlossary;
+
+  /// Historique des échanges IA dédiés au glossaire d'entreprise.
+  List<SpecChatMessage> get glossaryChatMessages => _glossaryChatMessages;
+
+  /// Vrai lorsqu'un tour IA du glossaire d'entreprise est en cours.
+  bool get isSendingGlossary => _isSending && _sendingGlossary;
+
+  /// Indique si un Undo est disponible sur le glossaire d'entreprise.
+  bool get canUndoGlossary => _glossaryUndoStack.isNotEmpty;
+
+  /// Indique si un Redo est disponible sur le glossaire d'entreprise.
+  bool get canRedoGlossary => _glossaryRedoStack.isNotEmpty;
+
+  /// Magasin disque du dictionnaire technique global.
+  ModelDictionaryStore get modelDictionaryStore => _modelDictionaryStore;
+
+  /// Préférences et règles techniques globales héritées par tous les projets.
+  BusinessObjectModelPreferences get modelPreferences => _modelPreferences;
+
+  /// Indique si un Undo est disponible sur le dictionnaire technique.
+  bool get canUndoModelPreferences => _modelPrefsUndoStack.isNotEmpty;
+
+  /// Indique si un Redo est disponible sur le dictionnaire technique.
+  bool get canRedoModelPreferences => _modelPrefsRedoStack.isNotEmpty;
 
   /// Projet actuellement ouvert, ou `null` sur l'écran d'accueil.
   SpecForgeProject? get project => _project;
@@ -141,9 +202,21 @@ class SpecForgeController extends ChangeNotifier {
   /// Indique si un rétablissement Redo est disponible.
   bool get canRedo => _redoStack.isNotEmpty;
 
-  /// Charge la liste des projets récents et restaure optionnellement le dernier projet actif.
+  /// Charge la liste des projets récents, les référentiels globaux et restaure optionnellement le dernier projet actif.
   Future<void> initialize({bool restoreLastProject = true}) async {
     _recentProjects = await _store.listProjects();
+    try {
+      _companyGlossary = await _glossaryStore.loadGlossary();
+      _glossaryChatMessages = await _glossaryStore.loadChatMessages();
+    } catch (_) {
+      _companyGlossary = CompanyGlossary.empty;
+      _glossaryChatMessages = const <SpecChatMessage>[];
+    }
+    try {
+      _modelPreferences = await _modelDictionaryStore.load();
+    } catch (_) {
+      _modelPreferences = BusinessObjectModelPreferences.defaults;
+    }
     if (restoreLastProject) {
       final lastId = await _store.getLastActiveProjectId();
       if (lastId != null) {
@@ -302,6 +375,7 @@ class SpecForgeController extends ChangeNotifier {
     final kickoffPrompt = SpecPromptBuilder.buildStageKickoffPrompt(
       current,
       stage,
+      modelPreferencesOverride: _modelPreferences,
     );
     await _runAgentTurn(
       stage: stage,
@@ -562,6 +636,7 @@ class SpecForgeController extends ChangeNotifier {
     var currentPrompt = SpecPromptBuilder.buildGlobalQuestionPrompt(
       project: initialProject,
       userInput: questionInput,
+      companyGlossary: _companyGlossary,
     );
     final turnToolTraces = <VibeToolTrace>[];
 
@@ -569,6 +644,8 @@ class SpecForgeController extends ChangeNotifier {
         _customToolRegistry ??
         SpecForgeToolRegistry.build(
           readProject: () => workingProject,
+          readCompanyGlossary: () => _companyGlossary,
+          readModelPreferences: () => _modelPreferences,
           onUpdateProject: (updated) async {
             _pushUndo(workingProject);
             workingProject = updated;
@@ -812,7 +889,11 @@ class SpecForgeController extends ChangeNotifier {
   List<SpecCoherenceIssue> runLocalCoherenceAudit() {
     final current = _project;
     if (current == null) return const <SpecCoherenceIssue>[];
-    return SpecCoherenceAnalyzer.analyze(current);
+    return SpecCoherenceAnalyzer.analyze(
+      current,
+      companyGlossary: _companyGlossary,
+      modelPreferences: _modelPreferences,
+    );
   }
 
   Future<void> _runAgentTurn({
@@ -863,6 +944,8 @@ class SpecForgeController extends ChangeNotifier {
       questioningLevel: _questioningLevel,
       afterAskUserReply: afterAskUserReply,
       forceFollowUpQuestions: forceFollowUpQuestions,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
     );
 
     final priorCauses = <String>[];
@@ -874,6 +957,8 @@ class SpecForgeController extends ChangeNotifier {
         _customToolRegistry ??
         SpecForgeToolRegistry.build(
           readProject: () => workingProject,
+          readCompanyGlossary: () => _companyGlossary,
+          readModelPreferences: () => _modelPreferences,
           onUpdateProject: (updated) async {
             _pushUndo(workingProject);
             workingProject = updated;
@@ -1177,6 +1262,8 @@ class SpecForgeController extends ChangeNotifier {
               questioningLevel: _questioningLevel,
               afterAskUserReply: afterAskUserReply || salvage.hasCheckpoint,
               forceFollowUpQuestions: forceFollowUpQuestions,
+              companyGlossary: _companyGlossary,
+              modelPreferencesOverride: _modelPreferences,
             );
             currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
               refreshedTurnPrompt: refreshedTurnPrompt,
@@ -1250,6 +1337,638 @@ class SpecForgeController extends ChangeNotifier {
       _undoStack.removeAt(0);
     }
     _redoStack.clear();
+  }
+
+  /// Met à jour le glossaire d'entreprise et le persiste sur disque.
+  Future<void> updateCompanyGlossary(
+    CompanyGlossary updated, {
+    bool recordUndo = true,
+  }) async {
+    updated.validate();
+    if (updated == _companyGlossary) return;
+    if (recordUndo) {
+      _pushGlossaryUndo(_companyGlossary);
+    }
+    _companyGlossary = updated;
+    notifyListeners();
+    await _persistGlossary(updated);
+  }
+
+  /// Ajoute ou met à jour un terme dans le glossaire d'entreprise.
+  Future<void> upsertCompanyGlossaryTerm(CompanyGlossaryTerm term) =>
+      updateCompanyGlossary(_companyGlossary.upsertTerm(term));
+
+  /// Supprime un terme du glossaire d'entreprise par [termId].
+  Future<void> deleteCompanyGlossaryTerm(String termId) =>
+      updateCompanyGlossary(_companyGlossary.removeTerm(termId));
+
+  /// Annule la dernière modification du glossaire d'entreprise.
+  Future<void> undoCompanyGlossary() async {
+    if (_glossaryUndoStack.isEmpty) return;
+    final previous = _glossaryUndoStack.removeLast();
+    _glossaryRedoStack.add(_companyGlossary);
+    _companyGlossary = previous;
+    notifyListeners();
+    await _persistGlossary(previous);
+  }
+
+  /// Rétablit la dernière modification annulée du glossaire d'entreprise.
+  Future<void> redoCompanyGlossary() async {
+    if (_glossaryRedoStack.isEmpty) return;
+    final next = _glossaryRedoStack.removeLast();
+    _glossaryUndoStack.add(_companyGlossary);
+    _companyGlossary = next;
+    notifyListeners();
+    await _persistGlossary(next);
+  }
+
+  /// Importe des termes sélectionnés du glossaire d'entreprise dans le lexique du projet actif.
+  Future<({int added, int updated})> importCompanyGlossaryToProject({
+    required List<String> termIds,
+    bool overwriteExisting = false,
+    bool includeConventions = false,
+  }) async {
+    final current = _project;
+    if (current == null) {
+      return (added: 0, updated: 0);
+    }
+    final wanted = termIds.toSet();
+    final selected = [
+      for (final t in _companyGlossary.terms)
+        if (wanted.contains(t.id)) t,
+    ];
+    if (selected.isEmpty && !includeConventions) {
+      return (added: 0, updated: 0);
+    }
+
+    final nextTerms = List<LexiconTerm>.from(current.lexicon.terms);
+    var added = 0;
+    var updated = 0;
+
+    for (final cgTerm in selected) {
+      final lexCandidate = cgTerm.toLexiconTerm();
+      final byId = nextTerms.indexWhere((t) => t.id == lexCandidate.id);
+      final idx = byId >= 0
+          ? byId
+          : nextTerms.indexWhere(
+              (t) => t.term.toLowerCase() == lexCandidate.term.toLowerCase(),
+            );
+      if (idx >= 0) {
+        if (overwriteExisting) {
+          final existing = nextTerms[idx];
+          nextTerms[idx] = lexCandidate.copyWith(id: existing.id);
+          updated++;
+        }
+      } else {
+        final existingIds = {for (final t in nextTerms) t.id};
+        final safeId = existingIds.contains(lexCandidate.id)
+            ? 'term_${shortid.generate()}'
+            : lexCandidate.id;
+        nextTerms.add(lexCandidate.copyWith(id: safeId));
+        added++;
+      }
+    }
+
+    var nextConventions = current.lexicon.conventions;
+    if (includeConventions && _companyGlossary.conventions.isNotEmpty) {
+      final seen = {for (final c in nextConventions) c.toLowerCase()};
+      nextConventions = [
+        ...nextConventions,
+        for (final c in _companyGlossary.conventions)
+          if (seen.add(c.toLowerCase())) c,
+      ];
+    }
+
+    final nextLexicon = current.lexicon.copyWith(
+      terms: nextTerms,
+      conventions: nextConventions,
+    );
+    if (nextLexicon != current.lexicon) {
+      await updateProject(current.copyWith(lexicon: nextLexicon));
+    }
+    return (added: added, updated: updated);
+  }
+
+  /// Promeut un terme du lexique projet vers le glossaire d'entreprise global.
+  Future<({bool created, CompanyGlossaryTerm term})>
+  promoteLexiconTermToCompanyGlossary(
+    LexiconTerm term, {
+    CompanyGlossaryStatus status = CompanyGlossaryStatus.approved,
+    String owner = '',
+    String technicalNameHint = '',
+    List<String> forbiddenTerms = const <String>[],
+  }) async {
+    final now = DateTime.now().toUtc();
+    final existingIdx = _companyGlossary.terms.indexWhere(
+      (t) => t.id == term.id || t.term.toLowerCase() == term.term.toLowerCase(),
+    );
+    if (existingIdx >= 0) {
+      final prev = _companyGlossary.terms[existingIdx];
+      final merged = prev.copyWith(
+        definition: term.definition.trim().isNotEmpty
+            ? term.definition.trim()
+            : prev.definition,
+        synonyms: [...prev.synonyms, ...term.synonyms],
+        forbiddenTerms: [...prev.forbiddenTerms, ...forbiddenTerms],
+        domain: term.domain.trim().isNotEmpty ? term.domain.trim() : prev.domain,
+        owner: owner.trim().isNotEmpty ? owner.trim() : prev.owner,
+        technicalNameHint: technicalNameHint.trim().isNotEmpty
+            ? technicalNameHint.trim()
+            : prev.technicalNameHint,
+        examples: [...prev.examples, ...term.examples],
+        status: status,
+        createdAt: prev.createdAt ?? now,
+        updatedAt: now,
+      );
+      await upsertCompanyGlossaryTerm(merged);
+      return (created: false, term: merged);
+    }
+
+    final newId = term.id.startsWith('cg_')
+        ? term.id
+        : 'cg_${shortid.generate()}';
+    final createdTerm = CompanyGlossaryTerm.fromLexiconTerm(
+      term,
+      idOverride: newId,
+      status: status,
+      owner: owner,
+      technicalNameHint: technicalNameHint,
+      forbiddenTerms: forbiddenTerms,
+      now: now,
+    );
+    await upsertCompanyGlossaryTerm(createdTerm);
+    return (created: true, term: createdTerm);
+  }
+
+  /// Envoie un message utilisateur à l'agent IA dédié au glossaire d'entreprise.
+  Future<void> sendGlossaryMessage(
+    String text, {
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty) return;
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : 'Analyse les pièces jointes et propose les termes à intégrer au glossaire d’entreprise.';
+    await _runGlossaryTurn(
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` dans le chat du glossaire.
+  Future<void> submitGlossaryAskUserAnswers(
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+  }) async {
+    if (_isSending) return;
+    final idx = _glossaryChatMessages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = _glossaryChatMessages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final updatedMsg = targetMsg.copyWith(
+      askUserAnswers: answers,
+      askUserUsedDefaults: usedDefaults,
+    );
+    final updatedMessages = List<SpecChatMessage>.from(_glossaryChatMessages)
+      ..[idx] = updatedMsg;
+    _glossaryChatMessages = List<SpecChatMessage>.unmodifiable(updatedMessages);
+    notifyListeners();
+
+    final summary =
+        'Arbitrage enregistré :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runGlossaryTurn(
+      userDisplayText: summary,
+      promptInput: summary,
+      afterAskUserReply: true,
+    );
+  }
+
+  /// Ignore un questionnaire dans le chat du glossaire en appliquant les valeurs par défaut.
+  Future<void> skipGlossaryAskUser(String messageId) async {
+    if (_isSending) return;
+    final idx = _glossaryChatMessages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = _glossaryChatMessages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final defaults = askUser.defaultAnswers();
+    final updatedMessages = List<SpecChatMessage>.from(_glossaryChatMessages)
+      ..[idx] = targetMsg.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      );
+    _glossaryChatMessages = List<SpecChatMessage>.unmodifiable(updatedMessages);
+    notifyListeners();
+
+    final summary =
+        'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}';
+    await _runGlossaryTurn(
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput: summary,
+      afterAskUserReply: true,
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat du glossaire.
+  Future<void> retryLastGlossaryTurn() async {
+    if (_isSending) return;
+    var retryText =
+        'La tentative précédente a échoué. Corrige le format JSON et mets à jour le glossaire.';
+    var lastAttachments = const <VibeChatAttachment>[];
+    for (var i = _glossaryChatMessages.length - 1; i >= 0; i--) {
+      if (_glossaryChatMessages[i].isUser) {
+        retryText =
+            (_glossaryChatMessages[i].promptText ??
+                    _glossaryChatMessages[i].text)
+                .trim();
+        lastAttachments = _glossaryChatMessages[i].attachments;
+        break;
+      }
+    }
+    await _runGlossaryTurn(
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '$retryText\n\nNOTE DE REPRISE : renvoie strictement un JSON valide.',
+      attachments: lastAttachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA dédié au glossaire d'entreprise.
+  Future<void> clearGlossaryChat() async {
+    if (_isSending) return;
+    _glossaryChatMessages = const <SpecChatMessage>[];
+    notifyListeners();
+    await _glossaryStore.saveChatMessages(_glossaryChatMessages);
+  }
+
+  Future<void> _runGlossaryTurn({
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final baseGlossary = _companyGlossary;
+    final userMessage = SpecChatMessage(
+      id: 'cgmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+    );
+    _glossaryChatMessages = List<SpecChatMessage>.unmodifiable([
+      ..._glossaryChatMessages,
+      userMessage,
+    ]);
+    _isSending = true;
+    _sendingGlossary = true;
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Analyse du glossaire d’entreprise…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    var currentPrompt = CompanyGlossaryAiAgent.buildTurnPrompt(
+      glossary: baseGlossary,
+      history: _glossaryChatMessages,
+      userInput: promptInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterAskUserReply,
+    );
+
+    try {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (_stopRequested) break;
+        final parser = SpecStreamParser();
+        try {
+          final completer = Completer<void>();
+          _activeStreamCompleter = completer;
+          _activeStreamSubscription = _aiService
+              .streamTurn(
+                stage: SpecForgeStage.lexicon,
+                prompt: currentPrompt,
+                attachments: attachments,
+                speedMode: _speedMode,
+                systemInstructionOverride:
+                    CompanyGlossaryAiAgent.systemInstruction,
+                staticGuideOverride: CompanyGlossaryAiAgent.patchSchemaGuide,
+              )
+              .listen(
+                (event) {
+                  if (_stopRequested) return;
+                  if (event.deltaText.isNotEmpty) {
+                    final snap = parser.addChunk(event.deltaText);
+                    _streamingMessage = snap.message;
+                    if (snap.hasAskUser) {
+                      _streamingStatus = 'Préparation des arbitrages…';
+                    } else if (snap.hasSpecPatch) {
+                      _streamingStatus = 'Mise à jour du glossaire…';
+                    } else if (snap.message != null) {
+                      _streamingStatus = 'Rédaction en cours…';
+                    }
+                    notifyListeners();
+                  }
+                },
+                onError: (Object error, StackTrace stack) {
+                  _activeStreamSubscription = null;
+                  if (!completer.isCompleted) {
+                    completer.completeError(error, stack);
+                  }
+                },
+                onDone: () {
+                  _activeStreamSubscription = null;
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
+                },
+                cancelOnError: true,
+              );
+
+          await completer.future;
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+
+          if (_stopRequested) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            final stoppedMsg = SpecChatMessage(
+              id: 'cgmsg_${shortid.generate()}',
+              isUser: false,
+              text: partial.isNotEmpty
+                  ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                  : 'Réflexion IA interrompue par l’utilisateur.',
+            );
+            _glossaryChatMessages = List<SpecChatMessage>.unmodifiable([
+              ..._glossaryChatMessages,
+              stoppedMsg,
+            ]);
+            await _glossaryStore.saveChatMessages(_glossaryChatMessages);
+            return;
+          }
+
+          final response = SpecAgentResponse.parse(parser.rawText);
+          var patchSummary = '';
+          if (response.specPatch != null && response.specPatch!.isNotEmpty) {
+            final applied = CompanyGlossaryAiAgent.applyPatch(
+              _companyGlossary,
+              response.specPatch!,
+            );
+            if (applied.glossary != _companyGlossary) {
+              _pushGlossaryUndo(_companyGlossary);
+              _companyGlossary = applied.glossary;
+              patchSummary = applied.summary;
+              await _persistGlossary(_companyGlossary);
+            }
+          }
+
+          final assistantMsg = SpecChatMessage(
+            id: 'cgmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          _glossaryChatMessages = List<SpecChatMessage>.unmodifiable([
+            ..._glossaryChatMessages,
+            assistantMsg,
+          ]);
+          await _glossaryStore.saveChatMessages(_glossaryChatMessages);
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          saveError(
+            '[SpecForge Glossaire IA] Tentative ${attempt + 1} : $cause',
+            stack,
+          );
+          if (attempt == 0 &&
+              (error is FormatException ||
+                  error is ArgumentError ||
+                  error is StateError)) {
+            currentPrompt =
+                '$currentPrompt\n\nErreur JSON précédente ($cause). Renvoie uniquement un objet JSON valide.';
+            continue;
+          }
+          final errMsg = SpecChatMessage(
+            id: 'cgmsg_${shortid.generate()}',
+            isUser: false,
+            text: 'Erreur lors de l’analyse du glossaire : $cause',
+            failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+          );
+          _glossaryChatMessages = List<SpecChatMessage>.unmodifiable([
+            ..._glossaryChatMessages,
+            errMsg,
+          ]);
+          _lastError = cause;
+          await _glossaryStore.saveChatMessages(_glossaryChatMessages);
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingGlossary = false;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  void _pushGlossaryUndo(CompanyGlossary snapshot) {
+    _glossaryUndoStack.add(snapshot);
+    if (_glossaryUndoStack.length > 40) {
+      _glossaryUndoStack.removeAt(0);
+    }
+    _glossaryRedoStack.clear();
+  }
+
+  Future<void> _persistGlossary(CompanyGlossary glossary) async {
+    final gen = ++_saveGeneration;
+    _isSaving = true;
+    notifyListeners();
+    try {
+      await _glossaryStore.saveGlossary(glossary);
+    } finally {
+      if (gen == _saveGeneration) {
+        _isSaving = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Met à jour les préférences et règles techniques globales puis persiste sur disque.
+  Future<void> updateModelPreferences(
+    BusinessObjectModelPreferences updated, {
+    bool recordUndo = true,
+  }) async {
+    updated.validate();
+    if (updated == _modelPreferences) return;
+    if (recordUndo) {
+      _modelPrefsUndoStack.add(_modelPreferences);
+      if (_modelPrefsUndoStack.length > 40) {
+        _modelPrefsUndoStack.removeAt(0);
+      }
+      _modelPrefsRedoStack.clear();
+    }
+    _modelPreferences = updated;
+    notifyListeners();
+    await _persistModelPreferences(updated);
+  }
+
+  /// Ajoute ou met à jour une règle technique dans le dictionnaire global.
+  Future<void> upsertTechnicalRule(TechnicalModelingRule rule) {
+    rule.validate();
+    final rules = List<TechnicalModelingRule>.from(
+      _modelPreferences.technicalRules,
+    );
+    final idx = rules.indexWhere((r) => r.id == rule.id);
+    if (idx >= 0) {
+      rules[idx] = rule;
+    } else {
+      rules.add(rule);
+    }
+    return updateModelPreferences(
+      _modelPreferences.copyWith(technicalRules: rules),
+    );
+  }
+
+  /// Supprime une règle technique du dictionnaire global par [ruleId].
+  Future<void> deleteTechnicalRule(String ruleId) {
+    final next = _modelPreferences.technicalRules
+        .where((r) => r.id != ruleId)
+        .toList();
+    return updateModelPreferences(
+      _modelPreferences.copyWith(technicalRules: next),
+    );
+  }
+
+  /// Réinitialise le dictionnaire technique et les préférences globales par défaut.
+  Future<void> resetModelPreferencesToDefaults() =>
+      updateModelPreferences(BusinessObjectModelPreferences.defaults);
+
+  /// Annule la dernière modification du dictionnaire technique global.
+  Future<void> undoModelPreferences() async {
+    if (_modelPrefsUndoStack.isEmpty) return;
+    final previous = _modelPrefsUndoStack.removeLast();
+    _modelPrefsRedoStack.add(_modelPreferences);
+    _modelPreferences = previous;
+    notifyListeners();
+    await _persistModelPreferences(previous);
+  }
+
+  /// Rétablit la dernière modification annulée du dictionnaire technique global.
+  Future<void> redoModelPreferences() async {
+    if (_modelPrefsRedoStack.isEmpty) return;
+    final next = _modelPrefsRedoStack.removeLast();
+    _modelPrefsUndoStack.add(_modelPreferences);
+    _modelPreferences = next;
+    notifyListeners();
+    await _persistModelPreferences(next);
+  }
+
+  /// Convertit rétroactivement les identifiants/énums du projet actif selon les règles globales.
+  Future<bool> applyModelCaseToActiveProject({
+    bool applyAttributeCase = true,
+    bool applyEnumCase = true,
+  }) async {
+    final current = _project;
+    if (current == null || current.businessObjects.isEmpty) return false;
+    final attrCase = applyAttributeCase ? _modelPreferences.attributeCase : null;
+    final enumCase = applyEnumCase ? _modelPreferences.enumCase : null;
+    if (attrCase == null && enumCase == null) return false;
+
+    List<BusinessAttribute> convertAttrs(List<BusinessAttribute> list) {
+      final used = <String>{};
+      return [
+        for (final attr in list)
+          () {
+            final base = attrCase != null
+                ? attrCase.formatIdentifier(attr.name)
+                : attr.name;
+            var candidate = base;
+            var suffix = 2;
+            while (!used.add(candidate)) {
+              candidate = '${base}_$suffix';
+              suffix++;
+            }
+            final nextEnumValues =
+                enumCase != null && attr.enumValues.isNotEmpty
+                ? [for (final v in attr.enumValues) enumCase.formatValue(v)]
+                : attr.enumValues;
+            return attr.copyWith(
+              name: candidate,
+              enumValues: nextEnumValues,
+              children: attr.children.isEmpty
+                  ? const []
+                  : convertAttrs(attr.children),
+            );
+          }(),
+      ];
+    }
+
+    final updatedObjects = [
+      for (final obj in current.businessObjects)
+        obj.copyWith(
+          attributes: convertAttrs(obj.attributes),
+          relations: attrCase == null
+              ? obj.relations
+              : [
+                  for (final rel in obj.relations)
+                    rel.copyWith(name: attrCase.formatIdentifier(rel.name)),
+                ],
+          lifecycleStates: enumCase == null
+              ? obj.lifecycleStates
+              : [
+                  for (final st in obj.lifecycleStates)
+                    st.copyWith(name: enumCase.formatValue(st.name)),
+                ],
+          lifecycleTransitions: enumCase == null
+              ? obj.lifecycleTransitions
+              : [
+                  for (final tr in obj.lifecycleTransitions)
+                    tr.copyWith(
+                      fromState: enumCase.formatValue(tr.fromState),
+                      toState: enumCase.formatValue(tr.toState),
+                    ),
+                ],
+        ),
+    ];
+
+    if (listEquals(updatedObjects, current.businessObjects)) return false;
+    await updateProject(current.copyWith(businessObjects: updatedObjects));
+    return true;
+  }
+
+  Future<void> _persistModelPreferences(
+    BusinessObjectModelPreferences prefs,
+  ) async {
+    final gen = ++_saveGeneration;
+    _isSaving = true;
+    notifyListeners();
+    try {
+      await _modelDictionaryStore.save(prefs);
+    } finally {
+      if (gen == _saveGeneration) {
+        _isSaving = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> _persistProject(SpecForgeProject project) async {

@@ -12,7 +12,6 @@ import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
-import '../../models/business_object_model_preferences.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
@@ -22,7 +21,6 @@ import '../spec_split_handle.dart';
 import 'attribute_constraints_editor.dart';
 import 'json_schema_viewer_dialog.dart';
 import 'markdown_viewer_dialog.dart';
-import 'model_preferences_dialog.dart';
 
 /// Vue structurée à 3 onglets (« Arbre & Inspecteur », « Source YAML » via [CodeEditor],
 /// et « JSON Schema & Seed » avec [SpecJsonSchemaViewerView]).
@@ -266,15 +264,6 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                     runSpacing: 6,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      OutlinedButton.icon(
-                        key: const ValueKey('spec-objects-prefs-btn'),
-                        onPressed: () =>
-                            _editModelPreferencesDialog(context, project),
-                        icon: const Icon(Icons.tune_rounded, size: 16),
-                        label: Text(
-                          'Préférences du modèle (${project.businessObjectModelPreferences.formatCompactButtonSummary()})',
-                        ),
-                      ),
                       FilledButton.tonalIcon(
                         key: const ValueKey('spec-objects-add-root'),
                         onPressed: () => _editObjectDialog(context, project),
@@ -818,7 +807,10 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
   }
 
   Widget _buildJsonSchemaAndSeedTab(SpecForgeProject project) {
-    final bundle = SpecSuperDesignerExporter.toBundle(project);
+    final bundle = SpecSuperDesignerExporter.toBundle(
+      project,
+      modelPreferencesOverride: widget.controller.modelPreferences,
+    );
     final safeProject = _safeFileSlug(project.name);
     final safeId = _safeFileSlug(project.id);
     return SpecJsonSchemaViewerView(
@@ -1216,104 +1208,6 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
   static String _toCamel(String pascal) {
     if (pascal.isEmpty) return 'parent';
     return '${pascal[0].toLowerCase()}${pascal.substring(1)}';
-  }
-
-  Future<void> _editModelPreferencesDialog(
-    BuildContext context,
-    SpecForgeProject project,
-  ) async {
-    final current = project.businessObjectModelPreferences;
-    final saved = await showBusinessObjectModelPreferencesDialog(
-      context,
-      initialPreferences: current,
-      hasExistingObjects: project.businessObjects.isNotEmpty,
-    );
-    if (saved == null) return;
-
-    var updatedObjects = project.businessObjects;
-    if (saved.applyAttributeCaseToExisting || saved.applyEnumCaseToExisting) {
-      updatedObjects = _convertBusinessObjectCases(
-        project.businessObjects,
-        attributeCase: saved.applyAttributeCaseToExisting
-            ? saved.preferences.attributeCase
-            : null,
-        enumCase: saved.applyEnumCaseToExisting
-            ? saved.preferences.enumCase
-            : null,
-      );
-    }
-    if (saved.preferences != current ||
-        updatedObjects != project.businessObjects) {
-      await widget.controller.updateProject(
-        project.copyWith(
-          businessObjectModelPreferences: saved.preferences,
-          businessObjects: updatedObjects,
-        ),
-      );
-    }
-  }
-
-  List<BusinessObjectSpec> _convertBusinessObjectCases(
-    List<BusinessObjectSpec> objects, {
-    AttributeNamingCase? attributeCase,
-    EnumValueNamingCase? enumCase,
-  }) {
-    List<BusinessAttribute> convertAttrs(List<BusinessAttribute> list) {
-      final used = <String>{};
-      return [
-        for (final attr in list)
-          () {
-            final base = attributeCase != null
-                ? attributeCase.formatIdentifier(attr.name)
-                : attr.name;
-            var candidate = base;
-            var suffix = 2;
-            while (!used.add(candidate)) {
-              candidate = '${base}_$suffix';
-              suffix++;
-            }
-            final nextEnumValues =
-                enumCase != null && attr.enumValues.isNotEmpty
-                ? [for (final v in attr.enumValues) enumCase.formatValue(v)]
-                : attr.enumValues;
-            return attr.copyWith(
-              name: candidate,
-              enumValues: nextEnumValues,
-              children: attr.children.isEmpty
-                  ? const []
-                  : convertAttrs(attr.children),
-            );
-          }(),
-      ];
-    }
-
-    return [
-      for (final obj in objects)
-        obj.copyWith(
-          attributes: convertAttrs(obj.attributes),
-          relations: attributeCase == null
-              ? obj.relations
-              : [
-                  for (final rel in obj.relations)
-                    rel.copyWith(name: attributeCase.formatIdentifier(rel.name)),
-                ],
-          lifecycleStates: enumCase == null
-              ? obj.lifecycleStates
-              : [
-                  for (final st in obj.lifecycleStates)
-                    st.copyWith(name: enumCase.formatValue(st.name)),
-                ],
-          lifecycleTransitions: enumCase == null
-              ? obj.lifecycleTransitions
-              : [
-                  for (final tr in obj.lifecycleTransitions)
-                    tr.copyWith(
-                      fromState: enumCase.formatValue(tr.fromState),
-                      toState: enumCase.formatValue(tr.toState),
-                    ),
-                ],
-        ),
-    ];
   }
 
   Future<void> _normalizeAllIdentifiers(SpecForgeProject project) async {

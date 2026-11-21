@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
+import '../../models/company_glossary.dart';
 import '../../models/spec_forge_project.dart';
 import '../../models/spec_lexicon.dart';
 import '../../services/spec_forge_controller.dart';
@@ -44,32 +45,46 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Lexique métier (${lexicon.terms.length})',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Lexique métier (${lexicon.terms.length})',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
-                  Text(
-                    'Vocabulaire canonique partagé entre cadrage, cahier des charges, objets et règles.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+                ),
+                Text(
+                  'Vocabulaire canonique partagé entre cadrage, cahier des charges, objets et règles.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            FilledButton.tonalIcon(
-              key: const ValueKey('spec-lexicon-add-term'),
-              onPressed: () => _editTermDialog(context, project),
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('Nouveau terme'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const ValueKey('spec-lexicon-import-company-glossary'),
+                  onPressed: () => _importFromCompanyGlossary(context, project),
+                  icon: const Icon(Icons.language_rounded, size: 16),
+                  label: const Text('Importer glossaire d’entreprise'),
+                ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('spec-lexicon-add-term'),
+                  onPressed: () => _editTermDialog(context, project),
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Nouveau terme'),
+                ),
+              ],
             ),
           ],
         ),
@@ -139,6 +154,28 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
                                 ),
                             ],
                           ),
+                        ),
+                        IconButton(
+                          key: ValueKey('spec-lexicon-promote-${term.id}'),
+                          tooltip: 'Promouvoir vers le glossaire d’entreprise',
+                          icon: const Icon(Icons.publish_rounded, size: 18),
+                          onPressed: () async {
+                            final res = await widget.controller
+                                .promoteLexiconTermToCompanyGlossary(term);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.maybeOf(context)
+                              ?..hideCurrentSnackBar()
+                              ..showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    res.created
+                                        ? '« ${term.term} » ajouté au glossaire d’entreprise.'
+                                        : '« ${term.term} » mis à jour dans le glossaire d’entreprise.',
+                                  ),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                          },
                         ),
                         IconButton(
                           icon: const Icon(Icons.edit_outlined, size: 18),
@@ -265,6 +302,140 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
         ),
       ],
     );
+  }
+
+  Future<void> _importFromCompanyGlossary(
+    BuildContext context,
+    SpecForgeProject project,
+  ) async {
+    final glossary = widget.controller.companyGlossary;
+    if (glossary.terms.isEmpty && glossary.conventions.isEmpty) {
+      ScaffoldMessenger.maybeOf(context)
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Le glossaire d’entreprise est vide. Ajoutez des termes depuis l’onglet Design.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      return;
+    }
+
+    final existingNames = {
+      for (final t in project.lexicon.terms) t.term.trim().toLowerCase(),
+    };
+    final selectedIds = <String>{
+      for (final t in glossary.terms)
+        if (t.status != CompanyGlossaryStatus.deprecated &&
+            !existingNames.contains(t.term.trim().toLowerCase()))
+          t.id,
+    };
+    var overwriteExisting = false;
+    var includeConventions = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Importer depuis le glossaire d’entreprise'),
+          content: SizedBox(
+            width: 520,
+            height: 380,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cochez les termes d’entreprise à intégrer dans le lexique de « ${project.name} » :',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final t in glossary.terms)
+                        CheckboxListTile(
+                          dense: true,
+                          value: selectedIds.contains(t.id),
+                          title: Text(
+                            '${t.term} (${t.status.label})'
+                            '${existingNames.contains(t.term.trim().toLowerCase()) ? ' — déjà dans le projet' : ''}',
+                          ),
+                          subtitle: t.definition.isNotEmpty
+                              ? Text(
+                                  t.definition,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : null,
+                          onChanged: (checked) {
+                            setDialogState(() {
+                              if (checked == true) {
+                                selectedIds.add(t.id);
+                              } else {
+                                selectedIds.remove(t.id);
+                              }
+                            });
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 12),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: overwriteExisting,
+                  title: const Text('Mettre à jour les termes déjà présents'),
+                  onChanged: (v) =>
+                      setDialogState(() => overwriteExisting = v ?? false),
+                ),
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: includeConventions,
+                  title: const Text('Importer aussi les conventions d’entreprise'),
+                  onChanged: (v) =>
+                      setDialogState(() => includeConventions = v ?? false),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              key: const ValueKey('spec-lexicon-confirm-company-import'),
+              onPressed: selectedIds.isEmpty && !includeConventions
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: Text('Importer (${selectedIds.length})'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+    final res = await widget.controller.importCompanyGlossaryToProject(
+      termIds: selectedIds.toList(),
+      overwriteExisting: overwriteExisting,
+      includeConventions: includeConventions,
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Lexique mis à jour : +${res.added} terme(s), ${res.updated} mis à jour.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   Future<void> _addStringItem(

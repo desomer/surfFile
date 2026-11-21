@@ -5,6 +5,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'business_object_spec.dart';
+import 'technical_modeling_rule.dart';
 
 /// Convention de casse des noms d'attributs et relations générés par l'IA.
 enum AttributeNamingCase {
@@ -647,14 +648,241 @@ enum CurrencyRepresentation {
   }
 }
 
+/// Politique de suffixation des dates et horodatages.
+enum DateTimeSuffixPolicy {
+  /// Imposer `*At` pour `date-time` UTC et `*Date` pour `date` calendaire.
+  strictAtAndDate(
+    label: '*At (horodatage UTC) vs *Date (date calendaire)',
+    promptGuidance:
+        'Distinguer strictement `*At` (string format `date-time` en UTC ISO 8601) et `*Date` (string format `date` calendaire YYYY-MM-DD sans heure).',
+  ),
+
+  /// Laisser le nommage libre.
+  flexible(
+    label: 'Libre selon le contexte',
+    promptGuidance:
+        'Choisir le nom de date le plus naturel selon le métier tout en précisant le format `date` ou `date-time` UTC.',
+  );
+
+  const DateTimeSuffixPolicy({
+    required this.label,
+    required this.promptGuidance,
+  });
+
+  /// Libellé lisible.
+  final String label;
+
+  /// Directive IA.
+  final String promptGuidance;
+
+  /// Désérialise depuis JSON.
+  static DateTimeSuffixPolicy fromJson(Object? raw) {
+    if (raw is String) {
+      final needle = raw.trim().toLowerCase();
+      for (final v in DateTimeSuffixPolicy.values) {
+        if (v.name.toLowerCase() == needle) return v;
+      }
+    }
+    return DateTimeSuffixPolicy.strictAtAndDate;
+  }
+}
+
+/// Politique de préfixage des attributs booléens.
+enum BooleanPrefixPolicy {
+  /// Imposer `is*`, `has*`, `can*` (forme affirmative).
+  strictIsHasCan(
+    label: 'Strict : is* / has* / can* (sans négation)',
+    promptGuidance:
+        'Préfixer obligatoirement tous les booléens par `is`, `has` ou `can` (ou leur équivalent dans la langue choisie) à la forme affirmative, avec valeur par défaut explicite.',
+  ),
+
+  /// Préférer `is*` sans le bloquer.
+  preferIs(
+    label: 'Préférer is* lorsque naturel',
+    promptGuidance:
+        'Privilégier le préfixe `is` sur les booléens d’état (`isActive`, `isEnabled`) à la forme affirmative.',
+  ),
+
+  /// Libre.
+  free(
+    label: 'Libre',
+    promptGuidance: 'Nommer les booléens librement à la forme affirmative.',
+  );
+
+  const BooleanPrefixPolicy({
+    required this.label,
+    required this.promptGuidance,
+  });
+
+  /// Libellé lisible.
+  final String label;
+
+  /// Directive IA.
+  final String promptGuidance;
+
+  /// Désérialise depuis JSON.
+  static BooleanPrefixPolicy fromJson(Object? raw) {
+    if (raw is String) {
+      final needle = raw.trim().toLowerCase();
+      for (final v in BooleanPrefixPolicy.values) {
+        if (v.name.toLowerCase() == needle) return v;
+      }
+    }
+    return BooleanPrefixPolicy.strictIsHasCan;
+  }
+}
+
+/// Politique de représentation des unités et quantités physiques/temporelles.
+enum UnitSuffixPolicy {
+  /// Suffixe d'unité explicite (`*Cents`, `*Ms`, `*Kg`, `*Minutes`, `*Meters`).
+  explicitSuffix(
+    label: 'Suffixe d’unité explicite (*Ms, *Kg, *Cents…)',
+    promptGuidance:
+        'Suffixer systématiquement les mesures physiques, durées et grandeurs par leur unité explicite (`*Ms`, `*Seconds`, `*Kg`, `*Cents`, `*Km`, `*Count`) pour éviter toute ambiguïté.',
+  ),
+
+  /// Sous-objet `{ value, unit }`.
+  valueUnitObject(
+    label: 'Sous-objet structuré { value, unit }',
+    promptGuidance:
+        'Modéliser les grandeurs physiques multi-unités via un sous-objet `{ value, unit }` avec unité normalisée.',
+  ),
+
+  /// Libre.
+  free(
+    label: 'Libre (unité précisée en description)',
+    promptGuidance:
+        'Préciser systématiquement l’unité de mesure dans la description JSON Schema de l’attribut.',
+  );
+
+  const UnitSuffixPolicy({
+    required this.label,
+    required this.promptGuidance,
+  });
+
+  /// Libellé lisible.
+  final String label;
+
+  /// Directive IA.
+  final String promptGuidance;
+
+  /// Désérialise depuis JSON.
+  static UnitSuffixPolicy fromJson(Object? raw) {
+    if (raw is String) {
+      final needle = raw.trim().toLowerCase();
+      for (final v in UnitSuffixPolicy.values) {
+        if (v.name.toLowerCase() == needle) return v;
+      }
+    }
+    return UnitSuffixPolicy.explicitSuffix;
+  }
+}
+
+/// Stratégie de suppression logique (soft-delete) sur les agrégats racines.
+enum SoftDeleteStrategy {
+  /// Suppression logique non imposée.
+  none(
+    label: 'Non imposée (suppression physique ou selon besoin)',
+    promptGuidance: 'Ne pas ajouter de marqueur de soft-delete sauf besoin d’archivage explicite.',
+  ),
+
+  /// Champ `deletedAt` nullable.
+  deletedAtTimestamp(
+    label: 'Horodatage deletedAt (nullable)',
+    promptGuidance:
+        'Ajouter un champ `deletedAt` (`date-time`, `nullable: true`, `readOnly: true`) pour la suppression logique.',
+  ),
+
+  /// Indicateur `isDeleted`.
+  isDeletedFlag(
+    label: 'Booléen isDeleted (default: false)',
+    promptGuidance:
+        'Ajouter un champ `isDeleted` (`boolean`, `default: false`) pour la suppression logique.',
+  ),
+
+  /// Combinaison `isDeleted` + `deletedAt`.
+  both(
+    label: 'Complet : isDeleted + deletedAt',
+    promptGuidance:
+        'Ajouter `isDeleted` (`boolean`, `default: false`) et `deletedAt` (`date-time`, `nullable: true`) sur chaque agrégat racine.',
+  );
+
+  const SoftDeleteStrategy({
+    required this.label,
+    required this.promptGuidance,
+  });
+
+  /// Libellé lisible.
+  final String label;
+
+  /// Directive IA.
+  final String promptGuidance;
+
+  /// Désérialise depuis JSON.
+  static SoftDeleteStrategy fromJson(Object? raw) {
+    if (raw is String) {
+      final needle = raw.trim().toLowerCase();
+      for (final v in SoftDeleteStrategy.values) {
+        if (v.name.toLowerCase() == needle) return v;
+      }
+    }
+    return SoftDeleteStrategy.none;
+  }
+}
+
+/// Stratégie de verrouillage optimiste (concurrence d'écriture).
+enum OptimisticLockingStrategy {
+  /// Aucun champ de version imposé.
+  none(
+    label: 'Aucun champ de version imposé',
+    promptGuidance: 'Ne pas imposer de champ de concurrence optimiste sauf besoin explicite.',
+  ),
+
+  /// Entier incrémental `version`.
+  integerVersion(
+    label: 'Compteur entier version (>= 1)',
+    promptGuidance:
+        'Ajouter un champ `version` (`integer`, `minimum: 1`, `default: 1`, `readOnly: true`) pour la concurrence optimiste.',
+  ),
+
+  /// Chaîne `etag`.
+  etagString(
+    label: 'Jeton etag (string opaque)',
+    promptGuidance:
+        'Ajouter un champ `etag` (`string`, `readOnly: true`) pour le contrôle de concurrence optimiste.',
+  );
+
+  const OptimisticLockingStrategy({
+    required this.label,
+    required this.promptGuidance,
+  });
+
+  /// Libellé lisible.
+  final String label;
+
+  /// Directive IA.
+  final String promptGuidance;
+
+  /// Désérialise depuis JSON.
+  static OptimisticLockingStrategy fromJson(Object? raw) {
+    if (raw is String) {
+      final needle = raw.trim().toLowerCase();
+      for (final v in OptimisticLockingStrategy.values) {
+        if (v.name.toLowerCase() == needle) return v;
+      }
+    }
+    return OptimisticLockingStrategy.none;
+  }
+}
+
 /// Alias rétrocompatible vers [BusinessObjectModelPreferences].
 typedef BusinessObjectLanguageSettings = BusinessObjectModelPreferences;
 
-/// Ensemble unifié des préférences de modélisation, nommage, JSON Schema et conventions
-/// transmis au `Domain Modeler` et appliqués aux exporteurs JSON Schema / Seed.
+/// Ensemble unifié des préférences de modélisation, nommage, JSON Schema et dictionnaire
+/// de règles techniques transmis au `Domain Modeler` et appliqué aux exporteurs.
 @immutable
 class BusinessObjectModelPreferences {
-  /// Construit un jeu de préférences de modèle immuable.
+  /// Construit un jeu de préférences de modèle et règles techniques immuable.
   const BusinessObjectModelPreferences({
     this.attributeLanguage = 'en',
     this.enumLanguage = 'en',
@@ -672,6 +900,16 @@ class BusinessObjectModelPreferences {
     this.customLocaleLabel = '',
     this.currencyStyle = CurrencyRepresentation.decimal,
     this.customInstructions = '',
+    this.enforceIdRefCodeNumberDistinction = true,
+    this.dateTimeSuffixPolicy = DateTimeSuffixPolicy.strictAtAndDate,
+    this.booleanPrefixPolicy = BooleanPrefixPolicy.strictIsHasCan,
+    this.unitSuffixPolicy = UnitSuffixPolicy.explicitSuffix,
+    this.softDeleteStrategy = SoftDeleteStrategy.none,
+    this.optimisticLockingStrategy = OptimisticLockingStrategy.none,
+    this.defaultCodeMaxLength = 64,
+    this.defaultLabelMaxLength = 255,
+    this.defaultDescriptionMaxLength = 2000,
+    this.technicalRules = TechnicalModelingRule.defaultRules,
   });
 
   /// Préférences par défaut (`en` pour attributs & valeurs d'enum, `fr` pour les textes/exemples).
@@ -735,6 +973,36 @@ class BusinessObjectModelPreferences {
 
   /// Consignes libres complémentaires transmises à l'IA.
   final String customInstructions;
+
+  /// Impose la distinction stricte entre `*Id`, `*Ref`, `*Code`, `*Number` et `*Key`.
+  final bool enforceIdRefCodeNumberDistinction;
+
+  /// Convention de nommage des dates et horodatages (`*At` vs `*Date`).
+  final DateTimeSuffixPolicy dateTimeSuffixPolicy;
+
+  /// Convention de préfixage des booléens (`is*`, `has*`, `can*`).
+  final BooleanPrefixPolicy booleanPrefixPolicy;
+
+  /// Convention d'unités et quantités explicites.
+  final UnitSuffixPolicy unitSuffixPolicy;
+
+  /// Stratégie de suppression logique (soft-delete).
+  final SoftDeleteStrategy softDeleteStrategy;
+
+  /// Stratégie de verrouillage optimiste (`version` / `etag`).
+  final OptimisticLockingStrategy optimisticLockingStrategy;
+
+  /// Longueur maximale par défaut des codes/références courtes (`maxLength`).
+  final int defaultCodeMaxLength;
+
+  /// Longueur maximale par défaut des libellés/titres (`maxLength`).
+  final int defaultLabelMaxLength;
+
+  /// Longueur maximale par défaut des descriptions longues (`maxLength`).
+  final int defaultDescriptionMaxLength;
+
+  /// Catalogue des règles techniques détaillées du dictionnaire de modélisation.
+  final List<TechnicalModelingRule> technicalRules;
 
   /// Vrai si toutes les préférences sont aux valeurs par défaut.
   bool get isDefault => this == defaults;
@@ -806,12 +1074,33 @@ class BusinessObjectModelPreferences {
       )
       ..writeln('- Stratégie d’identifiant primaire : ${idStrategy.promptGuidance}')
       ..writeln('- Clés étrangères / références : ${foreignKeyStyle.promptGuidance}')
+      ..writeln(
+        enforceIdRefCodeNumberDistinction
+            ? '- Arbitrage Id / Ref / Code / Number / Key (IMPÉRATIF) : réserver `*Id` aux clés techniques opaques/relations internes, `*Ref` aux références externes inter-systèmes, `*Code` aux nomenclatures courtes normalisées, `*Number` aux numéros séquentiels métier/légaux et `*Key` aux clés d’idempotence/URL.'
+            : '- Arbitrage Id / Ref / Code / Number : souple selon le contexte métier.',
+      )
+      ..writeln('- Dates & horodatages : ${dateTimeSuffixPolicy.promptGuidance}')
+      ..writeln('- Booléens : ${booleanPrefixPolicy.promptGuidance}')
+      ..writeln('- Quantités & unités : ${unitSuffixPolicy.promptGuidance}')
       ..writeln('- Champs d’audit : ${auditPreset.promptGuidance}')
+      ..writeln('- Suppression logique (soft-delete) : ${softDeleteStrategy.promptGuidance}')
+      ..writeln('- Concurrence optimiste : ${optimisticLockingStrategy.promptGuidance}')
       ..writeln('- Rigueur JSON Schema : ${schemaStrictness.promptGuidance}')
+      ..writeln(
+        '- Bornes JSON Schema par défaut : codes/références <= $defaultCodeMaxLength car., libellés/noms <= $defaultLabelMaxLength car., descriptions <= $defaultDescriptionMaxLength car. (respecter <= 200 attributs/objet et <= 200 lignes/tableau imbriqué).',
+      )
       ..writeln('- Nullabilité : ${nullabilityStyle.promptGuidance}')
       ..writeln('- Style des relations : ${relationStyle.promptGuidance}')
       ..writeln('- $localeDesc')
       ..writeln('- Monétaire : ${currencyStyle.promptGuidance}');
+
+    final activeRules = technicalRules.where((r) => r.enabled).toList();
+    if (activeRules.isNotEmpty) {
+      buf.writeln('DICTIONNAIRE DE RÈGLES TECHNIQUES ACTIVES (${activeRules.length}) :');
+      for (final rule in activeRules) {
+        buf.writeln('  • ${rule.toPromptLine()}');
+      }
+    }
 
     if (customInstructions.trim().isNotEmpty) {
       buf.writeln('- Consignes complémentaires d’équipe : ${customInstructions.trim()}');
@@ -819,7 +1108,7 @@ class BusinessObjectModelPreferences {
     return buf.toString().trimRight();
   }
 
-  /// Valide la cohérence des préférences.
+  /// Valide la cohérence des préférences et règles techniques.
   void validate() {
     if (attributeLanguage.trim().isEmpty) {
       throw const FormatException(
@@ -835,6 +1124,20 @@ class BusinessObjectModelPreferences {
       throw const FormatException(
         'La langue des exemples, titres et descriptions ne peut pas être vide.',
       );
+    }
+    if (defaultCodeMaxLength < 4 ||
+        defaultLabelMaxLength < 8 ||
+        defaultDescriptionMaxLength < 16) {
+      throw const FormatException(
+        'Les longueurs maximales par défaut doivent être positives (code >= 4, libellé >= 8, description >= 16).',
+      );
+    }
+    final seenIds = <String>{};
+    for (final rule in technicalRules) {
+      rule.validate();
+      if (!seenIds.add(rule.id)) {
+        throw FormatException('Règle technique dupliquée : ${rule.id}');
+      }
     }
   }
 
@@ -856,6 +1159,16 @@ class BusinessObjectModelPreferences {
     String? customLocaleLabel,
     CurrencyRepresentation? currencyStyle,
     String? customInstructions,
+    bool? enforceIdRefCodeNumberDistinction,
+    DateTimeSuffixPolicy? dateTimeSuffixPolicy,
+    BooleanPrefixPolicy? booleanPrefixPolicy,
+    UnitSuffixPolicy? unitSuffixPolicy,
+    SoftDeleteStrategy? softDeleteStrategy,
+    OptimisticLockingStrategy? optimisticLockingStrategy,
+    int? defaultCodeMaxLength,
+    int? defaultLabelMaxLength,
+    int? defaultDescriptionMaxLength,
+    List<TechnicalModelingRule>? technicalRules,
   }) => BusinessObjectModelPreferences(
     attributeLanguage: (attributeLanguage ?? this.attributeLanguage).trim(),
     enumLanguage: (enumLanguage ?? this.enumLanguage).trim(),
@@ -875,6 +1188,22 @@ class BusinessObjectModelPreferences {
     customLocaleLabel: (customLocaleLabel ?? this.customLocaleLabel).trim(),
     currencyStyle: currencyStyle ?? this.currencyStyle,
     customInstructions: (customInstructions ?? this.customInstructions).trim(),
+    enforceIdRefCodeNumberDistinction:
+        enforceIdRefCodeNumberDistinction ??
+        this.enforceIdRefCodeNumberDistinction,
+    dateTimeSuffixPolicy: dateTimeSuffixPolicy ?? this.dateTimeSuffixPolicy,
+    booleanPrefixPolicy: booleanPrefixPolicy ?? this.booleanPrefixPolicy,
+    unitSuffixPolicy: unitSuffixPolicy ?? this.unitSuffixPolicy,
+    softDeleteStrategy: softDeleteStrategy ?? this.softDeleteStrategy,
+    optimisticLockingStrategy:
+        optimisticLockingStrategy ?? this.optimisticLockingStrategy,
+    defaultCodeMaxLength: defaultCodeMaxLength ?? this.defaultCodeMaxLength,
+    defaultLabelMaxLength: defaultLabelMaxLength ?? this.defaultLabelMaxLength,
+    defaultDescriptionMaxLength:
+        defaultDescriptionMaxLength ?? this.defaultDescriptionMaxLength,
+    technicalRules: List<TechnicalModelingRule>.unmodifiable(
+      technicalRules ?? this.technicalRules,
+    ),
   );
 
   /// Sérialise en JSON.
@@ -895,6 +1224,16 @@ class BusinessObjectModelPreferences {
     if (customLocaleLabel.isNotEmpty) 'customLocaleLabel': customLocaleLabel,
     'currencyStyle': currencyStyle.name,
     if (customInstructions.isNotEmpty) 'customInstructions': customInstructions,
+    'enforceIdRefCodeNumberDistinction': enforceIdRefCodeNumberDistinction,
+    'dateTimeSuffixPolicy': dateTimeSuffixPolicy.name,
+    'booleanPrefixPolicy': booleanPrefixPolicy.name,
+    'unitSuffixPolicy': unitSuffixPolicy.name,
+    'softDeleteStrategy': softDeleteStrategy.name,
+    'optimisticLockingStrategy': optimisticLockingStrategy.name,
+    'defaultCodeMaxLength': defaultCodeMaxLength,
+    'defaultLabelMaxLength': defaultLabelMaxLength,
+    'defaultDescriptionMaxLength': defaultDescriptionMaxLength,
+    'technicalRules': [for (final r in technicalRules) r.toJson()],
   };
 
   /// Désérialise depuis JSON (rétrocompatible avec l'ancien `businessObjectLanguageSettings`).
@@ -903,6 +1242,12 @@ class BusinessObjectModelPreferences {
     final attr = (raw['attributeLanguage'] as String?)?.trim() ?? '';
     final enumLang = (raw['enumLanguage'] as String?)?.trim() ?? '';
     final content = (raw['contentLanguage'] as String?)?.trim() ?? '';
+    final rawRules = raw['technicalRules'];
+    final parsedRules = rawRules is List
+        ? List<TechnicalModelingRule>.unmodifiable([
+            for (final item in rawRules) TechnicalModelingRule.fromJson(item),
+          ])
+        : TechnicalModelingRule.defaultRules;
     return BusinessObjectModelPreferences(
       attributeLanguage: attr.isEmpty ? 'en' : attr,
       enumLanguage: enumLang.isEmpty ? 'en' : enumLang,
@@ -923,6 +1268,33 @@ class BusinessObjectModelPreferences {
       customLocaleLabel: (raw['customLocaleLabel'] as String?)?.trim() ?? '',
       currencyStyle: CurrencyRepresentation.fromJson(raw['currencyStyle']),
       customInstructions: (raw['customInstructions'] as String?)?.trim() ?? '',
+      enforceIdRefCodeNumberDistinction:
+          raw['enforceIdRefCodeNumberDistinction'] is bool
+          ? raw['enforceIdRefCodeNumberDistinction'] as bool
+          : true,
+      dateTimeSuffixPolicy: DateTimeSuffixPolicy.fromJson(
+        raw['dateTimeSuffixPolicy'],
+      ),
+      booleanPrefixPolicy: BooleanPrefixPolicy.fromJson(
+        raw['booleanPrefixPolicy'],
+      ),
+      unitSuffixPolicy: UnitSuffixPolicy.fromJson(raw['unitSuffixPolicy']),
+      softDeleteStrategy: SoftDeleteStrategy.fromJson(
+        raw['softDeleteStrategy'],
+      ),
+      optimisticLockingStrategy: OptimisticLockingStrategy.fromJson(
+        raw['optimisticLockingStrategy'],
+      ),
+      defaultCodeMaxLength:
+          (raw['defaultCodeMaxLength'] as num?)?.toInt().clamp(4, 512) ?? 64,
+      defaultLabelMaxLength:
+          (raw['defaultLabelMaxLength'] as num?)?.toInt().clamp(8, 2048) ?? 255,
+      defaultDescriptionMaxLength:
+          (raw['defaultDescriptionMaxLength'] as num?)
+              ?.toInt()
+              .clamp(16, 20000) ??
+          2000,
+      technicalRules: parsedRules,
     );
   }
 
@@ -946,10 +1318,21 @@ class BusinessObjectModelPreferences {
           other.localeProfile == localeProfile &&
           other.customLocaleLabel == customLocaleLabel &&
           other.currencyStyle == currencyStyle &&
-          other.customInstructions == customInstructions;
+          other.customInstructions == customInstructions &&
+          other.enforceIdRefCodeNumberDistinction ==
+              enforceIdRefCodeNumberDistinction &&
+          other.dateTimeSuffixPolicy == dateTimeSuffixPolicy &&
+          other.booleanPrefixPolicy == booleanPrefixPolicy &&
+          other.unitSuffixPolicy == unitSuffixPolicy &&
+          other.softDeleteStrategy == softDeleteStrategy &&
+          other.optimisticLockingStrategy == optimisticLockingStrategy &&
+          other.defaultCodeMaxLength == defaultCodeMaxLength &&
+          other.defaultLabelMaxLength == defaultLabelMaxLength &&
+          other.defaultDescriptionMaxLength == defaultDescriptionMaxLength &&
+          listEquals(other.technicalRules, technicalRules);
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     attributeLanguage,
     enumLanguage,
     contentLanguage,
@@ -966,5 +1349,15 @@ class BusinessObjectModelPreferences {
     customLocaleLabel,
     currencyStyle,
     customInstructions,
-  );
+    enforceIdRefCodeNumberDistinction,
+    dateTimeSuffixPolicy,
+    booleanPrefixPolicy,
+    unitSuffixPolicy,
+    softDeleteStrategy,
+    optimisticLockingStrategy,
+    defaultCodeMaxLength,
+    defaultLabelMaxLength,
+    defaultDescriptionMaxLength,
+    Object.hashAll(technicalRules),
+  ]);
 }

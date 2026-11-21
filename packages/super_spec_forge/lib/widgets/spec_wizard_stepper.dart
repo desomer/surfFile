@@ -12,6 +12,7 @@ class SpecWizardStepper extends StatelessWidget {
   const SpecWizardStepper({
     required this.project,
     required this.onSelectStage,
+    this.onBack,
     this.disabled = false,
     super.key,
   });
@@ -21,6 +22,9 @@ class SpecWizardStepper extends StatelessWidget {
 
   /// Callback appelé lors du clic sur une étape.
   final ValueChanged<SpecForgeStage> onSelectStage;
+
+  /// Callback optionnel de retour vers le menu Spec.
+  final VoidCallback? onBack;
 
   /// Désactive le changement d'étape pendant une génération IA si souhaité.
   final bool disabled;
@@ -38,6 +42,15 @@ class SpecWizardStepper extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
+          if (onBack != null) ...[
+            OutlinedButton.icon(
+              key: const ValueKey('spec-subview-back-btn'),
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back_rounded, size: 16),
+              label: const Text('Spec'),
+            ),
+            const SizedBox(width: 12),
+          ],
           for (var i = 0; i < SpecForgeStage.values.length; i++) ...[
             if (i > 0)
               Padding(

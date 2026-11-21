@@ -8,8 +8,10 @@ import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
+import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/company_glossary.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
@@ -199,6 +201,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     required Future<void> Function(SpecForgeProject updated) onUpdateProject,
     required Future<void> Function(SpecForgeStage stage) onNavigateStage,
     required void Function(String? objectId) onFocusObject,
+    CompanyGlossary Function()? readCompanyGlossary,
+    BusinessObjectModelPreferences Function()? readModelPreferences,
   }) {
     final handlers = <String, VibeToolHandler>{
       'get_lexicon_and_synonyms': (call) async {
@@ -218,6 +222,14 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
                     t.definition.toLowerCase().contains(q) ||
                     t.synonyms.any((s) => s.toLowerCase().contains(q));
               }).toList();
+        final companyGlossary = readCompanyGlossary?.call();
+        final companyTerms = companyGlossary == null
+            ? const <CompanyGlossaryTerm>[]
+            : (q.isEmpty
+                  ? companyGlossary.terms
+                  : companyGlossary.terms
+                        .where((t) => t.matchesQuery(q))
+                        .toList());
         return VibeToolResult(
           callId: call.id,
           name: call.name,
@@ -226,6 +238,13 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             'terms': [for (final t in terms) t.toJson()],
             'ambiguousTerms': project.lexicon.ambiguousTerms,
             'conventions': project.lexicon.conventions,
+            if (companyGlossary != null && companyGlossary.hasContent)
+              'companyGlossary': <String, Object?>{
+                'termCount': companyTerms.length,
+                'terms': [for (final t in companyTerms) t.toJson()],
+                'conventions': companyGlossary.conventions,
+                'ambiguousTerms': companyGlossary.ambiguousTerms,
+              },
           },
         );
       },
@@ -419,7 +438,11 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             message: 'Aucun projet actif.',
           );
         }
-        final issues = SpecCoherenceAnalyzer.analyze(project);
+        final issues = SpecCoherenceAnalyzer.analyze(
+          project,
+          companyGlossary: readCompanyGlossary?.call(),
+          modelPreferences: readModelPreferences?.call(),
+        );
         final errorCount = issues
             .where((i) => i.severity == CoherenceSeverity.error)
             .length;

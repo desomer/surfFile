@@ -6,11 +6,12 @@ import 'package:material_ui/material_ui.dart';
 /// Élément de lien affiché sous forme de carte arrondie dans [DesignLinksView].
 @immutable
 class DesignLinkItem {
-  /// Crée un lien cliquable de la page Design.
+  /// Crée un lien cliquable de la page Design ou Spec.
   const DesignLinkItem({
     required this.id,
     required this.label,
     required this.icon,
+    this.subtitle,
     this.tooltip,
   });
 
@@ -22,6 +23,9 @@ class DesignLinkItem {
 
   /// Icône affichée à gauche du libellé.
   final IconData icon;
+
+  /// Sous-titre optionnel affiché sous [label].
+  final String? subtitle;
 
   /// Info-bulle optionnelle au survol.
   final String? tooltip;
@@ -49,23 +53,52 @@ class DesignLinkSection {
 
 /// Vue principale de l'onglet Design présentant des sections repliables de cartes-liens.
 class DesignLinksView extends StatefulWidget {
-  /// Crée la page de liens Design.
+  /// Crée la page de liens Design (ou Spec via [keyPrefix]).
   const DesignLinksView({
     this.sections = defaultSections,
     this.onLinkTap,
+    this.keyPrefix = 'design',
     super.key,
   });
 
-  /// Sections par défaut (concepteur backend, puis urbaniste & architecte).
+  /// Sections par défaut (urbaniste & architecte, puis concepteur backend).
   static const List<DesignLinkSection> defaultSections = <DesignLinkSection>[
+    DesignLinkSection(
+      id: 'urban_planner_architect',
+      title: 'Pour l’urbaniste & architecte',
+      items: <DesignLinkItem>[
+        DesignLinkItem(
+          id: 'domain_management',
+          label: 'Gestion des domaines',
+          icon: Icons.domain_rounded,
+        ),
+        DesignLinkItem(
+          id: 'systems_services',
+          label: 'Systèmes & Services',
+          icon: Icons.apps_rounded,
+        ),
+        DesignLinkItem(
+          id: 'system_flow_maps',
+          label: 'Cartes des flux système',
+          icon: Icons.account_tree_outlined,
+        ),
+        DesignLinkItem(
+          id: 'expert_ai_chat',
+          label: 'Discuter avec l’IA experte',
+          icon: Icons.chat_bubble_outline_rounded,
+        ),
+      ],
+    ),
     DesignLinkSection(
       id: 'backend_designer',
       title: 'Pour le concepteur backend',
       items: <DesignLinkItem>[
         DesignLinkItem(
-          id: 'company_glossary',
-          label: 'Glossaire d’entreprise',
-          icon: Icons.language_rounded,
+          id: 'modeling_dictionary',
+          label: 'Dictionnaire technique & Modèle',
+          icon: Icons.rule_folder_outlined,
+          tooltip:
+              'Règles techniques (Id, Ref, Code, Number, dates, booléens) et préférences globales de modélisation',
         ),
         DesignLinkItem(
           id: 'models_contracts',
@@ -94,27 +127,6 @@ class DesignLinksView extends StatefulWidget {
         ),
       ],
     ),
-    DesignLinkSection(
-      id: 'urban_planner_architect',
-      title: 'Pour l’urbaniste & architecte',
-      items: <DesignLinkItem>[
-        DesignLinkItem(
-          id: 'systems_services',
-          label: 'Systèmes & Services',
-          icon: Icons.apps_rounded,
-        ),
-        DesignLinkItem(
-          id: 'system_flow_maps',
-          label: 'Cartes des flux système',
-          icon: Icons.account_tree_outlined,
-        ),
-        DesignLinkItem(
-          id: 'expert_ai_chat',
-          label: 'Discuter avec l’IA experte',
-          icon: Icons.chat_bubble_outline_rounded,
-        ),
-      ],
-    ),
   ];
 
   /// Sections à afficher sur la page.
@@ -124,6 +136,9 @@ class DesignLinksView extends StatefulWidget {
   ///
   /// S'il est omis, un [SnackBar] de retour visuel est affiché.
   final ValueChanged<DesignLinkItem>? onLinkTap;
+
+  /// Préfixe utilisé pour les [ValueKey] des en-têtes de section et cartes.
+  final String keyPrefix;
 
   @override
   State<DesignLinksView> createState() => _DesignLinksViewState();
@@ -192,7 +207,7 @@ class _DesignLinksViewState extends State<DesignLinksView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          key: ValueKey('design-section-header-${section.id}'),
+          key: ValueKey('${widget.keyPrefix}-section-header-${section.id}'),
           onTap: () => _toggleSection(section.id),
           borderRadius: BorderRadius.circular(10),
           child: Padding(
@@ -238,6 +253,7 @@ class _DesignLinksViewState extends State<DesignLinksView> {
                       for (final item in section.items)
                         _DesignLinkPillCard(
                           item: item,
+                          keyPrefix: widget.keyPrefix,
                           onTap: () => _handleItemTap(context, item),
                         ),
                     ],
@@ -252,10 +268,12 @@ class _DesignLinksViewState extends State<DesignLinksView> {
 class _DesignLinkPillCard extends StatefulWidget {
   const _DesignLinkPillCard({
     required this.item,
+    required this.keyPrefix,
     required this.onTap,
   });
 
   final DesignLinkItem item;
+  final String keyPrefix;
   final VoidCallback onTap;
 
   @override
@@ -329,7 +347,7 @@ class _DesignLinkPillCardState extends State<_DesignLinkPillCard> {
         child: Material(
           type: MaterialType.transparency,
           child: InkWell(
-            key: ValueKey('design-link-${widget.item.id}'),
+            key: ValueKey('${widget.keyPrefix}-link-${widget.item.id}'),
             borderRadius: BorderRadius.circular(18),
             onTap: widget.onTap,
             child: Padding(
@@ -343,17 +361,45 @@ class _DesignLinkPillCardState extends State<_DesignLinkPillCard> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      widget.item.label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                        height: 1.25,
-                        color: colors.onSurface,
-                      ),
-                    ),
+                    child: widget.item.subtitle == null
+                        ? Text(
+                            widget.item.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13.5,
+                              height: 1.25,
+                              color: colors.onSurface,
+                            ),
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.item.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
+                                  height: 1.25,
+                                  color: colors.onSurface,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.item.subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontSize: 11.5,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                   const SizedBox(width: 8),
                   Icon(

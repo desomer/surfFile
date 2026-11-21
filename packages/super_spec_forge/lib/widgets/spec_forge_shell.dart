@@ -7,9 +7,12 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
+import 'design/company_glossary_view.dart';
+import 'design/model_dictionary_view.dart';
 import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
+import 'spec_links_view.dart';
 import 'spec_split_handle.dart';
 import 'spec_wizard_stepper.dart';
 import 'stage_ai_chat_pane.dart';
@@ -57,6 +60,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   double _chatPaneFraction = 0.50;
   double _chatDragOffset = SpecSplitHandle.width / 2;
   int _selectedRailIndex = 0;
+  String? _activeSpecLinkId;
+  String? _activeDesignLinkId;
 
   void _cycleChatPaneSize() {
     setState(() {
@@ -128,12 +133,6 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                       ? widget.controller.redo
                       : null,
                 ),
-                const SizedBox(width: 4),
-                TextButton.icon(
-                  onPressed: widget.controller.closeProject,
-                  icon: const Icon(Icons.folder_open_rounded, size: 18),
-                  label: const Text('Projets'),
-                ),
               ],
               const SizedBox(width: 12),
             ],
@@ -145,8 +144,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                 selectedIndex: _selectedRailIndex < 3
                     ? _selectedRailIndex
                     : null,
-                onDestinationSelected: (index) =>
-                    setState(() => _selectedRailIndex = index),
+                onDestinationSelected: (index) => setState(() {
+                  if (index == 0 && _selectedRailIndex == 0) {
+                    _activeSpecLinkId = null;
+                  }
+                  _selectedRailIndex = index;
+                }),
                 labelType: NavigationRailLabelType.all,
                 minWidth: 64,
                 backgroundColor: colors.surfaceContainerLow,
@@ -199,17 +202,19 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
               const VerticalDivider(width: 1, thickness: 1),
               Expanded(
                 child: switch (_selectedRailIndex) {
-                  0 => _buildSpecContent(project, colors),
-                  1 => const DesignLinksView(
-                    key: ValueKey('spec-forge-design-view'),
-                  ),
+                  0 => _buildSpecContent(context, project, colors),
+                  1 => _buildDesignContent(context),
                   2 => const SizedBox.shrink(
                     key: ValueKey('spec-forge-build-empty'),
                   ),
                   _ => GlobalQuestionChatPane(
                     controller: widget.controller,
-                    onNavigateToSpec: () =>
-                        setState(() => _selectedRailIndex = 0),
+                    onNavigateToSpec: () => setState(() {
+                      _selectedRailIndex = 0;
+                      _activeSpecLinkId = widget.controller.project != null
+                          ? 'wizard'
+                          : null;
+                    }),
                     pickAttachments: widget.pickAttachments,
                     pasteAttachments: widget.pasteAttachments,
                     hasClipboardMedia: widget.hasClipboardMedia,
@@ -224,14 +229,96 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     );
   }
 
-  Widget _buildSpecContent(SpecForgeProject? project, ColorScheme colors) {
-    if (project == null) {
-      return IdeaLauncherView(controller: widget.controller);
+  Widget _buildDesignContent(BuildContext context) {
+    if (_activeDesignLinkId == 'modeling_dictionary') {
+      return ModelDictionaryView(
+        controller: widget.controller,
+        onBack: () => setState(() => _activeDesignLinkId = null),
+        pickAttachments: widget.pickAttachments,
+      );
     }
+    return DesignLinksView(
+      key: const ValueKey('spec-forge-design-view'),
+      onLinkTap: (item) {
+        if (item.id == 'modeling_dictionary') {
+          setState(() => _activeDesignLinkId = item.id);
+          return;
+        }
+        ScaffoldMessenger.maybeOf(context)
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text('${item.label} — bientôt disponible'),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      },
+    );
+  }
+
+  Widget _buildSpecContent(
+    BuildContext context,
+    SpecForgeProject? project,
+    ColorScheme colors,
+  ) {
+    if (_activeSpecLinkId == 'company_glossary') {
+      return CompanyGlossaryView(
+        controller: widget.controller,
+        onBack: () => setState(() => _activeSpecLinkId = null),
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
+      );
+    }
+    if (_activeSpecLinkId == 'projects') {
+      return IdeaLauncherView(
+        controller: widget.controller,
+        onBack: () => setState(() => _activeSpecLinkId = null),
+        onProjectActivated: () => setState(() => _activeSpecLinkId = 'wizard'),
+      );
+    }
+    if (_activeSpecLinkId == 'wizard' && project != null) {
+      return _buildSpecWizard(project, colors);
+    }
+    return SpecLinksView(
+      key: const ValueKey('spec-forge-spec-menu-view'),
+      activeProject: project,
+      recentProjectsCount: widget.controller.recentProjects.length,
+      companyGlossaryTermsCount: widget.controller.companyGlossary.terms.length,
+      onLinkTap: (item) {
+        if (item.id == 'projects' || item.id == 'company_glossary') {
+          setState(() => _activeSpecLinkId = item.id);
+          return;
+        }
+        if (item.id == 'wizard') {
+          if (project != null) {
+            setState(() => _activeSpecLinkId = 'wizard');
+            return;
+          }
+          ScaffoldMessenger.maybeOf(context)
+            ?..hideCurrentSnackBar()
+            ..showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Aucun projet actif — ouvrez ou créez un projet dans Projets',
+                ),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+        }
+      },
+    );
+  }
+
+  Widget _buildSpecWizard(SpecForgeProject project, ColorScheme colors) {
     return Column(
       children: [
         SpecWizardStepper(
           project: project,
+          onBack: () => setState(() => _activeSpecLinkId = null),
           disabled: widget.controller.isSending,
           onSelectStage: (stage) => widget.controller.goToStage(
             stage,
