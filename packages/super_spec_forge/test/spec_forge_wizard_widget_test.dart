@@ -563,14 +563,27 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
 
-      // 1. SuperTreeView affiche l'objet racine et ses sous-nœuds alignés en haut.
+      // 1. La ListView des repositories affiche Facture dépliée avec son SuperTreeView aligné en haut.
       expect(find.text('Arbre & Inspecteur'), findsOneWidget);
       expect(find.text('Arbre & Inspecteur (SuperTreeView)'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-listview')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_facture')),
+        findsOneWidget,
+      );
+      expect(find.text('Repositories (1)'), findsOneWidget);
+      expect(find.text('Agrégat'), findsOneWidget);
+      expect(find.text('Valide'), findsOneWidget);
       expect(find.byType(SuperTreeView), findsOneWidget);
-      final treeTop = tester.getTopLeft(find.byType(SuperTreeView)).dy;
+      final repoPaneTop = tester
+          .getTopLeft(find.byKey(const ValueKey('spec-objects-tree-pane')))
+          .dy;
       final tabViewTop = tester.getTopLeft(find.byType(TabBarView)).dy;
-      expect((treeTop - tabViewTop).abs(), lessThan(4.0));
-      expect(find.text('Facture (Facture)'), findsNWidgets(2));
+      expect((repoPaneTop - tabViewTop).abs(), lessThan(4.0));
+      expect(find.text('Facture (Facture)'), findsOneWidget);
       expect(find.text('adresseFacturation'), findsAtLeastNWidgets(1));
       expect(find.text('lignes'), findsAtLeastNWidgets(1));
       expect(find.text('5 / 200 attributs'), findsOneWidget);
@@ -579,7 +592,7 @@ void main() {
       await tester.tap(
         find.byKey(
           const ValueKey(
-            'super-tree-row-spec-objects-tree-nodes[0].children[2]',
+            'super-tree-row-spec-objects-tree-obj_facture-nodes[2]',
           ),
         ),
       );
@@ -1215,7 +1228,7 @@ Facture:
       await tester.tap(
         find.byKey(
           const ValueKey(
-            'super-tree-row-spec-objects-tree-nodes[0].children[0]',
+            'super-tree-row-spec-objects-tree-obj_article-nodes[0]',
           ),
         ),
       );
@@ -1502,7 +1515,7 @@ Facture:
 
       final rowFinder = find.byKey(
         const ValueKey(
-          'super-tree-row-spec-objects-tree-nodes[0].children[0]',
+          'super-tree-row-spec-objects-tree-obj_produit-nodes[0]',
         ),
       );
       expect(rowFinder, findsOneWidget);
@@ -1514,7 +1527,12 @@ Facture:
       await gesture.addPointer(location: Offset.zero);
       await tester.pump();
       await gesture.moveTo(tester.getCenter(rowFinder));
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 1500));
+      expect(
+        find.byKey(const ValueKey('spec-tree-node-tooltip-card')),
+        findsNothing,
+      );
+      await tester.pump(const Duration(milliseconds: 600));
       await tester.pumpAndSettle();
 
       expect(
@@ -2555,6 +2573,574 @@ Facture:
         find.text('« Bon de livraison » mis à jour dans le glossaire d’entreprise.'),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    'Arbre & Inspecteur : ListView de repositories dépliables (1er déplié, badges Agrégat/Entité liée et sélection)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion des commandes',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_commande',
+              name: 'Commande Client',
+              technicalName: 'CommandeClient',
+              aggregateRoot: true,
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_ref',
+                  name: 'referenceCommande',
+                  type: BusinessAttributeType.string,
+                  required: true,
+                ),
+              ],
+            ),
+            BusinessObjectSpec(
+              id: 'obj_ligne',
+              name: 'Ligne Commande',
+              technicalName: 'LigneCommande',
+              aggregateRoot: false,
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_qte',
+                  name: 'quantiteLigne',
+                  type: BusinessAttributeType.integer,
+                  required: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      // 1. Les deux repositories apparaissent avec leurs alias et badges Agrégat / Entité liée.
+      expect(find.text('Repositories (2)'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_commande')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-objects-repo-tile-obj_ligne')),
+        findsOneWidget,
+      );
+      expect(find.text('commande_client · CommandeClient'), findsOneWidget);
+      expect(find.text('ligne_commande · LigneCommande'), findsOneWidget);
+      expect(find.text('Agrégat'), findsOneWidget);
+      expect(find.text('Entité liée'), findsOneWidget);
+      expect(find.text('Valide'), findsNWidgets(2));
+
+      // 2. Seul le premier repository est déplié par défaut (mode un seul objet ouvert = true).
+      expect(controller.modelPreferences.singleExpandedBusinessObject, isTrue);
+      expect(find.byKey(const ValueKey('spec-objects-expand-all')), findsNothing);
+      expect(find.byType(SuperTreeView), findsOneWidget);
+      expect(find.text('referenceCommande'), findsAtLeastNWidgets(1));
+      expect(find.text('quantiteLigne'), findsNothing);
+      expect(find.text('Commande Client (CommandeClient)'), findsOneWidget);
+
+      // 3. Dépliage du second repository via son bouton chevron -> replie automatiquement le premier.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-repo-toggle-obj_ligne')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SuperTreeView), findsOneWidget);
+      expect(find.text('quantiteLigne'), findsAtLeastNWidgets(1));
+      expect(
+        find.byKey(
+          const ValueKey(
+            'super-tree-row-spec-objects-tree-obj_commande-nodes[0]',
+          ),
+        ),
+        findsNothing,
+      );
+
+      // 4. Sélection de l'attribut `quantiteLigne` dans le second SuperTreeView -> inspecteur d'attribut.
+      await tester.tap(
+        find.byKey(
+          const ValueKey('super-tree-row-spec-objects-tree-obj_ligne-nodes[0]'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('quantiteLigne'), findsAtLeastNWidgets(2));
+      expect(find.text('LigneCommande'), findsOneWidget);
+
+      // 5. Désactivation de l'option -> plusieurs objets peuvent être dépliés simultanément.
+      await controller.updateModelPreferences(
+        controller.modelPreferences.copyWith(
+          singleExpandedBusinessObject: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-objects-expand-all')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('spec-objects-repo-toggle-obj_commande')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SuperTreeView), findsNWidgets(2));
+      expect(find.text('referenceCommande'), findsAtLeastNWidgets(1));
+      expect(find.text('quantiteLigne'), findsAtLeastNWidgets(1));
+
+      // 6. Réactivation de l'option -> ne conserve qu'un seul objet métier ouvert.
+      await controller.updateModelPreferences(
+        controller.modelPreferences.copyWith(
+          singleExpandedBusinessObject: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SuperTreeView), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Préférences du modèle : option un seul objet métier ouvert (défaut true) dans le dialogue et JSON',
+    (WidgetTester tester) async {
+      final prefsJson = BusinessObjectModelPreferences.defaults.toJson();
+      expect(prefsJson['singleExpandedBusinessObject'], isTrue);
+      final parsedFalse = BusinessObjectModelPreferences.fromJson({
+        ...prefsJson,
+        'singleExpandedBusinessObject': false,
+      });
+      expect(parsedFalse.singleExpandedBusinessObject, isFalse);
+
+      ModelPreferencesDialogResult? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  result = await showBusinessObjectModelPreferencesDialog(
+                    context,
+                    initialPreferences: BusinessObjectModelPreferences.defaults,
+                    hasExistingObjects: false,
+                  );
+                },
+                child: const Text('Ouvrir'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Ouvrir'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Schéma & Relations'));
+      await tester.pumpAndSettle();
+
+      final switchFinder = find.byKey(
+        const ValueKey('spec-objects-single-expanded-switch'),
+      );
+      await tester.drag(
+        find.byKey(const ValueKey('spec-objects-relation-style-dropdown')),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+      expect(switchFinder, findsOneWidget);
+      expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
+
+      await tester.tap(switchFinder);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-objects-prefs-save')));
+      await tester.pumpAndSettle();
+
+      expect(result, isNotNull);
+      expect(result!.preferences.singleExpandedBusinessObject, isFalse);
+    },
+  );
+
+  testWidgets(
+    'Arbre & Inspecteur : en-têtes de repositories sticky en SliverMainAxisGroup lors du scroll',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Inventaire détaillé',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_article_long',
+              name: 'Article Long',
+              technicalName: 'ArticleLong',
+              aggregateRoot: true,
+              attributes: [
+                for (var i = 0; i < 30; i++)
+                  BusinessAttribute(
+                    id: 'a_long_$i',
+                    name: 'champ_$i',
+                    type: BusinessAttributeType.string,
+                  ),
+              ],
+            ),
+            BusinessObjectSpec(
+              id: 'obj_depot',
+              name: 'Dépôt',
+              technicalName: 'Depot',
+              aggregateRoot: true,
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_dep',
+                  name: 'codeDepot',
+                  type: BusinessAttributeType.string,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      final scrollFinder = find.byKey(
+        const ValueKey('spec-objects-repo-listview'),
+      );
+      expect(tester.widget(scrollFinder), isA<CustomScrollView>());
+      final headerFinder = find.byKey(
+        const ValueKey('spec-objects-repo-tile-obj_article_long'),
+      );
+      final initialTop = tester.getTopLeft(headerFinder).dy;
+
+      // Scroll modéré dans le premier repository : son en-tête reste épinglé en haut.
+      await tester.drag(scrollFinder, const Offset(0, -250));
+      await tester.pumpAndSettle();
+      expect(headerFinder, findsOneWidget);
+      expect(
+        (tester.getTopLeft(headerFinder).dy - initialTop).abs(),
+        lessThan(1.0),
+      );
+    },
+  );
+
+  testWidgets(
+    'Attribut enum : tableau avec x-enumNames et x-enumDescriptions dans l’inspecteur, le dialogue et le JSON Schema',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Workflow demandes',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_demande',
+              name: 'Demande',
+              technicalName: 'Demande',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_statut',
+                  name: 'statut',
+                  type: BusinessAttributeType.enumeration,
+                  required: true,
+                  enumValues: const ['pending', 'approved'],
+                  schemaConstraints: JsonSchemaConstraints(
+                    extraKeywords: const {
+                      'x-enumNames': ['En attente', 'Approuvée'],
+                      'x-enumDescriptions': [
+                        'La demande n’a pas encore été traitée',
+                        'La demande a été validée',
+                      ],
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      // 1. Sélection de l'attribut `statut` -> tableau enum affiché dans l'inspecteur.
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'super-tree-row-spec-objects-tree-obj_demande-nodes[0]',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-enum-table')),
+        findsOneWidget,
+      );
+      expect(find.text('En attente'), findsOneWidget);
+      expect(find.text('Approuvée'), findsOneWidget);
+      expect(
+        find.text('La demande n’a pas encore été traitée'),
+        findsOneWidget,
+      );
+      expect(find.text('La demande a été validée'), findsOneWidget);
+
+      // 2. Ouvre le dialogue d'édition -> tableau éditable avec ajout d'un 3e choix.
+      await tester.tap(find.byTooltip('Modifier'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-attr-enum-table')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-attr-enum-add-row')));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('spec-attr-enum-value-2')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-attr-enum-value-2')),
+        'refused',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('spec-attr-enum-name-2')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-attr-enum-name-2')),
+        'Refusée',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('spec-attr-enum-desc-2')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('spec-attr-enum-desc-2')),
+        'La demande a été refusée',
+      );
+
+      await tester.tap(find.byKey(const ValueKey('spec-attr-save-btn')));
+      await tester.pumpAndSettle();
+
+      final errFinder = find.byKey(
+        const ValueKey('spec-attr-validation-error'),
+      );
+      if (errFinder.evaluate().isNotEmpty) {
+        final errText = tester
+            .widget<Text>(
+              find.descendant(of: errFinder, matching: find.byType(Text)),
+            )
+            .data;
+        fail('Validation error in dialog: $errText');
+      }
+      expect(find.byKey(const ValueKey('spec-attr-save-btn')), findsNothing);
+
+      final savedAttr =
+          controller.project!.businessObjects.single.attributes.single;
+      expect(savedAttr.enumValues, ['pending', 'approved', 'refused']);
+      expect(savedAttr.schemaConstraints.enumNames, [
+        'En attente',
+        'Approuvée',
+        'Refusée',
+      ]);
+      expect(savedAttr.schemaConstraints.enumDescriptions, [
+        'La demande n’a pas encore été traitée',
+        'La demande a été validée',
+        'La demande a été refusée',
+      ]);
+
+      final jsonSchema = SpecSuperDesignerExporter.attributeToJsonSchema(
+        savedAttr,
+      );
+      expect(jsonSchema['enum'], ['pending', 'approved', 'refused']);
+      expect(jsonSchema['x-enumNames'], ['En attente', 'Approuvée', 'Refusée']);
+      expect(jsonSchema['x-enumDescriptions'], [
+        'La demande n’a pas encore été traitée',
+        'La demande a été validée',
+        'La demande a été refusée',
+      ]);
+      expect(find.text('Refusée'), findsOneWidget);
+      expect(find.text('La demande a été refusée'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Extensions x-mask et x-searchable : édition dans les propriétés, affichage inspecteur et consignes IA',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final agent = SpecStageAgent.forStage(SpecForgeStage.businessObjects);
+      expect(agent.systemInstruction, contains('x-enumNames'));
+      expect(agent.systemInstruction, contains('x-enumDescriptions'));
+      expect(agent.systemInstruction, contains('x-mask'));
+      expect(agent.systemInstruction, contains('x-searchable'));
+      expect(agent.systemInstruction, contains('x-database-index'));
+      expect(agent.patchSchemaGuide, contains('"x-mask"'));
+      expect(agent.patchSchemaGuide, contains('"x-searchable"'));
+      expect(agent.patchSchemaGuide, contains('"x-database-index"'));
+      expect(agent.patchSchemaGuide, contains('"x-enumNames"'));
+      expect(agent.patchSchemaGuide, contains('"x-enumDescriptions"'));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion parc',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.businessObjects,
+          businessObjects: [
+            BusinessObjectSpec(
+              id: 'obj_vehicule',
+              name: 'Véhicule',
+              technicalName: 'Vehicule',
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_plaque',
+                  name: 'immatriculation',
+                  type: BusinessAttributeType.string,
+                  required: true,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'super-tree-row-spec-objects-tree-obj_vehicule-nodes[0]',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Modifier'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Contraintes JSON Schema'));
+      await tester.pumpAndSettle();
+
+      final maskField = find.byKey(const ValueKey('spec-attr-x-mask-field'));
+      await tester.ensureVisible(maskField);
+      await tester.pumpAndSettle();
+      await tester.enterText(maskField, 'UU-###-UU');
+
+      final searchDropdown = find.byKey(
+        const ValueKey('spec-attr-x-searchable-dropdown'),
+      );
+      await tester.ensureVisible(searchDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(searchDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Recherchable (true)').last);
+      await tester.pumpAndSettle();
+
+      final dbIndexDropdown = find.byKey(
+        const ValueKey('spec-attr-x-database-index-dropdown'),
+      );
+      await tester.ensureVisible(dbIndexDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(dbIndexDropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Indexé en base (true)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('spec-attr-save-btn')));
+      await tester.pumpAndSettle();
+
+      final saved =
+          controller.project!.businessObjects.single.attributes.single;
+      expect(saved.schemaConstraints.xMask, 'UU-###-UU');
+      expect(saved.schemaConstraints.xSearchable, isTrue);
+      expect(saved.schemaConstraints.xDatabaseIndex, isTrue);
+
+      final schema = SpecSuperDesignerExporter.attributeToJsonSchema(saved);
+      expect(schema['x-mask'], 'UU-###-UU');
+      expect(schema['x-searchable'], isTrue);
+      expect(schema['x-database-index'], isTrue);
+
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-x-mask')),
+        findsOneWidget,
+      );
+      expect(find.text('x-mask: UU-###-UU'), findsAtLeastNWidgets(1));
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-x-searchable')),
+        findsOneWidget,
+      );
+      expect(find.text('x-searchable: true'), findsAtLeastNWidgets(1));
+      expect(
+        find.byKey(const ValueKey('spec-attr-inspector-x-database-index')),
+        findsOneWidget,
+      );
+      expect(find.text('x-database-index: true'), findsAtLeastNWidgets(1));
     },
   );
 }

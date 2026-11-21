@@ -176,7 +176,7 @@ class _BusinessAttributeEditorDialogState
   // Onglet 1 : Général
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _enumCtrl;
+  final List<_EnumChoiceRow> _enumRows = <_EnumChoiceRow>[];
   late final TextEditingController _defaultCtrl;
   late final TextEditingController _maxRowsCtrl;
   late final TextEditingController _freeConstraintsCtrl;
@@ -194,6 +194,7 @@ class _BusinessAttributeEditorDialogState
   late final TextEditingController _formatCtrl;
   late final TextEditingController _contentMediaCtrl;
   late final TextEditingController _contentEncCtrl;
+  late final TextEditingController _xMaskCtrl;
 
   late final TextEditingController _minItemsCtrl;
   late final TextEditingController _maxItemsCtrl;
@@ -224,6 +225,8 @@ class _BusinessAttributeEditorDialogState
   late bool _deprecated;
   late bool _hasConst;
   bool? _additionalPropertiesBool; // null = non spécifié, true, false
+  bool? _xSearchable; // null = non spécifié, true, false
+  bool? _xDatabaseIndex; // null = non spécifié, true, false
 
   String? _validationError;
 
@@ -235,7 +238,21 @@ class _BusinessAttributeEditorDialogState
 
     _nameCtrl = TextEditingController(text: ex?.name ?? '');
     _descCtrl = TextEditingController(text: ex?.description ?? '');
-    _enumCtrl = TextEditingController(text: ex?.enumValues.join(', ') ?? '');
+    final exValues = ex?.enumValues ?? const <String>[];
+    final exNames = sc.enumNames;
+    final exDescs = sc.enumDescriptions;
+    for (var i = 0; i < exValues.length; i++) {
+      _enumRows.add(
+        _EnumChoiceRow(
+          value: exValues[i],
+          name: i < exNames.length ? exNames[i] : '',
+          description: i < exDescs.length ? exDescs[i] : '',
+        ),
+      );
+    }
+    if ((ex?.type == BusinessAttributeType.enumeration) && _enumRows.isEmpty) {
+      _enumRows.add(_EnumChoiceRow());
+    }
     _defaultCtrl = TextEditingController(text: ex?.defaultValue ?? '');
     _maxRowsCtrl = TextEditingController(
       text: ex?.estimatedMaxRows?.toString() ?? '',
@@ -260,6 +277,7 @@ class _BusinessAttributeEditorDialogState
     _formatCtrl = TextEditingController(text: sc.format ?? '');
     _contentMediaCtrl = TextEditingController(text: sc.contentMediaType ?? '');
     _contentEncCtrl = TextEditingController(text: sc.contentEncoding ?? '');
+    _xMaskCtrl = TextEditingController(text: sc.xMask ?? '');
 
     _minItemsCtrl = TextEditingController(text: sc.minItems?.toString() ?? '');
     _maxItemsCtrl = TextEditingController(text: sc.maxItems?.toString() ?? '');
@@ -301,6 +319,8 @@ class _BusinessAttributeEditorDialogState
     _additionalPropertiesBool = sc.additionalProperties is bool
         ? sc.additionalProperties as bool
         : null;
+    _xSearchable = sc.xSearchable;
+    _xDatabaseIndex = sc.xDatabaseIndex;
 
     final advMap = <String, Object?>{
       if (sc.oneOf.isNotEmpty) 'oneOf': sc.oneOf,
@@ -323,6 +343,13 @@ class _BusinessAttributeEditorDialogState
         'dependentSchemas': sc.dependentSchemas,
       ...sc.extraKeywords,
     };
+    advMap.remove('x-mask');
+    advMap.remove('x-searchable');
+    advMap.remove('x-database-index');
+    if (ex?.type == BusinessAttributeType.enumeration) {
+      advMap.remove('x-enumNames');
+      advMap.remove('x-enumDescriptions');
+    }
     _advancedJsonCtrl = TextEditingController(
       text: advMap.isEmpty
           ? ''
@@ -334,7 +361,9 @@ class _BusinessAttributeEditorDialogState
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _enumCtrl.dispose();
+    for (final row in _enumRows) {
+      row.dispose();
+    }
     _defaultCtrl.dispose();
     _maxRowsCtrl.dispose();
     _freeConstraintsCtrl.dispose();
@@ -349,6 +378,7 @@ class _BusinessAttributeEditorDialogState
     _formatCtrl.dispose();
     _contentMediaCtrl.dispose();
     _contentEncCtrl.dispose();
+    _xMaskCtrl.dispose();
     _minItemsCtrl.dispose();
     _maxItemsCtrl.dispose();
     _minContainsCtrl.dispose();
@@ -373,7 +403,7 @@ class _BusinessAttributeEditorDialogState
         .replaceAll(RegExp(r'^@+'), '');
 
     final advRawText = _advancedJsonCtrl.text.trim();
-    Map<String, Object?> advMap = const {};
+    var advMap = <String, Object?>{};
     if (advRawText.isNotEmpty) {
       final decoded = jsonDecode(advRawText);
       if (decoded is! Map) {
@@ -406,8 +436,36 @@ class _BusinessAttributeEditorDialogState
       );
     }
 
+    final enumValues = <String>[];
+    final enumNames = <String>[];
+    final enumDescriptions = <String>[];
+    if (_type == BusinessAttributeType.enumeration) {
+      advMap.remove('x-enumNames');
+      advMap.remove('x-enumDescriptions');
+      for (final row in _enumRows) {
+        final v = row.valueCtrl.text.trim();
+        final n = row.nameCtrl.text.trim();
+        final d = row.descCtrl.text.trim();
+        if (v.isEmpty && n.isEmpty && d.isEmpty) continue;
+        if (v.isEmpty) {
+          throw const FormatException(
+            'Chaque choix d’énumération renseigné doit avoir une valeur (enum).',
+          );
+        }
+        enumValues.add(v);
+        enumNames.add(n);
+        enumDescriptions.add(d);
+      }
+    }
+
     final mergedSchemaMap = <String, Object?>{
       ...advMap,
+      if (_type == BusinessAttributeType.enumeration &&
+          enumNames.any((n) => n.isNotEmpty))
+        'x-enumNames': enumNames,
+      if (_type == BusinessAttributeType.enumeration &&
+          enumDescriptions.any((d) => d.isNotEmpty))
+        'x-enumDescriptions': enumDescriptions,
       'minimum': ?_parseNumOrNull(_minCtrl.text),
       'maximum': ?_parseNumOrNull(_maxCtrl.text),
       'exclusiveMinimum': ?_parseNumOrNull(_exclMinCtrl.text),
@@ -422,6 +480,9 @@ class _BusinessAttributeEditorDialogState
         'contentMediaType': _contentMediaCtrl.text.trim(),
       if (_contentEncCtrl.text.trim().isNotEmpty)
         'contentEncoding': _contentEncCtrl.text.trim(),
+      if (_xMaskCtrl.text.trim().isNotEmpty) 'x-mask': _xMaskCtrl.text.trim(),
+      if (_xSearchable != null) 'x-searchable': _xSearchable,
+      if (_xDatabaseIndex != null) 'x-database-index': _xDatabaseIndex,
       if (_isArray) 'minItems': ?_parseIntOrNull(_minItemsCtrl.text),
       if (_isArray) 'maxItems': ?maxItems,
       if (_isArray && _uniqueItems) 'uniqueItems': true,
@@ -456,11 +517,9 @@ class _BusinessAttributeEditorDialogState
       defaultValue: _defaultCtrl.text.trim().isEmpty
           ? null
           : _defaultCtrl.text.trim(),
-      enumValues: _enumCtrl.text
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList(),
+      enumValues: _type == BusinessAttributeType.enumeration
+          ? enumValues
+          : const <String>[],
       referenceObjectId: _refObjectId,
       description: _descCtrl.text.trim(),
       constraints: _freeConstraintsCtrl.text.trim(),
@@ -588,18 +647,20 @@ class _BusinessAttributeEditorDialogState
                 ),
             ],
             onChanged: (v) {
-              if (v != null) setState(() => _type = v);
+              if (v != null) {
+                setState(() {
+                  _type = v;
+                  if (_type == BusinessAttributeType.enumeration &&
+                      _enumRows.isEmpty) {
+                    _enumRows.add(_EnumChoiceRow());
+                  }
+                });
+              }
             },
           ),
           if (_type == BusinessAttributeType.enumeration) ...[
-            const SizedBox(height: 10),
-            TextField(
-              controller: _enumCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Valeurs énumérées (séparées par virgule)',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            const SizedBox(height: 12),
+            _buildEnumTableSection(),
           ],
           if (_type == BusinessAttributeType.reference &&
               widget.project.businessObjects.isNotEmpty) ...[
@@ -693,6 +754,185 @@ class _BusinessAttributeEditorDialogState
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnumTableSection() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      key: const ValueKey('spec-attr-enum-table'),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            color: colors.surfaceContainerLow,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Choix de l’énumération (${_enumRows.length})',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey('spec-attr-enum-add-row'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () {
+                    setState(() => _enumRows.add(_EnumChoiceRow()));
+                  },
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Ajouter un choix'),
+                ),
+              ],
+            ),
+          ),
+          if (_enumRows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Aucun choix défini. Cliquez sur « Ajouter un choix ».',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            )
+          else
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(1.1),
+                1: FlexColumnWidth(1.2),
+                2: FlexColumnWidth(1.8),
+                3: FixedColumnWidth(40),
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              border: TableBorder(
+                top: BorderSide(color: colors.outlineVariant),
+                horizontalInside: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: 0.6),
+                ),
+              ),
+              children: [
+                TableRow(
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow.withValues(alpha: 0.55),
+                  ),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        'Valeur (enum) *',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        'Nom (x-enumNames)',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        'Descriptif (x-enumDescriptions)',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox.shrink(),
+                  ],
+                ),
+                for (var i = 0; i < _enumRows.length; i++)
+                  TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: TextField(
+                          key: ValueKey('spec-attr-enum-value-$i'),
+                          controller: _enumRows[i].valueCtrl,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                          ),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'ex. pending',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: TextField(
+                          key: ValueKey('spec-attr-enum-name-$i'),
+                          controller: _enumRows[i].nameCtrl,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'ex. En attente',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: TextField(
+                          key: ValueKey('spec-attr-enum-desc-$i'),
+                          controller: _enumRows[i].descCtrl,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: 'Description du choix…',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: ValueKey('spec-attr-enum-remove-$i'),
+                        tooltip: 'Supprimer ce choix',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 16,
+                        onPressed: () {
+                          setState(() {
+                            final removed = _enumRows.removeAt(i);
+                            removed.dispose();
+                          });
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
         ],
       ),
     );
@@ -891,6 +1131,16 @@ class _BusinessAttributeEditorDialogState
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('spec-attr-x-mask-field'),
+              controller: _xMaskCtrl,
+              decoration: const InputDecoration(
+                labelText: 'x-mask (masque PatternMask : #, A, U, L, *)',
+                hintText: 'Ex. UU-###-UU ou ## ## ## ## ##',
+                border: OutlineInputBorder(),
+              ),
+            ),
             const SizedBox(height: 14),
           ],
           if (_isArray) ...[
@@ -1041,6 +1291,42 @@ class _BusinessAttributeEditorDialogState
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<bool?>(
+            key: const ValueKey('spec-attr-x-searchable-dropdown'),
+            initialValue: _xSearchable,
+            decoration: const InputDecoration(
+              labelText: 'Indexation / recherche (x-searchable)',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: null, child: Text('Non spécifié')),
+              DropdownMenuItem(value: true, child: Text('Recherchable (true)')),
+              DropdownMenuItem(
+                value: false,
+                child: Text('Non recherchable (false)'),
+              ),
+            ],
+            onChanged: (v) => setState(() => _xSearchable = v),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<bool?>(
+            key: const ValueKey('spec-attr-x-database-index-dropdown'),
+            initialValue: _xDatabaseIndex,
+            decoration: const InputDecoration(
+              labelText: 'Index base de données (x-database-index)',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: null, child: Text('Non spécifié')),
+              DropdownMenuItem(value: true, child: Text('Indexé en base (true)')),
+              DropdownMenuItem(
+                value: false,
+                child: Text('Non indexé (false)'),
+              ),
+            ],
+            onChanged: (v) => setState(() => _xDatabaseIndex = v),
+          ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Lecture seule (readOnly)'),
@@ -1130,5 +1416,25 @@ class _BusinessAttributeEditorDialogState
     } on FormatException {
       return trimmed;
     }
+  }
+}
+
+class _EnumChoiceRow {
+  _EnumChoiceRow({
+    String value = '',
+    String name = '',
+    String description = '',
+  }) : valueCtrl = TextEditingController(text: value),
+       nameCtrl = TextEditingController(text: name),
+       descCtrl = TextEditingController(text: description);
+
+  final TextEditingController valueCtrl;
+  final TextEditingController nameCtrl;
+  final TextEditingController descCtrl;
+
+  void dispose() {
+    valueCtrl.dispose();
+    nameCtrl.dispose();
+    descCtrl.dispose();
   }
 }

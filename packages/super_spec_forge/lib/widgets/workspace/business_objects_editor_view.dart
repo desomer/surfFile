@@ -1,5 +1,6 @@
-/// Atelier de l'étape 4 : Objets métiers structurés affichés via `Yaml2JsonSchemasParser`
-/// et `SuperTreeView`, avec inspecteur hiérarchique et éditeur [CodeEditor] YAML ([BusinessObjectsEditorView]).
+/// Atelier de l'étape 4 : Objets métiers structurés affichés par repository
+/// (`ListView` dépliable avec `SuperTreeView` embarqué), inspecteur hiérarchique
+/// et éditeur [CodeEditor] YAML ([BusinessObjectsEditorView]).
 library;
 
 import 'dart:async';
@@ -48,21 +49,29 @@ class BusinessObjectsEditorView extends StatefulWidget {
 }
 
 class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
-  static const String _treeRepoId = 'spec_schema_tree';
-
   final GlobalKey _splitRowKey = GlobalKey();
   late final JsonRepositoryStore _treeRepoStore;
+  final Map<String, String> _repoIdByObjectId = <String, String>{};
+  final Set<String> _registeredRepoIds = <String>{};
+  int _nextRepoSeq = 0;
   final ValueNotifier<String> _yamlErrorNotifier = ValueNotifier<String>('');
   late final CodeEditorConfig _codeEditorConfig;
 
   String _yamlText = '';
+  String? _lastSyncedProjectId;
+  String? _lastFocusedObjectId;
   List<BusinessObjectSpec>? _lastSyncedObjects;
-  Map<String, _TreeNodeSelectionTarget> _targetsByNodePath = const {};
+  List<_RepoTreeEntry> _repoEntries = const <_RepoTreeEntry>[];
+  final Set<String> _expandedObjectIds = <String>{};
+  String? _selectedObjectId;
   String? _selectedNodePath;
   bool _yamlDirty = false;
   String? _treeBuildError;
   double _treePaneFraction = 5 / 11;
   double _treeDragOffset = SpecSplitHandle.width / 2;
+
+  String _repoIdForObject(String objectId) =>
+      _repoIdByObjectId.putIfAbsent(objectId, () => 'repo_${_nextRepoSeq++}');
 
   @override
   void initState() {
@@ -90,12 +99,6 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
         '${Directory.systemTemp.path}${Platform.pathSeparator}ssf_tree',
       ),
     );
-    _treeRepoStore.registerRepository(
-      RepositoryImpl(
-        id: _treeRepoId,
-        json: const <String, Object?>{'nodes': <Object?>[]},
-      ),
-    );
     _syncFromProject(widget.controller.project, forceYaml: true);
   }
 
@@ -112,70 +115,199 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     super.dispose();
   }
 
+  void _clearTreeSelections({String? exceptObjectId}) {
+    for (final entry in _repoEntries) {
+      if (entry.object.id == exceptObjectId) continue;
+      if (_registeredRepoIds.contains(entry.repoId)) {
+        _treeRepoStore.bindingOf(entry.repoId).array('nodes').clear();
+      }
+    }
+  }
+
   void _syncFromProject(SpecForgeProject? project, {bool forceYaml = false}) {
     if (project == null) return;
-    if (!forceYaml && identical(_lastSyncedObjects, project.businessObjects)) {
+    final projectChanged = _lastSyncedProjectId != project.id;
+    final focusedId = widget.controller.focusedObjectId;
+    final focusChanged =
+        focusedId != null &&
+        focusedId.isNotEmpty &&
+        focusedId != _lastFocusedObjectId;
+
+    if (!forceYaml &&
+        !projectChanged &&
+        !focusChanged &&
+        identical(_lastSyncedObjects, project.businessObjects)) {
       return;
     }
-    _lastSyncedObjects = project.businessObjects;
 
-    List<Map<String, Object?>> nodes = const <Map<String, Object?>>[];
+    _lastSyncedProjectId = project.id;
+    _lastSyncedObjects = project.businessObjects;
+    if (focusedId != null && focusedId.isNotEmpty) {
+      _lastFocusedObjectId = focusedId;
+    }
+
+    List<Map<String, Object?>> rootNodes = const <Map<String, Object?>>[];
     try {
-      nodes = SpecSchemaDslBridge.buildTreeNodes(project);
+      rootNodes = SpecSchemaDslBridge.buildTreeNodes(project);
       _treeBuildError = null;
     } on FormatException catch (e) {
       _treeBuildError = e.message;
-      nodes = const <Map<String, Object?>>[];
+      rootNodes = const <Map<String, Object?>>[];
     }
-    final targets = <String, _TreeNodeSelectionTarget>{};
-    void indexNode(Map<String, Object?> node, String nodePath) {
-      final rawAttrPath = node['attributePath'];
-      final attrPath = rawAttrPath is List
-          ? [for (final s in rawAttrPath) '$s']
-          : const <String>[];
-      targets[nodePath] = _TreeNodeSelectionTarget(
-        nodePath: nodePath,
-        objectId: (node['objectId'] as String?) ?? '',
-        relationId: (node['relationId'] as String?) ?? '',
-        attributePath: attrPath,
-        isRootObject: node['isRootObject'] == true,
-        isRelation: ((node['relationId'] as String?) ?? '').isNotEmpty,
-        isArray: node['isArray'] == true,
-        isRequired: node['isRequired'] == true,
-        attrType: (node['attrType'] as String?) ?? '',
-        totalAttributes: (node['totalAttributes'] as int?) ?? 0,
-        estimatedMaxRows: node['estimatedMaxRows'] as int?,
-        typeIcon: (node['typeIcon'] as String?) ?? 'value',
-        displayType: (node['displayType'] as String?) ?? '',
-      );
-      final children = node['children'];
-      if (children is List) {
-        for (var i = 0; i < children.length; i++) {
-          final child = children[i];
-          if (child is Map<String, Object?>) {
-            indexNode(child, '$nodePath.children[$i]');
-          }
-        }
+
+    final rootByObjectId = <String, Map<String, Object?>>{};
+    for (final root in rootNodes) {
+      final objId = (root['objectId'] as String?) ?? '';
+      if (objId.isNotEmpty) {
+        rootByObjectId[objId] = root;
       }
     }
 
-    for (var i = 0; i < nodes.length; i++) {
-      indexNode(nodes[i], 'nodes[$i]');
-    }
-    _targetsByNodePath = targets;
+    final entries = <_RepoTreeEntry>[];
+    for (var i = 0; i < project.businessObjects.length; i++) {
+      final obj = project.businessObjects[i];
+      final rootNode =
+          rootByObjectId[obj.id] ?? (i < rootNodes.length ? rootNodes[i] : null);
+      final rawChildren = rootNode?['children'];
+      final children = rawChildren is List
+          ? [
+              for (final child in rawChildren)
+                if (child is Map<String, Object?>) child,
+            ]
+          : const <Map<String, Object?>>[];
 
-    if (_selectedNodePath == null ||
-        !_targetsByNodePath.containsKey(_selectedNodePath)) {
-      _selectedNodePath = nodes.isNotEmpty ? 'nodes[0]' : null;
+      final targets = <String, _TreeNodeSelectionTarget>{};
+      void indexNode(Map<String, Object?> node, String nodePath) {
+        final rawAttrPath = node['attributePath'];
+        final attrPath = rawAttrPath is List
+            ? [for (final s in rawAttrPath) '$s']
+            : const <String>[];
+        targets[nodePath] = _TreeNodeSelectionTarget(
+          nodePath: nodePath,
+          objectId: obj.id,
+          relationId: (node['relationId'] as String?) ?? '',
+          attributePath: attrPath,
+          isRootObject: false,
+          isRelation: ((node['relationId'] as String?) ?? '').isNotEmpty,
+          isArray: node['isArray'] == true,
+          isRequired: node['isRequired'] == true,
+          attrType: (node['attrType'] as String?) ?? '',
+          totalAttributes: (node['totalAttributes'] as int?) ?? 0,
+          estimatedMaxRows: node['estimatedMaxRows'] as int?,
+          typeIcon: (node['typeIcon'] as String?) ?? 'value',
+          displayType: (node['displayType'] as String?) ?? '',
+        );
+        final subChildren = node['children'];
+        if (subChildren is List) {
+          for (var j = 0; j < subChildren.length; j++) {
+            final sub = subChildren[j];
+            if (sub is Map<String, Object?>) {
+              indexNode(sub, '$nodePath.children[$j]');
+            }
+          }
+        }
+      }
+
+      for (var c = 0; c < children.length; c++) {
+        indexNode(children[c], 'nodes[$c]');
+      }
+
+      final preview = SpecSuperDesignerExporter.buildRepositoryPreview(
+        project,
+        obj,
+        modelPreferencesOverride: widget.controller.modelPreferences,
+      );
+      var isSchemaValid = true;
+      var schemaIssueCount = 0;
+      try {
+        final validation = JsonSchemaValidator.validate(
+          preview.seed,
+          preview.schema,
+        );
+        isSchemaValid = validation.isValid;
+        schemaIssueCount = validation.issues.length;
+      } on FormatException {
+        isSchemaValid = false;
+        schemaIssueCount = 1;
+      }
+
+      final repoId = _repoIdForObject(obj.id);
+      if (!_registeredRepoIds.contains(repoId)) {
+        _treeRepoStore.registerRepository(
+          RepositoryImpl(
+            id: repoId,
+            json: <String, Object?>{'nodes': children},
+          ),
+        );
+        _registeredRepoIds.add(repoId);
+      } else {
+        unawaited(_treeRepoStore.replaceArray(repoId, 'nodes', children));
+      }
+
+      entries.add(
+        _RepoTreeEntry(
+          object: obj,
+          repoId: repoId,
+          repoAlias: preview.alias,
+          isSchemaValid: isSchemaValid,
+          schemaIssueCount: schemaIssueCount,
+          childNodes: children,
+          targetsByNodePath: targets,
+        ),
+      );
     }
 
-    final focusedId = widget.controller.focusedObjectId;
-    if (focusedId != null && focusedId.isNotEmpty) {
-      final matched = _targetsByNodePath.entries
-          .where((e) => e.value.isRootObject && e.value.objectId == focusedId)
+    _repoEntries = entries;
+
+    final validObjectIds = {for (final e in entries) e.object.id};
+    if (projectChanged) {
+      _expandedObjectIds.clear();
+      _selectedObjectId = null;
+      _selectedNodePath = null;
+    } else {
+      _expandedObjectIds.removeWhere((id) => !validObjectIds.contains(id));
+    }
+
+    if (_selectedObjectId == null ||
+        !validObjectIds.contains(_selectedObjectId)) {
+      _selectedObjectId =
+          entries.isNotEmpty ? entries.first.object.id : null;
+      _selectedNodePath = null;
+    }
+
+    final singleExpanded =
+        widget.controller.modelPreferences.singleExpandedBusinessObject;
+    if (focusedId != null &&
+        focusedId.isNotEmpty &&
+        validObjectIds.contains(focusedId)) {
+      _selectedObjectId = focusedId;
+      _selectedNodePath = null;
+      if (singleExpanded) {
+        _expandedObjectIds.clear();
+      }
+      _expandedObjectIds.add(focusedId);
+    } else if (_expandedObjectIds.isEmpty && entries.isNotEmpty) {
+      _expandedObjectIds.add(
+        _selectedObjectId ?? entries.first.object.id,
+      );
+    }
+    if (singleExpanded && _expandedObjectIds.length > 1) {
+      final keepId = (_selectedObjectId != null &&
+              _expandedObjectIds.contains(_selectedObjectId))
+          ? _selectedObjectId!
+          : _expandedObjectIds.first;
+      _expandedObjectIds
+        ..clear()
+        ..add(keepId);
+    }
+
+    if (_selectedObjectId != null && _selectedNodePath != null) {
+      final selectedEntry = entries
+          .where((e) => e.object.id == _selectedObjectId)
           .firstOrNull;
-      if (matched != null) {
-        _selectedNodePath = matched.key;
+      if (selectedEntry == null ||
+          !selectedEntry.targetsByNodePath.containsKey(_selectedNodePath)) {
+        _selectedNodePath = null;
       }
     }
 
@@ -185,8 +317,6 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
       _yamlDirty = false;
       _codeEditorConfig.repaintCode();
     }
-
-    unawaited(_treeRepoStore.replaceArray(_treeRepoId, 'nodes', nodes));
   }
 
   Future<void> _applyYamlSource(SpecForgeProject project) async {
@@ -222,6 +352,18 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     final project = widget.controller.project;
     if (project == null) return const SizedBox.shrink();
     _syncFromProject(project);
+
+    final singleExpanded =
+        widget.controller.modelPreferences.singleExpandedBusinessObject;
+    if (singleExpanded && _expandedObjectIds.length > 1) {
+      final keepId = (_selectedObjectId != null &&
+              _expandedObjectIds.contains(_selectedObjectId))
+          ? _selectedObjectId!
+          : _expandedObjectIds.first;
+      _expandedObjectIds
+        ..clear()
+        ..add(keepId);
+    }
 
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -367,14 +509,17 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
       );
     }
 
-    final target = _selectedNodePath != null
-        ? _targetsByNodePath[_selectedNodePath]
+    final selectedEntry = _selectedObjectId != null
+        ? _repoEntries
+              .where((e) => e.object.id == _selectedObjectId)
+              .firstOrNull
         : null;
     final selectedObject =
-        (target != null && target.objectId.isNotEmpty
-            ? project.findBusinessObject(target.objectId)
-            : null) ??
-        project.businessObjects.first;
+        selectedEntry?.object ?? project.businessObjects.first;
+    final target =
+        selectedEntry != null && _selectedNodePath != null
+            ? selectedEntry.targetsByNodePath[_selectedNodePath]
+            : null;
     final selectedAttr = target == null || target.attributePath.isEmpty
         ? null
         : _findAttributeByPath(selectedObject.attributes, target.attributePath);
@@ -404,201 +549,74 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
               key: const ValueKey('spec-objects-tree-pane'),
               width: treeWidth,
               child: Container(
-                alignment: Alignment.topLeft,
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: SuperTreeView(
-                    id: 'spec-objects-tree',
-                    config: SuperTreeViewConfig(
-                      binding: const JsonTextBinding(
-                        repositoryId: _treeRepoId,
-                        path: 'nodes',
-                      ),
-                      rowHeight: 36,
-                      headerSize: 225,
-                      indent: 18,
-                      initiallyExpanded: true,
-                      showConnectors: true,
-                      emptyText: 'Aucun objet métier',
-                      placements: const {
-                        SuperTreeViewConfig.headerZone: ['header'],
-                        SuperTreeViewConfig.dataZone: ['data'],
-                      },
-                    ),
-                    onNodeSelected: (nodePath) {
-                      setState(() => _selectedNodePath = nodePath);
-                    },
-                    header: Builder(
-                      builder: (cellContext) {
-                        final listScope = JsonListScope.maybeOf(cellContext);
-                        final meta = listScope?.nodePath != null
-                            ? _targetsByNodePath[listScope!.nodePath]
-                            : null;
-                        final visual = _visualForNode(
-                          meta,
-                          colors,
-                          theme.brightness,
-                        );
-                        if (meta?.isRootObject ?? false) {
-                          return _wrapWithNodeTooltip(
-                            context: cellContext,
-                            project: project,
-                            meta: meta,
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: visual.bgColor,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: visual.borderColor,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          visual.icon,
-                                          size: 14,
-                                          color: visual.fgColor,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Flexible(
-                                          child: SuperValue(
-                                            id: 'spec-tree-node-name',
-                                            config: SuperValueConfig(
-                                              mode: SuperValueMode.display,
-                                              color: visual.fgColor,
-                                              fontWeight: FontWeight.w700,
-                                              binding: const JsonTextBinding(
-                                                repositoryId: _treeRepoId,
-                                                path: 'nodes[?].displayName',
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
+                color: colors.surfaceContainerLowest,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Repositories (${_repoEntries.length})',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: colors.onSurfaceVariant,
+                              ),
                             ),
-                          );
-                        }
-                        return _wrapWithNodeTooltip(
-                          context: cellContext,
-                          project: project,
-                          meta: meta,
-                          child: Row(
-                            children: [
-                              Icon(
-                                visual.icon,
-                                size: 15,
-                                color: visual.fgColor,
-                              ),
-                              const SizedBox(width: 7),
-                              Expanded(
-                                child: SuperValue(
-                                  id: 'spec-tree-node-name',
-                                  config: SuperValueConfig(
-                                    mode: SuperValueMode.display,
-                                    color: colors.onSurface,
-                                    fontWeight:
-                                        (meta?.isRelation == true ||
-                                            meta?.attrType == 'object' ||
-                                            meta?.isArray == true)
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    binding: const JsonTextBinding(
-                                      repositoryId: _treeRepoId,
-                                      path: 'nodes[?].displayName',
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (meta?.isRequired == true)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 4),
-                                  child: Text(
-                                    '*',
-                                    style: TextStyle(
-                                      color: colors.error,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                            ],
                           ),
-                        );
-                      },
-                    ),
-                    data: Builder(
-                      builder: (cellContext) {
-                        final listScope = JsonListScope.maybeOf(cellContext);
-                        final meta = listScope?.nodePath != null
-                            ? _targetsByNodePath[listScope!.nodePath]
-                            : null;
-                        final visual = _visualForNode(
-                          meta,
-                          colors,
-                          theme.brightness,
-                        );
-                        final overLimit =
-                            (meta?.isRootObject == true &&
-                                (meta?.totalAttributes ?? 0) >
-                                    BusinessObjectSpec
-                                        .maxAttributesPerObject) ||
-                            (meta?.isArray == true &&
-                                meta?.estimatedMaxRows != null &&
-                                meta!.estimatedMaxRows! >
-                                    BusinessObjectSpec.maxEmbeddedArrayRows);
-                        return _wrapWithNodeTooltip(
-                          context: cellContext,
-                          project: project,
-                          meta: meta,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: SuperValue(
-                                  id: 'spec-tree-node-type',
-                                  config: SuperValueConfig(
-                                    mode: SuperValueMode.display,
-                                    fontSize: 12,
-                                    fontWeight:
-                                        (meta?.isRootObject == true ||
-                                            meta?.isRelation == true ||
-                                            meta?.attrType == 'object' ||
-                                            meta?.isArray == true)
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    color: visual.fgColor,
-                                    binding: const JsonTextBinding(
-                                      repositoryId: _treeRepoId,
-                                      path: 'nodes[?].displayType',
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (overLimit) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.warning_amber_rounded,
-                                  size: 16,
-                                  color: colors.error,
-                                ),
-                              ],
-                            ],
+                          if (!widget
+                              .controller
+                              .modelPreferences
+                              .singleExpandedBusinessObject)
+                            IconButton(
+                              key: const ValueKey('spec-objects-expand-all'),
+                              tooltip: 'Tout déplier',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 18,
+                              onPressed: () {
+                                setState(() {
+                                  _expandedObjectIds.addAll(
+                                    _repoEntries.map((e) => e.object.id),
+                                  );
+                                });
+                              },
+                              icon: const Icon(Icons.unfold_more_rounded),
+                            ),
+                          IconButton(
+                            key: const ValueKey('spec-objects-collapse-all'),
+                            tooltip: 'Tout replier',
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 18,
+                            onPressed: () {
+                              setState(() {
+                                _expandedObjectIds.clear();
+                              });
+                            },
+                            icon: const Icon(Icons.unfold_less_rounded),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: CustomScrollView(
+                        key: const ValueKey('spec-objects-repo-listview'),
+                        slivers: [
+                          for (final entry in _repoEntries)
+                            ..._buildRepositorySlivers(
+                              context,
+                              project,
+                              entry,
+                              treeWidth: treeWidth,
+                              theme: theme,
+                              colors: colors,
+                            ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 6)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -651,16 +669,8 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                       attribute: selectedAttr,
                       attributePath: target.attributePath,
                       onBackToObject: () {
-                        final rootEntry = _targetsByNodePath.entries
-                            .where(
-                              (e) =>
-                                  e.value.isRootObject &&
-                                  e.value.objectId == selectedObject.id,
-                            )
-                            .firstOrNull;
-                        if (rootEntry != null) {
-                          setState(() => _selectedNodePath = rootEntry.key);
-                        }
+                        _clearTreeSelections();
+                        setState(() => _selectedNodePath = null);
                       },
                       onEditAttribute: () => _editAttributeDialog(
                         context,
@@ -726,6 +736,281 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
         );
       },
     );
+  }
+
+  List<Widget> _buildRepositorySlivers(
+    BuildContext context,
+    SpecForgeProject project,
+    _RepoTreeEntry entry, {
+    required double treeWidth,
+    required ThemeData theme,
+    required ColorScheme colors,
+  }) {
+    final obj = entry.object;
+    final isExpanded = _expandedObjectIds.contains(obj.id);
+    final isObjectSelected = _selectedObjectId == obj.id;
+    final isHeaderHighlighted = isObjectSelected && _selectedNodePath == null;
+    final totalAttrs = obj.totalAttributeCount;
+    final overAttrLimit =
+        totalAttrs > BusinessObjectSpec.maxAttributesPerObject;
+    final headerColumnWidth = ((treeWidth - 44) * 0.55).clamp(120.0, 225.0);
+    final borderColor =
+        isObjectSelected ? colors.primary : colors.outlineVariant;
+    final borderWidth = isObjectSelected ? 1.35 : 1.0;
+
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+        sliver: SliverMainAxisGroup(
+          slivers: [
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _RepoStickyHeaderDelegate(
+                entry: entry,
+                isExpanded: isExpanded,
+                isObjectSelected: isObjectSelected,
+                isHeaderHighlighted: isHeaderHighlighted,
+                overAttrLimit: overAttrLimit,
+                borderColor: borderColor,
+                borderWidth: borderWidth,
+                theme: theme,
+                colors: colors,
+                onSelectObject: () {
+                  _clearTreeSelections();
+                  setState(() {
+                    _selectedObjectId = obj.id;
+                    _selectedNodePath = null;
+                    if (widget
+                        .controller
+                        .modelPreferences
+                        .singleExpandedBusinessObject) {
+                      _expandedObjectIds.clear();
+                    }
+                    _expandedObjectIds.add(obj.id);
+                  });
+                },
+                onToggleExpanded: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedObjectIds.remove(obj.id);
+                    } else {
+                      if (widget
+                          .controller
+                          .modelPreferences
+                          .singleExpandedBusinessObject) {
+                        _expandedObjectIds.clear();
+                      }
+                      _expandedObjectIds.add(obj.id);
+                    }
+                  });
+                },
+              ),
+            ),
+            if (isExpanded)
+              SliverToBoxAdapter(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(10),
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      border: Border(
+                        left: BorderSide(color: borderColor, width: borderWidth),
+                        right: BorderSide(
+                          color: borderColor,
+                          width: borderWidth,
+                        ),
+                        bottom: BorderSide(
+                          color: borderColor,
+                          width: borderWidth,
+                        ),
+                      ),
+                    ),
+                    child: entry.childNodes.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Aucun attribut ni relation.',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: () =>
+                                    _editAttributeDialog(context, project, obj),
+                                icon: const Icon(Icons.add_rounded, size: 15),
+                                label: const Text('Ajouter'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: SuperTreeView(
+                            id: 'spec-objects-tree-${obj.id}',
+                            scrollPhysics:
+                                const NeverScrollableScrollPhysics(),
+                            showScrollbar: false,
+                            config: SuperTreeViewConfig(
+                              binding: JsonTextBinding(
+                                repositoryId: entry.repoId,
+                                path: 'nodes',
+                              ),
+                              rowHeight: 34,
+                              headerSize: headerColumnWidth,
+                              indent: 18,
+                              initiallyExpanded: true,
+                              showConnectors: true,
+                              emptyText: 'Aucun attribut défini',
+                              placements: const {
+                                SuperTreeViewConfig.headerZone: ['header'],
+                                SuperTreeViewConfig.dataZone: ['data'],
+                              },
+                            ),
+                            onNodeSelected: (nodePath) {
+                              _clearTreeSelections(exceptObjectId: obj.id);
+                              setState(() {
+                                _selectedObjectId = obj.id;
+                                _selectedNodePath = nodePath;
+                              });
+                            },
+                            header: Builder(
+                              builder: (cellContext) {
+                                final listScope =
+                                    JsonListScope.maybeOf(cellContext);
+                                final meta = listScope?.nodePath != null
+                                    ? entry.targetsByNodePath[listScope!
+                                          .nodePath!]
+                                    : null;
+                                final visual = _visualForNode(
+                                  meta,
+                                  colors,
+                                  theme.brightness,
+                                );
+                                return _wrapWithNodeTooltip(
+                                  context: cellContext,
+                                  project: project,
+                                  meta: meta,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        visual.icon,
+                                        size: 15,
+                                        color: visual.fgColor,
+                                      ),
+                                      const SizedBox(width: 7),
+                                      Expanded(
+                                        child: SuperValue(
+                                          id: 'spec-tree-node-name-${obj.id}',
+                                          config: SuperValueConfig(
+                                            mode: SuperValueMode.display,
+                                            color: colors.onSurface,
+                                            fontWeight:
+                                                (meta?.isRelation == true ||
+                                                    meta?.attrType ==
+                                                        'object' ||
+                                                    meta?.isArray == true)
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                            binding: JsonTextBinding(
+                                              repositoryId: entry.repoId,
+                                              path: 'nodes[?].displayName',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (meta?.isRequired == true)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 4,
+                                          ),
+                                          child: Text(
+                                            '*',
+                                            style: TextStyle(
+                                              color: colors.error,
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            data: Builder(
+                              builder: (cellContext) {
+                                final listScope =
+                                    JsonListScope.maybeOf(cellContext);
+                                final meta = listScope?.nodePath != null
+                                    ? entry.targetsByNodePath[listScope!
+                                          .nodePath!]
+                                    : null;
+                                final visual = _visualForNode(
+                                  meta,
+                                  colors,
+                                  theme.brightness,
+                                );
+                                final overLimit =
+                                    meta?.isArray == true &&
+                                    meta?.estimatedMaxRows != null &&
+                                    meta!.estimatedMaxRows! >
+                                        BusinessObjectSpec
+                                            .maxEmbeddedArrayRows;
+                                return _wrapWithNodeTooltip(
+                                  context: cellContext,
+                                  project: project,
+                                  meta: meta,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: SuperValue(
+                                          id: 'spec-tree-node-type-${obj.id}',
+                                          config: SuperValueConfig(
+                                            mode: SuperValueMode.display,
+                                            fontSize: 12,
+                                            fontWeight:
+                                                (meta?.isRelation == true ||
+                                                    meta?.attrType ==
+                                                        'object' ||
+                                                    meta?.isArray == true)
+                                                ? FontWeight.w600
+                                                : FontWeight.w500,
+                                            color: visual.fgColor,
+                                            binding: JsonTextBinding(
+                                              repositoryId: entry.repoId,
+                                              path: 'nodes[?].displayType',
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (overLimit) ...[
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          Icons.warning_amber_rounded,
+                                          size: 16,
+                                          color: colors.error,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _buildYamlSourceTab(
@@ -1174,7 +1459,7 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     final visual = _visualForNode(meta, theme.colorScheme, theme.brightness);
 
     return Tooltip(
-      waitDuration: const Duration(milliseconds: 260),
+      waitDuration: const Duration(seconds: 2),
       showDuration: const Duration(seconds: 12),
       preferBelow: false,
       padding: EdgeInsets.zero,
@@ -1396,6 +1681,299 @@ _visualForNode(
     bgColor: colors.surfaceContainerHighest,
     borderColor: colors.outline.withValues(alpha: 0.55),
   );
+}
+
+class _RepoStickyHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _RepoStickyHeaderDelegate({
+    required this.entry,
+    required this.isExpanded,
+    required this.isObjectSelected,
+    required this.isHeaderHighlighted,
+    required this.overAttrLimit,
+    required this.borderColor,
+    required this.borderWidth,
+    required this.theme,
+    required this.colors,
+    required this.onSelectObject,
+    required this.onToggleExpanded,
+  });
+
+  static const double headerHeight = 62.0;
+
+  final _RepoTreeEntry entry;
+  final bool isExpanded;
+  final bool isObjectSelected;
+  final bool isHeaderHighlighted;
+  final bool overAttrLimit;
+  final Color borderColor;
+  final double borderWidth;
+  final ThemeData theme;
+  final ColorScheme colors;
+  final VoidCallback onSelectObject;
+  final VoidCallback onToggleExpanded;
+
+  @override
+  double get minExtent => headerHeight;
+
+  @override
+  double get maxExtent => headerHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final obj = entry.object;
+    final totalAttrs = obj.totalAttributeCount;
+    final bgColor = isHeaderHighlighted
+        ? Color.alphaBlend(
+            colors.primaryContainer.withValues(alpha: 0.42),
+            colors.surface,
+          )
+        : colors.surfaceContainerLow;
+    final borderSide = BorderSide(color: borderColor, width: borderWidth);
+
+    return Container(
+      key: ValueKey('spec-objects-repo-tile-${obj.id}'),
+      height: headerHeight,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: isExpanded
+            ? const BorderRadius.vertical(top: Radius.circular(10))
+            : BorderRadius.circular(10),
+        border: Border.fromBorderSide(borderSide),
+        boxShadow: overlapsContent
+            ? [
+                BoxShadow(
+                  color: colors.shadow.withValues(alpha: 0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onSelectObject,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 7, 10, 7),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  key: ValueKey('spec-objects-repo-toggle-${obj.id}'),
+                  tooltip: isExpanded ? 'Replier' : 'Déplier',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  onPressed: onToggleExpanded,
+                  icon: Icon(
+                    isExpanded
+                        ? Icons.expand_more_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 20,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            obj.aggregateRoot
+                                ? Icons.hub_rounded
+                                : Icons.account_tree_outlined,
+                            size: 15,
+                            color: obj.aggregateRoot
+                                ? colors.primary
+                                : colors.secondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              obj.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: entry.isSchemaValid
+                                  ? colors.secondaryContainer
+                                  : colors.errorContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              entry.isSchemaValid
+                                  ? 'Valide'
+                                  : '${entry.schemaIssueCount} err.',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: entry.isSchemaValid
+                                    ? colors.onSecondaryContainer
+                                    : colors.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      LayoutBuilder(
+                        builder: (context, rowConstraints) {
+                          final maxChipsWidth =
+                              (rowConstraints.maxWidth * 0.58).clamp(
+                                0.0,
+                                180.0,
+                              );
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${entry.repoAlias} · ${obj.technicalName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: maxChipsWidth,
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _RepoCardChip(
+                                        label: obj.aggregateRoot
+                                            ? 'Agrégat'
+                                            : 'Entité liée',
+                                        bg: obj.aggregateRoot
+                                            ? colors.primaryContainer
+                                                  .withValues(alpha: 0.7)
+                                            : colors.surfaceContainerHighest,
+                                        fg: obj.aggregateRoot
+                                            ? colors.onPrimaryContainer
+                                            : colors.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      _RepoCardChip(
+                                        label:
+                                            '$totalAttrs/${BusinessObjectSpec.maxAttributesPerObject} attr.',
+                                        bg: overAttrLimit
+                                            ? colors.errorContainer
+                                            : colors.surfaceContainerHighest,
+                                        fg: overAttrLimit
+                                            ? colors.onErrorContainer
+                                            : colors.onSurfaceVariant,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _RepoStickyHeaderDelegate oldDelegate) {
+    return oldDelegate.entry.object != entry.object ||
+        oldDelegate.entry.repoAlias != entry.repoAlias ||
+        oldDelegate.entry.isSchemaValid != entry.isSchemaValid ||
+        oldDelegate.entry.schemaIssueCount != entry.schemaIssueCount ||
+        oldDelegate.isExpanded != isExpanded ||
+        oldDelegate.isObjectSelected != isObjectSelected ||
+        oldDelegate.isHeaderHighlighted != isHeaderHighlighted ||
+        oldDelegate.overAttrLimit != overAttrLimit ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.borderWidth != borderWidth ||
+        oldDelegate.theme.brightness != theme.brightness;
+  }
+}
+
+class _RepoTreeEntry {
+  const _RepoTreeEntry({
+    required this.object,
+    required this.repoId,
+    required this.repoAlias,
+    required this.isSchemaValid,
+    required this.schemaIssueCount,
+    required this.childNodes,
+    required this.targetsByNodePath,
+  });
+
+  final BusinessObjectSpec object;
+  final String repoId;
+  final String repoAlias;
+  final bool isSchemaValid;
+  final int schemaIssueCount;
+  final List<Map<String, Object?>> childNodes;
+  final Map<String, _TreeNodeSelectionTarget> targetsByNodePath;
+}
+
+class _RepoCardChip extends StatelessWidget {
+  const _RepoCardChip({
+    required this.label,
+    required this.bg,
+    required this.fg,
+  });
+
+  final String label;
+  final Color bg;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: fg,
+          fontWeight: FontWeight.w600,
+          fontSize: 10.5,
+        ),
+      ),
+    );
+  }
 }
 
 class _BusinessObjectInspectorPane extends StatelessWidget {
@@ -1758,6 +2336,42 @@ class _AttributeInspectorPane extends StatelessWidget {
             if (attribute.isArray) const Chip(label: Text('Tableau ([])')),
             if (attribute.isArray && attribute.estimatedMaxRows != null)
               Chip(label: Text('Max ${attribute.estimatedMaxRows} lignes')),
+            if (attribute.schemaConstraints.xMask != null)
+              Chip(
+                key: const ValueKey('spec-attr-inspector-x-mask'),
+                avatar: Icon(Icons.password_rounded, size: 15, color: colors.primary),
+                label: Text('x-mask: ${attribute.schemaConstraints.xMask}'),
+              ),
+            if (attribute.schemaConstraints.xSearchable != null)
+              Chip(
+                key: const ValueKey('spec-attr-inspector-x-searchable'),
+                avatar: Icon(
+                  attribute.schemaConstraints.xSearchable!
+                      ? Icons.search_rounded
+                      : Icons.search_off_rounded,
+                  size: 15,
+                  color: attribute.schemaConstraints.xSearchable!
+                      ? colors.primary
+                      : colors.onSurfaceVariant,
+                ),
+                label: Text(
+                  'x-searchable: ${attribute.schemaConstraints.xSearchable}',
+                ),
+              ),
+            if (attribute.schemaConstraints.xDatabaseIndex != null)
+              Chip(
+                key: const ValueKey('spec-attr-inspector-x-database-index'),
+                avatar: Icon(
+                  Icons.storage_rounded,
+                  size: 15,
+                  color: attribute.schemaConstraints.xDatabaseIndex!
+                      ? colors.primary
+                      : colors.onSurfaceVariant,
+                ),
+                label: Text(
+                  'x-database-index: ${attribute.schemaConstraints.xDatabaseIndex}',
+                ),
+              ),
           ],
         ),
         if (attribute.description.isNotEmpty) ...[
@@ -1772,10 +2386,20 @@ class _AttributeInspectorPane extends StatelessWidget {
           ),
         ],
         if (attribute.enumValues.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            'Valeurs énumérées : ${attribute.enumValues.join(', ')}',
-            style: theme.textTheme.bodySmall,
+            'Choix de l’énumération (${attribute.enumValues.length})',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _EnumValuesTable(
+            key: const ValueKey('spec-attr-inspector-enum-table'),
+            values: attribute.enumValues,
+            names: attribute.schemaConstraints.enumNames,
+            descriptions: attribute.schemaConstraints.enumDescriptions,
           ),
         ],
         if (attribute.schemaConstraints.examples.isNotEmpty) ...[
@@ -2105,12 +2729,23 @@ class _TreeNodeTooltipCard extends StatelessWidget {
         ],
         if (attr.enumValues.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Text(
-            'Valeurs possibles : ${attr.enumValues.join(', ')}',
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
+          ...() {
+            final names = attr.schemaConstraints.enumNames;
+            final formatted = [
+              for (var i = 0; i < attr.enumValues.length; i++)
+                (i < names.length && names[i].trim().isNotEmpty)
+                    ? '${attr.enumValues[i]} (${names[i].trim()})'
+                    : attr.enumValues[i],
+            ];
+            return [
+              Text(
+                'Valeurs possibles : ${formatted.join(', ')}',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ];
+          }(),
         ],
         if (attr.constraints.isNotEmpty) ...[
           const SizedBox(height: 6),
@@ -2391,4 +3026,120 @@ class _TooltipPill extends StatelessWidget {
 String _formatExampleValue(Object? value) {
   if (value is String) return value;
   return jsonEncode(value);
+}
+
+class _EnumValuesTable extends StatelessWidget {
+  const _EnumValuesTable({
+    required this.values,
+    required this.names,
+    required this.descriptions,
+    super.key,
+  });
+
+  final List<String> values;
+  final List<String> names;
+  final List<String> descriptions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Table(
+        columnWidths: const {
+          0: FlexColumnWidth(1.0),
+          1: FlexColumnWidth(1.2),
+          2: FlexColumnWidth(1.8),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        border: TableBorder(
+          horizontalInside: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: 0.6),
+          ),
+        ),
+        children: [
+          TableRow(
+            decoration: BoxDecoration(color: colors.surfaceContainerLow),
+            children: [
+              _headerCell(theme, 'Valeur (enum)'),
+              _headerCell(theme, 'Nom (x-enumNames)'),
+              _headerCell(theme, 'Descriptif (x-enumDescriptions)'),
+            ],
+          ),
+          for (var i = 0; i < values.length; i++)
+            TableRow(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    values[i],
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                      color: colors.primary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    i < names.length && names[i].trim().isNotEmpty
+                        ? names[i].trim()
+                        : '—',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight:
+                          i < names.length && names[i].trim().isNotEmpty
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: i < names.length && names[i].trim().isNotEmpty
+                          ? colors.onSurface
+                          : colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  child: Text(
+                    i < descriptions.length && descriptions[i].trim().isNotEmpty
+                        ? descriptions[i].trim()
+                        : '—',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color:
+                          i < descriptions.length &&
+                              descriptions[i].trim().isNotEmpty
+                          ? colors.onSurface
+                          : colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerCell(ThemeData theme, String label) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    child: Text(
+      label,
+      style: theme.textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+    ),
+  );
 }

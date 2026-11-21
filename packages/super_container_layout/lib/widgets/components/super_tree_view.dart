@@ -102,6 +102,8 @@ class SuperTreeView extends SuperStatefulComponent<SuperTreeViewConfig?> {
     this.templateStyle = const ContainerStyle(),
     this.onNodeSelected,
     this.onConfigChanged,
+    this.scrollPhysics,
+    this.showScrollbar = true,
     super.behaviours,
     super.key,
   });
@@ -139,6 +141,13 @@ class SuperTreeView extends SuperStatefulComponent<SuperTreeViewConfig?> {
 
   /// Appelé lorsque la configuration est modifiée.
   final ValueChanged<SuperTreeViewConfig>? onConfigChanged;
+
+  /// Physique de défilement optionnelle transmise à [TreeView]
+  /// (ex: [NeverScrollableScrollPhysics] lorsque l'arbre est intégré dans une [ListView]).
+  final ScrollPhysics? scrollPhysics;
+
+  /// Affiche la barre de défilement verticale de l'arbre.
+  final bool showScrollbar;
 
   SuperTreeViewConfig get _initialConfig {
     if (config != null) {
@@ -895,6 +904,8 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                         showConnectors: config.showConnectors,
                         showCheckboxes: config.showCheckboxes,
                         animateSelectionAndHover: animateIndicators,
+                        scrollPhysics: widget.scrollPhysics,
+                        showScrollbar: widget.showScrollbar,
                         selectionIndicatorBuilder: (ctx, _) =>
                             _buildSelectionIndicator(ctx, currentRowStyle),
                         hoverIndicatorBuilder: (ctx, _) =>

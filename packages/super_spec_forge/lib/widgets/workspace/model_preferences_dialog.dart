@@ -71,6 +71,7 @@ class _ModelPreferencesDialogState extends State<_ModelPreferencesDialog> {
   late RelationModelingStyle _relationStyle;
   late ModelLocaleProfile _localeProfile;
   late CurrencyRepresentation _currencyStyle;
+  late bool _singleExpandedBusinessObject;
 
   bool _applyAttributeCaseToExisting = false;
   bool _applyEnumCaseToExisting = false;
@@ -118,6 +119,7 @@ class _ModelPreferencesDialogState extends State<_ModelPreferencesDialog> {
     _localeProfile = prefs.localeProfile;
     _customLocaleCtrl.text = prefs.customLocaleLabel;
     _currencyStyle = prefs.currencyStyle;
+    _singleExpandedBusinessObject = prefs.singleExpandedBusinessObject;
     _customInstructionsCtrl.text = prefs.customInstructions;
     _error = null;
   }
@@ -155,6 +157,7 @@ class _ModelPreferencesDialogState extends State<_ModelPreferencesDialog> {
         localeProfile: _localeProfile,
         customLocaleLabel: _customLocaleCtrl.text.trim(),
         currencyStyle: _currencyStyle,
+        singleExpandedBusinessObject: _singleExpandedBusinessObject,
         customInstructions: _customInstructionsCtrl.text.trim(),
       );
 
@@ -712,6 +715,18 @@ class _ModelPreferencesDialogState extends State<_ModelPreferencesDialog> {
           onChanged: (v) {
             if (v != null) setState(() => _relationStyle = v);
           },
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile(
+          key: const ValueKey('spec-objects-single-expanded-switch'),
+          contentPadding: EdgeInsets.zero,
+          value: _singleExpandedBusinessObject,
+          onChanged: (v) =>
+              setState(() => _singleExpandedBusinessObject = v),
+          title: const Text('Un seul objet métier ouvert à la fois'),
+          subtitle: const Text(
+            'Dans « Arbre & Inspecteur », déplier un repository replie automatiquement les autres.',
+          ),
         ),
         const SizedBox(height: 14),
         Container(

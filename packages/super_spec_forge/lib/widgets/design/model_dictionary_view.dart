@@ -1070,6 +1070,22 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
         ),
         const SizedBox(height: 14),
         _PreferenceCard(
+          title: 'Affichage dans « Arbre & Inspecteur »',
+          child: SwitchListTile(
+            key: const ValueKey('model-dict-single-expanded-switch'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Un seul objet métier ouvert à la fois'),
+            subtitle: const Text(
+              'Déplier un repository dans « Arbre & Inspecteur » replie automatiquement les autres.',
+            ),
+            value: prefs.singleExpandedBusinessObject,
+            onChanged: (v) => _updatePrefs(
+              prefs.copyWith(singleExpandedBusinessObject: v),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _PreferenceCard(
           title: 'Longueurs maximales par défaut (`maxLength`)',
           child: Row(
             children: [

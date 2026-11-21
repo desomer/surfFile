@@ -909,6 +909,7 @@ class BusinessObjectModelPreferences {
     this.defaultCodeMaxLength = 64,
     this.defaultLabelMaxLength = 255,
     this.defaultDescriptionMaxLength = 2000,
+    this.singleExpandedBusinessObject = true,
     this.technicalRules = TechnicalModelingRule.defaultRules,
   });
 
@@ -1000,6 +1001,9 @@ class BusinessObjectModelPreferences {
 
   /// Longueur maximale par défaut des descriptions longues (`maxLength`).
   final int defaultDescriptionMaxLength;
+
+  /// Limite l'ouverture à un seul objet métier à la fois dans « Arbre & Inspecteur ».
+  final bool singleExpandedBusinessObject;
 
   /// Catalogue des règles techniques détaillées du dictionnaire de modélisation.
   final List<TechnicalModelingRule> technicalRules;
@@ -1168,6 +1172,7 @@ class BusinessObjectModelPreferences {
     int? defaultCodeMaxLength,
     int? defaultLabelMaxLength,
     int? defaultDescriptionMaxLength,
+    bool? singleExpandedBusinessObject,
     List<TechnicalModelingRule>? technicalRules,
   }) => BusinessObjectModelPreferences(
     attributeLanguage: (attributeLanguage ?? this.attributeLanguage).trim(),
@@ -1201,6 +1206,8 @@ class BusinessObjectModelPreferences {
     defaultLabelMaxLength: defaultLabelMaxLength ?? this.defaultLabelMaxLength,
     defaultDescriptionMaxLength:
         defaultDescriptionMaxLength ?? this.defaultDescriptionMaxLength,
+    singleExpandedBusinessObject:
+        singleExpandedBusinessObject ?? this.singleExpandedBusinessObject,
     technicalRules: List<TechnicalModelingRule>.unmodifiable(
       technicalRules ?? this.technicalRules,
     ),
@@ -1233,6 +1240,7 @@ class BusinessObjectModelPreferences {
     'defaultCodeMaxLength': defaultCodeMaxLength,
     'defaultLabelMaxLength': defaultLabelMaxLength,
     'defaultDescriptionMaxLength': defaultDescriptionMaxLength,
+    'singleExpandedBusinessObject': singleExpandedBusinessObject,
     'technicalRules': [for (final r in technicalRules) r.toJson()],
   };
 
@@ -1294,6 +1302,10 @@ class BusinessObjectModelPreferences {
               ?.toInt()
               .clamp(16, 20000) ??
           2000,
+      singleExpandedBusinessObject:
+          raw['singleExpandedBusinessObject'] is bool
+          ? raw['singleExpandedBusinessObject'] as bool
+          : true,
       technicalRules: parsedRules,
     );
   }
@@ -1329,6 +1341,7 @@ class BusinessObjectModelPreferences {
           other.defaultCodeMaxLength == defaultCodeMaxLength &&
           other.defaultLabelMaxLength == defaultLabelMaxLength &&
           other.defaultDescriptionMaxLength == defaultDescriptionMaxLength &&
+          other.singleExpandedBusinessObject == singleExpandedBusinessObject &&
           listEquals(other.technicalRules, technicalRules);
 
   @override
@@ -1358,6 +1371,7 @@ class BusinessObjectModelPreferences {
     defaultCodeMaxLength,
     defaultLabelMaxLength,
     defaultDescriptionMaxLength,
+    singleExpandedBusinessObject,
     Object.hashAll(technicalRules),
   ]);
 }

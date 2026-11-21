@@ -200,6 +200,40 @@ class JsonSchemaConstraints {
   // --- Extensions & mots-clés additionnels ---
   final Map<String, Object?> extraKeywords;
 
+  /// Libellés lisibles associés aux choix d'une énumération (`x-enumNames`).
+  List<String> get enumNames {
+    final raw = extraKeywords['x-enumNames'];
+    if (raw is! List) return const <String>[];
+    return List<String>.unmodifiable([for (final item in raw) '$item']);
+  }
+
+  /// Descriptifs associés aux choix d'une énumération (`x-enumDescriptions`).
+  List<String> get enumDescriptions {
+    final raw = extraKeywords['x-enumDescriptions'];
+    if (raw is! List) return const <String>[];
+    return List<String>.unmodifiable([for (final item in raw) '$item']);
+  }
+
+  /// Masque de saisie/affichage `PatternMask` (`x-mask`), ou `null`.
+  String? get xMask {
+    final raw = extraKeywords['x-mask'];
+    if (raw is! String) return null;
+    final trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Indique si l'attribut est indexable/recherchable (`x-searchable`), ou `null`.
+  bool? get xSearchable {
+    final raw = extraKeywords['x-searchable'];
+    return raw is bool ? raw : null;
+  }
+
+  /// Indique si l'attribut doit être indexé en base de données (`x-database-index`), ou `null`.
+  bool? get xDatabaseIndex {
+    final raw = extraKeywords['x-database-index'];
+    return raw is bool ? raw : null;
+  }
+
   /// Vrai lorsqu'aucune contrainte ni métadonnée n'est renseignée.
   bool get isEmpty =>
       minimum == null &&
@@ -330,6 +364,19 @@ class JsonSchemaConstraints {
         minProperties! > maxProperties!) {
       throw FormatException(
         'minProperties ($minProperties) ne peut pas dépasser maxProperties ($maxProperties).',
+      );
+    }
+
+    if (extraKeywords.containsKey('x-searchable') &&
+        extraKeywords['x-searchable'] is! bool) {
+      throw const FormatException(
+        'Mot-clé "x-searchable" invalide : booléen (true/false) attendu.',
+      );
+    }
+    if (extraKeywords.containsKey('x-database-index') &&
+        extraKeywords['x-database-index'] is! bool) {
+      throw const FormatException(
+        'Mot-clé "x-database-index" invalide : booléen (true/false) attendu.',
       );
     }
 
@@ -544,6 +591,13 @@ class JsonSchemaConstraints {
     if (not != null) badges.add('not');
     if (ifSchema != null) badges.add('if/then/else');
     for (final key in extraKeywords.keys) {
+      if (key == 'x-enumNames' || key == 'x-enumDescriptions') {
+        final raw = extraKeywords[key];
+        if (raw is List) {
+          badges.add('$key(${raw.length})');
+          continue;
+        }
+      }
       badges.add('$key: ${extraKeywords[key]}');
     }
     return badges;

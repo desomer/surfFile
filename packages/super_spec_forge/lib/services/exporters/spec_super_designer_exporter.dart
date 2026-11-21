@@ -70,6 +70,67 @@ abstract final class SpecSuperDesignerExporter {
     return '${buf.toString().trimRight()}\n';
   }
 
+  /// Calcule l'alias snake_case du repository associé à [obj].
+  static String repoAliasFor(BusinessObjectSpec obj) =>
+      _toSnakeCase(obj.technicalName);
+
+  /// Calcule la clé de collection plurielle associée à un [repoAlias].
+  static String collectionKeyFor(String repoAlias) =>
+      _pluralizeSnake(repoAlias);
+
+  /// Construit le couple `(alias, schema, seed)` pour un objet métier [obj].
+  static ({
+    String alias,
+    Map<String, Object?> schema,
+    Map<String, Object?> seed,
+  })
+  buildRepositoryPreview(
+    SpecForgeProject project,
+    BusinessObjectSpec obj, {
+    BusinessObjectModelPreferences? modelPreferencesOverride,
+  }) {
+    final prefs =
+        modelPreferencesOverride ?? project.businessObjectModelPreferences;
+    final strictObjects = prefs.schemaStrictness == JsonSchemaStrictness.strict;
+    final locale = prefs.localeProfile;
+    final repoAlias = repoAliasFor(obj);
+    final collectionKey = collectionKeyFor(repoAlias);
+    final itemSchema = _objectToJsonSchema(
+      project,
+      obj,
+      visited: {obj.id},
+      strictObjects: strictObjects,
+    );
+
+    final schema = <String, Object?>{
+      r'$schema': 'https://json-schema.org/draft/2020-12/schema',
+      'title': obj.name,
+      'description': obj.description,
+      'type': 'object',
+      if (strictObjects) 'additionalProperties': false,
+      'required': [collectionKey],
+      'properties': <String, Object?>{
+        collectionKey: <String, Object?>{
+          'type': 'array',
+          'items': itemSchema,
+        },
+      },
+    };
+
+    final seed = <String, Object?>{
+      collectionKey: [
+        _buildSampleRecord(
+          project,
+          obj,
+          visited: {obj.id},
+          localeProfile: locale,
+        ),
+      ],
+    };
+
+    return (alias: repoAlias, schema: schema, seed: seed);
+  }
+
   /// Génère le JSON Schema Draft 2020-12 et les données de démarrage pour chaque agrégat racine.
   static SuperDesignerExportBundle toBundle(
     SpecForgeProject project, {
@@ -78,49 +139,17 @@ abstract final class SpecSuperDesignerExporter {
     final schemas = <String, Map<String, Object?>>{};
     final seeds = <String, Map<String, Object?>>{};
 
-    final prefs =
-        modelPreferencesOverride ?? project.businessObjectModelPreferences;
-    final strictObjects = prefs.schemaStrictness == JsonSchemaStrictness.strict;
-    final locale = prefs.localeProfile;
-
     final roots = project.businessObjects.where((o) => o.aggregateRoot).toList();
     final objects = roots.isNotEmpty ? roots : project.businessObjects;
 
     for (final obj in objects) {
-      final repoAlias = _toSnakeCase(obj.technicalName);
-      final collectionKey = _pluralizeSnake(repoAlias);
-      final itemSchema = _objectToJsonSchema(
+      final preview = buildRepositoryPreview(
         project,
         obj,
-        visited: {obj.id},
-        strictObjects: strictObjects,
+        modelPreferencesOverride: modelPreferencesOverride,
       );
-
-      schemas[repoAlias] = <String, Object?>{
-        r'$schema': 'https://json-schema.org/draft/2020-12/schema',
-        'title': obj.name,
-        'description': obj.description,
-        'type': 'object',
-        if (strictObjects) 'additionalProperties': false,
-        'required': [collectionKey],
-        'properties': <String, Object?>{
-          collectionKey: <String, Object?>{
-            'type': 'array',
-            'items': itemSchema,
-          },
-        },
-      };
-
-      seeds[repoAlias] = <String, Object?>{
-        collectionKey: [
-          _buildSampleRecord(
-            project,
-            obj,
-            visited: {obj.id},
-            localeProfile: locale,
-          ),
-        ],
-      };
+      schemas[preview.alias] = preview.schema;
+      seeds[preview.alias] = preview.seed;
     }
 
     return SuperDesignerExportBundle(

@@ -191,6 +191,8 @@ class TreeView<T> extends StatefulWidget {
     this.canHoverNode,
     this.onCopy,
     this.onPaste,
+    this.scrollPhysics,
+    this.showScrollbar = true,
   });
 
   final GetNode<T> getNodes;
@@ -203,6 +205,13 @@ class TreeView<T> extends StatefulWidget {
   final OnSelectionChanged<T>? onSelectionChanged;
   final OnCopy? onCopy;
   final OnPaste? onPaste;
+
+  /// Physique de défilement optionnelle pour le [ListView] interne
+  /// (ex: [NeverScrollableScrollPhysics] lorsqu'imbriqué dans une autre liste).
+  final ScrollPhysics? scrollPhysics;
+
+  /// Affiche la barre de défilement verticale autour du [ListView] interne.
+  final bool showScrollbar;
 
   /// Enveloppe optionnelle autour de chaque ligne construite (ex: `IterableContent`).
   final Widget Function(TreeNodeData<T> node, Widget child)? rowWrapper;
@@ -412,27 +421,31 @@ class TreeViewState<T> extends State<TreeView<T>> {
               headerSize = clampedHeaderSize;
               repaintInProgess = timeBuild;
             }
-            final listView = Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: true, // ✅ Toujours visible sur desktop
-              child: ListView.builder(
-                primary: false,
-                clipBehavior: Clip.none,
-                controller: _scrollController,
-                shrinkWrap: true,
-                itemCount: list.length,
-                itemBuilder: (context, index) {
-                  var node = list[index];
-                  node.tree = this;
-                  var row = _getAnimatedHeightRow(
-                    node,
-                    _buildNode(context, node),
-                    GlobalObjectKey(node),
-                  );
-                  return row;
-                },
-              ),
+            final innerListView = ListView.builder(
+              primary: false,
+              clipBehavior: Clip.none,
+              controller: widget.showScrollbar ? _scrollController : null,
+              physics: widget.scrollPhysics,
+              shrinkWrap: true,
+              itemCount: list.length,
+              itemBuilder: (context, index) {
+                var node = list[index];
+                node.tree = this;
+                var row = _getAnimatedHeightRow(
+                  node,
+                  _buildNode(context, node),
+                  GlobalObjectKey(node),
+                );
+                return row;
+              },
             );
+            final listView = widget.showScrollbar
+                ? Scrollbar(
+                    controller: _scrollController,
+                    thumbVisibility: true, // ✅ Toujours visible sur desktop
+                    child: innerListView,
+                  )
+                : innerListView;
             if (!widget.animateSelectionAndHover) {
               return listView;
             }
