@@ -8,8 +8,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_schema_dsl/super_schema_dsl.dart' show JsonNode;
 
 import '../ai/company_glossary_ai.dart';
+import '../ai/domain_model_ai.dart';
 import '../ai/spec_ai_service.dart';
 import '../ai/spec_app_tools.dart';
 import '../ai/spec_delta_recovery.dart';
@@ -20,6 +22,8 @@ import '../ai/spec_stream_parser.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/domain_catalog.dart';
+import '../models/domain_contracts.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
@@ -27,6 +31,7 @@ import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/technical_modeling_rule.dart';
 import 'company_glossary_store.dart';
+import 'domain_catalog_store.dart';
 import 'model_dictionary_store.dart';
 import 'spec_coherence_analyzer.dart';
 import 'spec_project_store.dart';
@@ -45,6 +50,7 @@ class SpecForgeController extends ChangeNotifier {
     SpecProjectStore? store,
     CompanyGlossaryStore? glossaryStore,
     ModelDictionaryStore? modelDictionaryStore,
+    DomainCatalogStore? domainCatalogStore,
     SpecWorkspaceStore? workspaceStore,
     SpecAiService? aiService,
     VibeAppToolRegistry? toolRegistry,
@@ -54,7 +60,8 @@ class SpecForgeController extends ChangeNotifier {
   }) : _hasCustomStores =
            store != null ||
            glossaryStore != null ||
-           modelDictionaryStore != null,
+           modelDictionaryStore != null ||
+           domainCatalogStore != null,
        _workspaceStore = workspaceStore ?? SpecWorkspaceStore(),
        _store = store ?? SpecProjectStore(),
        _glossaryStore =
@@ -63,6 +70,9 @@ class SpecForgeController extends ChangeNotifier {
        _modelDictionaryStore =
            modelDictionaryStore ??
            ModelDictionaryStore((store ?? SpecProjectStore()).rootDirectory),
+       _domainCatalogStore =
+           domainCatalogStore ??
+           DomainCatalogStore((store ?? SpecProjectStore()).rootDirectory),
        _aiService = aiService ?? const GeminiSpecAiService(),
        _customToolRegistry = toolRegistry,
        _speedMode = initialSpeedMode,
@@ -73,6 +83,7 @@ class SpecForgeController extends ChangeNotifier {
   SpecProjectStore _store;
   CompanyGlossaryStore _glossaryStore;
   ModelDictionaryStore _modelDictionaryStore;
+  DomainCatalogStore _domainCatalogStore;
   final SpecAiService _aiService;
   final VibeAppToolRegistry? _customToolRegistry;
 
@@ -91,6 +102,7 @@ class SpecForgeController extends ChangeNotifier {
 
   BusinessObjectModelPreferences _modelPreferences =
       BusinessObjectModelPreferences.defaults;
+  DomainCatalog _domainCatalog = DomainCatalog.empty;
   final List<BusinessObjectModelPreferences> _modelPrefsUndoStack =
       <BusinessObjectModelPreferences>[];
   final List<BusinessObjectModelPreferences> _modelPrefsRedoStack =
@@ -102,6 +114,9 @@ class SpecForgeController extends ChangeNotifier {
   bool _isSending = false;
   bool _sendingGlobalQuestion = false;
   bool _sendingGlossary = false;
+
+  /// `domaine/entrée` du modèle dont le tour IA est en cours.
+  String? _sendingDomainModelKey;
   SpecForgeStage? _sendingStage;
   String? _streamingMessage;
   String _streamingStatus = '';
@@ -109,6 +124,10 @@ class SpecForgeController extends ChangeNotifier {
   String? _focusedObjectId;
   List<String> _focusedAttributePath = const <String>[];
   String _businessObjectFilter = '';
+
+  /// Sélection et filtre de l'arbre de chaque fiche, indexés par `domaine/entrée`.
+  final Map<String, ({List<String> attributePath, String filter})>
+  _domainModelFocus = {};
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -159,6 +178,60 @@ class SpecForgeController extends ChangeNotifier {
   /// Vrai lorsqu'un tour IA du glossaire d'entreprise est en cours.
   bool get isSendingGlossary => _isSending && _sendingGlossary;
 
+  /// Historique du chat IA du modèle [entryId] du domaine [domainId].
+  List<SpecChatMessage> domainModelChat(String domainId, String entryId) =>
+      _domainContractsOf(domainId)?.chats[entryId] ?? const [];
+
+  /// Vrai lorsqu'un tour IA du modèle [entryId] du domaine [domainId] est en cours.
+  bool isSendingDomainModel(String domainId, String entryId) =>
+      _isSending && _sendingDomainModelKey == '$domainId/$entryId';
+
+  /// Chemin d'IDs de l'attribut sélectionné dans la fiche du modèle [entryId]
+  /// (vide = objet entier), piloté par l'arbre ou l'outil `focus_stage_or_object`.
+  List<String> domainModelAttributePath(String domainId, String entryId) =>
+      _domainModelFocus['$domainId/$entryId']?.attributePath ?? const [];
+
+  /// Filtre de l'arbre de la fiche du modèle [entryId], piloté par l'interface
+  /// ou l'outil `filter_business_objects`.
+  String domainModelFilter(String domainId, String entryId) =>
+      _domainModelFocus['$domainId/$entryId']?.filter ?? '';
+
+  /// Sélectionne l'attribut [attributePath] (vide = objet entier) dans la fiche.
+  void focusDomainModelAttribute(
+    String domainId,
+    String entryId,
+    List<String> attributePath,
+  ) => _setDomainModelFocus(
+    domainId,
+    entryId,
+    attributePath: List.unmodifiable(attributePath),
+  );
+
+  /// Met à jour le filtre de l'arbre de la fiche du modèle [entryId].
+  void setDomainModelFilter(String domainId, String entryId, String query) =>
+      _setDomainModelFocus(domainId, entryId, filter: query);
+
+  void _setDomainModelFocus(
+    String domainId,
+    String entryId, {
+    List<String>? attributePath,
+    String? filter,
+  }) {
+    final key = '$domainId/$entryId';
+    final current = _domainModelFocus[key];
+    final next = (
+      attributePath: attributePath ?? current?.attributePath ?? const [],
+      filter: filter ?? current?.filter ?? '',
+    );
+    if (current != null &&
+        listEquals(current.attributePath, next.attributePath) &&
+        current.filter == next.filter) {
+      return;
+    }
+    _domainModelFocus[key] = next;
+    notifyListeners();
+  }
+
   /// Indique si un Undo est disponible sur le glossaire d'entreprise.
   bool get canUndoGlossary => _glossaryUndoStack.isNotEmpty;
 
@@ -170,6 +243,12 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Préférences et règles techniques globales héritées par tous les projets.
   BusinessObjectModelPreferences get modelPreferences => _modelPreferences;
+
+  /// Catalogue partagé des domaines fonctionnels du workspace actif.
+  DomainCatalog get domainCatalog => _domainCatalog;
+
+  /// Magasin disque du catalogue de domaines.
+  DomainCatalogStore get domainCatalogStore => _domainCatalogStore;
 
   /// Indique si un Undo est disponible sur le dictionnaire technique.
   bool get canUndoModelPreferences => _modelPrefsUndoStack.isNotEmpty;
@@ -331,6 +410,7 @@ class SpecForgeController extends ChangeNotifier {
     _store = SpecProjectStore(directory);
     _glossaryStore = CompanyGlossaryStore(directory);
     _modelDictionaryStore = ModelDictionaryStore(directory);
+    _domainCatalogStore = DomainCatalogStore(directory);
   }
 
   void _resetInMemoryState() {
@@ -343,11 +423,13 @@ class SpecForgeController extends ChangeNotifier {
     _glossaryUndoStack.clear();
     _glossaryRedoStack.clear();
     _modelPreferences = BusinessObjectModelPreferences.defaults;
+    _domainCatalog = DomainCatalog.empty;
     _modelPrefsUndoStack.clear();
     _modelPrefsRedoStack.clear();
     _focusedObjectId = null;
     _focusedAttributePath = const <String>[];
     _businessObjectFilter = '';
+    _domainModelFocus.clear();
     _lastError = null;
   }
 
@@ -365,6 +447,7 @@ class SpecForgeController extends ChangeNotifier {
     } catch (_) {
       _modelPreferences = BusinessObjectModelPreferences.defaults;
     }
+    _domainCatalog = await _domainCatalogStore.load();
     if (restoreLastProject) {
       final lastId = await _store.getLastActiveProjectId();
       if (lastId != null) {
@@ -375,6 +458,99 @@ class SpecForgeController extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// Valide, persiste et publie le catalogue [updated].
+  Future<void> updateDomainCatalog(DomainCatalog updated) async {
+    updated.validate();
+    if (_domainCatalog == updated) return;
+    for (final environment in _domainCatalog.environments.where(
+      (item) => item.status == LogicalEnvironmentStatus.archived,
+    )) {
+      final previousEntries = _configurationSnapshot(
+        _domainCatalog,
+        environment.id,
+      );
+      final nextEntries = _configurationSnapshot(updated, environment.id);
+      if (previousEntries != nextEntries) {
+        throw StateError(
+          'L’environnement ${environment.environmentCode} est archivé et ses configurations sont en lecture seule.',
+        );
+      }
+    }
+    await _domainCatalogStore.save(updated);
+    _domainCatalog = updated;
+    notifyListeners();
+  }
+
+  /// Met à jour le document de contrats sans modifier les autres domaines.
+  Future<void> updateDomainContracts(
+    String domainId,
+    DomainContracts document,
+  ) {
+    if (!_domainCatalog.domains.any((d) => d.id == domainId)) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    return updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final domain in _domainCatalog.domains)
+            if (domain.id == domainId)
+              domain.copyWith(contracts: document)
+            else
+              domain,
+        ],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  DomainContracts? _domainContractsOf(String domainId) => _domainCatalog.domains
+      .where((domain) => domain.id == domainId)
+      .firstOrNull
+      ?.contracts;
+
+  /// Enregistre le détail (attributs) d'un modèle du domaine [domainId] ;
+  /// [object] porte l'ID de l'entrée du catalogue.
+  Future<void> updateDomainModelObject(
+    String domainId,
+    BusinessObjectSpec object,
+  ) {
+    final contracts = _domainContractsOf(domainId);
+    if (contracts == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    return updateDomainContracts(
+      domainId,
+      contracts.withModel(object.id, object: object),
+    );
+  }
+
+  /// Remplace l'historique du chat d'un modèle ; `false` si l'entrée a disparu.
+  Future<bool> _updateDomainModelChat(
+    String domainId,
+    String entryId,
+    List<SpecChatMessage> Function(List<SpecChatMessage> chat) update,
+  ) async {
+    final contracts = _domainContractsOf(domainId);
+    if (contracts?.entryById(entryId) == null) return false;
+    await updateDomainContracts(
+      domainId,
+      contracts!.withModel(
+        entryId,
+        chat: update(contracts.chats[entryId] ?? const []),
+      ),
+    );
+    return true;
+  }
+
+  String _configurationSnapshot(DomainCatalog catalog, String environmentId) {
+    final entries =
+        catalog.configurationEntries
+            .where((entry) => entry.environmentId == environmentId)
+            .toList()
+          ..sort((a, b) => a.id.compareTo(b.id));
+    return jsonEncode([for (final entry in entries) entry.toJson()]);
   }
 
   /// Rafraîchit la liste des projets sauvegardés.
@@ -733,7 +909,8 @@ class SpecForgeController extends ChangeNotifier {
     final current = _project;
     if (current == null || _isSending) return;
     final messages = current.globalChatMessages;
-    var retryText = 'Réponds à ma dernière question sur la globalité du projet.';
+    var retryText =
+        'Réponds à ma dernière question sur la globalité du projet.';
     var lastAttachments = const <VibeChatAttachment>[];
     for (var i = messages.length - 1; i >= 0; i--) {
       if (messages[i].isUser) {
@@ -999,8 +1176,13 @@ class SpecForgeController extends ChangeNotifier {
           }
         } catch (error, stack) {
           final cause = _describeErrorCause(error);
-          saveError('[SpecForge Global Q&A] Tentative ${attempt + 1} : $cause', stack);
-          debugPrint('[SpecForge Global Q&A] Échec tentative ${attempt + 1} : $cause');
+          saveError(
+            '[SpecForge Global Q&A] Tentative ${attempt + 1} : $cause',
+            stack,
+          );
+          debugPrint(
+            '[SpecForge Global Q&A] Échec tentative ${attempt + 1} : $cause',
+          );
           if (attempt == 0 &&
               (error is FormatException ||
                   error is ArgumentError ||
@@ -1157,225 +1339,86 @@ class SpecForgeController extends ChangeNotifier {
         final parser = SpecStreamParser();
         SpecAgentResponse? parsedResponse;
         try {
-          var roundPrompt = currentPrompt;
-          final conversationContents = <Map<String, Object?>>[
-            <String, Object?>{
-              'role': 'user',
-              'parts': GeminiRestClient.buildUserParts(
-                currentPrompt,
-                attachments,
-              ),
-            },
-          ];
-
-          for (var round = 0; round <= maxToolRounds; round++) {
-            if (_stopRequested) break;
-            final allowTools = round < maxToolRounds;
-            parser.reset();
-            var nativeCalls = const <VibeToolCall>[];
-            var rawModelParts = const <Map<String, Object?>>[];
-
-            final completer = Completer<void>();
-            _activeStreamCompleter = completer;
-            _activeStreamSubscription = _aiService
-                .streamTurn(
-                  stage: stage,
-                  prompt: roundPrompt,
-                  attachments: attachments,
-                  speedMode: _speedMode,
-                  tools: allowTools ? registry.declarations : const [],
-                  conversationContents: conversationContents,
-                  enforceJsonResponse: !allowTools,
-                )
-                .listen(
-                  (event) {
-                    if (_stopRequested) return;
-                    if (event.functionCalls.isNotEmpty) {
-                      nativeCalls = event.functionCalls;
-                    }
-                    if (event.rawModelParts.isNotEmpty) {
-                      rawModelParts = event.rawModelParts;
-                    }
-                    if (event.deltaText.isNotEmpty) {
-                      final snap = parser.addChunk(event.deltaText);
-                      _streamingMessage = snap.message;
-                      if (snap.hasAskUser) {
-                        _streamingStatus = 'Préparation des questions…';
-                      } else if (snap.hasSpecPatch) {
-                        _streamingStatus = 'Structuration des spécifications…';
-                      } else if (snap.message != null) {
-                        _streamingStatus = 'Rédaction en cours…';
-                      }
-                      notifyListeners();
-                    }
-                  },
-                  onError: (Object error, StackTrace stack) {
-                    _activeStreamSubscription = null;
-                    if (!completer.isCompleted) {
-                      completer.completeError(error, stack);
-                    }
-                  },
-                  onDone: () {
-                    _activeStreamSubscription = null;
-                    if (!completer.isCompleted) {
-                      completer.complete();
-                    }
-                  },
-                  cancelOnError: true,
-                );
-
-            await completer.future;
-            _activeStreamSubscription = null;
-            _activeStreamCompleter = null;
-
-            if (_stopRequested) {
-              final partialText = parser.snapshot().message?.trim() ?? '';
-              if (checkpointSummaries.isNotEmpty) {
-                _pushUndo(baseSnapshotBeforeTurn);
-              }
-              final stoppedMessage = SpecChatMessage(
-                id: 'msg_${shortid.generate()}',
-                isUser: false,
-                text: partialText.isNotEmpty
-                    ? '$partialText\n\n[Réflexion IA interrompue par l’utilisateur.]'
-                    : 'Réflexion IA interrompue par l’utilisateur.',
-                toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
-                appliedPatchSummary: checkpointSummaries.join(', '),
-              );
-              final currentStageState = workingProject.stageStateFor(stage);
-              _project = workingProject.withStageState(
-                currentStageState.copyWith(
-                  messages: [...currentStageState.messages, stoppedMessage],
-                ),
-              );
-              await _persistProject(_project!);
-              recovered = true;
-              break;
-            }
-
-            List<VibeToolCall> callsToRun = nativeCalls;
-            SpecAgentResponse? roundParsed;
-            if (callsToRun.isEmpty && parser.rawText.trim().isNotEmpty) {
-              roundParsed = SpecAgentResponse.parse(parser.rawText);
-              if (roundParsed.specPatch == null &&
-                  roundParsed.toolCalls.isNotEmpty) {
-                callsToRun = roundParsed.toolCalls;
-              }
-            }
-
-            if (callsToRun.isNotEmpty && allowTools) {
-              _streamingMessage = null;
-              _streamingStatus =
-                  'Outil : ${callsToRun.map((c) => c.name).join(', ')}…';
-              notifyListeners();
-
-              final results = await registry.executeAll(callsToRun);
-              for (var i = 0; i < callsToRun.length; i++) {
-                final call = callsToRun[i];
-                final res = results[i];
-                final summary = SpecForgeToolRegistry.summarizeResult(
-                  call,
-                  res,
-                );
-                turnToolTraces.add(
-                  VibeToolTrace(
-                    name: call.name,
-                    arguments: call.arguments,
-                    isError: res.isError,
-                    summary: summary,
-                  ),
-                );
-                debugPrint(
-                  '[SpecForge IA Tool] ${call.name} -> $summary',
-                );
-              }
-              _streamingToolTraces = List<VibeToolTrace>.unmodifiable(
-                turnToolTraces,
-              );
-              notifyListeners();
-
-              conversationContents.add(<String, Object?>{
-                'role': 'model',
-                'parts': rawModelParts.isNotEmpty
-                    ? rawModelParts
-                    : <Map<String, Object?>>[
-                        for (final c in callsToRun)
-                          <String, Object?>{
-                            'functionCall': c.toGeminiFunctionCall(),
-                          },
-                      ],
-              });
-              conversationContents.add(<String, Object?>{
-                'role': 'user',
-                'parts': <Map<String, Object?>>[
-                  for (final r in results)
-                    <String, Object?>{
-                      'functionResponse': <String, Object?>{
-                        'name': r.name,
-                        'response': r.toGeminiFunctionResponsePayload(),
-                      },
-                    },
-                ],
-              });
-              roundPrompt =
-                  '$roundPrompt\n\nRÉSULTATS DES OUTILS (round ${round + 1}) :\n'
-                  '${jsonEncode([for (final r in results) r.toJson()])}\n'
-                  'Poursuis ou conclus maintenant avec la réponse JSON finale.';
-              continue;
-            }
-
-            final response =
-                roundParsed ?? SpecAgentResponse.parse(parser.rawText);
-            parsedResponse = response;
-
-            var updatedProject = workingProject;
-            var patchSummary = '';
-
-            if (response.specPatch != null && response.specPatch!.isNotEmpty) {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: stage,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+          );
+          if (response == null) {
+            final partialText = parser.snapshot().message?.trim() ?? '';
+            if (checkpointSummaries.isNotEmpty) {
               _pushUndo(baseSnapshotBeforeTurn);
-              final applied = SpecPatchApplier.apply(
-                workingProject,
-                response.specPatch!,
-              );
-              updatedProject = applied.project;
-              patchSummary = [
-                ...checkpointSummaries,
-                if (applied.summary.isNotEmpty) applied.summary,
-              ].join(', ');
-            } else if (checkpointSummaries.isNotEmpty) {
-              _pushUndo(baseSnapshotBeforeTurn);
-              patchSummary = checkpointSummaries.join(', ');
             }
-
-            final assistantMessage = SpecChatMessage(
+            final stoppedMessage = SpecChatMessage(
               id: 'msg_${shortid.generate()}',
               isUser: false,
-              text: response.message,
+              text: partialText.isNotEmpty
+                  ? '$partialText\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                  : 'Réflexion IA interrompue par l’utilisateur.',
               toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
-              askUser: response.askUser,
-              appliedPatchSummary: patchSummary,
-              stageReadyToAdvance: response.stageReadyToAdvance,
+              appliedPatchSummary: checkpointSummaries.join(', '),
             );
-
-            final currentStageState = updatedProject.stageStateFor(stage);
-            updatedProject = updatedProject.withStageState(
+            final currentStageState = workingProject.stageStateFor(stage);
+            _project = workingProject.withStageState(
               currentStageState.copyWith(
-                messages: [...currentStageState.messages, assistantMessage],
-                stageSummary: response.stageSummary.isNotEmpty
-                    ? response.stageSummary
-                    : currentStageState.stageSummary,
-                readyToAdvance:
-                    response.stageReadyToAdvance ||
-                    currentStageState.readyToAdvance,
+                messages: [...currentStageState.messages, stoppedMessage],
               ),
             );
-
-            _project = updatedProject;
-            await _persistProject(updatedProject);
+            await _persistProject(_project!);
             recovered = true;
             break;
           }
-          if (recovered) break;
+          parsedResponse = response;
+
+          var updatedProject = workingProject;
+          var patchSummary = '';
+
+          if (response.specPatch != null && response.specPatch!.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+            final applied = SpecPatchApplier.apply(
+              workingProject,
+              response.specPatch!,
+            );
+            updatedProject = applied.project;
+            patchSummary = [
+              ...checkpointSummaries,
+              if (applied.summary.isNotEmpty) applied.summary,
+            ].join(', ');
+          } else if (checkpointSummaries.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+            patchSummary = checkpointSummaries.join(', ');
+          }
+
+          final assistantMessage = SpecChatMessage(
+            id: 'msg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+            stageReadyToAdvance: response.stageReadyToAdvance,
+          );
+
+          final currentStageState = updatedProject.stageStateFor(stage);
+          updatedProject = updatedProject.withStageState(
+            currentStageState.copyWith(
+              messages: [...currentStageState.messages, assistantMessage],
+              stageSummary: response.stageSummary.isNotEmpty
+                  ? response.stageSummary
+                  : currentStageState.stageSummary,
+              readyToAdvance:
+                  response.stageReadyToAdvance ||
+                  currentStageState.readyToAdvance,
+            ),
+          );
+
+          _project = updatedProject;
+          await _persistProject(updatedProject);
+          recovered = true;
+          break;
         } catch (error, stack) {
           final cause = _describeErrorCause(error);
           final isValidationError =
@@ -1489,6 +1532,157 @@ class SpecForgeController extends ChangeNotifier {
       _streamingToolTraces = const <VibeToolTrace>[];
       notifyListeners();
     }
+  }
+
+  /// Diffuse un tour IA avec function calling : exécute les appels d'outils de
+  /// [registry] (tracés dans [toolTraces] et le flux) jusqu'à la réponse JSON
+  /// finale, en au plus [maxToolRounds] rounds. Partagé par les agents de la
+  /// spec et des modèles de domaine ; renvoie `null` si l'utilisateur a arrêté
+  /// la génération, [parser] conservant le texte du dernier round.
+  Future<SpecAgentResponse?> _streamAgentResponse({
+    required SpecStreamParser parser,
+    required SpecForgeStage stage,
+    required String prompt,
+    required List<VibeChatAttachment> attachments,
+    required VibeAppToolRegistry registry,
+    required List<VibeToolTrace> toolTraces,
+    String patchStatus = 'Structuration des spécifications…',
+    String? systemInstructionOverride,
+    String? staticGuideOverride,
+  }) async {
+    var roundPrompt = prompt;
+    final conversationContents = <Map<String, Object?>>[
+      <String, Object?>{
+        'role': 'user',
+        'parts': GeminiRestClient.buildUserParts(prompt, attachments),
+      },
+    ];
+
+    for (var round = 0; round <= maxToolRounds; round++) {
+      if (_stopRequested) return null;
+      final allowTools = round < maxToolRounds;
+      parser.reset();
+      var nativeCalls = const <VibeToolCall>[];
+      var rawModelParts = const <Map<String, Object?>>[];
+
+      final completer = Completer<void>();
+      _activeStreamCompleter = completer;
+      _activeStreamSubscription = _aiService
+          .streamTurn(
+            stage: stage,
+            prompt: roundPrompt,
+            attachments: attachments,
+            speedMode: _speedMode,
+            tools: allowTools ? registry.declarations : const [],
+            conversationContents: conversationContents,
+            enforceJsonResponse: !allowTools,
+            systemInstructionOverride: systemInstructionOverride,
+            staticGuideOverride: staticGuideOverride,
+          )
+          .listen(
+            (event) {
+              if (_stopRequested) return;
+              if (event.functionCalls.isNotEmpty) {
+                nativeCalls = event.functionCalls;
+              }
+              if (event.rawModelParts.isNotEmpty) {
+                rawModelParts = event.rawModelParts;
+              }
+              if (event.deltaText.isNotEmpty) {
+                final snap = parser.addChunk(event.deltaText);
+                _streamingMessage = snap.message;
+                if (snap.hasAskUser) {
+                  _streamingStatus = 'Préparation des questions…';
+                } else if (snap.hasSpecPatch) {
+                  _streamingStatus = patchStatus;
+                } else if (snap.message != null) {
+                  _streamingStatus = 'Rédaction en cours…';
+                }
+                notifyListeners();
+              }
+            },
+            onError: (Object error, StackTrace stack) {
+              _activeStreamSubscription = null;
+              if (!completer.isCompleted) {
+                completer.completeError(error, stack);
+              }
+            },
+            onDone: () {
+              _activeStreamSubscription = null;
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            },
+            cancelOnError: true,
+          );
+
+      await completer.future;
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      if (_stopRequested) return null;
+
+      List<VibeToolCall> callsToRun = nativeCalls;
+      SpecAgentResponse? roundParsed;
+      if (callsToRun.isEmpty && parser.rawText.trim().isNotEmpty) {
+        roundParsed = SpecAgentResponse.parse(parser.rawText);
+        if (roundParsed.specPatch == null && roundParsed.toolCalls.isNotEmpty) {
+          callsToRun = roundParsed.toolCalls;
+        }
+      }
+
+      if (callsToRun.isEmpty || !allowTools) {
+        return roundParsed ?? SpecAgentResponse.parse(parser.rawText);
+      }
+
+      _streamingMessage = null;
+      _streamingStatus = 'Outil : ${callsToRun.map((c) => c.name).join(', ')}…';
+      notifyListeners();
+
+      final results = await registry.executeAll(callsToRun);
+      for (var i = 0; i < callsToRun.length; i++) {
+        final call = callsToRun[i];
+        final res = results[i];
+        final summary = SpecForgeToolRegistry.summarizeResult(call, res);
+        toolTraces.add(
+          VibeToolTrace(
+            name: call.name,
+            arguments: call.arguments,
+            isError: res.isError,
+            summary: summary,
+          ),
+        );
+        debugPrint('[SpecForge IA Tool] ${call.name} -> $summary');
+      }
+      _streamingToolTraces = List<VibeToolTrace>.unmodifiable(toolTraces);
+      notifyListeners();
+
+      conversationContents.add(<String, Object?>{
+        'role': 'model',
+        'parts': rawModelParts.isNotEmpty
+            ? rawModelParts
+            : <Map<String, Object?>>[
+                for (final c in callsToRun)
+                  <String, Object?>{'functionCall': c.toGeminiFunctionCall()},
+              ],
+      });
+      conversationContents.add(<String, Object?>{
+        'role': 'user',
+        'parts': <Map<String, Object?>>[
+          for (final r in results)
+            <String, Object?>{
+              'functionResponse': <String, Object?>{
+                'name': r.name,
+                'response': r.toGeminiFunctionResponsePayload(),
+              },
+            },
+        ],
+      });
+      roundPrompt =
+          '$roundPrompt\n\nRÉSULTATS DES OUTILS (round ${round + 1}) :\n'
+          '${jsonEncode([for (final r in results) r.toJson()])}\n'
+          'Poursuis ou conclus maintenant avec la réponse JSON finale.';
+    }
+    return null;
   }
 
   static String _describeErrorCause(Object error) {
@@ -1637,7 +1831,9 @@ class SpecForgeController extends ChangeNotifier {
             : prev.definition,
         synonyms: [...prev.synonyms, ...term.synonyms],
         forbiddenTerms: [...prev.forbiddenTerms, ...forbiddenTerms],
-        domain: term.domain.trim().isNotEmpty ? term.domain.trim() : prev.domain,
+        domain: term.domain.trim().isNotEmpty
+            ? term.domain.trim()
+            : prev.domain,
         owner: owner.trim().isNotEmpty ? owner.trim() : prev.owner,
         technicalNameHint: technicalNameHint.trim().isNotEmpty
             ? technicalNameHint.trim()
@@ -1957,6 +2153,396 @@ class SpecForgeController extends ChangeNotifier {
     }
   }
 
+  /// Envoie un message à l'agent IA du modèle [entryId] du domaine [domainId] ;
+  /// [requestsMoreQuestions] demande des questions complémentaires (« + Questions »).
+  Future<void> sendDomainModelMessage(
+    String domainId,
+    String entryId,
+    String text, {
+    bool requestsMoreQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && !requestsMoreQuestions && attachments.isEmpty) {
+      return;
+    }
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour approfondir ce modèle.'
+              : 'Analyse les pièces jointes et propose les attributs du modèle.');
+    await _runDomainModelTurn(
+      domainId,
+      entryId,
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire du chat d'un modèle de domaine ;
+  /// [askMore] enchaîne sur des questions complémentaires.
+  Future<void> submitDomainModelAskUserAnswers(
+    String domainId,
+    String entryId,
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    if (_isSending) return;
+    final target = domainModelChat(
+      domainId,
+      entryId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final summary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runDomainModelTurn(
+      domainId,
+      entryId,
+      userDisplayText: askMore
+          ? '$summary\n(+ questions complémentaires demandées)'
+          : summary,
+      promptInput: summary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+      answered: target.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+        askUserRequestedMore: askMore,
+      ),
+    );
+  }
+
+  /// Ignore un questionnaire du chat d'un modèle en appliquant les valeurs par défaut.
+  Future<void> skipDomainModelAskUser(
+    String domainId,
+    String entryId,
+    String messageId,
+  ) async {
+    if (_isSending) return;
+    final target = domainModelChat(
+      domainId,
+      entryId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final defaults = askUser.defaultAnswers();
+    await _runDomainModelTurn(
+      domainId,
+      entryId,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput:
+          'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}',
+      afterAskUserReply: true,
+      answered: target.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      ),
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat d'un modèle de domaine.
+  Future<void> retryLastDomainModelTurn(String domainId, String entryId) async {
+    if (_isSending) return;
+    final lastUser = domainModelChat(domainId, entryId).lastWhere(
+      (m) => m.isUser,
+      orElse: () => SpecChatMessage(
+        id: '',
+        isUser: true,
+        text: 'La tentative précédente a échoué. Corrige le format JSON et mets à jour le modèle.',
+      ),
+    );
+    await _runDomainModelTurn(
+      domainId,
+      entryId,
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '${(lastUser.promptText ?? lastUser.text).trim()}\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastUser.attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA d'un modèle de domaine.
+  Future<void> clearDomainModelChat(String domainId, String entryId) async {
+    if (_isSending) return;
+    await _updateDomainModelChat(domainId, entryId, (_) => const []);
+  }
+
+  /// Tour IA sur le détail d'un modèle, avec les mêmes mécanismes que l'étape
+  /// Objets métier (outils, traces, scope sélectionné, reprises automatiques)
+  /// appliqués au projet temporaire de la fiche. Le document est relu à
+  /// chaque écriture : une saisie DSL pendant la réponse n'est pas écrasée,
+  /// et une entrée supprimée entre-temps termine le tour sans rien enregistrer.
+  Future<void> _runDomainModelTurn(
+    String domainId,
+    String entryId, {
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecChatMessage? answered,
+  }) async {
+    final contracts = _domainContractsOf(domainId);
+    final entry = contracts?.entryById(entryId);
+    if (contracts == null || entry == null) return;
+    final domainName = _domainCatalog.domains
+        .firstWhere((d) => d.id == domainId)
+        .name;
+
+    SpecForgeProject? readModelProject() {
+      final current = _domainContractsOf(domainId);
+      final currentEntry = current?.entryById(entryId);
+      if (current == null || currentEntry == null) return null;
+      return DomainModelAiAgent.modelProject(
+        current,
+        currentEntry,
+        domainId: domainId,
+        modelPreferences: _modelPreferences,
+      );
+    }
+
+    String buildPrompt(
+      DomainContracts document,
+      JsonNode target, {
+      required bool afterReply,
+    }) => DomainModelAiAgent.buildTurnPrompt(
+      domainName: domainName,
+      domainId: domainId,
+      contracts: document,
+      entry: target,
+      history: document.chats[entryId] ?? const <SpecChatMessage>[],
+      userInput: promptInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterReply,
+      forceFollowUpQuestions: forceFollowUpQuestions,
+      companyGlossary: _companyGlossary,
+      focusedAttributePath: domainModelAttributePath(domainId, entryId),
+      filter: domainModelFilter(domainId, entryId),
+    );
+
+    var currentPrompt = buildPrompt(
+      contracts,
+      entry,
+      afterReply: afterAskUserReply,
+    );
+    final userMessage = SpecChatMessage(
+      id: 'dmmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+    final turnToolTraces = <VibeToolTrace>[];
+    final priorCauses = <String>[];
+    Future<bool> append(SpecChatMessage message) =>
+        _updateDomainModelChat(domainId, entryId, (chat) => [...chat, message]);
+
+    final registry =
+        _customToolRegistry ??
+        SpecForgeToolRegistry.build(
+          readProject: readModelProject,
+          readCompanyGlossary: () => _companyGlossary,
+          readModelPreferences: () => _modelPreferences,
+          onUpdateProject: (updated) async {
+            final object = updated.businessObjects
+                .where((o) => o.id == entryId)
+                .firstOrNull;
+            if (object != null) {
+              await updateDomainModelObject(domainId, object);
+            }
+          },
+          onNavigateStage: (_) async {},
+          onFocusObject: (objectId) {
+            if (objectId == entryId) {
+              focusDomainModelAttribute(domainId, entryId, const []);
+            }
+          },
+          onFocusSelection: ({objectId, attributePath = const <String>[]}) {
+            if (objectId == entryId) {
+              focusDomainModelAttribute(domainId, entryId, attributePath);
+            }
+          },
+          onFilterBusinessObjects: (query) =>
+              setDomainModelFilter(domainId, entryId, query),
+          toolNames: DomainModelAiAgent.toolNames,
+          coherenceIssueFilter: DomainModelAiAgent.coherenceIssueFilterFor(
+            entryId,
+          ),
+        );
+
+    _isSending = true;
+    _sendingDomainModelKey = '$domainId/$entryId';
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Analyse du modèle ${entry.name}…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final started = await _updateDomainModelChat(
+        domainId,
+        entryId,
+        (chat) => [
+          for (final message in chat)
+            if (message.id == answered?.id) answered! else message,
+          userMessage,
+        ],
+      );
+      if (!started) return;
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.businessObjects,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour des attributs…',
+            systemInstructionOverride: DomainModelAiAgent.systemInstruction,
+            staticGuideOverride: DomainModelAiAgent.staticGuide,
+          );
+          final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
+          if (response == null) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            await append(
+              SpecChatMessage(
+                id: 'dmmsg_${shortid.generate()}',
+                isUser: false,
+                text: partial.isNotEmpty
+                    ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                    : 'Réflexion IA interrompue par l’utilisateur.',
+                toolTraces: traces,
+              ),
+            );
+            return;
+          }
+          parsedResponse = response;
+
+          final current = _domainContractsOf(domainId);
+          final currentEntry = current?.entryById(entryId);
+          if (current == null || currentEntry == null) return;
+          var next = current;
+          var patchSummary = '';
+          final patch = response.specPatch;
+          if (patch != null && patch.isNotEmpty) {
+            final applied = DomainModelAiAgent.applyPatch(
+              current.objectFor(currentEntry),
+              patch,
+              referenceTargets: current.referenceTargetsOf(currentEntry),
+            );
+            if (applied.summary.isNotEmpty) {
+              next = next.withModel(entryId, object: applied.object);
+              patchSummary = applied.summary;
+            }
+          }
+          final assistantMessage = SpecChatMessage(
+            id: 'dmmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: traces,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          await updateDomainContracts(
+            domainId,
+            next.withModel(
+              entryId,
+              chat: [...?next.chats[entryId], assistantMessage],
+            ),
+          );
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+          saveError(
+            '[SpecForge Modèle IA] Tentative ${attempt + 1}/$maxRecoveryAttempts : $cause',
+            stack,
+          );
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          final document = _domainContractsOf(domainId);
+          final target = document?.entryById(entryId);
+          final project = readModelProject();
+          if (attempt < maxRecoveryAttempts - 1 &&
+              isValidationError &&
+              document != null &&
+              target != null &&
+              project != null) {
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: buildPrompt(
+                document,
+                target,
+                afterReply: afterAskUserReply,
+              ),
+              priorCauses: priorCauses,
+              salvage: SpecSalvageOutcome.none(
+                project,
+                wasTruncated: parsedResponse == null,
+              ),
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+          _lastError = cause;
+          await append(
+            SpecChatMessage(
+              id: 'dmmsg_${shortid.generate()}',
+              isUser: false,
+              text:
+                  'Erreur lors de l’appel à l’assistant du modèle '
+                  '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n'
+                  '${priorCauses.length > 1 ? priorCauses.join('\n') : cause}',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            ),
+          );
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingDomainModelKey = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
   void _pushGlossaryUndo(CompanyGlossary snapshot) {
     _glossaryUndoStack.add(snapshot);
     if (_glossaryUndoStack.length > 40) {
@@ -2056,7 +2642,9 @@ class SpecForgeController extends ChangeNotifier {
   }) async {
     final current = _project;
     if (current == null || current.businessObjects.isEmpty) return false;
-    final attrCase = applyAttributeCase ? _modelPreferences.attributeCase : null;
+    final attrCase = applyAttributeCase
+        ? _modelPreferences.attributeCase
+        : null;
     final enumCase = applyEnumCase ? _modelPreferences.enumCase : null;
     if (attrCase == null && enumCase == null) return false;
 

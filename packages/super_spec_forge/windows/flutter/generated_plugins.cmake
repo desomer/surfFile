@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
   flutter_js
+  flutter_secure_storage_windows
   url_launcher_windows
   webview_flutter_windows
 )

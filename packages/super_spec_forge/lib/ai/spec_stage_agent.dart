@@ -42,6 +42,110 @@ Ta mission :
     SpecForgeStage.reviewExport => _reviewExportAgent,
   };
 
+  /// Règles communes de dimensionnement et de modélisation des attributs
+  /// (préférences du modèle, dictionnaire technique, nommage, types,
+  /// `schemaConstraints` et extensions `x-*`), partagées par l'étape
+  /// Objets métier et l'agent des modèles de domaine.
+  static const String attributeModelingRules = '''
+   - RÈGLE 1 — MAX 200 ATTRIBUTS : un objet métier ne doit JAMAIS dépasser 200 attributs au total (somme récursive des attributs directs et de tous les sous-attributs imbriqués). Scinde tout objet trop vaste en plusieurs objets cohérents.
+   - RÈGLE 2 — MAX 200 LIGNES PAR TABLEAU IMBRIQUÉ : tout tableau imbriqué ("isArray": true dans un objet métier) est strictement limité à 200 lignes maximum (ex. lignes d’une commande, échéancier, pièces jointes). Renseigne systématiquement "estimatedMaxRows" (entier <= 200).
+   - RÈGLE 3 — OBJET MÉTIER DÉDIÉ SI > 200 LIGNES : si un tableau doit fonctionnellement contenir beaucoup plus de 200 lignes (ex. catalogue produits, historique de mouvements, journal d’audit, factures, clients), il est STRICTEMENT INTERDIT de l’imbriquer comme tableau dans l’objet parent ; modélise-le obligatoirement comme un objet métier séparé relié par référence ("type": "reference" ou relation 1:N).
+   - PRÉFÉRENCES DU MODÈLE & DICTIONNAIRE TECHNIQUE : respecte impérativement la compatibilité `JsonAttributePath`, `Yaml2JsonSchemasParser` et `super_designer`, ainsi que le bloc **PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS** et son **DICTIONNAIRE DE RÈGLES TECHNIQUES ACTIVES** fournis dans le prompt du tour. Applique la langue et la casse demandées pour les attributs/relations (`camelCase`, `snake_case`, `PascalCase`, `kebab-case`, `SCREAMING_SNAKE_CASE`), la casse des `enumValues`/états, la stratégie d'identifiant primaire, le style de clés étrangères, les champs d'audit, la rigueur JSON Schema, la politique de nullabilité, le style de relations, le profil régional/monétaire et les consignes libres d'équipe. Chaque règle technique active (suffixes, préfixes, formats recommandés) s'applique à tout attribut concerné.
+   - Les noms d'attributs (`name`), sous-attributs, relations et `technicalName` doivent être des identifiants ASCII stricts correspondant à `^[A-Za-z_][A-Za-z0-9_-]*\$` : **SANS ACCENT**, sans espace, ni `.`, `[`, `]`, `?`, et ne JAMAIS commencer par `@`.
+   - Types d'attributs autorisés : string, integer, number, boolean, date, datetime, uuid, email, url, enumeration, reference, object, json.
+   - Utilise "type": "object" avec "children": [...] pour les sous-objets structurés (ex. adresse, coordonnées, lignes bornées <= 200).
+   - Renseigne "schemaConstraints" avec les mots-clés JSON Schema Draft 7 / 2020-12 pertinents : minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, minLength, maxLength, pattern, format, contentMediaType, contentEncoding, minItems, maxItems, uniqueItems, contains, minContains, maxContains, prefixItems, minProperties, maxProperties, additionalProperties, patternProperties, propertyNames, dependentRequired, dependentSchemas, const, examples, readOnly, writeOnly, deprecated, oneOf, anyOf, allOf, not, if/then/else, et les extensions x-mask, x-dateFormat, x-searchable, x-database-index, x-enumNames et x-enumDescriptions.
+   - MASQUES DE SAISIE (`x-mask`) : pour les chaînes structurées saisies/affichées (code, référence, numéro, code postal, téléphone, plaque, matricule, IBAN…), renseigne `"x-mask"` dans `"schemaConstraints"` avec la syntaxe `PatternMask` (`#` = chiffre, `A` = lettre, `U` = lettre majuscule, `L` = lettre minuscule, `*` = alphanumérique, `\\` = échappement ; ex. `"#####"`, `"## ## ## ## ##"`, `"UU-###-UU"`, `"CMD-####-####"`).
+   - INDEXATION RECHERCHE (`x-searchable`) : renseigne `"x-searchable"` (booléen `true` ou `false`) dans `"schemaConstraints"` sur chaque attribut scalaire/énuméré pour indiquer s'il doit être indexé dans les recherches/filtres (`true` sur codes, numéros, noms, emails, statuts, libellés ; `false` sur UUID techniques internes, mots de passe, notes longues ou champs binaires).
+   - INDEXATION BASE DE DONNÉES (`x-database-index`) : renseigne `"x-database-index"` (booléen `true` ou `false`) dans `"schemaConstraints"` sur les attributs pertinents pour les requêtes SQL/NoSQL (`true` sur clés uniques métier, clés étrangères/références, statuts filtrés, codes, emails, dates de tri fréquent ; `false` ou omis sur descriptions longues ou champs rarement filtrés).
+   - EXEMPLES JSON SCHEMA OBLIGATOIRES : sur chaque attribut scalaire (racine comme sous-attributs dans "children"), renseigne systématiquement `"schemaConstraints": { ..., "examples": [...] }` avec 1 à 3 valeurs d'exemple réalistes, typées (ex. nombre pour `number`/`integer`, booléen pour `boolean`, chaîne conforme pour `string`/`date`/`email`/`uuid`) et strictement conformes aux contraintes (`pattern`, `format`, `minimum`/`maximum`, `minLength`/`maxLength`, `enumValues`), dans la langue des exemples (`contentLanguage`) et le profil régional (`localeProfile`) demandés.
+   - ÉNUMÉRATIONS (`x-enumNames` & `x-enumDescriptions`) : si `type == "enumeration"`, renseigne impérativement `"enumValues"` ET renseigne dans `"schemaConstraints"` les tableaux `"x-enumNames"` (noms/libellés courts affichables) et `"x-enumDescriptions"` (descriptifs métier clairs de chaque choix), strictement de même longueur et alignés par index avec `"enumValues"` dans la langue des textes (`contentLanguage`).''';
+
+  /// Consignes de pilotage de l'arbre (scope sélectionné, outils
+  /// `focus_stage_or_object` et `filter_business_objects`), partagées par
+  /// l'étape Objets métier et l'agent des modèles de domaine.
+  static const String workshopPilotingRules = '''
+     * Si un bloc `FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION)` indique un attribut ou un objet sélectionné et que la demande de l’utilisateur est ciblée (« cet attribut », « celui sélectionné », « modifie-le »…), modifie en priorité l’élément focalisé en conservant son `id`.
+     * Si l’utilisateur demande dans le chat de sélectionner / montrer / inspecter un objet ou un attribut précis, appelle `focus_stage_or_object(stage: "businessObjects", objectId: "...", attributePath: "...")`.
+     * Si l’utilisateur demande de filtrer / rechercher des objets ou attributs dans l’arbre (ou de réinitialiser le filtre), appelle `filter_business_objects(query: "...")`.''';
+
+  /// Exemples JSON d'attributs (`schemaConstraints`, `x-mask`, `x-searchable`,
+  /// `x-database-index`, `x-enumNames`, `x-enumDescriptions`, `examples`)
+  /// partagés par les guides de patch des objets métier et des modèles de domaine.
+  static const String attributeExamplesJson = '''
+        {
+          "id": "attr_cmd_numero",
+          "name": "numero",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "unique": true,
+          "isArray": false,
+          "description": "Référence unique de commande",
+          "constraints": "Format CMD-YYYY-NNNN",
+          "schemaConstraints": {
+            "minLength": 13,
+            "maxLength": 13,
+            "pattern": "^CMD-\\d{4}-\\d{4}\$",
+            "x-mask": "CMD-####-####",
+            "x-searchable": true,
+            "x-database-index": true,
+            "examples": ["CMD-2026-0001", "CMD-2026-0042"]
+          }
+        },
+        {
+          "id": "attr_cmd_adresse",
+          "name": "adresseLivraison",
+          "type": "object",
+          "required": true,
+          "description": "Sous-objet structuré d'adresse de livraison",
+          "schemaConstraints": {
+            "additionalProperties": false,
+            "minProperties": 3
+          },
+          "children": [
+            {"id": "attr_cmd_rue", "name": "rue", "type": "string", "required": true, "schemaConstraints": {"minLength": 2, "maxLength": 150, "x-searchable": true, "examples": ["12 rue de la Paix"]}},
+            {"id": "attr_cmd_cp", "name": "codePostal", "type": "string", "required": true, "schemaConstraints": {"pattern": "^\\d{5}\$", "x-mask": "#####", "x-searchable": true, "examples": ["75001"]}},
+            {"id": "attr_cmd_ville", "name": "ville", "type": "string", "required": true, "schemaConstraints": {"x-searchable": true, "examples": ["Paris"]}}
+          ]
+        },
+        {
+          "id": "attr_cmd_lignes",
+          "name": "lignes",
+          "type": "object",
+          "isArray": true,
+          "estimatedMaxRows": 100,
+          "required": true,
+          "description": "Tableau imbriqué borné (<= 200 lignes max)",
+          "schemaConstraints": {"minItems": 1, "maxItems": 100, "uniqueItems": false},
+          "children": [
+            {"id": "attr_lig_ref", "name": "produitId", "type": "reference", "referenceObjectId": "obj_produit", "required": true, "schemaConstraints": {"x-searchable": false, "x-database-index": true, "examples": ["prod_001"]}},
+            {"id": "attr_lig_qte", "name": "quantite", "type": "integer", "required": true, "schemaConstraints": {"minimum": 1, "maximum": 10000, "examples": [2, 5]}},
+            {"id": "attr_lig_pu", "name": "prixUnitaire", "type": "number", "required": true, "schemaConstraints": {"minimum": 0, "multipleOf": 0.01, "examples": [49.90]}}
+          ]
+        },
+        {
+          "id": "attr_cmd_statut",
+          "name": "statut",
+          "type": "enumeration",
+          "required": true,
+          "enumValues": ["brouillon", "validee", "expediee", "annulee"],
+          "defaultValue": "brouillon",
+          "description": "État courant dans le cycle de vie",
+          "schemaConstraints": {
+            "x-searchable": true,
+            "x-database-index": true,
+            "x-enumNames": ["Brouillon", "Validée", "Expédiée", "Annulée"],
+            "x-enumDescriptions": [
+              "La commande est en cours de préparation",
+              "La commande a été confirmée par le gestionnaire",
+              "La commande a quitté l'entrepôt",
+              "La commande a été annulée sans suite"
+            ],
+            "examples": ["validee"]
+          }
+        }''';
+
   static const String _commonJsonRules = '''
 Réponds EXCLUSIVEMENT en français et renvoie UNIQUEMENT un objet JSON valide (aucun Markdown, aucun texte hors JSON).
 Place impérativement la clé "message" EN PREMIER pour permettre le streaming en direct :
@@ -214,28 +318,14 @@ Tu es le « Domain Modeler » (Architecte Données & DDD) de SuperSpecForge.
 Ta mission pour l'étape 3 (Objets métiers structurés JSON Schema) :
 1. À partir de la vision et du cahier des charges, modélise les objets métiers comme des schémas JSON structurés avec sous-objets imbriqués ("type": "object", "children": [...]), attributs typés, relations (1:1, 1:N, N:M) et cycles de vie (états et transitions).
 2. Pose des questions ciblées via "askUser" sur la granularité des entités, les sous-objets imbriqués, la volumétrie attendue des listes/tableaux, les statuts du cycle de vie ou les cardinalités ambiguës.
-3. RÈGLES IMPÉRATIVES DE DIMENSIONNEMENT (STRICTES & BLOQUANTES) :
-   - RÈGLE 1 — MAX 200 ATTRIBUTS : un objet métier ne doit JAMAIS dépasser 200 attributs au total (somme récursive des attributs directs et de tous les sous-attributs imbriqués). Scinde tout objet trop vaste en plusieurs objets cohérents.
-   - RÈGLE 2 — MAX 200 LIGNES PAR TABLEAU IMBRIQUÉ : tout tableau imbriqué ("isArray": true dans un objet métier) est strictement limité à 200 lignes maximum (ex. lignes d’une commande, échéancier, pièces jointes). Renseigne systématiquement "estimatedMaxRows" (entier <= 200).
-   - RÈGLE 3 — OBJET MÉTIER DÉDIÉ SI > 200 LIGNES : si un tableau doit fonctionnellement contenir beaucoup plus de 200 lignes (ex. catalogue produits, historique de mouvements, journal d’audit, factures, clients), il est STRICTEMENT INTERDIT de l’imbriquer comme tableau dans l’objet parent ; modélise-le obligatoirement comme un objet métier séparé relié par référence ("type": "reference" ou relation 1:N).
-4. Respecte impérativement la compatibilité `JsonAttributePath`, `Yaml2JsonSchemasParser` et `super_designer`, ainsi que le bloc **PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS** fourni dans le prompt du tour :
-   - Applique la langue et la casse demandées pour les attributs/relations (`camelCase`, `snake_case`, `PascalCase`, `kebab-case`, `SCREAMING_SNAKE_CASE`), la casse des `enumValues`/états, la stratégie d'identifiant primaire, le style de clés étrangères, les champs d'audit, la rigueur JSON Schema, la politique de nullabilité, le style de relations, le profil régional/monétaire et les consignes libres d'équipe.
-   - Les noms d'attributs (`name`), sous-attributs, relations et `technicalName` doivent être des identifiants ASCII stricts correspondant à `^[A-Za-z_][A-Za-z0-9_-]*\$` : **SANS ACCENT**, sans espace, ni `.`, `[`, `]`, `?`, et ne JAMAIS commencer par `@`.
-   - Types d'attributs autorisés : string, integer, number, boolean, date, datetime, uuid, email, url, enumeration, reference, object, json.
-   - Utilise "type": "object" avec "children": [...] pour les sous-objets structurés (ex. adresse, coordonnées, lignes bornées <= 200).
-   - Renseigne "schemaConstraints" avec les mots-clés JSON Schema Draft 7 / 2020-12 pertinents : minimum, maximum, exclusiveMinimum, exclusiveMaximum, multipleOf, minLength, maxLength, pattern, format, contentMediaType, contentEncoding, minItems, maxItems, uniqueItems, contains, minContains, maxContains, prefixItems, minProperties, maxProperties, additionalProperties, patternProperties, propertyNames, dependentRequired, dependentSchemas, const, examples, readOnly, writeOnly, deprecated, oneOf, anyOf, allOf, not, if/then/else, et les extensions x-mask, x-dateFormat, x-searchable, x-database-index, x-enumNames et x-enumDescriptions.
-   - MASQUES DE SAISIE (`x-mask`) : pour les chaînes structurées saisies/affichées (code, référence, numéro, code postal, téléphone, plaque, matricule, IBAN…), renseigne `"x-mask"` dans `"schemaConstraints"` avec la syntaxe `PatternMask` (`#` = chiffre, `A` = lettre, `U` = lettre majuscule, `L` = lettre minuscule, `*` = alphanumérique, `\\` = échappement ; ex. `"#####"`, `"## ## ## ## ##"`, `"UU-###-UU"`, `"CMD-####-####"`).
-   - INDEXATION RECHERCHE (`x-searchable`) : renseigne `"x-searchable"` (booléen `true` ou `false`) dans `"schemaConstraints"` sur chaque attribut scalaire/énuméré pour indiquer s'il doit être indexé dans les recherches/filtres (`true` sur codes, numéros, noms, emails, statuts, libellés ; `false` sur UUID techniques internes, mots de passe, notes longues ou champs binaires).
-   - INDEXATION BASE DE DONNÉES (`x-database-index`) : renseigne `"x-database-index"` (booléen `true` ou `false`) dans `"schemaConstraints"` sur les attributs pertinents pour les requêtes SQL/NoSQL (`true` sur clés uniques métier, clés étrangères/références, statuts filtrés, codes, emails, dates de tri fréquent ; `false` ou omis sur descriptions longues ou champs rarement filtrés).
-   - EXEMPLES JSON SCHEMA OBLIGATOIRES : sur chaque attribut scalaire (racine comme sous-attributs dans "children"), renseigne systématiquement `"schemaConstraints": { ..., "examples": [...] }` avec 1 à 3 valeurs d'exemple réalistes, typées (ex. nombre pour `number`/`integer`, booléen pour `boolean`, chaîne conforme pour `string`/`date`/`email`/`uuid`) et strictement conformes aux contraintes (`pattern`, `format`, `minimum`/`maximum`, `minLength`/`maxLength`, `enumValues`), dans la langue des exemples (`contentLanguage`) et le profil régional (`localeProfile`) demandés.
-   - ÉNUMÉRATIONS (`x-enumNames` & `x-enumDescriptions`) : si `type == "enumeration"`, renseigne impérativement `"enumValues"` ET renseigne dans `"schemaConstraints"` les tableaux `"x-enumNames"` (noms/libellés courts affichables) et `"x-enumDescriptions"` (descriptifs métier clairs de chaque choix), strictement de même longueur et alignés par index avec `"enumValues"` dans la langue des textes (`contentLanguage`).
-   - PILOTAGE DE L’ATELIER & SCOPE SÉLECTIONNÉ :
-     * Si un bloc `FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION)` indique un attribut ou un objet sélectionné et que la demande de l’utilisateur est ciblée (« cet attribut », « celui sélectionné », « modifie-le »…), modifie en priorité l’élément focalisé en conservant son `id`.
-     * Si l’utilisateur demande dans le chat de sélectionner / montrer / inspecter un objet ou un attribut précis, appelle `focus_stage_or_object(stage: "businessObjects", objectId: "...", attributePath: "...")`.
-     * Si l’utilisateur demande de filtrer / rechercher des objets ou attributs dans l’arbre (ou de réinitialiser le filtre), appelle `filter_business_objects(query: "...")`.
-   - Si l'objet possède un statut évolutif, modélise "lifecycleStates" (avec au moins un "isInitial": true) et "lifecycleTransitions".
+3. RÈGLES IMPÉRATIVES DE DIMENSIONNEMENT ET DE MODÉLISATION DES ATTRIBUTS (STRICTES & BLOQUANTES) :
+$attributeModelingRules
+4. PILOTAGE DE L’ATELIER & SCOPE SÉLECTIONNÉ :
+$workshopPilotingRules
+5. Si l'objet possède un statut évolutif, modélise "lifecycleStates" (avec au moins un "isInitial": true) et "lifecycleTransitions".
 $_commonJsonRules''',
-    patchSchemaGuide: '''
+    patchSchemaGuide:
+        '''
 SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
 {
   "businessObjects": [
@@ -246,78 +336,7 @@ SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
       "description": "Engagement commercial entre un client et l'entreprise",
       "aggregateRoot": true,
       "attributes": [
-        {
-          "id": "attr_cmd_numero",
-          "name": "numero",
-          "type": "string",
-          "required": true,
-          "nullable": false,
-          "unique": true,
-          "isArray": false,
-          "description": "Référence unique de commande",
-          "constraints": "Format CMD-YYYY-NNNN",
-          "schemaConstraints": {
-            "minLength": 13,
-            "maxLength": 13,
-            "pattern": "^CMD-\\d{4}-\\d{4}\$",
-            "x-mask": "CMD-####-####",
-            "x-searchable": true,
-            "x-database-index": true,
-            "examples": ["CMD-2026-0001", "CMD-2026-0042"]
-          }
-        },
-        {
-          "id": "attr_cmd_adresse",
-          "name": "adresseLivraison",
-          "type": "object",
-          "required": true,
-          "description": "Sous-objet structuré d'adresse de livraison",
-          "schemaConstraints": {
-            "additionalProperties": false,
-            "minProperties": 3
-          },
-          "children": [
-            {"id": "attr_cmd_rue", "name": "rue", "type": "string", "required": true, "schemaConstraints": {"minLength": 2, "maxLength": 150, "x-searchable": true, "examples": ["12 rue de la Paix"]}},
-            {"id": "attr_cmd_cp", "name": "codePostal", "type": "string", "required": true, "schemaConstraints": {"pattern": "^\\d{5}\$", "x-mask": "#####", "x-searchable": true, "examples": ["75001"]}},
-            {"id": "attr_cmd_ville", "name": "ville", "type": "string", "required": true, "schemaConstraints": {"x-searchable": true, "examples": ["Paris"]}}
-          ]
-        },
-        {
-          "id": "attr_cmd_lignes",
-          "name": "lignes",
-          "type": "object",
-          "isArray": true,
-          "estimatedMaxRows": 100,
-          "required": true,
-          "description": "Tableau imbriqué borné (<= 200 lignes max)",
-          "schemaConstraints": {"minItems": 1, "maxItems": 100, "uniqueItems": false},
-          "children": [
-            {"id": "attr_lig_ref", "name": "produitId", "type": "reference", "referenceObjectId": "obj_produit", "required": true, "schemaConstraints": {"x-searchable": false, "x-database-index": true, "examples": ["prod_001"]}},
-            {"id": "attr_lig_qte", "name": "quantite", "type": "integer", "required": true, "schemaConstraints": {"minimum": 1, "maximum": 10000, "examples": [2, 5]}},
-            {"id": "attr_lig_pu", "name": "prixUnitaire", "type": "number", "required": true, "schemaConstraints": {"minimum": 0, "multipleOf": 0.01, "examples": [49.90]}}
-          ]
-        },
-        {
-          "id": "attr_cmd_statut",
-          "name": "statut",
-          "type": "enumeration",
-          "required": true,
-          "enumValues": ["brouillon", "validee", "expediee", "annulee"],
-          "defaultValue": "brouillon",
-          "description": "État courant dans le cycle de vie",
-          "schemaConstraints": {
-            "x-searchable": true,
-            "x-database-index": true,
-            "x-enumNames": ["Brouillon", "Validée", "Expédiée", "Annulée"],
-            "x-enumDescriptions": [
-              "La commande est en cours de préparation",
-              "La commande a été confirmée par le gestionnaire",
-              "La commande a quitté l'entrepôt",
-              "La commande a été annulée sans suite"
-            ],
-            "examples": ["validee"]
-          }
-        }
+$attributeExamplesJson
       ],
       "relations": [
         {

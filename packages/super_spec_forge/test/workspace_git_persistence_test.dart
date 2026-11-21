@@ -373,6 +373,20 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      final catalog = DomainCatalog(domains: const [
+        FunctionalDomain(id: 'sales', domainCode: 'sales', name: 'Ventes'),
+      ]);
+      await tester.runAsync(() => controller.updateDomainCatalog(catalog));
+      await tester.tap(find.text('Design'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('design-link-domain_management')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('domain-item-sales')));
+      await tester.pumpAndSettle();
+      Finder title(String value) =>
+          find.descendant(of: find.byType(AppBar), matching: find.text(value));
+      expect(title('Gestion des domaines › Ventes'), findsOneWidget);
+
       await tester.tap(find.byKey(const ValueKey('spec-workspace-selector-btn')));
       await tester.pumpAndSettle();
 
@@ -400,6 +414,10 @@ void main() {
 
       expect(controller.workspaceDirectory.path, wsNew.path);
       expect(controller.workspaceMetadata?.name, 'Nouveau Dépôt');
+      // Même identifiant dans le nouveau workspace, mais aucune fiche ouverte.
+      await tester.runAsync(() => controller.updateDomainCatalog(catalog));
+      await tester.pumpAndSettle();
+      expect(title('Design › Gestion des domaines'), findsOneWidget);
       expect(
         SpecWorkspaceStore.gitignoreFileFor(wsNew).existsSync(),
         isTrue,

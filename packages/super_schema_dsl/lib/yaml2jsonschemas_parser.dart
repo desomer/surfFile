@@ -38,8 +38,10 @@ import 'json_browser.dart';
 /// Convertit le DSL YAML en arbre de [JsonNode] (un nœud racine par
 /// définition), réutilisable dans un [JsonModel].
 class Yaml2JsonSchemasParser {
-  Yaml2JsonSchemasParser({String Function()? generateId})
-    : _generateId = generateId ?? shortid.generate;
+  /// [externalTypes] déclare des types de référence fournis par l'application.
+  Yaml2JsonSchemasParser({String Function()? generateId, Set<String> externalTypes = const {}})
+    : _externalTypes = Set.unmodifiable(externalTypes),
+      _generateId = generateId ?? shortid.generate;
 
   /// Types primitifs reconnus.
   static const primitives = {
@@ -106,6 +108,7 @@ class Yaml2JsonSchemasParser {
   );
 
   final String Function() _generateId;
+  final Set<String> _externalTypes;
   final Set<String> _ids = {};
   Set<String> _definitions = const {};
 
@@ -220,6 +223,7 @@ class Yaml2JsonSchemasParser {
       type == enumType ||
       type == whenType ||
       type == endpointType ||
+      _externalTypes.contains(type) ||
       _definitions.contains(type);
 
   static Iterable<JsonNode> _walk(List<JsonNode> nodes) sync* {

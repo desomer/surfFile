@@ -2,6 +2,8 @@
 
 Application Flutter Desktop et bibliothèque Dart de conception de cahier des charges, d'objets métiers et de règles de gestion à partir d'une idée, guidée par un wizard multi-étapes d'agents IA spécialisés.
 
+La barre d’application indique la page visible (`Spec › Projets`), l’étape et le projet dans le wizard (`Lexique métier — Atlas`), ou la sélection dans Design (`Modèles & Contrats › Client`). Le workspace actif reste affiché à droite.
+
 ## Étapes du wizard IA
 
 1. **Lexique métier** (`Ubiquitous Language Expert`) : définition des termes canoniques, synonymes à unifier, sigles et conventions de vocabulaire.
@@ -27,6 +29,8 @@ Les données sont stockées dans un **dossier Workspace sélectionnable** (par d
 ├── dictionary/
 │   ├── preferences.json                # Préférences globales de modélisation
 │   └── rules/<slug>.json               # 1 fichier par règle technique
+├── domains/
+│   └── catalog.json                    # Domaines, environnements, services, configurations & audit
 └── projects/<project-slug>/
     ├── project.json                    # Métadonnées du projet
     ├── spec/
@@ -40,6 +44,70 @@ Les données sont stockées dans un **dossier Workspace sélectionnable** (par d
     ├── chats/                          # Historiques IA par étape et chat global
     └── attachments/                    # Pièces jointes dédupliquées
 ```
+
+## Gestion des domaines
+
+L'onglet **Design → Gestion des domaines** permet de gérer les domaines
+fonctionnels, leurs environnements logiques, les microservices, les variables
+de configuration et les secrets. Les codes sont validés en `kebab-case`, les
+clés de configuration en `UPPER_SNAKE_CASE`. Le clonage copie les variables
+en clair et crée les secrets en attente de réinitialisation. L'export `.env`
+omet les valeurs secrètes et les remplace par des placeholders.
+
+Les valeurs secrètes sont chiffrées en AES-256-GCM. La clé est conservée dans
+le coffre sécurisé du système et n'est pas incluse dans le workspace : un
+workspace déplacé sur une autre machine ne permet donc pas de déchiffrer ses
+secrets sans mécanisme de migration de clé. Le catalogue garde un journal
+append-only au niveau de l'application. L'authentification, les rôles
+DevOps/SRE, l'adresse IP et le User-Agent ne sont pas disponibles dans cette
+application locale et ne sont donc pas simulés.
+
+Dans **Design → Modèles & Contrats**, cliquez sur le domaine en bleu dans le
+fil d’Ariane, puis sur le badge du domaine voulu. Les badges proviennent du
+catalogue du workspace actif. Si le catalogue est vide, le bouton
+**Gestion des domaines** de la page permet d’en créer. Les segments du modèle
+et de sa version ne sont affichés que lorsque sa fiche est ouverte. Dans le
+fil d’Ariane, l’icône de grille revient au menu Design et la flèche remonte
+d’un niveau : de la fiche à la liste, puis de la liste au menu Design.
+
+Le volet **Modèles métiers** (SuperCode) commence avec quatre rubriques vides :
+`models`, `components`, `dto` et `message`. Saisissez des entrées indentées
+(par exemple `vente: model` ou `reponse: xresponsedto`)
+Le moteur `super_schema_dsl` valide et enregistre le texte automatiquement
+après la saisie : en cas d’erreur, le message s’affiche dans la zone d’erreur
+en bas de l’éditeur SuperCode et le dernier arbre valide reste affiché. Dans
+la colonne gauche du catalogue, le badge à droite du nom permet de
+choisir le type : `model`, `part`, `component`, `createxdto`, `updatexdto`,
+`xresponsedto`, `xlistitemdto`, `xquerydto`, `eventxpayloaddto`, `eventxenvelopedto`
+ou `flatfile`. Le titre, les quatre états et la version restent dans la colonne de droite.
+Le texte et les propriétés sont enregistrés dans le domaine du workspace.
+Une poignée verticale sépare l’éditeur DSL et le catalogue, comme entre le
+chat et le contenu des écrans Spec : faites-la glisser pour redimensionner les
+volets, ou double-cliquez dessus pour revenir à la proportion par défaut
+(30 % pour le DSL). Cette largeur est conservée quand vous changez de domaine.
+Le nom souligné d’une entrée du catalogue ouvre sa fiche (type, titre,
+rubrique, version et états) dans la page suivante d’un `PageView` piloté par
+le fil d’Ariane, qui devient *domaine › Liste des modèles et contrats › nom ›
+version*. Cliquez sur « Liste des modèles et contrats » ou sur la flèche pour
+revenir à la liste, où le brouillon DSL est conservé. Changer de domaine ramène à la liste.
+La fiche reprend l’étape Spec **Objets métier** pour un seul objet : à gauche,
+un chat IA (Gemini) crée et modifie les attributs du modèle, pose des questions
+de clarification et accepte des pièces jointes ; à droite, le détail affiche les
+attributs dans un `SuperTreeView` et un inspecteur (description, jauge,
+aperçu JSON Schema, ajout, modification et suppression d’attributs). Un attribut
+`reference` cible une autre entrée du domaine, désignée par son nom technique.
+L’assistant applique les mêmes consignes que l’étape Objets métier
+(`SpecStageAgent.attributeModelingRules` et `attributeExamplesJson`) :
+dimensionnement, nommage, `schemaConstraints`, `x-mask`, `x-searchable`,
+`x-database-index`, `x-enumNames`/`x-enumDescriptions` et `examples`. Chaque tour
+reçoit aussi les préférences et règles actives du **Dictionnaire technique & Modèle**.
+Des poignées séparent le chat, l’arbre et l’inspecteur ; le chat se replie sur
+un rail. L’objet et l’historique du chat sont enregistrés dans le domaine sous
+l’ID de l’entrée (sans le contenu des pièces jointes).
+Chaque entrée possède un ID stable attribué par `JsonModel` (`super_schema_dsl`) :
+un bloc déplacé vers une autre rubrique, renommé, retypé ou coupé puis recollé
+garde son titre, ses états, sa version, ses attributs et son chat. Les anciens catalogues, indexés par
+chemin `rubrique.nom`, sont migrés au chargement.
 
 ## Lancement & Validation
 

@@ -21,27 +21,69 @@ import '../services/spec_schema_dsl_bridge.dart';
 
 /// Construit et documente les outils exposés aux agents IA de `super_spec_forge`.
 abstract final class SpecForgeToolRegistry {
-  /// Guide succinct injecté dans le guide statique des agents.
-  static String toolsGuide() => '''
-OUTILS D'INTROSPECTION, VALIDATION ET ACTION DISPONIBLES :
-1. `get_lexicon_and_synonyms` : recherche les termes canoniques, définitions et synonymes rejetés dans le lexique métier.
-2. `get_requirements_summary` : liste les modules, exigences fonctionnelles (EXF), cas d'usage et exigences non fonctionnelles (ENF).
-3. `inspect_business_object` : lit le détail complet d'un objet métier (sous-objets, attributs, compteur N/200, tableaux, relations, cycle de vie, YAML Light).
-4. `get_business_rules` : liste les règles de gestion RG-xxx existantes (filtrables par objet ou catégorie).
-5. `get_debug_entries` : consulte les derniers journaux et erreurs capturés dans la console debug.
-6. `run_coherence_audit` : exécute l'analyse de cohérence inter-étapes et signale références cassées ou dépassements > 200.
-7. `validate_yaml_light_schema` : valide un bloc YAML Light via Yaml2JsonSchemasParser et vérifie les règles <= 200 attributs / <= 200 lignes/tableau.
-8. `extract_array_to_business_object` : extrait un tableau imbriqué vers un nouvel objet métier dédié relié en 1:N.
-9. `focus_stage_or_object` : bascule l'interface sur une étape du wizard et sélectionne éventuellement un objet métier cible et/ou un attribut précis (`attributePath`, ex. `statut` ou `adresseLivraison.codePostal`).
-10. `filter_business_objects` : filtre les objets métiers et attributs affichés dans « Arbre & Inspecteur » (ou efface le filtre avec `query: ""`).
-Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vérifier des détails, valider un schéma ou auditer la cohérence.''';
+  /// Ligne de guide (nom → rôle) de chaque outil, dans l'ordre de [declarations].
+  static const List<(String, String)> _toolGuideLines = <(String, String)>[
+    (
+      'get_lexicon_and_synonyms',
+      'recherche les termes canoniques, définitions et synonymes rejetés dans le lexique métier.',
+    ),
+    (
+      'get_requirements_summary',
+      'liste les modules, exigences fonctionnelles (EXF), cas d\'usage et exigences non fonctionnelles (ENF).',
+    ),
+    (
+      'inspect_business_object',
+      'lit le détail complet d\'un objet métier (sous-objets, attributs, compteur N/200, tableaux, relations, cycle de vie, YAML Light).',
+    ),
+    (
+      'get_business_rules',
+      'liste les règles de gestion RG-xxx existantes (filtrables par objet ou catégorie).',
+    ),
+    (
+      'get_debug_entries',
+      'consulte les derniers journaux et erreurs capturés dans la console debug.',
+    ),
+    (
+      'run_coherence_audit',
+      'exécute l\'analyse de cohérence inter-étapes et signale références cassées ou dépassements > 200.',
+    ),
+    (
+      'validate_yaml_light_schema',
+      'valide un bloc YAML Light via Yaml2JsonSchemasParser et vérifie les règles <= 200 attributs / <= 200 lignes/tableau.',
+    ),
+    (
+      'extract_array_to_business_object',
+      'extrait un tableau imbriqué vers un nouvel objet métier dédié relié en 1:N.',
+    ),
+    (
+      'focus_stage_or_object',
+      'bascule l\'interface sur une étape du wizard et sélectionne éventuellement un objet métier cible et/ou un attribut précis (`attributePath`, ex. `statut` ou `adresseLivraison.codePostal`).',
+    ),
+    (
+      'filter_business_objects',
+      'filtre les objets métiers et attributs affichés dans « Arbre & Inspecteur » (ou efface le filtre avec `query: ""`).',
+    ),
+  ];
+
+  /// Guide succinct injecté dans le guide statique des agents, restreint aux
+  /// outils [toolNames] lorsqu'il est fourni (numérotation recalculée).
+  static String toolsGuide({Set<String>? toolNames}) {
+    final lines = [
+      for (final (name, role) in _toolGuideLines)
+        if (toolNames == null || toolNames.contains(name)) '`$name` : $role',
+    ];
+    return [
+      'OUTILS D\'INTROSPECTION, VALIDATION ET ACTION DISPONIBLES :',
+      for (var i = 0; i < lines.length; i++) '${i + 1}. ${lines[i]}',
+      'Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vérifier des détails, valider un schéma ou auditer la cohérence.',
+    ].join('\n');
+  }
 
   /// Déclarations statiques des 10 outils exposés au modèle Gemini.
   static const List<VibeToolDeclaration> declarations = <VibeToolDeclaration>[
     VibeToolDeclaration(
       name: 'get_lexicon_and_synonyms',
-      description:
-          'Consulte le lexique métier (termes canoniques, définitions, synonymes à unifier, conventions).',
+      description: 'Consulte le lexique métier (termes canoniques, définitions, synonymes à unifier, conventions).',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -54,8 +96,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'get_requirements_summary',
-      description:
-          'Liste les modules, exigences fonctionnelles (EXF), cas d’usage et exigences non fonctionnelles (ENF) du cahier des charges.',
+      description: 'Liste les modules, exigences fonctionnelles (EXF), cas d’usage et exigences non fonctionnelles (ENF) du cahier des charges.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -72,8 +113,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'inspect_business_object',
-      description:
-          'Retourne le détail complet d’un objet métier (sous-objets, compteur N/200 attributs, tableaux imbriqués, relations, cycle de vie et YAML Light optionnel), ou la liste synthétique si objectIdOrName est omis.',
+      description: 'Retourne le détail complet d’un objet métier (sous-objets, compteur N/200 attributs, tableaux imbriqués, relations, cycle de vie et YAML Light optionnel), ou la liste synthétique si objectIdOrName est omis.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -90,8 +130,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'get_business_rules',
-      description:
-          'Liste les règles de gestion RG-xxx existantes, filtrables par objet cible ou catégorie.',
+      description: 'Liste les règles de gestion RG-xxx existantes, filtrables par objet cible ou catégorie.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -108,14 +147,14 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'get_debug_entries',
-      description:
-          'Lit les derniers journaux et erreurs capturés dans la console debug (debugEntries).',
+      description: 'Lit les derniers journaux et erreurs capturés dans la console debug (debugEntries).',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
           'type': <String, Object?>{
             'type': 'string',
-            'description': 'Filtre optionnel : error, log ou all (error par défaut).',
+            'description':
+                'Filtre optionnel : error, log ou all (error par défaut).',
           },
           'query': <String, Object?>{
             'type': 'string',
@@ -123,15 +162,15 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
           },
           'limit': <String, Object?>{
             'type': 'integer',
-            'description': 'Nombre maximal d’entrées retournées (1..50, 20 par défaut).',
+            'description':
+                'Nombre maximal d’entrées retournées (1..50, 20 par défaut).',
           },
         },
       },
     ),
     VibeToolDeclaration(
       name: 'run_coherence_audit',
-      description:
-          'Exécute l’analyse de cohérence statique inter-étapes sur l’ensemble du projet (références cassées, états manquants, limites > 200).',
+      description: 'Exécute l’analyse de cohérence statique inter-étapes sur l’ensemble du projet (références cassées, états manquants, limites > 200).',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{},
@@ -139,8 +178,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'validate_yaml_light_schema',
-      description:
-          'Valide un schéma YAML « JSON Schemas Light » via Yaml2JsonSchemasParser et vérifie les règles <= 200 attributs et <= 200 lignes par tableau.',
+      description: 'Valide un schéma YAML « JSON Schemas Light » via Yaml2JsonSchemasParser et vérifie les règles <= 200 attributs et <= 200 lignes par tableau.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -154,8 +192,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'extract_array_to_business_object',
-      description:
-          'Extrait un attribut tableau d’un objet métier vers un nouvel objet métier dédié relié en 1:N (recommandé dès > 200 lignes fonctionnelles).',
+      description: 'Extrait un attribut tableau d’un objet métier vers un nouvel objet métier dédié relié en 1:N (recommandé dès > 200 lignes fonctionnelles).',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -177,8 +214,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'focus_stage_or_object',
-      description:
-          'Positionne l’interface du wizard sur une étape donnée et sélectionne éventuellement un objet métier ainsi qu’un attribut (ou sous-attribut) dans l’inspecteur.',
+      description: 'Positionne l’interface du wizard sur une étape donnée et sélectionne éventuellement un objet métier ainsi qu’un attribut (ou sous-attribut) dans l’inspecteur.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -200,8 +236,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     ),
     VibeToolDeclaration(
       name: 'filter_business_objects',
-      description:
-          'Filtre l’arbre des objets métiers et attributs dans « Arbre & Inspecteur » selon une requête texte, ou efface le filtre si query est vide.',
+      description: 'Filtre l’arbre des objets métiers et attributs dans « Arbre & Inspecteur » selon une requête texte, ou efface le filtre si query est vide.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -216,6 +251,9 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
   ];
 
   /// Construit un [VibeAppToolRegistry] connecté au projet courant et aux callbacks de mutation/navigation.
+  ///
+  /// [toolNames] restreint les outils enregistrés (tous par défaut) et
+  /// [coherenceIssueFilter] limite les diagnostics renvoyés par `run_coherence_audit`.
   static VibeAppToolRegistry build({
     required SpecForgeProject? Function() readProject,
     required Future<void> Function(SpecForgeProject updated) onUpdateProject,
@@ -226,6 +264,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
+    Set<String>? toolNames,
+    bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) {
     final handlers = <String, VibeToolHandler>{
       'get_lexicon_and_synonyms': (call) async {
@@ -237,7 +277,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             message: 'Aucun projet actif.',
           );
         }
-        final q = (call.arguments['query'] as String?)?.trim().toLowerCase() ?? '';
+        final q =
+            (call.arguments['query'] as String?)?.trim().toLowerCase() ?? '';
         final terms = q.isEmpty
             ? project.lexicon.terms
             : project.lexicon.terms.where((t) {
@@ -280,14 +321,18 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             message: 'Aucun projet actif.',
           );
         }
-        final moduleFilter = (call.arguments['moduleId'] as String?)?.trim() ?? '';
-        final priorityRaw = (call.arguments['priority'] as String?)?.trim() ?? '';
+        final moduleFilter =
+            (call.arguments['moduleId'] as String?)?.trim() ?? '';
+        final priorityRaw =
+            (call.arguments['priority'] as String?)?.trim() ?? '';
         final priorityFilter = priorityRaw.isEmpty
             ? null
             : RequirementPriority.fromJson(priorityRaw);
         final reqs = project.cahierDesCharges.functionalRequirements.where((r) {
-          if (moduleFilter.isNotEmpty && r.moduleId != moduleFilter) return false;
-          if (priorityFilter != null && r.priority != priorityFilter) return false;
+          if (moduleFilter.isNotEmpty && r.moduleId != moduleFilter)
+            return false;
+          if (priorityFilter != null && r.priority != priorityFilter)
+            return false;
           return true;
         }).toList();
 
@@ -308,7 +353,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             'nfrCount':
                 project.cahierDesCharges.nonFunctionalRequirements.length,
             'nonFunctionalRequirements': [
-              for (final n in project.cahierDesCharges.nonFunctionalRequirements)
+              for (final n
+                  in project.cahierDesCharges.nonFunctionalRequirements)
                 n.toJson(),
             ],
           },
@@ -411,7 +457,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
       },
       'get_debug_entries': (call) async {
         final rawType =
-            (call.arguments['type'] as String?)?.trim().toLowerCase() ?? 'error';
+            (call.arguments['type'] as String?)?.trim().toLowerCase() ??
+            'error';
         final DebugEntryType? typeFilter = switch (rawType) {
           'error' || 'errors' => DebugEntryType.error,
           'log' || 'logs' => DebugEntryType.log,
@@ -461,11 +508,14 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
             message: 'Aucun projet actif.',
           );
         }
-        final issues = SpecCoherenceAnalyzer.analyze(
-          project,
-          companyGlossary: readCompanyGlossary?.call(),
-          modelPreferences: readModelPreferences?.call(),
-        );
+        final issues = [
+          for (final issue in SpecCoherenceAnalyzer.analyze(
+            project,
+            companyGlossary: readCompanyGlossary?.call(),
+            modelPreferences: readModelPreferences?.call(),
+          ))
+            if (coherenceIssueFilter?.call(issue) ?? true) issue,
+        ];
         final errorCount = issues
             .where((i) => i.severity == CoherenceSeverity.error)
             .length;
@@ -660,7 +710,10 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
         String? resolvedAttrDotPath;
         if (attrQuery.isNotEmpty) {
           if (targetObj != null) {
-            final match = _resolveAttributePath(targetObj.attributes, attrQuery);
+            final match = _resolveAttributePath(
+              targetObj.attributes,
+              attrQuery,
+            );
             if (match == null) {
               return VibeToolResult.error(
                 callId: call.id,
@@ -670,10 +723,14 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
               );
             }
             resolvedAttrPath = match.ids;
-            resolvedAttrDotPath = '${targetObj.technicalName}.${match.names.join('.')}';
+            resolvedAttrDotPath =
+                '${targetObj.technicalName}.${match.names.join('.')}';
           } else {
             for (final candidate in project.businessObjects) {
-              final match = _resolveAttributePath(candidate.attributes, attrQuery);
+              final match = _resolveAttributePath(
+                candidate.attributes,
+                attrQuery,
+              );
               if (match != null) {
                 targetObj = candidate;
                 resolvedId = candidate.id;
@@ -754,10 +811,8 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
 
     return VibeAppToolRegistry([
       for (final decl in declarations)
-        VibeRegisteredTool(
-          declaration: decl,
-          handler: handlers[decl.name]!,
-        ),
+        if (toolNames == null || toolNames.contains(decl.name))
+          VibeRegisteredTool(declaration: decl, handler: handlers[decl.name]!),
     ]);
   }
 
@@ -894,6 +949,7 @@ Utilise ces outils à bon escient avant de conclure lorsque tu as besoin de vér
     return words.map((w) => '${w[0].toUpperCase()}${w.substring(1)}').join();
   }
 
-  static String _toCamel(String pascal) =>
-      pascal.isEmpty ? 'parent' : '${pascal[0].toLowerCase()}${pascal.substring(1)}';
+  static String _toCamel(String pascal) => pascal.isEmpty
+      ? 'parent'
+      : '${pascal[0].toLowerCase()}${pascal.substring(1)}';
 }

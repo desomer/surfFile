@@ -7,8 +7,11 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
+import '../services/spec_project_store.dart';
 import 'design/company_glossary_view.dart';
+import 'design/domain_management_view.dart';
 import 'design/model_dictionary_view.dart';
+import 'design/models_contracts_view.dart';
 import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
@@ -67,6 +70,64 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   int _selectedRailIndex = 0;
   String? _activeSpecLinkId;
   String? _activeDesignLinkId;
+  ({SpecProjectStore workspace, String domainId, String? entryId})?
+  _designDetail;
+
+  void _selectRail(int index) => setState(() {
+    if (index == 0 && _selectedRailIndex == 0) _activeSpecLinkId = null;
+    if (index != _selectedRailIndex) _designDetail = null;
+    _selectedRailIndex = index;
+  });
+
+  void _selectDesignPage(String? id) => setState(() {
+    _activeDesignLinkId = id;
+    _designDetail = null;
+  });
+
+  void _selectDesignDetail(String? domainId, String? entryId) => setState(() {
+    _designDetail = domainId == null
+        ? null
+        : (
+            workspace: widget.controller.store,
+            domainId: domainId,
+            entryId: entryId,
+          );
+  });
+
+  String _appBarTitle(SpecForgeProject? project) {
+    switch (_selectedRailIndex) {
+      case 0:
+        return switch (_activeSpecLinkId) {
+          'company_glossary' => 'Spec › ${SpecLinksView.glossaryLabel}',
+          'projects' => 'Spec › ${SpecLinksView.projectsLabel}',
+          'wizard' when project != null =>
+            '${project.currentStage.title} — ${project.name}',
+          _ => 'Spec',
+        };
+      case 1:
+        final id = _activeDesignLinkId;
+        if (id == null) return 'Design';
+        final page = DesignLinksView.defaultSections
+            .expand((section) => section.items)
+            .firstWhere((item) => item.id == id)
+            .label;
+        final detail = _designDetail;
+        if (detail != null && detail.workspace == widget.controller.store) {
+          final domain = widget.controller.domainCatalog.domains
+              .where((domain) => domain.id == detail.domainId)
+              .firstOrNull;
+          final name = id == 'domain_management'
+              ? domain?.name
+              : domain?.contracts?.entryById(detail.entryId)?.name;
+          if (name != null) return '$page › $name';
+        }
+        return 'Design › $page';
+      case 2:
+        return 'Build';
+      default:
+        return project == null ? 'Question' : 'Question — ${project.name}';
+    }
+  }
 
   void _cycleChatPaneSize() {
     setState(() {
@@ -113,9 +174,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    project == null
-                        ? 'SuperSpecForge'
-                        : 'SuperSpecForge — ${project.name}',
+                    _appBarTitle(project),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -185,12 +245,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                 selectedIndex: _selectedRailIndex < 3
                     ? _selectedRailIndex
                     : null,
-                onDestinationSelected: (index) => setState(() {
-                  if (index == 0 && _selectedRailIndex == 0) {
-                    _activeSpecLinkId = null;
-                  }
-                  _selectedRailIndex = index;
-                }),
+                onDestinationSelected: _selectRail,
                 labelType: NavigationRailLabelType.all,
                 minWidth: 64,
                 backgroundColor: colors.surfaceContainerLow,
@@ -232,7 +287,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                             icon: Icons.question_answer_outlined,
                             selectedIcon: Icons.question_answer_rounded,
                             label: 'Question',
-                            onTap: () => setState(() => _selectedRailIndex = 3),
+                            onTap: () => _selectRail(3),
                           ),
                         ],
                       ),
@@ -271,18 +326,41 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   }
 
   Widget _buildDesignContent(BuildContext context) {
+    if (_activeDesignLinkId == 'models_contracts') {
+      return ModelsContractsView(
+        key: ObjectKey(widget.controller.store),
+        controller: widget.controller,
+        onBack: () => _selectDesignPage(null),
+        onManageDomains: () => _selectDesignPage('domain_management'),
+        onOpenEntryChanged: _selectDesignDetail,
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
+      );
+    }
+    if (_activeDesignLinkId == 'domain_management') {
+      return DomainManagementView(
+        key: ObjectKey(widget.controller.store),
+        controller: widget.controller,
+        onBack: () => _selectDesignPage(null),
+        onDomainSelected: (id) => _selectDesignDetail(id, null),
+      );
+    }
     if (_activeDesignLinkId == 'modeling_dictionary') {
       return ModelDictionaryView(
         controller: widget.controller,
-        onBack: () => setState(() => _activeDesignLinkId = null),
+        onBack: () => _selectDesignPage(null),
         pickAttachments: widget.pickAttachments,
       );
     }
     return DesignLinksView(
       key: const ValueKey('spec-forge-design-view'),
       onLinkTap: (item) {
-        if (item.id == 'modeling_dictionary') {
-          setState(() => _activeDesignLinkId = item.id);
+        if (item.id == 'domain_management' ||
+            item.id == 'modeling_dictionary' ||
+            item.id == 'models_contracts') {
+          _selectDesignPage(item.id);
           return;
         }
         ScaffoldMessenger.maybeOf(context)

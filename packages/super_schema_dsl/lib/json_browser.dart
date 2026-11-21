@@ -66,21 +66,25 @@ class JsonNode {
 
 /// Structure JSON nommée, décrite par ses nœuds de premier niveau.
 class JsonModel {
+  /// [removedNodes] restaure l'historique d'un modèle précédent (voir
+  /// [JsonModel.removedNodes]) pour qu'un nœud supprimé retrouve son ID.
   JsonModel({
     required this.name,
     required Object? json,
     required List<JsonNode> nodes,
+    List<JsonNode> removedNodes = const [],
     String Function()? generateId,
     this.maxRemovedNodes = 50,
   }) : _document = json,
        _nodes = List.unmodifiable(nodes),
+       _removed = List.unmodifiable(removedNodes),
        _generateId = generateId ?? shortid.generate;
 
   final String name;
   final String Function() _generateId;
   Object? _document;
   List<JsonNode> _nodes;
-  List<JsonNode> _removed = const [];
+  List<JsonNode> _removed;
 
   /// Nombre maximal de sous-arbres supprimés conservés (les plus anciens
   /// sont oubliés en premier).
@@ -435,10 +439,13 @@ class _JsonMatcher {
 
   /// Racines des sous-arbres sans correspondance (anciens supprimés encore
   /// absents, puis nouvellement supprimés), du plus ancien au plus récent.
+  /// Un nœud supprimé sous un parent conservé est aussi une racine.
   List<JsonNode> unmatchedRoots() {
     bool isRoot(JsonNode node) {
       final parent = node.parent;
-      return parent == null || !_oldSignatures.containsKey(parent);
+      return parent == null ||
+          !_oldSignatures.containsKey(parent) ||
+          used.contains(parent);
     }
 
     return [

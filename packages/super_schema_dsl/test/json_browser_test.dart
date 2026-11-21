@@ -229,6 +229,23 @@ items:
       );
     });
 
+    test('stores a node removed under a kept parent and restores its ID', () {
+      final source = JsonBrowser().model('Nested', null)
+        ..patch('groups:\n  a: {x: 1}\n  b: 2\n');
+      final b = source.nodes.single.children[1].id;
+      source.patch('groups:\n  a: {x: 1}\n');
+      expect(source.removedNodes.map((node) => node.id), [b]);
+      // A model rebuilt with the removed history behaves like the original.
+      final rebuilt = JsonModel(
+        name: 'Nested',
+        json: source.json,
+        nodes: source.nodes,
+        removedNodes: source.removedNodes,
+      )..patch('groups:\n  a: {x: 1, b: 2}\n');
+      expect(rebuilt.nodes.single.children.single.children[1].id, b);
+      expect(rebuilt.removedNodes, isEmpty);
+    });
+
     test('keeps only the most recent removed subtrees', () {
       final limited = JsonModel(
         name: 'Limited',

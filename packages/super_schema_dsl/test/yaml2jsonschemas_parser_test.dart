@@ -58,6 +58,13 @@ Error:
 ''';
 
 void main() {
+  test('external types are opt-in and do not become root definitions', () {
+    const source = 'models:\n  sale: model';
+    expect(() => Yaml2JsonSchemasParser().parse(source), throwsFormatException);
+    final parser = Yaml2JsonSchemasParser(externalTypes: {'model'});
+    expect(parser.parse(source).single.children.single.type, 'model');
+    expect(() => parser.parse('models:\n  sale: other'), throwsFormatException);
+  });
   late Yaml2JsonSchemasParser parser;
 
   setUp(() {

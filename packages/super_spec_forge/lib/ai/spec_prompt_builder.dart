@@ -55,9 +55,8 @@ abstract final class SpecPromptBuilder {
   static String businessObjectPreferencesDirective(
     SpecForgeProject project, {
     BusinessObjectModelPreferences? modelPreferencesOverride,
-  }) =>
-      (modelPreferencesOverride ?? project.businessObjectModelPreferences)
-          .toPromptDirective();
+  }) => (modelPreferencesOverride ?? project.businessObjectModelPreferences)
+      .toPromptDirective();
 
   /// Alias rétrocompatible vers [businessObjectPreferencesDirective].
   static String businessObjectLanguageDirective(
@@ -114,16 +113,17 @@ abstract final class SpecPromptBuilder {
     final stageState = project.stageStateFor(stage);
     final effectivePrefs =
         modelPreferencesOverride ?? project.businessObjectModelPreferences;
-    final contextJson = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(project.toCompactContextJson(stage));
+    final contextJson = const JsonEncoder.withIndent('  ')
+        .convert(project.toCompactContextJson(stage));
 
     final previousSummaries = <String>[];
     for (final s in SpecForgeStage.values) {
       if (s.index >= stage.index) break;
       final summary = project.stageStateFor(s).stageSummary.trim();
       if (summary.isNotEmpty) {
-        previousSummaries.add('- Étape ${s.stepNumber} (${s.title}) : $summary');
+        previousSummaries.add(
+          '- Étape ${s.stepNumber} (${s.title}) : $summary',
+        );
       }
     }
 
@@ -158,16 +158,11 @@ abstract final class SpecPromptBuilder {
         );
     }
 
-    if (companyGlossary != null && companyGlossary.hasContent) {
-      final glossaryJson = const JsonEncoder.withIndent(
-        '  ',
-      ).convert(companyGlossary.toPromptContextJson());
+    final glossaryBlock = companyGlossaryBlock(companyGlossary);
+    if (glossaryBlock.isNotEmpty) {
       buffer
         ..writeln()
-        ..writeln(
-          'GLOSSAIRE D’ENTREPRISE (RÉFÉRENTIEL PRIORITAIRE — respecte les termes validés et évite les "forbiddenTerms") :',
-        )
-        ..writeln(glossaryJson);
+        ..writeln(glossaryBlock);
     }
 
     if (previousSummaries.isNotEmpty) {
@@ -182,7 +177,7 @@ abstract final class SpecPromptBuilder {
       ..writeln('ÉTAT COURANT DU PROJET (JSON) :')
       ..writeln(contextJson);
 
-    final focusBlock = _buildFocusScopeBlock(
+    final focusBlock = buildFocusScopeBlock(
       project: project,
       focusedObjectId: focusedObjectId,
       focusedAttributePath: focusedAttributePath,
@@ -209,11 +204,24 @@ abstract final class SpecPromptBuilder {
     return buffer.toString();
   }
 
-  static String _buildFocusScopeBlock({
+  /// Bloc « GLOSSAIRE D’ENTREPRISE » partagé par les agents de la spec et du
+  /// design (chaîne vide si [companyGlossary] est absent ou vide).
+  static String companyGlossaryBlock(CompanyGlossary? companyGlossary) {
+    if (companyGlossary == null || !companyGlossary.hasContent) return '';
+    final glossaryJson = const JsonEncoder.withIndent('  ')
+        .convert(companyGlossary.toPromptContextJson());
+    return 'GLOSSAIRE D’ENTREPRISE (RÉFÉRENTIEL PRIORITAIRE — respecte les termes validés et évite les "forbiddenTerms") :\n'
+        '$glossaryJson';
+  }
+
+  /// Bloc « FOCUS COURANT » décrivant l'objet, l'attribut sélectionné et le
+  /// filtre actif de l'arbre [treeLabel] (chaîne vide sans objet ni filtre).
+  static String buildFocusScopeBlock({
     required SpecForgeProject project,
     required String? focusedObjectId,
     required List<String> focusedAttributePath,
     required String businessObjectFilter,
+    String treeLabel = 'Arbre & Inspecteur',
   }) {
     final buf = StringBuffer();
     final trimmedFilter = businessObjectFilter.trim();
@@ -236,9 +244,8 @@ abstract final class SpecPromptBuilder {
       );
       if (resolvedAttr != null) {
         final dotPath = resolvedAttr.names.join('.');
-        final attrJson = const JsonEncoder.withIndent(
-          '  ',
-        ).convert(resolvedAttr.attribute.toJson());
+        final attrJson = const JsonEncoder.withIndent('  ')
+            .convert(resolvedAttr.attribute.toJson());
         buf
           ..writeln(
             '- Attribut sélectionné : ${focusedObj.technicalName}.$dotPath (id: ${resolvedAttr.attribute.id}, type: ${resolvedAttr.attribute.type.name})',
@@ -255,16 +262,13 @@ abstract final class SpecPromptBuilder {
       }
     }
     if (trimmedFilter.isNotEmpty) {
-      buf.writeln('- Filtre actif dans « Arbre & Inspecteur » : "$trimmedFilter"');
+      buf.writeln('- Filtre actif dans « $treeLabel » : "$trimmedFilter"');
     }
     return buf.toString().trimRight();
   }
 
   static ({BusinessAttribute attribute, List<String> names})?
-  _resolveAttributeChain(
-    List<BusinessAttribute> roots,
-    List<String> pathIds,
-  ) {
+  _resolveAttributeChain(List<BusinessAttribute> roots, List<String> pathIds) {
     if (pathIds.isEmpty) return null;
     var current = roots;
     final names = <String>[];
@@ -286,9 +290,8 @@ abstract final class SpecPromptBuilder {
     int maxHistoryEntries = 12,
     CompanyGlossary? companyGlossary,
   }) {
-    final fullSnapshot = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(project.toCompactContextJson(SpecForgeStage.reviewExport));
+    final fullSnapshot = const JsonEncoder.withIndent('  ')
+        .convert(project.toCompactContextJson(SpecForgeStage.reviewExport));
 
     final stageSummaries = <String>[
       for (final s in SpecForgeStage.values)
@@ -315,9 +318,8 @@ abstract final class SpecPromptBuilder {
     }
 
     if (companyGlossary != null && companyGlossary.hasContent) {
-      final glossaryJson = const JsonEncoder.withIndent(
-        '  ',
-      ).convert(companyGlossary.toPromptContextJson());
+      final glossaryJson = const JsonEncoder.withIndent('  ')
+          .convert(companyGlossary.toPromptContextJson());
       buffer
         ..writeln()
         ..writeln('GLOSSAIRE D’ENTREPRISE GLOBAL :')

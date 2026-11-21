@@ -22,6 +22,10 @@ class SpecLinksView extends StatelessWidget {
   /// Projet actuellement ouvert en mémoire, le cas échéant.
   final SpecForgeProject? activeProject;
 
+  /// Libellés partagés par les cartes et le titre de la page ouverte.
+  static const projectsLabel = 'Projets';
+  static const glossaryLabel = 'Glossaire d’entreprise';
+
   /// Nombre de projets récents enregistrés.
   final int recentProjectsCount;
 
@@ -41,7 +45,7 @@ class SpecLinksView extends StatelessWidget {
         items: <DesignLinkItem>[
           DesignLinkItem(
             id: 'company_glossary',
-            label: 'Glossaire d’entreprise',
+            label: glossaryLabel,
             icon: Icons.language_rounded,
             subtitle: companyGlossaryTermsCount > 0
                 ? '$companyGlossaryTermsCount terme(s)'
@@ -57,7 +61,7 @@ class SpecLinksView extends StatelessWidget {
         items: <DesignLinkItem>[
           DesignLinkItem(
             id: 'projects',
-            label: 'Projets',
+            label: projectsLabel,
             icon: Icons.folder_open_rounded,
             subtitle: recentProjectsCount > 0
                 ? '$recentProjectsCount projet(s) récent(s)'
