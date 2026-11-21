@@ -7,6 +7,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
+import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
 import 'spec_split_handle.dart';
@@ -199,8 +200,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
               Expanded(
                 child: switch (_selectedRailIndex) {
                   0 => _buildSpecContent(project, colors),
-                  1 => const SizedBox.shrink(
-                    key: ValueKey('spec-forge-design-empty'),
+                  1 => const DesignLinksView(
+                    key: ValueKey('spec-forge-design-view'),
                   ),
                   2 => const SizedBox.shrink(
                     key: ValueKey('spec-forge-build-empty'),

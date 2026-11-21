@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -210,48 +211,196 @@ void main() {
       }
     });
 
-    test('SpecProjectStore sauvegarde, liste, recharge et supprime', () async {
+    test('SpecProjectStore sauvegarde en multi-fichiers, liste via manifest.json, recharge, met à jour incrémentalement et supprime', () async {
       final tempDir = await Directory.systemTemp.createTemp('spec_forge_store_');
       try {
         final store = SpecProjectStore(tempDir);
-        final project = buildSampleProject();
+        final sep = Platform.pathSeparator;
+        final baseProject = buildSampleProject();
+
+        final textAttachment = VibeChatAttachment.text(
+          name: 'cahier.md',
+          content: '# Note métier\nContenu détaillé en UTF-8.',
+        );
+        final binaryAttachment = VibeChatAttachment.image(
+          name: 'schema.png',
+          bytes: Uint8List.fromList([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]),
+          mimeType: 'image/png',
+        );
+        final project = baseProject
+            .withStageState(
+              SpecStageState(
+                stage: SpecForgeStage.lexicon,
+                status: SpecStageStatus.inProgress,
+                messages: [
+                  SpecChatMessage(
+                    id: 'm1',
+                    isUser: true,
+                    text: 'Analyse ces deux documents',
+                    attachments: [textAttachment, binaryAttachment],
+                  ),
+                ],
+              ),
+              updatedAt: baseProject.updatedAt,
+            )
+            .copyWith(
+              globalChatMessages: [
+                SpecChatMessage(
+                  id: 'gm1',
+                  isUser: true,
+                  text: 'Question globale',
+                  attachments: [textAttachment],
+                ),
+              ],
+              updatedAt: baseProject.updatedAt,
+            );
+
         await store.saveProject(project);
 
+        final projPath = '${tempDir.path}${sep}projects$sep${project.id}';
+        expect(await File('$projPath${sep}project.json').exists(), isFalse);
+        expect(await File('$projPath${sep}manifest.json').exists(), isTrue);
+        expect(
+          await File('$projPath${sep}spec${sep}lexicon.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}vision.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}cahier_des_charges.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}business_objects.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}business_rules.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}model_preferences.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}spec${sep}coherence_issues.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}chats${sep}stage_lexicon.json').exists(),
+          isTrue,
+        );
+        expect(
+          await File('$projPath${sep}chats${sep}global_chat.json').exists(),
+          isTrue,
+        );
+
+        // Vérifie l'externalisation des pièces jointes dans attachments/.
+        final attachmentsDir = Directory('$projPath${sep}attachments');
+        expect(await attachmentsDir.exists(), isTrue);
+        final attachmentFiles = await attachmentsDir.list().toList();
+        expect(attachmentFiles.length, 2);
+        final stageChatRaw = await File(
+          '$projPath${sep}chats${sep}stage_lexicon.json',
+        ).readAsString();
+        expect(stageChatRaw, contains('"storageFile"'));
+        expect(stageChatRaw, isNot(contains('"bytesBase64"')));
+        expect(stageChatRaw, isNot(contains('Contenu détaillé en UTF-8.')));
+
+        // listProjects() fonctionne uniquement via manifest.json.
         final list = await store.listProjects();
         expect(list.length, 1);
         expect(list.single.name, 'B2B Orders');
+        expect(list.single.objectCount, 1);
+        expect(list.single.ruleCount, 1);
 
         final loaded = await store.loadProject(project.id);
         expect(loaded, equals(project));
-
         expect(await store.getLastActiveProjectId(), project.id);
 
+        // Sauvegarde incrémentale : seul lexique + manifeste doivent être réécrits.
+        final pastTime = DateTime(2020, 1, 1);
+        final lexiconFile = File('$projPath${sep}spec${sep}lexicon.json');
+        final visionFile = File('$projPath${sep}spec${sep}vision.json');
+        final objectsFile = File(
+          '$projPath${sep}spec${sep}business_objects.json',
+        );
+        final globalChatFile = File('$projPath${sep}chats${sep}global_chat.json');
+        lexiconFile.setLastModifiedSync(pastTime);
+        visionFile.setLastModifiedSync(pastTime);
+        objectsFile.setLastModifiedSync(pastTime);
+        globalChatFile.setLastModifiedSync(pastTime);
+
+        final updatedLexicon = project.copyWith(
+          lexicon: project.lexicon.copyWith(
+            terms: [
+              ...project.lexicon.terms,
+              LexiconTerm(
+                id: 't_client',
+                term: 'Acheteur',
+                definition: 'Collaborateur autorisé à passer commande.',
+              ),
+            ],
+          ),
+        );
+        await store.saveProject(updatedLexicon);
+
+        expect(lexiconFile.lastModifiedSync().isAfter(pastTime), isTrue);
+        expect(visionFile.lastModifiedSync(), equals(pastTime));
+        expect(objectsFile.lastModifiedSync(), equals(pastTime));
+        expect(globalChatFile.lastModifiedSync(), equals(pastTime));
+
+        // Nettoyage des pièces jointes orphelines après suppression du message binaire.
+        final withoutBinary = updatedLexicon.withStageState(
+          SpecStageState(
+            stage: SpecForgeStage.lexicon,
+            status: SpecStageStatus.inProgress,
+            messages: [
+              SpecChatMessage(
+                id: 'm1',
+                isUser: true,
+                text: 'Analyse ce document',
+                attachments: [textAttachment],
+              ),
+            ],
+          ),
+        );
+        await store.saveProject(withoutBinary);
+        final remainingAttachments = await attachmentsDir.list().toList();
+        expect(remainingAttachments.length, 1);
+
+        // listProjects() reste opérationnel même avec un dossier ne contenant que manifest.json.
+        final manifestOnlyDir = Directory(
+          '${tempDir.path}${sep}projects${sep}proj_manifest_only',
+        );
+        await manifestOnlyDir.create(recursive: true);
+        await File('${manifestOnlyDir.path}${sep}manifest.json').writeAsString(
+          jsonEncode({
+            'format': SpecProjectStore.manifestFormat,
+            'version': SpecProjectStore.storageVersion,
+            'id': 'proj_manifest_only',
+            'name': 'Manifeste seul',
+            'initialIdea': 'Idée test',
+            'createdAt': '2026-01-01T00:00:00.000Z',
+            'updatedAt': '2026-01-02T00:00:00.000Z',
+            'currentStage': 'vision',
+            'objectCount': 4,
+            'ruleCount': 7,
+          }),
+        );
+        final twoProjects = await store.listProjects();
+        expect(twoProjects.length, 2);
+        final manifestOnlySummary = twoProjects.firstWhere(
+          (p) => p.id == 'proj_manifest_only',
+        );
+        expect(manifestOnlySummary.objectCount, 4);
+        expect(manifestOnlySummary.ruleCount, 7);
+
         await store.deleteProject(project.id);
+        await store.deleteProject('proj_manifest_only');
         expect(await store.listProjects(), isEmpty);
-
-        // Migration automatique d'un ancien fichier JSON contenant un attribut accentué.
-        final legacyProject = buildSampleProject();
-        final legacyJson = legacyProject.toJson();
-        final objs = (legacyJson['businessObjects'] as List).cast<Map<String, Object?>>();
-        final attrs = (objs.first['attributes'] as List).cast<Map<String, Object?>>();
-        attrs.add({
-          'id': 'a_legacy_accent',
-          'name': 'statutCohérence',
-          'type': 'string',
-          'required': true,
-        });
-        final legacyFile = File(
-          '${tempDir.path}${Platform.pathSeparator}projects${Platform.pathSeparator}${legacyProject.id}${Platform.pathSeparator}project.json',
-        );
-        await legacyFile.parent.create(recursive: true);
-        await legacyFile.writeAsString(jsonEncode(legacyJson));
-
-        final migrated = await store.loadProject(legacyProject.id);
-        expect(migrated, isNotNull);
-        expect(
-          migrated!.businessObjects.first.attributes.last.name,
-          'statutCoherence',
-        );
       } finally {
         if (await tempDir.exists()) {
           await tempDir.delete(recursive: true);

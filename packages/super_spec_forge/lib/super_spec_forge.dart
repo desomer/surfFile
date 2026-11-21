@@ -36,6 +36,7 @@ export 'services/spec_coherence_analyzer.dart';
 export 'services/spec_forge_controller.dart';
 export 'services/spec_project_store.dart';
 export 'services/spec_schema_dsl_bridge.dart';
+export 'widgets/design_links_view.dart';
 export 'widgets/global_question_chat_pane.dart';
 export 'widgets/idea_launcher_view.dart';
 export 'widgets/spec_forge_shell.dart';

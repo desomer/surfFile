@@ -578,7 +578,7 @@ Facture:
   );
 
   testWidgets(
-    'NavigationRail gauche : Spec affiche le contenu actuel, Design et Build restent vides',
+    'NavigationRail gauche : Spec affiche le contenu actuel, Design affiche la page de liens et Build reste vide',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -600,13 +600,51 @@ Facture:
       expect(find.text('Build'), findsOneWidget);
       expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
 
+      // Onglet Design accessible même sans projet ouvert.
       await tester.tap(find.text('Design'));
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('spec-forge-design-empty')),
+        find.byKey(const ValueKey('spec-forge-design-view')),
         findsOneWidget,
       );
       expect(find.text('Nouvelle forge à partir d’une idée'), findsNothing);
+
+      // Vérifie les deux sections et les 9 liens en français.
+      expect(find.text('Pour le concepteur backend'), findsOneWidget);
+      expect(find.text('Pour l’urbaniste & architecte'), findsOneWidget);
+      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+      expect(find.text('Modèles & Contrats'), findsOneWidget);
+      expect(find.text('Mapping sortant'), findsOneWidget);
+      expect(find.text('Cas d’usage & orchestration'), findsOneWidget);
+      expect(find.text('Points d’entrée entrants'), findsOneWidget);
+      expect(find.text('Adaptateurs d’infrastructure'), findsOneWidget);
+      expect(find.text('Systèmes & Services'), findsOneWidget);
+      expect(find.text('Cartes des flux système'), findsOneWidget);
+      expect(find.text('Discuter avec l’IA experte'), findsOneWidget);
+
+      // Clic sur un lien : affiche le retour visuel.
+      await tester.tap(
+        find.byKey(const ValueKey('design-link-company_glossary')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Glossaire d’entreprise — bientôt disponible'),
+        findsOneWidget,
+      );
+
+      // Replier puis déplier la première section.
+      await tester.tap(
+        find.byKey(const ValueKey('design-section-header-backend_designer')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Glossaire d’entreprise'), findsNothing);
+      expect(find.text('Systèmes & Services'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('design-section-header-backend_designer')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Glossaire d’entreprise'), findsOneWidget);
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
