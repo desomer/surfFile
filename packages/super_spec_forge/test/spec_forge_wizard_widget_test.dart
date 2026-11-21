@@ -564,18 +564,21 @@ void main() {
       await tester.pumpAndSettle();
 
       // 1. La ListView des repositories affiche Facture dépliée avec son SuperTreeView aligné en haut.
-      expect(find.text('Objet métier'), findsOneWidget);
-      expect(find.text('Repository'), findsOneWidget);
+      expect(find.byKey(const ValueKey('spec-objects-tree-tab')), findsOneWidget);
+      expect(find.byKey(const ValueKey('spec-objects-schema-tab')), findsOneWidget);
+      expect(find.byKey(const ValueKey('spec-objects-dsl-tab')), findsOneWidget);
+      expect(find.text('Objets'), findsOneWidget);
+      expect(find.text('Repositories'), findsOneWidget);
       expect(find.text('DSL'), findsOneWidget);
       expect(find.text('Arbre & Inspecteur'), findsNothing);
       expect(find.text('Arbre & Inspecteur (SuperTreeView)'), findsNothing);
       expect(
-        tester.getTopLeft(find.text('Objet métier')).dx,
-        lessThan(tester.getTopLeft(find.text('Repository')).dx),
+        tester.getTopLeft(find.byKey(const ValueKey('spec-objects-tree-tab'))).dx,
+        lessThan(tester.getTopLeft(find.byKey(const ValueKey('spec-objects-schema-tab'))).dx),
       );
       expect(
-        tester.getTopLeft(find.text('Repository')).dx,
-        lessThan(tester.getTopLeft(find.text('DSL')).dx),
+        tester.getTopLeft(find.byKey(const ValueKey('spec-objects-schema-tab'))).dx,
+        lessThan(tester.getTopLeft(find.byKey(const ValueKey('spec-objects-dsl-tab'))).dx),
       );
       expect(
         find.byKey(const ValueKey('spec-objects-repo-listview')),

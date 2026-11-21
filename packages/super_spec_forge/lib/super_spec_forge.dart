@@ -30,6 +30,7 @@ export 'models/spec_lexicon.dart';
 export 'models/spec_stage_chat.dart';
 export 'models/spec_vision.dart';
 export 'models/technical_modeling_rule.dart';
+export 'services/business_object_operations.dart';
 export 'services/company_glossary_store.dart';
 export 'services/exporters/company_glossary_codec.dart';
 export 'services/exporters/model_dictionary_codec.dart';
