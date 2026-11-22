@@ -69,6 +69,34 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
   static const String reproduceExactPlanningDirective =
       planModePlanningDirective;
 
+  /// Directive d'édition des calculs JavaScript réactifs et de leurs champs IHM.
+  static const String reactiveValuesDirective = '''
+MODE « VALEURS RÉACTIVES » :
+Configure les repositories et l’interface afin que les valeurs dérivées restent calculées à partir des données saisies.
+
+1. CALCULS JAVASCRIPT RÉACTIFS (`calculatedAttributes`) :
+- Déclare les attributs calculés JS dans le repository concerné, avec la syntaxe QuickJS `(row, ctx, doc)` et le format `calculatedAttributes` documenté dans le Guide IA.
+- Par ligne de tableau : utilise `scope: "monTableau[?]"` pour les calculs unitaires (ex. `lignes[?].@totalHt = (row.quantite ?? 0) * (row.prixUnitaire ?? 0)`).
+- Par entité parente : utilise le scope de l’entité pour les soldes ou taux dérivés (ex. `enveloppes[?].@disponible = (row.initial ?? 0) - (row.engage ?? 0)`).
+- Globaux / racine : déclare sans scope les KPI agrégés du document racine (ex. `@kpisGlobal`, somme des montants du tableau).
+- Respecte le format réel des définitions (`name`, `scope`, `code`, `description`) et n’enregistre jamais de clé `@...` dans les données `data` du repository.
+
+2. FRONTIÈRE IHM SAISIE VS CONSULTATION :
+- Configure chaque champ de saisie en `mode: "input"` avec un `label` concis, un `placeholder` réaliste et les unités dans `suffix` (ex. `€ HT`, `j`).
+- Configure tous les champs calculés en `mode: "display"` (strictement en lecture seule), liés directement à leur chemin calculé `@...`.
+
+3. ERGONOMIE ET ATOMICITÉ :
+- Respecte l’atomicité stricte : un attribut métier = un seul `SuperValue`, avec ses propriétés natives `label`, `binding` et `suffix`.
+- Ne concatène jamais le libellé et la donnée dans `text`.
+- Ne stocke aucun attribut préfixé par `@` dans les données du repository ; les `@calcul` restent en lecture seule.
+- Si la page couvre plusieurs sections, propose un plan de réalisation par lots cohérents.
+
+4. GRAPHIQUES ET VISUALISATION DES VALEURS CALCULÉES :
+- N’oublie pas les graphiques pertinents : lorsqu’une évolution, une comparaison ou une répartition aide à comprendre les données, ajoute un `registry:Chart` dans les `placements` et configure son entrée `components[chartId]` avec `"type": "chart"` (`SuperChart`).
+- Lie `binding` au tableau JSON source, puis configure `labelPath` et `series[].valuePath` avec des chemins relatifs à chaque ligne. Les chemins calculés sont autorisés, par exemple `labelPath: "mois"` et `series: [{"label": "Total HT", "valuePath": "@totalHt"}]`.
+- Garde le joker `[?]` uniquement dans `binding` (ex. `lignes[?].ventes`) ; `labelPath`, `valuePath` et `secondaryValuePath` sont relatifs à la ligne et ne doivent pas contenir `[?]`. Depuis une branche sœur de la liste, indique explicitement le repository dans `binding`.
+- Le graphique doit lire les données et calculs réactifs du repository, jamais des valeurs recopiées ou simulées dans `data`. Un KPI calculé scalaire à la racine reste affiché dans un `SuperValue` ; ne le lie pas directement comme tableau au graphique.''';
+
   /// Conserve la fenêtre récente de conversation et l'erreur précédente utile.
   static String buildConversationHistory(
     List<VibeChatMessage> messages, {
@@ -137,9 +165,7 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
       final targetIdsList = scope.canonicalComponentIds
           .map((id) => '"$id"')
           .join(', ');
-      final effectiveParent = parentIds.isNotEmpty
-          ? parentList
-          : targetIdsList;
+      final effectiveParent = parentIds.isNotEmpty ? parentList : targetIdsList;
       final scopeDirective = scope.isMultiTarget
           ? '''RESTRICTION STRICTE DE SCOPE (SÉLECTION LASSO MULTI-CIBLES) :
 L'utilisateur a entouré au lasso les éléments suivants :
@@ -209,7 +235,8 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
         : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
     final effectiveExact = plan.reproduceExact;
     final exactSection = effectiveExact ? reproduceExactCommonDirective : null;
-    final lotDirective = '''
+    final lotDirective =
+        '''
 PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
 ${plan.formatLotContextPrompt(lotIndex)}
 
@@ -236,9 +263,7 @@ ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DE
       final targetIdsList = scope.canonicalComponentIds
           .map((id) => '"$id"')
           .join(', ');
-      final effectiveParent = parentIds.isNotEmpty
-          ? parentList
-          : targetIdsList;
+      final effectiveParent = parentIds.isNotEmpty ? parentList : targetIdsList;
       return [
         ?exactSection,
         lotDirective,
@@ -316,9 +341,7 @@ RÈGLES OBLIGATOIRES :
       final targetIdsList = scope.canonicalComponentIds
           .map((id) => '"$id"')
           .join(', ');
-      final effectiveParent = parentIds.isNotEmpty
-          ? parentList
-          : targetIdsList;
+      final effectiveParent = parentIds.isNotEmpty ? parentList : targetIdsList;
       final scopeDirective =
           '''RESTRICTION STRICTE DE SCOPE POUR L’AUDIT :
 Le périmètre modifiable autorisé couvre uniquement ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).

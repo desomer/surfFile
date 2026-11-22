@@ -18,6 +18,7 @@ class VibePlanCard extends StatelessWidget {
     this.onStop,
     this.onRetryLot,
     this.onSkipLot,
+    this.onToggleLot,
     super.key,
   });
 
@@ -45,11 +46,17 @@ class VibePlanCard extends StatelessWidget {
   /// Déclenché au clic sur « Ignorer ce lot » lorsqu'un lot est en échec.
   final VoidCallback? onSkipLot;
 
+  /// Déclenché lors de l'activation ou de la désactivation d'un lot en attente.
+  final ValueChanged<int>? onToggleLot;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final total = plan.lots.length;
     final finished = plan.finishedCount;
+    final actionable = plan.actionableCount;
+    final canToggleLots =
+        isActivePlan && plan.status == VibePlanStatus.awaitingConfirmation;
 
     final (IconData headerIcon, Color headerColor) = switch (plan.status) {
       VibePlanStatus.awaitingConfirmation => (
@@ -136,7 +143,12 @@ class VibePlanCard extends StatelessWidget {
           const SizedBox(height: 8),
           for (final (index, lot) in plan.lots.indexed) ...[
             if (index > 0) const SizedBox(height: 5),
-            _LotRow(index: index, lot: lot),
+            _LotRow(
+              index: index,
+              lot: lot,
+              canToggle: canToggleLots && !busy,
+              onToggle: onToggleLot,
+            ),
           ],
           if (isActivePlan) ...[
             if (plan.status == VibePlanStatus.awaitingConfirmation) ...[
@@ -152,12 +164,14 @@ class VibePlanCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   FilledButton.icon(
                     key: const ValueKey('vibe-plan-start'),
-                    onPressed: busy ? null : onStart,
+                    onPressed: busy || actionable == 0 ? null : onStart,
                     icon: const Icon(Icons.play_arrow, size: 17),
                     label: Text(
-                      total == 1
+                      actionable == 0
+                          ? 'Aucun lot activé'
+                          : actionable == 1
                           ? 'Exécuter le lot'
-                          : 'Exécuter les $total lots',
+                          : 'Exécuter les $actionable lots',
                     ),
                   ),
                 ],
@@ -210,10 +224,17 @@ class VibePlanCard extends StatelessWidget {
 }
 
 class _LotRow extends StatelessWidget {
-  const _LotRow({required this.index, required this.lot});
+  const _LotRow({
+    required this.index,
+    required this.lot,
+    required this.canToggle,
+    required this.onToggle,
+  });
 
   final int index;
   final VibePlanLot lot;
+  final bool canToggle;
+  final ValueChanged<int>? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -221,6 +242,7 @@ class _LotRow extends StatelessWidget {
     final isRunning = lot.status == VibeLotStatus.running;
     final isFailed = lot.status == VibeLotStatus.failed;
     final isDone = lot.status == VibeLotStatus.done;
+    final isDisabled = lot.status == VibeLotStatus.disabled;
 
     final Widget leadingIcon = switch (lot.status) {
       VibeLotStatus.pending => Icon(
@@ -247,6 +269,11 @@ class _LotRow extends StatelessWidget {
         size: 16,
         color: scheme.onSurfaceVariant,
       ),
+      VibeLotStatus.disabled => Icon(
+        Icons.do_not_disturb_on_outlined,
+        size: 16,
+        color: scheme.onSurfaceVariant,
+      ),
     };
 
     return Container(
@@ -257,6 +284,8 @@ class _LotRow extends StatelessWidget {
             ? scheme.errorContainer.withValues(alpha: 0.45)
             : isRunning
             ? scheme.primaryContainer.withValues(alpha: 0.45)
+            : isDisabled
+            ? scheme.surfaceContainerLow.withValues(alpha: 0.55)
             : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
@@ -289,10 +318,11 @@ class _LotRow extends StatelessWidget {
                         : FontWeight.w500,
                     color: isDone
                         ? scheme.onSurface
-                        : lot.status == VibeLotStatus.skipped
+                        : lot.status == VibeLotStatus.skipped || isDisabled
                         ? scheme.onSurfaceVariant
                         : scheme.onSurface,
-                    decoration: lot.status == VibeLotStatus.skipped
+                    decoration:
+                        lot.status == VibeLotStatus.skipped || isDisabled
                         ? TextDecoration.lineThrough
                         : null,
                   ),
@@ -328,6 +358,16 @@ class _LotRow extends StatelessWidget {
               ],
             ),
           ),
+          if (canToggle)
+            Tooltip(
+              message: isDisabled ? 'Activer ce lot' : 'Désactiver ce lot',
+              child: Checkbox(
+                key: ValueKey('vibe-plan-lot-toggle-${lot.id}'),
+                value: !isDisabled,
+                visualDensity: VisualDensity.compact,
+                onChanged: (_) => onToggle?.call(index),
+              ),
+            ),
         ],
       ),
     );

@@ -201,84 +201,81 @@ void main() {
     },
   );
 
-  test(
-    'VibePageAuditService detects missing @calculs bindings and undeclared calculated attributes',
-    () async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      final tempDir = await Directory.systemTemp.createTemp('vibe_audit_calc_');
-      final repoStore = JsonRepositoryStore(tempDir);
-      addTearDown(() async {
-        repoStore.dispose();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
-      });
+  test('VibePageAuditService detects missing @calculs bindings and undeclared calculated attributes', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    final tempDir = await Directory.systemTemp.createTemp('vibe_audit_calc_');
+    final repoStore = JsonRepositoryStore(tempDir);
+    addTearDown(() async {
+      repoStore.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
 
-      repoStore.registerRepository(
-        RepositoryImpl(
-          id: 'ventes',
-          json: const <String, Object?>{
-            'lignes': <Map<String, Object?>>[
-              {'montant': 120},
-              {'montant': 80},
-            ],
+    repoStore.registerRepository(
+      RepositoryImpl(
+        id: 'ventes',
+        json: const <String, Object?>{
+          'lignes': <Map<String, Object?>>[
+            {'montant': 120},
+            {'montant': 80},
+          ],
+        },
+      ),
+    );
+
+    final appearance = Appearance(
+      components: <String, ComponentConfig>{
+        'root': const SuperLayoutConfig(
+          placements: <SuperLayoutZone, List<String>>{
+            SuperLayoutZone.center: <String>['kpi-total-ventes', 'kpi-marge'],
+          },
+          slotTypes: <String, String>{
+            'kpi-total-ventes': 'registry:Value',
+            'kpi-marge': 'registry:Value',
           },
         ),
-      );
-
-      final appearance = Appearance(
-        components: <String, ComponentConfig>{
-          'root': const SuperLayoutConfig(
-            placements: <SuperLayoutZone, List<String>>{
-              SuperLayoutZone.center: <String>['kpi-total-ventes', 'kpi-marge'],
-            },
-            slotTypes: <String, String>{
-              'kpi-total-ventes': 'registry:Value',
-              'kpi-marge': 'registry:Value',
-            },
-          ),
-          'kpi-total-ventes': const SuperValueConfig(
-            label: 'Total des ventes',
-            initialText: '0 €',
-          ),
-          'kpi-marge': const SuperValueConfig(
-            label: 'Marge nette',
-            binding: JsonTextBinding(
-              repositoryId: 'ventes',
-              path: '@calculs.margeNette',
-            ),
-          ),
-        },
-      );
-
-      final inspector = VibeAppInspector(
-        readAppearance: () => appearance,
-        repositoryStore: repoStore,
-      );
-      final report = await VibePageAuditService.collect(inspector);
-
-      expect(report.isClean, isFalse);
-      expect(
-        report.findings.any(
-          (f) =>
-              f.componentId == 'kpi-total-ventes' &&
-              f.kind == 'suspected_missing_calculation' &&
-              f.category == VibeAuditCategory.missingCalculation,
+        'kpi-total-ventes': const SuperValueConfig(
+          label: 'Total des ventes',
+          initialText: '0 €',
         ),
-        isTrue,
-      );
-      expect(
-        report.findings.any(
-          (f) =>
-              f.componentId == 'kpi-marge' &&
-              f.kind == 'undeclared_calculated_attribute' &&
-              f.category == VibeAuditCategory.missingCalculation,
+        'kpi-marge': const SuperValueConfig(
+          label: 'Marge nette',
+          binding: JsonTextBinding(
+            repositoryId: 'ventes',
+            path: '@calculs.margeNette',
+          ),
         ),
-        isTrue,
-      );
-    },
-  );
+      },
+    );
+
+    final inspector = VibeAppInspector(
+      readAppearance: () => appearance,
+      repositoryStore: repoStore,
+    );
+    final report = await VibePageAuditService.collect(inspector);
+
+    expect(report.isClean, isFalse);
+    expect(
+      report.findings.any(
+        (f) =>
+            f.componentId == 'kpi-total-ventes' &&
+            f.kind == 'suspected_missing_calculation' &&
+            f.category == VibeAuditCategory.missingCalculation,
+      ),
+      isTrue,
+    );
+    expect(
+      report.findings.any(
+        (f) =>
+            f.componentId == 'kpi-marge' &&
+            f.kind == 'undeclared_calculated_attribute' &&
+            f.category == VibeAuditCategory.missingCalculation,
+      ),
+      isTrue,
+    );
+  });
 
   testWidgets(
     'VibeChatDialog Audit & correction chip runs pre-audit, builds VibeExecutionPlan and executes fix lot',
@@ -344,7 +341,30 @@ void main() {
                         onDrag: (_) {},
                         generate: (prompt) async {
                           capturedPrompts.add(prompt);
-                          if (capturedPrompts.length == 1) {
+                          if (prompt.contains('PHASE 2 — EXÉCUTION DU LOT')) {
+                            return jsonEncode(<String, Object?>{
+                              'message': 'Marges corrigées.',
+                              'vibe': <String, Object?>{
+                                'styles': <String, Object?>{
+                                  'kpi-total': <String, Object?>{
+                                    'margin': 0,
+                                    'padding': 8,
+                                  },
+                                },
+                                'components': <String, Object?>{
+                                  'mainLayout': <String, Object?>{
+                                    'type': 'layout',
+                                    'slotSizeConstraints': <String, Object?>{
+                                      'kpi-total': <String, Object?>{
+                                        'fitContent': true,
+                                      },
+                                    },
+                                  },
+                                },
+                              },
+                            });
+                          }
+                          if (prompt.contains('MODE « AUDIT & CORRECTION »')) {
                             return jsonEncode(<String, Object?>{
                               'message': 'Audit terminé : 1 anomalie détectée.',
                               'plan': <String, Object?>{
@@ -353,35 +373,20 @@ void main() {
                                   <String, Object?>{
                                     'id': 'lot-1',
                                     'title': 'Corriger les marges du KPI',
-                                    'description':
-                                        'Réduire les marges/paddings de kpi-total et activer fitContent.',
+                                    'description': 'Réduire les marges/paddings de kpi-total et activer fitContent.',
                                   },
                                 ],
                               },
                               'vibe': null,
                             });
                           }
-                          return jsonEncode(<String, Object?>{
-                            'message': 'Marges corrigées.',
-                            'vibe': <String, Object?>{
-                              'styles': <String, Object?>{
-                                'kpi-total': <String, Object?>{
-                                  'margin': 0,
-                                  'padding': 8,
-                                },
-                              },
-                              'components': <String, Object?>{
-                                'mainLayout': <String, Object?>{
-                                  'type': 'layout',
-                                  'slotSizeConstraints': <String, Object?>{
-                                    'kpi-total': <String, Object?>{
-                                      'fitContent': true,
-                                    },
-                                  },
-                                },
-                              },
-                            },
-                          });
+                          if (prompt.contains('MODE « VALEURS RÉACTIVES »')) {
+                            return jsonEncode(<String, Object?>{
+                              'message': 'Consignes de valeurs réactives prises en compte.',
+                              'vibe': null,
+                            });
+                          }
+                          throw StateError('Unexpected prompt in test.');
                         },
                       ),
                     ),
@@ -410,19 +415,41 @@ void main() {
         });
       }
 
-      final auditChip = find.byKey(const ValueKey('vibe-chat-audit-page'));
-      expect(auditChip, findsOneWidget);
-      await tester.ensureVisible(auditChip);
-      await tester.tap(auditChip);
-      await pumpUntil(
-        () => find.byKey(const ValueKey('vibe-plan-start')).evaluate().isNotEmpty,
+      final reactiveChip = find.byKey(
+        const ValueKey('vibe-chat-reactive-values'),
       );
+      final auditChip = find.byKey(const ValueKey('vibe-chat-audit-page'));
+      expect(reactiveChip, findsOneWidget);
+      expect(auditChip, findsOneWidget);
+      expect(
+        tester.getTopLeft(reactiveChip).dx,
+        lessThan(tester.getTopLeft(auditChip).dx),
+      );
+      await tester.ensureVisible(reactiveChip);
+      await tester.tap(reactiveChip);
+      await pumpUntil(() => capturedPrompts.isNotEmpty);
       await tester.pumpAndSettle();
 
       expect(capturedPrompts, hasLength(1));
-      expect(capturedPrompts.first, contains('MODE « AUDIT & CORRECTION »'));
+      expect(capturedPrompts.first, contains('MODE « VALEURS RÉACTIVES »'));
+      expect(capturedPrompts.first, contains('calculatedAttributes'));
+      expect(capturedPrompts.first, contains('(row, ctx, doc)'));
+      expect(capturedPrompts.first, contains('SuperValue'));
+      expect(capturedPrompts.first, contains('lecture seule'));
+      expect(capturedPrompts.first, contains('plan de réalisation par lots'));
+
+      await tester.ensureVisible(auditChip);
+      await tester.tap(auditChip);
+      await pumpUntil(
+        () =>
+            find.byKey(const ValueKey('vibe-plan-start')).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      expect(capturedPrompts, hasLength(2));
+      expect(capturedPrompts[1], contains('MODE « AUDIT & CORRECTION »'));
       expect(
-        capturedPrompts.first,
+        capturedPrompts[1],
         contains('excessive_margin_or_padding_for_fixed_size'),
       );
       expect(find.text('Plan d’audit et correction'), findsOneWidget);
@@ -438,13 +465,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(capturedPrompts, hasLength(2));
-      expect(capturedPrompts[1], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
+      expect(capturedPrompts, hasLength(3));
+      expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
       expect(appAppearance.value.styles['kpi-total']?.padding, 8);
       expect(appAppearance.value.styles['kpi-total']?.margin, 0);
       final updatedLayout =
           appAppearance.value.components['mainLayout'] as SuperLayoutConfig;
-      expect(updatedLayout.slotSizeConstraints['kpi-total']?.fitContent, isTrue);
+      expect(
+        updatedLayout.slotSizeConstraints['kpi-total']?.fitContent,
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
     },
   );

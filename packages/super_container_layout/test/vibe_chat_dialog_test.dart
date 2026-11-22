@@ -4340,6 +4340,22 @@ void main() {
       expect(plan.reproduceExact, isFalse);
       expect(plan.lots.map((l) => l.id).toList(), ['lot-1', 'lot-1_2']);
       expect(plan.status, VibePlanStatus.awaitingConfirmation);
+      expect(plan.actionableCount, 2);
+      final withDisabledLot = plan.withLotAt(
+        0,
+        (lot) => lot.copyWith(status: VibeLotStatus.disabled),
+      );
+      expect(withDisabledLot.actionableCount, 1);
+      expect(withDisabledLot.finishedCount, 0);
+      expect(withDisabledLot.nextActionableIndex, 1);
+      expect(
+        withDisabledLot.copyWith(status: VibePlanStatus.running).finishedCount,
+        1,
+      );
+      expect(
+        withDisabledLot.formatLotContextPrompt(1),
+        contains('Désactivé'),
+      );
       expect(
         plan.formatLotContextPrompt(1),
         contains('>>> À EXÉCUTER MAINTENANT'),
@@ -4777,7 +4793,7 @@ void main() {
     );
 
     testWidgets(
-      'confirme le plan, exécute automatiquement tous les lots avec pièces jointes et regroupe en 1 Undo',
+      'désactive un lot avant exécution, conserve les pièces jointes et regroupe en 1 Undo',
       (tester) async {
         final registry = Registry()..bootstrap();
         final appearance = ValueNotifier(Appearance());
@@ -4954,26 +4970,51 @@ void main() {
         expect(appearance.value.components.containsKey('hero-title'), isFalse);
         expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);
 
-        // Phase 2 : clic sur « Exécuter les 2 lots » -> enchaînement automatique.
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Exécuter le lot'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-1')),
+        );
+        await tester.pumpAndSettle();
+        final startButton = tester.widget<FilledButton>(
+          find.byKey(const ValueKey('vibe-plan-start')),
+        );
+        expect(startButton.onPressed, isNull);
+        expect(find.text('Aucun lot activé'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-1')),
+        );
         await tester.pumpAndSettle();
 
-        expect(callCount, 3);
+        // Le lot désactivé reste dans le plan, mais n'est pas exécuté.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await pumpRealAsync(
+          tester,
+          until: () => find
+              .text(
+                'Reproduction terminée : 1/2 lots appliqués (1 désactivé(s)).',
+              )
+              .evaluate()
+              .isNotEmpty,
+        );
+        await tester.pumpAndSettle();
+
+        expect(callCount, 2);
         expect(capturedPrompts[1], contains('PHASE 2 — EXÉCUTION DU LOT 1/2'));
-        expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 2/2'));
         expect(capturedAttachments[1].single.name, 'blueprint.md');
-        expect(capturedAttachments[2].single.name, 'blueprint.md');
 
         expect(
           appearance.value.valueComponent('hero-title').initialText,
           'Bienvenue',
         );
+        expect(appearance.value.components.containsKey('hero-sub'), isFalse);
         expect(
-          appearance.value.valueComponent('hero-sub').initialText,
-          'Description exacte',
-        );
-        expect(
-          find.text('Reproduction terminée : 2/2 lots appliqués.'),
+          find.text(
+            'Reproduction terminée : 1/2 lots appliqués (1 désactivé(s)).',
+          ),
           findsOneWidget,
         );
 

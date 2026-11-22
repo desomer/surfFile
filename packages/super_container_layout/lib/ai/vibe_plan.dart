@@ -23,7 +23,10 @@ enum VibeLotStatus {
   failed('Échec'),
 
   /// Ignoré manuellement par l'utilisateur après un échec.
-  skipped('Ignoré');
+  skipped('Ignoré'),
+
+  /// Désactivé par l'utilisateur avant le lancement du plan.
+  disabled('Désactivé');
 
   /// Construit un statut de lot.
   const VibeLotStatus(this.label);
@@ -43,7 +46,7 @@ enum VibePlanStatus {
   /// Exécution mise en pause suite à l'échec d'un lot.
   pausedOnError('En pause (erreur)'),
 
-  /// Tous les lots ont été traités (terminés ou ignorés).
+  /// Tous les lots ont été traités, ignorés ou désactivés.
   completed('Plan terminé'),
 
   /// Plan annulé avant lancement ou arrêté manuellement par l'utilisateur.
@@ -177,12 +180,23 @@ class VibeExecutionPlan {
   int get doneCount =>
       lots.where((lot) => lot.status == VibeLotStatus.done).length;
 
-  /// Nombre de lots traités ([VibeLotStatus.done] ou [VibeLotStatus.skipped]).
+  /// Nombre de lots traités, plus les lots désactivés après le lancement.
   int get finishedCount => lots
       .where(
         (lot) =>
             lot.status == VibeLotStatus.done ||
-            lot.status == VibeLotStatus.skipped,
+            lot.status == VibeLotStatus.skipped ||
+            (status != VibePlanStatus.awaitingConfirmation &&
+                lot.status == VibeLotStatus.disabled),
+      )
+      .length;
+
+  /// Nombre de lots qui restent activés et peuvent être exécutés ou repris.
+  int get actionableCount => lots
+      .where(
+        (lot) =>
+            lot.status == VibeLotStatus.pending ||
+            lot.status == VibeLotStatus.failed,
       )
       .length;
 

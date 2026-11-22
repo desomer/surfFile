@@ -1834,6 +1834,19 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     );
   }
 
+  Future<void> _runReactiveValues() async {
+    if (_isBusy) return;
+    _cancelSpeechDictation();
+    final activeScope = _scope;
+    final displayUserText = activeScope == null
+        ? 'Configurer les valeurs réactives de la page.'
+        : 'Configurer les valeurs réactives de ${activeScope.displayLabel}.';
+    await _runGenerationTurn(
+      displayUserText: displayUserText,
+      promptOverride: VibePromptBuilder.reactiveValuesDirective,
+    );
+  }
+
   @override
   void dispose() {
     _completionHideTimer?.cancel();
@@ -2782,6 +2795,28 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     _commitOuterPlanTransaction();
   }
 
+  void _togglePlanLot(int messageIndex, int lotIndex) {
+    if (_isBusy || messageIndex != _activePlanMessageIndex) return;
+    final plan = _messages[messageIndex].plan;
+    if (plan == null ||
+        plan.status != VibePlanStatus.awaitingConfirmation ||
+        lotIndex < 0 ||
+        lotIndex >= plan.lots.length) {
+      return;
+    }
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.withLotAt(
+        lotIndex,
+        (lot) => lot.copyWith(
+          status: lot.status == VibeLotStatus.disabled
+              ? VibeLotStatus.pending
+              : VibeLotStatus.disabled,
+        ),
+      ),
+    );
+  }
+
   void _stopPlan(int messageIndex) {
     if (messageIndex != _activePlanMessageIndex) return;
     final plan = _messages[messageIndex].plan;
@@ -2870,12 +2905,21 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       final skippedCount = updated.lots
           .where((l) => l.status == VibeLotStatus.skipped)
           .length;
-      final detail = skippedCount == 0
-          ? '${updated.doneCount}/${updated.lots.length} lots appliqués.'
-          : '${updated.doneCount}/${updated.lots.length} lots appliqués ($skippedCount ignoré(s)).';
+      final disabledCount = updated.lots
+          .where((l) => l.status == VibeLotStatus.disabled)
+          .length;
+      final omissions = [
+        if (skippedCount > 0) '$skippedCount ignoré(s)',
+        if (disabledCount > 0) '$disabledCount désactivé(s)',
+      ].join(', ');
+      final detail =
+          '${updated.doneCount}/${updated.lots.length} lots appliqués'
+          '${omissions.isEmpty ? '' : ' ($omissions)'}.';
       _appendMessage(
-        'Plan terminé (${updated.doneCount}/${updated.lots.length} lots appliqués, '
-        '$skippedCount ignoré(s)).',
+        disabledCount == 0
+            ? 'Plan terminé (${updated.doneCount}/${updated.lots.length} '
+                  'lots appliqués, $skippedCount ignoré(s)).'
+            : 'Plan terminé : $detail',
       );
       _notifyTaskCompletion(
         outcome: VibeTaskOutcome.success,
@@ -2931,7 +2975,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         if (currentPlan == null) return;
         final lot = currentPlan.lots[i];
         if (lot.status == VibeLotStatus.done ||
-            lot.status == VibeLotStatus.skipped) {
+            lot.status == VibeLotStatus.skipped ||
+            lot.status == VibeLotStatus.disabled) {
           continue;
         }
 
@@ -3027,17 +3072,20 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         final skipped = completedPlan.lots
             .where((l) => l.status == VibeLotStatus.skipped)
             .length;
-        final detail = skipped == 0
-            ? '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
-            : '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).';
+        final disabled = completedPlan.lots
+            .where((l) => l.status == VibeLotStatus.disabled)
+            .length;
+        final omissions = [
+          if (skipped > 0) '$skipped ignoré(s)',
+          if (disabled > 0) '$disabled désactivé(s)',
+        ].join(', ');
+        final detail =
+            '${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués'
+            '${omissions.isEmpty ? '' : ' ($omissions)'}.';
         final completionPrefix = completedPlan.reproduceExact
             ? 'Reproduction terminée'
             : 'Plan terminé';
-        _appendMessage(
-          skipped == 0
-              ? '$completionPrefix : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués.'
-              : '$completionPrefix : ${completedPlan.doneCount}/${completedPlan.lots.length} lots appliqués ($skipped ignoré(s)).',
-        );
+        _appendMessage('$completionPrefix : $detail');
         _notifyTaskCompletion(
           outcome: VibeTaskOutcome.success,
           title: 'Plan IA terminé',
@@ -5202,6 +5250,11 @@ $response
                                       ),
                                     ),
                                     const SizedBox(width: 6),
+                                      VibeReactiveValuesActionChip(
+                                        enabled: !_isBusy,
+                                        onPressed: _runReactiveValues,
+                                      ),
+                                      const SizedBox(width: 6),
                                     VibeAuditActionChip(
                                       enabled: !_isBusy,
                                       scoped: _scope != null,
@@ -5474,6 +5527,8 @@ $response
                             onStopPlan: () => _stopPlan(i),
                             onRetryPlanLot: () => _retryPlanLot(i),
                             onSkipPlanLot: () => _skipPlanLot(i),
+                              onTogglePlanLot: (lotIndex) =>
+                                  _togglePlanLot(i, lotIndex),
                           ),
                       ],
                     ),

@@ -117,6 +117,7 @@ class VibeMessageBubble extends StatelessWidget {
     this.onStopPlan,
     this.onRetryPlanLot,
     this.onSkipPlanLot,
+    this.onTogglePlanLot,
     this.speechTranscriber,
     this.onSpeechError,
     super.key,
@@ -157,6 +158,9 @@ class VibeMessageBubble extends StatelessWidget {
 
   /// Ignore le lot en échec et poursuit avec le suivant.
   final VoidCallback? onSkipPlanLot;
+
+  /// Active ou désactive un lot proposé avant le lancement du plan.
+  final ValueChanged<int>? onTogglePlanLot;
 
   /// Service optionnel de dictée vocale (Speech-to-Text) pour les champs texte du questionnaire.
   final VibeSpeechTranscriber? speechTranscriber;
@@ -340,6 +344,7 @@ class VibeMessageBubble extends StatelessWidget {
                     onStop: onStopPlan,
                     onRetryLot: onRetryPlanLot,
                     onSkipLot: onSkipPlanLot,
+                    onToggleLot: onTogglePlanLot,
                   ),
                 ],
                 if (onRequestMoreQuestions != null) ...[
@@ -865,6 +870,76 @@ class VibeReproduceExactChip extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bouton lançant une génération orientée vers les valeurs calculées réactives.
+class VibeReactiveValuesActionChip extends StatelessWidget {
+  /// Crée la puce « Valeur réactif ».
+  const VibeReactiveValuesActionChip({
+    required this.enabled,
+    required this.onPressed,
+    super.key,
+  });
+
+  /// Indique si le bouton est cliquable.
+  final bool enabled;
+
+  /// Callback déclenché au clic.
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final foreground = scheme.secondary;
+    return Tooltip(
+      message:
+          'Configurer les calculatedAttributes, les champs de saisie et '
+          'les valeurs calculées en consultation',
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: 'Valeur réactif',
+        child: Material(
+          color: scheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-reactive-values'),
+            onTap: enabled ? onPressed : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.calculate_outlined,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Valeur réactif',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                       color: enabled
                           ? foreground
                           : foreground.withValues(alpha: 0.5),
