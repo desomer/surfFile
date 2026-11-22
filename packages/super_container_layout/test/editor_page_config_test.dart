@@ -335,4 +335,41 @@ void main() {
       expect((await store.load()).pageCatalog.pages, isEmpty);
     },
   );
+
+  test('showCloseButton defaults to true, omits true in JSON, and persists false', () {
+    final withDefault = EditorPageConfig(
+      id: 'sheet-default',
+      name: 'Panneau bas',
+      path: '/sheet-default',
+      pageType: EditorPageType.bottomSheet,
+    );
+    expect(withDefault.showCloseButton, isTrue);
+    expect(withDefault.toJson(), isNot(contains('showCloseButton')));
+    expect(withDefault.toCompactJson(), isNot(contains('showCloseButton')));
+
+    final withoutClose = withDefault.copyWith(showCloseButton: false);
+    expect(withoutClose.showCloseButton, isFalse);
+    expect(withoutClose, isNot(equals(withDefault)));
+    expect(withoutClose.toJson()['showCloseButton'], isFalse);
+    expect(withoutClose.toCompactJson()['showCloseButton'], isFalse);
+    expect(EditorPageConfig.fromJson(withoutClose.toJson()), withoutClose);
+
+    final explicitTrue = EditorPageConfig.fromJson({
+      ...withoutClose.toJson(),
+      'showCloseButton': true,
+    });
+    expect(explicitTrue.showCloseButton, isTrue);
+    expect(explicitTrue, withDefault);
+
+    for (final bad in <Object?>[null, 1, 'false', const <Object?>[]]) {
+      expect(
+        () => EditorPageConfig.fromJson({
+          ...withDefault.toJson(),
+          'showCloseButton': bad,
+        }),
+        throwsFormatException,
+        reason: '$bad',
+      );
+    }
+  });
 }

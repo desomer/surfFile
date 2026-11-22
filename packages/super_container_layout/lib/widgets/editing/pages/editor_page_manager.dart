@@ -132,6 +132,7 @@ class _PageManagerState extends State<_PageManager> {
           pageType: page?.pageType ?? EditorPageType.standard,
           modalWidth: page?.modalWidth,
           modalHeight: page?.modalHeight,
+          showCloseButton: page?.showCloseButton ?? true,
           layoutOverride: page?.layoutOverride,
           defaultParameters: page?.defaultParameters ?? const {},
         ),
@@ -643,6 +644,7 @@ class _PageDetailsState extends State<_PageDetails> {
     text: widget.page.layoutOverride?.desktopGutter?.round().toString() ?? '',
   );
   late EditorPageType _pageType = widget.page.pageType;
+  late bool _showCloseButton = widget.page.showCloseButton;
   late PageContainerMode? _overrideMode =
       widget.page.layoutOverride?.containerMode;
   final Map<String, TextEditingController> _parameters = {};
@@ -717,6 +719,7 @@ class _PageDetailsState extends State<_PageDetails> {
       pageType: _pageType,
       modalWidth: showWidth ? _parseOptionalDimension(_modalWidth) : null,
       modalHeight: showHeight ? _parseOptionalDimension(_modalHeight) : null,
+      showCloseButton: _pageType.isModal ? _showCloseButton : true,
       layoutOverride: _buildLayoutOverride(),
       defaultParameters: {
         for (final entry in _parameters.entries)
@@ -874,6 +877,19 @@ class _PageDetailsState extends State<_PageDetails> {
                           ),
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    key: const ValueKey('editor-page-modal-close-button'),
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('Bouton fermer par défaut'),
+                    subtitle: const Text(
+                      'Affiche un bouton × en haut à droite',
+                    ),
+                    value: _showCloseButton,
+                    onChanged: (value) =>
+                        setState(() => _showCloseButton = value),
                   ),
                 ],
                 if (_pageType == EditorPageType.standard) ...[

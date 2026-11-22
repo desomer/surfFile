@@ -576,6 +576,8 @@ class VibeAppInspector {
               'modalWidth': activePage.modalWidth,
             if (activePage.modalHeight != null)
               'modalHeight': activePage.modalHeight,
+            if (activePage.pageType.isModal)
+              'showCloseButton': activePage.showCloseButton,
           },
         if (pageRouting != null)
           'codedRoutes': <String>[

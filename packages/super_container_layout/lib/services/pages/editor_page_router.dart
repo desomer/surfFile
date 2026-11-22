@@ -755,16 +755,19 @@ Page<void>? buildEditorModalPage({
     key: key,
     width: page.modalWidth,
     height: page.modalHeight,
+    showCloseButton: page.showCloseButton,
     child: child,
   ),
   EditorPageType.bottomSheet => _EditorBottomSheetPage(
     key: key,
     height: page.modalHeight,
+    showCloseButton: page.showCloseButton,
     child: child,
   ),
   EditorPageType.sideSheet => _EditorSideSheetPage(
     key: key,
     width: page.modalWidth,
+    showCloseButton: page.showCloseButton,
     child: child,
   ),
   EditorPageType.standard || EditorPageType.a4Document => null,
@@ -816,12 +819,14 @@ class _EditorDialogPage extends Page<void> {
     required this.child,
     this.width,
     this.height,
+    this.showCloseButton = true,
     super.key,
   });
 
   final Widget child;
   final double? width;
   final double? height;
+  final bool showCloseButton;
 
   @override
   Route<void> createRoute(BuildContext context) => DialogRoute<void>(
@@ -845,7 +850,9 @@ class _EditorDialogPage extends Page<void> {
         child: SizedBox(
           width: targetWidth,
           height: targetHeight,
-          child: _wrapWithModalClose(dialogContext, child),
+          child: showCloseButton
+              ? _wrapWithModalClose(dialogContext, child)
+              : child,
         ),
       );
     },
@@ -853,10 +860,16 @@ class _EditorDialogPage extends Page<void> {
 }
 
 class _EditorBottomSheetPage extends Page<void> {
-  const _EditorBottomSheetPage({required this.child, this.height, super.key});
+  const _EditorBottomSheetPage({
+    required this.child,
+    this.height,
+    this.showCloseButton = true,
+    super.key,
+  });
 
   final Widget child;
   final double? height;
+  final bool showCloseButton;
 
   @override
   Route<void> createRoute(BuildContext context) => ModalBottomSheetRoute<void>(
@@ -874,17 +887,25 @@ class _EditorBottomSheetPage extends Page<void> {
       return SizedBox(
         key: const ValueKey('editor-bottom-sheet-page-container'),
         height: targetHeight,
-        child: _wrapWithModalClose(sheetContext, child),
+        child: showCloseButton
+            ? _wrapWithModalClose(sheetContext, child)
+            : child,
       );
     },
   );
 }
 
 class _EditorSideSheetPage extends Page<void> {
-  const _EditorSideSheetPage({required this.child, this.width, super.key});
+  const _EditorSideSheetPage({
+    required this.child,
+    this.width,
+    this.showCloseButton = true,
+    super.key,
+  });
 
   final Widget child;
   final double? width;
+  final bool showCloseButton;
 
   @override
   Route<void> createRoute(BuildContext context) => RawDialogRoute<void>(
@@ -914,7 +935,9 @@ class _EditorSideSheetPage extends Page<void> {
             child: SizedBox(
               width: targetWidth,
               height: double.infinity,
-              child: _wrapWithModalClose(layoutContext, child),
+              child: showCloseButton
+                  ? _wrapWithModalClose(layoutContext, child)
+                  : child,
             ),
           ),
         );

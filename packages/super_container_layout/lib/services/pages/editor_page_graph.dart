@@ -518,6 +518,9 @@ abstract final class EditorPageGraph {
                   (config is A4PageConfig
                       ? EditorPageType.a4Document
                       : EditorPageType.standard),
+              modalWidth: page?.modalWidth,
+              modalHeight: page?.modalHeight,
+              showCloseButton: page?.showCloseButton ?? true,
             ),
           ],
         ),

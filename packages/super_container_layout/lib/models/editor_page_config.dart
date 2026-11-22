@@ -90,6 +90,7 @@ class EditorPageConfig {
     this.pageType = EditorPageType.standard,
     this.modalWidth,
     this.modalHeight,
+    this.showCloseButton = true,
     this.layoutOverride,
     Map<String, String> defaultParameters = const {},
   }) : defaultParameters = Map.unmodifiable(defaultParameters) {
@@ -108,6 +109,10 @@ class EditorPageConfig {
 
   /// Hauteur optionnelle (px) pour les pages modales (`dialog`, `bottomSheet`).
   final double? modalHeight;
+
+  /// Indique si le bouton « Fermer » (`×`) est affiché par défaut en haut à droite
+  /// des pages modales (`dialog`, `bottomSheet`, `sideSheet`). Vaut `true` par défaut.
+  final bool showCloseButton;
 
   /// Surcharge responsive optionnelle de cette page (mode conteneur, max-width, gutters).
   final ResponsiveLayoutOverride? layoutOverride;
@@ -148,6 +153,7 @@ class EditorPageConfig {
     bool clearModalWidth = false,
     double? modalHeight,
     bool clearModalHeight = false,
+    bool? showCloseButton,
     ResponsiveLayoutOverride? layoutOverride,
     bool clearLayoutOverride = false,
     Map<String, String>? defaultParameters,
@@ -158,6 +164,7 @@ class EditorPageConfig {
     pageType: pageType ?? this.pageType,
     modalWidth: clearModalWidth ? null : modalWidth ?? this.modalWidth,
     modalHeight: clearModalHeight ? null : modalHeight ?? this.modalHeight,
+    showCloseButton: showCloseButton ?? this.showCloseButton,
     layoutOverride: clearLayoutOverride
         ? null
         : (layoutOverride ?? this.layoutOverride),
@@ -171,6 +178,7 @@ class EditorPageConfig {
     if (pageType != EditorPageType.standard) 'pageType': pageType.name,
     if (modalWidth != null) 'modalWidth': JsonNumbers.round(modalWidth!),
     if (modalHeight != null) 'modalHeight': JsonNumbers.round(modalHeight!),
+    if (!showCloseButton) 'showCloseButton': false,
     if (layoutOverride != null && !layoutOverride!.isEmpty)
       'layoutOverride': layoutOverride!.toJson(),
     'defaultParameters': defaultParameters,
@@ -184,6 +192,7 @@ class EditorPageConfig {
     if (pageType != EditorPageType.standard) 'pageType': pageType.name,
     if (modalWidth != null) 'modalWidth': JsonNumbers.round(modalWidth!),
     if (modalHeight != null) 'modalHeight': JsonNumbers.round(modalHeight!),
+    if (!showCloseButton) 'showCloseButton': false,
     if (layoutOverride != null && !layoutOverride!.isEmpty)
       'layoutOverride': layoutOverride!.toJson(),
     if (defaultParameters.isNotEmpty) 'defaultParameters': defaultParameters,
@@ -199,6 +208,7 @@ class EditorPageConfig {
             'pageType',
             'modalWidth',
             'modalHeight',
+            'showCloseButton',
             'layoutOverride',
             'defaultParameters',
           }.contains(key),
@@ -218,6 +228,10 @@ class EditorPageConfig {
     if ((value.containsKey('modalWidth') && rawModalWidth is! num?) ||
         (value.containsKey('modalHeight') && rawModalHeight is! num?)) {
       throw const FormatException('Invalid editor page modal dimensions.');
+    }
+    final rawShowCloseButton = value['showCloseButton'];
+    if (value.containsKey('showCloseButton') && rawShowCloseButton is! bool) {
+      throw const FormatException('Invalid editor page showCloseButton.');
     }
     final layoutOverride = value.containsKey('layoutOverride')
         ? ResponsiveLayoutOverride.fromJson(value['layoutOverride'])
@@ -239,6 +253,7 @@ class EditorPageConfig {
         pageType: pageType,
         modalWidth: (rawModalWidth as num?)?.toDouble(),
         modalHeight: (rawModalHeight as num?)?.toDouble(),
+        showCloseButton: rawShowCloseButton as bool? ?? true,
         layoutOverride: layoutOverride,
         defaultParameters: Map<String, String>.from(parameters),
       );
@@ -257,6 +272,7 @@ class EditorPageConfig {
           other.pageType == pageType &&
           other.modalWidth == modalWidth &&
           other.modalHeight == modalHeight &&
+          other.showCloseButton == showCloseButton &&
           other.layoutOverride == layoutOverride &&
           mapEquals(other.defaultParameters, defaultParameters);
 
@@ -268,6 +284,7 @@ class EditorPageConfig {
     pageType,
     modalWidth,
     modalHeight,
+    showCloseButton,
     layoutOverride,
     Object.hashAllUnordered(
       defaultParameters.entries.map((e) => Object.hash(e.key, e.value)),
