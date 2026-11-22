@@ -2608,16 +2608,24 @@ void main() {
     final fullBundle = _NamedGuideBundle({
       'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
       'REPOSITORY_JSON_AI_GUIDE.md': 'Modélisation des repositories JSON.',
+      'BEHAVIOR_JSON_AI_GUIDE.md': 'Modélisation des comportements.',
       'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
     });
     final withRepoGuide = await VibeChatDialog.loadStaticGuide(fullBundle);
     expect(withRepoGuide, contains('Grammaire JSON de base.'));
     expect(withRepoGuide, contains('GUIDE DE MODÉLISATION DES REPOSITORIES :'));
     expect(withRepoGuide, contains('Modélisation des repositories JSON.'));
+    expect(
+      withRepoGuide,
+      contains(
+        'GUIDE DES COMPORTEMENTS (BEHAVIORS, EVENTS, VALIDATORS & ACTIONS) :',
+      ),
+    );
+    expect(withRepoGuide, contains('Modélisation des comportements.'));
     expect(withRepoGuide, contains('GUIDE DE DESIGN SYSTEM :'));
     expect(withRepoGuide, contains('Design System moderne par défaut.'));
 
-    // Repli gracieux lorsque REPOSITORY_JSON_AI_GUIDE.md est absent d'un bundle minimal
+    // Repli gracieux lorsque REPOSITORY_JSON_AI_GUIDE.md et BEHAVIOR_JSON_AI_GUIDE.md sont absents d'un bundle minimal
     final bundle = _NamedGuideBundle({
       'SCREEN_JSON_AI_GUIDE.md': 'Grammaire JSON de base.',
       'SCREEN_DESIGN_AI_GUIDE.md': 'Design System moderne par défaut.',
@@ -2628,6 +2636,14 @@ void main() {
     expect(
       combined,
       isNot(contains('GUIDE DE MODÉLISATION DES REPOSITORIES :')),
+    );
+    expect(
+      combined,
+      isNot(
+        contains(
+          'GUIDE DES COMPORTEMENTS (BEHAVIORS, EVENTS, VALIDATORS & ACTIONS) :',
+        ),
+      ),
     );
     expect(combined, contains('GUIDE DE DESIGN SYSTEM :'));
     expect(combined, contains('Design System moderne par défaut.'));
@@ -2657,6 +2673,8 @@ void main() {
       'SCREEN_JSON_AI_GUIDE.md',
       'REPOSITORY_JSON_AI_GUIDE.md',
       'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
+      'BEHAVIOR_JSON_AI_GUIDE.md',
+      'packages/super_container_layout/BEHAVIOR_JSON_AI_GUIDE.md',
     ]);
   });
 

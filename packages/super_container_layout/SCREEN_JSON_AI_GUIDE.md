@@ -68,25 +68,9 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 
 ### Liaisons sur des attributs calculés
 
-Les calculs sont soit déclarés côté Dart (`RepositoryImpl.addCalculatedAttribute` / `addJsCalculatedAttribute`), soit définis en JavaScript (QuickJS) dans le gestionnaire de repositories ou via la clé `"calculatedAttributes"` de `"repositories"` (persistés dans `calculated/<id>.json`).
-Les données `"data"` et l'apparence contiennent uniquement leurs chemins, jamais de résultats de cache. Ne pas lier un `@calcul` non déclaré.
-
-- `@nom` lit un calcul racine ; `@stats.total` lit une propriété de son résultat.
-- `@actifs[?].nom` lit une ligne d'un tableau calculé, avec les mêmes jokers et
-  sélection maître/détail que les tableaux sources.
-- `articles[?].@montant` lit un calcul par ligne enregistré avec
-  `scope: 'articles[?]'` ; `articles[?].@stats.total` lit une propriété de ce calcul.
-- Un chemin comporte au plus un segment `@nom`. Son nom contient 1 à 64 lettres
-  ASCII, chiffres ou `_`. Les clés JSON commençant par `@` sont réservées aux
-  calculs ; une collision est une erreur.
-- Tout chemin contenant un segment calculé est **en lecture seule**, y compris
-  ses sous-chemins. Pas d'édition bidirectionnelle ni d'ajout/suppression sur une
-  collection calculée ; sélection, copie et navigation sans écriture restent possibles.
-- Les scopes par ligne portent exclusivement sur des tableaux JSON sources,
-  éventuellement imbriqués ; pas de calcul par ligne déclaré sur un tableau calculé.
-- Le cache et les dépendances, y compris entre repositories du même store,
-  sont gérés par le runtime (`CalculatedAttributeEngine` + `QuickJsCalculatedEvaluator`). Les erreurs ne sont pas remplacées par une valeur
-  par défaut. Les formules JS sont définies via `"repositories.*.calculatedAttributes"` (ou l'éditeur JS), jamais dans `"data"` ni dans `"vibe"`.
+- `@nom` lit un calcul racine ; `@stats.total` lit une propriété de son résultat ; `@actifs[?].nom` lit une ligne d'un tableau calculé ; `articles[?].@montant` lit un calcul par ligne (`scope: 'articles[?]'`).
+- Tout chemin contenant un segment calculé `@nom` est **strictement en lecture seule** (pas de `mode: "input"` ni `addArrayItem`). Ne lie jamais un `@calcul` absent de `REPOSITORIES DISPONIBLES` ou non déclaré dans `"repositories.*.calculatedAttributes"`.
+- Pour les règles complètes de déclaration QuickJS (`"calculatedAttributes"`), dépendances et cache, consulte [`REPOSITORY_JSON_AI_GUIDE.md`](REPOSITORY_JSON_AI_GUIDE.md).
 
 ### Couleurs du thème Material 3 (`theme:<rôle>` à privilégier)
 
@@ -121,7 +105,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
-3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements attachés aux composants, structurés en **3 paramètres** : événement déclencheur (`event`), condition de garde optionnelle (`validator`) et action polymorphe (`action`, ex. `"goToPage"`, `"runJavaScript"`, `"emitEvent"`, `"datasource"`, etc.).
+3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements attachés aux composants, structurés en **3 paramètres** : événement déclencheur (`event`), condition de garde optionnelle (`validator`) et action polymorphe (`action`, ex. `"goToPage"`, `"runJavaScript"`, `"sortCollection"`, `"filterCollection"`, `"emitEvent"`, `"datasource"`, etc.). Voir le guide dédié [`BEHAVIOR_JSON_AI_GUIDE.md`](BEHAVIOR_JSON_AI_GUIDE.md).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`). Chaque page déclare `id`, `name`, `path`, et optionnellement `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
 5. **`responsiveLayout`** (optionnel à la racine) : configuration responsive globale du `body` des pages (`containerMode`: `"fullPage"` par défaut ou `"constrained"`, `maxWidth`: `1440` par défaut, `gutters`: `{"mobile": 24, "desktop": 32}`, `breakpoints`: `{"mobileWidth": 375, "tabletMinWidth": 768, "desktopMinWidth": 1280, "largeDesktopMinWidth": 1440}`).
 6. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
@@ -1558,338 +1542,19 @@ Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l
 
 Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
 
-### 4.12. Comportements (`behaviors`) : Événements, validateurs et actions
+### 4.12. Comportements (`behaviors`) : Vue d'ensemble
 
-Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs ou réactifs à n'importe quel composant par son ID technique. Chaque entrée repose sur une **architecture à 3 paramètres** (plus `"id"` et `"enabled"` optionnel, défaut `true`) :
+> **Spécification normative complète** : consulte [`BEHAVIOR_JSON_AI_GUIDE.md`](BEHAVIOR_JSON_AI_GUIDE.md) pour la référence exhaustive des 16 événements (`event.data` par composant), des 37 validateurs (`self`, `other*`, `binding*`, `all`, `any`, `not`, `expectedComponentId`, `expectedBinding`, `caseSensitive`), des 16 actions, du moteur `CollectionViewTransform`, de la signature QuickJS `(ctx, doc, event)` et des exemples exécutables.
 
-1. **`event`** — quand le comportement se déclenche ;
-2. **`validator`** *(optionnel)* — condition de garde évaluée avant d'exécuter l'action ;
-3. **`action`** — l'action polymorphe à lancer parmi les **14 actions** du catalogue.
+Le dictionnaire plat `"behaviors"` (`Map<String, List<ComponentBehavior>>`) attache une liste de comportements à chaque composant par son ID (`"<id>"`, ou `"<listId>:item"` pour les lignes de `SuperListView`, ou `"<itemId>"` pour les lignes de `SuperTable` / `SuperTreeView`). Chaque entrée associe :
+1. **`"id"`** et **`"enabled"`** *(optionnel, défaut `true`)* ;
+2. **`"event"`** *(toujours émettre `"event"`, jamais `"trigger"`)* :
+   - **13 événements impératifs** : `"onTap"`, `"onDoubleTap"`, `"onLongPress"`, `"onHoverEnter"`, `"onHoverExit"`, `"onSelected"`, `"onChanged"`, `"onSubmitted"`, `"onFocus"`, `"onBlur"`, `"onExpanded"`, `"onCollapsed"`, `"onMount"` ;
+   - **3 événements déclaratifs / réactifs (couplages stricts)** : `"onHover"` (*uniquement* `"onTooltip"`), `"onBinding"` (*uniquement* `"bindState"`, `"bindZoneSize"`, `"sortCollection"`, `"filterCollection"`), `"onCreate"` (*uniquement* `"creationDefault"`).
+3. **`"validator"`** *(optionnel)* : condition de garde avant une action impérative (ou garde/prédicat en `"onBinding"` sur une collection).
+4. **`"action"`** *(16 types)* : `"goToPage"`, `"generatePdf"`, `"emitEvent"`, `"setStyle"`, `"setVisibility"`, `"setState"`, `"onTooltip"`, `"bindState"`, `"bindZoneSize"`, `"addArrayItem"`, `"creationDefault"`, `"runJavaScript"`, `"sortCollection"`, `"filterCollection"`, `"searchProvider"`, `"datasource"`.
 
-#### 1. Événement déclencheur (`event`)
-
-La clé canonique est **`"event"`** (l'ancienne clé `"trigger"` reste acceptée en lecture pour rétrocompatibilité, mais **toujours émettre `"event"`**).
-
-- **Événements impératifs** (compatibles avec **toutes** les actions impératives et un `validator` optionnel ; ignorés en mode édition) :
-  - **Gestes** :
-    - `"onTap"` *(alias : `"click"`, `"tap"`)* : clic simple ou tap. Le curseur passe automatiquement en pointeur (`click`).
-    - `"onDoubleTap"` *(alias : `"doubleClick"`, `"doubleTap"`)* : double-clic. Si un comportement `"onTap"` est aussi configuré, les clics simples restent émis et le double-clic s'exécute en supplément.
-    - `"onLongPress"` *(alias : `"longPress"`)* : appui long maintenu.
-  - **Survol impératif** :
-    - `"onHoverEnter"` *(alias : `"hoverEnter"`)* : entrée du pointeur sur le composant.
-    - `"onHoverExit"` *(alias : `"hoverExit"`)* : sortie du pointeur du composant.
-  - **Sélection** :
-    - `"onSelected"` *(alias : `"selected"`)* : sélection d'une ligne (`ListView`, `Table`, `TreeView`), d'un onglet (`Tab`), d'une destination (`BottomNavigationBar`, `NavigationRail`) ou d'une option (`Value`).
-  - **Valeur & saisie** :
-    - `"onChanged"` *(alias : `"changed"`)* : modification de valeur par l'utilisateur (`Value`, `Expansible`, `Menu`).
-    - `"onSubmitted"` *(alias : `"submitted"`)* : validation clavier (touche Entrée) dans un champ de saisie (`Value`).
-  - **Focus** :
-    - `"onFocus"` *(alias : `"focus"`)* : prise de focus d'un champ ou composant focusable.
-    - `"onBlur"` *(alias : `"blur"`)* : perte de focus d'un champ ou composant focusable.
-  - **Ouverture / Fermeture** :
-    - `"onExpanded"` *(alias : `"expanded"`)* : dépliage d'un `Expansible`, `Menu` ou nœud de `TreeView`.
-    - `"onCollapsed"` *(alias : `"collapsed"`)* : repliage d'un `Expansible`, `Menu` ou nœud de `TreeView`.
-  - **Cycle de vie** :
-    - `"onMount"` *(alias : `"mount"`)* : exécution unique lors de l'affichage initial du composant (hors mode édition).
-
-- **Événements déclaratifs / réactifs** (réservés exclusivement à leurs actions dédiées) :
-  - `"onHover"` *(alias : `"hover"`)* : réservé à `"onTooltip"` (sans action au clic ni curseur pointeur ; utiliser `"onHoverEnter"` pour une action impérative au survol).
-  - `"onBinding"` *(alias : `"binding"`)* : réservé aux actions réactives `"bindZoneSize"`, `"bindState"`, `"sortCollection"` et `"filterCollection"` ; s'applique à chaque changement de la valeur liée, du repository ou des composants référencés.
-  - `"onCreate"` *(alias : `"create"`)* : réservé à `"creationDefault"` sur une `SuperValue` ; appliqué automatiquement lors de la création d'une ligne dans le tableau associé.
-
-#### 2. Validateur conditionnel (`validator`, optionnel)
-
-Lorsqu'il est renseigné sur un comportement impératif, `validator` est évalué avant d'exécuter `action` : si la condition est fausse, l'action n'est pas exécutée. S'il est omis, l'action s'exécute sans condition.
-
-- **Sur le composant courant (`self`)** :
-  - Unaires (sans `"value"`) : `"isEmpty"`, `"isFill"` *(alias : `"isFilled"`, `"isNotEmpty"`)*, `"isTrue"`, `"isFalse"`, `"isValid"`, `"isInvalid"`.
-  - Binaires (avec `"value"`) : `"equals"`, `"notEquals"`, `"contains"`, `"startsWith"` *(chaîne)*, `"greaterThan"` *(nombre fini)*, `"lessThan"` *(nombre fini)*, `"matchesRegex"` *(RegExp non vide)*.
-- **Sur un autre composant (`component`, requiert `"targetComponentId"`)** :
-  - Unaires : `"otherIsEmpty"`, `"otherIsFill"` *(alias : `"otherIsFilled"`, `"otherIsNotEmpty"`)*, `"otherIsTrue"`, `"otherIsFalse"`, `"otherIsValid"`, `"otherIsInvalid"`.
-  - Binaires (avec `"value"`) : `"otherEquals"`, `"otherNotEquals"`, `"otherContains"`, `"otherStartsWith"`, `"otherGreaterThan"`, `"otherLessThan"`, `"otherMatchesRegex"`.
-- **Sur une liaison repository (`binding`, requiert `"binding"` : `{"repositoryId": "...", "path": "..."}` ou forme courte `"chemin"` héritée)** :
-  - Unaires : `"bindingIsEmpty"`, `"bindingIsFill"` *(alias : `"bindingIsFilled"`, `"bindingIsNotEmpty"`)*, `"bindingIsTrue"`, `"bindingIsFalse"`.
-  - Binaires (avec `"value"`) : `"bindingEquals"`, `"bindingNotEquals"`, `"bindingContains"`, `"bindingStartsWith"`, `"bindingGreaterThan"`, `"bindingLessThan"`, `"bindingMatchesRegex"`.
-  - *(Note : `isValid` et `isInvalid` exigent un composant `self` ou `component` et ne s'appliquent pas à une liaison brute.)*
-- **Composites logiques** :
-  - `"all"` *(ET logique)* : `{"type": "all", "validators": [ ... ]}` (au moins 1 sous-validateur).
-  - `"any"` *(OU logique)* : `{"type": "any", "validators": [ ... ]}` (au moins 1 sous-validateur).
-  - `"not"` *(NON logique)* : `{"type": "not", "validator": { ... }}`.
-- **Valeurs de comparaison dynamiques & casse (sur tout validateur binaire)** :
-  - À la place d'une constante `"value"`, un validateur binaire accepte **`"expectedComponentId"`** (valeur runtime d'un autre composant, ex. champ de recherche `SuperValue`) **ou** **`"expectedBinding"`** (attribut d'un repository JSON, ex. `{"repositoryId": "filtres", "path": "recherche"}`) — mutuellement exclusifs avec `"value"`.
-  - **`"caseSensitive"`** *(optionnel, booléen, défaut `true`)* : mettre `false` pour des comparaisons insensibles à la casse sur `"equals"`, `"notEquals"`, `"contains"`, `"startsWith"` et `"matchesRegex"`.
-- **Règle d'évaluation `isEmpty` / `isFill`** :
-  - **Vide** (`isEmpty` = vrai, `isFill` = faux) : `null`, chaîne vide `""` ou composée uniquement d'espaces, liste vide `[]`, map/objet vide `{}`.
-  - **Rempli** (`isFill` = vrai) : chaîne non blanche, collection non vide, et **tout nombre y compris `0`**.
-  - **Booléen** : ne pas utiliser `isEmpty`/`isFill` pour tester vrai/faux — utiliser `"isTrue"` / `"isFalse"` (ou `"otherIsTrue"` / `"otherIsFalse"`, `"bindingIsTrue"` / `"bindingIsFalse"`).
-
-#### 3. Actions polymorphes (`action` — 16 types)
-
-Toutes les **12 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`, `setStyle`, `setVisibility`, `setState`, `sortCollection`, `filterCollection`) acceptent **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions exclusivement déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié ; **`sortCollection`** et **`filterCollection`** acceptent **aussi** `"onBinding"` directement sur un `SuperListView` ou un `SuperTable` pour un tri/filtrage déclaratif réactif.
-
-- **`"goToPage"`** (`GoToPageAction`, impérative) : navigation vers une page ou une URL.
-  - `pagePath` : chemin absolu cible (ex. `"/details"`, `"/clients"`).
-  - `pageId` *(optionnel)* : identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
-  - `pageName` *(optionnel)* : nom lisible de la page cible (ex. `"Détails"`).
-- **`"emitEvent"`** (`EmitEventAction`, impérative) : publie un événement sur le bus interne `SuperEventBus` fourni à `SuperApp`.
-  - `eventId` : identifiant non vide, sans espaces de début/fin, filtré par égalité exacte.
-  - `custom` *(optionnel)* : objet JSON statique, distinct des données automatiques.
-  - L'événement expose `eventId`, `componentId`, `componentType`, `trigger` *(nom historique pour compatibilité ou nom canonique pour les nouveaux événements)*, `data`, `custom`.
-  - Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient `previousValue` et `value` (texte ou booléen). L'interaction native (saisie, sélection, checkbox/switch) est conservée. Ne pas inventer d'action d'exécution Dart ni de binding dynamique dans `custom`.
-- **`"searchProvider"`** (`SearchProviderAction`, impérative) : déclenche la recherche d'un provider de données enregistré dans `store.providers` (alimente son repository cible depuis son repository de filtre).
-  - `providerId` : identifiant du provider (`a-z`, `0-9`, `_`, 32 caractères max).
-- **`"datasource"`** (`DatasourceAction`, impérative) : exécute une commande Search / Pagination / Tri / CRUD d'une datasource enregistrée dans `store.datasources` avec le contexte de ligne courant (`JsonListScope`).
-  - `datasourceId` : identifiant de la datasource (`a-z`, `0-9`, `_`, 32 caractères max).
-  - `command` *(optionnel, défaut `"search"`)* : `"search"`, `"refresh"`, `"firstPage"`, `"previousPage"`, `"nextPage"`, `"loadMore"`, `"sort"`, `"create"`, `"read"`, `"update"`, `"delete"`.
-  - `field` *(requis uniquement pour `"sort"`)* : champ trié.
-  - `direction` *(optionnel, uniquement pour `"sort"`)* : `"asc"` | `"desc"` (omis = alterne le sens au déclenchement suivant).
-- **`"generatePdf"`** (`GeneratePdfAction`, impérative) : génère un PDF depuis une page de type `"a4Document"` (`pageCatalog.pages[*].pageType: "a4Document"`) en combinant traduction vectorielle et fallback raster haute résolution.
-  - `pageId` *(optionnel)* : identifiant de la page A4 cible ; omis ou `null` utilise la page A4 courante (ou l'unique page A4 du catalogue).
-  - `pageName` *(optionnel)* : nom lisible de la page A4 cible.
-  - `fileName` *(optionnel)* : nom de fichier `.pdf` suggéré (sinon utilise `defaultFileName` de `A4PageConfig`).
-  - `outputMode` *(optionnel, défaut `"exportDialog"`)* : `"exportDialog"` (boîte d'export en fichier `.pdf`) ou `"saveFile"` (enregistrement direct dans le dossier par défaut).
-- **`"addArrayItem"`** (`AddArrayItemAction`, impérative) : ajoute une nouvelle ligne dans un tableau JSON en initialisant ses champs depuis le JSON Schema du repository puis les éventuels comportements `"creationDefault"` des `SuperValue`.
-  - `binding` : `{"repositoryId": "...", "path": "clients"}` ou `"clients[?].commandes"`.
-  - `selectCreated` *(optionnel, défaut `true`)* : sélectionne automatiquement la ligne créée dans le tableau.
-- **`"runJavaScript"`** (`RunJavaScriptAction`, impérative) : exécute un script JavaScript contrôlé. Exemple : `{"type":"runJavaScript","repositoryId":"commandes","code":"ctx.set('statut', 'envoyée');"}`. `repositoryId` est optionnel dans une liste et hérite alors du repository de la ligne. Le script reçoit `ctx`, `doc` et `event` ; `doc` et `event` (métadonnées et `data` de l'événement) sont en lecture seule et la seule écriture autorisée est `ctx.set(chemin, valeur)`. Les chemins `@...` restent strictement en lecture seule, les valeurs sont validées comme JSON et les écritures sont appliquées atomiquement avec validation du schéma. Les chemins avec `[?]` utilisent les indices de lignes englobantes ou la sélection courante.
-- **`"setStyle"`** (`SetStyleAction`, impérative) : modifie dynamiquement le style visuel d'un composant ou d'une surface en mémoire (sans muter `Appearance` ; suspendu en mode édition).
-  - `operation` *(optionnel, défaut `"apply"`)* : `"apply"` (fusionne le patch), `"toggle"` (applique ou retire uniquement les propriétés portées par le patch), ou `"reset"` (efface toutes les surcharges runtime de la cible).
-  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (omis ou `null` = le composant déclencheur). Dans une liste/arbre, cible en priorité l'instance de la même ligne si elle existe, sinon la cible globale.
-  - `durationMs` *(optionnel, défaut `0`)* : durée d'animation en millisecondes (`>= 0`).
-  - `style` *(requis sauf si `operation: "reset"`)* : objet `BehaviorStylePatch` contenant au moins une propriété parmi :
-    - `backgroundColor` *(alias `"color"`)*, `foregroundColor` *(alias `"textColor"`)*, `borderColor` : couleurs hex (`"#FF0000"`) ou tokens thème (`"theme:primary"`, `"theme:errorContainer"`, etc.) ;
-    - `borderWidth` (`>= 0`), `radius` (`>= 0`), `opacity` (`0.0..1.0`), `elevation` (`>= 0`) ;
-    - `fontSize` (`> 0`), `fontWeight` (`"w100"`..`"w900"`, `"bold"`, `"normal"`) ;
-    - `namedState` : nom d'un état métier existant dans `states.named` du composant ou de la surface ;
-    - `fill`, `shadow`, `neon` : effets avancés de surface au même format que `ContainerStyle`.
-- **`"setVisibility"`** (`SetVisibilityAction`, impérative) : contrôle la visibilité d'un composant en mémoire (suspendu en mode édition).
-  - `mode` : `"show"` (afficher) | `"hide"` (masquer) | `"toggle"` (basculer) | `"reset"` (restaurer la visibilité par défaut / `bindState`).
-  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (`null`/omis = soi-même).
-  - `maintainSize` *(optionnel, défaut `false`, utilisé avec `"hide"` / `"toggle"`)* : conserve l'espace dans la mise en page lorsque masqué.
-- **`"sortCollection"`** (`SortCollectionAction`, déclaratif `onBinding` sur `SuperListView`/`SuperTable` **ou** impératif depuis tout composant) : trie les lignes côté client en préservant les indices sources (sélection Maître/Détail, édition et suppression ; suspendu en mode édition).
-  - `mode` *(optionnel, défaut `"set"`)* : `"set"` (remplace le tri), `"add"` (ajoute/met à jour un critère secondaire) ou `"clear"` (réinitialise le tri impératif, mode impératif uniquement).
-  - `targetComponentId` *(impératif uniquement, optionnel si attaché à la collection)* : ID du `SuperListView` ou `SuperTable` cible. Interdit avec `"onBinding"`.
-  - `criteria` *(liste de critères)* **ou** raccourci mono-critère directement sur l'action (`path`, `direction`, `caseSensitive`, `nullsLast`) :
-    - `path` : chemin relatif dans la ligne (`"nom"`, `"adresse.ville"`), modèle (`"clients[?].prix"`), calculé (`"@total"`) ou `"."` pour une liste de primitives ;
-    - `direction` *(optionnel, défaut `"asc"`)* : `"asc"`, `"desc"`, ou `"toggle"` *(impératif uniquement — alterne asc/desc)* ;
-    - `caseSensitive` *(optionnel, défaut `false`)*, `nullsLast` *(optionnel, défaut `true`)*.
-  - En mode `"onBinding"`, `validator` sert de **condition d'activation** du tri (ex. `{"type": "otherEquals", "targetComponentId": "sort-select", "value": "prix_desc"}`).
-- **`"filterCollection"`** (`FilterCollectionAction`, déclaratif `onBinding` sur `SuperListView`/`SuperTable` **ou** impératif depuis tout composant) : filtre les lignes côté client via `BehaviorValidator` (suspendu en mode édition ; plusieurs filtres actifs se cumulent en ET logique).
-  - `mode` *(optionnel, défaut `"apply"`)* : `"apply"`, `"toggle"`, `"clear"` ou `"clearAll"` (seul `"apply"` est autorisé avec `"onBinding"`).
-  - `targetComponentId` *(impératif uniquement)* : ID du `SuperListView` ou `SuperTable` cible. Interdit avec `"onBinding"`.
-  - `filterKey` *(optionnel, impératif uniquement)* : clé logique permettant de gérer plusieurs filtres indépendants (`"search"`, `"status"`…).
-  - `predicate` (`BehaviorValidator`) : prédicat évalué **pour chaque ligne** dans son `JsonListScope` (ex. `{"type": "bindingContains", "binding": "clients[?].nom", "expectedComponentId": "search-input", "caseSensitive": false}`).
-  - En mode `"onBinding"` : si `predicate` est omis, le `validator` du comportement est évalué directement **par ligne** ; si `predicate` **et** `validator` sont tous deux renseignés, `validator` sert de **condition d'activation globale** (ex. `otherIsFill("search-input")`) et `predicate` filtre chaque ligne.
-- **`"setState"`** (`SetStateAction`, impérative) : contrôle l'état interactif (`disabled` ou `readOnly`) d'un composant en mémoire (suspendu en mode édition).
-  - `state` : `"disabled"` (bloque pointeur, focus, comportements et passe les composants interactifs en état inactif) | `"readOnly"` (lecture seule).
-  - `operation` *(optionnel, défaut `"set"`)* : `"set"` (force à `value`) | `"toggle"` (bascule) | `"reset"` (restaure l'état par défaut / `bindState`).
-  - `value` *(optionnel, défaut `true`, utilisé uniquement avec `operation: "set"`)* : `true` active `disabled`/`readOnly`, `false` réactive le composant / autorise la modification.
-  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (`null`/omis = soi-même).
-- **`"onTooltip"`** (`TooltipAction`, événement `"onHover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
-  - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
-  - `binding` *(optionnel)* : `{"repositoryId": "...", "path": "clients[?].description"}` ou forme courte `"clients[?].description"` avec repository hérité. La valeur doit être un texte ou `null`.
-  - Avec `binding`, `message` n'est pas un fallback. La liaison suit les données et le contexte courant/sélectionné ; une valeur vide/null ou une absence de sélection n'affiche rien. Le premier `onTooltip` activé remplace le tooltip natif de cette cible, sans affichage en édition.
-- **`"bindZoneSize"`** (`ZoneSizeBindingAction`, événement `"onBinding"`, sur l'ID d'un `SuperLayout`) : lie l'épaisseur d'un côté à une valeur numérique d'un repository et anime chaque changement (ouverture / fermeture en tiroir).
-  - `zone` : `"west"` | `"east"` | `"north"` | `"south"`.
-  - `binding` : `{"repositoryId": "...", "path": "ui.panneau.largeur"}` (`repositoryId` omis dans une liste : hérite).
-  - `unit` *(optionnel, défaut `"pixels"`)* : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
-  - `durationMs` *(optionnel, défaut `250`, `0` sans animation)* et `curve` *(optionnel, défaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`)*.
-  - `0` ferme la zone ; une valeur absente ou non numérique rend la taille de la configuration. La poignée de redimensionnement du côté est masquée et la première valeur s'applique sans animation.
-- **`"bindState"`** (`StateBindingAction`, événement `"onBinding"`, disponible sur tous les composants par ID) : change l'état d'un composant en fonction d'un booléen d'un repository JSON.
-  - `state` : `"invisible"` (masque hors mode édition) | `"readOnly"` (active `AutomaticState.readOnly`) | `"disabled"` (active `AutomaticState.disabled`).
-  - `binding` : `{"repositoryId": "...", "path": "clients[?].estVerrouille"}` ou forme courte `"clients[?].estVerrouille"` avec repository hérité.
-  - `whenValue` *(optionnel, défaut `true`)* : `true` applique l'état quand le booléen vaut `true`, `false` quand il vaut `false`.
-  - `maintainSize` *(optionnel, défaut `false`, uniquement avec `state: "invisible"`)* : conserve l'espace dans la mise en page.
-- **`"creationDefault"`** (`CreationDefaultAction`, événement `"onCreate"`, sur une `SuperValue`) : définit la valeur par défaut écrite dans le champ lié lorsqu'une ligne est créée dans le tableau associé (`addArrayItem` ou bouton `+` de liste/table).
-  - `defaultValue` : valeur par défaut JSON (`string`, `number`, `boolean`, `null`, etc.).
-  - `binding` *(optionnel)* : cible explicite si différente ou si la `SuperValue` n'a pas encore de `binding`.
-
-#### Exemple : clic gardé par `otherIsFill`, sélection sur une liste et saisie avec validateur `all`
-
-```json
-{
-  "behaviors": {
-    "btn-save-client": [
-      {
-        "id": "b-save-if-email-filled",
-        "event": "onTap",
-        "validator": {
-          "type": "otherIsFill",
-          "targetComponentId": "input-client-email"
-        },
-        "action": {
-          "type": "datasource",
-          "datasourceId": "clients",
-          "command": "update"
-        }
-      }
-    ],
-    "list-clients": [
-      {
-        "id": "b-select-client",
-        "event": "onSelected",
-        "action": {
-          "type": "goToPage",
-          "pagePath": "/clients/details",
-          "pageName": "Fiche Client"
-        }
-      }
-    ],
-    "input-search-query": [
-      {
-        "id": "b-live-search",
-        "event": "onChanged",
-        "validator": {
-          "type": "all",
-          "validators": [
-            { "type": "isFill" },
-            { "type": "otherIsValid", "targetComponentId": "input-min-amount" }
-          ]
-        },
-        "action": {
-          "type": "searchProvider",
-          "providerId": "clients_search"
-        }
-      }
-    ]
-  }
-}
-```
-
-#### Exemple : changer le style, la visibilité et l'état `disabled` d'autres composants
-
-```json
-{
-  "behaviors": {
-    "btn-toggle-advanced": [
-      {
-        "id": "b-toggle-panel-visibility",
-        "event": "onTap",
-        "action": {
-          "type": "setVisibility",
-          "mode": "toggle",
-          "targetComponentId": "card-advanced-options"
-        }
-      },
-      {
-        "id": "b-highlight-button",
-        "event": "onTap",
-        "action": {
-          "type": "setStyle",
-          "operation": "toggle",
-          "style": {
-            "backgroundColor": "theme:primaryContainer",
-            "foregroundColor": "theme:onPrimaryContainer",
-            "borderColor": "theme:primary",
-            "borderWidth": 2
-          }
-        }
-      }
-    ],
-    "switch-lock-form": [
-      {
-        "id": "b-disable-submit",
-        "event": "onChanged",
-        "validator": { "type": "isTrue" },
-        "action": {
-          "type": "setState",
-          "state": "disabled",
-          "operation": "set",
-          "value": true,
-          "targetComponentId": "btn-submit"
-        }
-      },
-      {
-        "id": "b-enable-submit",
-        "event": "onChanged",
-        "validator": { "type": "isFalse" },
-        "action": {
-          "type": "setState",
-          "state": "disabled",
-          "operation": "set",
-          "value": false,
-          "targetComponentId": "btn-submit"
-        }
-      }
-    ]
-  }
-}
-```
-
-#### Exemple : info-bulle fixe et info-bulle liée sur une ligne
-
-```json
-{
-  "behaviors": {
-    "main-layout": [
-      {
-        "id": "layout-tooltip",
-        "event": "onHover",
-        "action": { "type": "onTooltip", "message": "Espace de travail" }
-      }
-    ],
-    "list-clients:item": [
-      {
-        "id": "client-tooltip",
-        "event": "onHover",
-        "action": {
-          "type": "onTooltip",
-          "binding": "clients[?].description"
-        }
-      }
-    ]
-  }
-}
-```
-
-#### Exemple : panneau ouest lié à un repository
-
-```json
-{
-  "behaviors": {
-    "main-layout": [
-      {
-        "id": "b-west-panel",
-        "event": "onBinding",
-        "enabled": true,
-        "action": {
-          "type": "bindZoneSize",
-          "zone": "west",
-          "binding": {"repositoryId": "pan_model_repository", "path": "ui.westWidth"},
-          "unit": "pixels",
-          "durationMs": 300,
-          "curve": "easeInOut"
-        }
-      }
-    ]
-  }
-}
-```
-
-#### Exemple : événement au double-clic d'une valeur
-
-```json
-{
-  "behaviors": {
-    "tree-node-name": [
-      {
-        "id": "b-node-open",
-        "event": "onDoubleTap",
-        "enabled": true,
-        "action": {
-          "type": "emitEvent",
-          "eventId": "node.changed",
-          "custom": {"origin": "designer"}
-        }
-      }
-    ]
-  }
-}
-```
-
-L'application hôte écoute avec `eventBus.on('node.changed').listen(...)` et
-injecte ce même bus dans `SuperApp(eventBus: eventBus, ...)`.
-Ne pas inventer d'action d'exécution Dart ni de binding dynamique dans `custom`.
+> **Rappel Vibe** : émets `"behaviors"` après `"components"` ; une entrée `behaviors["<id>"]` remplace toute la liste du composant `<id>` (conserve les comportements existants à garder).
 
 ---
 
@@ -1912,27 +1577,10 @@ La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque dem
 
 ### 6.1. Outils d'introspection runtime & auto-vérification
 
-Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA dispose de 13 outils d'introspection et de sélection (exposés via Function Calling natif Gemini `functionDeclarations` et en repli JSON via `"toolCalls"`) :
-
-| Outil | Rôle | Paramètres principaux |
-| :--- | :--- | :--- |
-| `get_viewport_and_route` | Dimensions réelles de la fenêtre/viewport en dp, `devicePixelRatio`, route GoRouter active, page du catalogue, mode édition et scope. | `{}` |
-| `get_component_geometry` | Taille réelle rendue (`width`, `height` en dp), bornes globales/relatives, contraintes (`RenderBox`/`RenderSliver`), état de scroll et diagnostics (`isZeroSized`, débordements). | `ids?: string[]`, `zoneId?: string`, `includeScroll?: bool`, `includeZones?: bool` |
-| `get_runtime_tree` | Arbre effectivement monté sur la page active avec zones/placements, statut monté et dimensions. | `rootId?: string`, `maxDepth?: int` |
-| `query_repository_data` | Catalogue, schémas, requêtes paginées et sélections actives Maître/Détail sur `JsonRepositoryStore`. | `repositoryId?: string`, `path?: string`, `offset?: int`, `limit?: int` |
-| `capture_element_screenshot` | Copie d'écran PNG **isolée** d'un élément précis (`RepaintBoundary` interne du slot sans contours d'édition ni page entière, netteté HiDPI, support `occurrenceIndex`, `scrollIntoView` et `contextPadding`). | `componentId?: string`, `zoneId?: string`, `occurrenceIndex?: int`, `scrollIntoView?: bool`, `contextPadding?: number`, `maxDimension?: int` |
-| `capture_screenshot` | Capture PNG de la vue applicative entière (préférer `capture_element_screenshot` pour un composant ou une zone). | `componentId?: string`, `zoneId?: string`, `maxDimension?: int` |
-| `get_debug_entries` | Lecture filtrée de `debugEntries` typés par sévérité (`critical`, `error`, `warning`, `info`) et catégorie (`binding`, `javascript`, `font`, `userInput`, `rendering`, `system`), incluant les erreurs affichées en rouge dans l'IHM. | `type?: "error"\|"log"\|"all"`, `minSeverity?: "info"\|"warning"\|"error"\|"critical"`, `category?: "all"\|"binding"\|"javascript"\|"font"\|"userInput"\|"rendering"\|"system"`, `componentId?: string`, `visibleInUiOnly?: bool`, `query?: string`, `sinceTurnStart?: bool`, `includeStackTrace?: bool`, `limit?: int` |
-| `get_datasources_and_providers` | Catalogue et état runtime (`DatasourceStatus`, `DataProviderStatus`) des datasources CRUD et providers HTTP/code hors d'`Appearance` (en-têtes sensibles masqués). | `datasourceId?: string`, `providerId?: string`, `includeProblems?: bool` |
-| `inspect_bindings_and_diagnostics` | Audit des liaisons JSON (repositories manquants, oubli de `<repoId>:` hors liste en Maître/Détail, `[?]` sans sélection, clés absentes), orphelins et états `ComponentBehaviorStateScope`. | `componentIds?: string[]` |
-| `get_theme_and_contrast` | Rôles `theme:*` résolus en `#RRGGBB` et calcul de contraste WCAG AA texte/fond des composants de l'écran. | `componentIds?: string[]`, `onlyIssues?: bool` |
-| `get_registry_and_selection` | Constructeurs/extensions enregistrés dans `Registry`, polices disponibles et sélection active `LayoutSelection`. | `includeComponents?: bool`, `includeFonts?: bool` |
-| `preview_navigation_or_selection` | Action d'aperçu réversible (annulée au rollback) : navigation vers une page de `pageCatalog` ou sélection d'une ligne `JsonArrayBinding` pour inspecter une vue Détail. | `pageId?: string`, `routePath?: string`, `repositoryId?: string`, `arrayTemplate?: string`, `index?: int`, `parentIndices?: int[]`, `clearSelection?: bool` |
-| `select_editor_element` | Sélectionne et met en évidence à distance un élément sur le canevas du mode édition (active le mode édition si besoin, défile jusqu'à l'élément, met à jour `LayoutSelection` et pulse un halo visuel). | `componentId?: string`, `zoneId?: string`, `occurrenceIndex?: int`, `enableEditMode?: bool`, `scrollIntoView?: bool`, `pulseHighlight?: bool`, `setChatScope?: bool`, `clear?: bool` |
-
-- **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, erreurs Flutter/overflow (`get_debug_entries`), liaisons ou données vides (`inspect_bindings_and_diagnostics`, `get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne/page (`preview_navigation_or_selection`) ou inspection visuelle ciblée (`capture_element_screenshot`).
-- **Quand ne pas les appeler** : modifications purement déclaratives simples dont le JSON courant suffit déjà.
-- **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également déclenché automatiquement en mode « Reproduire à l'identique » ou dès qu'une nouvelle erreur `critical`, `error` ou `warning` — hors `userInput` — apparaît dans `debugEntries` après l'aperçu, y compris erreurs rouges IHM, JS, binding ou police indisponible) pour inspecter le rendu réel et se corriger en 1 passe avant validation finale.
-- **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants `[somme(width) + espacements]` reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`).
+La liste exhaustive des outils et de leurs paramètres est injectée dynamiquement à la fin du guide (`VibeAppToolRegistry`). Règles d'usage :
+- **Quand appeler les outils** : mesures géométriques ou slots applicatifs hors JSON (`get_component_geometry`, `get_runtime_tree`), erreurs Flutter/overflow/JS/binding (`get_debug_entries`), audit des liaisons (`inspect_bindings_and_diagnostics`), données et JSON Schemas (`query_repository_data`, `manage_repository_json_schema`), datasources/providers existants (`get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne/page (`preview_navigation_or_selection`) ou inspection visuelle isolée (`capture_element_screenshot`, toujours préféré à `capture_screenshot` pour un composant ou une zone).
+- **Quand ne pas les appeler** : modifications déclaratives simples dont le JSON courant suffit déjà.
+- **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également déclenché automatiquement en mode « Reproduire à l'identique » ou dès qu'une nouvelle erreur `critical`, `error` ou `warning` — hors `userInput` — apparaît dans `debugEntries` après l'aperçu) pour inspecter le rendu réel et se corriger en 1 passe avant validation finale.
+- **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie via `get_component_geometry` que la somme des largeurs mesurées des enfants `[somme(width) + espacements]` reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`).
 - **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte.
 

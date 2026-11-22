@@ -44,6 +44,7 @@ flutter:
   assets:
     - SCREEN_JSON_AI_GUIDE.md
     - REPOSITORY_JSON_AI_GUIDE.md
+    - BEHAVIOR_JSON_AI_GUIDE.md
     - SCREEN_DESIGN_AI_GUIDE.md
     - assets/design_systems/
   fonts:

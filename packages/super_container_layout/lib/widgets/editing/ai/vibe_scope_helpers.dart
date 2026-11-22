@@ -150,9 +150,7 @@ abstract final class VibeScopeHelpers {
     if (payload['behaviors'] case final Map rawBehaviors) {
       for (final entry in rawBehaviors.entries) {
         final bid = entry.key;
-        if (bid is String &&
-            !nonTargetedParents.contains(bid) &&
-            (allowedSubtreeIds.contains(bid) || rawTargetIds.contains(bid))) {
+        if (bid is String && isStyleAllowed(bid)) {
           filteredBehaviors[bid] = entry.value;
         }
       }
@@ -224,7 +222,15 @@ abstract final class VibeScopeHelpers {
     };
     final scopedBehaviors = <String, Object?>{
       for (final entry in allBehaviors.entries)
-        if (subtreeIds.contains(entry.key) || rawTargetIds.contains(entry.key))
+        if (subtreeIds.contains(entry.key) ||
+            rawTargetIds.contains(entry.key) ||
+            (entry.key.endsWith(':item') &&
+                (subtreeIds.contains(
+                      entry.key.substring(0, entry.key.length - 5),
+                    ) ||
+                    rawTargetIds.contains(
+                      entry.key.substring(0, entry.key.length - 5),
+                    ))))
           entry.key: entry.value,
     };
     final scopedUsages = <String, Object?>{

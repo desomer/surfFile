@@ -35,6 +35,7 @@ class _TestGuideBundle extends CachingAssetBundle {
   @override
   Future<String> loadString(String key, {bool cache = true}) async {
     if (key.contains('REPOSITORY_JSON_AI_GUIDE.md') ||
+        key.contains('BEHAVIOR_JSON_AI_GUIDE.md') ||
         key.contains('SCREEN_DESIGN_AI_GUIDE.md')) {
       return 'Guide secondaire minimal.';
     }

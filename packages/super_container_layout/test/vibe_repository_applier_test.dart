@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -5,6 +6,54 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_scope_helpers.dart';
+
+class _GuideJsEvaluator
+    implements JsCalculatedEvaluator, JsRepositoryActionEvaluator {
+  @override
+  FutureOr<Object?> evaluate({
+    required String code,
+    required Object? scopeData,
+    required Object? rootData,
+    required CalculatedAttributeContext context,
+  }) {
+    if (code.contains('row.montantHt') && code.contains('row.tauxTva')) {
+      final row = scopeData! as Map<String, Object?>;
+      final ht = (row['montantHt'] as num?)?.toDouble() ?? 0;
+      final tva = (row['tauxTva'] as num?)?.toDouble() ?? 0.2;
+      return (ht * (1 + tva) * 100).roundToDouble() / 100;
+    }
+    return null;
+  }
+
+  @override
+  FutureOr<List<JsRepositoryScriptWrite>> executeAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+  }) {
+    final writes = <JsRepositoryScriptWrite>[];
+    final pattern = RegExp(
+      r"ctx\.set\(\s*'([^']+)'\s*,\s*('[^']*'|true|false|-?\d+(?:\.\d+)?)\s*\)",
+    );
+    for (final match in pattern.allMatches(code)) {
+      final path = match.group(1)!;
+      final rawVal = match.group(2)!;
+      final Object? val = rawVal.startsWith("'")
+          ? rawVal.substring(1, rawVal.length - 1)
+          : jsonDecode(rawVal);
+      writes.add((path: path, value: val));
+    }
+    return writes;
+  }
+
+  @override
+  void invalidateDocument([String? repositoryId]) {}
+
+  @override
+  void dispose() {}
+}
 
 ({Directory dir, JsonRepositoryStore store}) _createTempStore([
   String prefix = 'vibe_repository_applier_test_',
@@ -142,6 +191,190 @@ void main() {
               as List;
       expect(storedClients, hasLength(expectedClients.length));
       expect(storedClients, expectedClients);
+    });
+  });
+
+  group('BEHAVIOR_JSON_AI_GUIDE.md executable validation', () {
+    test('documente tous les événements, validateurs, 16 actions et CollectionViewTransform, et exécute la recette finale de bout en bout', () async {
+      final guideFile = File('BEHAVIOR_JSON_AI_GUIDE.md').existsSync()
+          ? File('BEHAVIOR_JSON_AI_GUIDE.md')
+          : File('packages/super_container_layout/BEHAVIOR_JSON_AI_GUIDE.md');
+      expect(guideFile.existsSync(), isTrue);
+      final content = guideFile.readAsStringSync();
+
+      for (final event in BehaviorEvent.values) {
+        expect(
+          content,
+          contains('"${event.name}"'),
+          reason: 'BehaviorEvent.${event.name} doit être documenté.',
+        );
+      }
+      for (final op in BehaviorValidatorOperator.values) {
+        expect(
+          content,
+          contains('"${op.shortName}"'),
+          reason:
+              'BehaviorValidatorOperator.${op.shortName} doit être documenté.',
+        );
+      }
+      for (final composite in ['"all"', '"any"', '"not"']) {
+        expect(content, contains(composite));
+      }
+      for (final item in BehaviorCatalog.items) {
+        expect(
+          content,
+          contains('"${item.actionType}"'),
+          reason: 'Action "${item.actionType}" doit être documentée.',
+        );
+      }
+      expect(content, contains('CollectionViewTransform'));
+      expect(content, contains('ctx.set'));
+
+      final jsonBlocks = RegExp(r'```json\s*([\s\S]*?)\s*```')
+          .allMatches(content)
+          .map((m) => m.group(1)!)
+          .toList();
+      expect(jsonBlocks, isNotEmpty);
+
+      final recipeRaw = jsonBlocks.last;
+      final decodedRecipe = jsonDecode(recipeRaw) as Map<String, dynamic>;
+      expect(decodedRecipe.keys.toList(), ['message', 'repositories', 'vibe']);
+
+      final dir = Directory.systemTemp.createTempSync('vibe_behavior_guide_');
+      final store = JsonRepositoryStore(dir, jsEvaluator: _GuideJsEvaluator());
+      addTearDown(() async {
+        store.dispose();
+        if (dir.existsSync()) {
+          await dir.delete(recursive: true);
+        }
+      });
+      final tx = VibeRepositoryTurnTransaction(store);
+      final rawRepositories =
+          decodedRecipe['repositories'] as Map<String, dynamic>;
+      final aliases = await tx.applyRepositoriesPatch(rawRepositories);
+
+      final actualId = aliases['pilotage_dossiers'];
+      expect(actualId, isNotNull);
+      expect(actualId, matches(RegExp(r'^[0-9a-f]{32}$')));
+
+      final rawVibe = decodedRecipe['vibe'] as Map<String, dynamic>;
+      final rewrittenVibe = tx.rewriteVibePatchBindings(rawVibe);
+      final updated = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode(rewrittenVibe),
+      );
+
+      // Vérifie la réécriture des alias dans runJavaScript, addArrayItem, bindState, bindZoneSize et validateurs
+      final toggleSidebar =
+          updated.behaviorsFor('btn-toggle-sidebar').single.action
+              as RunJavaScriptAction;
+      expect(toggleSidebar.repositoryId, actualId);
+
+      final validateBehavior = updated
+          .behaviorsFor('btn-validate-dossier')
+          .last;
+      final validateJs = validateBehavior.action as RunJavaScriptAction;
+      expect(validateJs.repositoryId, actualId);
+      final allValidator = validateBehavior.validator! as AllBehaviorValidator;
+      final statusGuard =
+          allValidator.validators.last as ValueBehaviorValidator;
+      expect(
+        statusGuard.binding,
+        JsonTextBinding(repositoryId: actualId, path: 'dossiers[?].statut'),
+      );
+
+      final addAction =
+          updated.behaviorsFor('btn-add-dossier').single.action
+              as AddArrayItemAction;
+      expect(
+        addAction.binding,
+        JsonTextBinding(repositoryId: actualId, path: 'dossiers'),
+      );
+
+      // Vérifie aussi la réécriture d'expectedBinding en chaîne courte "<alias>:..."
+      final expectedRewritten = rewriteVibePatchRepositoryAliases(
+        {
+          'behaviors': {
+            'list-dossiers': [
+              {
+                'id': 'b-min-ht',
+                'event': 'onBinding',
+                'action': {
+                  'type': 'filterCollection',
+                  'predicate': {
+                    'type': 'bindingGreaterThan',
+                    'binding': 'dossiers[?].montantHt',
+                    'expectedBinding': 'pilotage_dossiers:ui.westWidth',
+                  },
+                },
+              },
+            ],
+          },
+        },
+        {'pilotage_dossiers': actualId!},
+      );
+      final parsedExpected = ComponentBehavior.fromJson(
+        Map<String, dynamic>.from(
+          ((expectedRewritten['behaviors'] as Map)['list-dossiers'] as List)
+                  .single
+              as Map,
+        ),
+      );
+      final pred =
+          (parsedExpected.action as FilterCollectionAction).predicate!
+              as ValueBehaviorValidator;
+      expect(
+        pred.expectedBinding,
+        JsonTextBinding(repositoryId: actualId, path: 'ui.westWidth'),
+      );
+
+      // Vérifie la préservation de behaviors["list-dossiers:item"] dans un scope Vibe
+      const listScope = VibeChatScope(
+        componentId: 'list-dossiers',
+        label: 'Liste des dossiers',
+      );
+      final exportedScoped = jsonDecode(
+        VibeScopeHelpers.exportScopedAi(updated, listScope),
+      ) as Map<String, dynamic>;
+      expect(
+        (exportedScoped['behaviors'] as Map).containsKey('list-dossiers:item'),
+        isTrue,
+      );
+      final filteredScoped = VibeScopeHelpers.filterPatchToScope(updated, {
+        'behaviors': {
+          'list-dossiers:item': [
+            {
+              'id': 'b-row-tap',
+              'event': 'onTap',
+              'action': {'type': 'goToPage', 'pagePath': '/detail'},
+            },
+          ],
+        },
+      }, listScope);
+      expect(
+        (filteredScoped['behaviors'] as Map).containsKey('list-dossiers:item'),
+        isTrue,
+      );
+
+      // Vérifie le calcul @montantTtc sur la première ligne (12500 * 1.2 = 15000)
+      final ttc0 = await store.readAttribute(
+        JsonTextBinding(
+          repositoryId: actualId,
+          path: 'dossiers[0].@montantTtc',
+        ),
+      );
+      expect(ttc0.value, 15000.0);
+
+      // Sélectionne la ligne 0 et exécute le script de validation sur le repository
+      store.bindingOf(actualId).array('dossiers').select(const [], 0);
+      await store.runJavaScriptAction(
+        repositoryId: actualId,
+        code: validateJs.code,
+      );
+      final dossiersAfter = await store.readArray(actualId, 'dossiers');
+      final firstAfter = dossiersAfter.first as Map;
+      expect(firstAfter['statut'], 'valide');
+      expect(firstAfter['verrouille'], true);
     });
   });
 

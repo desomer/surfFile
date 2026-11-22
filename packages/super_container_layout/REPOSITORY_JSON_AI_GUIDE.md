@@ -2,7 +2,7 @@
 
 Ce document est la spécification technique normative destinée à une Intelligence Artificielle. Il définit comment **concevoir, structurer, typer et peupler des Repositories JSON** dans `super_container_layout`, et comment coordonner en une seule réponse les données (`"repositories"`) et l'interface GenUI (`"vibe"`) sans erreur de validation ni incohérence de rendu.
 
-Il complète [`SCREEN_JSON_AI_GUIDE.md`](SCREEN_JSON_AI_GUIDE.md) (grammaire des composants, styles, états et comportements) et [`SCREEN_DESIGN_AI_GUIDE.md`](SCREEN_DESIGN_AI_GUIDE.md) (Design System Material 3 Desktop).
+Il complète [`SCREEN_JSON_AI_GUIDE.md`](SCREEN_JSON_AI_GUIDE.md) (grammaire des composants, styles et états), [`BEHAVIOR_JSON_AI_GUIDE.md`](BEHAVIOR_JSON_AI_GUIDE.md) (événements, validateurs, actions, `CollectionViewTransform` et scripts QuickJS) et [`SCREEN_DESIGN_AI_GUIDE.md`](SCREEN_DESIGN_AI_GUIDE.md) (Design System Material 3 Desktop).
 
 > **Règle stricte (« zéro hallucination »)** : respecte à la lettre les contraintes de `JsonRepositoryStore`, `JsonAttributePath`, `JsonTextBinding`, `CalculatedAttributeEngine`, `VibeRepositoryApplier` et `AppearanceTransfer.applyVibe` documentées ci-dessous. N'invente ni syntaxe JSONPath, ni clé commençant par `@` dans les données stockées, ni identifiant hexadécimal forgé à la main.
 

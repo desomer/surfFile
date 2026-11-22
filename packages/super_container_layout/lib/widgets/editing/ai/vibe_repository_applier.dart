@@ -575,6 +575,7 @@ abstract final class VibeRepositoryApplier {
 
   static const Set<String> _directBindingKeys = <String>{
     'binding',
+    'expectedBinding',
     'optionsBinding',
     'imageBinding',
     'errorBinding',
@@ -610,6 +611,7 @@ abstract final class VibeRepositoryApplier {
   }) {
     final result = <String, dynamic>{};
     final hasPath = source['path'] is String;
+    final isRunJsAction = source['type'] == 'runJavaScript';
     final inPropertyBindings = parentKey == 'propertyBindings';
     final inDynamicTab = parentKey == 'dynamicTab';
 
@@ -617,7 +619,9 @@ abstract final class VibeRepositoryApplier {
       final key = entry.key.toString();
       final value = entry.value;
 
-      if (key == 'repositoryId' && hasPath && value is String) {
+      if (key == 'repositoryId' &&
+          (hasPath || isRunJsAction) &&
+          value is String) {
         final trimmed = value.trim();
         if (!_protectedPrefixes.contains(trimmed.toLowerCase()) &&
             aliasToActualId.containsKey(trimmed)) {

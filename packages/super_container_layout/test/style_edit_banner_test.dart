@@ -334,6 +334,18 @@ void main() {
     );
     expect(
       prompt,
+      contains(
+        'GUIDE DES COMPORTEMENTS (BEHAVIORS, EVENTS, VALIDATORS & ACTIONS) :',
+      ),
+    );
+    expect(
+      prompt,
+      contains(
+        'guide behaviors disponible uniquement via le chemin de package',
+      ),
+    );
+    expect(
+      prompt,
       contains('guide design disponible uniquement via le chemin de package'),
     );
     expect(assetBundle.loads, [
@@ -341,6 +353,8 @@ void main() {
       'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
       'REPOSITORY_JSON_AI_GUIDE.md',
       'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
+      'BEHAVIOR_JSON_AI_GUIDE.md',
+      'packages/super_container_layout/BEHAVIOR_JSON_AI_GUIDE.md',
       'SCREEN_DESIGN_AI_GUIDE.md',
       'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
     ]);
@@ -1206,6 +1220,15 @@ class _FallbackGuideBundle extends CachingAssetBundle {
         Uint8List.fromList(
           utf8.encode(
             'guide repositories disponible uniquement via le chemin de package',
+          ),
+        ),
+      );
+    }
+    if (key == 'packages/super_container_layout/BEHAVIOR_JSON_AI_GUIDE.md') {
+      return ByteData.sublistView(
+        Uint8List.fromList(
+          utf8.encode(
+            'guide behaviors disponible uniquement via le chemin de package',
           ),
         ),
       );

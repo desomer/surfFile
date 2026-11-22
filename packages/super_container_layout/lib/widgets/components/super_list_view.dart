@@ -935,7 +935,6 @@ class _SuperListViewState extends State<SuperListView>
                         if (!editing && event.buttons == kPrimaryButton) {
                           final data = <String, Object?>{
                             'index': sourceIndex,
-                            'visualIndex': visualIndex,
                             'previousIndex': ?previousIndex,
                           };
                           unawaited(

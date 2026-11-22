@@ -344,6 +344,7 @@ abstract final class CollectionViewTransform {
       }
     } else {
       for (var i = 0; i < items.length; i++) {
+        if (!context.mounted) return const [];
         final rowScope = _rowScopeFor(
           source: source,
           parentScope: parentScope,

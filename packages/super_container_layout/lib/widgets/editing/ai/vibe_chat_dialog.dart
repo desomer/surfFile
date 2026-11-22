@@ -1,8 +1,8 @@
 /// Interface de chat IA (« Vibe ») pour la génération et la modification incrémentale d'écrans ([VibeChatDialog]).
 ///
 /// Met en cache les guides `SCREEN_JSON_AI_GUIDE.md`, `REPOSITORY_JSON_AI_GUIDE.md`,
-/// `SCREEN_DESIGN_AI_GUIDE.md` et le référentiel `DESIGN.md` actif ([DesignSystemPreset],
-/// [VibeChatDialog.warmUp]), assemble un instantané JSON compact (global ou ciblé sur un
+/// `BEHAVIOR_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md` et le référentiel `DESIGN.md`
+/// actif ([DesignSystemPreset], [VibeChatDialog.warmUp]), assemble un instantané JSON compact (global ou ciblé sur un
 /// [VibeChatScope]) enrichi du contexte du [JsonRepositoryStore] actif, diffuse la réponse en
 /// direct via [streamGemini] ([VibeAiSpeedMode]) ou [callGemini], propose au besoin un
 /// questionnaire de clarification interactif ([VibeAskUserRequest]), et applique les mutations
@@ -214,6 +214,11 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
   ];
 
+  static const List<String> _behaviorGuideAssets = [
+    'BEHAVIOR_JSON_AI_GUIDE.md',
+    'packages/super_container_layout/BEHAVIOR_JSON_AI_GUIDE.md',
+  ];
+
   static const List<String> _designGuideAssets = [
     'SCREEN_DESIGN_AI_GUIDE.md',
     'packages/super_container_layout/SCREEN_DESIGN_AI_GUIDE.md',
@@ -223,6 +228,8 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   static Future<String>? _inFlightRootBundleGuide;
   static String? _cachedRootBundleRepositoryGuide;
   static Future<String?>? _inFlightRootBundleRepositoryGuide;
+  static String? _cachedRootBundleBehaviorGuide;
+  static Future<String?>? _inFlightRootBundleBehaviorGuide;
   static String? _cachedRootBundleDesignGuide;
   static Future<String?>? _inFlightRootBundleDesignGuide;
 
@@ -372,6 +379,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   static String composeStaticGuide({
     required String screenGuide,
     String? repositoryGuide,
+    String? behaviorGuide,
     String? defaultDesignGuide,
     String? selectedDesignSystemMarkdown,
     String? selectedDesignSystemName,
@@ -382,6 +390,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   }) {
     final trimmedScreen = screenGuide.trim();
     final trimmedRepository = repositoryGuide?.trim() ?? '';
+    final trimmedBehavior = behaviorGuide?.trim() ?? '';
     final trimmedDefaultDesign = defaultDesignGuide?.trim() ?? '';
     final trimmedSelectedDesign = selectedDesignSystemMarkdown?.trim() ?? '';
     final trimmedSelectedName = selectedDesignSystemName?.trim() ?? '';
@@ -392,6 +401,14 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
       buffer
         ..write('\n\n---\n\nGUIDE DE MODÉLISATION DES REPOSITORIES :\n')
         ..write(trimmedRepository);
+    }
+
+    if (trimmedBehavior.isNotEmpty) {
+      buffer
+        ..write(
+          '\n\n---\n\nGUIDE DES COMPORTEMENTS (BEHAVIORS, EVENTS, VALIDATORS & ACTIONS) :\n',
+        )
+        ..write(trimmedBehavior);
     }
 
     final includeDefault =
@@ -524,6 +541,48 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     }
   }
 
+  static Future<String?> _loadBehaviorGuideFromBundle(
+    AssetBundle bundle,
+  ) async {
+    final isRoot = identical(bundle, rootBundle);
+    if (isRoot) {
+      final cached = _cachedRootBundleBehaviorGuide;
+      if (cached != null) return cached;
+      final inFlight = _inFlightRootBundleBehaviorGuide;
+      if (inFlight != null) return inFlight;
+    }
+
+    Future<String?> load() async {
+      for (final asset in _behaviorGuideAssets) {
+        try {
+          final guide = await bundle.loadString(asset);
+          if (guide.trim().isNotEmpty) {
+            if (isRoot) {
+              _cachedRootBundleBehaviorGuide = guide;
+            }
+            return guide;
+          }
+        } on FlutterError {
+          // Continue vers le chemin de package ou repli gracieux sur les bundles de test minimaux.
+        }
+      }
+      return null;
+    }
+
+    if (!isRoot) {
+      return load();
+    }
+    final future = load();
+    _inFlightRootBundleBehaviorGuide = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_inFlightRootBundleBehaviorGuide, future)) {
+        _inFlightRootBundleBehaviorGuide = null;
+      }
+    }
+  }
+
   static Future<String?> _loadDesignGuideFromBundle(AssetBundle bundle) async {
     final isRoot = identical(bundle, rootBundle);
     if (isRoot) {
@@ -565,8 +624,9 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   }
 
   /// Charge et assemble le guide statique complet (`SCREEN_JSON_AI_GUIDE.md` +
-  /// `REPOSITORY_JSON_AI_GUIDE.md` éventuel + `SCREEN_DESIGN_AI_GUIDE.md` +
-  /// [designSystemPreset] éventuel + [customDesignGuide] éventuel) depuis [bundle].
+  /// `REPOSITORY_JSON_AI_GUIDE.md` éventuel + `BEHAVIOR_JSON_AI_GUIDE.md` éventuel +
+  /// `SCREEN_DESIGN_AI_GUIDE.md` + [designSystemPreset] éventuel + [customDesignGuide]
+  /// éventuel) depuis [bundle].
   static Future<String> loadStaticGuide(
     AssetBundle bundle, {
     DesignSystemPreset? designSystemPreset,
@@ -578,6 +638,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
         replaceDefaultDesignGuide && trimmedCustom.isNotEmpty;
     final screenGuide = await _loadScreenGuideFromBundle(bundle);
     final repositoryGuide = await _loadRepositoryGuideFromBundle(bundle);
+    final behaviorGuide = await _loadBehaviorGuideFromBundle(bundle);
     final defaultDesignGuide = skipDefaultDesign
         ? null
         : await _loadDesignGuideFromBundle(bundle);
@@ -590,6 +651,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
     return composeStaticGuide(
       screenGuide: screenGuide,
       repositoryGuide: repositoryGuide,
+      behaviorGuide: behaviorGuide,
       defaultDesignGuide: defaultDesignGuide,
       selectedDesignSystemMarkdown: selectedDesignSystemMarkdown,
       selectedDesignSystemName: designSystemPreset?.name,
@@ -599,7 +661,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
   }
 
   /// Précharge en mémoire les guides `SCREEN_JSON_AI_GUIDE.md`,
-  /// `REPOSITORY_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md`
+  /// `REPOSITORY_JSON_AI_GUIDE.md`, `BEHAVIOR_JSON_AI_GUIDE.md`, `SCREEN_DESIGN_AI_GUIDE.md`
   /// et le référentiel [designSystemPreset] éventuel depuis [bundle], puis préchauffe
   /// silencieusement la connexion TLS ainsi que le cache de contexte Gemini pour [speedMode].
   static Future<void> warmUp(
