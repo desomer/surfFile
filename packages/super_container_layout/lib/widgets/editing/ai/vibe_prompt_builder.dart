@@ -7,6 +7,7 @@ import '../../../ai/vibe_chat_attachment.dart';
 import '../../../ai/vibe_plan.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../services/inspection/vibe_page_audit.dart';
 import '../../../theme/appearance.dart';
 import '../slots/editor_context_menu.dart';
 import 'vibe_chat_message.dart';
@@ -265,6 +266,87 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
       ?repositoriesSection,
       'ÉTAT ACTUEL DE L’ÉCRAN APRÈS LES LOTS PRÉCÉDENTS (JSON) :\n$current',
       sourceSection,
+    ].join('\n\n');
+  }
+
+  /// Directive de phase 1 pour l'audit complet et la planification de corrections.
+  static const String auditPlanDirective = '''
+MODE « AUDIT & CORRECTION » — PHASE 1 (ANALYSE + PLAN DE CORRECTION PAR LOTS) :
+Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré-audit déterministe ci-dessous, de l’instantané JSON et, si utile, des outils d’inspection (`get_component_geometry`, `capture_element_screenshot`, `capture_screenshot`, `query_repository_data`, `inspect_bindings_and_diagnostics`).
+
+RÈGLES OBLIGATOIRES :
+1. NE génère PAS encore de patch `"vibe"` ni `"repositories"` sur ce tour (`"vibe": null`, `"askUser": null`).
+2. Vérifie notamment :
+   - Les marges/paddings qui coupent le contenu, dépassements parent/viewport, contraintes `slotSizeConstraints` trop serrées (`fitContent: false`), textes tronqués et `RenderFlex` overflows ;
+   - Les calculs manquants (`@calculs` non déclarés sur les repositories, KPIs/totaux statiques ou placeholders sans binding calculé, bindings cassés) ;
+   - Les erreurs runtime, problèmes de schémas/liaisons et défauts de contraste WCAG AA.
+3. Si des anomalies sont confirmées, renvoie UNIQUEMENT un plan de correction structuré en lots cohérents :
+   {"message":"Résumé clair des anomalies trouvées en français","plan":{"title":"Plan d’audit et correction","lots":[{"id":"lot-1","title":"...","description":"Liste précise des IDs de composants/styles/repositories et corrections exactes à appliquer"}]},"vibe":null}
+   - Regroupe logiquement : par ex. Lot 1 = Mise en page, marges, paddings, contraintes et coupures ; Lot 2 = Repositories, attributs `@calculs` et liaisons manquantes ; Lot 3 = Contrastes WCAG AA et finitions (ou 1 seul lot s’il y a peu de corrections).
+   - Indique dans la description des lots corrigeant des marges/débordements de recontrôler le rendu après application (`"verifyRender": true`).
+4. Si aucune anomalie réelle n’est détectée après vérification, renvoie :
+   {"message":"Audit terminé : aucune anomalie détectée sur ce périmètre.","plan":null,"vibe":null}''';
+
+  /// Assemble le prompt spécialisé d'audit de la page active (ou du [scope] actif).
+  static String buildAuditTurnPrompt({
+    required VibePageAuditReport report,
+    required String conversation,
+    required Appearance appearance,
+    required AppearanceCodec codec,
+    required VibeChatScope? scope,
+    Iterable<String>? instantiatedComponentIds,
+    List<String> mountedSlotSummaries = const <String>[],
+    String? repositoriesContext,
+  }) {
+    final trimmedRepositories = repositoriesContext?.trim() ?? '';
+    final repositoriesSection = trimmedRepositories.isEmpty
+        ? null
+        : (trimmedRepositories.startsWith('REPOSITORIES DISPONIBLES')
+              ? trimmedRepositories
+              : 'REPOSITORIES DISPONIBLES (JSON) :\n$trimmedRepositories');
+    final mountedHint = mountedSlotSummaries.isEmpty
+        ? null
+        : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
+    final reportSection =
+        'RAPPORT DE PRÉ-AUDIT DÉTERMINISTE :\n${report.toPromptSummary()}';
+
+    if (scope != null) {
+      final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
+      final parentList = parentIds.map((id) => '"$id"').join(', ');
+      final targetIdsList = scope.canonicalComponentIds
+          .map((id) => '"$id"')
+          .join(', ');
+      final effectiveParent = parentIds.isNotEmpty
+          ? parentList
+          : targetIdsList;
+      final scopeDirective =
+          '''RESTRICTION STRICTE DE SCOPE POUR L’AUDIT :
+Le périmètre modifiable autorisé couvre uniquement ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).
+Ne propose aucune modification en dehors de ce scope ni sur les paramètres globaux de thème ou pageCatalog.''';
+      return [
+        auditPlanDirective,
+        scopeDirective,
+        reportSection,
+        ?mountedHint,
+        ?repositoriesSection,
+        'ÉTAT DU SCOPE CIBLÉ (JSON) :\n${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
+        if (conversation.trim().isNotEmpty) 'CONVERSATION :\n$conversation',
+      ].join('\n\n');
+    }
+
+    final current = AppearanceTransfer.exportCompactAi(
+      appearance,
+      codec: codec,
+    );
+    return [
+      auditPlanDirective,
+      if (instantiatedComponentIds != null)
+        'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}.',
+      reportSection,
+      ?mountedHint,
+      ?repositoriesSection,
+      'ÉTAT ACTUEL (JSON) :\n$current',
+      if (conversation.trim().isNotEmpty) 'CONVERSATION :\n$conversation',
     ].join('\n\n');
   }
 }

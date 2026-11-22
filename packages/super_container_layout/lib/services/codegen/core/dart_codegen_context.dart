@@ -442,6 +442,28 @@ class DartCodegenContext {
           indent: indent,
           forceMultiline: true,
         );
+      case final AddArrayItemAction addArray:
+        return formatCall('const AddArrayItemAction', const [], {
+          'binding': formatBinding(
+            addArray.binding,
+            indent: indent + 2,
+            includeConst: true,
+          ),
+          if (!addArray.selectCreated) 'selectCreated': 'false',
+        }, indent: indent, forceMultiline: true);
+      case final CreationDefaultAction creationDefault:
+        return formatCall('const CreationDefaultAction', const [], {
+          'defaultValue': formatLiteralValue(
+            creationDefault.defaultValue,
+            indent: indent + 2,
+          ),
+          if (creationDefault.binding != null)
+            'binding': formatBinding(
+              creationDefault.binding!,
+              indent: indent + 2,
+              includeConst: true,
+            ),
+        }, indent: indent, forceMultiline: true);
       default:
         return formatCall(
           'BehaviorActionCatalog.decode',

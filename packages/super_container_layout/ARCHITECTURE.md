@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **325 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **326 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -187,6 +187,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/behaviours/generate_pdf_action.dart` | `GeneratePdfAction`, `PdfOutputMode` : génération d'un document PDF hybride depuis une page A4 (`generatePdf`, `click` / `doubleClick`). |
 | `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
 | `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement (`searchProvider`). |
+| `models/behaviours/run_javascript_action.dart` | `RunJavaScriptAction` : exécute un script au clic/double-clic et délègue ses écritures contrôlées au store (`runJavaScript`), sans écriture sur `@calcul`. |
 | `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`binding`). |
 | `models/behaviours/tooltip_action.dart` | `TooltipAction` : info-bulle déclarative fixe ou liée à un repository JSON (`onTooltip`, `hover`). |
 | `models/behaviours/zone_size_binding_action.dart` | `ZoneSizeBindingAction`, `BehaviorCurve` : liaison réactive et animée de la taille d'une zone de `SuperLayout` (`binding`). |
@@ -421,7 +422,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/ai/vibe_delta_recovery.dart` | `VibeDeltaRecovery`, `VibeSalvageOutcome` : récupération incrémentale des composants, styles, comportements, usages et repositories valides déjà streamés lorsqu'une tentative échoue (erreur de schéma, contrat de région, troncature JSON ou composant détaché), construction du prompt de relance delta ciblé et nettoyage final des brouillons non rattachés. |
 | `widgets/editing/ai/vibe_plan_card.dart` | `VibePlanCard` : carte interactive affichant les lots d'un `VibeExecutionPlan`, leur progression et les actions (`Exécuter les lots`, `Annuler`, `Arrêter`, `Réessayer ce lot`, `Ignorer ce lot`). |
 | `widgets/editing/ai/vibe_repository_applier.dart` | `VibeRepositoryPromptFormatter`, `VibeRepositoryPatchValidator`, `VibeRepositoryApplier`, `VibeRepositoryTurnTransaction`, `VibeRepositoryPatchEntry`, `VibeRepositoryPatchMode`, `rewriteVibePatchRepositoryAliases` : formatage borné de `REPOSITORIES DISPONIBLES` (données et `jsonSchema`), validation stricte des patches `"repositories"` (`merge`/`replace`, `"jsonSchema"`, interdiction du préfixe `@` et des caractères réservés de `JsonAttributePath`), réécriture des alias `snake_case` vers leurs identifiants 32 hex dans `"vibe"`, suivi transactionnel des schémas modifiés via outil (`applyJsonSchemaFromTool`, `assertAllSchemasValid`) et transaction idempotente SSE/finale avec `rollback()` et callbacks Undo/Redo. |
-| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle, recherche de provider et commande de datasource. |
+| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, scripts JavaScript contrôlés, taille liée, info-bulle, recherche de provider et commande de datasource. |
 | `widgets/editing/behaviors/datasource_action_settings.dart` | `DatasourceActionSettings`, `DatasourceActionDraft` : sélection de la datasource, de la commande et du tri pour l'action `datasource`, avec accès au gestionnaire. |
 | `widgets/editing/behaviors/search_provider_settings.dart` | `SearchProviderSettings` : sélection d'un provider pour l'action `searchProvider`, avec accès au gestionnaire. |
 | `widgets/editing/components/native_component_editor.dart` | Point d'entrée public de l'éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |

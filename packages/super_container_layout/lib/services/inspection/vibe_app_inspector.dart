@@ -50,6 +50,7 @@ import '../repositories/json_schema_validator.dart';
 import 'vibe_debug_capture.dart';
 import 'vibe_diagnostics_inspector.dart';
 import 'vibe_mounted_slot_index.dart';
+import 'vibe_page_audit.dart';
 
 /// Service d'introspection runtime de l'application Flutter exposé à Vibe IA.
 class VibeAppInspector {
@@ -191,6 +192,14 @@ class VibeAppInspector {
             selectEditorElement(call.id, call.name, call.arguments),
         'register_design_system': (call) =>
             registerDesignSystem(call.id, call.name, call.arguments),
+        'audit_active_page': (call) async {
+          final report = await VibePageAuditService.collect(this);
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: report.toJson(),
+          );
+        },
       });
 
   /// Lit et filtre les journaux et erreurs d'exécution depuis `debugEntries`.
@@ -284,7 +293,8 @@ class VibeAppInspector {
     return null;
   }
 
-  EditorPageConfig? _resolveActivePage(Appearance appearance) {
+  /// Résout la page active à partir de la route courante ou de `homePageId`.
+  EditorPageConfig? resolveActivePage(Appearance appearance) {
     final location =
         pageRouting?.router.routeInformationProvider.value.uri.path;
     final pages = appearance.pageCatalog.pages;
@@ -302,6 +312,47 @@ class VibeAppInspector {
     }
     return pages.first;
   }
+
+  /// Collecte les identifiants de composants du [VibeChatScope] actif ou de la page active.
+  Set<String> collectScopeOrActivePageComponentIds(Appearance appearance) {
+    final scope = readScope?.call();
+    if (scope != null) {
+      return <String>{
+        ...scope.canonicalComponentIds,
+        ...VibeScopeHelpers.parentIdsOfScope(appearance, scope),
+        ...VibeScopeHelpers.existingSubtreeIds(appearance, scope),
+      };
+    }
+
+    final seeds = <String>{};
+    final activePage = resolveActivePage(appearance);
+    if (activePage != null) {
+      seeds.add(activePage.id);
+    } else if (appearance.components.containsKey('root')) {
+      seeds.add('root');
+    } else if (appearance.components.containsKey('mainLayout')) {
+      seeds.add('mainLayout');
+    } else {
+      seeds.addAll(slotIndex.mountedComponentIds);
+    }
+
+    final collected = <String>{};
+    final queue = <String>[...seeds];
+    while (queue.isNotEmpty) {
+      final id = queue.removeLast();
+      if (!collected.add(id)) continue;
+      final config = appearance.components[id];
+      for (final childId in VibeScopeHelpers.childrenOfComponent(config)) {
+        if (!collected.contains(childId)) {
+          queue.add(childId);
+        }
+      }
+    }
+    return collected;
+  }
+
+  EditorPageConfig? _resolveActivePage(Appearance appearance) =>
+      resolveActivePage(appearance);
 
   /// Retourne l'état du viewport, de la route active, du mode édition et du scope.
   Future<Map<String, Object?>> getViewportAndRoute() async {
@@ -510,6 +561,8 @@ class VibeAppInspector {
           }
 
           final parentObj = renderObj.parent;
+          var exceedsParentWidth = false;
+          var exceedsParentHeight = false;
           if (parentObj is RenderBox &&
               parentObj.attached &&
               parentObj.hasSize) {
@@ -524,11 +577,39 @@ class VibeAppInspector {
                 'parentWidth': _round2(parentObj.size.width),
                 'parentHeight': _round2(parentObj.size.height),
               };
+              const eps = 0.5;
+              exceedsParentWidth =
+                  localOffset.dx < -eps ||
+                  localOffset.dx + size.width > parentObj.size.width + eps;
+              exceedsParentHeight =
+                  localOffset.dy < -eps ||
+                  localOffset.dy + size.height > parentObj.size.height + eps;
             }
           }
 
+          final ancestorClip = !isOffstage
+              ? _inspectAncestorClipping(renderObj, size, rootBox)
+              : (clipped: false, edges: const <String>[]);
+          final clipsChildContent = !isOffstage
+              ? _inspectChildOverflow(renderObj, size)
+              : false;
+          final truncatedTexts = !isOffstage
+              ? _inspectTruncatedTexts(renderObj)
+              : const <String>[];
+
           item['diagnostics'] = <String, Object?>{
             'isZeroSized': size.width <= 0.0 || size.height <= 0.0,
+            if (exceedsParentWidth) 'exceedsParentWidth': true,
+            if (exceedsParentHeight) 'exceedsParentHeight': true,
+            if (ancestorClip.clipped) ...<String, Object?>{
+              'isClippedByAncestor': true,
+              'clippedEdges': ancestorClip.edges,
+            },
+            if (clipsChildContent) 'clipsChildContent': true,
+            if (truncatedTexts.isNotEmpty) ...<String, Object?>{
+              'hasTruncatedText': true,
+              'truncatedTextSamples': truncatedTexts,
+            },
             if (globalRect == null)
               'isOffscreen': true
             else if (viewportSize != null) ...<String, Object?>{
@@ -2056,5 +2137,118 @@ class VibeAppInspector {
         message: error.message,
       );
     }
+  }
+
+  static ({bool clipped, List<String> edges}) _inspectAncestorClipping(
+    RenderBox target,
+    Size targetSize,
+    RenderBox? rootBox,
+  ) {
+    if (targetSize.isEmpty) {
+      return (clipped: false, edges: const <String>[]);
+    }
+    const eps = 1.0;
+    final clippedEdges = <String>{};
+    RenderObject? current = target.parent;
+    var hops = 0;
+    while (current != null && current != rootBox && hops < 14) {
+      hops++;
+      if (current is RenderAbstractViewport) {
+        break;
+      }
+      final isClipNode =
+          (current is RenderClipRect && current.clipBehavior != Clip.none) ||
+          (current is RenderClipRRect && current.clipBehavior != Clip.none) ||
+          (current is RenderClipPath && current.clipBehavior != Clip.none) ||
+          (current is RenderClipOval && current.clipBehavior != Clip.none);
+      if (isClipNode && current is RenderBox && current.attached && current.hasSize) {
+        final offset = target.localToGlobal(Offset.zero, ancestor: current);
+        if (offset.isFinite) {
+          if (offset.dx < -eps) clippedEdges.add('left');
+          if (offset.dy < -eps) clippedEdges.add('top');
+          if (offset.dx + targetSize.width > current.size.width + eps) {
+            clippedEdges.add('right');
+          }
+          if (offset.dy + targetSize.height > current.size.height + eps) {
+            clippedEdges.add('bottom');
+          }
+        }
+      }
+      current = current.parent;
+    }
+    return (
+      clipped: clippedEdges.isNotEmpty,
+      edges: clippedEdges.toList(growable: false),
+    );
+  }
+
+  static bool _inspectChildOverflow(RenderBox container, Size containerSize) {
+    if (containerSize.isEmpty) return false;
+    const eps = 1.0;
+    var overflowFound = false;
+    var visited = 0;
+
+    void walk(RenderObject node) {
+      if (overflowFound || visited >= 80) return;
+      node.visitChildren((child) {
+        if (overflowFound || visited >= 80) return;
+        visited++;
+        if (child is RenderAbstractViewport) return;
+        if (child is RenderBox && child.attached && child.hasSize) {
+          final offset = child.localToGlobal(Offset.zero, ancestor: container);
+          if (offset.isFinite) {
+            if (offset.dx < -eps ||
+                offset.dy < -eps ||
+                offset.dx + child.size.width > containerSize.width + eps ||
+                offset.dy + child.size.height > containerSize.height + eps) {
+              overflowFound = true;
+              return;
+            }
+          }
+        }
+        walk(child);
+      });
+    }
+
+    walk(container);
+    return overflowFound;
+  }
+
+  static List<String> _inspectTruncatedTexts(RenderBox container) {
+    final samples = <String>[];
+    var visited = 0;
+
+    void walk(RenderObject node) {
+      if (samples.length >= 3 || visited >= 80) return;
+      node.visitChildren((child) {
+        if (samples.length >= 3 || visited >= 80) return;
+        visited++;
+        if (child is RenderParagraph && child.attached && child.hasSize) {
+          final text = child.text.toPlainText().trim();
+          if (text.isNotEmpty) {
+            final maxLines = child.maxLines;
+            final clipsSingleLine =
+                maxLines == 1 &&
+                (child.overflow == TextOverflow.ellipsis ||
+                    child.overflow == TextOverflow.clip ||
+                    child.overflow == TextOverflow.fade) &&
+                child.getMaxIntrinsicWidth(double.infinity) >
+                    child.size.width + 1.5;
+            if (child.didExceedMaxLines || clipsSingleLine) {
+              final preview = text.length > 48
+                  ? '${text.substring(0, 45)}…'
+                  : text;
+              if (!samples.contains(preview)) {
+                samples.add(preview);
+              }
+            }
+          }
+        }
+        walk(child);
+      });
+    }
+
+    walk(container);
+    return samples;
   }
 }

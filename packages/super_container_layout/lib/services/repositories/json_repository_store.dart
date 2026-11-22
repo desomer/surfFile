@@ -21,6 +21,7 @@ import '../datasources/super_backend_datasource_bridge.dart';
 import '../providers/data_provider_registry.dart';
 import '../providers/json_definition_folder.dart';
 import 'calculated_attribute.dart';
+import 'json_list_scope.dart';
 import 'json_repository_binding.dart';
 import 'json_schema_validator.dart';
 import 'js_calculated_attribute_runtime.dart';
@@ -281,12 +282,11 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   /// Instance [SuperBackend] locale de ce store (base SQLite
   /// `<directory>/super_backend.db`), créée à la première utilisation.
-  SuperBackend get superBackend =>
-      _superBackend ??= SuperBackend(
-        store: SqliteCollectionStore(
-          '${directory.path}${Platform.pathSeparator}super_backend.db',
-        ),
-      );
+  SuperBackend get superBackend => _superBackend ??= SuperBackend(
+    store: SqliteCollectionStore(
+      '${directory.path}${Platform.pathSeparator}super_backend.db',
+    ),
+  );
 
   /// Remplace l'instance [SuperBackend] locale de ce store (par exemple en
   /// mémoire pour les tests) et réinstalle son transport HTTP sur [providers].
@@ -306,11 +306,8 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   /// Pont connectant [superBackend] aux registres [providers] et [datasources]
   /// de ce store.
-  SuperBackendDatasourceBridge get superBackendBridge =>
-      _superBackendBridge ??= SuperBackendDatasourceBridge(
-        backend: superBackend,
-        store: this,
-      );
+  SuperBackendDatasourceBridge get superBackendBridge => _superBackendBridge ??=
+      SuperBackendDatasourceBridge(backend: superBackend, store: this);
 
   /// Registre des providers de données qui alimentent les repositories de ce
   /// store (appel d'API, etc.), créé à la première utilisation.
@@ -346,11 +343,19 @@ class JsonRepositoryStore extends ChangeNotifier {
     onAsyncValue: _changed,
     jsEvaluator: jsEvaluator,
   );
+  JsRepositoryActionEvaluator? _ownedScriptEvaluator;
+  JsRepositoryActionEvaluator get _scriptEvaluator {
+    final injected = jsEvaluator;
+    if (injected case final JsRepositoryActionEvaluator evaluator) {
+      return evaluator;
+    }
+    return _ownedScriptEvaluator ??= QuickJsCalculatedEvaluator();
+  }
+
   late final _calculatedFolder =
       JsonDefinitionFolder<RepositoryCalculatedAttributesDocument>(
-        directory: () => Directory(
-          '${directory.path}${Platform.pathSeparator}calculated',
-        ),
+        directory: () =>
+            Directory('${directory.path}${Platform.pathSeparator}calculated'),
         ofOne: 'd’attributs calculés',
         plural: 'attributs calculés',
         maxFiles: 500,
@@ -364,9 +369,8 @@ class JsonRepositoryStore extends ChangeNotifier {
   final _loadedCalculatedRepos = <String>{};
   late final _schemasFolder =
       JsonDefinitionFolder<RepositoryJsonSchemaDocument>(
-        directory: () => Directory(
-          '${directory.path}${Platform.pathSeparator}schemas',
-        ),
+        directory: () =>
+            Directory('${directory.path}${Platform.pathSeparator}schemas'),
         ofOne: 'de JSON Schema',
         plural: 'JSON Schemas',
         maxFiles: 500,
@@ -515,11 +519,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     _persistentRepositories[repository.id] = persistence;
     registerRepository(
       RepositoryImpl(
-        id: repository.id,
-        json: document,
-        onChanged: repository.onChanged,
-        jsonSchema: repository.jsonSchema,
-      )
+          id: repository.id,
+          json: document,
+          onChanged: repository.onChanged,
+          jsonSchema: repository.jsonSchema,
+        )
         .._calculatedAttributes.addAll(repository._calculatedAttributes)
         .._jsCalculatedAttributes.addAll(effectiveJs),
     );
@@ -535,7 +539,10 @@ class JsonRepositoryStore extends ChangeNotifier {
     await flushBindings();
     await _exclusive(() async {
       final persistence = _registeredPersistenceOf(repositoryId);
-      await _assertValidDocument(repositoryId, _memoryRepositories[repositoryId]);
+      await _assertValidDocument(
+        repositoryId,
+        _memoryRepositories[repositoryId],
+      );
       await _writeRegisteredDocument(
         persistence,
         _memoryRepositories[repositoryId],
@@ -885,6 +892,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     final backend = _superBackend;
     if (backend != null) unawaited(backend.close());
     _calculatedEngine.dispose();
+    _ownedScriptEvaluator?.dispose();
+    _ownedScriptEvaluator = null;
     errors.dispose();
     for (final binding in _bindings.values) {
       binding.dispose();
@@ -1133,29 +1142,31 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (_allCalculatedLoaded) return Future.value();
     final inFlight = _loadingAllCalculated;
     if (inFlight != null) return inFlight;
-    final future = _calculatedFolder.serial(() async {
-      if (_allCalculatedLoaded || _disposed) return;
-      final result = await _calculatedFolder.readAll(
-        describe: (error) => error.toString(),
-      );
-      if (_disposed) return;
-      for (final entry in result.loaded.entries) {
-        if (_loadedCalculatedRepos.contains(entry.key) &&
-            isMemoryOnlyRepository(entry.key)) {
-          continue;
-        }
-        try {
-          _calculatedEngine.registerJsAttributes(
-            entry.key,
-            entry.value.attributes,
+    final future = _calculatedFolder
+        .serial(() async {
+          if (_allCalculatedLoaded || _disposed) return;
+          final result = await _calculatedFolder.readAll(
+            describe: (error) => error.toString(),
           );
-          _loadedCalculatedRepos.add(entry.key);
-        } on FormatException catch (error) {
-          reportBindingError(error.message);
-        }
-      }
-      _allCalculatedLoaded = true;
-    }).whenComplete(() => _loadingAllCalculated = null);
+          if (_disposed) return;
+          for (final entry in result.loaded.entries) {
+            if (_loadedCalculatedRepos.contains(entry.key) &&
+                isMemoryOnlyRepository(entry.key)) {
+              continue;
+            }
+            try {
+              _calculatedEngine.registerJsAttributes(
+                entry.key,
+                entry.value.attributes,
+              );
+              _loadedCalculatedRepos.add(entry.key);
+            } on FormatException catch (error) {
+              reportBindingError(error.message);
+            }
+          }
+          _allCalculatedLoaded = true;
+        })
+        .whenComplete(() => _loadingAllCalculated = null);
     _loadingAllCalculated = future;
     return future;
   }
@@ -1211,28 +1222,30 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (_allSchemasLoaded) return Future.value();
     final inFlight = _loadingAllSchemas;
     if (inFlight != null) return inFlight;
-    final future = _schemasFolder.serial(() async {
-      if (_allSchemasLoaded || _disposed) return;
-      final result = await _schemasFolder.readAll(
-        describe: (error) => error.toString(),
-      );
-      if (_disposed) return;
-      for (final entry in result.loaded.entries) {
-        if (_codeSchemaRepoIds.contains(entry.key) ||
-            (_loadedSchemaRepos.contains(entry.key) &&
-                isMemoryOnlyRepository(entry.key))) {
-          continue;
-        }
-        try {
-          JsonSchemaValidator.validateSchemaDefinition(entry.value.schema);
-          _schemasByRepoId[entry.key] = entry.value;
-          _loadedSchemaRepos.add(entry.key);
-        } on FormatException catch (error) {
-          reportBindingError(error.message);
-        }
-      }
-      _allSchemasLoaded = true;
-    }).whenComplete(() => _loadingAllSchemas = null);
+    final future = _schemasFolder
+        .serial(() async {
+          if (_allSchemasLoaded || _disposed) return;
+          final result = await _schemasFolder.readAll(
+            describe: (error) => error.toString(),
+          );
+          if (_disposed) return;
+          for (final entry in result.loaded.entries) {
+            if (_codeSchemaRepoIds.contains(entry.key) ||
+                (_loadedSchemaRepos.contains(entry.key) &&
+                    isMemoryOnlyRepository(entry.key))) {
+              continue;
+            }
+            try {
+              JsonSchemaValidator.validateSchemaDefinition(entry.value.schema);
+              _schemasByRepoId[entry.key] = entry.value;
+              _loadedSchemaRepos.add(entry.key);
+            } on FormatException catch (error) {
+              reportBindingError(error.message);
+            }
+          }
+          _allSchemasLoaded = true;
+        })
+        .whenComplete(() => _loadingAllSchemas = null);
     _loadingAllSchemas = future;
     return future;
   }
@@ -1382,6 +1395,136 @@ class JsonRepositoryStore extends ChangeNotifier {
       indices: indices,
     );
   }
+
+  /// Exécute un comportement JavaScript et applique ses écritures en une seule
+  /// transaction du repository. `ctx.set(path, value)` est la seule API
+  /// d'écriture ; `eventData` est l'objet lu par le script sous `event`.
+  /// Les chemins calculés `@...` restent toujours en lecture seule.
+  Future<void> runJavaScriptAction({
+    required String repositoryId,
+    required String code,
+    JsonListScope? scope,
+    Map<String, Object?> eventData = const {},
+    String? componentId,
+  }) async {
+    JsonTextBinding(repositoryId: repositoryId, path: '_').validate();
+    if (code.trim().isEmpty) {
+      throw const FormatException(
+        'Le script JavaScript ne peut pas être vide.',
+      );
+    }
+    final expectedDocument = await readDocument(repositoryId);
+    final writes = await _scriptEvaluator.executeAction(
+      code: code,
+      rootData: expectedDocument,
+      eventData: eventData,
+      repositoryId: repositoryId,
+    );
+    if (writes.isEmpty) return;
+
+    final resolvedWrites = <JsRepositoryScriptWrite>[];
+    for (final write in writes) {
+      final selected = JsonListScope.resolveSelected(
+        JsonTextBinding(repositoryId: repositoryId, path: write.path),
+        scope,
+        this,
+      );
+      final binding = selected.binding;
+      if (binding == null) {
+        throw FormatException(
+          'Aucune ligne sélectionnée pour le chemin « ${write.path} ».',
+        );
+      }
+      binding.validateResolved();
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        throw FormatException(
+          'L’attribut calculé « ${binding.path} » est en lecture seule.',
+        );
+      }
+      resolvedWrites.add((path: binding.path, value: write.value));
+    }
+
+    await _applyScriptWrites(
+      repositoryId,
+      expectedDocument,
+      resolvedWrites,
+      componentId: componentId,
+    );
+  }
+
+  Future<void> _applyScriptWrites(
+    String repositoryId,
+    Object? expectedDocument,
+    List<JsRepositoryScriptWrite> writes, {
+    String? componentId,
+  }) => _exclusive(() async {
+    Object? current;
+    String? name;
+    String? originalText;
+    final isMemory = _memoryRepositories.containsKey(repositoryId);
+    if (isMemory) {
+      current = _memoryRepositories[repositoryId];
+    } else {
+      name = await _nameOf(repositoryId);
+      originalText = await read(name);
+      current = await _decodeAsync(originalText);
+    }
+    if (!jsonEquals(current, expectedDocument)) {
+      throw const JsonRepositoryConflictException(
+        'Le repository a changé pendant l’exécution du script. Réessayez.',
+      );
+    }
+
+    var updated = _deepCloneJson(current);
+    final changedPaths = <String>{};
+    for (final write in writes) {
+      final binding = JsonTextBinding(
+        repositoryId: repositoryId,
+        path: write.path,
+      )..validateResolved();
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        throw FormatException(
+          'L’attribut calculé « ${binding.path} » est en lecture seule.',
+        );
+      }
+      final path = JsonAttributePath(binding.path);
+      final next = path.replaceNode(updated, _deepCloneJson(write.value));
+      if (!jsonEquals(updated, next)) changedPaths.add(binding.path);
+      updated = next;
+    }
+    if (changedPaths.isEmpty) return;
+    await _assertValidDocument(repositoryId, updated);
+
+    if (isMemory) {
+      await _saveRegisteredAutomatically(repositoryId, updated);
+      _memoryRepositories[repositoryId] = updated;
+      _documentCache[repositoryId] = updated;
+      for (final path in changedPaths) {
+        _invalidateCalculated(repositoryId, path);
+      }
+      _changed();
+      _notifyMemoryRepositoryChanged(
+        repositoryId: repositoryId,
+        path: '',
+        oldValue: current,
+        newValue: updated,
+        componentId: componentId,
+      );
+      return;
+    }
+
+    final original = originalText!;
+    final repositoryName = name!;
+    await _save(
+      repositoryName,
+      await _encodeAsync(updated),
+      expectedText: original,
+      changedPath: changedPaths.first,
+    );
+    for (final path in changedPaths.skip(1)) {
+      _invalidateCalculated(repositoryId, path);
+    }
+  });
 
   static String _formatAttributeText(Object? value) {
     if (value is List) {
@@ -1714,15 +1857,22 @@ class JsonRepositoryStore extends ChangeNotifier {
     );
   }
 
-  /// Appends a blank copy of the last element, or `{}` to an empty array.
+  /// Appends [initialItem] if provided, otherwise a blank copy of the last
+  /// element, or `{}` to an empty array.
   Future<int> appendArrayItem(
     String repositoryId,
     String path, {
-    required int expectedLength,
+    int? expectedLength,
     String? componentId,
+    Object? initialItem,
   }) => _updateArray(repositoryId, path, (items) {
-    if (items.length != expectedLength) _arrayConflict();
-    return [...items, items.isEmpty ? <String, dynamic>{} : blank(items.last)];
+    if (expectedLength != null && items.length != expectedLength) {
+      _arrayConflict();
+    }
+    final nextItem = initialItem != null
+        ? _deepCloneJson(initialItem)
+        : (items.isEmpty ? <String, dynamic>{} : blank(items.last));
+    return [...items, nextItem];
   }, componentId: componentId);
 
   Future<int> removeArrayItem(
@@ -2065,7 +2215,9 @@ class JsonRepositoryStore extends ChangeNotifier {
         await jsonFile.create(exclusive: true);
         await jsonFile.writeAsString(await _encodeAsync(copy), flush: true);
         if (schemaDoc case final createdSchema?) {
-          await _schemasFolder.serial(() => _schemasFolder.write(createdSchema));
+          await _schemasFolder.serial(
+            () => _schemasFolder.write(createdSchema),
+          );
           _schemasByRepoId[id] = createdSchema;
           _loadedSchemaRepos.add(id);
         }
@@ -2130,51 +2282,50 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   /// Supprime un repository fichier par son [repositoryId] sans vérifier les liaisons d'Appearance (utilisé pour le rollback transactionnel et l'Undo d'une création IA).
-  Future<void> deleteCreatedFileRepositoryById(String repositoryId) =>
-      _exclusive(() async {
-        if (_memoryRepositories.containsKey(repositoryId)) {
-          throw FormatException(
-            'Impossible de supprimer le repository applicatif enregistré « $repositoryId ».',
-          );
-        }
-        final entries = await _catalog();
-        final match = entries
-            .where((entry) => entry.id == repositoryId)
-            .firstOrNull;
-        if (match == null) return;
-        final name = match.name;
-        _checkUnusedByProviders(name, repositoryId);
-        final file = _file(name);
-        if (await FileSystemEntity.type(file.path, followLinks: false) ==
-            FileSystemEntityType.file) {
-          await file.delete();
-        }
-        final idFile = _idFile(name);
-        if (await FileSystemEntity.type(idFile.path, followLinks: false) ==
-            FileSystemEntityType.file) {
-          await idFile.delete();
-        }
-        _documentCache.remove(repositoryId);
-        _calculatedEngine.unregisterRepository(repositoryId);
-        _loadedCalculatedRepos.remove(repositoryId);
-        await _calculatedFolder.serial(
-          () => _calculatedFolder.delete(repositoryId),
-        );
-        _schemasByRepoId.remove(repositoryId);
-        _codeSchemaRepoIds.remove(repositoryId);
-        _loadedSchemaRepos.remove(repositoryId);
-        await _schemasFolder.serial(
-          () => _schemasFolder.delete(repositoryId),
-        );
-        _idToNameCache = null;
-        final binding = _bindings[repositoryId];
-        if (binding != null) {
-          for (final array in binding.arrays) {
-            array.clear();
-          }
-        }
-        _changed();
-      });
+  Future<void> deleteCreatedFileRepositoryById(
+    String repositoryId,
+  ) => _exclusive(() async {
+    if (_memoryRepositories.containsKey(repositoryId)) {
+      throw FormatException(
+        'Impossible de supprimer le repository applicatif enregistré « $repositoryId ».',
+      );
+    }
+    final entries = await _catalog();
+    final match = entries
+        .where((entry) => entry.id == repositoryId)
+        .firstOrNull;
+    if (match == null) return;
+    final name = match.name;
+    _checkUnusedByProviders(name, repositoryId);
+    final file = _file(name);
+    if (await FileSystemEntity.type(file.path, followLinks: false) ==
+        FileSystemEntityType.file) {
+      await file.delete();
+    }
+    final idFile = _idFile(name);
+    if (await FileSystemEntity.type(idFile.path, followLinks: false) ==
+        FileSystemEntityType.file) {
+      await idFile.delete();
+    }
+    _documentCache.remove(repositoryId);
+    _calculatedEngine.unregisterRepository(repositoryId);
+    _loadedCalculatedRepos.remove(repositoryId);
+    await _calculatedFolder.serial(
+      () => _calculatedFolder.delete(repositoryId),
+    );
+    _schemasByRepoId.remove(repositoryId);
+    _codeSchemaRepoIds.remove(repositoryId);
+    _loadedSchemaRepos.remove(repositoryId);
+    await _schemasFolder.serial(() => _schemasFolder.delete(repositoryId));
+    _idToNameCache = null;
+    final binding = _bindings[repositoryId];
+    if (binding != null) {
+      for (final array in binding.arrays) {
+        array.clear();
+      }
+    }
+    _changed();
+  });
 
   /// Enregistre un document entier après contrôle de sa version précédente.
   ///
@@ -2333,9 +2484,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       _loadingDocuments.remove(validated);
       _calculatedEngine.unregisterRepository(validated);
       _loadedCalculatedRepos.remove(validated);
-      await _calculatedFolder.serial(
-        () => _calculatedFolder.delete(validated),
-      );
+      await _calculatedFolder.serial(() => _calculatedFolder.delete(validated));
       _schemasByRepoId.remove(validated);
       _codeSchemaRepoIds.remove(validated);
       _loadedSchemaRepos.remove(validated);

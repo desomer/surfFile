@@ -576,7 +576,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                 Expanded(
                   flex: 5,
                   child: Tooltip(
-                    message: 'Ajouter un comportement',
+                    message: 'Gérer les comportements de l’élément',
                     child: InkWell(
                       key: const ValueKey('style-menu-behavior'),
                       borderRadius: BorderRadius.circular(6),

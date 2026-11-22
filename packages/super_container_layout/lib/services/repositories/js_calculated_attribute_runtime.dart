@@ -38,6 +38,23 @@ abstract class JsCalculatedEvaluator {
   void dispose();
 }
 
+/// Évaluateur optionnel des scripts JavaScript associés aux comportements.
+abstract interface class JsRepositoryActionEvaluator {
+  /// Exécute un script de comportement et retourne ses demandes d'écriture.
+  FutureOr<List<JsRepositoryScriptWrite>> executeAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+  });
+
+  /// Libère les ressources natives associées au runtime.
+  void dispose();
+}
+
+/// Écriture JSON demandée par un script de comportement.
+typedef JsRepositoryScriptWrite = ({String path, Object? value});
+
 /// Exception levée lors d'une erreur de syntaxe ou d'exécution JavaScript.
 class JsCalculationException extends FormatException {
   /// Crée une exception de calcul JavaScript avec un message affichable.
@@ -53,7 +70,8 @@ typedef _CtxReadRequest = ({
 });
 
 /// Évaluateur QuickJS embarqué s'appuyant sur `flutter_js` ([QuickJsRuntime2]).
-class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
+class QuickJsCalculatedEvaluator
+    implements JsCalculatedEvaluator, JsRepositoryActionEvaluator {
   /// Crée un évaluateur QuickJS ; [runtimeFactory] permet d'injecter un
   /// runtime personnalisé dans les tests.
   QuickJsCalculatedEvaluator({JavascriptRuntime Function()? runtimeFactory})
@@ -359,6 +377,66 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
       });
     }
   };
+
+  globalThis.__sclRunRepositoryAction = function(payloadJson) {
+    const payload = JSON.parse(payloadJson);
+    const writes = new Map();
+    function readonly(value) {
+      if (value === null || typeof value !== 'object') return value;
+      return new Proxy(value, {
+        get(obj, prop, receiver) {
+          const result = Reflect.get(obj, prop, receiver);
+          if (typeof result === 'function') return result.bind(receiver);
+          return readonly(result);
+        },
+        set() {
+          throw new TypeError('Utilisez ctx.set(path, value) pour modifier le repository.');
+        },
+        deleteProperty() {
+          throw new TypeError('Les données du repository sont en lecture seule dans un script.');
+        },
+        defineProperty() {
+          throw new TypeError('Les données du repository sont en lecture seule dans un script.');
+        },
+        setPrototypeOf() {
+          throw new TypeError('Les données du repository sont en lecture seule dans un script.');
+        },
+      });
+    }
+
+    try {
+      const ctx = {
+        repositoryId: payload.repositoryId,
+        set(path, value) {
+          if (typeof path !== 'string' || path.trim() === '') {
+            throw new TypeError('ctx.set attend un chemin JSON non vide.');
+          }
+          const cleanPath = path.trim();
+          if (cleanPath.split('.').some(segment => segment.startsWith('@'))) {
+            throw new TypeError('Les attributs calculés (@) sont en lecture seule.');
+          }
+          writes.set(cleanPath, __assertJsonCompatible(value));
+          return value;
+        },
+      };
+      const fn = new Function(
+        'ctx',
+        'doc',
+        'event',
+        '"use strict"; ' + String(payload.code ?? '')
+      );
+      fn(ctx, readonly(payload.rootData), readonly(payload.eventData || {}));
+      return JSON.stringify({
+        status: 'ok',
+        writes: Array.from(writes, ([path, value]) => ({path, value})),
+      });
+    } catch (error) {
+      const message = error && error.message ? String(error.message) : String(error);
+      const name = error && error.name ? String(error.name) : 'Error';
+      return JSON.stringify({status: 'error', error: name + ': ' + message});
+    }
+  };
+
   globalThis.__sclCalcReady = true;
   return true;
 })();
@@ -528,7 +606,9 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
           );
         }
         if (decoded is! Map<String, dynamic>) {
-          throw const JsCalculationException('Réponse interne QuickJS invalide.');
+          throw const JsCalculationException(
+            'Réponse interne QuickJS invalide.',
+          );
         }
         final status = decoded['status'];
         if (status == 'error') {
@@ -557,10 +637,7 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
             for (final rawPath in rootPaths) {
               if (rawPath is String && rawPath.isNotEmpty) {
                 track(
-                  context.getValue(
-                    rawPath,
-                    repositoryId: context.repositoryId,
-                  ),
+                  context.getValue(rawPath, repositoryId: context.repositoryId),
                 );
               }
             }
@@ -630,6 +707,68 @@ class QuickJsCalculatedEvaluator implements JsCalculatedEvaluator {
     }
 
     return step();
+  }
+
+  @override
+  FutureOr<List<JsRepositoryScriptWrite>> executeAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+  }) {
+    final runtime = _ensureRuntime();
+    final payload = jsonEncode(<String, Object?>{
+      'code': code,
+      'rootData': rootData,
+      'eventData': eventData,
+      'repositoryId': repositoryId,
+    });
+    final result = runtime.evaluate(
+      'globalThis.__sclRunRepositoryAction(${jsonEncode(payload)})',
+    );
+    if (result.isError) {
+      throw JsCalculationException(
+        'Erreur JavaScript : ${result.stringResult}',
+      );
+    }
+    final rawText = result.rawResult is String
+        ? result.rawResult as String
+        : result.stringResult;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(rawText);
+    } on FormatException {
+      throw const JsCalculationException(
+        'Réponse interne du script JavaScript invalide.',
+      );
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const JsCalculationException(
+        'Réponse interne du script JavaScript invalide.',
+      );
+    }
+    if (decoded['status'] != 'ok') {
+      throw JsCalculationException(
+        decoded['error']?.toString() ?? 'Erreur JavaScript inconnue.',
+      );
+    }
+    final rawWrites = decoded['writes'];
+    if (rawWrites is! List) {
+      throw const JsCalculationException(
+        'La liste des écritures JavaScript est invalide.',
+      );
+    }
+    return List<JsRepositoryScriptWrite>.unmodifiable([
+      for (final rawWrite in rawWrites)
+        if (rawWrite is Map &&
+            rawWrite['path'] is String &&
+            rawWrite.containsKey('value'))
+          (path: rawWrite['path'] as String, value: rawWrite['value'])
+        else
+          throw const JsCalculationException(
+            'Une écriture JavaScript est invalide.',
+          ),
+    ]);
   }
 
   static FutureOr<Object?> _readTyped(

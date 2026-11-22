@@ -880,6 +880,83 @@ class VibeReproduceExactChip extends StatelessWidget {
   }
 }
 
+/// Bouton d'action déclenchant l'audit déterministe et la planification de corrections
+/// de la page active (ou du scope ciblé).
+class VibeAuditActionChip extends StatelessWidget {
+  /// Crée la puce d'action « Audit & correction ».
+  const VibeAuditActionChip({
+    required this.enabled,
+    required this.onPressed,
+    this.scoped = false,
+    super.key,
+  });
+
+  /// Indique si le bouton est cliquable (désactivé pendant une génération).
+  final bool enabled;
+
+  /// Indique si l'audit porte sur un `VibeChatScope` restreint.
+  final bool scoped;
+
+  /// Callback déclenché au clic.
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = scheme.surfaceContainerLow;
+    final foreground = scheme.primary;
+    final borderColor = scheme.outlineVariant;
+    return Tooltip(
+      message: scoped
+          ? 'Auditer ce périmètre (marges coupées, débordements, calculs @calculs manquants, contrastes) et préparer un plan de correction'
+          : 'Auditer la page active (marges coupées, débordements, calculs @calculs manquants, contrastes) et préparer un plan de correction',
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: 'Audit & correction',
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-audit-page'),
+            onTap: enabled ? onPressed : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.troubleshoot_outlined,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Audit & correction',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bulle présentant progressivement le texte et l'état du patch généré.
 class VibeStreamingAssistantBubble extends StatelessWidget {
   /// Crée la bulle liée aux snapshots de [snapshot].

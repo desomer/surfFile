@@ -59,6 +59,7 @@ export 'widgets/design/models_contracts_view.dart';
 export 'widgets/design_links_view.dart';
 export 'widgets/global_question_chat_pane.dart';
 export 'widgets/idea_launcher_view.dart';
+export 'widgets/spec_chat_widgets.dart';
 export 'widgets/spec_forge_shell.dart';
 export 'widgets/spec_links_view.dart';
 export 'widgets/spec_wizard_stepper.dart';

@@ -13,9 +13,12 @@ import '../../../models/datasources/datasource_config.dart';
 import '../../../models/editor_page_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
+import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
+import '../../../services/repositories/json_schema_field_resolver.dart';
 import '../../../super_app.dart';
+import '../../../theme/appearance.dart';
 import '../../components/super_layout/super_layout.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
@@ -63,12 +66,12 @@ enum BehaviorWizardStage {
   final String title;
 }
 
-/// Ouvre le wizard de comportements pour choisir un element cible et son action.
+/// Ouvre l'assistant pour ajouter, modifier ou supprimer un comportement.
 Future<ComponentBehavior?> showComponentBehaviorWizard({
   required BuildContext context,
   required List<BehaviorTargetElement> targets,
   BuildContext? target,
-  String title = 'Ajouter un comportement',
+  String title = 'Gérer les comportements',
   String keyPrefix = 'behavior',
 }) async {
   if (targets.isEmpty) return null;
@@ -136,8 +139,10 @@ class ComponentBehaviorWizard extends StatefulWidget {
 class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   int _step = 0;
   late BehaviorTargetElement _selectedTarget;
+  ComponentBehavior? _editing;
+  String? _saveError;
   BehaviorCatalogItem _selectedCatalogItem = BehaviorCatalog.goToPage;
-  BehaviorTrigger _eventTrigger = BehaviorTrigger.click;
+  BehaviorTrigger _gestureTrigger = BehaviorTrigger.click;
   final _eventIdController = TextEditingController();
   final _customJsonController = TextEditingController(text: '{}');
   String? _selectedPageId;
@@ -166,6 +171,16 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   String? _pdfPageName;
   PdfOutputMode _pdfOutputMode = PdfOutputMode.exportDialog;
   final _pdfFileNameController = TextEditingController();
+  JsonTextBinding? _addArrayBinding;
+  bool _addArraySelectCreated = true;
+  JsonTextBinding? _creationDefaultBinding;
+  final _creationDefaultController = TextEditingController();
+  final _scriptRepositoryController = TextEditingController();
+  final _scriptCodeController = TextEditingController(
+    text: "ctx.set('status', 'done');",
+  );
+  bool _creationDefaultUseNull = false;
+  bool? _creationDefaultBool;
 
   @override
   void initState() {
@@ -195,10 +210,103 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     _durationController.dispose();
     _tooltipMessage.dispose();
     _pdfFileNameController.dispose();
+    _creationDefaultController.dispose();
+    _scriptRepositoryController.dispose();
+    _scriptCodeController.dispose();
     super.dispose();
   }
 
   BehaviorWizardStage get _stage => BehaviorWizardStage.values[_step];
+
+  bool get _usesGesture =>
+      BehaviorTrigger.gestures.contains(_selectedCatalogItem.trigger);
+  BehaviorTrigger get _trigger =>
+      _usesGesture ? _gestureTrigger : _selectedCatalogItem.trigger;
+  int get _firstStep =>
+      _editing == null ? 0 : BehaviorWizardStage.catalog.index;
+
+  BehaviorCatalogItem? _editorFor(BehaviorAction action) => switch (action) {
+    GoToPageAction() => BehaviorCatalog.goToPage,
+    EmitEventAction() => BehaviorCatalog.emitEvent,
+    TooltipAction() => BehaviorCatalog.onTooltip,
+    StateBindingAction() => BehaviorCatalog.bindState,
+    ZoneSizeBindingAction() => BehaviorCatalog.zoneSize,
+    SearchProviderAction() => BehaviorCatalog.searchProvider,
+    DatasourceAction() => BehaviorCatalog.datasource,
+    GeneratePdfAction() => BehaviorCatalog.generatePdf,
+    AddArrayItemAction() => BehaviorCatalog.addArrayItem,
+    CreationDefaultAction() => BehaviorCatalog.creationDefault,
+    RunJavaScriptAction() => BehaviorCatalog.runJavaScript,
+    _ => null,
+  };
+
+  void _editBehavior(ComponentBehavior behavior, BehaviorCatalogItem item) {
+    setState(() {
+      _editing = behavior;
+      _selectedCatalogItem = item;
+      _step = BehaviorWizardStage.settings.index;
+      _gestureTrigger = BehaviorTrigger.gestures.contains(behavior.trigger)
+          ? behavior.trigger
+          : BehaviorTrigger.click;
+      switch (behavior.action) {
+        case GoToPageAction a:
+          _customPath = a.pageId == null;
+          _customPathController.text = a.pagePath;
+          _selectedPageId = a.pageId;
+          _selectedPagePath = a.pagePath;
+          _selectedPageName = a.pageName;
+        case EmitEventAction a:
+          _eventIdController.text = a.eventId;
+          _customJsonController.text = jsonEncode(a.custom);
+        case TooltipAction a:
+          _tooltipMessage.text = a.message;
+          _tooltipBinding = a.binding;
+        case StateBindingAction a:
+          _boundState = a.state;
+          _stateBinding = a.binding;
+          _stateWhenValue = a.whenValue;
+          _stateMaintainSize = a.maintainSize;
+        case ZoneSizeBindingAction a:
+          _zone = a.zone;
+          _zoneBinding = a.binding;
+          _zoneUnit = a.unit;
+          _durationController.text = '${a.durationMs}';
+          _curve = a.curve;
+        case SearchProviderAction a:
+          _selectedProviderId = a.providerId;
+        case DatasourceAction a:
+          _datasourceDraft = (
+            datasourceId: a.datasourceId,
+            command: a.command,
+            field: a.field ?? '',
+            direction: a.direction,
+          );
+        case GeneratePdfAction a:
+          _pdfPageId = a.pageId;
+          _pdfPageName = a.pageName;
+          _pdfOutputMode = a.outputMode;
+          _pdfFileNameController.text = a.fileName ?? '';
+        case AddArrayItemAction a:
+          _addArrayBinding = a.binding;
+          _addArraySelectCreated = a.selectCreated;
+        case CreationDefaultAction a:
+          _creationDefaultBinding = a.binding;
+          final value = a.defaultValue;
+          _creationDefaultUseNull = value == null;
+          _creationDefaultBool = value is bool ? value : null;
+          _creationDefaultController.text = _creationValueText(value);
+        case RunJavaScriptAction a:
+          _scriptRepositoryController.text = a.repositoryId ?? '';
+          _scriptCodeController.text = a.code;
+      }
+    });
+  }
+
+  String _creationValueText(Object? value) => value is String
+      ? value
+      : value == null
+      ? ''
+      : jsonEncode(value);
 
   bool get _isEvent => _selectedCatalogItem.actionType == 'emitEvent';
   bool get _isTooltip => _selectedCatalogItem.actionType == 'onTooltip';
@@ -221,6 +329,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       _selectedCatalogItem.actionType == 'searchProvider';
   bool get _isDatasource => _selectedCatalogItem.actionType == 'datasource';
   bool get _isGeneratePdf => _selectedCatalogItem.actionType == 'generatePdf';
+  bool get _isAddArrayItem => _selectedCatalogItem.actionType == 'addArrayItem';
+  bool get _isCreationDefault =>
+      _selectedCatalogItem.actionType == 'creationDefault';
+  bool get _isJavaScriptAction =>
+      _selectedCatalogItem.actionType == 'runJavaScript';
 
   DatasourceConfig? get _selectedDatasource {
     final id = _datasourceDraft.datasourceId;
@@ -247,21 +360,76 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         slot.widget.eventComponentType == 'layout';
   }
 
+  bool _isValueTarget(BehaviorTargetElement target) {
+    final slot = target.slot;
+    if (slot != null &&
+        slot.mounted &&
+        slot.widget.eventComponentType == 'value') {
+      return true;
+    }
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    return appearance?.components[target.id] is SuperValueConfig;
+  }
+
   List<BehaviorCatalogItem> get _catalogItems => [
     for (final item in BehaviorCatalog.items)
-      if (item.actionType != 'bindZoneSize' || _isLayoutTarget(_selectedTarget))
+      if (_editing?.action.type == item.actionType ||
+          ((item.actionType != 'bindZoneSize' ||
+                  _isLayoutTarget(_selectedTarget)) &&
+              (item.actionType != 'creationDefault' ||
+                  _isValueTarget(_selectedTarget))))
         item,
   ];
 
+  JsonTextBinding? get _targetValueBinding {
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final cfg = appearance?.components[_selectedTarget.id];
+    return cfg is SuperValueConfig ? cfg.binding : null;
+  }
+
+  JsonTextBinding? get _effectiveCreationDefaultBinding =>
+      _creationDefaultBinding ?? _targetValueBinding;
+
+  Object? _resolveCreationDefaultValue() {
+    if (_creationDefaultUseNull) return null;
+    if (_creationDefaultBool != null) return _creationDefaultBool!;
+    final text = _creationDefaultController.text;
+    if (_editing?.action case CreationDefaultAction(:final defaultValue)) {
+      if (text == _creationValueText(defaultValue) &&
+          defaultValue != null &&
+          defaultValue is! bool) {
+        return defaultValue;
+      }
+    }
+    final trimmed = text.trim();
+    if (trimmed.isNotEmpty) {
+      final asInt = int.tryParse(trimmed);
+      if (asInt != null && trimmed == '$asInt') return asInt;
+      final asDouble = double.tryParse(trimmed.replaceAll(',', '.'));
+      if (asDouble != null && RegExp(r'^-?\d+(?:[.,]\d+)$').hasMatch(trimmed)) {
+        return asDouble;
+      }
+      if (trimmed == 'true') return true;
+      if (trimmed == 'false') return false;
+    }
+    return text;
+  }
+
   /// Côtés visibles du layout ciblé (tous à défaut).
   List<SuperLayoutZone> get _layoutSides {
+    final original = _editing?.action;
+    final originalZone = original is ZoneSizeBindingAction
+        ? original.zone
+        : null;
     final zones = _targetSlot?.context
         .findAncestorStateOfType<SuperLayoutState>()
         ?.config
         .visibleZones;
     final sides = [
       for (final zone in SuperLayoutZone.values)
-        if (zone.isSide && (zones == null || zones.contains(zone))) zone,
+        if (zone.isSide &&
+            (zones == null || zones.contains(zone) || originalZone == zone))
+          zone,
     ];
     return sides.isEmpty
         ? [
@@ -310,6 +478,14 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           ? _datasourceAction != null
           : _isGeneratePdf
           ? true
+          : _isAddArrayItem
+          ? _addArrayBinding != null &&
+                _addArrayBinding!.path.trim().isNotEmpty &&
+                !JsonTextBinding.isCalculatedPath(_addArrayBinding!.path)
+          : _isCreationDefault
+          ? _effectiveCreationDefaultBinding != null
+          : _isJavaScriptAction
+          ? _isJavaScriptActionValid
           : _isBindState
           ? _stateBinding != null
           : _isZoneSize
@@ -326,6 +502,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     return text.isNotEmpty && text.startsWith('/');
   }
 
+  bool get _isJavaScriptActionValid {
+    try {
+      RunJavaScriptAction(
+        code: _scriptCodeController.text,
+        repositoryId: _scriptRepositoryController.text.trim().isEmpty
+            ? null
+            : _scriptRepositoryController.text.trim(),
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
   void _next() {
     if (!_canContinue) return;
     if (_step < BehaviorWizardStage.values.length - 1) {
@@ -336,7 +526,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   }
 
   void _back() {
-    if (_step > 0) setState(() => _step--);
+    if (_step > _firstStep) setState(() => _step--);
   }
 
   void _apply() {
@@ -358,6 +548,16 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 ? null
                 : _pdfFileNameController.text.trim(),
             outputMode: _pdfOutputMode,
+          )
+        : _isAddArrayItem
+        ? AddArrayItemAction(
+            binding: _addArrayBinding!,
+            selectCreated: _addArraySelectCreated,
+          )
+        : _isCreationDefault
+        ? CreationDefaultAction(
+            defaultValue: _resolveCreationDefaultValue(),
+            binding: _creationDefaultBinding,
           )
         : _isBindState
         ? StateBindingAction(
@@ -381,6 +581,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             eventId: _eventIdController.text.trim(),
             custom: jsonDecode(_customJsonText) as Map<String, dynamic>,
           )
+        : _isJavaScriptAction
+        ? RunJavaScriptAction(
+            code: _scriptCodeController.text,
+            repositoryId: _scriptRepositoryController.text.trim().isEmpty
+                ? null
+                : _scriptRepositoryController.text.trim(),
+          )
         : GoToPageAction(
             pagePath: path,
             pageId: _customPath ? null : _selectedPageId,
@@ -388,20 +595,34 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           );
 
     final behavior = ComponentBehavior(
-      id: 'behavior-${shortid.generate()}',
-      trigger: _isEvent ? _eventTrigger : _selectedCatalogItem.trigger,
+      id: _editing?.id ?? 'behavior-${shortid.generate()}',
+      enabled: _editing?.enabled ?? true,
+      trigger: _trigger,
       action: action,
     );
 
     final appearanceController = AppearanceScope.controllerOf(
       widget.ownerContext,
     );
+    final targetId = _selectedTarget.id;
+    if (_editing != null &&
+        !(appearanceController?.value
+                .behaviorsFor(targetId)
+                .any((b) => b.id == behavior.id) ??
+            false)) {
+      setState(
+        () => _saveError = 'Ce comportement n’existe plus sur cet élément.',
+      );
+      return;
+    }
     final history = EditorHistoryScope.controllerOf(widget.ownerContext);
     history?.beginTransaction();
     try {
       if (appearanceController != null) {
-        appearanceController.value = appearanceController.value
-            .withAddedBehavior(_selectedTarget.id, behavior);
+        final appearance = appearanceController.value;
+        appearanceController.value = _editing == null
+            ? appearance.withAddedBehavior(targetId, behavior)
+            : appearance.withReplacedBehavior(targetId, behavior);
       }
     } finally {
       history?.commitTransaction();
@@ -424,7 +645,6 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     } finally {
       history?.commitTransaction();
     }
-    setState(() {});
   }
 
   bool _titlesFit(BuildContext context, double width) {
@@ -449,7 +669,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     return AlertDialog(
       key: ValueKey('${widget.keyPrefix}-add-wizard'),
       insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-      title: EditorDialogHeader(label: widget.title),
+      title: EditorDialogHeader(
+        label: _editing == null ? widget.title : 'Modifier un comportement',
+      ),
       contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
       content: SizedBox(
         width: 640,
@@ -462,7 +684,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               currentStep: _step,
               elevation: 0,
               onStepTapped: (step) {
-                if (step < _step || (step == _step + 1 && _canContinue)) {
+                if (step >= _firstStep &&
+                    (step < _step || (step == _step + 1 && _canContinue))) {
                   setState(() => _step = step);
                 }
               },
@@ -476,12 +699,17 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ),
       ),
       actions: [
+        if (_saveError case final message?)
+          Text(
+            message,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         TextButton(
           key: ValueKey('${widget.keyPrefix}-add-cancel'),
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Annuler'),
         ),
-        if (_step > 0)
+        if (_step > _firstStep)
           TextButton(
             key: ValueKey('${widget.keyPrefix}-add-back'),
             onPressed: _back,
@@ -516,7 +744,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 child: const SizedBox(width: 4, height: 24),
               ),
         isActive: _step >= index,
-        state: _step > index ? StepState.complete : StepState.indexed,
+        state: index < _firstStep
+            ? StepState.disabled
+            : _step > index
+            ? StepState.complete
+            : StepState.indexed,
         content: _step != index
             ? const SizedBox.shrink()
             : switch (stage) {
@@ -529,9 +761,17 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   ];
 
   Widget _buildTargetStep(BuildContext context) {
+    final controller = AppearanceScope.controllerOf(widget.ownerContext);
+    if (controller == null) return _targetList(context, null);
+    return ValueListenableBuilder<Appearance>(
+      valueListenable: controller,
+      builder: (context, appearance, _) => _targetList(context, appearance),
+    );
+  }
+
+  Widget _targetList(BuildContext context, Appearance? appearance) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
 
     return SingleChildScrollView(
       child: Column(
@@ -542,7 +782,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             selected: _selectedTarget,
             onSelected: (target) => setState(() {
               _selectedTarget = target;
-              if (_isZoneSize && !_isLayoutTarget(target)) {
+              if ((_isZoneSize && !_isLayoutTarget(target)) ||
+                  (_isCreationDefault && !_isValueTarget(target))) {
                 _selectedCatalogItem = BehaviorCatalog.goToPage;
               }
             }),
@@ -577,7 +818,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 children: [
                   const SizedBox(height: 12),
                   Text(
-                    'Comportements deja existants sur cet element :',
+                    'Comportements de cet élément',
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -596,18 +837,36 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (b.trigger != BehaviorTrigger.binding)
+                            if (b.trigger != BehaviorTrigger.binding &&
+                                b.trigger != BehaviorTrigger.create)
                               IconButton(
                                 icon: const Icon(Icons.play_arrow_outlined),
                                 tooltip: 'Tester',
                                 onPressed: () => b.execute(widget.ownerContext),
                               ),
+                            Builder(
+                              builder: (_) {
+                                final item = _editorFor(b.action);
+                                return IconButton(
+                                  key: ValueKey('behavior-edit-${b.id}'),
+                                  icon: const Icon(Icons.edit_outlined),
+                                  tooltip: item == null
+                                      ? 'Aucun éditeur disponible pour cette action'
+                                      : 'Modifier',
+                                  onPressed: item == null || appearance == null
+                                      ? null
+                                      : () => _editBehavior(b, item),
+                                );
+                              },
+                            ),
                             IconButton(
                               key: ValueKey('behavior-delete-${b.id}'),
                               icon: const Icon(Icons.delete_outline),
                               tooltip: 'Supprimer',
                               color: colors.error,
-                              onPressed: () => _removeExistingBehavior(b.id),
+                              onPressed: appearance == null
+                                  ? null
+                                  : () => _removeExistingBehavior(b.id),
                             ),
                           ],
                         ),
@@ -735,11 +994,40 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
+  Widget _gestureField(String key) => DropdownButtonFormField<BehaviorTrigger>(
+    key: ValueKey(key),
+    initialValue: _gestureTrigger,
+    decoration: const InputDecoration(labelText: 'Déclencheur'),
+    items: [
+      for (final trigger in BehaviorTrigger.gestures)
+        DropdownMenuItem(value: trigger, child: Text(trigger.label)),
+    ],
+    onChanged: (value) {
+      if (value != null) setState(() => _gestureTrigger = value);
+    },
+  );
+
   Widget _buildSettingsStep(BuildContext context) {
+    final settings = _buildActionSettings(context);
+    if (!_usesGesture || _isEvent || _isAddArrayItem) return settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _gestureField('behavior-gesture-trigger'),
+        const SizedBox(height: 12),
+        settings,
+      ],
+    );
+  }
+
+  Widget _buildActionSettings(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
     if (_isSearchProvider) return _buildSearchProviderSettings();
     if (_isDatasource) return _buildDatasourceSettings();
     if (_isGeneratePdf) return _buildGeneratePdfSettings(context);
+    if (_isAddArrayItem) return _buildAddArrayItemSettings(context);
+    if (_isJavaScriptAction) return _buildJavaScriptSettings(context);
+    if (_isCreationDefault) return _buildCreationDefaultSettings(context);
     if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
@@ -761,13 +1049,6 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             ),
           ),
           const SizedBox(height: 12),
-          ListTile(
-            dense: true,
-            leading: const Icon(Icons.touch_app_outlined),
-            title: const Text('Declencheur'),
-            subtitle: Text(_selectedCatalogItem.trigger.description),
-          ),
-          const SizedBox(height: 12),
           Text(
             'Destination du clic',
             style: theme.textTheme.labelLarge?.copyWith(
@@ -776,7 +1057,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           ),
           const SizedBox(height: 8),
           if ((pageCatalog?.pages.isNotEmpty ?? false) ||
-              codedRoutes.isNotEmpty) ...[
+              codedRoutes.isNotEmpty ||
+              _selectedPageId != null) ...[
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(
@@ -794,7 +1076,21 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               ],
               selected: {_customPath},
               onSelectionChanged: (set) {
-                setState(() => _customPath = set.first);
+                setState(() {
+                  _customPath = set.first;
+                  if (!_customPath && _selectedPageId == null) {
+                    final page = pageCatalog?.pages.firstOrNull;
+                    final route = codedRoutes.firstOrNull;
+                    if (page != null) {
+                      _selectedPageId = page.id;
+                      _selectedPagePath = page.path;
+                      _selectedPageName = page.name;
+                    } else if (route != null) {
+                      _selectedPageId = '__route_${route.path}';
+                      _selectedPagePath = _selectedPageName = route.path;
+                    }
+                  }
+                });
               },
             ),
             const SizedBox(height: 12),
@@ -807,12 +1103,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                   border: OutlineInputBorder(),
                   labelText: 'Selectionner une page',
                 ),
-                initialValue:
-                    _selectedPageId ??
-                    (pageCatalog != null && pageCatalog.pages.isNotEmpty
-                        ? pageCatalog.pages.first.id
-                        : null),
+                initialValue: _selectedPageId,
                 items: [
+                  if (_selectedPageId != null &&
+                      !(pageCatalog?.pages.any(
+                            (p) => p.id == _selectedPageId,
+                          ) ??
+                          false) &&
+                      !codedRoutes.any(
+                        (r) => '__route_${r.path}' == _selectedPageId,
+                      ))
+                    DropdownMenuItem(
+                      value: _selectedPageId,
+                      child: Text('Page indisponible : $_selectedPageId'),
+                    ),
                   if (pageCatalog != null)
                     for (final page in pageCatalog.pages)
                       DropdownMenuItem(
@@ -886,6 +1190,60 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
+  Widget _buildJavaScriptSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            key: const ValueKey('behavior-script-repository'),
+            controller: _scriptRepositoryController,
+            decoration: const InputDecoration(
+              labelText: 'ID du repository (optionnel)',
+              hintText: 'Ex. commandes',
+              helperText:
+                  'Vide = repository de la liste englobante. Les écritures '
+                  'restent dans un seul repository.',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          Text('Script JavaScript', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          const Text(
+            'Utilisez ctx.set("chemin", valeur) pour écrire. doc et event '
+            '(componentId, componentType, trigger, data) sont en lecture seule ; '
+            'les chemins @calcul ne peuvent pas être modifiés.',
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            key: const ValueKey('behavior-script-code'),
+            controller: _scriptCodeController,
+            minLines: 8,
+            maxLines: 14,
+            keyboardType: TextInputType.multiline,
+            style: const TextStyle(fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: "ctx.set('statut', 'terminé');",
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (!_isJavaScriptActionValid)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Le script doit contenir du code et l’ID du repository doit '
+                'être valide.',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummaryStep(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -924,11 +1282,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                     context,
                     icon: Icons.touch_app_outlined,
                     label: 'Declencheur',
-                    value:
-                        (_isEvent
-                                ? _eventTrigger
-                                : _selectedCatalogItem.trigger)
-                            .description,
+                    value: _trigger.description,
                   ),
                   const Divider(height: 16),
                   _summaryRow(
@@ -994,6 +1348,56 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                         value: _pdfFileNameController.text.trim(),
                       ),
                     ],
+                  ] else if (_isAddArrayItem) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.link,
+                      label: 'Tableau cible',
+                      value: _addArrayBinding == null
+                          ? '-'
+                          : '${_addArrayBinding!.repositoryId ?? 'liste'} : '
+                                '${_addArrayBinding!.path}',
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.check_circle_outline,
+                      label: 'Sélection auto',
+                      value: _addArraySelectCreated ? 'Oui' : 'Non',
+                    ),
+                  ] else if (_isCreationDefault) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.link,
+                      label: 'Champ cible',
+                      value: _effectiveCreationDefaultBinding == null
+                          ? '-'
+                          : '${_effectiveCreationDefaultBinding!.repositoryId ?? 'liste'} : '
+                                '${_effectiveCreationDefaultBinding!.path}',
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.add_box_outlined,
+                      label: 'Valeur par défaut',
+                      value: '${_resolveCreationDefaultValue()}',
+                    ),
+                  ] else if (_isJavaScriptAction) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.storage_outlined,
+                      label: 'Repository',
+                      value: _scriptRepositoryController.text.trim().isEmpty
+                          ? 'Hérité de la liste englobante'
+                          : _scriptRepositoryController.text.trim(),
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.code,
+                      label: 'Écriture',
+                      value: 'ctx.set(chemin, valeur)',
+                    ),
                   ] else if (_isBindState) ...[
                     _summaryRow(
                       context,
@@ -1183,12 +1587,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     final theme = Theme.of(context);
     final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
     final a4Pages = [
-      for (final page in appearance?.pageCatalog.pages ?? const <EditorPageConfig>[])
+      for (final page
+          in appearance?.pageCatalog.pages ?? const <EditorPageConfig>[])
         if (page.pageType == EditorPageType.a4Document) page,
     ];
-    final currentValue = a4Pages.any((p) => p.id == _pdfPageId)
-        ? _pdfPageId
-        : null;
 
     return SingleChildScrollView(
       child: Column(
@@ -1204,7 +1606,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           DropdownButtonFormField<String?>(
             key: const ValueKey('behavior-pdf-page-dropdown'),
             isExpanded: true,
-            initialValue: currentValue,
+            initialValue: _pdfPageId,
             decoration: const InputDecoration(
               isDense: true,
               border: OutlineInputBorder(),
@@ -1215,6 +1617,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 value: null,
                 child: Text('Page A4 courante (ou unique page A4)'),
               ),
+              if (_pdfPageId != null && !a4Pages.any((p) => p.id == _pdfPageId))
+                DropdownMenuItem<String?>(
+                  value: _pdfPageId,
+                  child: Text('Page A4 indisponible : $_pdfPageId'),
+                ),
               for (final page in a4Pages)
                 DropdownMenuItem<String?>(
                   value: page.id,
@@ -1459,18 +1866,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<BehaviorTrigger>(
-          key: const ValueKey('behavior-event-trigger'),
-          initialValue: _eventTrigger,
-          decoration: const InputDecoration(labelText: 'Declencheur'),
-          items: [
-            for (final trigger in BehaviorTrigger.gestures)
-              DropdownMenuItem(value: trigger, child: Text(trigger.label)),
-          ],
-          onChanged: (value) {
-            if (value != null) setState(() => _eventTrigger = value);
-          },
-        ),
+        _gestureField('behavior-event-trigger'),
         const SizedBox(height: 12),
         TextField(
           key: const ValueKey('behavior-event-id'),
@@ -1506,6 +1902,252 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       ],
     ),
   );
+
+  Widget _buildAddArrayItemSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final store = JsonRepositoryScope.maybeOf(targetContext);
+    final listScope = JsonListScope.maybeOf(targetContext);
+    final repoId = _addArrayBinding?.repositoryId?.trim().isNotEmpty == true
+        ? _addArrayBinding!.repositoryId!.trim()
+        : listScope?.repositoryId?.trim();
+    final arrayPath = _addArrayBinding?.path.trim() ?? '';
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _gestureField('behavior-add-array-trigger'),
+          const SizedBox(height: 12),
+          RepositoryBindingFields(
+            keyPrefix: 'behavior-add-array-binding',
+            binding: _addArrayBinding,
+            store: store,
+            listScope: listScope,
+            pathHint: 'clients ou clients[?].commandes',
+            helper:
+                'Tableau JSON cible dans le repository. Utilise le JSON Schema '
+                'associé au repository (et les valeurs par défaut des SuperValue) '
+                'pour construire la nouvelle ligne.',
+            onChanged: (binding) => setState(() => _addArrayBinding = binding),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            key: const ValueKey('behavior-add-array-select-created'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Sélectionner la nouvelle ligne'),
+            subtitle: const Text(
+              'Met à jour la sélection Maître/Détail sur l’élément créé',
+            ),
+            value: _addArraySelectCreated,
+            onChanged: (value) =>
+                setState(() => _addArraySelectCreated = value),
+          ),
+          if (store != null &&
+              repoId != null &&
+              repoId.isNotEmpty &&
+              arrayPath.isNotEmpty)
+            FutureBuilder<Map<String, Object?>?>(
+              future: store.readJsonSchema(repoId),
+              builder: (context, snapshot) {
+                final schema = snapshot.data;
+                if (schema == null) return const SizedBox.shrink();
+                final preview = JsonSchemaFieldResolver.buildDefaultArrayItem(
+                  schema,
+                  arrayPath,
+                );
+                if (preview == null) return const SizedBox.shrink();
+                return Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Modèle déduit du JSON Schema :',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        const JsonEncoder.withIndent('  ').convert(preview),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreationDefaultSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final store = JsonRepositoryScope.maybeOf(targetContext);
+    final listScope = JsonListScope.maybeOf(targetContext);
+    final targetBinding = _targetValueBinding;
+    final effectiveBinding = _effectiveCreationDefaultBinding;
+    final repoId = effectiveBinding?.repositoryId?.trim().isNotEmpty == true
+        ? effectiveBinding!.repositoryId!.trim()
+        : listScope?.repositoryId?.trim();
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (targetBinding != null)
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: colors.outlineVariant),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.link, size: 18, color: colors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Champ lié de la SuperValue : '
+                      '${targetBinding.repositoryId ?? 'liste héritée'} : '
+                      '${targetBinding.path}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            RepositoryBindingFields(
+              keyPrefix: 'behavior-creation-default-binding',
+              binding: _creationDefaultBinding,
+              store: store,
+              listScope: listScope,
+              pathHint: 'clients[?].statut',
+              helper:
+                  'Cette SuperValue n’a pas encore de liaison : indique le '
+                  'repository et le chemin du champ cible.',
+              onChanged: (binding) =>
+                  setState(() => _creationDefaultBinding = binding),
+            ),
+          const SizedBox(height: 12),
+          SwitchListTile(
+            key: const ValueKey('behavior-creation-default-null'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Valeur nulle (null)'),
+            value: _creationDefaultUseNull,
+            onChanged: (value) => setState(() {
+              _creationDefaultUseNull = value;
+              if (value) _creationDefaultBool = null;
+            }),
+          ),
+          if (!_creationDefaultUseNull)
+            FutureBuilder<Map<String, Object?>?>(
+              future: (store != null && repoId != null && repoId.isNotEmpty)
+                  ? store.readJsonSchema(repoId)
+                  : Future<Map<String, Object?>?>.value(null),
+              builder: (context, snapshot) {
+                final schema = snapshot.data;
+                final node = (schema != null && effectiveBinding != null)
+                    ? JsonSchemaFieldResolver.resolveSchemaNode(
+                        schema,
+                        effectiveBinding.path,
+                      )
+                    : null;
+                final schemaType = node?['type'];
+                final rawEnum = node?['enum'];
+                final enumChoices = rawEnum is List
+                    ? rawEnum
+                          .where((e) => e is String || e is num || e is bool)
+                          .toList(growable: false)
+                    : const <Object>[];
+
+                if (schemaType == 'boolean') {
+                  final boolVal = _creationDefaultBool ?? false;
+                  return SwitchListTile(
+                    key: const ValueKey('behavior-creation-default-bool'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Valeur booléenne par défaut'),
+                    value: boolVal,
+                    onChanged: (v) => setState(() => _creationDefaultBool = v),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (enumChoices.isNotEmpty) ...[
+                      DropdownButtonFormField<String>(
+                        key: const ValueKey('behavior-creation-default-enum'),
+                        isExpanded: true,
+                        initialValue:
+                            enumChoices
+                                .map((e) => e.toString())
+                                .contains(_creationDefaultController.text)
+                            ? _creationDefaultController.text
+                            : null,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          labelText: 'Valeurs autorisées par le schéma (enum)',
+                        ),
+                        items: [
+                          for (final item in enumChoices)
+                            DropdownMenuItem(
+                              value: item.toString(),
+                              child: Text(item.toString()),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _creationDefaultBool = null;
+                            _creationDefaultController.text = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    TextField(
+                      key: const ValueKey('behavior-creation-default-value'),
+                      controller: _creationDefaultController,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                        labelText: 'Valeur par défaut à la création',
+                        hintText: node?['default'] != null
+                            ? 'Schéma : ${node!['default']}'
+                            : 'Ex: Nouveau, 0, true…',
+                        helperText: 'Sera convertie automatiquement selon le type du JSON Schema si défini.',
+                      ),
+                      onChanged: (_) => setState(() {
+                        _creationDefaultBool = null;
+                      }),
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
 
   Widget _summaryRow(
     BuildContext context, {

@@ -960,6 +960,77 @@ Facture:
       find.text('Mis à jour : sales (+3 attribut(s), description)'),
       findsOneWidget,
     );
+    // Mêmes outils que l'étape Objets métier, restreints à l'objet du modèle.
+    expect(aiService.lastToolNames, contains('focus_stage_or_object'));
+    expect(aiService.lastToolNames, contains('filter_business_objects'));
+    expect(
+      aiService.lastToolNames,
+      isNot(contains('get_requirements_summary')),
+    );
+    expect(aiService.lastStaticGuide, contains('focus_stage_or_object'));
+    expect(
+      aiService.lastStaticGuide,
+      isNot(contains('get_requirements_summary')),
+    );
+    // L'IA sélectionne un attribut : arbre, inspecteur et trace d'outil.
+    await tester.enterText(
+      find.byKey(const ValueKey('contract-chat-input')),
+      'Sélectionne le client',
+    );
+    await tester.tap(find.byKey(const ValueKey('contract-chat-send')));
+    await tester.pumpAndSettle();
+    final clientId = contracts.objects[salesId]!.attributes[1].id;
+    expect(controller.domainModelAttributePath('rh', salesId), [clientId]);
+    expect(
+      find.byKey(const ValueKey('spec-attr-inspector-x-mask')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('contract-chat-tools-section')),
+      findsOneWidget,
+    );
+    // Le tour suivant reçoit le focus et le glossaire ; l'IA filtre l'arbre.
+    await controller.upsertCompanyGlossaryTerm(
+      CompanyGlossaryTerm(id: 'cg_vente', term: 'Vente'),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('contract-chat-input')),
+      'Filtre sur montant',
+    );
+    await tester.tap(find.byKey(const ValueKey('contract-chat-send')));
+    await tester.pumpAndSettle();
+    expect(aiService.lastPrompt, contains('FOCUS COURANT'));
+    expect(
+      aiService.lastPrompt,
+      contains('Attribut sélectionné : sales.client'),
+    );
+    expect(aiService.lastPrompt, contains('GLOSSAIRE D’ENTREPRISE'));
+    expect(controller.domainModelFilter('rh', salesId), 'montant');
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('contract-model-filter-field')),
+          )
+          .controller
+          ?.text,
+      'montant',
+    );
+    expect(
+      find.descendant(of: treePane, matching: find.text('evenement')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('contract-model-filter-clear')));
+    await tester.pumpAndSettle();
+    expect(controller.domainModelFilter('rh', salesId), isEmpty);
+    expect(
+      find.descendant(of: treePane, matching: find.text('evenement')),
+      findsOneWidget,
+    );
+    // « + Questions » force des questions complémentaires, comme dans la spec.
+    await tester.tap(find.byKey(const ValueKey('contract-chat-ask-more')));
+    await tester.pumpAndSettle();
+    expect(aiService.lastPrompt, contains('+ de questions demandé'));
+    expect(find.text('Quelques précisions ?'), findsOneWidget);
     await tester.tap(
       find.byTooltip('Retour à la liste des modèles et contrats'),
     );
@@ -3838,6 +3909,28 @@ class _DomainModelFakeAiService implements SpecAiService {
   String? lastPrompt;
   String? lastStaticGuide;
   String? lastSystemInstruction;
+  List<String> lastToolNames = const <String>[];
+
+  GeminiStreamEvent _json(Map<String, Object?> payload) {
+    final encoded = jsonEncode(payload);
+    return GeminiStreamEvent(
+      deltaText: encoded,
+      accumulatedText: encoded,
+      isDone: true,
+      usedContextCache: false,
+    );
+  }
+
+  GeminiStreamEvent _call(String name, Map<String, Object?> arguments) =>
+      GeminiStreamEvent(
+        deltaText: '',
+        accumulatedText: '',
+        isDone: true,
+        usedContextCache: false,
+        functionCalls: [
+          VibeToolCall(id: 'call_$name', name: name, arguments: arguments),
+        ],
+      );
 
   @override
   Future<void> warmUp(
@@ -3858,10 +3951,42 @@ class _DomainModelFakeAiService implements SpecAiService {
     String? systemInstructionOverride,
     String? staticGuideOverride,
   }) async* {
+    final afterToolCall =
+        conversationContents != null &&
+        conversationContents.length >= 3 &&
+        (conversationContents.last['parts'] is List) &&
+        (conversationContents.last['parts'] as List).any(
+          (p) => p is Map && p.containsKey('functionResponse'),
+        );
+    if (afterToolCall) {
+      yield _json({'message': 'Action effectuée.', 'specPatch': null});
+      return;
+    }
     lastPrompt = prompt;
     lastStaticGuide = staticGuideOverride;
     lastSystemInstruction = systemInstructionOverride;
-    final encoded = jsonEncode({
+    lastToolNames = [for (final tool in tools) tool.name];
+    final request = prompt.split('DEMANDE UTILISATEUR :').last;
+    if (request.contains('Sélectionne le client')) {
+      yield _call('focus_stage_or_object', const {
+        'objectId': 'sales',
+        'attributePath': 'client',
+      });
+      return;
+    }
+    if (request.contains('Filtre sur montant')) {
+      yield _call('filter_business_objects', const {'query': 'montant'});
+      return;
+    }
+    if (prompt.contains('+ de questions demandé')) {
+      yield _json({
+        'message': 'Quelques précisions ?',
+        'askUser': null,
+        'specPatch': null,
+      });
+      return;
+    }
+    yield _json({
       'message': 'Montant, client et événement ajoutés.',
       'askUser': null,
       'specPatch': {
@@ -3881,12 +4006,6 @@ class _DomainModelFakeAiService implements SpecAiService {
         ],
       },
     });
-    yield GeminiStreamEvent(
-      deltaText: encoded,
-      accumulatedText: encoded,
-      isDone: true,
-      usedContextCache: false,
-    );
   }
 }
 

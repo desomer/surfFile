@@ -121,7 +121,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
-3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
+3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic ou script `"runJavaScript"`).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`). Chaque page déclare `id`, `name`, `path`, et optionnellement `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
 5. **`responsiveLayout`** (optionnel à la racine) : configuration responsive globale du `body` des pages (`containerMode`: `"fullPage"` par défaut ou `"constrained"`, `maxWidth`: `1440` par défaut, `gutters`: `{"mobile": 24, "desktop": 32}`, `breakpoints`: `{"mobileWidth": 375, "tabletMinWidth": 768, "desktopMinWidth": 1280, "largeDesktopMinWidth": 1440}`).
 6. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
@@ -1566,6 +1566,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
   - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
   - `"binding"` : Réactif, réservé aux actions `"bindZoneSize"` et `"bindState"` ; s'applique à chaque changement de la valeur liée (aucun clic).
   - `"hover"` : Survol hors édition, réservé à l'action `"onTooltip"`, sans action au clic ni curseur de clic ajouté.
+  - `"create"` : Déclaratif, réservé à l'action `"creationDefault"` sur les `SuperValue`s ; appliqué automatiquement lors de la création d'une ligne dans le tableau associé.
 - **Actions polymorphes (`action`)** :
   - `"onTooltip"` (`TooltipAction`, déclencheur `"hover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
     - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
@@ -1599,6 +1600,13 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     - `binding` : `{"repositoryId": "...", "path": "clients[?].estVerrouille"}` ou forme courte `"clients[?].estVerrouille"` avec repository hérité.
     - `whenValue` (optionnel, défaut `true`) : `true` applique l'état quand le booléen vaut `true`, `false` l'applique quand il vaut `false`.
     - `maintainSize` (optionnel, défaut `false`, utilisé uniquement avec `state: "invisible"`) : conserve l'espace du composant dans la mise en page lorsqu'il est masqué.
+  - `"addArrayItem"` (`AddArrayItemAction`, déclencheur `"click"` ou `"doubleClick"`) : ajoute une nouvelle ligne dans un tableau JSON en initialisant ses champs depuis le JSON Schema associé au repository puis les éventuels comportements `"creationDefault"` des `SuperValue`s.
+    - `binding` : `{"repositoryId": "...", "path": "clients"}` ou `"clients[?].commandes"`.
+    - `selectCreated` (optionnel, défaut `true`) : sélectionne automatiquement la ligne créée dans le tableau.
+  - `"creationDefault"` (`CreationDefaultAction`, déclencheur `"create"`, sur une `SuperValue`) : définit la valeur par défaut écrite dans le champ lié de la `SuperValue` lorsqu'une ligne est créée dans le tableau associé (`addArrayItem` ou bouton `+` de liste/table).
+    - `defaultValue` : valeur par défaut JSON (`string`, `number`, `boolean`, `null`, etc.).
+    - `binding` (optionnel) : cible explicite si différente ou si la `SuperValue` n'a pas encore de `binding`.
+  - `"runJavaScript"` (`RunJavaScriptAction`, déclencheur `"click"` ou `"doubleClick"`) : exécute un script JavaScript explicite au geste utilisateur. Exemple : `{"type":"runJavaScript","repositoryId":"commandes","code":"ctx.set('statut', 'envoyée');"}`. `repositoryId` est optionnel dans une liste et hérite alors du repository de la ligne. Le script reçoit `ctx`, `doc` et `event` ; `doc` et `event` (métadonnées et `data` du geste) sont en lecture seule et la seule écriture autorisée est `ctx.set(chemin, valeur)`. Les chemins `@...` restent strictement en lecture seule, les valeurs sont validées comme JSON et les écritures sont appliquées atomiquement avec validation du schéma. Les chemins avec `[?]` utilisent les indices de lignes englobantes ou la sélection courante.
 
 #### Exemple : info-bulle fixe et info-bulle liée sur une ligne
 

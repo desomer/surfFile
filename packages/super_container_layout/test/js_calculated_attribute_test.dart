@@ -27,7 +27,8 @@ bool _tryLoadQuickJsDll() {
   return false;
 }
 
-class _FakeJsEvaluator implements JsCalculatedEvaluator {
+class _FakeJsEvaluator
+    implements JsCalculatedEvaluator, JsRepositoryActionEvaluator {
   final List<String> evaluatedCodes = [];
 
   @override
@@ -51,7 +52,10 @@ class _FakeJsEvaluator implements JsCalculatedEvaluator {
       final items = context.sync.getList('articles', defaultValue: const [])!;
       var sum = 0.0;
       for (var i = 0; i < items.length; i++) {
-        sum += context.sync.getDouble('articles[$i].@montant', defaultValue: 0)!;
+        sum += context.sync.getDouble(
+          'articles[$i].@montant',
+          defaultValue: 0,
+        )!;
       }
       final remise = context.sync.getDouble(
         'remise',
@@ -65,6 +69,23 @@ class _FakeJsEvaluator implements JsCalculatedEvaluator {
       return '${row['nom']}!';
     }
     return 99;
+  }
+
+  @override
+  FutureOr<List<JsRepositoryScriptWrite>> executeAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+  }) {
+    if (code == 'script-writes' || code == 'script-writes-and-calc') {
+      return [
+        (path: 'status', value: eventData['status'] ?? 'sent'),
+        (path: 'items[?].name', value: 'Updated'),
+        if (code == 'script-writes-and-calc') (path: '@total', value: 10),
+      ];
+    }
+    throw const JsCalculationException('Unknown fake repository script.');
   }
 
   @override
@@ -90,10 +111,7 @@ void main() {
         'code': 'row.brut * 0.8',
         'description': 'Total après remise',
       });
-      expect(
-        CalculatedAttributeDefinition.fromJson(rootDef.toJson()),
-        rootDef,
-      );
+      expect(CalculatedAttributeDefinition.fromJson(rootDef.toJson()), rootDef);
 
       final rowDef = CalculatedAttributeDefinition(
         name: 'montant',
@@ -140,37 +158,29 @@ void main() {
         await dir.delete(recursive: true);
       });
 
-      test(
-        'evaluates expressions, function bodies, arrow fns, Proxy row tracking, and cross-repo ctx.get',
-        () async {
-          final cfg = RepositoryImpl(id: 'cfg_repo', json: {'tva': 0.2});
-          final devis = RepositoryImpl(
-            id: 'devis_repo',
-            json: {
-              'remise': 0.1,
-              'articles': [
-                {'label': 'Audit', 'qte': 2, 'pu': 100.0},
-                {'label': 'Dev', 'qte': 3, 'pu': 200.0},
-              ],
-            },
-          );
-          devis.addJsCalculatedAttribute(
-            'montantHt',
-            scope: 'articles[?]',
-            '(row.qte ?? 0) * (row.pu ?? 0)',
-          );
-          devis.addJsCalculatedAttribute(
-            'montantTtc',
-            scope: 'articles[?]',
-            '''
+      test('evaluates expressions, function bodies, arrow fns, Proxy row tracking, and cross-repo ctx.get', () async {
+        final cfg = RepositoryImpl(id: 'cfg_repo', json: {'tva': 0.2});
+        final devis = RepositoryImpl(
+          id: 'devis_repo',
+          json: {
+            'remise': 0.1,
+            'articles': [
+              {'label': 'Audit', 'qte': 2, 'pu': 100.0},
+              {'label': 'Dev', 'qte': 3, 'pu': 200.0},
+            ],
+          },
+        );
+        devis.addJsCalculatedAttribute(
+          'montantHt',
+          scope: 'articles[?]',
+          '(row.qte ?? 0) * (row.pu ?? 0)',
+        );
+        devis.addJsCalculatedAttribute('montantTtc', scope: 'articles[?]', '''
 const ht = row['@montantHt'];
 const tva = ctx.getNum('tva', 'cfg_repo', 0);
 return ht * (1 + tva);
-''',
-          );
-          devis.addJsCalculatedAttribute(
-            'totalNetTtc',
-            '''
+''');
+        devis.addJsCalculatedAttribute('totalNetTtc', '''
 (row, ctx) => {
   let total = 0;
   for (let i = 0; i < row.articles.length; i++) {
@@ -178,142 +188,197 @@ return ht * (1 + tva);
   }
   return Math.round(total * (1 - (row.remise ?? 0)) * 100) / 100;
 }
-''',
-          );
+''');
 
-          store.registerRepository(cfg);
-          store.registerRepository(devis);
+        store.registerRepository(cfg);
+        store.registerRepository(devis);
 
-          // Synchronous peekAttribute works immediately!
-          expect(
-            store
-                .peekAttribute(
-                  const JsonTextBinding(
-                    repositoryId: 'devis_repo',
-                    path: 'articles[0].@montantHt',
-                  ),
-                )
-                ?.value,
-            200.0,
-          );
-          expect(
-            store
-                .peekAttribute(
-                  const JsonTextBinding(
-                    repositoryId: 'devis_repo',
-                    path: 'articles[1].@montantTtc',
-                  ),
-                )
-                ?.value,
-            720.0,
-          );
-          expect(
-            (await store.readAttribute(
-              const JsonTextBinding(
-                repositoryId: 'devis_repo',
-                path: '@totalNetTtc',
-              ),
-            )).value,
-            864.0,
-          );
-
-          // Modifying cross-repo dependency invalidates @montantTtc and @totalNetTtc
-          await store.writeAttribute(
-            const JsonTextBinding(repositoryId: 'cfg_repo', path: 'tva'),
-            '0.1',
-            expectedValue: 0.2,
-          );
-          expect(
-            (await store.readAttribute(
-              const JsonTextBinding(
-                repositoryId: 'devis_repo',
-                path: '@totalNetTtc',
-              ),
-            )).value,
-            792.0,
-          );
-
-          // Mutation inside JS throws read-only error
-          await expectLater(
-            store.testCalculatedAttribute(
-              'devis_repo',
-              CalculatedAttributeDefinition(
-                name: 'badMut',
-                code: 'row.remise = 0.5; return row.remise;',
-              ),
+        // Synchronous peekAttribute works immediately!
+        expect(
+          store
+              .peekAttribute(
+                const JsonTextBinding(
+                  repositoryId: 'devis_repo',
+                  path: 'articles[0].@montantHt',
+                ),
+              )
+              ?.value,
+          200.0,
+        );
+        expect(
+          store
+              .peekAttribute(
+                const JsonTextBinding(
+                  repositoryId: 'devis_repo',
+                  path: 'articles[1].@montantTtc',
+                ),
+              )
+              ?.value,
+          720.0,
+        );
+        expect(
+          (await store.readAttribute(
+            const JsonTextBinding(
+              repositoryId: 'devis_repo',
+              path: '@totalNetTtc',
             ),
-            throwsFormatException,
-          );
+          )).value,
+          864.0,
+        );
 
-          // NaN / Infinity throws FormatException
-          await expectLater(
-            store.testCalculatedAttribute(
-              'devis_repo',
-              CalculatedAttributeDefinition(
-                name: 'badNan',
-                code: '0 / 0',
-              ),
+        // Modifying cross-repo dependency invalidates @montantTtc and @totalNetTtc
+        await store.writeAttribute(
+          const JsonTextBinding(repositoryId: 'cfg_repo', path: 'tva'),
+          '0.1',
+          expectedValue: 0.2,
+        );
+        expect(
+          (await store.readAttribute(
+            const JsonTextBinding(
+              repositoryId: 'devis_repo',
+              path: '@totalNetTtc',
             ),
-            throwsFormatException,
-          );
-        },
-      );
+          )).value,
+          792.0,
+        );
+
+        // Mutation inside JS throws read-only error
+        await expectLater(
+          store.testCalculatedAttribute(
+            'devis_repo',
+            CalculatedAttributeDefinition(
+              name: 'badMut',
+              code: 'row.remise = 0.5; return row.remise;',
+            ),
+          ),
+          throwsFormatException,
+        );
+
+        // NaN / Infinity throws FormatException
+        await expectLater(
+          store.testCalculatedAttribute(
+            'devis_repo',
+            CalculatedAttributeDefinition(name: 'badNan', code: '0 / 0'),
+          ),
+          throwsFormatException,
+        );
+      });
 
       test(
-        'uploads repository document once across many row evaluations and re-uploads after mutation',
+        'behavior scripts update repository values but cannot write @calcul',
         () async {
-          final qjs = QuickJsCalculatedEvaluator();
-          final localStore = JsonRepositoryStore(dir, jsEvaluator: qjs);
-          addTearDown(localStore.dispose);
-
-          final repo = RepositoryImpl(
-            id: 'bulk_repo',
-            json: {
-              'tax': 0.2,
-              'rows': [
-                for (var i = 0; i < 20; i++) {'qty': i + 1, 'price': 10.0},
-              ],
-            },
+          store.registerRepository(
+            RepositoryImpl(
+              id: 'script_repo',
+              json: {
+                'status': 'pending',
+                'items': [
+                  {'name': 'First'},
+                  {'name': 'Second'},
+                ],
+              },
+            ),
           );
-          repo.addJsCalculatedAttribute(
-            'ttc',
-            scope: 'rows[?]',
-            'row.qty * row.price * (1 + doc.tax)',
+          final scope = JsonListScope(
+            repositoryId: 'script_repo',
+            indices: const [1],
+            child: const SizedBox.shrink(),
           );
-          localStore.registerRepository(repo);
 
-          for (var i = 0; i < 20; i++) {
-            final value = localStore
-                .peekAttribute(
-                  JsonTextBinding(
-                    repositoryId: 'bulk_repo',
-                    path: 'rows[$i].@ttc',
-                  ),
-                )
-                ?.value;
-            expect(value, closeTo((i + 1) * 12.0, 1e-9));
-          }
-          expect(qjs.debugDocumentUploadCount, 1);
-
-          await localStore.writeAttribute(
-            const JsonTextBinding(repositoryId: 'bulk_repo', path: 'tax'),
-            '0.5',
-            expectedValue: 0.2,
+          await store.runJavaScriptAction(
+            repositoryId: 'script_repo',
+            scope: scope,
+            code: '''
+ctx.set('status', event.value);
+ctx.set('items[?].name', doc.items[1].name + ' updated');
+''',
+            eventData: const {'value': 'sent'},
           );
-          for (var i = 0; i < 20; i++) {
-            final value = localStore
-                .peekAttribute(
-                  JsonTextBinding(
-                    repositoryId: 'bulk_repo',
-                    path: 'rows[$i].@ttc',
-                  ),
-                )
-                ?.value;
-            expect(value, closeTo((i + 1) * 15.0, 1e-9));
-          }
-          expect(qjs.debugDocumentUploadCount, 2);
+          expect(await store.readDocument('script_repo'), {
+            'status': 'sent',
+            'items': [
+              {'name': 'First'},
+              {'name': 'Second updated'},
+            ],
+          });
+
+          await expectLater(
+            store.runJavaScriptAction(
+              repositoryId: 'script_repo',
+              code: "ctx.set('status', 'wrong'); ctx.set('@total', 2);",
+            ),
+            throwsFormatException,
+          );
+          expect(
+            (await store.readDocument('script_repo') as Map)['status'],
+            'sent',
+          );
+          await expectLater(
+            store.runJavaScriptAction(
+              repositoryId: 'script_repo',
+              code: "doc.status = 'wrong';",
+            ),
+            throwsFormatException,
+          );
+          expect(
+            (await store.readDocument('script_repo') as Map)['status'],
+            'sent',
+          );
         },
       );
+
+      test('uploads repository document once across many row evaluations and re-uploads after mutation', () async {
+        final qjs = QuickJsCalculatedEvaluator();
+        final localStore = JsonRepositoryStore(dir, jsEvaluator: qjs);
+        addTearDown(localStore.dispose);
+
+        final repo = RepositoryImpl(
+          id: 'bulk_repo',
+          json: {
+            'tax': 0.2,
+            'rows': [
+              for (var i = 0; i < 20; i++) {'qty': i + 1, 'price': 10.0},
+            ],
+          },
+        );
+        repo.addJsCalculatedAttribute(
+          'ttc',
+          scope: 'rows[?]',
+          'row.qty * row.price * (1 + doc.tax)',
+        );
+        localStore.registerRepository(repo);
+
+        for (var i = 0; i < 20; i++) {
+          final value = localStore
+              .peekAttribute(
+                JsonTextBinding(
+                  repositoryId: 'bulk_repo',
+                  path: 'rows[$i].@ttc',
+                ),
+              )
+              ?.value;
+          expect(value, closeTo((i + 1) * 12.0, 1e-9));
+        }
+        expect(qjs.debugDocumentUploadCount, 1);
+
+        await localStore.writeAttribute(
+          const JsonTextBinding(repositoryId: 'bulk_repo', path: 'tax'),
+          '0.5',
+          expectedValue: 0.2,
+        );
+        for (var i = 0; i < 20; i++) {
+          final value = localStore
+              .peekAttribute(
+                JsonTextBinding(
+                  repositoryId: 'bulk_repo',
+                  path: 'rows[$i].@ttc',
+                ),
+              )
+              ?.value;
+          expect(value, closeTo((i + 1) * 15.0, 1e-9));
+        }
+        expect(qjs.debugDocumentUploadCount, 2);
+      });
     });
   }
 
@@ -334,79 +399,149 @@ return ht * (1 + tva);
     });
 
     test(
-      'persists JS definitions per repositoryId, survives rename, preloads synchronously, and cleans up on delete',
+      'behavior script writes atomically and refuses @calcul paths',
       () async {
-        await store.create('Facture');
-        final id = await store.idOf('Facture');
-        await store.replaceDocumentById(id, {
-          'articles': [
-            {'qte': 2, 'pu': 50},
-            {'qte': 3, 'pu': 100},
+        store.registerRepository(
+          RepositoryImpl(
+            id: 'script_repo',
+            json: {
+              'status': 'pending',
+              'items': [
+                {'name': 'First'},
+                {'name': 'Second'},
+              ],
+            },
+          ),
+        );
+        final scope = JsonListScope(
+          repositoryId: 'script_repo',
+          indices: const [1],
+          child: const SizedBox.shrink(),
+        );
+
+        await store.runJavaScriptAction(
+          repositoryId: 'script_repo',
+          code: 'script-writes',
+          scope: scope,
+          eventData: const {'status': 'sent'},
+        );
+        expect(await store.readDocument('script_repo'), {
+          'status': 'sent',
+          'items': [
+            {'name': 'First'},
+            {'name': 'Updated'},
           ],
         });
-        await store.saveCalculatedAttributes(id, [
-          CalculatedAttributeDefinition(
-            name: 'montant',
-            scope: 'articles[?]',
-            code: 'row.qte * row.pu',
+
+        await expectLater(
+          store.runJavaScriptAction(
+            repositoryId: 'script_repo',
+            code: 'script-writes-and-calc',
+            scope: scope,
           ),
-          CalculatedAttributeDefinition(
-            name: 'total',
-            code: 'ctx_total',
-          ),
-        ]);
-
-        final cfgRepo = RepositoryImpl(id: 'cfg_repo', json: {'remise': 0.2});
-        store.registerRepository(cfgRepo);
-
-        // Rename file repository: calculated/<id>.json stays attached!
-        await store.rename('Facture', 'Facture2026');
-        expect(
-          (await store.readAttribute(
-            JsonTextBinding(repositoryId: id, path: '@total'),
-          )).value,
-          320.0,
-        );
-
-        // Reopen a fresh store and preload -> synchronous peekAttribute works!
-        final store2 = JsonRepositoryStore(dir, jsEvaluator: _FakeJsEvaluator());
-        addTearDown(store2.dispose);
-        store2.registerRepository(
-          RepositoryImpl(id: 'cfg_repo', json: {'remise': 0.2}),
-        );
-        await store2.preload();
-        expect(
-          store2
-              .peekAttribute(
-                JsonTextBinding(repositoryId: id, path: 'articles[1].@montant'),
-              )
-              ?.value,
-          300,
+          throwsFormatException,
         );
         expect(
-          store2
-              .peekAttribute(JsonTextBinding(repositoryId: id, path: '@total'))
-              ?.value,
-          320.0,
+          (await store.readDocument('script_repo') as Map)['status'],
+          'sent',
         );
-
-        // Deleting repository cleans up calculated/<id>.json
-        await store2.delete('Facture2026');
-        final calcFile = File(
-          '${dir.path}${Platform.pathSeparator}calculated'
-          '${Platform.pathSeparator}$id.json',
-        );
-        expect(await calcFile.exists(), isFalse);
       },
     );
+
+    test('behavior script persists updates to a file repository', () async {
+      await store.create('script-data');
+      final repositoryId = await store.idOf('script-data');
+      await store.replaceDocumentById(repositoryId, {
+        'status': 'pending',
+        'items': [
+          {'name': 'First'},
+        ],
+      });
+
+      await store.runJavaScriptAction(
+        repositoryId: repositoryId,
+        code: 'script-writes',
+        scope: JsonListScope(
+          repositoryId: repositoryId,
+          indices: const [0],
+          child: const SizedBox.shrink(),
+        ),
+      );
+
+      expect(jsonDecode(await store.read('script-data')), {
+        'status': 'sent',
+        'items': [
+          {'name': 'Updated'},
+        ],
+      });
+    });
+
+    test('persists JS definitions per repositoryId, survives rename, preloads synchronously, and cleans up on delete', () async {
+      await store.create('Facture');
+      final id = await store.idOf('Facture');
+      await store.replaceDocumentById(id, {
+        'articles': [
+          {'qte': 2, 'pu': 50},
+          {'qte': 3, 'pu': 100},
+        ],
+      });
+      await store.saveCalculatedAttributes(id, [
+        CalculatedAttributeDefinition(
+          name: 'montant',
+          scope: 'articles[?]',
+          code: 'row.qte * row.pu',
+        ),
+        CalculatedAttributeDefinition(name: 'total', code: 'ctx_total'),
+      ]);
+
+      final cfgRepo = RepositoryImpl(id: 'cfg_repo', json: {'remise': 0.2});
+      store.registerRepository(cfgRepo);
+
+      // Rename file repository: calculated/<id>.json stays attached!
+      await store.rename('Facture', 'Facture2026');
+      expect(
+        (await store.readAttribute(
+          JsonTextBinding(repositoryId: id, path: '@total'),
+        )).value,
+        320.0,
+      );
+
+      // Reopen a fresh store and preload -> synchronous peekAttribute works!
+      final store2 = JsonRepositoryStore(dir, jsEvaluator: _FakeJsEvaluator());
+      addTearDown(store2.dispose);
+      store2.registerRepository(
+        RepositoryImpl(id: 'cfg_repo', json: {'remise': 0.2}),
+      );
+      await store2.preload();
+      expect(
+        store2
+            .peekAttribute(
+              JsonTextBinding(repositoryId: id, path: 'articles[1].@montant'),
+            )
+            ?.value,
+        300,
+      );
+      expect(
+        store2
+            .peekAttribute(JsonTextBinding(repositoryId: id, path: '@total'))
+            ?.value,
+        320.0,
+      );
+
+      // Deleting repository cleans up calculated/<id>.json
+      await store2.delete('Facture2026');
+      final calcFile = File(
+        '${dir.path}${Platform.pathSeparator}calculated'
+        '${Platform.pathSeparator}$id.json',
+      );
+      expect(await calcFile.exists(), isFalse);
+    });
 
     test(
       'rejects collision between Dart and JS calculated attribute paths',
       () async {
-        final repo = RepositoryImpl(
-          id: 'app_repo',
-          json: {'a': 1},
-        )..addCalculatedAttribute('total', (ctx) => ctx.sync.getInt('a'));
+        final repo = RepositoryImpl(id: 'app_repo', json: {'a': 1})
+          ..addCalculatedAttribute('total', (ctx) => ctx.sync.getInt('a'));
         store.registerRepository(repo);
 
         await expectLater(
@@ -639,163 +774,140 @@ return ht * (1 + tva);
       },
     );
 
-    test(
-      'VibeRepositoryTurnTransaction creates, merges, rolls back, and undoes/redoes JS calculatedAttributes',
-      () async {
-        final tx = VibeRepositoryTurnTransaction(store);
-        final aliasMap = await tx.applyRepositoriesPatch({
-          'devis_calc': {
-            'name': 'Devis',
-            'mode': 'merge',
-            'data': {
-              'articles': [
-                {'qte': 2, 'pu': 40},
-              ],
+    test('VibeRepositoryTurnTransaction creates, merges, rolls back, and undoes/redoes JS calculatedAttributes', () async {
+      final tx = VibeRepositoryTurnTransaction(store);
+      final aliasMap = await tx.applyRepositoriesPatch({
+        'devis_calc': {
+          'name': 'Devis',
+          'mode': 'merge',
+          'data': {
+            'articles': [
+              {'qte': 2, 'pu': 40},
+            ],
+          },
+          'calculatedAttributes': [
+            {
+              'name': 'montant',
+              'scope': 'articles[?]',
+              'code': 'row.qte * row.pu',
             },
-            'calculatedAttributes': [
-              {
-                'name': 'montant',
-                'scope': 'articles[?]',
-                'code': 'row.qte * row.pu',
-              },
-            ],
-          },
-        });
-        final actualId = aliasMap['devis_calc']!;
-        expect(
-          (await store.readAttribute(
-            JsonTextBinding(
-              repositoryId: actualId,
-              path: 'articles[0].@montant',
-            ),
-          )).value,
-          80,
-        );
-
-        final callbacks = tx.buildHistoryCallbacks()!;
-        await callbacks.undo();
-        expect(await store.catalog(), isEmpty);
-
-        await callbacks.redo();
-        expect(
-          (await store.readAttribute(
-            JsonTextBinding(
-              repositoryId: actualId,
-              path: 'articles[0].@montant',
-            ),
-          )).value,
-          80,
-        );
-
-        // Prompt formatter includes jsCalculatedAttributes
-        final promptCtx = await VibeRepositoryPromptFormatter.formatStoreContext(
-          store,
-        );
-        final jsonText = promptCtx.substring(promptCtx.indexOf('['));
-        final parsed = jsonDecode(jsonText) as List;
-        final desc = parsed.single as Map;
-        expect(desc['calculatedAttributes'], ['articles[?].@montant']);
-        expect(
-          (desc['jsCalculatedAttributes'] as List).single['code'],
-          'row.qte * row.pu',
-        );
-
-        // Rollback on a second transaction modifying calculatedAttributes
-        final tx2 = VibeRepositoryTurnTransaction(store);
-        await tx2.applyRepositoriesPatch({
-          actualId: {
-            'mode': 'merge',
-            'calculatedAttributes': [
-              {
-                'name': 'montant',
-                'scope': 'articles[?]',
-                'code': '99',
-              },
-            ],
-          },
-        });
-        expect(
-          (await store.readAttribute(
-            JsonTextBinding(
-              repositoryId: actualId,
-              path: 'articles[0].@montant',
-            ),
-          )).value,
-          99,
-        );
-        await tx2.rollback();
-        expect(
-          (await store.readAttribute(
-            JsonTextBinding(
-              repositoryId: actualId,
-              path: 'articles[0].@montant',
-            ),
-          )).value,
-          80,
-        );
-      },
-    );
-
-    test(
-      'buildJsCalculatedExamples combines schema-adapted and generic QuickJS badges',
-      () {
-        final doc = {
-          'taux': 0.2,
-          'articles': [
-            {'label': 'Audit', 'qte': 4, 'pu': 25, 'actif': true},
           ],
-        };
+        },
+      });
+      final actualId = aliasMap['devis_calc']!;
+      expect(
+        (await store.readAttribute(
+          JsonTextBinding(repositoryId: actualId, path: 'articles[0].@montant'),
+        )).value,
+        80,
+      );
 
-        final rootExamples = buildJsCalculatedExamples(
-          document: doc,
-          scope: '',
-          scopedCalculatedPaths: const ['articles[?].@montant'],
-          otherRepositoryIds: const ['cfg_repo'],
-        );
-        expect(rootExamples.length, greaterThanOrEqualTo(18));
-        expect(
-          rootExamples.any(
-            (e) =>
-                e.isSchemaAdapted &&
-                e.code.contains("articles[' + i + '].@montant"),
-          ),
-          isTrue,
-        );
-        expect(
-          rootExamples.any(
-            (e) =>
-                e.isSchemaAdapted &&
-                e.code.contains("ctx.getNum('taux', \"cfg_repo\", 0.2)"),
-          ),
-          isTrue,
-        );
+      final callbacks = tx.buildHistoryCallbacks()!;
+      await callbacks.undo();
+      expect(await store.catalog(), isEmpty);
 
-        final rowExamples = buildJsCalculatedExamples(
-          document: doc,
-          scope: 'articles[?]',
-          sameScopeCalculatedNames: const ['montant', 'courant'],
-          currentAttributeName: 'courant',
-        );
-        expect(
-          rowExamples.any(
-            (e) =>
-                e.isSchemaAdapted &&
-                e.code == '(row.qte ?? 0) * (row.pu ?? 0)',
-          ),
-          isTrue,
-        );
-        expect(
-          rowExamples.any(
-            (e) => e.isSchemaAdapted && e.code.contains("row['@montant']"),
-          ),
-          isTrue,
-        );
-        expect(
-          rowExamples.any((e) => e.code.contains("row['@courant']")),
-          isFalse,
-        );
-      },
-    );
+      await callbacks.redo();
+      expect(
+        (await store.readAttribute(
+          JsonTextBinding(repositoryId: actualId, path: 'articles[0].@montant'),
+        )).value,
+        80,
+      );
+
+      // Prompt formatter includes jsCalculatedAttributes
+      final promptCtx = await VibeRepositoryPromptFormatter.formatStoreContext(
+        store,
+      );
+      final jsonText = promptCtx.substring(promptCtx.indexOf('['));
+      final parsed = jsonDecode(jsonText) as List;
+      final desc = parsed.single as Map;
+      expect(desc['calculatedAttributes'], ['articles[?].@montant']);
+      expect(
+        (desc['jsCalculatedAttributes'] as List).single['code'],
+        'row.qte * row.pu',
+      );
+
+      // Rollback on a second transaction modifying calculatedAttributes
+      final tx2 = VibeRepositoryTurnTransaction(store);
+      await tx2.applyRepositoriesPatch({
+        actualId: {
+          'mode': 'merge',
+          'calculatedAttributes': [
+            {'name': 'montant', 'scope': 'articles[?]', 'code': '99'},
+          ],
+        },
+      });
+      expect(
+        (await store.readAttribute(
+          JsonTextBinding(repositoryId: actualId, path: 'articles[0].@montant'),
+        )).value,
+        99,
+      );
+      await tx2.rollback();
+      expect(
+        (await store.readAttribute(
+          JsonTextBinding(repositoryId: actualId, path: 'articles[0].@montant'),
+        )).value,
+        80,
+      );
+    });
+
+    test('buildJsCalculatedExamples combines schema-adapted and generic QuickJS badges', () {
+      final doc = {
+        'taux': 0.2,
+        'articles': [
+          {'label': 'Audit', 'qte': 4, 'pu': 25, 'actif': true},
+        ],
+      };
+
+      final rootExamples = buildJsCalculatedExamples(
+        document: doc,
+        scope: '',
+        scopedCalculatedPaths: const ['articles[?].@montant'],
+        otherRepositoryIds: const ['cfg_repo'],
+      );
+      expect(rootExamples.length, greaterThanOrEqualTo(18));
+      expect(
+        rootExamples.any(
+          (e) =>
+              e.isSchemaAdapted &&
+              e.code.contains("articles[' + i + '].@montant"),
+        ),
+        isTrue,
+      );
+      expect(
+        rootExamples.any(
+          (e) =>
+              e.isSchemaAdapted &&
+              e.code.contains("ctx.getNum('taux', \"cfg_repo\", 0.2)"),
+        ),
+        isTrue,
+      );
+
+      final rowExamples = buildJsCalculatedExamples(
+        document: doc,
+        scope: 'articles[?]',
+        sameScopeCalculatedNames: const ['montant', 'courant'],
+        currentAttributeName: 'courant',
+      );
+      expect(
+        rowExamples.any(
+          (e) =>
+              e.isSchemaAdapted && e.code == '(row.qte ?? 0) * (row.pu ?? 0)',
+        ),
+        isTrue,
+      );
+      expect(
+        rowExamples.any(
+          (e) => e.isSchemaAdapted && e.code.contains("row['@montant']"),
+        ),
+        isTrue,
+      );
+      expect(
+        rowExamples.any((e) => e.code.contains("row['@courant']")),
+        isFalse,
+      );
+    });
 
     testWidgets(
       'CalculatedAttributesDialog prefills CodeEditor when clicking example Wrap badges without overwriting metadata',
@@ -847,7 +959,9 @@ return ht * (1 + tva);
           find.byKey(const ValueKey('calculated-attr-examples')),
           findsOneWidget,
         );
-        final wrapFinder = find.byKey(const ValueKey('calculated-attr-examples'));
+        final wrapFinder = find.byKey(
+          const ValueKey('calculated-attr-examples'),
+        );
         final chipCount = find
             .descendant(of: wrapFinder, matching: find.byType(ActionChip))
             .evaluate()

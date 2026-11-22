@@ -47,6 +47,7 @@ import '../../../services/inspection/vibe_app_inspector.dart';
 import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/inspection/vibe_diagnostics_inspector.dart';
 import '../../../services/inspection/vibe_mounted_slot_index.dart';
+import '../../../services/inspection/vibe_page_audit.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/pages/editor_page_router.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -1807,6 +1808,32 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     );
   }
 
+  Future<void> _runPageAudit() async {
+    if (_isBusy) return;
+    _cancelSpeechDictation();
+    setState(() {
+      _attachmentError = null;
+      for (var i = 0; i < _messages.length; i++) {
+        final msg = _messages[i];
+        if (msg.askUser != null &&
+            msg.askUserAnswers == null &&
+            !msg.askUserDismissed) {
+          _messages[i] = msg.copyWith(askUserDismissed: true);
+        }
+      }
+    });
+
+    final activeScope = _scope;
+    final displayUserText = activeScope == null
+        ? 'Audit & correction de la page active.'
+        : 'Audit & correction de ${activeScope.displayLabel}.';
+
+    await _runGenerationTurn(
+      displayUserText: displayUserText,
+      runPageAudit: true,
+    );
+  }
+
   @override
   void dispose() {
     _completionHideTimer?.cancel();
@@ -2360,6 +2387,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     String? promptOverride,
     List<VibeChatAttachment> attachments = const [],
     bool requestsMoreQuestions = false,
+    bool runPageAudit = false,
   }) async {
     final history = EditorHistoryScope.controllerOf(context);
     final resolvedPageRouting =
@@ -2417,11 +2445,48 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           : await VibeRepositoryPromptFormatter.formatStoreContext(
               resolvedRepositoryStore,
             );
-      final turnPrompt = _buildTurnPrompt(
-        appearanceOverride: session.baseAppearance,
-        instantiatedIdsOverride: session.initialInstantiatedIds,
-        repositoriesContext: repositoriesContext,
-      );
+      String effectivePlanPrompt = promptOverride ?? displayUserText;
+      final String turnPrompt;
+      if (runPageAudit) {
+        final auditInspector = VibeAppInspector(
+          readAppearance: () => session.baseAppearance,
+          registry: widget.registry,
+          repositoryStore: resolvedRepositoryStore,
+          pageRouting: resolvedPageRouting,
+          readScope: () => _scope,
+          fallbackContext: () => mounted ? context : null,
+          turnStartMarker: session.turnStartMarker,
+        );
+        final auditReport = await VibePageAuditService.collect(auditInspector);
+        final auditSummaryPrompt =
+            'AUDIT & CORRECTION :\n${auditReport.toPromptSummary()}';
+        effectivePlanPrompt = auditSummaryPrompt;
+        if (mounted && _messages.isNotEmpty) {
+          final lastIdx = _messages.length - 1;
+          if (_messages[lastIdx].isUser) {
+            _messages[lastIdx] = _messages[lastIdx].copyWith(
+              promptText: auditSummaryPrompt,
+            );
+          }
+        }
+        turnPrompt = VibePromptBuilder.buildAuditTurnPrompt(
+          report: auditReport,
+          conversation: _buildConversationHistory(),
+          appearance: session.baseAppearance,
+          codec: widget.codec,
+          scope: _scope,
+          instantiatedComponentIds: session.initialInstantiatedIds,
+          mountedSlotSummaries: VibeMountedSlotIndex.instance
+              .mountedSlotSummaries(),
+          repositoriesContext: repositoriesContext,
+        );
+      } else {
+        turnPrompt = _buildTurnPrompt(
+          appearanceOverride: session.baseAppearance,
+          instantiatedIdsOverride: session.initialInstantiatedIds,
+          repositoriesContext: repositoriesContext,
+        );
+      }
       final generated = await _generateAndApply(
         turnPrompt,
         systemGuide: guide,
@@ -2490,7 +2555,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           : 'Modifications appliquées.';
       final planSource = !hasMutations && generated.plan != null
           ? _collectPlanSourceContext(
-              currentPrompt: promptOverride ?? displayUserText,
+              currentPrompt: effectivePlanPrompt,
               currentAttachments: attachments,
             )
           : null;
@@ -3253,6 +3318,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           'Sélection de l’élément dans l’éditeur…',
         'register_design_system' =>
           'Génération et ajout du Design System DESIGN.md…',
+        'audit_active_page' => 'Audit complet de la page active…',
         final other => 'Exécution de $other…',
       };
     }
@@ -5134,6 +5200,12 @@ $response
                                       onToggle: () => _setReproduceExactMode(
                                         !_reproduceExactMode,
                                       ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    VibeAuditActionChip(
+                                      enabled: !_isBusy,
+                                      scoped: _scope != null,
+                                      onPressed: _runPageAudit,
                                     ),
                                   ],
                                 ),

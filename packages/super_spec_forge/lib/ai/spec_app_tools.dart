@@ -329,10 +329,12 @@ abstract final class SpecForgeToolRegistry {
             ? null
             : RequirementPriority.fromJson(priorityRaw);
         final reqs = project.cahierDesCharges.functionalRequirements.where((r) {
-          if (moduleFilter.isNotEmpty && r.moduleId != moduleFilter)
+          if (moduleFilter.isNotEmpty && r.moduleId != moduleFilter) {
             return false;
-          if (priorityFilter != null && r.priority != priorityFilter)
+          }
+          if (priorityFilter != null && r.priority != priorityFilter) {
             return false;
+          }
           return true;
         }).toList();
 

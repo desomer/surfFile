@@ -342,6 +342,10 @@ class VibeToolTrace {
         final name = data['name'] ?? data['id'] ?? 'DESIGN.md';
         final selected = data['selected'] == true ? ' (activé)' : '';
         return '$name ajouté$selected';
+      case 'audit_active_page':
+        final count = data['findingCount'] ?? 0;
+        final errors = data['errorCount'] ?? 0;
+        return '$count anomalie(s) détectée(s) ($errors critique(s))';
     }
     return 'OK';
   }
@@ -949,6 +953,17 @@ class VibeAppToolRegistry {
                     'si false, l’ajoute uniquement à la liste des choix possibles.',
               },
             },
+          },
+        ),
+        VibeToolDeclaration(
+          name: 'audit_active_page',
+          description:
+              'Exécute un audit déterministe complet sur la page active (ou le scope actif) : '
+              'marges/paddings coupés, dépassements parent/viewport, textes tronqués, erreurs runtime, '
+              'attributs calculés @calculs manquants ou non déclarés et contrastes WCAG AA.',
+          parametersSchema: <String, Object?>{
+            'type': 'object',
+            'properties': <String, Object?>{},
           },
         ),
       ];

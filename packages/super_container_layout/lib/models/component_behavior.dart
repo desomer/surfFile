@@ -5,10 +5,13 @@
 /// `Appearance.behaviors`.
 ///
 /// Les actions concrètes vivent dans `models/behaviours/` et sont réexportées ici :
+/// - [AddArrayItemAction] (`behaviours/add_array_item_action.dart`)
+/// - [CreationDefaultAction] (`behaviours/creation_default_action.dart`)
 /// - [DatasourceAction] (`behaviours/datasource_action.dart`)
 /// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
 /// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
+/// - [RunJavaScriptAction] (`behaviours/run_javascript_action.dart`)
 /// - [StateBindingAction] (`behaviours/state_binding_action.dart`)
 /// - [TooltipAction] (`behaviours/tooltip_action.dart`)
 /// - [ZoneSizeBindingAction] (`behaviours/zone_size_binding_action.dart`)
@@ -17,20 +20,26 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../services/events/super_event_bus.dart';
+import 'behaviours/add_array_item_action.dart';
+import 'behaviours/creation_default_action.dart';
 import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
 import 'behaviours/generate_pdf_action.dart';
 import 'behaviours/go_to_page_action.dart';
 import 'behaviours/search_provider_action.dart';
+import 'behaviours/run_javascript_action.dart';
 import 'behaviours/state_binding_action.dart';
 import 'behaviours/tooltip_action.dart';
 import 'behaviours/zone_size_binding_action.dart';
 
+export 'behaviours/add_array_item_action.dart';
+export 'behaviours/creation_default_action.dart';
 export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
 export 'behaviours/generate_pdf_action.dart';
 export 'behaviours/go_to_page_action.dart';
 export 'behaviours/search_provider_action.dart';
+export 'behaviours/run_javascript_action.dart';
 export 'behaviours/state_binding_action.dart';
 export 'behaviours/tooltip_action.dart';
 export 'behaviours/zone_size_binding_action.dart';
@@ -44,7 +53,10 @@ enum BehaviorTrigger {
   hover('Survol', 'Au survol du composant', Icons.info_outline),
 
   /// Comportement réactif : appliqué quand la valeur liée change.
-  binding('Liaison', 'Quand la valeur liée change', Icons.link);
+  binding('Liaison', 'Quand la valeur liée change', Icons.link),
+
+  /// Comportement déclaratif : valeur par défaut lors de la création d'une ligne.
+  create('Création', 'À la création d’une ligne', Icons.add_box_outlined);
 
   /// Déclencheurs provoqués par un geste de l'utilisateur.
   static const gestures = [click, doubleClick];
@@ -104,6 +116,9 @@ abstract final class BehaviorActionCatalog {
     'searchProvider': SearchProviderAction.fromJson,
     'datasource': DatasourceAction.fromJson,
     'generatePdf': GeneratePdfAction.fromJson,
+    'addArrayItem': AddArrayItemAction.fromJson,
+    'creationDefault': CreationDefaultAction.fromJson,
+    'runJavaScript': RunJavaScriptAction.fromJson,
   };
 
   static void register(
@@ -192,6 +207,32 @@ class ComponentBehavior {
         );
       }
     }
+    if (action case final AddArrayItemAction addArray) {
+      addArray.validate();
+      if (!BehaviorTrigger.gestures.contains(trigger)) {
+        throw const FormatException(
+          'addArrayItem exige le déclencheur click ou doubleClick.',
+        );
+      }
+    }
+    if (action case final CreationDefaultAction creationDefault) {
+      creationDefault.validate();
+      if (trigger != BehaviorTrigger.create) {
+        throw const FormatException(
+          'creationDefault exige le déclencheur create.',
+        );
+      }
+    } else if (trigger == BehaviorTrigger.create) {
+      throw const FormatException('create exige une action creationDefault.');
+    }
+    if (action case final RunJavaScriptAction script) {
+      script.validate();
+      if (!BehaviorTrigger.gestures.contains(trigger)) {
+        throw const FormatException(
+          'runJavaScript exige le déclencheur click ou doubleClick.',
+        );
+      }
+    }
   }
 
   Map<String, Object?> toJson() {
@@ -211,6 +252,10 @@ class ComponentBehavior {
       'action': tooltip.toCompactJson(),
     if (action case final StateBindingAction stateBinding)
       'action': stateBinding.toCompactJson(),
+    if (action case final AddArrayItemAction addArray)
+      'action': addArray.toCompactJson(),
+    if (action case final CreationDefaultAction creationDefault)
+      'action': creationDefault.toCompactJson(),
   };
 
   factory ComponentBehavior.fromJson(Map<String, dynamic> json) {
@@ -358,11 +403,45 @@ abstract final class BehaviorCatalog {
   static const generatePdf = BehaviorCatalogItem(
     id: 'generate_pdf',
     title: 'Générer un PDF (A4)',
-    description:
-        'Exporter une page Document A4 au format PDF (aperçu/impression ou fichier)',
+    description: 'Exporter une page Document A4 au format PDF (aperçu/impression ou fichier)',
     icon: Icons.picture_as_pdf_outlined,
     trigger: BehaviorTrigger.click,
     actionType: 'generatePdf',
+  );
+
+  /// Ajoute une ligne dans un tableau JSON en s'appuyant sur son JSON Schema.
+  static const addArrayItem = BehaviorCatalogItem(
+    id: 'add_array_item',
+    title: 'Ajouter une ligne (JSON Schema)',
+    description:
+        'Créer et ajouter une nouvelle ligne dans un tableau de repository '
+        'selon son JSON Schema et les valeurs par défaut des SuperValue',
+    icon: Icons.playlist_add_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'addArrayItem',
+  );
+
+  /// Définit la valeur par défaut d'une SuperValue lors de la création de ligne.
+  static const creationDefault = BehaviorCatalogItem(
+    id: 'creation_default',
+    title: 'Valeur par défaut à la création',
+    description:
+        'Appliquer une valeur par défaut sur cette SuperValue lorsqu’une '
+        'nouvelle ligne est créée dans le tableau lié',
+    icon: Icons.add_box_outlined,
+    trigger: BehaviorTrigger.create,
+    actionType: 'creationDefault',
+  );
+
+  /// Exécute un script JavaScript au clic ou double-clic.
+  static const runJavaScript = BehaviorCatalogItem(
+    id: 'run_javascript',
+    title: 'Script JavaScript (écriture repository)',
+    description:
+        'Exécuter un script au clic ; les écritures passent par ctx.set',
+    icon: Icons.code,
+    trigger: BehaviorTrigger.click,
+    actionType: 'runJavaScript',
   );
 
   static final List<BehaviorCatalogItem> items = [
@@ -374,5 +453,8 @@ abstract final class BehaviorCatalog {
     onTooltip,
     searchProvider,
     datasource,
+    addArrayItem,
+    creationDefault,
+    runJavaScript,
   ];
 }

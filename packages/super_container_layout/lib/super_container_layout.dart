@@ -19,6 +19,7 @@ export 'services/inspection/vibe_app_inspector.dart';
 export 'services/inspection/vibe_debug_capture.dart';
 export 'services/inspection/vibe_diagnostics_inspector.dart';
 export 'services/inspection/vibe_mounted_slot_index.dart';
+export 'services/inspection/vibe_page_audit.dart';
 export 'widgets/editing/ai/design_system_catalog_dialog.dart';
 export 'widgets/editing/ai/design_system_preview_card.dart';
 export 'widgets/editing/ai/vibe_chat_dialog.dart';

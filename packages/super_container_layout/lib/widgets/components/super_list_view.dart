@@ -73,6 +73,8 @@ import 'super_component.dart';
 
 import '../../models/json_text_binding.dart';
 import '../../models/super_layout_config.dart';
+import '../../services/repositories/repository_array_creation.dart';
+import '../appearance/appearance_scope.dart';
 import '../../models/super_list_view_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
@@ -560,12 +562,23 @@ class _SuperListViewState extends State<SuperListView>
 
   Future<void> _add() {
     final length = _items?.length ?? 0;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final existing = _items;
+    final template = _template;
     return _change((store, binding) async {
+      final initialItem = await RepositoryArrayCreationService.buildNewRow(
+        store: store,
+        repositoryId: binding.repositoryId!,
+        arrayTemplatePath: template ?? binding.path,
+        appearance: appearance,
+        existingItems: existing,
+      );
       final count = await store.appendArrayItem(
         binding.repositoryId!,
         binding.path,
         expectedLength: length,
         componentId: widget.id,
+        initialItem: initialItem,
       );
       if (mounted && _source?.binding == binding) _select(count - 1);
       return count;

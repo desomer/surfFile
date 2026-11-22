@@ -909,6 +909,20 @@ Pour exposer aussi le menu d'édition **Comportement...** sur un widget
 personnalisé, utiliser `EditorSlot(id: 'custom-component', label: 'Mon composant',
 child: myWidget)` ; cette enveloppe installe déjà `ComponentTooltip`.
 
+## Modifier ou supprimer un comportement
+
+En mode édition, faites un clic droit sur le composant, ouvrez **Comportement…**
+et sélectionnez l’élément cible. Dans **Comportements de cet élément** :
+
+- Le **crayon** ouvre les réglages existants. Pour changer d’action, revenez à
+  l’étape **Comportement**. **Appliquer** conserve l’ordre et l’état activé ou
+  désactivé du comportement ; **Annuler** abandonne la modification.
+- La **corbeille** supprime immédiatement le comportement choisi. L’historique
+  permet d’annuler la suppression ou la modification.
+
+Ce menu gère les comportements enregistrés dans l’apparence ; il ne modifie
+pas une liste `behaviours` fournie explicitement par le code.
+
 ## Evenements internes des composants
 
 Dans **Comportement...**, choisir **Emettre un evenement**, son declencheur

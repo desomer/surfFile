@@ -73,6 +73,47 @@ void main() {
       expect(BehaviorCatalog.items, contains(BehaviorCatalog.bindState));
     });
 
+    test('RunJavaScriptAction serialization and validation', () {
+      const behavior = ComponentBehavior(
+        id: 'b-script',
+        trigger: BehaviorTrigger.click,
+        action: RunJavaScriptAction(
+          repositoryId: 'orders',
+          code: "ctx.set('status', 'done');",
+        ),
+      );
+      expect(ComponentBehavior.fromJson(behavior.toJson()), behavior);
+      expect(
+        ComponentBehavior.fromJson(
+          Map<String, dynamic>.from(behavior.toCompactJson()),
+        ),
+        behavior,
+      );
+      expect(
+        BehaviorActionCatalog.decode({
+          'type': 'runJavaScript',
+          'code': "ctx.set('status', 'done');",
+        }),
+        const RunJavaScriptAction(code: "ctx.set('status', 'done');"),
+      );
+      expect(BehaviorCatalog.items, contains(BehaviorCatalog.runJavaScript));
+      expect(
+        () => ComponentBehavior(
+          id: 'b-script-hover',
+          trigger: BehaviorTrigger.hover,
+          action: behavior.action,
+        ).validate(),
+        throwsFormatException,
+      );
+      expect(
+        () => const RunJavaScriptAction(
+          repositoryId: 'Invalid-ID',
+          code: 'ctx.set("value", 1);',
+        ).validate(),
+        throwsFormatException,
+      );
+    });
+
     test('StateBindingAction serialization, compact JSON, and validation', () {
       const action = StateBindingAction(
         state: BehaviorBoundState.invisible,
@@ -583,6 +624,125 @@ void main() {
       // Now click on the component in run mode -> should trigger navigation to '/home'
       await tester.tap(find.text('Target Text'));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('Edit, cancel, delete and undo an existing behavior in place', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      const first = ComponentBehavior(
+        id: 'first',
+        action: GoToPageAction(pagePath: '/home'),
+      );
+      final original = ComponentBehavior(
+        id: 'second',
+        enabled: false,
+        trigger: BehaviorTrigger.doubleClick,
+        action: EmitEventAction(eventId: 'old.event', custom: {'count': 2}),
+      );
+      final appearance = ValueNotifier(
+        Appearance(
+          behaviors: {
+            'target': [first, original],
+            'other': [original],
+          },
+        ),
+      );
+      final editing = ValueNotifier(true);
+      final history = EditorHistoryController(
+        appearance: appearance,
+        editMode: editing,
+      );
+      addTearDown(appearance.dispose);
+      addTearDown(editing.dispose);
+      addTearDown(history.dispose);
+      await tester.pumpWidget(
+        AppearanceScope(
+          controller: appearance,
+          child: EditorHistoryScope(
+            controller: history,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    key: const ValueKey('open'),
+                    onPressed: () => showComponentBehaviorEditor(
+                      context: context,
+                      componentId: 'target',
+                      componentLabel: 'Bouton',
+                    ),
+                    child: const Text('Ouvrir'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      Finder keyed(String key) => find.byKey(ValueKey(key));
+      Future<void> tapKey(String key) async {
+        await tester.ensureVisible(keyed(key));
+        await tester.tap(keyed(key));
+        await tester.pumpAndSettle();
+      }
+
+      List<ComponentBehavior> current() =>
+          appearance.value.behaviorsFor('target');
+
+      await tapKey('open');
+      await tapKey('behavior-edit-second');
+      expect(
+        tester.widget<TextField>(keyed('behavior-event-id')).controller!.text,
+        'old.event',
+      );
+      expect(
+        tester
+            .widget<TextField>(keyed('behavior-event-custom'))
+            .controller!
+            .text,
+        '{"count":2}',
+      );
+      expect(find.text('Double-clic'), findsOneWidget);
+      await tester.enterText(keyed('behavior-event-id'), 'discard.me');
+      await tapKey('behavior-add-cancel');
+      expect(current(), [first, original]);
+      expect(history.canUndo, isFalse);
+
+      await tapKey('open');
+      await tapKey('behavior-edit-second');
+      await tapKey('behavior-add-back');
+      await tapKey('behavior-catalog-go_to_page');
+      await tapKey('behavior-add-next');
+      await tapKey('behavior-gesture-trigger');
+      await tester.tap(find.text('Clic').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(keyed('behavior-custom-path-input'), '/changed');
+      await tapKey('behavior-add-next');
+      await tapKey('behavior-add-submit');
+      const changed = ComponentBehavior(
+        id: 'second',
+        enabled: false,
+        trigger: BehaviorTrigger.click,
+        action: GoToPageAction(pagePath: '/changed'),
+      );
+      expect(current(), [first, changed]);
+      expect(appearance.value.behaviorsFor('other'), [original]);
+      history.undo();
+      expect(current(), [first, original]);
+      expect(history.canUndo, isFalse);
+      history.redo();
+      expect(current(), [first, changed]);
+
+      await tapKey('open');
+      await tapKey('behavior-delete-second');
+      expect(current(), [first]);
+      expect(keyed('behavior-delete-second'), findsNothing);
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(current(), [first, changed]);
+      expect(keyed('behavior-edit-second'), findsOneWidget);
+      await tapKey('behavior-add-cancel');
     });
 
     testWidgets('Wizard adds a searchProvider behavior that runs on click', (
@@ -1373,6 +1533,324 @@ void main() {
         editing.value = true;
         await tester.pumpAndSettle();
         expect(find.text('Secret Content'), findsOneWidget);
+      },
+    );
+
+    test(
+      'AddArrayItemAction and CreationDefaultAction serialize and validate',
+      () {
+        const addAction = AddArrayItemAction(
+          binding: JsonTextBinding(repositoryId: 'crm', path: 'clients'),
+          selectCreated: true,
+        );
+        final addBehavior = ComponentBehavior(
+          id: 'b-add',
+          trigger: BehaviorTrigger.click,
+          action: addAction,
+        );
+        final decodedAdd = ComponentBehavior.fromJson(addBehavior.toJson());
+        expect(decodedAdd, addBehavior);
+        expect(BehaviorCatalog.items, contains(BehaviorCatalog.addArrayItem));
+
+        expect(
+          () => ComponentBehavior(
+            id: 'b-bad-add',
+            trigger: BehaviorTrigger.binding,
+            action: addAction,
+          ).validate(),
+          throwsFormatException,
+        );
+
+        const defaultAction = CreationDefaultAction(defaultValue: 'Nouveau');
+        const defaultBehavior = ComponentBehavior(
+          id: 'b-def',
+          trigger: BehaviorTrigger.create,
+          action: defaultAction,
+        );
+        final decodedDefault = ComponentBehavior.fromJson(
+          defaultBehavior.toJson(),
+        );
+        expect(decodedDefault, defaultBehavior);
+        expect(
+          BehaviorCatalog.items,
+          contains(BehaviorCatalog.creationDefault),
+        );
+
+        expect(
+          () => ComponentBehavior(
+            id: 'b-bad-def',
+            trigger: BehaviorTrigger.click,
+            action: defaultAction,
+          ).validate(),
+          throwsFormatException,
+        );
+        expect(
+          () => ComponentBehavior(
+            id: 'b-bad-trigger',
+            trigger: BehaviorTrigger.create,
+            action: const GoToPageAction(pagePath: '/home'),
+          ).validate(),
+          throwsFormatException,
+        );
+      },
+    );
+
+    testWidgets(
+      'AddArrayItemAction creates row from JSON Schema merged with SuperValue CreationDefaultAction',
+      (tester) async {
+        late Directory tempDir;
+        late JsonRepositoryStore store;
+        late String repoId;
+
+        await tester.runAsync(() async {
+          tempDir = await Directory.systemTemp.createTemp(
+            'add_array_schema_test_',
+          );
+          store = JsonRepositoryStore(tempDir);
+          await store.create('CRM');
+          repoId = await store.idOf('CRM');
+          final before = await store.read('CRM');
+          await store.save(
+            'CRM',
+            jsonEncode(<String, Object?>{'clients': <Object?>[]}),
+            expectedText: before,
+          );
+          await store.saveJsonSchema(repoId, <String, Object?>{
+            r'$schema': 'https://json-schema.org/draft/2020-12/schema',
+            'type': 'object',
+            'required': ['clients'],
+            'properties': <String, Object?>{
+              'clients': <String, Object?>{
+                'type': 'array',
+                'items': <String, Object?>{
+                  'type': 'object',
+                  'required': ['nom', 'statut', 'priorite', 'actif'],
+                  'properties': <String, Object?>{
+                    'nom': <String, Object?>{
+                      'type': 'string',
+                      'default': 'Nouveau client',
+                    },
+                    'statut': <String, Object?>{
+                      'type': 'string',
+                      'enum': ['Standard', 'VIP'],
+                      'default': 'Standard',
+                    },
+                    'priorite': <String, Object?>{
+                      'type': 'integer',
+                      'minimum': 1,
+                    },
+                    'actif': <String, Object?>{
+                      'type': 'boolean',
+                      'default': true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+        });
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          store.dispose();
+          await tester.runAsync(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            if (await tempDir.exists()) {
+              await tempDir.delete(recursive: true);
+            }
+          });
+        });
+
+        final editing = ValueNotifier(false);
+        addTearDown(editing.dispose);
+
+        final appearance = ValueNotifier(
+          Appearance(
+            components: {
+              'main-layout': const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: [
+                    'btn-add-client',
+                    'list-clients',
+                    'detail-priorite',
+                  ],
+                },
+                slotTypes: {
+                  'btn-add-client': 'registry:Action',
+                  'list-clients': 'registry:ListView',
+                  'detail-priorite': 'registry:Value',
+                },
+              ),
+              'btn-add-client': const SuperActionConfig(label: 'Ajouter'),
+              'list-clients': SuperListViewConfig(
+                binding: JsonTextBinding(repositoryId: repoId, path: 'clients'),
+                template: const SuperLayoutConfig(
+                  placements: {
+                    SuperLayoutZone.center: ['row-statut'],
+                  },
+                  slotTypes: {'row-statut': 'registry:Value'},
+                ),
+              ),
+              'row-statut': const SuperValueConfig(
+                binding: JsonTextBinding(path: 'clients[?].statut'),
+              ),
+              'detail-priorite': SuperValueConfig(
+                binding: JsonTextBinding(
+                  repositoryId: repoId,
+                  path: 'clients[?].priorite',
+                ),
+              ),
+            },
+            behaviors: {
+              'btn-add-client': [
+                ComponentBehavior(
+                  id: 'b-add-client',
+                  trigger: BehaviorTrigger.click,
+                  action: AddArrayItemAction(
+                    binding: JsonTextBinding(
+                      repositoryId: repoId,
+                      path: 'clients',
+                    ),
+                  ),
+                ),
+              ],
+              'row-statut': [
+                const ComponentBehavior(
+                  id: 'b-default-statut',
+                  trigger: BehaviorTrigger.create,
+                  action: CreationDefaultAction(defaultValue: 'VIP'),
+                ),
+              ],
+              'detail-priorite': [
+                const ComponentBehavior(
+                  id: 'b-default-priorite',
+                  trigger: BehaviorTrigger.create,
+                  action: CreationDefaultAction(defaultValue: '3'),
+                ),
+              ],
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        await tester.pumpWidget(
+          JsonRepositoryScope(
+            store: store,
+            child: AppearanceScope(
+              controller: appearance,
+              child: StyleEditScope(
+                controller: editing,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: SuperAction(
+                      id: 'btn-add-client',
+                      config: const SuperActionConfig(label: 'Ajouter'),
+                      behaviours: appearance.value.behaviorsFor(
+                        'btn-add-client',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        List<Object?>? created;
+        await tester.runAsync(() async {
+          await tester.tap(
+            find.byKey(const ValueKey('super-action-button-btn-add-client')),
+          );
+          for (var i = 0; i < 60; i++) {
+            await tester.pump();
+            created = await store.readArray(repoId, 'clients');
+            if (created != null && created!.isNotEmpty) break;
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+          }
+        });
+        await tester.pumpAndSettle();
+
+        expect(created, hasLength(1));
+        expect(created!.single, <String, Object?>{
+          'nom': 'Nouveau client',
+          'statut': 'VIP',
+          'priorite': 3,
+          'actif': true,
+        });
+        expect(store.bindingOf(repoId).array('clients').selection, [0]);
+      },
+    );
+
+    testWidgets(
+      'ComponentBehaviorWizard exposes creationDefault on SuperValue and hides it on SuperAction',
+      (tester) async {
+        final appearance = ValueNotifier(
+          Appearance(
+            components: {
+              'val-statut': const SuperValueConfig(
+                binding: JsonTextBinding(
+                  repositoryId: 'crm',
+                  path: 'clients[?].statut',
+                ),
+              ),
+              'btn-add': const SuperActionConfig(label: 'Ajouter'),
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => Column(
+                    children: [
+                      ElevatedButton(
+                        key: const ValueKey('open-value-wizard'),
+                        onPressed: () => showComponentBehaviorEditor(
+                          context: context,
+                          componentId: 'val-statut',
+                          componentLabel: 'Statut',
+                        ),
+                        child: const Text('Value Wizard'),
+                      ),
+                      ElevatedButton(
+                        key: const ValueKey('open-action-wizard'),
+                        onPressed: () => showComponentBehaviorEditor(
+                          context: context,
+                          componentId: 'btn-add',
+                          componentLabel: 'Ajouter',
+                        ),
+                        child: const Text('Action Wizard'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // Sur SuperValue : creationDefault est proposé.
+        await tester.tap(find.byKey(const ValueKey('open-value-wizard')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        expect(find.text('Valeur par défaut à la création'), findsOneWidget);
+        expect(find.text('Ajouter une ligne (JSON Schema)'), findsOneWidget);
+
+        await tester.tap(find.text('Annuler'));
+        await tester.pumpAndSettle();
+
+        // Sur SuperAction : creationDefault n'est pas proposé.
+        await tester.tap(find.byKey(const ValueKey('open-action-wizard')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        expect(find.text('Valeur par défaut à la création'), findsNothing);
+        expect(find.text('Ajouter une ligne (JSON Schema)'), findsOneWidget);
       },
     );
   });

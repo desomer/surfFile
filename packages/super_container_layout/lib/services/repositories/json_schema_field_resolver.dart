@@ -26,9 +26,52 @@ abstract final class JsonSchemaFieldResolver {
     'constValue',
   };
 
+  /// Résout le sous-schéma déballé (`$ref`, `allOf`, `anyOf`/`oneOf`) associé
+  /// à [attributePath] dans [rootSchema], ou retourne `null` si introuvable.
+  static Map<String, Object?>? resolveSchemaNode(
+    Map<String, Object?>? rootSchema,
+    String attributePath,
+  ) {
+    final resolved = _resolveNodeWithRequired(rootSchema, attributePath);
+    return resolved?.node;
+  }
+
+  /// Construit une valeur/ligne par défaut pour les éléments du tableau situé à
+  /// [arrayPath] à partir de [rootSchema], ou retourne `null` si aucun schéma
+  /// d'élément n'est résolu.
+  static Object? buildDefaultArrayItem(
+    Map<String, Object?>? rootSchema,
+    String arrayPath,
+  ) {
+    final arrayNode = resolveSchemaNode(rootSchema, arrayPath);
+    if (arrayNode == null || rootSchema == null) return null;
+
+    Object? rawItemSchema = arrayNode['items'];
+    if (rawItemSchema == null &&
+        arrayNode['prefixItems'] is List &&
+        (arrayNode['prefixItems'] as List).isNotEmpty) {
+      rawItemSchema = (arrayNode['prefixItems'] as List).first;
+    } else if (rawItemSchema is List && rawItemSchema.isNotEmpty) {
+      rawItemSchema = rawItemSchema.first;
+    }
+    final itemNode = _unwrapNode(rawItemSchema, rootSchema, <String>{});
+    if (itemNode == null) return null;
+    return _buildDefaultValue(itemNode, rootSchema, <Object>{});
+  }
+
   /// Résout le [SchemaFieldProfile] associé à [attributePath] dans [rootSchema],
   /// ou retourne `null` si le chemin est introuvable, calculé (`@nom`) ou invalide.
   static SchemaFieldProfile? resolve(
+    Map<String, Object?>? rootSchema,
+    String attributePath,
+  ) {
+    final resolved = _resolveNodeWithRequired(rootSchema, attributePath);
+    if (resolved == null) return null;
+    return _extractProfile(resolved.node, isRequired: resolved.isRequired);
+  }
+
+  static ({Map<String, Object?> node, bool isRequired})?
+  _resolveNodeWithRequired(
     Map<String, Object?>? rootSchema,
     String attributePath,
   ) {
@@ -111,7 +154,118 @@ abstract final class JsonSchemaFieldResolver {
     }
 
     if (current == null) return null;
-    return _extractProfile(current, isRequired: isRequired);
+    return (node: current, isRequired: isRequired);
+  }
+
+  static Object? _buildDefaultValue(
+    Map<String, Object?> node,
+    Map<String, Object?> rootSchema,
+    Set<Object> activeNodes,
+  ) {
+    if (node.containsKey('default')) {
+      return _cloneJsonValue(node['default']);
+    }
+    if (node.containsKey('const')) {
+      return _cloneJsonValue(node['const']);
+    }
+
+    final rawType = _primaryJsonType(node);
+    if (rawType == 'object' || (rawType == null && node['properties'] is Map)) {
+      if (!activeNodes.add(node)) {
+        return <String, dynamic>{};
+      }
+      try {
+        final result = <String, dynamic>{};
+        final props = node['properties'];
+        if (props is Map) {
+          for (final entry in props.entries) {
+            final key = entry.key.toString();
+            final propNode = _unwrapNode(entry.value, rootSchema, <String>{});
+            if (propNode == null) continue;
+            result[key] = _buildDefaultValue(propNode, rootSchema, activeNodes);
+          }
+        }
+        return result;
+      } finally {
+        activeNodes.remove(node);
+      }
+    }
+
+    if (rawType == 'array') {
+      return <Object?>[];
+    }
+
+    if (node['enum'] is List && (node['enum'] as List).isNotEmpty) {
+      return _cloneJsonValue((node['enum'] as List).first);
+    }
+
+    return switch (rawType) {
+      'string' => '',
+      'boolean' => false,
+      'integer' => _defaultIntegerFor(node),
+      'number' => _defaultNumberFor(node),
+      'null' => null,
+      _ => null,
+    };
+  }
+
+  static String? _primaryJsonType(Map<String, Object?> node) {
+    final raw = node['type'];
+    if (raw is String) return raw;
+    if (raw is List) {
+      for (final candidate in raw) {
+        if (candidate is String && candidate != 'null') return candidate;
+      }
+      if (raw.contains('null')) return 'null';
+    }
+    return null;
+  }
+
+  static int _defaultIntegerFor(Map<String, Object?> node) {
+    final min = node['minimum'];
+    final exMin = node['exclusiveMinimum'];
+    var candidate = 0;
+    if (min is num && min.isFinite && min > candidate) {
+      candidate = min.ceil();
+    }
+    if (exMin is num && exMin.isFinite && exMin >= candidate) {
+      candidate = exMin.floor() + 1;
+    }
+    final max = node['maximum'];
+    if (max is num && max.isFinite && candidate > max) {
+      candidate = max.floor();
+    }
+    return candidate;
+  }
+
+  static double _defaultNumberFor(Map<String, Object?> node) {
+    final min = node['minimum'];
+    final exMin = node['exclusiveMinimum'];
+    var candidate = 0.0;
+    if (min is num && min.isFinite && min > candidate) {
+      candidate = min.toDouble();
+    }
+    if (exMin is num && exMin.isFinite && exMin >= candidate) {
+      candidate = exMin.toDouble() + 1.0;
+    }
+    final max = node['maximum'];
+    if (max is num && max.isFinite && candidate > max) {
+      candidate = max.toDouble();
+    }
+    return candidate;
+  }
+
+  static Object? _cloneJsonValue(Object? value) {
+    if (value is Map) {
+      return <String, dynamic>{
+        for (final entry in value.entries)
+          entry.key.toString(): _cloneJsonValue(entry.value),
+      };
+    }
+    if (value is List) {
+      return <Object?>[for (final item in value) _cloneJsonValue(item)];
+    }
+    return value;
   }
 
   static SchemaFieldProfile _extractProfile(

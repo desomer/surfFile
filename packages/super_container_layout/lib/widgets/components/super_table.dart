@@ -39,6 +39,8 @@ import '../../models/super_table_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
+import '../../services/repositories/repository_array_creation.dart';
+import '../appearance/appearance_scope.dart';
 import 'component_common.dart';
 import 'json_collection_common.dart';
 import '../../services/repositories/json_repository_store.dart';
@@ -378,12 +380,23 @@ class _SuperTableState extends State<SuperTable> {
 
   Future<void> _add() {
     final length = _items?.length ?? 0;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final existing = _items;
+    final templatePath = _templatePath;
     return _change((store, binding) async {
+      final initialItem = await RepositoryArrayCreationService.buildNewRow(
+        store: store,
+        repositoryId: binding.repositoryId!,
+        arrayTemplatePath: templatePath ?? binding.path,
+        appearance: appearance,
+        existingItems: existing,
+      );
       final count = await store.appendArrayItem(
         binding.repositoryId!,
         binding.path,
         expectedLength: length,
         componentId: widget.id,
+        initialItem: initialItem,
       );
       if (mounted && _source?.binding == binding) _selectRow(count - 1);
       return count;

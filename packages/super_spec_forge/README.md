@@ -101,6 +101,15 @@ L’assistant applique les mêmes consignes que l’étape Objets métier
 dimensionnement, nommage, `schemaConstraints`, `x-mask`, `x-searchable`,
 `x-database-index`, `x-enumNames`/`x-enumDescriptions` et `examples`. Chaque tour
 reçoit aussi les préférences et règles actives du **Dictionnaire technique & Modèle**.
+Le chat partage aussi le fonctionnement de l’étape Objets métier : un
+sous-ensemble des outils `SpecForgeToolRegistry` (`DomainModelAiAgent.toolNames`,
+appliqués au projet temporaire `DomainModelAiAgent.modelProject`), la sélection
+d’un attribut (bloc « FOCUS COURANT », outil `focus_stage_or_object`), le
+filtre de l’arbre (outil `filter_business_objects`), le glossaire d’entreprise,
+les reprises automatiques, le bouton « Réessayer / Corriger », « + Questions » et
+les traces d’outils. Les deux chats sont assemblés à partir des mêmes briques de
+`widgets/spec_chat_widgets.dart` (`SpecChatMessageTile`, `SpecStreamingBubble`,
+`SpecToolTracesSection`, `SpecChatComposer`).
 Des poignées séparent le chat, l’arbre et l’inspecteur ; le chat se replie sur
 un rail. L’objet et l’historique du chat sont enregistrés dans le domaine sous
 l’ID de l’entrée (sans le contenu des pièces jointes).

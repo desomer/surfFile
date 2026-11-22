@@ -254,6 +254,15 @@ class Appearance {
     return withBehaviors(id, [...current, behavior]);
   }
 
+  /// Remplace le comportement de même identifiant sans déplacer ses voisins.
+  /// Ne recrée pas un comportement supprimé pendant l'édition.
+  Appearance withReplacedBehavior(String componentId, ComponentBehavior value) {
+    final current = behaviorsFor(componentId);
+    final index = current.indexWhere((item) => item.id == value.id);
+    if (index < 0 || current[index] == value) return this;
+    return withBehaviors(componentId, [...current]..[index] = value);
+  }
+
   Appearance withRemovedBehavior(String componentId, String behaviorId) {
     final current = behaviorsFor(componentId);
     return withBehaviors(

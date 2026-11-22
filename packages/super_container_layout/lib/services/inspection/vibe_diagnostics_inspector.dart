@@ -18,12 +18,14 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ai/vibe_app_tools.dart';
 import '../../models/component_behavior.dart';
+import '../../models/component_usage.dart';
 import '../../models/datasources/datasource_config.dart';
 import '../../models/json_syntax.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/registry.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_conditional_config.dart';
+import '../../models/super_indicator_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
@@ -630,6 +632,24 @@ class VibeDiagnosticsInspector {
             inheritedWildcards: inheritedWildcards,
             inTreeScope: inTreeScope,
           );
+        } else if (action is AddArrayItemAction) {
+          checkBinding(
+            ownerId: id,
+            location: 'behaviors[$id].addArrayItem',
+            binding: action.binding,
+            inheritedRepoId: inheritedRepo,
+            inheritedWildcards: inheritedWildcards,
+            inTreeScope: inTreeScope,
+          );
+        } else if (action is CreationDefaultAction && action.binding != null) {
+          checkBinding(
+            ownerId: id,
+            location: 'behaviors[$id].creationDefault',
+            binding: action.binding,
+            inheritedRepoId: inheritedRepo,
+            inheritedWildcards: inheritedWildcards,
+            inTreeScope: inTreeScope,
+          );
         } else if (action is SearchProviderAction && store != null) {
           if (requestedIds.isEmpty || requestedIds.contains(id)) {
             if (store.providers.provider(action.providerId) == null) {
@@ -749,6 +769,125 @@ class VibeDiagnosticsInspector {
             inheritedWildcards: inheritedWildcards,
             inTreeScope: inTreeScope,
           );
+          if ((requestedIds.isEmpty || requestedIds.contains(id)) &&
+              knownRepos.isNotEmpty &&
+              v.mode == SuperValueMode.display &&
+              v.binding == null) {
+            final usage = appearance.usages[id];
+            final isExplicitStatic =
+                usage?.kind == ComponentUsageKind.staticData;
+            final isDynamicUsage =
+                usage?.kind == ComponentUsageKind.dynamicData;
+            if (!isExplicitStatic &&
+                (isDynamicUsage ||
+                    _looksLikeMissingCalculation(
+                      id: id,
+                      label: v.label,
+                      text: v.initialText,
+                      usageKey: usage?.translationKey,
+                    ))) {
+              issues.add(<String, Object?>{
+                'componentId': id,
+                'location': 'components[$id].binding',
+                'kind': 'suspected_missing_calculation',
+                if (v.label.trim().isNotEmpty) 'label': v.label.trim(),
+                if (v.initialText.trim().isNotEmpty)
+                  'initialText': v.initialText.trim(),
+                if (usage != null) 'usageKind': usage.kind.name,
+                'message':
+                    'Ce composant KPI/métrique semble afficher une valeur statique ou placeholder sans liaison ni attribut calculé `@calculs` alors que des repositories existent (${knownRepos.keys.join(', ')}).',
+              });
+            }
+          }
+        case final SuperIndicatorConfig ind:
+          for (final pb in ind.propertyBindings.entries) {
+            checkBinding(
+              ownerId: id,
+              location: 'components[$id].propertyBindings.${pb.key.name}',
+              binding: pb.value,
+              inheritedRepoId: inheritedRepo,
+              inheritedWildcards: inheritedWildcards,
+              inTreeScope: inTreeScope,
+            );
+          }
+          checkBinding(
+            ownerId: id,
+            location: 'components[$id].states.binding',
+            binding: ind.states?.binding,
+            inheritedRepoId: inheritedRepo,
+            inheritedWildcards: inheritedWildcards,
+            inTreeScope: inTreeScope,
+          );
+          if ((requestedIds.isEmpty || requestedIds.contains(id)) &&
+              knownRepos.isNotEmpty &&
+              !ind.propertyBindings.containsKey(SuperIndicatorProperty.label)) {
+            final usage = appearance.usages[id];
+            final isExplicitStatic =
+                usage?.kind == ComponentUsageKind.staticData;
+            final isDynamicUsage =
+                usage?.kind == ComponentUsageKind.dynamicData;
+            if (!isExplicitStatic &&
+                (isDynamicUsage ||
+                    _looksLikeMissingCalculation(
+                      id: id,
+                      label: ind.label,
+                      text: ind.label,
+                      usageKey: usage?.translationKey,
+                    ))) {
+              issues.add(<String, Object?>{
+                'componentId': id,
+                'location': 'components[$id].propertyBindings.label',
+                'kind': 'suspected_missing_calculation',
+                if (ind.label.trim().isNotEmpty) 'label': ind.label.trim(),
+                if (usage != null) 'usageKind': usage.kind.name,
+                'message':
+                    'Cet indicateur semble représenter une métrique calculée sans liaison de données ni `@calculs`.',
+              });
+            }
+          }
+        case final SuperLayoutConfig layout:
+          for (final entry in layout.slotSizeConstraints.entries) {
+            final childId = entry.key;
+            if (requestedIds.isNotEmpty &&
+                !requestedIds.contains(id) &&
+                !requestedIds.contains(childId)) {
+              continue;
+            }
+            final sc = entry.value;
+            if (sc.fitContent == true) continue;
+            final childStyle = appearance.styles[childId];
+            final margin = childStyle?.outerMargin ?? EdgeInsets.zero;
+            final padding =
+                (childStyle?.contentPadding ?? EdgeInsets.zero) +
+                sc.contentPadding;
+            final totalH = margin.horizontal + padding.horizontal;
+            final totalV = margin.vertical + padding.vertical;
+            final fixedW = sc.preferredWidth?.unit == SlotSizeUnit.pixels
+                ? sc.preferredWidth!.value
+                : (sc.maxWidth?.unit == SlotSizeUnit.pixels
+                      ? sc.maxWidth!.value
+                      : null);
+            final fixedH = sc.preferredHeight?.unit == SlotSizeUnit.pixels
+                ? sc.preferredHeight!.value
+                : (sc.maxHeight?.unit == SlotSizeUnit.pixels
+                      ? sc.maxHeight!.value
+                      : null);
+            if ((fixedW != null && fixedW - totalH <= 8.0) ||
+                (fixedH != null && fixedH - totalV <= 8.0)) {
+              issues.add(<String, Object?>{
+                'componentId': childId,
+                'parentId': id,
+                'location': 'components[$id].slotSizeConstraints.$childId',
+                'kind': 'excessive_margin_or_padding_for_fixed_size',
+                'fixedWidth': ?fixedW,
+                'fixedHeight': ?fixedH,
+                'horizontalInsets': totalH,
+                'verticalInsets': totalV,
+                'message':
+                    'Les marges/paddings cumulés (${totalH.round()}×${totalV.round()} px) écrasent ou coupent le contenu du slot "$childId" contraint en taille fixe (${fixedW?.round() ?? 'auto'}×${fixedH?.round() ?? 'auto'} px).',
+              });
+            }
+          }
         case final SuperActionConfig a:
           for (final pb in a.propertyBindings.entries) {
             checkBinding(
@@ -1009,6 +1148,37 @@ class VibeDiagnosticsInspector {
     if (trimmed.isEmpty || trimmed.startsWith('@')) return null;
     final stop = trimmed.indexOf(RegExp(r'[.\[]'));
     return stop < 0 ? trimmed : trimmed.substring(0, stop);
+  }
+
+  static final RegExp _placeholderCalcTextPattern = RegExp(
+    r'^(?:--|—|n/?a|tbd|\?+|\.\.\.|0(?:[.,]0+)?\s*(?:€|\$|%|pts?)?)$',
+    caseSensitive: false,
+  );
+
+  static final RegExp _aggregateKeywordPattern = RegExp(
+    r'\b(?:total|totaux|somme|sum|moyenne|avg|average|nombre|count|nb|solde|balance|taux|rate|ratio|pourcentage|kpi|montant\s+total|chiffre\s+d.affaires?|marge\s+totale|calcul[eé]?)\b',
+    caseSensitive: false,
+  );
+
+  static bool _looksLikeMissingCalculation({
+    required String id,
+    required String label,
+    required String text,
+    required String? usageKey,
+  }) {
+    final trimmedText = text.trim();
+    if (trimmedText.isNotEmpty &&
+        _placeholderCalcTextPattern.hasMatch(trimmedText)) {
+      return true;
+    }
+    final combined = '${id.trim()} ${label.trim()} ${usageKey?.trim() ?? ''}'
+        .trim();
+    if (combined.isEmpty) return false;
+    if (!_aggregateKeywordPattern.hasMatch(combined)) return false;
+    // Évite les faux positifs sur de simples titres de section sans valeur chiffrée.
+    if (trimmedText.isEmpty) return true;
+    return RegExp(r'[0-9%€$]').hasMatch(trimmedText) ||
+        _placeholderCalcTextPattern.hasMatch(trimmedText);
   }
 
   /// 4. Résout les couleurs `ThemeColorRole` (`theme:*`) en `#RRGGBB` et vérifie le contraste WCAG AA.
