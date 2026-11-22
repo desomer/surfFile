@@ -792,8 +792,13 @@ void main() {
       );
       expect(guide, contains('get_component_geometry'));
       expect(guide, contains('capture_screenshot'));
+      expect(guide, contains('validate_or_list_icons'));
       expect(guide, contains('Règles de décision'));
       expect(guide, contains('"verifyRender": true'));
+      expect(
+        VibeChatDialog.defaultSystemInstruction,
+        contains('validate_or_list_icons'),
+      );
     });
 
     test('GeminiRestClient omet responseMimeType dès le 1er appel quand enforceJsonResponse=false', () async {
@@ -1789,8 +1794,70 @@ Studio sombre bleu cobalt haute densité.
           arguments: const {'name': 'Cobalt Studio'},
         ),
         okResult,
+        durationMs: 42,
       );
       expect(trace.summary, 'Cobalt Studio ajouté (activé)');
+      expect(trace.durationMs, 42);
+    });
+
+    test('validate_or_list_icons valide les icônes, suggère des alternatives et liste le catalogue', () async {
+      final inspector = VibeAppInspector(
+        readAppearance: Appearance.new,
+      );
+      final registry = inspector.buildToolRegistry();
+
+      final checkResult = await registry.execute(
+        VibeToolCall(
+          id: 'ico-1',
+          name: 'validate_or_list_icons',
+          arguments: const {
+            'icons': ['save', 'Icons.edit_outlined', 'inexistant_trash_xyz'],
+          },
+        ),
+      );
+      expect(checkResult.isError, isFalse);
+      expect(checkResult.data['allValid'], isFalse);
+      expect(checkResult.data['validCount'], 2);
+      expect(checkResult.data['invalidCount'], 1);
+      expect(checkResult.data['invalidIcons'], ['inexistant_trash_xyz']);
+
+      final validations = checkResult.data['validations'] as List;
+      expect((validations[0] as Map)['canonicalId'], 'save');
+      expect((validations[1] as Map)['canonicalId'], 'edit');
+      expect((validations[2] as Map)['valid'], isFalse);
+      expect((validations[2] as Map)['suggestions'], contains('delete'));
+
+      final trace = VibeToolTrace.fromExecution(
+        VibeToolCall(id: 'ico-1', name: 'validate_or_list_icons'),
+        checkResult,
+      );
+      expect(trace.summary, contains('2/3 valide(s)'));
+      expect(trace.durationMs, isNotNull);
+
+      final listResult = await registry.execute(
+        VibeToolCall(
+          id: 'ico-2',
+          name: 'validate_or_list_icons',
+          arguments: const {'query': 'facture', 'category': 'commerce'},
+        ),
+      );
+      expect(listResult.isError, isFalse);
+      expect(listResult.data['iconIds'], contains('receipt'));
+      expect(listResult.data['icons'], isNotEmpty);
+
+      final allResult = await registry.execute(
+        VibeToolCall(
+          id: 'ico-3',
+          name: 'validate_or_list_icons',
+          arguments: const {'includeAll': true},
+        ),
+      );
+      expect(allResult.isError, isFalse);
+      expect(
+        allResult.data['returnedCount'],
+        allResult.data['totalCatalogCount'],
+      );
+      expect(allResult.data['iconIds'], containsAll(['add', 'save', 'delete']));
     });
   });
 }

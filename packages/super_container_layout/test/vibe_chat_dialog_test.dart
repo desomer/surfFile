@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/ai/vibe_stream_parser.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
@@ -5393,6 +5394,314 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'affiche les traces timées Phase 1 / lots / outils et supporte Retry partiel (checkpoint) et Retry complet (lot & plan)',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var phase1Attempts = 0;
+        var lot1Calls = 0;
+        var lot2Calls = 0;
+        final lot2Prompts = <String>[];
+        var lot2ShouldFail = true;
+        var lot2Mode = 'partial';
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialPlanMode: true,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) async* {
+                          if (prompt.contains('PHASE 1 — PLANIFICATION')) {
+                            phase1Attempts++;
+                            if (phase1Attempts == 1) {
+                              throw const GeminiApiException(
+                                statusCode: 503,
+                                message: 'Service unavailable',
+                              );
+                            }
+                            final planPayload = jsonEncode({
+                              'message': 'Plan prêt en 2 lots.',
+                              'plan': {
+                                'title': 'Page CRM',
+                                'lots': [
+                                  {'id': 'lot-1', 'title': 'En-tête'},
+                                  {'id': 'lot-2', 'title': 'Corps'},
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                            yield GeminiStreamEvent(
+                              deltaText: planPayload,
+                              accumulatedText: planPayload,
+                              isDone: true,
+                              usedContextCache: true,
+                            );
+                            return;
+                          }
+
+                          if (prompt.contains('LOT 1/2')) {
+                            lot1Calls++;
+                            final lot1Payload = jsonEncode({
+                              'message': 'Lot 1 ok',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'slotLabels': {'hdr-title': 'Titre'},
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'hdr-title',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'hdr-title': {
+                                    'type': 'value',
+                                    'text': 'CRM v$lot1Calls',
+                                  },
+                                },
+                                'usages': {
+                                  'hdr-title': {
+                                    'kind': 'explanation',
+                                    'translationKey': 'hdrTitle',
+                                  },
+                                },
+                              },
+                            });
+                            yield GeminiStreamEvent(
+                              deltaText: lot1Payload,
+                              accumulatedText: lot1Payload,
+                              isDone: true,
+                              usedContextCache: true,
+                            );
+                            return;
+                          }
+
+                          lot2Calls++;
+                          lot2Prompts.add(prompt);
+                          if (lot2ShouldFail) {
+                            // Simule une coupure réseau en plein streaming SSE après avoir
+                            // déjà reçu un composant valide (lot2-ok) mais avant lot2-bad.
+                            const partialChunk =
+                                '{"message":"Lot 2 partiel","vibe":{"components":{'
+                                '"mainLayout":{"type":"layout","slotLabels":{"hdr-title":"Titre","lot2-ok":"OK","lot2-bad":"KO"},'
+                                '"placements":{"center":[{"id":"hdr-title","type":"registry:Value"},'
+                                '{"id":"lot2-ok","type":"registry:Value"},'
+                                '{"id":"lot2-bad","type":"registry:Value"}]}},'
+                                '"lot2-ok":{"type":"value","text":"Sauvegardé"},';
+                            yield const GeminiStreamEvent(
+                              deltaText: partialChunk,
+                              accumulatedText: partialChunk,
+                              isDone: false,
+                              usedContextCache: true,
+                            );
+                            throw const GeminiApiException(
+                              statusCode: 503,
+                              message: 'Stream interrupted',
+                            );
+                          }
+
+                          final completionPayload = lot2Mode == 'partial'
+                              ? jsonEncode({
+                                  'message': 'Delta lot 2 ok',
+                                  'vibe': {
+                                    'components': {
+                                      'lot2-bad': {
+                                        'type': 'value',
+                                        'text': 'Complété',
+                                      },
+                                    },
+                                    'usages': {
+                                      'lot2-ok': {
+                                        'kind': 'explanation',
+                                        'translationKey': 'lot2Ok',
+                                      },
+                                      'lot2-bad': {
+                                        'kind': 'explanation',
+                                        'translationKey': 'lot2Bad',
+                                      },
+                                    },
+                                  },
+                                })
+                              : jsonEncode({
+                                  'message': 'Lot 2 complet ok',
+                                  'vibe': {
+                                    'components': {
+                                      'mainLayout': {
+                                        'type': 'layout',
+                                        'slotLabels': {
+                                          'hdr-title': 'Titre',
+                                          'lot2-full': 'Complet',
+                                        },
+                                        'placements': {
+                                          'center': [
+                                            {
+                                              'id': 'hdr-title',
+                                              'type': 'registry:Value',
+                                            },
+                                            {
+                                              'id': 'lot2-full',
+                                              'type': 'registry:Value',
+                                            },
+                                          ],
+                                        },
+                                      },
+                                      'lot2-full': {
+                                        'type': 'value',
+                                        'text': 'Régénéré complet',
+                                      },
+                                    },
+                                    'usages': {
+                                      'lot2-full': {
+                                        'kind': 'explanation',
+                                        'translationKey': 'lot2Full',
+                                      },
+                                    },
+                                  },
+                                });
+                          yield GeminiStreamEvent(
+                            deltaText: completionPayload,
+                            accumulatedText: completionPayload,
+                            isDone: true,
+                            usedContextCache: true,
+                          );
+                        },
+                    generate: (_) async => '',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis le CRM',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        // Phase 1 a récupéré automatiquement après la 503 et affiche ses traces timées.
+        expect(phase1Attempts, 2);
+        expect(
+          find.byKey(const ValueKey('vibe-plan-duration-badge')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-planning-traces')),
+          findsOneWidget,
+        );
+
+        // Démarre l'exécution : Lot 1 passe, Lot 2 échoue avec checkpoint partiel préservé.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        expect(lot1Calls, 1);
+        expect(lot2Calls, 4);
+        // L'écran reste propre sur Lot 1 en pause (lot2-ok pas encore commité).
+        expect(
+          appearance.value.valueComponent('hdr-title').initialText,
+          'CRM v1',
+        );
+        expect(appearance.value.components.containsKey('lot2-ok'), isFalse);
+
+        // Traces timées & badge checkpoint partiel + boutons Retry partiel / complet.
+        expect(
+          find.byKey(const ValueKey('vibe-plan-lot-duration-lot-1')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-lot-traces-lot-2')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-traces-lot-2')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('checkpoint partiel'),
+          findsAtLeastNWidgets(1),
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-lot-checkpoint-lot-2')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-retry-lot-partial')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-retry-lot')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-retry-all')),
+          findsOneWidget,
+        );
+
+        // 1. Retry partiel du lot 2 : reprend depuis le checkpoint sans régénérer lot2-ok.
+        lot2ShouldFail = false;
+        lot2Mode = 'partial';
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-retry-lot-partial')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(lot2Prompts.last, contains('MODE DELTA INCRÉMENTAL'));
+        expect(lot2Prompts.last, contains('lot2-ok'));
+        expect(
+          appearance.value.valueComponent('lot2-ok').initialText,
+          'Sauvegardé',
+        );
+        expect(
+          appearance.value.valueComponent('lot2-bad').initialText,
+          'Complété',
+        );
+        expect(find.text('Plan terminé : 2/2 lots appliqués.'), findsOneWidget);
+
+        // 2. Retry complet du plan après complétion : ré-exécute Lot 1 puis Lot 2 depuis zéro.
+        lot2Mode = 'full';
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-retry-all')));
+        await tester.pumpAndSettle();
+
+        expect(lot1Calls, 2);
+        expect(
+          appearance.value.valueComponent('hdr-title').initialText,
+          'CRM v2',
+        );
+        expect(appearance.value.components.containsKey('lot2-ok'), isFalse);
+        expect(
+          appearance.value.valueComponent('lot2-full').initialText,
+          'Régénéré complet',
+        );
+      },
+    );
   });
 
   group('Layout styles rejection and delta recovery', () {
@@ -6258,6 +6567,895 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Réponse IA prête'), findsOneWidget);
+      },
+    );
+
+    test('VibeDeltaRecovery.salvageFailedAttempt isolates invalid pageCatalog entries and keeps valid pages', () {
+      final router = EditorPageRouter(
+        baseConfig: RoutingConfig(
+          routes: [
+            GoRoute(path: '/', builder: (_, _) => const SizedBox.shrink()),
+          ],
+        ),
+      );
+      addTearDown(router.dispose);
+
+      final base = Appearance();
+      final outcome = VibeDeltaRecovery.salvageFailedAttempt(
+        initialAppearance: base,
+        workingAppearance: base,
+        initialPageIds: const {},
+        instantiatedIds: const {},
+        hasRegistry: false,
+        scope: null,
+        codec: const AppearanceCodec(),
+        validateAppearance: (a) => router.validate(a.pageCatalog),
+        effectiveVibePatch: {
+          'pageCatalog': {
+            'pages': [
+              {'id': 'page-home', 'name': 'Accueil', 'path': '/'},
+              {'id': 'page-clients', 'name': 'Clients', 'path': '/clients'},
+            ],
+            'homePageId': 'page-home',
+          },
+          'components': {
+            'page-home': {
+              'type': 'scaffold',
+              'placements': {
+                'body': [
+                  {'id': 'home-title', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'home-title': {'type': 'value', 'text': 'Accueil'},
+            'page-clients': {
+              'type': 'scaffold',
+              'placements': {
+                'body': [
+                  {'id': 'clients-title', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'clients-title': {'type': 'value', 'text': 'Clients'},
+          },
+        },
+        rejectedRepoEntries: const [],
+        appliedRepoKeys: const {},
+        wasTruncated: false,
+      );
+
+      expect(outcome.hasCheckpoint, isTrue);
+      expect(outcome.checkpointAppearance.pageCatalog.pages.map((p) => p.id), [
+        'page-clients',
+      ]);
+      expect(outcome.checkpointAppearance.pageCatalog.homePageId, isNull);
+      expect(
+        outcome.checkpointAppearance
+            .valueComponent('clients-title')
+            .initialText,
+        'Clients',
+      );
+      expect(outcome.rejectedEntries, hasLength(1));
+      expect(outcome.rejectedEntries.single.section, 'pageCatalog');
+      expect(outcome.rejectedEntries.single.key, 'page-home');
+      expect(outcome.rejectedEntries.single.message, contains('page-home'));
+
+      final retryPrompt = VibeDeltaRecovery.buildDeltaRetryPrompt(
+        refreshedTurnPrompt: 'ÉTAT ACTUEL',
+        priorCauses: const ['Chemin invalide'],
+        salvage: outcome,
+        pendingRequiredComponentIds: outcome.pendingRequiredComponentIds,
+      );
+      expect(retryPrompt, contains('pageCatalog["page-home"]'));
+      expect(retryPrompt, contains('Rappel sur "pageCatalog"'));
+      expect(retryPrompt, contains('"root" / "mainLayout"'));
+    });
+
+    testWidgets(
+      'Plan mode passes coded routes and recovers when Lot 1 emits pageCatalog with "/"',
+      (tester) async {
+        final router = EditorPageRouter(
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(path: '/', builder: (_, _) => const SizedBox.shrink()),
+            ],
+          ),
+        );
+        addTearDown(router.dispose);
+
+        final appearance = ValueNotifier(
+          Appearance(components: {'mainLayout': const SuperLayoutConfig()}),
+        );
+        addTearDown(appearance.dispose);
+
+        final prompts = <String>[];
+        var callIndex = 0;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    pageRouting: router,
+                    validateAppearance: (a) => router.validate(a.pageCatalog),
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    initialPlanMode: true,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (prompt) async {
+                      prompts.add(prompt);
+                      callIndex++;
+                      if (callIndex == 1) {
+                        return jsonEncode({
+                          'message': 'Voici le plan.',
+                          'plan': {
+                            'title': 'Application CRM',
+                            'lots': [
+                              {
+                                'id': 'lot-1',
+                                'title': 'Shell et accueil',
+                                'description': 'Configurer la page accueil.',
+                              },
+                            ],
+                          },
+                          'vibe': null,
+                        });
+                      }
+                      if (callIndex == 2) {
+                        return jsonEncode({
+                          'message': 'Lot 1 généré.',
+                          'vibe': {
+                            'pageCatalog': {
+                              'pages': [
+                                {
+                                  'id': 'page-home',
+                                  'name': 'Accueil',
+                                  'path': '/',
+                                },
+                              ],
+                              'homePageId': 'page-home',
+                            },
+                            'components': {
+                              'page-home': {
+                                'type': 'scaffold',
+                                'placements': {
+                                  'body': [
+                                    {
+                                      'id': 'home-title',
+                                      'type': 'registry:Value',
+                                    },
+                                  ],
+                                },
+                              },
+                              'home-title': {
+                                'type': 'value',
+                                'text': 'Bienvenue',
+                              },
+                            },
+                          },
+                        });
+                      }
+                      return jsonEncode({
+                        'message': 'Lot 1 corrigé sans page "/" redondante.',
+                        'vibe': {
+                          'components': {
+                            'mainLayout': {
+                              'type': 'layout',
+                              'slotLabels': {'home-title': 'Titre accueil'},
+                              'placements': {
+                                'center': [
+                                  {
+                                    'id': 'home-title',
+                                    'type': 'registry:Value',
+                                  },
+                                ],
+                              },
+                            },
+                            'home-title': {
+                              'type': 'value',
+                              'text': 'Bienvenue',
+                            },
+                          },
+                          'usages': {
+                            'home-title': {
+                              'kind': 'explanation',
+                              'translationKey': 'welcomeTitle',
+                            },
+                          },
+                        },
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Crée un CRM.',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(callIndex, 1);
+        expect(prompts[0], contains('Routes codées existantes'));
+        expect(prompts[0], contains('["/"]'));
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        expect(callIndex, 3);
+        expect(prompts[1], contains('Routes codées existantes'));
+        expect(prompts[2], contains('page-home'));
+        expect(prompts[2], contains('root'));
+        expect(appearance.value.pageCatalog.pages, isEmpty);
+        expect(
+          appearance.value.valueComponent('home-title').initialText,
+          'Bienvenue',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'émet des traces console détaillées lors d’un appel IA de patch de composant (scope, preview, outils, diff et post-rendu)',
+      (tester) async {
+        final logs = <String>[];
+        final previousDebugPrint = debugPrint;
+        debugPrint = (String? message, {int? wrapWidth}) {
+          if (message != null) logs.add(message);
+        };
+        addTearDown(() => debugPrint = previousDebugPrint);
+
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(
+          Appearance(
+            components: {
+              'mainLayout': const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: ['card-title'],
+                },
+                slotTypes: {'card-title': 'registry:Value'},
+              ),
+              'card-title': const SuperValueConfig(initialText: 'Ancien titre'),
+            },
+          ),
+        );
+        registry.bindAppearance(appearance);
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final customTools = VibeAppToolRegistry([
+          VibeRegisteredTool(
+            declaration: const VibeToolDeclaration(
+              name: 'validate_or_list_icons',
+              description: 'Valide les icônes',
+              parametersSchema: {'type': 'object', 'properties': {}},
+            ),
+            handler: (call) async => VibeToolResult(
+              callId: call.id,
+              name: call.name,
+              data: const {'ok': true, 'validCount': 1, 'invalidCount': 0},
+            ),
+          ),
+        ]);
+
+        var streamCall = 0;
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    toolRegistry: customTools,
+                    scope: const VibeChatScope(
+                      componentId: 'card-title',
+                      label: 'Titre carte',
+                    ),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => '',
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) async* {
+                          streamCall++;
+                          if (streamCall == 1) {
+                            final toolReq = jsonEncode({
+                              'message': 'Vérification icône…',
+                              'toolCalls': [
+                                {
+                                  'id': 't1',
+                                  'name': 'validate_or_list_icons',
+                                  'arguments': {
+                                    'icons': ['check'],
+                                  },
+                                },
+                              ],
+                              'vibe': null,
+                            });
+                            yield GeminiStreamEvent(
+                              deltaText: toolReq,
+                              accumulatedText: toolReq,
+                              isDone: true,
+                              usedContextCache: true,
+                            );
+                            return;
+                          }
+                          if (streamCall == 2) {
+                            const chunk1 =
+                                '{"message":"Titre mis à jour.","verifyRender":true,"vibe":{"components":{"card-title":{"type":"value","text":"Nouveau titre"}},';
+                            const chunk2 =
+                                '"styles":{"card-title":{"color":"#EEF2FF"}}}}';
+                            yield const GeminiStreamEvent(
+                              deltaText: chunk1,
+                              accumulatedText: chunk1,
+                              isDone: false,
+                              usedContextCache: true,
+                            );
+                            await Future<void>.delayed(
+                              const Duration(milliseconds: 20),
+                            );
+                            yield const GeminiStreamEvent(
+                              deltaText: chunk2,
+                              accumulatedText: '$chunk1$chunk2',
+                              isDone: true,
+                              usedContextCache: true,
+                            );
+                            return;
+                          }
+                          final verifyResp = jsonEncode({
+                            'message': 'Rendu vérifié.',
+                            'vibe': null,
+                          });
+                          yield GeminiStreamEvent(
+                            deltaText: verifyResp,
+                            accumulatedText: verifyResp,
+                            isDone: true,
+                            usedContextCache: true,
+                          );
+                        },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Change le titre en Nouveau titre',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await pumpRealAsync(
+          tester,
+          until: () => logs.any((l) => l.contains('Apparence mise à jour')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          appearance.value.valueComponent('card-title').initialText,
+          'Nouveau titre',
+        );
+        final joined = logs.join('\n');
+        expect(joined, contains('scope: "Titre carte" [card-title]'));
+        expect(joined, contains('[Outil] validate_or_list_icons'));
+        expect(joined, contains('[Vibe IA][Preview] Palier #'));
+        expect(joined, contains('[Vibe IA][Tour] Patch à appliquer'));
+        expect(joined, contains('Diff composants appliqué'));
+        expect(joined, contains('~comp(1): [card-title]'));
+        expect(joined, contains('styles(1): [card-title]'));
+        expect(
+          joined,
+          contains('[PostVerify] Démarrage passe de vérification'),
+        );
+        expect(joined, contains('[PostVerify] Rendu conforme'));
+      },
+    );
+
+    testWidgets(
+      'annule un appel IA streaming en cours depuis le bouton de saisie, rollback la prévisualisation et permet de réessayer',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final completionController = VibeTaskCompletionController();
+        addTearDown(completionController.dispose);
+        final soundPlayer = _RecordingVibeSoundPlayer();
+
+        var streamCallCount = 0;
+        var firstStreamCancelled = false;
+        late StreamController<GeminiStreamEvent> firstStreamController;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    completionController: completionController,
+                    soundPlayer: soundPlayer,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => fail('Should use streamGenerate'),
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) {
+                          streamCallCount++;
+                          if (streamCallCount == 1) {
+                            firstStreamController =
+                                StreamController<GeminiStreamEvent>(
+                                  onCancel: () {
+                                    firstStreamCancelled = true;
+                                  },
+                                );
+                            return firstStreamController.stream;
+                          }
+                          final okPayload = jsonEncode({
+                            'message': 'Titre appliqué après reprise.',
+                            'vibe': {
+                              'components': {
+                                'mainLayout': {
+                                  'type': 'layout',
+                                  'placements': {
+                                    'center': [
+                                      {
+                                        'id': 'retry-title',
+                                        'type': 'registry:Value',
+                                      },
+                                    ],
+                                  },
+                                },
+                                'retry-title': {
+                                  'type': 'value',
+                                  'text': 'Bonjour',
+                                },
+                              },
+                            },
+                          });
+                          return Stream<GeminiStreamEvent>.value(
+                            GeminiStreamEvent(
+                              deltaText: okPayload,
+                              accumulatedText: okPayload,
+                              isDone: true,
+                              usedContextCache: false,
+                            ),
+                          );
+                        },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Ajoute un titre Bonjour',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pump();
+
+        expect(find.byKey(const ValueKey('vibe-chat-cancel')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-chat-streaming-cancel')),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('vibe-chat-send')), findsNothing);
+
+        // Envoie un aperçu partiel en direct qui devra être annulé (rollback).
+        const partialChunk =
+            '{"message":"Création en cours…","vibe":{"accent":"#EF4444","components":{"mainLayout":{"type":"layout","placements":{"center":[{"id":"temp-title","type":"registry:Value"}]}},"temp-title":{"type":"value","text":"Temporaire"}},';
+        firstStreamController.add(
+          const GeminiStreamEvent(
+            deltaText: partialChunk,
+            accumulatedText: partialChunk,
+            isDone: false,
+            usedContextCache: false,
+          ),
+        );
+        await tester.pump();
+        expect(appearance.value.components.containsKey('temp-title'), isTrue);
+
+        // Clique sur le bouton d'annulation dans la barre de saisie.
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-cancel')));
+        await tester.pumpAndSettle();
+
+        expect(firstStreamCancelled, isTrue);
+        expect(appearance.value.components.containsKey('temp-title'), isFalse);
+        expect(find.byKey(const ValueKey('vibe-chat-send')), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-chat-cancel')), findsNothing);
+        expect(find.text('Appel IA annulé.'), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-message-retry')), findsOneWidget);
+        expect(soundPlayer.outcomes, isEmpty);
+
+        // Relance le tour annulé via « Réessayer ».
+        await tester.tap(find.byKey(const ValueKey('vibe-message-retry')));
+        await tester.pumpAndSettle();
+
+        expect(streamCallCount, 2);
+        expect(
+          appearance.value.valueComponent('retry-title').initialText,
+          'Bonjour',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'annule un appel IA non-streaming en attente depuis la bulle ou la touche Échap sans attendre la réponse tardive',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        final pendingResponse = Completer<String>();
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) => pendingResponse.future,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Appel bloqué',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pump();
+
+        expect(
+          find.byKey(const ValueKey('vibe-chat-streaming-cancel')),
+          findsOneWidget,
+        );
+
+        // Annulation via le bouton de la bulle de streaming.
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-chat-streaming-cancel')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Appel IA annulé.'), findsOneWidget);
+        expect(find.byKey(const ValueKey('vibe-chat-send')), findsOneWidget);
+
+        // Une réponse tardive ne doit ni muter l'apparence ni provoquer d'erreur.
+        pendingResponse.complete(
+          jsonEncode({
+            'message': 'Réponse tardive',
+            'vibe': {'accent': '#EF4444'},
+          }),
+        );
+        await tester.pumpAndSettle();
+        expect(appearance.value.accent, isNot(const Color(0xFFEF4444)));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'annule un lot en cours d’un plan via le bouton du chat, conserve les lots terminés et permet la reprise partielle',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var callIndex = 0;
+        var lot2Cancelled = false;
+        late StreamController<GeminiStreamEvent> lot2Controller;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialPlanMode: true,
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => fail('Should use streamGenerate'),
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) {
+                          callIndex++;
+                          if (callIndex == 1) {
+                            final planJson = jsonEncode({
+                              'message': 'Plan prêt.',
+                              'plan': {
+                                'title': 'Plan 2 lots',
+                                'lots': [
+                                  {
+                                    'id': 'lot-1',
+                                    'title': 'Lot 1',
+                                    'description': 'Ajoute lot1-val',
+                                  },
+                                  {
+                                    'id': 'lot-2',
+                                    'title': 'Lot 2',
+                                    'description': 'Ajoute lot2-val',
+                                  },
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                            return Stream<GeminiStreamEvent>.value(
+                              GeminiStreamEvent(
+                                deltaText: planJson,
+                                accumulatedText: planJson,
+                                isDone: true,
+                                usedContextCache: false,
+                              ),
+                            );
+                          }
+                          if (callIndex == 2) {
+                            final lot1Json = jsonEncode({
+                              'message': 'Lot 1 appliqué.',
+                              'vibe': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'lot1-val',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'lot1-val': {
+                                    'type': 'value',
+                                    'text': 'Lot 1 OK',
+                                  },
+                                },
+                              },
+                            });
+                            return Stream<GeminiStreamEvent>.value(
+                              GeminiStreamEvent(
+                                deltaText: lot1Json,
+                                accumulatedText: lot1Json,
+                                isDone: true,
+                                usedContextCache: false,
+                              ),
+                            );
+                          }
+                          if (callIndex == 3) {
+                            lot2Controller =
+                                StreamController<GeminiStreamEvent>(
+                                  onCancel: () {
+                                    lot2Cancelled = true;
+                                  },
+                                );
+                            return lot2Controller.stream;
+                          }
+                          final lot2Json = jsonEncode({
+                            'message': 'Lot 2 repris et appliqué.',
+                            'vibe': {
+                              'components': {
+                                'mainLayout': {
+                                  'type': 'layout',
+                                  'placements': {
+                                    'center': [
+                                      {
+                                        'id': 'lot1-val',
+                                        'type': 'registry:Value',
+                                      },
+                                      {
+                                        'id': 'lot2-val',
+                                        'type': 'registry:Value',
+                                      },
+                                    ],
+                                  },
+                                },
+                                'lot2-val': {
+                                  'type': 'value',
+                                  'text': 'Lot 2 OK',
+                                },
+                              },
+                            },
+                          });
+                          return Stream<GeminiStreamEvent>.value(
+                            GeminiStreamEvent(
+                              deltaText: lot2Json,
+                              accumulatedText: lot2Json,
+                              isDone: true,
+                              usedContextCache: false,
+                            ),
+                          );
+                        },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis un écran en 2 lots',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pump();
+        await tester.pump();
+
+        // Lot 1 est terminé et Lot 2 attend le flux IA.
+        expect(
+          appearance.value.valueComponent('lot1-val').initialText,
+          'Lot 1 OK',
+        );
+        expect(find.byKey(const ValueKey('vibe-chat-cancel')), findsOneWidget);
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-cancel')));
+        await tester.pumpAndSettle();
+
+        expect(lot2Cancelled, isTrue);
+        expect(
+          appearance.value.valueComponent('lot1-val').initialText,
+          'Lot 1 OK',
+        );
+        expect(appearance.value.components.containsKey('lot2-val'), isFalse);
+        expect(
+          find.text('Exécution du plan arrêtée (1/2 lots appliqués).'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('vibe-plan-resume-partial')),
+          findsOneWidget,
+        );
+
+        // Reprendre (partiel) termine uniquement le Lot 2.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-resume-partial')));
+        await tester.pumpAndSettle();
+
+        expect(
+          appearance.value.valueComponent('lot2-val').initialText,
+          'Lot 2 OK',
+        );
+        expect(
+          find.text('Plan terminé : 2/2 lots appliqués.'),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'fermer le chat pendant un appel IA en cours annule le flux sans erreur de ValueNotifier disposé',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var streamCancelled = false;
+        final controller = StreamController<GeminiStreamEvent>(
+          onCancel: () {
+            streamCancelled = true;
+          },
+        );
+
+        var closed = false;
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: StatefulBuilder(
+                    builder: (context, setHostState) => closed
+                        ? const SizedBox.shrink()
+                        : VibeChatDialog(
+                            controller: appearance,
+                            registry: registry,
+                            codec: const AppearanceCodec(),
+                            initialQuestioningLevel: VibeQuestioningLevel.none,
+                            onClose: () => setHostState(() => closed = true),
+                            onDrag: (_) {},
+                            generate: (_) async =>
+                                fail('Should use streamGenerate'),
+                            streamGenerate:
+                                (
+                                  prompt, {
+                                  systemInstruction,
+                                  staticGuide,
+                                  attachments = const [],
+                                  speedMode = VibeAiSpeedMode.fast,
+                                }) => controller.stream,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Génère un écran',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pump();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-close')));
+        await tester.pumpAndSettle();
+
+        expect(closed, isTrue);
+        expect(streamCancelled, isTrue);
+        expect(tester.takeException(), isNull);
       },
     );
   });

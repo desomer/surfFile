@@ -95,6 +95,10 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   /// Indique si la page [pageId] a déjà été chargée depuis le disque (ou créée en session).
   bool isPageLoaded(String pageId) => _loadedPageIds.contains(pageId);
 
+  /// Indique si [pageId] appartient au catalogue déjà persisté sur disque.
+  bool isKnownCatalogPage(String pageId) =>
+      _knownCatalogPageIds.contains(pageId.trim());
+
   /// Retourne le nom de fichier sûr correspondant à [pageId] dans [pagesDirectory].
   static String pageFileNameFor(String pageId) {
     final trimmed = pageId.trim();

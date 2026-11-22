@@ -190,6 +190,19 @@ void main() {
         );
       }
       expect(
+        () => controller.routeFor(page('home-page', '/')),
+        throwsA(
+          isA<FormatException>()
+              .having(
+                (e) => e.message,
+                'message',
+                contains('Chemin absolu requis, différent de /'),
+              )
+              .having((e) => e.message, 'message', contains('home-page'))
+              .having((e) => e.message, 'message', contains('"/"')),
+        ),
+      );
+      expect(
         () => controller.validate(
           EditorPageCatalog(
             pages: [

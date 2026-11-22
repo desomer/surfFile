@@ -38,8 +38,11 @@ class EditorCodedRoute {
 }
 
 /// Fonction enveloppant une page construite par [EditorPageRouter] (ex. surface de fond et barre d'outils flottante).
-typedef EditorPageWrapper =
-    Widget Function(BuildContext context, GoRouterState state, Widget child);
+typedef EditorPageWrapper = Widget Function(
+  BuildContext context,
+  GoRouterState state,
+  Widget child,
+);
 
 /// Opt-in routing for editor-created pages. The application owns this object.
 class EditorPageRouter {
@@ -115,8 +118,9 @@ class EditorPageRouter {
           page.path == '/' ||
           page.path.endsWith('/') ||
           _hasInvalidLiteral(page.path)) {
-        throw const FormatException(
-          'Chemin absolu requis, différent de /, sans espace ni fragment.',
+        throw FormatException(
+          'Chemin absolu requis, différent de /, sans espace ni fragment '
+          '(page "${page.id}" : "${page.path}").',
         );
       }
       _validatePathConstraints(page.path);
@@ -136,25 +140,12 @@ class EditorPageRouter {
                     pageConfig: ScaffoldPageConfig(),
                   ),
                 );
-                return switch (page.pageType) {
-                  EditorPageType.dialog => _EditorDialogPage(
-                    key: state.pageKey,
-                    width: page.modalWidth,
-                    height: page.modalHeight,
-                    child: child,
-                  ),
-                  EditorPageType.bottomSheet => _EditorBottomSheetPage(
-                    key: state.pageKey,
-                    height: page.modalHeight,
-                    child: child,
-                  ),
-                  EditorPageType.sideSheet => _EditorSideSheetPage(
-                    key: state.pageKey,
-                    width: page.modalWidth,
-                    child: child,
-                  ),
-                  _ => MaterialPage<void>(key: state.pageKey, child: child),
-                };
+                return buildEditorModalPage(
+                      page: page,
+                      key: state.pageKey,
+                      child: child,
+                    ) ??
+                    MaterialPage<void>(key: state.pageKey, child: child);
               }
             : null,
         builder: page.pageType.isModal
@@ -449,7 +440,7 @@ class EditorPageRouter {
   }
 
   void validate(EditorPageCatalog catalog) {
-    if (identical(catalog, _validatedCatalog)) return;
+    if (catalog == _validatedCatalog) return;
     final coded = _codedRoutes();
     final accepted = <GoRoute>[];
     final reservedNames = <String>{};
@@ -483,7 +474,72 @@ class EditorPageRouter {
         locationFor(page, page.defaultParameters);
       }
     }
+    if (catalog.homePageId case final homeId?) {
+      final homePage = catalog.pages
+          .where((page) => page.id == homeId)
+          .firstOrNull;
+      if (homePage != null && homePage.pageType.isModal) {
+        throw FormatException(
+          'La page « ${homePage.name} » (${homePage.pageType.label}) est modale '
+          'et ne peut pas être définie comme page d’accueil.',
+        );
+      }
+    }
     _validatedCatalog = catalog;
+  }
+
+  /// URI de la route actuellement affichée (y compris les routes empilées via `push`).
+  Uri get currentUri {
+    final config = router.routerDelegate.currentConfiguration;
+    final providerUri = router.routeInformationProvider.value.uri;
+    if (config.matches.isNotEmpty) {
+      final last = config.matches.last;
+      if (last is ImperativeRouteMatch && config.uri == providerUri) {
+        return last.matches.uri;
+      }
+    }
+    return providerUri;
+  }
+
+  /// Navigue vers [location] en empilant via `push` les pages modales
+  /// (`dialog`, `bottomSheet`, `sideSheet`) par-dessus une route non modale,
+  /// ou via `go` pour les routes pleines pages.
+  void openLocation(String location) {
+    final targetUri = Uri.parse(location);
+    final targetPage = pageAt(targetUri);
+    if (targetPage == null || !targetPage.pageType.isModal) {
+      while (router.canPop() &&
+          (pageAt(currentUri)?.pageType.isModal ?? false)) {
+        router.pop();
+      }
+      router.go(location);
+      return;
+    }
+    final currentPage = pageAt(currentUri);
+    if (currentPage != null && currentPage.pageType.isModal) {
+      if (router.canPop()) {
+        router.pop();
+      } else {
+        router.go(_home(_catalog));
+      }
+    }
+    if (router.routerDelegate.currentConfiguration.matches.isEmpty) {
+      router.go(_home(_catalog));
+    }
+    unawaited(router.push<Object?>(location));
+  }
+
+  /// Restaure la navigation vers [previousLocation] en dépilant d'abord les
+  /// modales poussées en aperçu avant de recourir à [openLocation] si besoin.
+  void restoreLocation(String previousLocation) {
+    while (router.canPop() &&
+        currentUri.toString() != previousLocation &&
+        (pageAt(currentUri)?.pageType.isModal ?? false)) {
+      router.pop();
+    }
+    if (currentUri.toString() != previousLocation) {
+      openLocation(previousLocation);
+    }
   }
 
   EditorPageConfig? pageAt(Uri uri, {EditorPageCatalog? catalog}) {
@@ -505,10 +561,8 @@ class EditorPageRouter {
   /// Returns a visible explanation when the current destination was removed.
   String? synchronize(EditorPageCatalog catalog) {
     validate(catalog);
-    if (_initialized && identical(catalog, _catalog)) return null;
-    final current = _initialized
-        ? router.routeInformationProvider.value.uri
-        : _initialUri;
+    if (_initialized && catalog == _catalog) return null;
+    final current = _initialized ? currentUri : _initialUri;
     final oldPage = pageAt(current);
     String? destination;
     String? notice;
@@ -672,10 +726,7 @@ class _OnDemandEditorPageState extends State<_OnDemandEditorPage> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _retry,
-                  child: const Text('Réessayer'),
-                ),
+                FilledButton(onPressed: _retry, child: const Text('Réessayer')),
               ],
             ),
           ),
@@ -692,30 +743,73 @@ class _OnDemandEditorPageState extends State<_OnDemandEditorPage> {
   }
 }
 
-Widget _wrapWithModalClose(BuildContext context, Widget child) => Stack(
-  children: [
-    Positioned.fill(child: child),
-    Positioned(
-      top: 8,
-      right: 8,
-      child: Material(
-        type: MaterialType.transparency,
-        child: IconButton(
-          key: const ValueKey('editor-modal-page-close'),
-          tooltip: 'Fermer',
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              GoRouter.maybeOf(context)?.go('/');
-            }
-          },
-          icon: const Icon(Icons.close, size: 20),
+/// Construit une [Page] adaptée au type modal de [page] (`dialog`, `bottomSheet`, `sideSheet`).
+///
+/// Retourne `null` pour les pages non modales (`standard`, `a4Document`).
+Page<void>? buildEditorModalPage({
+  required EditorPageConfig page,
+  required LocalKey key,
+  required Widget child,
+}) => switch (page.pageType) {
+  EditorPageType.dialog => _EditorDialogPage(
+    key: key,
+    width: page.modalWidth,
+    height: page.modalHeight,
+    child: child,
+  ),
+  EditorPageType.bottomSheet => _EditorBottomSheetPage(
+    key: key,
+    height: page.modalHeight,
+    child: child,
+  ),
+  EditorPageType.sideSheet => _EditorSideSheetPage(
+    key: key,
+    width: page.modalWidth,
+    child: child,
+  ),
+  EditorPageType.standard || EditorPageType.a4Document => null,
+};
+
+Widget _wrapWithModalClose(BuildContext context, Widget child) {
+  final scheme = Theme.of(context).colorScheme;
+  return Stack(
+    children: [
+      Positioned.fill(child: child),
+      Positioned(
+        top: 8,
+        right: 8,
+        child: Material(
+          type: MaterialType.transparency,
+          child: SizedBox.square(
+            dimension: 32,
+            child: IconButton(
+              key: const ValueKey('editor-modal-page-close'),
+              tooltip: 'Fermer',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                backgroundColor: scheme.surfaceContainerHighest.withValues(
+                  alpha: 0.85,
+                ),
+                foregroundColor: scheme.onSurface,
+                shape: const CircleBorder(),
+              ),
+              onPressed: () {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                } else {
+                  GoRouter.maybeOf(context)?.go('/');
+                }
+              },
+              icon: const Icon(Icons.close, size: 18),
+            ),
+          ),
         ),
       ),
-    ),
-  ],
-);
+    ],
+  );
+}
 
 class _EditorDialogPage extends Page<void> {
   const _EditorDialogPage({
@@ -736,8 +830,14 @@ class _EditorDialogPage extends Page<void> {
     barrierDismissible: true,
     builder: (dialogContext) {
       final viewport = MediaQuery.sizeOf(dialogContext);
-      final targetWidth = math.min(width ?? 640.0, math.max(240.0, viewport.width - 48));
-      final targetHeight = math.min(height ?? 520.0, math.max(220.0, viewport.height - 48));
+      final targetWidth = math.min(
+        width ?? 640.0,
+        math.max(240.0, viewport.width - 48),
+      );
+      final targetHeight = math.min(
+        height ?? 520.0,
+        math.max(220.0, viewport.height - 48),
+      );
       return Dialog(
         key: const ValueKey('editor-dialog-page-container'),
         clipBehavior: Clip.antiAlias,
@@ -753,11 +853,7 @@ class _EditorDialogPage extends Page<void> {
 }
 
 class _EditorBottomSheetPage extends Page<void> {
-  const _EditorBottomSheetPage({
-    required this.child,
-    this.height,
-    super.key,
-  });
+  const _EditorBottomSheetPage({required this.child, this.height, super.key});
 
   final Widget child;
   final double? height;
@@ -785,11 +881,7 @@ class _EditorBottomSheetPage extends Page<void> {
 }
 
 class _EditorSideSheetPage extends Page<void> {
-  const _EditorSideSheetPage({
-    required this.child,
-    this.width,
-    super.key,
-  });
+  const _EditorSideSheetPage({required this.child, this.width, super.key});
 
   final Widget child;
   final double? width;
@@ -801,34 +893,38 @@ class _EditorSideSheetPage extends Page<void> {
     barrierColor: Colors.black54,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     transitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (sheetContext, _, _) {
-      final viewportWidth = MediaQuery.sizeOf(sheetContext).width;
-      final targetWidth = math.min(
-        width ?? 420.0,
-        math.max(240.0, viewportWidth - 32),
-      );
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Material(
-          key: const ValueKey('editor-side-sheet-page-container'),
-          elevation: 16,
-          clipBehavior: Clip.antiAlias,
-          borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-          child: SizedBox(
-            width: targetWidth,
-            height: double.infinity,
-            child: _wrapWithModalClose(sheetContext, child),
+    pageBuilder: (sheetContext, _, _) => LayoutBuilder(
+      builder: (layoutContext, constraints) {
+        final viewportWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(layoutContext).width;
+        final targetWidth = math.min(
+          width ?? 420.0,
+          math.max(240.0, viewportWidth - 32),
+        );
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            key: const ValueKey('editor-side-sheet-page-container'),
+            elevation: 16,
+            clipBehavior: Clip.antiAlias,
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(16),
+            ),
+            child: SizedBox(
+              width: targetWidth,
+              height: double.infinity,
+              child: _wrapWithModalClose(layoutContext, child),
+            ),
           ),
-        ),
-      );
-    },
+        );
+      },
+    ),
     transitionBuilder: (_, animation, _, child) => SlideTransition(
       position: Tween<Offset>(
         begin: const Offset(1, 0),
         end: Offset.zero,
-      ).animate(
-        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-      ),
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
       child: child,
     ),
   );

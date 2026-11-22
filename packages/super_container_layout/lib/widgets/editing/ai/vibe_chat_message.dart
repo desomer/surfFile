@@ -152,8 +152,7 @@ class VibeChatMessage {
     requestsMoreQuestions: requestsMoreQuestions ?? this.requestsMoreQuestions,
     plan: plan ?? this.plan,
     planSourcePrompt: planSourcePrompt ?? this.planSourcePrompt,
-    planSourceAttachments:
-        planSourceAttachments ?? this.planSourceAttachments,
+    planSourceAttachments: planSourceAttachments ?? this.planSourceAttachments,
     toolTraces: toolTraces ?? this.toolTraces,
     timedTraces: timedTraces ?? this.timedTraces,
     generationDurationMs: generationDurationMs ?? this.generationDurationMs,

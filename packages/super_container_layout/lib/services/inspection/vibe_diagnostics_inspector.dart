@@ -22,6 +22,7 @@ import '../../models/component_usage.dart';
 import '../../models/datasources/datasource_config.dart';
 import '../../models/json_syntax.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/material_icon_catalog.dart';
 import '../../models/registry.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_conditional_config.dart';
@@ -40,7 +41,8 @@ import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../../widgets/editing/ai/vibe_work_highlight.dart';
 import '../../widgets/editing/overlay/editor_overlay.dart'
     show isRenderObjectOffstage;
-import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope;
+import '../../widgets/editing/slots/editor_context_menu.dart'
+    show VibeChatScope;
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
 import '../diagnostics/debug_entry.dart';
@@ -880,7 +882,8 @@ class VibeDiagnosticsInspector {
                     issues.add(<String, Object?>{
                       'componentId': id,
                       'location': 'components[$id].binding',
-                      'kind': 'repository_value_incompatible_with_field_or_schema',
+                      'kind':
+                          'repository_value_incompatible_with_field_or_schema',
                       'repositoryId': effectiveRepo,
                       'binding': v.binding!.path,
                       'samplePath': sample.concretePath,
@@ -983,8 +986,7 @@ class VibeDiagnosticsInspector {
                 'kind': 'suspected_missing_calculation',
                 if (ind.label.trim().isNotEmpty) 'label': ind.label.trim(),
                 if (usage != null) 'usageKind': usage.kind.name,
-                'message':
-                    'Cet indicateur semble représenter une métrique calculée sans liaison de données ni `@calculs`.',
+                'message': 'Cet indicateur semble représenter une métrique calculée sans liaison de données ni `@calculs`.',
               });
             }
           }
@@ -1075,7 +1077,9 @@ class VibeDiagnosticsInspector {
             final rightEdgeZones = <SuperLayoutZone>[
               if (hasEast)
                 SuperLayoutZone.east
-              else if (l.template.placementsOf(SuperLayoutZone.center).isNotEmpty)
+              else if (l.template
+                  .placementsOf(SuperLayoutZone.center)
+                  .isNotEmpty)
                 SuperLayoutZone.center,
               if (l.template.north &&
                   l.template.placementsOf(SuperLayoutZone.north).isNotEmpty &&
@@ -1195,7 +1199,8 @@ class VibeDiagnosticsInspector {
     final forcedStates = <Map<String, Object?>>[];
     for (final entry in slotIndex.allEntries) {
       if (entry.zoneId != null && entry.zoneId!.isNotEmpty) continue;
-      if (requestedIds.isNotEmpty && !requestedIds.contains(entry.componentId)) {
+      if (requestedIds.isNotEmpty &&
+          !requestedIds.contains(entry.componentId)) {
         continue;
       }
       final ctx = entry.slotContext();
@@ -1589,8 +1594,7 @@ class VibeDiagnosticsInspector {
         return VibeToolResult.error(
           callId: callId,
           name: toolName,
-          message:
-              'Mode « Uniquement visible » actif : la navigation vers une autre page/route est désactivée.',
+          message: 'Mode « Uniquement visible » actif : la navigation vers une autre page/route est désactivée.',
         );
       }
       final routing = pageRouting;
@@ -1598,8 +1602,7 @@ class VibeDiagnosticsInspector {
         return VibeToolResult.error(
           callId: callId,
           name: toolName,
-          message:
-              'Aucun EditorPageRouter actif : impossible de changer de route en aperçu.',
+          message: 'Aucun EditorPageRouter actif : impossible de changer de route en aperçu.',
         );
       }
       routing.synchronize(appearance.pageCatalog);
@@ -1635,7 +1638,7 @@ class VibeDiagnosticsInspector {
         await ensurePageLoaded!(targetPageId);
       }
       previewTracker?.markNavigated();
-      routing.router.go(targetLocation);
+      routing.openLocation(targetLocation);
       actions['navigatedTo'] = targetLocation;
       didSomething = true;
     }
@@ -1646,7 +1649,8 @@ class VibeDiagnosticsInspector {
         return VibeToolResult.error(
           callId: callId,
           name: toolName,
-          message: 'Aucun JsonRepositoryStore actif pour modifier la sélection.',
+          message:
+              'Aucun JsonRepositoryStore actif pour modifier la sélection.',
         );
       }
       final String canonicalTemplate;
@@ -1665,9 +1669,9 @@ class VibeDiagnosticsInspector {
         repositoryId,
         canonicalTemplate,
       );
-      final arrayBinding = store.bindingOf(repositoryId).array(
-        canonicalTemplate,
-      );
+      final arrayBinding = store
+          .bindingOf(repositoryId)
+          .array(canonicalTemplate);
       if (clearSelection) {
         arrayBinding.clear();
         actions['selection'] = <String, Object?>{
@@ -1713,17 +1717,14 @@ class VibeDiagnosticsInspector {
         : '';
     final rawTabIndex = args['tabIndex'];
     final wantsTabSwitch =
-        tabComponentId.isNotEmpty ||
-        tabIdArg.isNotEmpty ||
-        rawTabIndex is num;
+        tabComponentId.isNotEmpty || tabIdArg.isNotEmpty || rawTabIndex is num;
 
     if (wantsTabSwitch) {
       if (visibleOnly) {
         return VibeToolResult.error(
           callId: callId,
           name: toolName,
-          message:
-              'Mode « Uniquement visible » actif : interdit de changer d’onglet. Reste sur l’onglet actif et la position de scroll courante.',
+          message: 'Mode « Uniquement visible » actif : interdit de changer d’onglet. Reste sur l’onglet actif et la position de scroll courante.',
         );
       }
       final activeScope = readScope?.call();
@@ -1826,7 +1827,8 @@ class VibeDiagnosticsInspector {
         final exactMatch = snap.tabs
             .where((t) => t.tabId == tabIdArg || t.label == tabIdArg)
             .firstOrNull;
-        final ciMatch = exactMatch ??
+        final ciMatch =
+            exactMatch ??
             snap.tabs
                 .where(
                   (t) =>
@@ -1870,8 +1872,7 @@ class VibeDiagnosticsInspector {
       return VibeToolResult.error(
         callId: callId,
         name: toolName,
-        message:
-            'Fournis pageId/routePath, (repositoryId + arrayTemplate) et/ou (tabComponentId + tabIndex/tabId) à prévisualiser.',
+        message: 'Fournis pageId/routePath, (repositoryId + arrayTemplate) et/ou (tabComponentId + tabIndex/tabId) à prévisualiser.',
       );
     }
 
@@ -1929,15 +1930,15 @@ class VibeDiagnosticsInspector {
 
     var componentId =
         args['componentId'] is String &&
-                (args['componentId'] as String).trim().isNotEmpty
-            ? (args['componentId'] as String).trim()
-            : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
-                  ? (args['id'] as String).trim()
-                  : '');
+            (args['componentId'] as String).trim().isNotEmpty
+        ? (args['componentId'] as String).trim()
+        : (args['id'] is String && (args['id'] as String).trim().isNotEmpty
+              ? (args['id'] as String).trim()
+              : '');
     final zoneId =
         args['zoneId'] is String && (args['zoneId'] as String).trim().isNotEmpty
-            ? (args['zoneId'] as String).trim()
-            : null;
+        ? (args['zoneId'] as String).trim()
+        : null;
 
     if (componentId.isEmpty) {
       final available = slotIndex.mountedSlotSummaries(limit: 25);
@@ -1985,12 +1986,11 @@ class VibeDiagnosticsInspector {
     final enableEditMode = args['enableEditMode'] is bool
         ? args['enableEditMode'] as bool
         : true;
-    final scrollIntoView =
-        readVisibleOnly?.call() == true
-            ? false
-            : (args['scrollIntoView'] is bool
-                  ? args['scrollIntoView'] as bool
-                  : true);
+    final scrollIntoView = readVisibleOnly?.call() == true
+        ? false
+        : (args['scrollIntoView'] is bool
+              ? args['scrollIntoView'] as bool
+              : true);
     final pulseHighlight = args['pulseHighlight'] is bool
         ? args['pulseHighlight'] as bool
         : true;
@@ -2031,10 +2031,7 @@ class VibeDiagnosticsInspector {
 
     final EditorSlotState? slotState = entry.token is EditorSlotState
         ? entry.token as EditorSlotState
-        : EditorSlotState.resolveFromContext(
-            slotCtx,
-            preferredId: componentId,
-          );
+        : EditorSlotState.resolveFromContext(slotCtx, preferredId: componentId);
     if (slotState == null || !slotState.mounted) {
       return VibeToolResult.error(
         callId: callId,
@@ -2075,5 +2072,204 @@ class VibeDiagnosticsInspector {
         if (setChatScope) 'scopeUpdated': slotState.aiScope.displayLabel,
       },
     );
+  }
+
+  /// 8. Valide des identifiants d'icônes dans [MaterialIconCatalog] et/ou liste les icônes disponibles.
+  VibeToolResult validateOrListIcons(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) {
+    final requestedIcons = <String>[
+      if (args['icons'] case final List rawList)
+        for (final item in rawList)
+          if (item is String && item.trim().isNotEmpty) item.trim(),
+      if (args['icon'] case final String single when single.trim().isNotEmpty)
+        single.trim(),
+    ];
+
+    final query = args['query'] is String
+        ? (args['query'] as String).trim()
+        : '';
+    final rawCategory = args['category'] is String
+        ? (args['category'] as String).trim()
+        : '';
+
+    MaterialIconCategory? parsedCategory;
+    if (rawCategory.isNotEmpty) {
+      parsedCategory = MaterialIconCategory.values
+          .where(
+            (c) =>
+                c.name.toLowerCase() == rawCategory.toLowerCase() ||
+                c.label.toLowerCase() == rawCategory.toLowerCase(),
+          )
+          .firstOrNull;
+      if (parsedCategory == null) {
+        final validCategories = [
+          for (final c in MaterialIconCategory.values) c.name,
+        ];
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Catégorie d’icônes inconnue "$rawCategory" '
+              '(catégories valides : ${validCategories.join(', ')}).',
+        );
+      }
+    }
+
+    final validations = <Map<String, Object?>>[];
+    final invalidIcons = <String>[];
+    var validCount = 0;
+
+    for (final raw in requestedIcons) {
+      final canonical = MaterialIconCatalog.resolveCanonicalId(raw);
+      if (canonical != null) {
+        validCount++;
+        final entry = MaterialIconCatalog.byId[canonical]!;
+        validations.add(<String, Object?>{
+          'requested': raw,
+          'valid': true,
+          'canonicalId': canonical,
+          'label': entry.label,
+          'category': entry.category.name,
+        });
+      } else {
+        invalidIcons.add(raw);
+        final suggestions = _suggestIconsFor(raw, category: parsedCategory);
+        validations.add(<String, Object?>{
+          'requested': raw,
+          'valid': false,
+          'canonicalId': null,
+          'suggestions': suggestions,
+        });
+      }
+    }
+
+    final includeAllExplicit = args['includeAll'] is bool
+        ? args['includeAll'] as bool
+        : null;
+    final shouldList =
+        includeAllExplicit == true ||
+        query.isNotEmpty ||
+        parsedCategory != null ||
+        (requestedIcons.isEmpty && includeAllExplicit != false);
+
+    final rawOffset = args['offset'];
+    final offset = rawOffset is num ? math.max(0, rawOffset.toInt()) : 0;
+    final defaultLimit = (query.isEmpty && parsedCategory == null) ? 500 : 120;
+    final rawLimit = args['limit'];
+    final limit = rawLimit is num
+        ? rawLimit.toInt().clamp(1, 500)
+        : defaultLimit;
+
+    List<MaterialIconEntry> matchedEntries = const <MaterialIconEntry>[];
+    List<MaterialIconEntry> pagedEntries = const <MaterialIconEntry>[];
+    if (shouldList) {
+      matchedEntries = MaterialIconCatalog.search(
+        query: query,
+        category: parsedCategory,
+      );
+      if (offset < matchedEntries.length) {
+        final end = math.min(matchedEntries.length, offset + limit);
+        pagedEntries = matchedEntries.sublist(offset, end);
+      }
+    }
+
+    final includeDetailedItems =
+        query.isNotEmpty ||
+        parsedCategory != null ||
+        pagedEntries.length <= 120;
+
+    return VibeToolResult(
+      callId: callId,
+      name: toolName,
+      data: <String, Object?>{
+        'ok': true,
+        'totalCatalogCount': MaterialIconCatalog.entries.length,
+        'availableCategories': <Map<String, Object?>>[
+          for (final c in MaterialIconCategory.values)
+            <String, Object?>{'id': c.name, 'label': c.label},
+        ],
+        if (validations.isNotEmpty) ...<String, Object?>{
+          'allValid': invalidIcons.isEmpty,
+          'validCount': validCount,
+          'invalidCount': invalidIcons.length,
+          if (invalidIcons.isNotEmpty) 'invalidIcons': invalidIcons,
+          'validations': validations,
+        },
+        if (shouldList) ...<String, Object?>{
+          if (query.isNotEmpty) 'query': query,
+          if (parsedCategory != null) 'category': parsedCategory.name,
+          'matchCount': matchedEntries.length,
+          'returnedCount': pagedEntries.length,
+          'offset': offset,
+          'hasMore': offset + pagedEntries.length < matchedEntries.length,
+          'iconIds': <String>[for (final entry in pagedEntries) entry.id],
+          if (includeDetailedItems)
+            'icons': <Map<String, Object?>>[
+              for (final entry in pagedEntries)
+                <String, Object?>{
+                  'id': entry.id,
+                  'label': entry.label,
+                  'category': entry.category.name,
+                },
+            ],
+        },
+      },
+    );
+  }
+
+  static List<String> _suggestIconsFor(
+    String raw, {
+    MaterialIconCategory? category,
+    int maxSuggestions = 5,
+  }) {
+    var cleaned = raw.trim();
+    if (cleaned.startsWith('Icons.') || cleaned.startsWith('icons.')) {
+      cleaned = cleaned.substring(6);
+    }
+    cleaned = cleaned
+        .replaceAllMapped(
+          RegExp(r'(?<=[a-z0-9])([A-Z])'),
+          (m) => '_${m.group(1)!.toLowerCase()}',
+        )
+        .replaceAll('-', '_');
+    final normalized = MaterialIconCatalog.normalizeQuery(cleaned);
+    final tokens = normalized
+        .split(RegExp(r'\s+'))
+        .where((t) => t.length >= 2)
+        .toList();
+
+    final scored = <String, int>{};
+    void addMatches(List<MaterialIconEntry> items, int weight) {
+      for (final entry in items) {
+        scored[entry.id] = (scored[entry.id] ?? 0) + weight;
+      }
+    }
+
+    for (final token in tokens) {
+      addMatches(
+        MaterialIconCatalog.search(query: token, category: category),
+        3,
+      );
+      for (final entry in MaterialIconCatalog.entries) {
+        if (category != null && entry.category != category) continue;
+        if (entry.id.contains(token) || token.contains(entry.id)) {
+          scored[entry.id] = (scored[entry.id] ?? 0) + 2;
+        }
+      }
+    }
+    if (scored.isEmpty && category != null) {
+      return [
+        for (final entry in MaterialIconCatalog.search(
+          category: category,
+        ).take(maxSuggestions))
+          entry.id,
+      ];
+    }
+    final ordered = scored.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return [for (final item in ordered.take(maxSuggestions)) item.key];
   }
 }

@@ -18,6 +18,7 @@ import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/events/super_event_bus.dart';
 import '../../services/pages/editor_page_graph.dart';
+import '../../services/pages/editor_page_router.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
@@ -211,7 +212,19 @@ class _RendererDocumentState extends State<_RendererDocument> {
       ),
       for (final page in appearance.pageCatalog.pages)
         if (page.path != '/')
-          GoRoute(path: page.path, builder: (_, _) => _root(page.id)),
+          GoRoute(
+            path: page.path,
+            pageBuilder: page.pageType.isModal
+                ? (_, state) =>
+                    buildEditorModalPage(
+                      page: page,
+                      key: state.pageKey,
+                      child: _root(page.id),
+                    ) ??
+                    MaterialPage<void>(key: state.pageKey, child: _root(page.id))
+                : null,
+            builder: page.pageType.isModal ? null : (_, _) => _root(page.id),
+          ),
     ],
     errorBuilder: (_, state) => Material(
       child: Center(child: Text('Navigation impossible : ${state.error}')),
@@ -291,6 +304,7 @@ class _RendererDocumentState extends State<_RendererDocument> {
             pageConfig: switch (config) {
               ScaffoldPageConfig() => config,
               NativeComponentConfig() => ScaffoldPageConfig.fromNative(config),
+              null => ScaffoldPageConfig(),
               _ => throw FormatException('Page invalide : $id.'),
             },
           );

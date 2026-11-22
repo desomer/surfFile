@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -400,6 +401,122 @@ void main() {
         ),
         findsOneWidget,
       );
+    },
+  );
+
+  test('createSuperDesignerLogZoneSpecification horodate les logs console et conserve le message brut dans debugEntries', () {
+    clearDebugEntries();
+    addTearDown(clearDebugEntries);
+
+    final printed = <String>[];
+    final fixedTime = DateTime(2026, 11, 22, 22, 3, 2, 273);
+
+    runZoned(
+      () {
+        runZoned(
+          () {
+            Zone.current.print('[Vibe IA] Test horodatage');
+          },
+          zoneSpecification: createSuperDesignerLogZoneSpecification(
+            clock: () => fixedTime,
+          ),
+        );
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (self, parent, zone, line) => printed.add(line),
+      ),
+    );
+
+    expect(printed, ['[22:03:02.273] [Vibe IA] Test horodatage']);
+    expect(debugEntries, hasLength(1));
+    expect(debugEntries.single.message, '[Vibe IA] Test horodatage');
+    expect(
+      VibeDebugCapture.isVibeInternalMessage(debugEntries.single.message),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'SuperDesignerApp opens sideSheet over root page, preserves FloatingAppearanceToolbar, edits inside sideSheet and closes cleanly',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+      await tester.pump();
+
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.pumpAndSettle();
+
+      final superApp = tester.widget<SuperApp>(find.byType(SuperApp));
+      final rootCtx = tester.element(find.byType(SuperPage));
+      final appearance = AppearanceScope.controllerOf(rootCtx)!;
+
+      appearance.value = appearance.value.copyWith(
+        pageCatalog: EditorPageCatalog(
+          pages: [
+            EditorPageConfig(
+              id: 'designer-side',
+              name: 'Panneau Latéral',
+              path: '/panneau',
+              pageType: EditorPageType.sideSheet,
+              modalWidth: 400,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      superApp.pageRouting!.openLocation('/panneau');
+      await tester.pumpAndSettle();
+
+      final sideContainer = find.byKey(
+        const ValueKey('editor-side-sheet-page-container'),
+      );
+      expect(sideContainer, findsOneWidget);
+      expect(tester.getSize(sideContainer).width, 400);
+      expect(
+        find.byKey(const ValueKey('editor-page-designer-side')),
+        findsOneWidget,
+      );
+      expect(
+        find.byType(FloatingAppearanceToolbar, skipOffstage: false),
+        findsOneWidget,
+      );
+
+      final sheetCtx = tester.element(
+        find.byKey(const ValueKey('editor-page-designer-side')),
+      );
+      StyleEditScope.controllerOf(sheetCtx)!.value = true;
+      await tester.pumpAndSettle();
+
+      LayoutSelection.select(['Panneau Latéral']);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('scaffold-page-add-body')));
+      await tester.pumpAndSettle();
+      final addCard = find.byKey(
+        const ValueKey('scaffold-page-add-slot-factory:Card'),
+      );
+      await tester.ensureVisible(addCard);
+      await tester.pumpAndSettle();
+      await tester.tap(addCard);
+      await tester.pumpAndSettle();
+
+      expect(
+        appearance.value.nativeComponent('designer-side').slotsOf('body'),
+        hasLength(1),
+      );
+
+      StyleEditScope.controllerOf(sheetCtx)!.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('editor-modal-page-close')));
+      await tester.pumpAndSettle();
+
+      expect(sideContainer, findsNothing);
+      expect(find.byType(FloatingAppearanceToolbar), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 }

@@ -237,6 +237,7 @@ Stream<GeminiStreamEvent> streamGemini(
   List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
   List<Map<String, Object?>>? conversationContents,
   bool enforceJsonResponse = true,
+  VibeCancellationToken? cancellationToken,
 }) => GeminiRestClient.instance.streamGenerate(
   prompt,
   systemInstruction: systemInstruction,
@@ -246,6 +247,7 @@ Stream<GeminiStreamEvent> streamGemini(
   tools: tools,
   conversationContents: conversationContents,
   enforceJsonResponse: enforceJsonResponse,
+  cancellationToken: cancellationToken,
 );
 
 /// Génère une réponse Gemini complète pour [prompt] tout en restant compatible avec les callbacks existants.
@@ -255,12 +257,14 @@ Future<String> callGemini(
   String? systemInstruction,
   String? staticGuide,
   VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+  VibeCancellationToken? cancellationToken,
 }) => GeminiRestClient.instance.generate(
   prompt,
   attachments: attachments,
   systemInstruction: systemInstruction,
   staticGuide: staticGuide,
   speedMode: speedMode,
+  cancellationToken: cancellationToken,
 );
 
 /// Transcrit un enregistrement audio WAV en texte via Gemini.

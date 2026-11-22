@@ -176,6 +176,19 @@ class EditorPageConfig {
     'defaultParameters': defaultParameters,
   };
 
+  /// Sérialise la page au format compact en omettant les valeurs par défaut.
+  Map<String, Object?> toCompactJson() => {
+    'id': id,
+    'name': name,
+    'path': path,
+    if (pageType != EditorPageType.standard) 'pageType': pageType.name,
+    if (modalWidth != null) 'modalWidth': JsonNumbers.round(modalWidth!),
+    if (modalHeight != null) 'modalHeight': JsonNumbers.round(modalHeight!),
+    if (layoutOverride != null && !layoutOverride!.isEmpty)
+      'layoutOverride': layoutOverride!.toJson(),
+    if (defaultParameters.isNotEmpty) 'defaultParameters': defaultParameters,
+  };
+
   factory EditorPageConfig.fromJson(Object? value) {
     if (value is! Map<String, dynamic> ||
         value.keys.any(
@@ -233,6 +246,33 @@ class EditorPageConfig {
       throw FormatException('Invalid editor page configuration: $error');
     }
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EditorPageConfig &&
+          other.id == id &&
+          other.name == name &&
+          other.path == path &&
+          other.pageType == pageType &&
+          other.modalWidth == modalWidth &&
+          other.modalHeight == modalHeight &&
+          other.layoutOverride == layoutOverride &&
+          mapEquals(other.defaultParameters, defaultParameters);
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    path,
+    pageType,
+    modalWidth,
+    modalHeight,
+    layoutOverride,
+    Object.hashAllUnordered(
+      defaultParameters.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+  );
 }
 
 /// Ordered editor pages and their optional startup destination.
@@ -275,6 +315,12 @@ class EditorPageCatalog {
     'homePageId': homePageId,
   };
 
+  /// Sérialise le catalogue au format compact en omettant `homePageId` lorsqu'il est nul.
+  Map<String, Object?> toCompactJson() => {
+    'pages': [for (final page in pages) page.toCompactJson()],
+    if (homePageId != null) 'homePageId': homePageId,
+  };
+
   factory EditorPageCatalog.fromJson(Object? value) {
     if (value is! Map<String, dynamic> ||
         value.keys.any((key) => !const {'pages', 'homePageId'}.contains(key)) ||
@@ -294,4 +340,14 @@ class EditorPageCatalog {
       throw FormatException('Invalid editor page catalog: $error');
     }
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EditorPageCatalog &&
+          other.homePageId == homePageId &&
+          listEquals(other.pages, pages);
+
+  @override
+  int get hashCode => Object.hash(homePageId, Object.hashAll(pages));
 }

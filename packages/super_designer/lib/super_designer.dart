@@ -10,4 +10,9 @@ export 'package:super_container_layout/super_container_layout.dart';
 export 'package:super_schema_dsl/super_schema_dsl.dart';
 
 export 'main.dart'
-    show SuperDesignerApp, TestApp, createSuperDesignerRegistry, main;
+    show
+        SuperDesignerApp,
+        TestApp,
+        createSuperDesignerLogZoneSpecification,
+        createSuperDesignerRegistry,
+        main;

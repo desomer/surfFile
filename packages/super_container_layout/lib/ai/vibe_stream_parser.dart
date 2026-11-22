@@ -455,7 +455,7 @@ class VibeIncrementalStreamParser {
       partialRepositoriesPatch: _repositoriesRevision == 0
           ? null
           : (_cachedPartialRepositoriesPatch ??=
-              Map<String, dynamic>.unmodifiable(_repositoriesPatchEntries)),
+                Map<String, dynamic>.unmodifiable(_repositoriesPatchEntries)),
       repositoriesRevision: _repositoriesRevision,
       activeSection: hasActiveVibeCapture ? capture.section : null,
       activeEntryKey: hasActiveVibeCapture ? capture.entryKey : null,
@@ -1006,11 +1006,7 @@ enum _StrMode { normal, escape, unicode }
 enum _CaptureKind { container, string, primitive }
 
 final class _ContainerFrame {
-  _ContainerFrame({
-    required this.kind,
-    required this.phase,
-    this.sectionName,
-  });
+  _ContainerFrame({required this.kind, required this.phase, this.sectionName});
 
   final _FrameKind kind;
   final String? sectionName;

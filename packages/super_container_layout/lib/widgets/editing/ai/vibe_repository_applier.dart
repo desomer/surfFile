@@ -355,7 +355,9 @@ abstract final class VibeRepositoryPatchValidator {
     String repoKey,
     Map<String, Object?> map,
   ) {
-    final extraKeys = map.keys.where((k) => !_envelopeKeys.contains(k)).toList();
+    final extraKeys = map.keys
+        .where((k) => !_envelopeKeys.contains(k))
+        .toList();
     String? validatedName;
     if (map.containsKey('name') && map['name'] != null) {
       final rawName = map['name'];
@@ -515,9 +517,7 @@ abstract final class VibeRepositoryPatchValidator {
       return value;
     }
     if (value is List) {
-      return <Object?>[
-        for (final item in value) _validateValue(repoKey, item),
-      ];
+      return <Object?>[for (final item in value) _validateValue(repoKey, item)];
     }
     if (value is Map) {
       return validateDataObject(repoKey, value);
@@ -842,8 +842,7 @@ class VibeRepositoryTurnTransaction {
 
     var catalog = await store.catalog();
     final inPatchDocuments = <String, Map<String, Object?>>{};
-    final inPatchCalculated =
-        <String, List<CalculatedAttributeDefinition>>{};
+    final inPatchCalculated = <String, List<CalculatedAttributeDefinition>>{};
 
     for (final entry in parsedEntries.entries) {
       final repoKey = entry.key;
@@ -878,7 +877,8 @@ class VibeRepositoryTurnTransaction {
               catalog,
             );
             final initialDoc = _deepCopyJsonMap(parsed.data);
-            final initialSchema = parsed.hasJsonSchema && parsed.jsonSchema != null
+            final initialSchema =
+                parsed.hasJsonSchema && parsed.jsonSchema != null
                 ? _deepCopyJsonMap(parsed.jsonSchema!)
                 : null;
             await store.createWithId(
@@ -899,7 +899,8 @@ class VibeRepositoryTurnTransaction {
                   List<CalculatedAttributeDefinition>.of(
                     parsed.calculatedAttributes,
                   );
-              inPatchCalculated[actualId] = _finalCalculatedAttributes[actualId]!;
+              inPatchCalculated[actualId] =
+                  _finalCalculatedAttributes[actualId]!;
             }
             _createdRepositories[actualId] = (name: chosenName, id: actualId);
             _aliasToActualId[repoKey] = actualId;
@@ -1173,13 +1174,17 @@ class VibeRepositoryTurnTransaction {
       ..clear()
       ..addAll({
         for (final entry in savepoint._baselineJsonSchemas.entries)
-          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          entry.key: entry.value == null
+              ? null
+              : _deepCopyJsonMap(entry.value!),
       });
     _finalJsonSchemas
       ..clear()
       ..addAll({
         for (final entry in savepoint._finalJsonSchemas.entries)
-          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          entry.key: entry.value == null
+              ? null
+              : _deepCopyJsonMap(entry.value!),
       });
     _pendingSchemaValidationRepoIds
       ..clear()
@@ -1246,10 +1251,9 @@ class VibeRepositoryTurnTransaction {
         List<MapEntry<String, List<CalculatedAttributeDefinition>>>.of(
           _baselineCalculatedAttributes.entries,
         );
-    final schemaBaselines =
-        List<MapEntry<String, Map<String, Object?>?>>.of(
-          _baselineJsonSchemas.entries,
-        );
+    final schemaBaselines = List<MapEntry<String, Map<String, Object?>?>>.of(
+      _baselineJsonSchemas.entries,
+    );
     final created = List<({String name, String id})>.of(
       _createdRepositories.values,
     );
@@ -1310,18 +1314,14 @@ class VibeRepositoryTurnTransaction {
       for (final id in baselineSnapshot.keys)
         id: _deepCopyJsonMap(_finalDocuments[id] ?? const <String, Object?>{}),
     };
-    final calcBaselineSnapshot =
-        <String, List<CalculatedAttributeDefinition>>{
-          for (final entry in _baselineCalculatedAttributes.entries)
-            if (_finalCalculatedAttributes.containsKey(entry.key) &&
-                !listEquals(
-                  entry.value,
-                  _finalCalculatedAttributes[entry.key],
-                ))
-              entry.key: List<CalculatedAttributeDefinition>.unmodifiable(
-                entry.value,
-              ),
-        };
+    final calcBaselineSnapshot = <String, List<CalculatedAttributeDefinition>>{
+      for (final entry in _baselineCalculatedAttributes.entries)
+        if (_finalCalculatedAttributes.containsKey(entry.key) &&
+            !listEquals(entry.value, _finalCalculatedAttributes[entry.key]))
+          entry.key: List<CalculatedAttributeDefinition>.unmodifiable(
+            entry.value,
+          ),
+    };
     final calcFinalSnapshot = <String, List<CalculatedAttributeDefinition>>{
       for (final created in createdSnapshot)
         if (_finalCalculatedAttributes.containsKey(created.id))
@@ -1340,7 +1340,9 @@ class VibeRepositoryTurnTransaction {
               entry.value,
               _finalJsonSchemas[entry.key],
             ))
-          entry.key: entry.value == null ? null : _deepCopyJsonMap(entry.value!),
+          entry.key: entry.value == null
+              ? null
+              : _deepCopyJsonMap(entry.value!),
     };
     final schemaFinalSnapshot = <String, Map<String, Object?>?>{
       for (final created in createdSnapshot)
@@ -1461,10 +1463,7 @@ class VibeRepositoryTurnTransaction {
     return result;
   }
 
-  String _allocateUniqueHexId(
-    String alias,
-    List<JsonRepositoryEntry> catalog,
-  ) {
+  String _allocateUniqueHexId(String alias, List<JsonRepositoryEntry> catalog) {
     final existingIds = <String>{
       for (final entry in catalog) entry.id,
       ..._createdRepositories.keys,

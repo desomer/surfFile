@@ -27,6 +27,7 @@ import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/repository_json_schema.dart';
+import '../../models/responsive_layout_config.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../models/super_conditional_config.dart';
 import '../../models/super_layout_config.dart';
@@ -346,6 +347,8 @@ class VibeAppInspector {
             data: report.toJson(),
           );
         },
+        'validate_or_list_icons': (call) async =>
+            validateOrListIcons(call.id, call.name, call.arguments),
       });
 
   /// Lit et filtre les journaux et erreurs d'exécution depuis `debugEntries`.
@@ -370,6 +373,13 @@ class VibeAppInspector {
   Future<Map<String, Object?>> getRegistryAndSelection(
     Map<String, Object?> args,
   ) => _diagnostics.getRegistryAndSelection(args);
+
+  /// Valide un ou plusieurs identifiants d'icônes et/ou liste les icônes disponibles dans `MaterialIconCatalog`.
+  VibeToolResult validateOrListIcons(
+    String callId,
+    String toolName,
+    Map<String, Object?> args,
+  ) => _diagnostics.validateOrListIcons(callId, toolName, args);
 
   /// Navigue temporairement vers une page ou sélectionne une ligne Maître/Détail en aperçu.
   Future<VibeToolResult> previewNavigationOrSelection(
@@ -441,13 +451,14 @@ class VibeAppInspector {
 
   /// Résout la page active à partir de la route courante ou de `homePageId`.
   EditorPageConfig? resolveActivePage(Appearance appearance) {
-    final location =
-        pageRouting?.router.routeInformationProvider.value.uri.path;
+    final uri = pageRouting?.currentUri;
     final pages = appearance.pageCatalog.pages;
     if (pages.isEmpty) return null;
-    if (location != null && location.isNotEmpty) {
+    if (uri != null && uri.path.isNotEmpty) {
+      final matched = pageRouting?.pageAt(uri, catalog: appearance.pageCatalog);
+      if (matched != null) return matched;
       for (final page in pages) {
-        if (page.path == location) return page;
+        if (page.path == uri.path) return page;
       }
     }
     final homeId = appearance.pageCatalog.homePageId;
@@ -521,17 +532,19 @@ class VibeAppInspector {
         : null;
     final scope = readScope?.call();
     final activePage = _resolveActivePage(appearance);
-    final effectiveResponsive = activePage != null
+    final baseResponsive = activePage != null
         ? appearance.effectiveResponsiveLayoutForPage(activePage.id)
         : appearance.responsiveLayout;
+    final effectiveResponsive = (activePage?.pageType.isModal ?? false)
+        ? baseResponsive.copyWith(containerMode: PageContainerMode.fullPage)
+        : baseResponsive;
     final resolvedResponsive = media != null
         ? effectiveResponsive.resolveForWidth(media.size.width)
         : null;
 
     String? currentLocation;
     try {
-      currentLocation = pageRouting?.router.routeInformationProvider.value.uri
-          .toString();
+      currentLocation = pageRouting?.currentUri.toString();
     } catch (_) {
       currentLocation = null;
     }
@@ -557,7 +570,17 @@ class VibeAppInspector {
             'id': activePage.id,
             'name': activePage.name,
             'path': activePage.path,
+            'pageType': activePage.pageType.name,
+            if (activePage.pageType.isModal) 'isModal': true,
+            if (activePage.modalWidth != null)
+              'modalWidth': activePage.modalWidth,
+            if (activePage.modalHeight != null)
+              'modalHeight': activePage.modalHeight,
           },
+        if (pageRouting != null)
+          'codedRoutes': <String>[
+            for (final route in pageRouting!.codedRoutes) route.path,
+          ],
         'homePageId': appearance.pageCatalog.homePageId,
         'pageCount': appearance.pageCatalog.pages.length,
       },

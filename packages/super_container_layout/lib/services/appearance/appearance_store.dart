@@ -201,11 +201,23 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
   /// Tranche en cours d'hydratation (utilisée par l'historique pour enrichir les snapshots sans créer d'étape Undo).
   EditorPageAppearanceSlice? get activeHydrationSlice => _activeHydrationSlice;
 
-  /// Indique si la page [pageId] est déjà chargée en mémoire (toujours `true` pour les stores monolithiques).
-  bool isPageLoaded(String pageId) => switch (store) {
-    final PagedFileAppearanceStore paged => paged.isPageLoaded(pageId),
-    _ => true,
-  };
+  /// Indique si la page [pageId] est déjà chargée en mémoire (toujours `true` pour les stores monolithiques,
+  /// ainsi que pour les pages créées uniquement en mémoire avant leur première sauvegarde).
+  bool isPageLoaded(String pageId) {
+    final trimmed = pageId.trim();
+    if (trimmed.isEmpty) return true;
+    return switch (store) {
+      final PagedFileAppearanceStore paged =>
+        paged.isPageLoaded(trimmed) ||
+            (!_restoring && !paged.isKnownCatalogPage(trimmed)),
+      _ => true,
+    };
+  }
+
+  /// Indique si `value.pageCatalog` contient au moins une page persistée non encore hydratée en mémoire.
+  bool get hasUnloadedCatalogPages =>
+      store is PagedFileAppearanceStore &&
+      value.pageCatalog.pages.any((page) => !isPageLoaded(page.id));
 
   /// Charge à la demande les données persistées de [pageId] sans déclencher d'écriture disque.
   Future<void> ensurePageLoaded(String pageId) {
@@ -214,7 +226,9 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
       return Future<void>.value();
     }
     final trimmed = pageId.trim();
-    if (trimmed.isEmpty || currentStore.isPageLoaded(trimmed)) {
+    if (trimmed.isEmpty ||
+        currentStore.isPageLoaded(trimmed) ||
+        (!_restoring && !currentStore.isKnownCatalogPage(trimmed))) {
       return Future<void>.value();
     }
     final inFlight = _inFlightPageLoads[trimmed];

@@ -56,7 +56,7 @@ Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la 
   static const String planModePlanningDirective = '''
 PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
 - Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents et autonomes afin de structurer la construction et ne jamais dépasser la limite de sortie JSON :
-  - Lot 1 : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, et architecture globale de navigation/shell/en-tête.
+  - Lot 1 : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, et architecture globale de navigation/shell/en-tête (rappel : la route "/" existe déjà côté hôte via "root" / "mainLayout" — ne prévois jamais une page "pageCatalog" avec "path": "/").
   - Lots intermédiaires : 1 à x sections visuelles, vues ou blocs fonctionnels par lot.
   - Dernier lot : Pages secondaires, pied de page et finitions.
   - (Si la demande est courte/simple, un plan à 1 seul lot suffit.)
@@ -151,6 +151,7 @@ Configure les repositories et l’interface afin que les valeurs dérivées rest
     required VibeChatScope? scope,
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
+    List<String> codedRoutePaths = const <String>[],
     String? repositoriesContext,
     bool planMode = false,
     bool reproduceExactMode = false,
@@ -216,12 +217,17 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
       appearance,
       codec: codec,
     );
+    final codedRoutesHint = codedRoutePaths.isEmpty
+        ? null
+        : 'Routes codées existantes (réservées — ne jamais les réutiliser comme "path" dans "pageCatalog" ; "/" correspond déjà à "root"/"mainLayout") : '
+              '${jsonEncode(codedRoutePaths)}.';
     return [
       questioningDirective,
       ?exactSection,
       ?planSection,
       ?visibleOnlySection,
       ?visibleCtxSection,
+      ?codedRoutesHint,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les modifications à ces composants ou aux pages déclarées ; '
@@ -244,6 +250,7 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     List<VibeChatAttachment> sourceAttachments = const [],
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
+    List<String> codedRoutePaths = const <String>[],
     String? repositoriesContext,
     bool visibleOnlyMode = false,
     String? visibleViewportContext,
@@ -264,13 +271,17 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
         ? trimmedVisibleCtx
         : null;
+    final isAuditPlan =
+        sourcePrompt.trimLeft().startsWith('AUDIT & CORRECTION') ||
+        plan.title.toLowerCase().contains('audit');
+    final auditLotSection = isAuditPlan ? auditLotExecutionDirective : null;
     final lotDirective =
         '''
 PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
 ${plan.formatLotContextPrompt(lotIndex)}
 
 RÈGLES D’EXÉCUTION DU LOT :
-- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null ; ajoute "verifyRender": true si le lot le demande ou s’il modifie une zone en ligne `zoneAxes: 'row'`, un en-tête ou une barre d’outils).
+- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null ; ajoute "verifyRender": true si le lot le demande, s’il s’agit d’un lot d’audit touchant un en-tête de carte maître, ou s’il modifie une zone en ligne `zoneAxes: 'row'`, un volet étroit ≤ 480 dp, un en-tête ou une barre d’outils).
 ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DESIGN.md sélectionné) et les règles d’atomicité GenUI.\n'}- PRÉSERVATION OBLIGATOIRE DES LOTS PRÉCÉDENTS : lorsque tu modifies "placements" ou "regions" d’un conteneur existant ("root", "mainLayout", etc.), réémets INTÉGRALEMENT tous les placements existants à conserver dans l’ordre (y compris ceux déjà construits par les lots précédents et "scaffold:body"), en ajoutant uniquement les nouvelles sections de ce lot.
 - Renseigne systématiquement "slotLabels" sur le parent et "usages" pour chaque nouveau composant sans liaison.''';
 
@@ -296,6 +307,7 @@ ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DE
       return [
         ?exactSection,
         lotDirective,
+        ?auditLotSection,
         ?visibleOnlySection,
         '''RESTRICTION STRICTE DE SCOPE :
 Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).''',
@@ -312,11 +324,17 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
       appearance,
       codec: codec,
     );
+    final codedRoutesHint = codedRoutePaths.isEmpty
+        ? null
+        : 'Routes codées existantes (réservées — ne jamais les réutiliser comme "path" dans "pageCatalog" ; "/" correspond déjà à "root"/"mainLayout") : '
+              '${jsonEncode(codedRoutePaths)}.';
     return [
       ?exactSection,
       lotDirective,
+      ?auditLotSection,
       ?visibleOnlySection,
       ?visibleCtxSection,
+      ?codedRoutesHint,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les nouvelles sections à ces conteneurs existants.',
@@ -334,18 +352,26 @@ Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré
 
 RÈGLES OBLIGATOIRES :
 1. NE génère PAS encore de patch `"vibe"` ni `"repositories"` sur ce tour (`"vibe": null`, `"askUser": null`).
-2. Vérifie notamment :
+2. Vérifie impérativement :
    - Les marges/paddings qui coupent le contenu, dépassements parent/viewport, contraintes `slotSizeConstraints` trop serrées (`fitContent: false`), textes tronqués et `RenderFlex` overflows ;
-   - **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants [somme(width) + espacements] reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`) ;
-   - **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte ;
+   - **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)** / **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Sur tout conteneur ou zone disposé en ligne (`zoneAxes: 'row'`), additionne systématiquement via `get_component_geometry` les largeurs mesurées des composants enfants et lève une alerte dès que `somme(width) > parentWidth - paddings` (et veille à ce que `[somme(width) + espacements]` reste strictement inférieur à `parentWidth - paddingLeft - paddingRight`) ;
+   - **Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)** : Interdis strictement la cohabitation sur une même ligne d'un titre long (> 30 caractères) et d'un bouton d'action complet texte + icône ; exige soit un bouton d'action à icône seule (`kind: 'icon'`, avec `tooltip` explicite), soit un titre compacté (≤ 30 caractères) ;
+   - **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** & **Inspection visuelle par élément** : Ordonne et exécute une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore un lot d'audit (ainsi qu'en cas de modification d'en-tête ou de barre d'outils) pour valider l'alignement et l'absence de débordement au bord de carte ;
    - Les calculs manquants (`@calculs` non déclarés sur les repositories, KPIs/totaux statiques ou placeholders sans binding calculé, bindings cassés) ;
    - Les erreurs runtime, problèmes de schémas/liaisons et défauts de contraste WCAG AA.
 3. Si des anomalies sont confirmées, renvoie UNIQUEMENT un plan de correction structuré en lots cohérents :
    {"message":"Résumé clair des anomalies trouvées en français","plan":{"title":"Plan d’audit et correction","lots":[{"id":"lot-1","title":"...","description":"Liste précise des IDs de composants/styles/repositories et corrections exactes à appliquer"}]},"vibe":null}
-   - Regroupe logiquement : par ex. Lot 1 = Mise en page, marges, paddings, contraintes et coupures ; Lot 2 = Repositories, attributs `@calculs` et liaisons manquantes ; Lot 3 = Contrastes WCAG AA et finitions (ou 1 seul lot s’il y a peu de corrections).
-   - Indique dans la description des lots corrigeant des marges/débordements, une zone en ligne (`zoneAxes: 'row'`), un onglet, un en-tête ou une barre d’outils de recontrôler le rendu après application (`"verifyRender": true`).
+   - Regroupe logiquement : par ex. Lot 1 = Mise en page, marges, paddings, volets latéraux étroits (≤ 480 dp), contraintes et coupures ; Lot 2 = Repositories, attributs `@calculs` et liaisons manquantes ; Lot 3 = Contrastes WCAG AA et finitions (ou 1 seul lot s’il y a peu de corrections).
+   - Indique dans la description des lots corrigeant des marges/débordements, une zone en ligne (`zoneAxes: 'row'`), un volet latéral étroit (≤ 480 dp), un onglet, une barre d’outils ou un en-tête de carte maître de recontrôler le rendu après application (`"verifyRender": true`) avec une capture isolée `capture_element_screenshot` sur chaque en-tête de carte maître avant clôture du lot.
 4. Si aucune anomalie réelle n’est détectée après vérification, renvoie :
    {"message":"Audit terminé : aucune anomalie détectée sur ce périmètre.","plan":null,"vibe":null}''';
+
+  /// Consignes impératives injectées en Phase 2 lors de l'exécution d'un lot issu de « Audit & correction ».
+  static const String auditLotExecutionDirective = '''
+RÈGLES IMPÉRATIVES D’AUDIT & CORRECTION SUR CE LOT :
+1. **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)** : Additionne les largeurs mesurées des composants enfants sur tout conteneur en ligne et corrige toute configuration où `somme(width) > parentWidth - paddings` (`[somme(width) + espacements] < parentWidth - paddingLeft - paddingRight`).
+2. **Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)** : Interdis sur une même ligne la cohabitation d'un titre long (> 30 caractères) et d'un bouton d'action complet texte + icône ; applique obligatoirement soit un bouton d'action à icône seule (`kind: 'icon'`, avec `tooltip`), soit un titre compacté.
+3. **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** : Active `"verifyRender": true` et effectue une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore ce lot d'audit.''';
 
   /// Consigne de balayage systématique des onglets (`SuperTab`) injectée uniquement hors scope.
   static const String auditTabSweepDirective = '''

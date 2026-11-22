@@ -36,7 +36,7 @@ Future<void> showEditorPageManager({
   );
   if (!context.mounted || location == null) return;
   routing.synchronize(appearance.value.pageCatalog);
-  routing.router.go(location);
+  routing.openLocation(location);
 }
 
 class _PageManager extends StatefulWidget {
@@ -173,6 +173,7 @@ class _PageManagerState extends State<_PageManager> {
     }
     _catalogChanged(
       _catalog.copyWith(
+        clearHomePage: result.pageType.isModal && _catalog.homePageId == page.id,
         pages: [
           for (final entry in _catalog.pages)
             entry.id == page.id ? result : entry,
@@ -278,6 +279,7 @@ class _PageManagerState extends State<_PageManager> {
   }
 
   Future<void> _home(EditorPageConfig page) async {
+    if (page.pageType.isModal) return;
     if (_catalog.homePageId == page.id) {
       _catalogChanged(_catalog.copyWith(clearHomePage: true));
       return;
@@ -546,9 +548,15 @@ class _PageManagerState extends State<_PageManager> {
                                 icon: const Icon(Icons.copy_outlined),
                               ),
                               IconButton(
-                                tooltip: 'Page d’accueil',
-                                onPressed: () => _home(page),
-                                isSelected: _catalog.homePageId == page.id,
+                                tooltip: page.pageType.isModal
+                                    ? 'Une page modale ne peut pas être page d’accueil'
+                                    : 'Page d’accueil',
+                                onPressed: page.pageType.isModal
+                                    ? null
+                                    : () => _home(page),
+                                isSelected:
+                                    !page.pageType.isModal &&
+                                    _catalog.homePageId == page.id,
                                 icon: const Icon(Icons.home_outlined),
                                 selectedIcon: const Icon(Icons.home),
                               ),
@@ -806,6 +814,18 @@ class _PageDetailsState extends State<_PageDetails> {
                   ),
                 ),
                 if (widget.originalId != null &&
+                    widget.catalog.homePageId == widget.originalId &&
+                    _pageType.isModal) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Une page modale ne peut pas être page d’accueil : '
+                    'le statut de page d’accueil sera retiré.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                if (widget.originalId != null &&
                     _pageType.usesScaffold !=
                         widget.page.pageType.usesScaffold) ...[
                   const SizedBox(height: 8),
@@ -983,6 +1003,9 @@ class _PageDetailsState extends State<_PageDetails> {
               );
               widget.routing.validate(
                 widget.catalog.copyWith(
+                  clearHomePage:
+                      page.pageType.isModal &&
+                      widget.catalog.homePageId == widget.originalId,
                   pages: [
                     for (final entry in widget.catalog.pages)
                       if (entry.id != widget.originalId) entry,

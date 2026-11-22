@@ -163,4 +163,14 @@ void main() {
       isFalse,
     );
   });
+
+  test('formatTimestampedConsoleLog préfixe [HH:MM:SS.mmm] sans doubler', () {
+    final ts = DateTime(2026, 11, 22, 9, 5, 3, 42);
+    final formatted = formatTimestampedConsoleLog(
+      '[Vibe IA] Patch appliqué',
+      timestamp: ts,
+    );
+    expect(formatted, '[09:05:03.042] [Vibe IA] Patch appliqué');
+    expect(formatTimestampedConsoleLog(formatted, timestamp: ts), formatted);
+  });
 }

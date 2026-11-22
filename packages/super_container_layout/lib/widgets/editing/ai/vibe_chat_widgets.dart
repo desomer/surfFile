@@ -398,8 +398,7 @@ class VibeMessageBubble extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerRight,
                     child: Tooltip(
-                      message:
-                          'Demander 2 à 4 questions pour affiner ou compléter cet écran',
+                      message: 'Demander 2 à 4 questions pour affiner ou compléter cet écran',
                       child: ActionChip(
                         key: const ValueKey('vibe-message-more-questions'),
                         visualDensity: VisualDensity.compact,
@@ -466,7 +465,9 @@ class _VibeToolTracesSectionState extends State<VibeToolTracesSection> {
         color: scheme.surface.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasError ? scheme.error.withValues(alpha: 0.45) : scheme.outlineVariant,
+          color: hasError
+              ? scheme.error.withValues(alpha: 0.45)
+              : scheme.outlineVariant,
         ),
       ),
       child: Column(
@@ -483,7 +484,9 @@ class _VibeToolTracesSectionState extends State<VibeToolTracesSection> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    hasError ? Icons.warning_amber_rounded : Icons.troubleshoot_outlined,
+                    hasError
+                        ? Icons.warning_amber_rounded
+                        : Icons.troubleshoot_outlined,
                     size: 14,
                     color: hasError ? scheme.error : scheme.primary,
                   ),
@@ -1306,10 +1309,37 @@ class VibeAuditActionChip extends StatelessWidget {
 /// Bulle présentant progressivement le texte et l'état du patch généré.
 class VibeStreamingAssistantBubble extends StatelessWidget {
   /// Crée la bulle liée aux snapshots de [snapshot].
-  const VibeStreamingAssistantBubble({required this.snapshot, super.key});
+  const VibeStreamingAssistantBubble({
+    required this.snapshot,
+    this.onCancel,
+    super.key,
+  });
 
   /// Snapshot réactif du parseur de réponse incrémental.
   final ValueListenable<VibeStreamSnapshot?> snapshot;
+
+  /// Callback optionnel déclenché pour annuler l'appel IA en cours.
+  final VoidCallback? onCancel;
+
+  Widget _buildCancelButton(ColorScheme scheme) => Align(
+    alignment: Alignment.centerRight,
+    child: Tooltip(
+      message: 'Annuler l’appel IA en cours',
+      child: TextButton.icon(
+        key: const ValueKey('vibe-chat-streaming-cancel'),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          foregroundColor: scheme.error,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: onCancel,
+        icon: const Icon(Icons.stop_circle_outlined, size: 15),
+        label: const Text('Annuler', style: TextStyle(fontSize: 12)),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1423,6 +1453,10 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (onCancel != null) ...[
+                        const SizedBox(height: 6),
+                        _buildCancelButton(scheme),
+                      ],
                     ],
                   ),
                 );
@@ -1614,6 +1648,10 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ],
+                    if (onCancel != null) ...[
+                      const SizedBox(height: 6),
+                      _buildCancelButton(scheme),
                     ],
                   ],
                 ),

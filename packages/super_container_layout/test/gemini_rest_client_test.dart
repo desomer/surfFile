@@ -724,5 +724,148 @@ void main() {
         );
       },
     );
+
+    test(
+      'streamGenerate annulé en cours de flux via VibeCancellationToken émet VibeCancelledException immédiatement',
+      () async {
+        final lineController = StreamController<List<int>>();
+        var sseStreamCancelled = false;
+        lineController.onCancel = () {
+          sseStreamCancelled = true;
+        };
+
+        final transport = _FakeGeminiHttpTransport(
+          onPostSseStream: (_) async => GeminiHttpStreamResponse(
+            statusCode: 200,
+            byteStream: lineController.stream,
+          ),
+        );
+
+        final client = GeminiRestClient(
+          transport: transport,
+          apiKeyResolver: () async => 'test-key',
+        );
+        final token = VibeCancellationToken();
+
+        final events = <GeminiStreamEvent>[];
+        Object? caughtError;
+        final done = Completer<void>();
+
+        client
+            .streamGenerate('Génère un écran', cancellationToken: token)
+            .listen(
+              events.add,
+              onError: (Object error) {
+                caughtError = error;
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+            );
+
+        await Future<void>.delayed(Duration.zero);
+        lineController.add(
+          utf8.encode(
+            'data: ${jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '{"message":"Début'},
+                    ],
+                  },
+                },
+              ],
+            })}\n',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(events, hasLength(1));
+
+        token.cancel();
+        await done.future.timeout(const Duration(seconds: 1));
+
+        expect(caughtError, isA<VibeCancelledException>());
+        expect(sseStreamCancelled, isTrue);
+      },
+    );
+
+    test(
+      'ensureCachedContent annulé via VibeCancellationToken lève VibeCancelledException sans blacklister le cache',
+      () async {
+        final pendingCacheCompleter = Completer<GeminiHttpResponse>();
+        var cacheAttempts = 0;
+
+        final transport = _FakeGeminiHttpTransport(
+          onPostJson: (_) {
+            cacheAttempts++;
+            if (cacheAttempts == 1) {
+              return pendingCacheCompleter.future;
+            }
+            return Future<GeminiHttpResponse>.value(
+              GeminiHttpResponse(
+                statusCode: 200,
+                body: jsonEncode({
+                  'name': 'cachedContents/recovered-after-cancel',
+                  'expireTime': '2099-01-01T00:00:00Z',
+                }),
+              ),
+            );
+          },
+          onPostSseStream: (_) async => _sseJsonChunks([
+            {
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '{"message":"OK","vibe":null}'},
+                    ],
+                  },
+                },
+              ],
+            },
+          ]),
+        );
+
+        final client = GeminiRestClient(
+          transport: transport,
+          apiKeyResolver: () async => 'test-key',
+        );
+        final token = VibeCancellationToken();
+
+        final cancelledFuture = client
+            .streamGenerate(
+              'Tour annulé',
+              systemInstruction: 'Règles',
+              staticGuide: largeGuide,
+              cancellationToken: token,
+            )
+            .toList();
+
+        await Future<void>.delayed(Duration.zero);
+        token.cancel();
+
+        await expectLater(
+          cancelledFuture,
+          throwsA(isA<VibeCancelledException>()),
+        );
+
+        // Complète tardivement la requête HTTP annulée : ne doit pas lever ni polluer le cache.
+        pendingCacheCompleter.complete(
+          const GeminiHttpResponse(statusCode: 500, body: 'late failure'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final nextEvents = await client
+            .streamGenerate(
+              'Tour suivant',
+              systemInstruction: 'Règles',
+              staticGuide: largeGuide,
+            )
+            .toList();
+        expect(cacheAttempts, 2);
+        expect(nextEvents.last.usedContextCache, isTrue);
+      },
+    );
   });
 }

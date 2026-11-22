@@ -85,8 +85,14 @@ class VibeTimedTrace {
           other.isError == isError;
 
   @override
-  int get hashCode =>
-      Object.hash(label, durationMs, phase, elapsedFromStartMs, detail, isError);
+  int get hashCode => Object.hash(
+    label,
+    durationMs,
+    phase,
+    elapsedFromStartMs,
+    detail,
+    isError,
+  );
 }
 
 /// État d'exécution d'un lot individuel au sein d'un [VibeExecutionPlan].
@@ -251,7 +257,9 @@ class VibePlanLot {
     title: title ?? this.title,
     description: description ?? this.description,
     status: status ?? this.status,
-    errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+    errorMessage: clearErrorMessage
+        ? null
+        : (errorMessage ?? this.errorMessage),
     durationMs: clearDuration ? null : (durationMs ?? this.durationMs),
     attempts: attempts ?? this.attempts,
     hasPartialCheckpoint: clearPartialCheckpoint
@@ -415,8 +423,7 @@ class VibeExecutionPlan {
     'status': status.name,
     if (reproduceExact) 'reproduceExact': true,
     if (planningDurationMs != null) 'planningDurationMs': planningDurationMs,
-    if (executionDurationMs != null)
-      'executionDurationMs': executionDurationMs,
+    if (executionDurationMs != null) 'executionDurationMs': executionDurationMs,
     if (planningTraces.isNotEmpty)
       'planningTraces': [for (final t in planningTraces) t.toJson()],
     'lots': [for (final lot in lots) lot.toJson()],
@@ -463,7 +470,9 @@ class VibeExecutionPlan {
       ..writeln('ÉTAT DES LOTS :');
     for (var i = 0; i < lots.length; i++) {
       final lot = lots[i];
-      final marker = i == lotIndex ? '>>> À EXÉCUTER MAINTENANT' : lot.status.label;
+      final marker = i == lotIndex
+          ? '>>> À EXÉCUTER MAINTENANT'
+          : lot.status.label;
       buffer.writeln(
         '${i + 1}. [${lot.id}] ${lot.title} — $marker'
         '${lot.description.isNotEmpty && i == lotIndex ? '\n   Détails : ${lot.description}' : ''}',

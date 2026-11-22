@@ -225,6 +225,108 @@ class GeminiApiException implements Exception {
   }
 }
 
+/// Exception levée lorsqu'un appel IA Vibe est annulé par l'utilisateur.
+class VibeCancelledException implements Exception {
+  /// Crée une exception d'annulation d'appel IA.
+  const VibeCancelledException([
+    this.message = 'Appel IA annulé par l’utilisateur.',
+  ]);
+
+  /// Message descriptif de l'annulation.
+  final String message;
+
+  @override
+  String toString() => 'VibeCancelledException: $message';
+}
+
+/// Jeton coopératif permettant d'annuler immédiatement un appel HTTP/SSE Gemini
+/// ou un tour de génération dans le chat Vibe IA.
+class VibeCancellationToken {
+  /// Crée un jeton d'annulation actif.
+  VibeCancellationToken();
+
+  bool _isCancelled = false;
+  final List<void Function()> _listeners = <void Function()>[];
+  final Completer<void> _cancelledCompleter = Completer<void>();
+
+  /// Indique si [cancel] a déjà été appelé sur ce jeton.
+  bool get isCancelled => _isCancelled;
+
+  /// Futur complété dès que [cancel] est appelé.
+  Future<void> get whenCancelled => _cancelledCompleter.future;
+
+  /// Enregistre un observateur déclenché lors de l'annulation (ou immédiatement si déjà annulé).
+  ///
+  /// Retourne une fonction permettant de désinscrire cet observateur.
+  void Function() addListener(void Function() listener) {
+    if (_isCancelled) {
+      listener();
+      return () {};
+    }
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
+
+  /// Déclenche l'annulation et notifie les observateurs enregistrés (ex. `HttpClientRequest.abort`).
+  void cancel() {
+    if (_isCancelled) return;
+    _isCancelled = true;
+    if (!_cancelledCompleter.isCompleted) {
+      _cancelledCompleter.complete();
+    }
+    final snapshot = List<void Function()>.of(_listeners);
+    _listeners.clear();
+    for (final listener in snapshot) {
+      try {
+        listener();
+      } catch (_) {
+        // L'annulation doit notifier tous les observateurs sans propager d'erreur.
+      }
+    }
+  }
+
+  /// Lève [VibeCancelledException] si l'annulation a été demandée.
+  void throwIfCancelled() {
+    if (_isCancelled) {
+      throw const VibeCancelledException();
+    }
+  }
+}
+
+Future<T> _raceWithCancellation<T>(
+  Future<T> future,
+  VibeCancellationToken? cancellationToken,
+) {
+  if (cancellationToken == null) return future;
+  cancellationToken.throwIfCancelled();
+  final completer = Completer<T>();
+  final removeListener = cancellationToken.addListener(() {
+    if (!completer.isCompleted) {
+      completer.completeError(const VibeCancelledException());
+    }
+  });
+  future.then(
+    (value) {
+      removeListener();
+      if (!completer.isCompleted) {
+        completer.complete(value);
+      }
+    },
+    onError: (Object error, StackTrace stackTrace) {
+      removeListener();
+      if (!completer.isCompleted) {
+        completer.completeError(
+          cancellationToken.isCancelled
+              ? const VibeCancelledException()
+              : error,
+          stackTrace,
+        );
+      }
+    },
+  );
+  return completer.future;
+}
+
 /// Abstraction injectable de transport HTTP/SSE utilisée par [GeminiRestClient].
 ///
 /// Permet de substituer un transport simulé en mémoire dans les tests unitaires
@@ -240,12 +342,34 @@ abstract class GeminiHttpTransport {
     required Map<String, Object?> body,
   });
 
+  /// Variante annulable de [postJson] utilisant [cancellationToken].
+  Future<GeminiHttpResponse> postJsonCancellable(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    VibeCancellationToken? cancellationToken,
+  }) => _raceWithCancellation(
+    postJson(uri, headers: headers, body: body),
+    cancellationToken,
+  );
+
   /// Envoie une requête `POST` JSON et retourne immédiatement les en-têtes/statut et le flux d'octets SSE.
   Future<GeminiHttpStreamResponse> postSseStream(
     Uri uri, {
     required Map<String, String> headers,
     required Map<String, Object?> body,
   });
+
+  /// Variante annulable de [postSseStream] utilisant [cancellationToken].
+  Future<GeminiHttpStreamResponse> postSseStreamCancellable(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    VibeCancellationToken? cancellationToken,
+  }) => _raceWithCancellation(
+    postSseStream(uri, headers: headers, body: body),
+    cancellationToken,
+  );
 
   /// Préchauffe optionnellement la connexion TCP/TLS vers [uri].
   Future<void> warmUp(Uri uri) async {}
@@ -286,26 +410,61 @@ class DartIoGeminiHttpTransport extends GeminiHttpTransport {
     _lastActivityAt = DateTime.now();
   }
 
+  static void _abortQuietly(HttpClientRequest? request) {
+    if (request == null) return;
+    try {
+      request.abort();
+    } catch (_) {
+      // Ignore si la requête est déjà fermée ou annulée.
+    }
+  }
+
   @override
   Future<GeminiHttpResponse> postJson(
     Uri uri, {
     required Map<String, String> headers,
     required Map<String, Object?> body,
+  }) => postJsonCancellable(uri, headers: headers, body: body);
+
+  @override
+  Future<GeminiHttpResponse> postJsonCancellable(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    VibeCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final client = _ensureClient();
-    final request = await client.postUrl(uri);
-    request.persistentConnection = true;
-    headers.forEach(request.headers.set);
-    final payload = utf8.encode(jsonEncode(body));
-    request.contentLength = payload.length;
-    request.add(payload);
-    final response = await request.close();
-    final responseBody = await utf8.decoder.bind(response).join();
-    _touchActivity();
-    return GeminiHttpResponse(
-      statusCode: response.statusCode,
-      body: responseBody,
+    HttpClientRequest? activeRequest;
+    final removeAbort = cancellationToken?.addListener(
+      () => _abortQuietly(activeRequest),
     );
+    Future<GeminiHttpResponse> run() async {
+      final request = await client.postUrl(uri);
+      if (cancellationToken?.isCancelled == true) {
+        _abortQuietly(request);
+        throw const VibeCancelledException();
+      }
+      activeRequest = request;
+      request.persistentConnection = true;
+      headers.forEach(request.headers.set);
+      final payload = utf8.encode(jsonEncode(body));
+      request.contentLength = payload.length;
+      request.add(payload);
+      final response = await request.close();
+      final responseBody = await utf8.decoder.bind(response).join();
+      _touchActivity();
+      return GeminiHttpResponse(
+        statusCode: response.statusCode,
+        body: responseBody,
+      );
+    }
+
+    try {
+      return await _raceWithCancellation(run(), cancellationToken);
+    } finally {
+      removeAbort?.call();
+    }
   }
 
   @override
@@ -313,19 +472,136 @@ class DartIoGeminiHttpTransport extends GeminiHttpTransport {
     Uri uri, {
     required Map<String, String> headers,
     required Map<String, Object?> body,
+  }) => postSseStreamCancellable(uri, headers: headers, body: body);
+
+  @override
+  Future<GeminiHttpStreamResponse> postSseStreamCancellable(
+    Uri uri, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    VibeCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final client = _ensureClient();
-    final request = await client.postUrl(uri);
-    request.persistentConnection = true;
-    headers.forEach(request.headers.set);
-    final payload = utf8.encode(jsonEncode(body));
-    request.contentLength = payload.length;
-    request.add(payload);
-    final response = await request.close();
-    _touchActivity();
+    HttpClientRequest? activeRequest;
+    void Function()? removeAbort;
+    if (cancellationToken != null) {
+      removeAbort = cancellationToken.addListener(
+        () => _abortQuietly(activeRequest),
+      );
+    }
+
+    Future<HttpClientResponse> openResponse() async {
+      final request = await client.postUrl(uri);
+      if (cancellationToken?.isCancelled == true) {
+        _abortQuietly(request);
+        throw const VibeCancelledException();
+      }
+      activeRequest = request;
+      request.persistentConnection = true;
+      headers.forEach(request.headers.set);
+      final payload = utf8.encode(jsonEncode(body));
+      request.contentLength = payload.length;
+      request.add(payload);
+      final response = await request.close();
+      if (cancellationToken?.isCancelled == true) {
+        _abortQuietly(request);
+        throw const VibeCancelledException();
+      }
+      _touchActivity();
+      return response;
+    }
+
+    final HttpClientResponse response;
+    try {
+      response = await _raceWithCancellation(
+        openResponse(),
+        cancellationToken,
+      );
+    } catch (_) {
+      removeAbort?.call();
+      rethrow;
+    }
+
+    if (cancellationToken == null) {
+      return GeminiHttpStreamResponse(
+        statusCode: response.statusCode,
+        byteStream: response,
+      );
+    }
+
+    late final StreamController<List<int>> byteController;
+    StreamSubscription<List<int>>? responseSub;
+    void Function()? removeStreamAbort;
+
+    void cleanup() {
+      removeAbort?.call();
+      removeAbort = null;
+      removeStreamAbort?.call();
+      removeStreamAbort = null;
+    }
+
+    byteController = StreamController<List<int>>(
+      onListen: () {
+        if (cancellationToken.isCancelled) {
+          cleanup();
+          _abortQuietly(activeRequest);
+          if (!byteController.isClosed) {
+            byteController.addError(const VibeCancelledException());
+            unawaited(byteController.close());
+          }
+          return;
+        }
+        responseSub = response.listen(
+          byteController.add,
+          onError: (Object error, StackTrace stackTrace) {
+            cleanup();
+            if (!byteController.isClosed) {
+              byteController.addError(
+                cancellationToken.isCancelled
+                    ? const VibeCancelledException()
+                    : error,
+                stackTrace,
+              );
+              unawaited(byteController.close());
+            }
+          },
+          onDone: () {
+            cleanup();
+            if (!byteController.isClosed) {
+              unawaited(byteController.close());
+            }
+          },
+          cancelOnError: false,
+        );
+        removeStreamAbort = cancellationToken.addListener(() {
+          _abortQuietly(activeRequest);
+          unawaited(responseSub?.cancel() ?? Future<void>.value());
+          cleanup();
+          if (!byteController.isClosed) {
+            byteController.addError(const VibeCancelledException());
+            unawaited(byteController.close());
+          }
+        });
+      },
+      onPause: () => responseSub?.pause(),
+      onResume: () => responseSub?.resume(),
+      onCancel: () async {
+        cleanup();
+        final sub = responseSub;
+        responseSub = null;
+        if (cancellationToken.isCancelled) {
+          _abortQuietly(activeRequest);
+        }
+        if (sub != null) {
+          await sub.cancel();
+        }
+      },
+    );
+
     return GeminiHttpStreamResponse(
       statusCode: response.statusCode,
-      byteStream: response,
+      byteStream: byteController.stream,
     );
   }
 
@@ -544,7 +820,9 @@ class GeminiRestClient {
     String? systemInstruction,
     String? staticGuide,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    VibeCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     if (staticGuide == null ||
         staticGuide.trim().isEmpty ||
         staticGuide.length < minGuideCharsForExplicitCache) {
@@ -572,7 +850,7 @@ class GeminiRestClient {
 
     final inFlight = _inFlightCacheCreations[cacheKey];
     if (inFlight != null) {
-      return inFlight;
+      return _raceWithCancellation(inFlight, cancellationToken);
     }
 
     final future = _createCachedContent(
@@ -582,6 +860,7 @@ class GeminiRestClient {
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
       tools: tools,
+      cancellationToken: cancellationToken,
     );
     _inFlightCacheCreations[cacheKey] = future;
     try {
@@ -600,7 +879,9 @@ class GeminiRestClient {
     required String? systemInstruction,
     required String staticGuide,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    VibeCancellationToken? cancellationToken,
   }) async {
+    cancellationToken?.throwIfCancelled();
     final stopwatch = Stopwatch()..start();
     final toolsPayload = tools.isEmpty
         ? const <Map<String, Object?>>[]
@@ -642,11 +923,13 @@ class GeminiRestClient {
     };
 
     try {
-      final response = await _transport.postJson(
+      final response = await _transport.postJsonCancellable(
         _cachedContentsUri,
         headers: _jsonHeaders(apiKey),
         body: requestBody,
+        cancellationToken: cancellationToken,
       );
+      cancellationToken?.throwIfCancelled();
       stopwatch.stop();
 
       if (!response.isSuccess) {
@@ -688,8 +971,14 @@ class GeminiRestClient {
         '${stopwatch.elapsedMilliseconds} ms (modèle: $model).',
       );
       return name;
+    } on VibeCancelledException {
+      stopwatch.stop();
+      rethrow;
     } catch (error) {
       stopwatch.stop();
+      if (cancellationToken?.isCancelled == true) {
+        throw const VibeCancelledException();
+      }
       _unsupportedCacheKeys.add(cacheKey);
       debugPrint(
         '[Vibe IA][Gemini REST] Échec de cachedContents après '
@@ -705,6 +994,8 @@ class GeminiRestClient {
   /// Utilise automatiquement un `cachedContent` lorsque [staticGuide] dépasse
   /// [minGuideCharsForExplicitCache], et bascule sans coupure sur `systemInstruction`,
   /// sans `thinkingConfig` ou sans `responseMimeType` avec outils si l'API le requiert.
+  /// Lorsque [cancellationToken] est annulé, interrompt immédiatement la requête et
+  /// émet une [VibeCancelledException] sur le flux retourné.
   Stream<GeminiStreamEvent> streamGenerate(
     String prompt, {
     String? apiKey,
@@ -715,54 +1006,52 @@ class GeminiRestClient {
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
     List<Map<String, Object?>>? conversationContents,
     bool enforceJsonResponse = true,
-  }) async* {
-    final resolvedKey = (apiKey ?? await _apiKeyResolver()).trim();
-    if (resolvedKey.isEmpty) {
-      debugPrint(
-        '[Vibe IA][Gemini REST] Clé GEMINI_API_KEY absente '
-        '(dotenv.isInitialized=${dotenv.isInitialized}).',
-      );
-      throw Exception('GEMINI_API_KEY dotenv is not defined');
+    VibeCancellationToken? cancellationToken,
+  }) {
+    late final StreamController<GeminiStreamEvent> controller;
+    StreamSubscription<String>? activeLineSub;
+    void Function()? removeCancelListener;
+    var consumerCancelled = false;
+
+    void abortWithCancellation() {
+      if (controller.isClosed) return;
+      final sub = activeLineSub;
+      activeLineSub = null;
+      if (sub != null) {
+        unawaited(sub.cancel());
+      }
+      if (!consumerCancelled) {
+        controller.addError(const VibeCancelledException());
+      }
+      unawaited(controller.close());
     }
 
-    var model = resolveModel(speedMode);
-    final triedModels = <String>{model};
-    final totalStopwatch = Stopwatch()..start();
+    Future<void> drive() async {
+      try {
+        cancellationToken?.throwIfCancelled();
+        final resolvedKey = (await _raceWithCancellation(
+          apiKey != null ? Future<String>.value(apiKey) : _apiKeyResolver(),
+          cancellationToken,
+        )).trim();
+        cancellationToken?.throwIfCancelled();
+        if (resolvedKey.isEmpty) {
+          debugPrint(
+            '[Vibe IA][Gemini REST] Clé GEMINI_API_KEY absente '
+            '(dotenv.isInitialized=${dotenv.isInitialized}).',
+          );
+          throw Exception('GEMINI_API_KEY dotenv is not defined');
+        }
 
-    final hasCacheableGuide =
-        staticGuide != null &&
-        staticGuide.trim().isNotEmpty &&
-        staticGuide.length >= minGuideCharsForExplicitCache;
+        var model = resolveModel(speedMode);
+        final triedModels = <String>{model};
+        final totalStopwatch = Stopwatch()..start();
 
-    String? cacheKey = hasCacheableGuide
-        ? _buildCacheKey(
-            model: model,
-            systemInstruction: systemInstruction,
-            staticGuide: staticGuide,
-            tools: tools,
-          )
-        : null;
+        final hasCacheableGuide =
+            staticGuide != null &&
+            staticGuide.trim().isNotEmpty &&
+            staticGuide.length >= minGuideCharsForExplicitCache;
 
-    var cachedContentName = await ensureCachedContent(
-      apiKey: resolvedKey,
-      model: model,
-      systemInstruction: systemInstruction,
-      staticGuide: staticGuide,
-      tools: tools,
-    );
-
-    if (cachedContentName == null && _unavailableModels.contains(model)) {
-      final fallback = resolveModelCandidates(speedMode)
-          .where((m) => !triedModels.contains(m))
-          .firstOrNull;
-      if (fallback != null) {
-        debugPrint(
-          '[Vibe IA][Gemini REST] Modèle $model retiré lors du cache (HTTP 404), '
-          'bascule automatique vers $fallback.',
-        );
-        model = fallback;
-        triedModels.add(model);
-        cacheKey = hasCacheableGuide
+        String? cacheKey = hasCacheableGuide
             ? _buildCacheKey(
                 model: model,
                 systemInstruction: systemInstruction,
@@ -770,273 +1059,406 @@ class GeminiRestClient {
                 tools: tools,
               )
             : null;
-        cachedContentName = await ensureCachedContent(
+
+        var cachedContentName = await ensureCachedContent(
           apiKey: resolvedKey,
           model: model,
           systemInstruction: systemInstruction,
           staticGuide: staticGuide,
           tools: tools,
+          cancellationToken: cancellationToken,
         );
-      }
-    }
+        cancellationToken?.throwIfCancelled();
 
-    final contentsPayload = conversationContents ??
-        <Map<String, Object?>>[
-          <String, Object?>{
-            'role': 'user',
-            'parts': _buildUserParts(prompt, attachments),
-          },
-        ];
-    var streamUri = Uri.parse(
-      '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
-    );
+        if (cachedContentName == null && _unavailableModels.contains(model)) {
+          final fallback = resolveModelCandidates(speedMode)
+              .where((m) => !triedModels.contains(m))
+              .firstOrNull;
+          if (fallback != null) {
+            debugPrint(
+              '[Vibe IA][Gemini REST] Modèle $model retiré lors du cache (HTTP 404), '
+              'bascule automatique vers $fallback.',
+            );
+            model = fallback;
+            triedModels.add(model);
+            cacheKey = hasCacheableGuide
+                ? _buildCacheKey(
+                    model: model,
+                    systemInstruction: systemInstruction,
+                    staticGuide: staticGuide,
+                    tools: tools,
+                  )
+                : null;
+            cachedContentName = await ensureCachedContent(
+              apiKey: resolvedKey,
+              model: model,
+              systemInstruction: systemInstruction,
+              staticGuide: staticGuide,
+              tools: tools,
+              cancellationToken: cancellationToken,
+            );
+            cancellationToken?.throwIfCancelled();
+          }
+        }
 
-    var retriedWithoutCache = false;
-    var retriedWithoutThinking = false;
-    var retriedWithoutResponseMimeType = false;
-    late GeminiHttpStreamResponse streamResponse;
+        final contentsPayload = conversationContents ??
+            <Map<String, Object?>>[
+              <String, Object?>{
+                'role': 'user',
+                'parts': _buildUserParts(prompt, attachments),
+              },
+            ];
+        var streamUri = Uri.parse(
+          '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
+        );
 
-    while (true) {
-      final thinkingKey = '$model|${speedMode.name}';
-      final includeThinking =
-          !_unsupportedThinkingModels.contains(model) &&
-          !_unsupportedThinkingConfigs.contains(thinkingKey);
-      final includeResponseMimeType =
-          enforceJsonResponse &&
-          !(tools.isNotEmpty &&
-              _unsupportedJsonWithToolsModels.contains(model));
-      final requestBody = _buildGenerateRequestBody(
-        contents: contentsPayload,
-        cachedContentName: cachedContentName,
-        systemInstruction: systemInstruction,
-        staticGuide: staticGuide,
-        speedMode: speedMode,
-        includeThinkingConfig: includeThinking,
-        tools: tools,
-        includeResponseMimeType: includeResponseMimeType,
-      );
+        var retriedWithoutCache = false;
+        var retriedWithoutThinking = false;
+        var retriedWithoutResponseMimeType = false;
+        late GeminiHttpStreamResponse streamResponse;
 
-      streamResponse = await _transport.postSseStream(
-        streamUri,
-        headers: _sseHeaders(resolvedKey),
-        body: requestBody,
-      );
+        while (true) {
+          cancellationToken?.throwIfCancelled();
+          if (consumerCancelled || controller.isClosed) return;
 
-      if (streamResponse.isSuccess) {
-        break;
-      }
-
-      final errorBody = await streamResponse.readBodyAsString();
-      final status = streamResponse.statusCode;
-
-      if (status == 404 && _isModelNotFoundError(errorBody)) {
-        _markModelUnavailable(model, errorBody);
-        final nextModel = resolveModelCandidates(speedMode)
-            .where((m) => !triedModels.contains(m))
-            .firstOrNull;
-        if (nextModel != null) {
-          debugPrint(
-            '[Vibe IA][Gemini REST] Modèle $model indisponible (HTTP 404), '
-            'bascule automatique vers $nextModel.',
-          );
-          model = nextModel;
-          triedModels.add(model);
-          cacheKey = hasCacheableGuide
-              ? _buildCacheKey(
-                  model: model,
-                  systemInstruction: systemInstruction,
-                  staticGuide: staticGuide,
-                  tools: tools,
-                )
-              : null;
-          cachedContentName = await ensureCachedContent(
-            apiKey: resolvedKey,
-            model: model,
+          final thinkingKey = '$model|${speedMode.name}';
+          final includeThinking =
+              !_unsupportedThinkingModels.contains(model) &&
+              !_unsupportedThinkingConfigs.contains(thinkingKey);
+          final includeResponseMimeType =
+              enforceJsonResponse &&
+              !(tools.isNotEmpty &&
+                  _unsupportedJsonWithToolsModels.contains(model));
+          final requestBody = _buildGenerateRequestBody(
+            contents: contentsPayload,
+            cachedContentName: cachedContentName,
             systemInstruction: systemInstruction,
             staticGuide: staticGuide,
+            speedMode: speedMode,
+            includeThinkingConfig: includeThinking,
             tools: tools,
+            includeResponseMimeType: includeResponseMimeType,
           );
-          streamUri = Uri.parse(
-            '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
+
+          streamResponse = await _transport.postSseStreamCancellable(
+            streamUri,
+            headers: _sseHeaders(resolvedKey),
+            body: requestBody,
+            cancellationToken: cancellationToken,
           );
-          retriedWithoutCache = false;
-          retriedWithoutThinking = false;
-          retriedWithoutResponseMimeType = false;
-          continue;
+          cancellationToken?.throwIfCancelled();
+          if (consumerCancelled || controller.isClosed) return;
+
+          if (streamResponse.isSuccess) {
+            break;
+          }
+
+          final errorBody = await _raceWithCancellation(
+            streamResponse.readBodyAsString(),
+            cancellationToken,
+          );
+          cancellationToken?.throwIfCancelled();
+          final status = streamResponse.statusCode;
+
+          if (status == 404 && _isModelNotFoundError(errorBody)) {
+            _markModelUnavailable(model, errorBody);
+            final nextModel = resolveModelCandidates(speedMode)
+                .where((m) => !triedModels.contains(m))
+                .firstOrNull;
+            if (nextModel != null) {
+              debugPrint(
+                '[Vibe IA][Gemini REST] Modèle $model indisponible (HTTP 404), '
+                'bascule automatique vers $nextModel.',
+              );
+              model = nextModel;
+              triedModels.add(model);
+              cacheKey = hasCacheableGuide
+                  ? _buildCacheKey(
+                      model: model,
+                      systemInstruction: systemInstruction,
+                      staticGuide: staticGuide,
+                      tools: tools,
+                    )
+                  : null;
+              cachedContentName = await ensureCachedContent(
+                apiKey: resolvedKey,
+                model: model,
+                systemInstruction: systemInstruction,
+                staticGuide: staticGuide,
+                tools: tools,
+                cancellationToken: cancellationToken,
+              );
+              cancellationToken?.throwIfCancelled();
+              streamUri = Uri.parse(
+                '$_baseUrl/models/$model:streamGenerateContent?alt=sse',
+              );
+              retriedWithoutCache = false;
+              retriedWithoutThinking = false;
+              retriedWithoutResponseMimeType = false;
+              continue;
+            }
+          }
+
+          if (cachedContentName != null &&
+              !retriedWithoutCache &&
+              (status == 404 ||
+                  (status == 400 && _mentionsCachedContent(errorBody)))) {
+            if (cacheKey != null) {
+              _activeCaches.remove(cacheKey);
+            }
+            debugPrint(
+              '[Vibe IA][Gemini REST] cachedContent expiré ou invalide '
+              '(HTTP $status), éviction et nouvelle tentative avec systemInstruction.',
+            );
+            cachedContentName = null;
+            retriedWithoutCache = true;
+            continue;
+          }
+
+          if (tools.isNotEmpty &&
+              includeResponseMimeType &&
+              !retriedWithoutResponseMimeType &&
+              status == 400 &&
+              _mentionsResponseMimeTypeWithTools(errorBody)) {
+            _unsupportedJsonWithToolsModels.add(model);
+            debugPrint(
+              '[Vibe IA][Gemini REST] Modèle $model incompatible avec responseMimeType + tools '
+              '(HTTP 400), nouvelle tentative sans responseMimeType.',
+            );
+            retriedWithoutResponseMimeType = true;
+            continue;
+          }
+
+          if (includeThinking &&
+              !retriedWithoutThinking &&
+              status == 400 &&
+              (_mentionsThinkingConfig(errorBody) ||
+                  _isGenericInvalidArgument(errorBody))) {
+            _unsupportedThinkingConfigs.add(thinkingKey);
+            if (_mentionsModelWideThinkingUnsupported(errorBody)) {
+              _unsupportedThinkingModels.add(model);
+            }
+            debugPrint(
+              '[Vibe IA][Gemini REST] Modèle $model incompatible avec thinkingConfig '
+              '(HTTP 400), nouvelle tentative sans thinkingConfig.',
+            );
+            retriedWithoutThinking = true;
+            continue;
+          }
+
+          totalStopwatch.stop();
+          debugPrint(
+            '[Vibe IA][Gemini REST] Échec HTTP $status après '
+            '${totalStopwatch.elapsedMilliseconds} ms : $errorBody',
+          );
+          throw GeminiApiException(
+            statusCode: status,
+            message: _extractApiErrorMessage(errorBody) ?? 'HTTP $status',
+            responseBody: errorBody,
+          );
         }
-      }
 
-      if (cachedContentName != null &&
-          !retriedWithoutCache &&
-          (status == 404 ||
-              (status == 400 && _mentionsCachedContent(errorBody)))) {
-        if (cacheKey != null) {
-          _activeCaches.remove(cacheKey);
-        }
+        final usedCache = cachedContentName != null;
+        final accumulatedBuffer = StringBuffer();
+        final accumulatedCalls = <VibeToolCall>[];
+        final accumulatedModelParts = <Map<String, Object?>>[];
+        int? ttftMs;
+        Map<String, dynamic>? lastUsageMetadata;
+        String? lastFinishReason;
+
+        final lineStream = utf8.decoder
+            .bind(streamResponse.byteStream)
+            .transform(const LineSplitter());
+        final lineDone = Completer<void>();
+
+        activeLineSub = lineStream.listen(
+          (rawLine) {
+            if (cancellationToken?.isCancelled == true ||
+                consumerCancelled ||
+                controller.isClosed) {
+              return;
+            }
+            final line = rawLine.trim();
+            if (line.isEmpty || line.startsWith(':')) {
+              return;
+            }
+            if (!line.startsWith('data:')) {
+              return;
+            }
+            final payload = line.substring(5).trim();
+            if (payload.isEmpty || payload == '[DONE]') {
+              return;
+            }
+
+            final Object? decoded;
+            try {
+              decoded = jsonDecode(payload);
+            } on FormatException catch (error) {
+              debugPrint(
+                '[Vibe IA][Gemini REST] Ligne SSE JSON ignorée (${error.message}).',
+              );
+              return;
+            }
+            if (decoded is! Map<String, dynamic>) {
+              return;
+            }
+
+            if (decoded['error'] case final Map<Object?, Object?> errorMap
+                when decoded['candidates'] == null) {
+              final code = (errorMap['code'] as num?)?.toInt() ?? 500;
+              final message =
+                  errorMap['message']?.toString() ??
+                  'Erreur du flux SSE Gemini';
+              if (!lineDone.isCompleted) {
+                lineDone.completeError(
+                  GeminiApiException(
+                    statusCode: code,
+                    message: message,
+                    responseBody: payload,
+                  ),
+                );
+              }
+              return;
+            }
+
+            if (decoded['usageMetadata'] case final Map<String, dynamic> usage) {
+              lastUsageMetadata = usage;
+            }
+            if (decoded['candidates'] case [
+              final Map<Object?, Object?> first,
+              ...,
+            ]) {
+              if (first['finishReason'] case final String reason
+                  when reason.isNotEmpty) {
+                lastFinishReason = reason;
+              }
+            }
+
+            final extracted = _extractCandidateChunk(
+              decoded,
+              nextCallIndex: accumulatedCalls.length,
+            );
+            if (extracted.rawParts.isNotEmpty) {
+              accumulatedModelParts.addAll(extracted.rawParts);
+            }
+            if (extracted.functionCalls.isNotEmpty) {
+              accumulatedCalls.addAll(extracted.functionCalls);
+            }
+            if (extracted.text.isNotEmpty ||
+                extracted.functionCalls.isNotEmpty) {
+              ttftMs ??= totalStopwatch.elapsedMilliseconds;
+              accumulatedBuffer.write(extracted.text);
+              controller.add(
+                GeminiStreamEvent(
+                  deltaText: extracted.text,
+                  accumulatedText: accumulatedBuffer.toString(),
+                  isDone: false,
+                  usedContextCache: usedCache,
+                  functionCalls: List<VibeToolCall>.unmodifiable(
+                    accumulatedCalls,
+                  ),
+                  rawModelParts: List<Map<String, Object?>>.unmodifiable(
+                    accumulatedModelParts,
+                  ),
+                ),
+              );
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!lineDone.isCompleted) {
+              lineDone.completeError(
+                cancellationToken?.isCancelled == true
+                    ? const VibeCancelledException()
+                    : error,
+                stackTrace,
+              );
+            }
+          },
+          onDone: () {
+            if (!lineDone.isCompleted) {
+              lineDone.complete();
+            }
+          },
+          cancelOnError: true,
+        );
+
+        await _raceWithCancellation(lineDone.future, cancellationToken);
+        activeLineSub = null;
+        cancellationToken?.throwIfCancelled();
+        if (consumerCancelled || controller.isClosed) return;
+
+        totalStopwatch.stop();
+        final usageSummary = _formatUsageSummary(lastUsageMetadata);
+        final finishInfo =
+            lastFinishReason != null && lastFinishReason != 'STOP'
+            ? ', finish: $lastFinishReason'
+            : '';
         debugPrint(
-          '[Vibe IA][Gemini REST] cachedContent expiré ou invalide '
-          '(HTTP $status), éviction et nouvelle tentative avec systemInstruction.',
+          '[Vibe IA][Gemini REST] $model (${speedMode.name}) terminé — '
+          'TTFT: ${ttftMs ?? totalStopwatch.elapsedMilliseconds} ms, '
+          'total: ${totalStopwatch.elapsedMilliseconds} ms, '
+          'cache: ${usedCache ? "HIT" : "MISS"}'
+          '${accumulatedCalls.isNotEmpty ? ", tools=${accumulatedCalls.length}" : ""}'
+          '$finishInfo'
+          '${usageSummary.isEmpty ? "" : ", $usageSummary"}.',
         );
-        cachedContentName = null;
-        retriedWithoutCache = true;
-        continue;
-      }
 
-      if (tools.isNotEmpty &&
-          includeResponseMimeType &&
-          !retriedWithoutResponseMimeType &&
-          status == 400 &&
-          _mentionsResponseMimeTypeWithTools(errorBody)) {
-        _unsupportedJsonWithToolsModels.add(model);
-        debugPrint(
-          '[Vibe IA][Gemini REST] Modèle $model incompatible avec responseMimeType + tools '
-          '(HTTP 400), nouvelle tentative sans responseMimeType.',
-        );
-        retriedWithoutResponseMimeType = true;
-        continue;
-      }
-
-      if (includeThinking &&
-          !retriedWithoutThinking &&
-          status == 400 &&
-          (_mentionsThinkingConfig(errorBody) ||
-              _isGenericInvalidArgument(errorBody))) {
-        _unsupportedThinkingConfigs.add(thinkingKey);
-        if (_mentionsModelWideThinkingUnsupported(errorBody)) {
-          _unsupportedThinkingModels.add(model);
-        }
-        debugPrint(
-          '[Vibe IA][Gemini REST] Modèle $model incompatible avec thinkingConfig '
-          '(HTTP 400), nouvelle tentative sans thinkingConfig.',
-        );
-        retriedWithoutThinking = true;
-        continue;
-      }
-
-      totalStopwatch.stop();
-      debugPrint(
-        '[Vibe IA][Gemini REST] Échec HTTP $status après '
-        '${totalStopwatch.elapsedMilliseconds} ms : $errorBody',
-      );
-      throw GeminiApiException(
-        statusCode: status,
-        message: _extractApiErrorMessage(errorBody) ?? 'HTTP $status',
-        responseBody: errorBody,
-      );
-    }
-
-    final usedCache = cachedContentName != null;
-    final accumulatedBuffer = StringBuffer();
-    final accumulatedCalls = <VibeToolCall>[];
-    final accumulatedModelParts = <Map<String, Object?>>[];
-    int? ttftMs;
-    Map<String, dynamic>? lastUsageMetadata;
-    String? lastFinishReason;
-
-    final lineStream = utf8.decoder
-        .bind(streamResponse.byteStream)
-        .transform(const LineSplitter());
-
-    await for (final rawLine in lineStream) {
-      final line = rawLine.trim();
-      if (line.isEmpty || line.startsWith(':')) {
-        continue;
-      }
-      if (!line.startsWith('data:')) {
-        continue;
-      }
-      final payload = line.substring(5).trim();
-      if (payload.isEmpty || payload == '[DONE]') {
-        continue;
-      }
-
-      final Object? decoded;
-      try {
-        decoded = jsonDecode(payload);
-      } on FormatException catch (error) {
-        debugPrint(
-          '[Vibe IA][Gemini REST] Ligne SSE JSON ignorée (${error.message}).',
-        );
-        continue;
-      }
-      if (decoded is! Map<String, dynamic>) {
-        continue;
-      }
-
-      if (decoded['error'] case final Map<Object?, Object?> errorMap
-          when decoded['candidates'] == null) {
-        final code = (errorMap['code'] as num?)?.toInt() ?? 500;
-        final message =
-            errorMap['message']?.toString() ?? 'Erreur du flux SSE Gemini';
-        throw GeminiApiException(
-          statusCode: code,
-          message: message,
-          responseBody: payload,
-        );
-      }
-
-      if (decoded['usageMetadata'] case final Map<String, dynamic> usage) {
-        lastUsageMetadata = usage;
-      }
-      if (decoded['candidates'] case [final Map<Object?, Object?> first, ...]) {
-        if (first['finishReason'] case final String reason
-            when reason.isNotEmpty) {
-          lastFinishReason = reason;
-        }
-      }
-
-      final extracted = _extractCandidateChunk(
-        decoded,
-        nextCallIndex: accumulatedCalls.length,
-      );
-      if (extracted.rawParts.isNotEmpty) {
-        accumulatedModelParts.addAll(extracted.rawParts);
-      }
-      if (extracted.functionCalls.isNotEmpty) {
-        accumulatedCalls.addAll(extracted.functionCalls);
-      }
-      if (extracted.text.isNotEmpty || extracted.functionCalls.isNotEmpty) {
-        ttftMs ??= totalStopwatch.elapsedMilliseconds;
-        accumulatedBuffer.write(extracted.text);
-        yield GeminiStreamEvent(
-          deltaText: extracted.text,
-          accumulatedText: accumulatedBuffer.toString(),
-          isDone: false,
-          usedContextCache: usedCache,
-          functionCalls: List<VibeToolCall>.unmodifiable(accumulatedCalls),
-          rawModelParts: List<Map<String, Object?>>.unmodifiable(
-            accumulatedModelParts,
+        controller.add(
+          GeminiStreamEvent(
+            deltaText: '',
+            accumulatedText: accumulatedBuffer.toString(),
+            isDone: true,
+            usedContextCache: usedCache,
+            functionCalls: List<VibeToolCall>.unmodifiable(accumulatedCalls),
+            rawModelParts: List<Map<String, Object?>>.unmodifiable(
+              accumulatedModelParts,
+            ),
           ),
         );
+        await controller.close();
+      } on VibeCancelledException {
+        abortWithCancellation();
+      } catch (error, stackTrace) {
+        if (cancellationToken?.isCancelled == true) {
+          abortWithCancellation();
+          return;
+        }
+        if (!consumerCancelled && !controller.isClosed) {
+          controller.addError(error, stackTrace);
+          await controller.close();
+        }
+      } finally {
+        removeCancelListener?.call();
+        removeCancelListener = null;
       }
     }
 
-    totalStopwatch.stop();
-    final usageSummary = _formatUsageSummary(lastUsageMetadata);
-    final finishInfo =
-        lastFinishReason != null && lastFinishReason != 'STOP'
-        ? ', finish: $lastFinishReason'
-        : '';
-    debugPrint(
-      '[Vibe IA][Gemini REST] $model (${speedMode.name}) terminé — '
-      'TTFT: ${ttftMs ?? totalStopwatch.elapsedMilliseconds} ms, '
-      'total: ${totalStopwatch.elapsedMilliseconds} ms, '
-      'cache: ${usedCache ? "HIT" : "MISS"}'
-      '${accumulatedCalls.isNotEmpty ? ", tools=${accumulatedCalls.length}" : ""}'
-      '$finishInfo'
-      '${usageSummary.isEmpty ? "" : ", $usageSummary"}.',
+    controller = StreamController<GeminiStreamEvent>(
+      onListen: () {
+        if (cancellationToken?.isCancelled == true) {
+          abortWithCancellation();
+          return;
+        }
+        if (cancellationToken != null) {
+          removeCancelListener = cancellationToken.addListener(
+            abortWithCancellation,
+          );
+        }
+        unawaited(drive());
+      },
+      onCancel: () async {
+        consumerCancelled = true;
+        removeCancelListener?.call();
+        removeCancelListener = null;
+        final sub = activeLineSub;
+        activeLineSub = null;
+        if (sub != null) {
+          await sub.cancel();
+        }
+      },
     );
 
-    yield GeminiStreamEvent(
-      deltaText: '',
-      accumulatedText: accumulatedBuffer.toString(),
-      isDone: true,
-      usedContextCache: usedCache,
-      functionCalls: List<VibeToolCall>.unmodifiable(accumulatedCalls),
-      rawModelParts: List<Map<String, Object?>>.unmodifiable(
-        accumulatedModelParts,
-      ),
-    );
+    return controller.stream;
   }
 
   /// Génère la réponse complète sous forme de chaîne unique en consommant [streamGenerate].
@@ -1047,6 +1469,7 @@ class GeminiRestClient {
     String? systemInstruction,
     String? staticGuide,
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+    VibeCancellationToken? cancellationToken,
   }) async {
     var result = '';
     await for (final event in streamGenerate(
@@ -1056,6 +1479,7 @@ class GeminiRestClient {
       staticGuide: staticGuide,
       attachments: attachments,
       speedMode: speedMode,
+      cancellationToken: cancellationToken,
     )) {
       result = event.accumulatedText;
     }

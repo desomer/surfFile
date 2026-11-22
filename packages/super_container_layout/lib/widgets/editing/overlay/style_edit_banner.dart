@@ -745,6 +745,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   height: contentHeight,
                   child: VibeChatDialog(
                     registry: SuperApp.maybeOf(context)?.registry,
+                    pageRouting: SuperApp.maybeOf(context)?.pageRouting,
                     controller: appearance,
                     codec: codec,
                     scope: _chatScope,

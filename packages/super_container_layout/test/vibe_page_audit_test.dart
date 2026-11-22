@@ -497,14 +497,28 @@ void main() {
       expect(capturedPrompts[1], contains('MODE « AUDIT & CORRECTION »'));
       expect(
         capturedPrompts[1],
-        contains("Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)"),
+        contains(
+          "Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)",
+        ),
       );
       expect(
         capturedPrompts[1],
-        contains('parentWidth - paddingLeft - paddingRight'),
+        contains('somme(width) > parentWidth - paddings'),
       );
-      expect(capturedPrompts[1], contains('Inspection visuelle par élément'));
-      expect(capturedPrompts[1], contains('capture_element_screenshot'));
+      expect(
+        capturedPrompts[1],
+        contains(
+          "Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)",
+        ),
+      );
+      expect(capturedPrompts[1], contains("kind: 'icon'"));
+      expect(
+        capturedPrompts[1],
+        contains(
+          'Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)',
+        ),
+      );
+      expect(capturedPrompts[1], contains('en-tête de carte maître'));
       expect(
         capturedPrompts[1],
         contains('excessive_margin_or_padding_for_fixed_size'),
@@ -525,17 +539,37 @@ void main() {
       expect(capturedPrompts, hasLength(4));
       expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
       expect(capturedPrompts[2], contains('verifyRender'));
+      expect(
+        capturedPrompts[2],
+        contains(
+          "Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)",
+        ),
+      );
+      expect(capturedPrompts[2], contains('en-tête de carte maître'));
       expect(capturedPrompts[3], contains('VÉRIFICATION POST-RENDU'));
       expect(
         capturedPrompts[3],
-        contains("Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)"),
+        contains(
+          "Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)",
+        ),
       );
       expect(
         capturedPrompts[3],
-        contains('parentWidth - paddingLeft - paddingRight'),
+        contains('somme(width) > parentWidth - paddings'),
       );
-      expect(capturedPrompts[3], contains('Inspection visuelle par élément'));
-      expect(capturedPrompts[3], contains('capture_element_screenshot'));
+      expect(
+        capturedPrompts[3],
+        contains(
+          "Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)",
+        ),
+      );
+      expect(
+        capturedPrompts[3],
+        contains(
+          'Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)',
+        ),
+      );
+      expect(capturedPrompts[3], contains('en-tête de carte maître'));
       expect(capturedPrompts[3], contains('Balayage des onglets (hors scope)'));
       expect(
         capturedPrompts[1],

@@ -67,17 +67,28 @@ void main() {
         FlutterErrorDetails(exception: error, stack: stack),
       );
     },
-    zoneSpecification: ZoneSpecification(
-      print: (self, parent, zone, line) {
-        // Capture la stack ici, dans le contexte de l'appelant du print
-        saveLog(line, null);
-
-        // Et tu continues d'afficher normalement
-        parent.print(zone, line);
-      },
-    ),
+    zoneSpecification: createSuperDesignerLogZoneSpecification(),
   );
 }
+
+/// Construit la [ZoneSpecification] de journalisation console horodatée pour `super_designer`.
+///
+/// Enregistre la ligne brute dans [debugEntries] via [saveLog] et préfixe
+/// la sortie console avec l'heure locale `[HH:MM:SS.mmm]` via [formatTimestampedConsoleLog].
+ZoneSpecification createSuperDesignerLogZoneSpecification({
+  DateTime Function()? clock,
+}) => ZoneSpecification(
+  print: (self, parent, zone, line) {
+    // Capture la stack ici, dans le contexte de l'appelant du print
+    saveLog(line, null);
+
+    // Et tu continues d'afficher normalement avec l'horodatage console
+    parent.print(
+      zone,
+      formatTimestampedConsoleLog(line, timestamp: clock?.call()),
+    );
+  },
+);
 
 /// Widget racine de l'application de démonstration et d'édition `super_designer`,
 /// donnant accès au moteur `super_container_layout` et à ses extensions.
@@ -321,27 +332,27 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     ),
   );
 
-  RepositoryImpl _createPanModelRepository() {
-    final repository = RepositoryImpl(
-      id: _repositoryId,
-      onChanged: _onRepositoryChanged,
-      json: {
-        'source': '',
-        'estSize': 300,
-        'yamlError': '',
-        'nodes': <Object?>[],
-      },
-    );
+  // RepositoryImpl _createPanModelRepository() {
+  //   final repository = RepositoryImpl(
+  //     id: _repositoryId,
+  //     onChanged: _onRepositoryChanged,
+  //     json: {
+  //       'source': '',
+  //       'estSize': 300,
+  //       'yamlError': '',
+  //       'nodes': <Object?>[],
+  //     },
+  //   );
 
-    repository.addCalculatedAttribute('total', (ctx) {
-      final articles = ctx.sync.getValue('articles')! as List;
-      return articles.fold<num>(
-        0,
-        (sum, article) => sum + ((article as Map)['prix'] as num),
-      );
-    });
-    return repository;
-  }
+  //   repository.addCalculatedAttribute('total', (ctx) {
+  //     final articles = ctx.sync.getValue('articles')! as List;
+  //     return articles.fold<num>(
+  //       0,
+  //       (sum, article) => sum + ((article as Map)['prix'] as num),
+  //     );
+  //   });
+  //   return repository;
+  // }
 
   Future<void> _initializeSandboxedSession() async {
     final requestedDir = widget.applicationDirectory;
@@ -385,7 +396,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       registry: _registry,
     );
     _repositoryStore = SandboxedApplicationStore.repositoryStoreFor(targetDir);
-    await _initializePersistentRepository(_createPanModelRepository());
+    //await _initializePersistentRepository(_createPanModelRepository());
   }
 
   @override
@@ -423,7 +434,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
           );
         });
 
-    SuperDesignerRegistry(_registry).addRegistry();
+    //SuperDesignerRegistry(_registry).addRegistry();
     _pageRouting = _createPageRouting(_registry);
     _repositoryStore = widget.repositoryDirectory == null
         ? JsonRepositoryStore.defaultStore()
@@ -432,11 +443,11 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     if (_usesSandboxedAppMode) {
       _repositoryInitialization = _initializeSandboxedSession();
     } else if (widget.persistRepository) {
-      _repositoryInitialization = _initializePersistentRepository(
-        _createPanModelRepository(),
-      );
+      // _repositoryInitialization = _initializePersistentRepository(
+      //   _createPanModelRepository(),
+      // );
     } else {
-      _repositoryStore.registerRepository(_createPanModelRepository());
+      //_repositoryStore.registerRepository(_createPanModelRepository());
       _repositoryInitialization = null;
       _queueValidation();
     }
@@ -445,7 +456,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   /// Enregistre les modifications d'apparence et de repositories en attente.
   Future<void> _flushActiveApplication(BuildContext? appContext) async {
     final navContext =
-        appContext ?? _pageRouting.router.routerDelegate.navigatorKey.currentContext;
+        appContext ??
+        _pageRouting.router.routerDelegate.navigatorKey.currentContext;
     if (navContext != null && navContext.mounted) {
       final controller = AppearanceScope.controllerOf(navContext);
       if (controller is PersistentAppearanceController) {
@@ -453,9 +465,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       }
       if (_currentAppDir != null &&
           controller != null &&
-          !SandboxedApplicationStore.appearanceFileFor(
-            _currentAppDir!,
-          ).existsSync()) {
+          !SandboxedApplicationStore.appearanceFileFor(_currentAppDir!)
+              .existsSync()) {
         await _appearanceStore?.save(controller.value);
       }
     }
@@ -488,7 +499,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _schemaModelReady = false;
 
     final nextRegistry = createSuperDesignerRegistry();
-    SuperDesignerRegistry(nextRegistry).addRegistry();
+    //SuperDesignerRegistry(nextRegistry).addRegistry();
     final nextRepositoryStore = SandboxedApplicationStore.repositoryStoreFor(
       targetDir,
     );
@@ -506,9 +517,9 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _currentAppName = manifest.name;
     _appSessionGeneration++;
 
-    _repositoryInitialization = _initializePersistentRepository(
-      _createPanModelRepository(),
-    );
+    // _repositoryInitialization = _initializePersistentRepository(
+    //   _createPanModelRepository(),
+    // );
     setState(() {});
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -568,16 +579,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               directory,
               initializeNonEmpty: initializeNonEmpty,
             ),
-        onCreateApplication: (
-          directory, {
-          required name,
-          required cloneCurrent,
-        }) => _createAndSwitchApplication(
-          appContext,
-          directory,
-          name: name,
-          cloneCurrent: cloneCurrent,
-        ),
+        onCreateApplication:
+            (directory, {required name, required cloneCurrent}) =>
+                _createAndSwitchApplication(
+                  appContext,
+                  directory,
+                  name: name,
+                  cloneCurrent: cloneCurrent,
+                ),
       );
 
   /// Attend l'initialisation, les saisies et validations en attente avant

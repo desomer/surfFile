@@ -250,29 +250,143 @@ abstract final class VibeDeltaRecovery {
         validateAppearance(candidate);
       } catch (error) {
         if (candidate.pageCatalog != workingAppearance.pageCatalog) {
-          final reverted = candidate.copyWith(
-            pageCatalog: workingAppearance.pageCatalog,
-          );
-          appliedPatch.remove('pageCatalog');
-          allRejected.add(
-            PatchRejectedEntry(
-              section: 'pageCatalog',
-              key: 'pageCatalog',
-              message: error.toString(),
-              rawValue: effectiveVibePatch?['pageCatalog'],
-            ),
-          );
-          try {
-            validateAppearance(reverted);
-            candidate = reverted;
-          } catch (_) {
-            return VibeSalvageOutcome.none(
-              workingAppearance,
-              rejectedEntries: allRejected,
-              wasTruncated: wasTruncated,
-              interruptedSection: interruptedSection,
-              interruptedKey: interruptedKey,
+          final rawPageCatalog = effectiveVibePatch == null
+              ? null
+              : (effectiveVibePatch['data'] is Map
+                    ? (effectiveVibePatch['data'] as Map)['pageCatalog']
+                    : effectiveVibePatch['pageCatalog']);
+          final rawPagesById = <String, Object?>{};
+          if (rawPageCatalog is Map && rawPageCatalog['pages'] is List) {
+            for (final rawPage in rawPageCatalog['pages'] as List) {
+              if (rawPage is Map && rawPage['id'] is String) {
+                rawPagesById[rawPage['id'] as String] = rawPage;
+              }
+            }
+          }
+
+          final acceptedPages = <EditorPageConfig>[];
+          for (final page in candidate.pageCatalog.pages) {
+            final trialCatalog = EditorPageCatalog(
+              pages: [...acceptedPages, page],
             );
+            try {
+              validateAppearance(candidate.copyWith(pageCatalog: trialCatalog));
+              acceptedPages.add(page);
+            } catch (pageError) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: page.id,
+                  message: pageError is FormatException
+                      ? pageError.message
+                      : pageError.toString(),
+                  rawValue: rawPagesById[page.id] ?? page.toJson(),
+                ),
+              );
+            }
+          }
+
+          String? resolvedHomeId;
+          final candidateHomeId = candidate.pageCatalog.homePageId;
+          if (candidateHomeId != null &&
+              acceptedPages.any((p) => p.id == candidateHomeId)) {
+            try {
+              validateAppearance(
+                candidate.copyWith(
+                  pageCatalog: EditorPageCatalog(
+                    pages: acceptedPages,
+                    homePageId: candidateHomeId,
+                  ),
+                ),
+              );
+              resolvedHomeId = candidateHomeId;
+            } catch (homeError) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: 'homePageId',
+                  message: homeError is FormatException
+                      ? homeError.message
+                      : homeError.toString(),
+                  rawValue: candidateHomeId,
+                ),
+              );
+            }
+          }
+          if (resolvedHomeId == null) {
+            final prevHomeId = workingAppearance.pageCatalog.homePageId;
+            if (prevHomeId != null &&
+                acceptedPages.any((p) => p.id == prevHomeId)) {
+              try {
+                validateAppearance(
+                  candidate.copyWith(
+                    pageCatalog: EditorPageCatalog(
+                      pages: acceptedPages,
+                      homePageId: prevHomeId,
+                    ),
+                  ),
+                );
+                resolvedHomeId = prevHomeId;
+              } catch (_) {
+                resolvedHomeId = null;
+              }
+            }
+          }
+
+          final salvagedCatalog =
+              acceptedPages.length ==
+                      workingAppearance.pageCatalog.pages.length &&
+                  resolvedHomeId == workingAppearance.pageCatalog.homePageId &&
+                  _samePageList(
+                    acceptedPages,
+                    workingAppearance.pageCatalog.pages,
+                  )
+              ? workingAppearance.pageCatalog
+              : EditorPageCatalog(
+                  pages: acceptedPages,
+                  homePageId: resolvedHomeId,
+                );
+          final salvagedCandidate = candidate.copyWith(
+            pageCatalog: salvagedCatalog,
+          );
+
+          try {
+            validateAppearance(salvagedCandidate);
+            candidate = salvagedCandidate;
+            if (identical(salvagedCatalog, workingAppearance.pageCatalog)) {
+              appliedPatch.remove('pageCatalog');
+            } else {
+              appliedPatch['pageCatalog'] = salvagedCatalog.toJson();
+            }
+          } catch (_) {
+            final reverted = candidate.copyWith(
+              pageCatalog: workingAppearance.pageCatalog,
+            );
+            appliedPatch.remove('pageCatalog');
+            if (!allRejected.any((entry) => entry.section == 'pageCatalog')) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: 'pageCatalog',
+                  message: error is FormatException
+                      ? error.message
+                      : error.toString(),
+                  rawValue: rawPageCatalog,
+                ),
+              );
+            }
+            try {
+              validateAppearance(reverted);
+              candidate = reverted;
+            } catch (_) {
+              return VibeSalvageOutcome.none(
+                workingAppearance,
+                rejectedEntries: allRejected,
+                wasTruncated: wasTruncated,
+                interruptedSection: interruptedSection,
+                interruptedKey: interruptedKey,
+              );
+            }
           }
         } else {
           return VibeSalvageOutcome.none(
@@ -543,6 +657,17 @@ abstract final class VibeDeltaRecovery {
           '- ${entry.section}["${entry.key}"] : ${entry.message}'
           '${snippet == null ? '' : ' | JSON reçu : $snippet'}',
         );
+      }
+      if (salvage.rejectedEntries.any((e) => e.section == 'pageCatalog')) {
+        buffer
+          ..writeln()
+          ..writeln(
+            'Rappel sur "pageCatalog" : la route "/" est déjà réservée par la page racine '
+            '("root" / "mainLayout"). Ne déclare JAMAIS une page avec "path": "/" dans '
+            '"pageCatalog" ; configure directement "root" / "mainLayout" pour "/", ou donne '
+            'à chaque nouvelle page un chemin distinct (ex. "/accueil", "/clients") sans "/" '
+            'final, sans espace, sans "?" et sans "#".',
+          );
       }
     }
 

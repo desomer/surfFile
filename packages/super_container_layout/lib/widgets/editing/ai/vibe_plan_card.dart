@@ -91,10 +91,7 @@ class VibePlanCard extends StatelessWidget {
         Icons.pause_circle_outline,
         scheme.error,
       ),
-      VibePlanStatus.completed => (
-        Icons.check_circle_outline,
-        scheme.primary,
-      ),
+      VibePlanStatus.completed => (Icons.check_circle_outline, scheme.primary),
       VibePlanStatus.stopped => (
         Icons.stop_circle_outlined,
         scheme.onSurfaceVariant,
@@ -432,10 +429,7 @@ class _LotRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: leadingIcon,
-          ),
+          Padding(padding: const EdgeInsets.only(top: 1), child: leadingIcon),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -468,7 +462,8 @@ class _LotRow extends StatelessWidget {
                     if (lot.hasPartialCheckpoint) ...[
                       const SizedBox(width: 6),
                       Tooltip(
-                        message: lot.partialCheckpointSummary ??
+                        message:
+                            lot.partialCheckpointSummary ??
                             'Progrès partiel valide conservé pour retry delta',
                         child: Container(
                           key: ValueKey('vibe-plan-lot-checkpoint-${lot.id}'),

@@ -86,14 +86,21 @@ enum DebugErrorCategory {
   static DebugErrorCategory? tryParse(String? raw) {
     if (raw == null) return null;
     return switch (raw.trim().toLowerCase()) {
-      'binding' || 'bindings' || 'data' || 'repository' =>
-        DebugErrorCategory.binding,
+      'binding' ||
+      'bindings' ||
+      'data' ||
+      'repository' => DebugErrorCategory.binding,
       'javascript' || 'js' || 'script' => DebugErrorCategory.javascript,
       'font' || 'fonts' || 'police' || 'typography' => DebugErrorCategory.font,
-      'userinput' || 'user_input' || 'input' || 'saisie' || 'validation' =>
-        DebugErrorCategory.userInput,
-      'rendering' || 'render' || 'layout' || 'flutter' =>
-        DebugErrorCategory.rendering,
+      'userinput' ||
+      'user_input' ||
+      'input' ||
+      'saisie' ||
+      'validation' => DebugErrorCategory.userInput,
+      'rendering' ||
+      'render' ||
+      'layout' ||
+      'flutter' => DebugErrorCategory.rendering,
       'system' || 'general' => DebugErrorCategory.system,
       _ => null,
     };
@@ -289,10 +296,7 @@ inferDebugErrorClassification(String message) {
       lower.contains('fontfamily') ||
       lower.contains('font ') ||
       lower.contains('.ttf')) {
-    return (
-      category: DebugErrorCategory.font,
-      severity: DebugSeverity.warning,
-    );
+    return (category: DebugErrorCategory.font, severity: DebugSeverity.warning);
   }
   if (lower.startsWith('[input error]') ||
       lower.startsWith('[user input]') ||
@@ -324,10 +328,26 @@ inferDebugErrorClassification(String message) {
       severity: DebugSeverity.critical,
     );
   }
-  return (
-    category: DebugErrorCategory.system,
-    severity: DebugSeverity.error,
-  );
+  return (category: DebugErrorCategory.system, severity: DebugSeverity.error);
+}
+
+final RegExp _leadingConsoleTimestampPattern = RegExp(
+  r'^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\s',
+);
+
+/// Préfixe [line] avec un horodatage local `[HH:MM:SS.mmm]` pour l'affichage console.
+///
+/// N'ajoute pas de second préfixe si [line] commence déjà par un horodatage de ce format.
+String formatTimestampedConsoleLog(String line, {DateTime? timestamp}) {
+  if (_leadingConsoleTimestampPattern.hasMatch(line)) {
+    return line;
+  }
+  final at = timestamp ?? DateTime.now();
+  final hh = at.hour.toString().padLeft(2, '0');
+  final mm = at.minute.toString().padLeft(2, '0');
+  final ss = at.second.toString().padLeft(2, '0');
+  final ms = at.millisecond.toString().padLeft(3, '0');
+  return '[$hh:$mm:$ss.$ms] $line';
 }
 
 /// Enregistre une ligne de journal dans [debugEntries] en conservant au plus [maxDebugEntries] entrées.

@@ -374,6 +374,24 @@ class VibeToolTrace {
             ? ', ${swept.toInt()} onglet(s) balayé(s)'
             : '';
         return '$count anomalie(s) détectée(s) ($errors critique(s)$sweptLabel)';
+      case 'validate_or_list_icons':
+        final validations = data['validations'];
+        if (validations is List && validations.isNotEmpty) {
+          final validCount = (data['validCount'] as num?)?.toInt() ?? 0;
+          final invalidCount = (data['invalidCount'] as num?)?.toInt() ?? 0;
+          final total = validCount + invalidCount;
+          if (invalidCount > 0) {
+            final invalidList = data['invalidIcons'] is List
+                ? (data['invalidIcons'] as List).take(2).join(', ')
+                : '';
+            return '$validCount/$total valide(s) ($invalidCount invalide(s)'
+                '${invalidList.isEmpty ? '' : ': $invalidList'})';
+          }
+          return '$validCount/$total icône(s) valide(s)';
+        }
+        final returned = data['returnedCount'] ?? 0;
+        final totalCatalog = data['totalCatalogCount'] ?? returned;
+        return '$returned/$totalCatalog icône(s) listée(s)';
     }
     return 'OK';
   }
@@ -436,620 +454,629 @@ class VibeAppToolRegistry {
   static final VibeAppToolRegistry empty = VibeAppToolRegistry(const []);
 
   /// Déclarations standard des 5 outils d'introspection en lecture seule.
-  static const List<VibeToolDeclaration> standardDeclarations =
-      <VibeToolDeclaration>[
-        VibeToolDeclaration(
-          name: 'get_viewport_and_route',
-          description:
-              'Retourne la taille réelle de la fenêtre/viewport en dp, le devicePixelRatio, '
-              'la route GoRouter active, la page active du catalogue, le mode édition et le scope.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{},
+  static const List<VibeToolDeclaration>
+  standardDeclarations = <VibeToolDeclaration>[
+    VibeToolDeclaration(
+      name: 'get_viewport_and_route',
+      description:
+          'Retourne la taille réelle de la fenêtre/viewport en dp, le devicePixelRatio, '
+          'la route GoRouter active, la page active du catalogue, le mode édition et le scope.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{},
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_component_geometry',
+      description:
+          'Mesure la géométrie réelle rendue à l’écran (taille width/height en dp, '
+          'position globale et relative au parent, contraintes de layout, état de scroll, '
+          'diagnostics de débordement) pour un ou plusieurs identifiants de composants.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'ids': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description': 'Liste des identifiants de composants à mesurer. Si omis, mesure les composants racines ou le scope actif.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_component_geometry',
-          description:
-              'Mesure la géométrie réelle rendue à l’écran (taille width/height en dp, '
-              'position globale et relative au parent, contraintes de layout, état de scroll, '
-              'diagnostics de débordement) pour un ou plusieurs identifiants de composants.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'ids': <String, Object?>{
-                'type': 'array',
-                'items': <String, Object?>{'type': 'string'},
-                'description':
-                    'Liste des identifiants de composants à mesurer. Si omis, mesure les composants racines ou le scope actif.',
-              },
-              'zoneId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant optionnel de zone (ex: center, west, header) à cibler.',
-              },
-              'includeScroll': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Inclut les métriques du Scrollable englobant ou interne (true par défaut).',
-              },
-              'includeZones': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Inclut aussi les entrées de zones montées pour les conteneurs demandés (true par défaut).',
-              },
-            },
+          'zoneId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant optionnel de zone (ex: center, west, header) à cibler.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_runtime_tree',
-          description:
-              'Retourne la hiérarchie effectivement montée sur la page active ou depuis un rootId, '
-              'avec le type de chaque nœud, ses zones/placements, son statut monté et ses dimensions.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'rootId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant racine optionnel. Par défaut, utilise la page active ou le scope courant.',
-              },
-              'maxDepth': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Profondeur maximale de parcours (entre 1 et 12, défaut 6).',
-              },
-            },
+          'includeScroll': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut les métriques du Scrollable englobant ou interne (true par défaut).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'query_repository_data',
-          description:
-              'Interroge le JsonRepositoryStore actif en lecture seule : liste des repositories, '
-              'présence et contenu de leur jsonSchema, échantillons paginés à un chemin JSON et sélections actives Maître/Détail.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'repositoryId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant du repository à inspecter. Si omis, retourne le catalogue résumé.',
-              },
-              'path': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Chemin d’attribut JSON optionnel (ex: clients ou clients[0].commandes).',
-              },
-              'offset': <String, Object?>{
-                'type': 'integer',
-                'description': 'Indice de départ pour les tableaux (défaut 0).',
-              },
-              'limit': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Nombre maximal d’éléments retournés pour un tableau (entre 1 et 50, défaut 10).',
-              },
-            },
+          'includeZones': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut aussi les entrées de zones montées pour les conteneurs demandés (true par défaut).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'manage_repository_json_schema',
-          description:
-              'Lit, infère, valide, associe (create), modifie (update) ou dissocie (delete) le JSON Schema '
-              'standard (Draft 7 / Draft 2020-12) d’un repository existant. Participe à la transaction du tour '
-              '(rollback et Undo/Redo).',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'required': <String>['action', 'repositoryId'],
-            'properties': <String, Object?>{
-              'action': <String, Object?>{
-                'type': 'string',
-                'enum': <String>[
-                  'get',
-                  'create',
-                  'update',
-                  'delete',
-                  'validate',
-                  'infer',
-                ],
-                'description':
-                    'Opération : "get" (lire), "infer" (générer un schéma initial depuis les données), '
-                    '"validate" (tester le document contre un schéma), "create" (associer un nouveau schéma), '
-                    '"update" (remplacer le schéma existant), "delete" (dissocier le schéma).',
-              },
-              'repositoryId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant technique ou nom exact d’un repository existant dans le store.',
-              },
-              'schema': <String, Object?>{
-                'type': 'object',
-                'description':
-                    'Objet JSON Schema standard (requis pour "create" et "update", optionnel pour "validate").',
-              },
-              'validateCurrentDocument': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Valide immédiatement le document courant avant d’enregistrer le schéma (défaut true). '
-                    'Passer false uniquement si tu mets aussi à jour les données du repository dans le même tour.',
-              },
-              'markPresentKeysRequired': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Utilisé avec "infer" : marque les clés présentes dans le document comme "required" (défaut false).',
-              },
-            },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_runtime_tree',
+      description:
+          'Retourne la hiérarchie effectivement montée sur la page active ou depuis un rootId, '
+          'avec le type de chaque nœud, ses zones/placements, son statut monté et ses dimensions.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'rootId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant racine optionnel. Par défaut, utilise la page active ou le scope courant.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'capture_element_screenshot',
-          description:
-              'Capture une copie d’écran PNG isolée d’UN élément précis (composant, carte, zone ou ligne '
-              'de liste) sans capturer toute la page ni les contours d’édition. Préfère systématiquement '
-              'cet outil à capture_screenshot pour inspecter visuellement un composant individuel.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'componentId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant du composant monté à capturer. Si omis, cible le scope actif ou le composant sélectionné.',
-              },
-              'zoneId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant optionnel d’une zone précise du conteneur (ex: west, center, header).',
-              },
-              'occurrenceIndex': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Indice 0-based de l’occurrence à capturer dans une liste/table répétée (défaut 0).',
-              },
-              'scrollIntoView': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Fait défiler automatiquement le conteneur scrollable jusqu’à l’élément avant capture (true par défaut).',
-              },
-              'contextPadding': <String, Object?>{
-                'type': 'number',
-                'description':
-                    'Marge visuelle autour de l’élément en dp : 0 (défaut) capture uniquement le RepaintBoundary isolé de l’élément ; > 0 inclut ses voisins immédiats.',
-              },
-              'maxDimension': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Dimension maximale en pixels de l’image générée (entre 256 et 1600, défaut 800).',
-              },
-            },
+          'maxDepth': <String, Object?>{
+            'type': 'integer',
+            'description':
+                'Profondeur maximale de parcours (entre 1 et 12, défaut 6).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'capture_screenshot',
-          description:
-              'Capture une image PNG de la page/fenêtre entière de l’application (utilise plutôt '
-              'capture_element_screenshot lorsque tu ne veux inspecter qu’un composant ou une zone).',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'componentId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Optionnel : si fourni, délègue à capture_element_screenshot ; si omis, capture toute la page.',
-              },
-              'zoneId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant optionnel de zone lorsque componentId est fourni.',
-              },
-              'maxDimension': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Dimension maximale en pixels de l’image générée (entre 256 et 1600, défaut 1024).',
-              },
-            },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'query_repository_data',
+      description:
+          'Interroge le JsonRepositoryStore actif en lecture seule : liste des repositories, '
+          'présence et contenu de leur jsonSchema, échantillons paginés à un chemin JSON et sélections actives Maître/Détail.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'repositoryId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant du repository à inspecter. Si omis, retourne le catalogue résumé.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_debug_entries',
-          description:
-              'Lit les journaux et erreurs typés capturés à l’exécution dans debugEntries '
-              '(catégories : binding, javascript, font, userInput, rendering, system ; '
-              'sévérités : critical, error, warning, info), y compris les erreurs affichées en rouge dans l’IHM.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'type': <String, Object?>{
-                'type': 'string',
-                'enum': <String>['error', 'log', 'all'],
-                'description':
-                    'Filtre par nature ("error" par défaut, "log" ou "all").',
-              },
-              'minSeverity': <String, Object?>{
-                'type': 'string',
-                'enum': <String>['info', 'warning', 'error', 'critical'],
-                'description':
-                    'Niveau minimal d’importance à retourner (critical > error > warning > info).',
-              },
-              'category': <String, Object?>{
-                'type': 'string',
-                'enum': <String>[
-                  'all',
-                  'binding',
-                  'javascript',
-                  'font',
-                  'userInput',
-                  'rendering',
-                  'system',
-                ],
-                'description':
-                    'Filtre par catégorie fonctionnelle : binding, javascript, font, userInput, rendering, system ou all.',
-              },
-              'componentId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Filtre exact sur l’identifiant du composant UI concerné.',
-              },
-              'visibleInUiOnly': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Ne retourne que les erreurs affichées en rouge dans l’IHM (false par défaut).',
-              },
-              'query': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Sous-chaîne optionnelle à rechercher (ex: overflowed, RenderFlex, ID de composant, police).',
-              },
-              'sinceTurnStart': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Ne retourne que les entrées survenues depuis le début de ce tour IA (false par défaut).',
-              },
-              'includeStackTrace': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Inclut un extrait condensé de la pile d’appels (true par défaut).',
-              },
-              'limit': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Nombre maximal d’entrées récentes retournées (1 à 50, défaut 20).',
-              },
-            },
+          'path': <String, Object?>{
+            'type': 'string',
+            'description': 'Chemin d’attribut JSON optionnel (ex: clients ou clients[0].commandes).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_datasources_and_providers',
-          description:
-              'Liste les Datasources CRUD et les DataProviders HTTP/code enregistrés hors d’Appearance '
-              '(identifiants, opérations, cibles/filtres, pagination et statut d’exécution/erreurs).',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'datasourceId': <String, Object?>{
-                'type': 'string',
-                'description': 'Filtre optionnel sur un identifiant de datasource.',
-              },
-              'providerId': <String, Object?>{
-                'type': 'string',
-                'description': 'Filtre optionnel sur un identifiant de provider.',
-              },
-              'includeProblems': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Inclut les diagnostics de cohérence des datasources (true par défaut).',
-              },
-            },
+          'offset': <String, Object?>{
+            'type': 'integer',
+            'description': 'Indice de départ pour les tableaux (défaut 0).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'inspect_bindings_and_diagnostics',
-          description:
-              'Audite la santé des liaisons JSON sur l’écran (repositories manquants, oubli du préfixe '
-              '<repoId>: hors liste en Maître/Détail, jokers [?] sans sélection, clés absentes), '
-              'la conformité des données aux JSON Schemas, la cohérence masque/date/données, '
-              'les erreurs actives de repository, les composants orphelins et les états forcés.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'componentIds': <String, Object?>{
-                'type': 'array',
-                'items': <String, Object?>{'type': 'string'},
-                'description':
-                    'Sous-ensemble optionnel d’IDs à auditer (par défaut audite tout l’écran ou le scope).',
-              },
-            },
+          'limit': <String, Object?>{
+            'type': 'integer',
+            'description': 'Nombre maximal d’éléments retournés pour un tableau (entre 1 et 50, défaut 10).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_theme_and_contrast',
-          description:
-              'Résout tous les rôles Material 3 theme:* en couleurs #RRGGBB effectives et vérifie les '
-              'ratios de contraste WCAG AA texte/fond des composants de l’écran.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'componentIds': <String, Object?>{
-                'type': 'array',
-                'items': <String, Object?>{'type': 'string'},
-                'description': 'Liste optionnelle d’IDs à vérifier.',
-              },
-              'onlyIssues': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Si true, ne retourne dans contrastChecks que les composants en échec WCAG AA.',
-              },
-            },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'manage_repository_json_schema',
+      description:
+          'Lit, infère, valide, associe (create), modifie (update) ou dissocie (delete) le JSON Schema '
+          'standard (Draft 7 / Draft 2020-12) d’un repository existant. Participe à la transaction du tour '
+          '(rollback et Undo/Redo).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'required': <String>['action', 'repositoryId'],
+        'properties': <String, Object?>{
+          'action': <String, Object?>{
+            'type': 'string',
+            'enum': <String>[
+              'get',
+              'create',
+              'update',
+              'delete',
+              'validate',
+              'infer',
+            ],
+            'description':
+                'Opération : "get" (lire), "infer" (générer un schéma initial depuis les données), '
+                '"validate" (tester le document contre un schéma), "create" (associer un nouveau schéma), '
+                '"update" (remplacer le schéma existant), "delete" (dissocier le schéma).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'get_registry_and_selection',
-          description:
-              'Retourne les composants et extensions réellement enregistrés dans Registry (ex: Chart ou '
-              'composants métier hôtes), les polices disponibles et la sélection active dans l’éditeur.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'includeComponents': <String, Object?>{
-                'type': 'boolean',
-                'description': 'Inclut la liste des builders du Registry (true par défaut).',
-              },
-              'includeFonts': <String, Object?>{
-                'type': 'boolean',
-                'description': 'Inclut les familles de polices disponibles (true par défaut).',
-              },
-            },
+          'repositoryId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant technique ou nom exact d’un repository existant dans le store.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'preview_navigation_or_selection',
-          description:
-              'Action d’aperçu non destructive (annulée en cas de rollback) : navigue vers une page du '
-              'catalogue, sélectionne une ligne d’un tableau JSON pour alimenter une vue Détail, ou bascule '
-              'sur un onglet précis d’un SuperTab monté (hors scope restreint) pour mesurer/capturer son contenu.',
-          parametersSchema: <String, Object?>{
+          'schema': <String, Object?>{
             'type': 'object',
-            'properties': <String, Object?>{
-              'pageId': <String, Object?>{
-                'type': 'string',
-                'description': 'Identifiant d’une page de pageCatalog à afficher.',
-              },
-              'routePath': <String, Object?>{
-                'type': 'string',
-                'description': 'Chemin de route débutant par "/" à afficher.',
-              },
-              'repositoryId': <String, Object?>{
-                'type': 'string',
-                'description': 'Repository contenant le tableau dont la sélection doit changer.',
-              },
-              'arrayTemplate': <String, Object?>{
-                'type': 'string',
-                'description': 'Chemin modèle du tableau (ex: clients ou clients[?].commandes).',
-              },
-              'index': <String, Object?>{
-                'type': 'integer',
-                'description': 'Indice 0-based de la ligne à sélectionner (défaut 0).',
-              },
-              'parentIndices': <String, Object?>{
-                'type': 'array',
-                'items': <String, Object?>{'type': 'integer'},
-                'description': 'Indices parents éventuels pour un sous-tableau imbriqué.',
-              },
-              'clearSelection': <String, Object?>{
-                'type': 'boolean',
-                'description': 'Si true, efface la sélection du tableau.',
-              },
-              'tabComponentId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant d’un composant SuperTab monté dont on veut activer un onglet en aperçu.',
-              },
-              'tabIndex': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Indice 0-based de l’onglet à activer dans tabComponentId.',
-              },
-              'tabId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant technique (slotId) ou libellé exact de l’onglet à activer dans tabComponentId.',
-              },
-            },
+            'description': 'Objet JSON Schema standard (requis pour "create" et "update", optionnel pour "validate").',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'select_editor_element',
-          description:
-              'Sélectionne et met en évidence à distance un élément monté sur le canevas du mode édition '
-              '(active le mode édition si nécessaire, fait défiler jusqu’à l’élément, met à jour le chemin '
-              'de la bannière et déclenche un halo visuel). Utile pour montrer ou cibler un composant précis.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{
-              'componentId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant du composant à sélectionner (requis sauf si clear=true).',
-              },
-              'zoneId': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant optionnel d’une zone du conteneur (ex: west, center, header).',
-              },
-              'occurrenceIndex': <String, Object?>{
-                'type': 'integer',
-                'description':
-                    'Indice 0-based de l’occurrence à sélectionner dans une liste/table (défaut 0).',
-              },
-              'enableEditMode': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Active automatiquement le mode édition s’il est désactivé (true par défaut).',
-              },
-              'scrollIntoView': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Fait défiler jusqu’à l’élément avant sélection (true par défaut).',
-              },
-              'pulseHighlight': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Déclenche un halo visuel temporaire sur l’élément (true par défaut).',
-              },
-              'setChatScope': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Si true, restreint aussi le scope actif du chat Vibe à cet élément (false par défaut).',
-              },
-              'clear': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Si true, efface toute sélection active sur le canevas.',
-              },
-            },
+          'validateCurrentDocument': <String, Object?>{
+            'type': 'boolean',
+            'description':
+                'Valide immédiatement le document courant avant d’enregistrer le schéma (défaut true). '
+                'Passer false uniquement si tu mets aussi à jour les données du repository dans le même tour.',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'register_design_system',
-          description:
-              'Génère, valide et enregistre un nouveau système de design DESIGN.md dans la liste des choix '
-              'possibles du catalogue (et le sélectionne par défaut comme système actif du chat). '
-              'À appeler lorsqu’on te demande de créer, extraire ou ajouter un DESIGN.md / Design System '
-              'à partir de pièces jointes du chat (captures d’écran, maquettes, fichiers CSS/HTML, SVG, chartes) '
-              'ou d’une description. Essaie toujours de récupérer ou reconstruire le logo de la marque depuis les '
-              'pièces jointes (URL exacte, Data URI, <svg> inline joint ou extrait du HTML, ou SVG vectoriel minimal '
-              'fidèle au logo visible) via le paramètre "logo" et documente-le dans le DESIGN.md.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'required': <String>['name', 'markdown'],
-            'properties': <String, Object?>{
-              'name': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Nom lisible du Design System (ex: "Acme Dashboard", "Aurora Dark").',
-              },
-              'markdown': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Contenu complet du document DESIGN.md en français (avec les 9 sections : '
-                    '1. Visual Theme & Atmosphere, 2. Color Palette & Roles (+ Brand Logo / SVG ou URL si récupéré), '
-                    '3. Typography Rules, 4. Component Stylings, 5. Layout Principles, 6. Depth & Elevation, '
-                    '7. Do\'s and Don\'ts, 8. Responsive & Desktop Ergonomics, 9. Agent Prompt Guide incluant le logo si disponible).',
-              },
-              'slug': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Identifiant kebab-case optionnel (ex: "acme-dashboard").',
-              },
-              'category': <String, Object?>{
-                'type': 'string',
-                'enum': <String>[
-                  'productivity-saas',
-                  'developer-tools',
-                  'ai-platforms',
-                  'fintech',
-                  'design-creative',
-                  'media-retail',
-                  'special-retro',
-                  'custom',
-                ],
-                'description':
-                    'Catégorie fonctionnelle ou esthétique du système de design (défaut "custom").',
-              },
-              'tagline': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Accroche courte résumant la personnalité visuelle sur la carte d’aperçu.',
-              },
-              'description': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Description synthétique de l’atmosphère, de la hiérarchie et des usages.',
-              },
-              'mode': <String, Object?>{
-                'type': 'string',
-                'enum': <String>['light', 'dark'],
-                'description':
-                    'Mode lumineux principal ("light" ou "dark") extrait des pièces jointes.',
-              },
-              'accent': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Couleur d’accentuation principale au format #RRGGBB.',
-              },
-              'canvasColor': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Couleur d’arrière-plan globale (canvas) au format #RRGGBB.',
-              },
-              'surfaceColor': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Couleur des cartes et panneaux (surface) au format #RRGGBB.',
-              },
-              'textColor': <String, Object?>{
-                'type': 'string',
-                'description': 'Couleur du texte principal au format #RRGGBB.',
-              },
-              'mutedTextColor': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Couleur du texte secondaire/atténué au format #RRGGBB.',
-              },
-              'borderColor': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Couleur des bordures fines et séparateurs au format #RRGGBB.',
-              },
-              'cardRadius': <String, Object?>{
-                'type': 'number',
-                'description':
-                    'Rayon d’arrondi représentatif des cartes en dp (ex: 8, 12, 16).',
-              },
-              'surfaceSystem': <String, Object?>{
-                'type': 'string',
-                'enum': <String>['material', 'neumorphism', 'liquidGlass'],
-                'description': 'Système de rendu de surface (défaut "material").',
-              },
-              'fontFamily': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Famille typographique principale recommandée (ex: "Inter").',
-              },
-              'logo': <String, Object?>{
-                'type': 'string',
-                'description':
-                    'Logo de la marque récupéré depuis les pièces jointes si disponible '
-                    '(code <svg...>...</svg> inline compact, Data URI data:image/..., ou URL exacte https://... '
-                    'extraite des pièces jointes — ne jamais inventer d’URL externe).',
-              },
-              'tags': <String, Object?>{
-                'type': 'array',
-                'items': <String, Object?>{'type': 'string'},
-                'description':
-                    'Mots-clés facilitant la recherche dans le catalogue.',
-              },
-              'select': <String, Object?>{
-                'type': 'boolean',
-                'description':
-                    'Si true (défaut), active immédiatement ce Design System dans le chat Vibe ; '
-                    'si false, l’ajoute uniquement à la liste des choix possibles.',
-              },
-            },
+          'markPresentKeysRequired': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Utilisé avec "infer" : marque les clés présentes dans le document comme "required" (défaut false).',
           },
-        ),
-        VibeToolDeclaration(
-          name: 'audit_active_page',
-          description:
-              'Exécute un audit déterministe complet sur la page active (ou le scope actif), en balayant '
-              'automatiquement tous les onglets des SuperTab de la page lorsqu’aucun scope n’est actif : '
-              'marges/paddings coupés, dépassements parent/viewport, budget de largeur en ligne (zoneAxes: row), '
-              'textes tronqués, erreurs runtime, attributs calculés @calculs manquants et contrastes WCAG AA.',
-          parametersSchema: <String, Object?>{
-            'type': 'object',
-            'properties': <String, Object?>{},
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'capture_element_screenshot',
+      description:
+          'Capture une copie d’écran PNG isolée d’UN élément précis (composant, carte, zone ou ligne '
+          'de liste) sans capturer toute la page ni les contours d’édition. Préfère systématiquement '
+          'cet outil à capture_screenshot pour inspecter visuellement un composant individuel.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'componentId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant du composant monté à capturer. Si omis, cible le scope actif ou le composant sélectionné.',
           },
-        ),
-      ];
+          'zoneId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant optionnel d’une zone précise du conteneur (ex: west, center, header).',
+          },
+          'occurrenceIndex': <String, Object?>{
+            'type': 'integer',
+            'description': 'Indice 0-based de l’occurrence à capturer dans une liste/table répétée (défaut 0).',
+          },
+          'scrollIntoView': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Fait défiler automatiquement le conteneur scrollable jusqu’à l’élément avant capture (true par défaut).',
+          },
+          'contextPadding': <String, Object?>{
+            'type': 'number',
+            'description': 'Marge visuelle autour de l’élément en dp : 0 (défaut) capture uniquement le RepaintBoundary isolé de l’élément ; > 0 inclut ses voisins immédiats.',
+          },
+          'maxDimension': <String, Object?>{
+            'type': 'integer',
+            'description': 'Dimension maximale en pixels de l’image générée (entre 256 et 1600, défaut 800).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'capture_screenshot',
+      description:
+          'Capture une image PNG de la page/fenêtre entière de l’application (utilise plutôt '
+          'capture_element_screenshot lorsque tu ne veux inspecter qu’un composant ou une zone).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'componentId': <String, Object?>{
+            'type': 'string',
+            'description': 'Optionnel : si fourni, délègue à capture_element_screenshot ; si omis, capture toute la page.',
+          },
+          'zoneId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Identifiant optionnel de zone lorsque componentId est fourni.',
+          },
+          'maxDimension': <String, Object?>{
+            'type': 'integer',
+            'description': 'Dimension maximale en pixels de l’image générée (entre 256 et 1600, défaut 1024).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_debug_entries',
+      description:
+          'Lit les journaux et erreurs typés capturés à l’exécution dans debugEntries '
+          '(catégories : binding, javascript, font, userInput, rendering, system ; '
+          'sévérités : critical, error, warning, info), y compris les erreurs affichées en rouge dans l’IHM.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'type': <String, Object?>{
+            'type': 'string',
+            'enum': <String>['error', 'log', 'all'],
+            'description':
+                'Filtre par nature ("error" par défaut, "log" ou "all").',
+          },
+          'minSeverity': <String, Object?>{
+            'type': 'string',
+            'enum': <String>['info', 'warning', 'error', 'critical'],
+            'description': 'Niveau minimal d’importance à retourner (critical > error > warning > info).',
+          },
+          'category': <String, Object?>{
+            'type': 'string',
+            'enum': <String>[
+              'all',
+              'binding',
+              'javascript',
+              'font',
+              'userInput',
+              'rendering',
+              'system',
+            ],
+            'description': 'Filtre par catégorie fonctionnelle : binding, javascript, font, userInput, rendering, system ou all.',
+          },
+          'componentId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Filtre exact sur l’identifiant du composant UI concerné.',
+          },
+          'visibleInUiOnly': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Ne retourne que les erreurs affichées en rouge dans l’IHM (false par défaut).',
+          },
+          'query': <String, Object?>{
+            'type': 'string',
+            'description': 'Sous-chaîne optionnelle à rechercher (ex: overflowed, RenderFlex, ID de composant, police).',
+          },
+          'sinceTurnStart': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Ne retourne que les entrées survenues depuis le début de ce tour IA (false par défaut).',
+          },
+          'includeStackTrace': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut un extrait condensé de la pile d’appels (true par défaut).',
+          },
+          'limit': <String, Object?>{
+            'type': 'integer',
+            'description': 'Nombre maximal d’entrées récentes retournées (1 à 50, défaut 20).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_datasources_and_providers',
+      description:
+          'Liste les Datasources CRUD et les DataProviders HTTP/code enregistrés hors d’Appearance '
+          '(identifiants, opérations, cibles/filtres, pagination et statut d’exécution/erreurs).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'datasourceId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel sur un identifiant de datasource.',
+          },
+          'providerId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel sur un identifiant de provider.',
+          },
+          'includeProblems': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut les diagnostics de cohérence des datasources (true par défaut).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'inspect_bindings_and_diagnostics',
+      description:
+          'Audite la santé des liaisons JSON sur l’écran (repositories manquants, oubli du préfixe '
+          '<repoId>: hors liste en Maître/Détail, jokers [?] sans sélection, clés absentes), '
+          'la conformité des données aux JSON Schemas, la cohérence masque/date/données, '
+          'les erreurs actives de repository, les composants orphelins et les états forcés.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'componentIds': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description': 'Sous-ensemble optionnel d’IDs à auditer (par défaut audite tout l’écran ou le scope).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_theme_and_contrast',
+      description:
+          'Résout tous les rôles Material 3 theme:* en couleurs #RRGGBB effectives et vérifie les '
+          'ratios de contraste WCAG AA texte/fond des composants de l’écran.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'componentIds': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description': 'Liste optionnelle d’IDs à vérifier.',
+          },
+          'onlyIssues': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, ne retourne dans contrastChecks que les composants en échec WCAG AA.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_registry_and_selection',
+      description:
+          'Retourne les composants et extensions réellement enregistrés dans Registry (ex: Chart ou '
+          'composants métier hôtes), les polices disponibles et la sélection active dans l’éditeur.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'includeComponents': <String, Object?>{
+            'type': 'boolean',
+            'description':
+                'Inclut la liste des builders du Registry (true par défaut).',
+          },
+          'includeFonts': <String, Object?>{
+            'type': 'boolean',
+            'description':
+                'Inclut les familles de polices disponibles (true par défaut).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'preview_navigation_or_selection',
+      description:
+          'Action d’aperçu non destructive (annulée en cas de rollback) : navigue vers une page du '
+          'catalogue, sélectionne une ligne d’un tableau JSON pour alimenter une vue Détail, ou bascule '
+          'sur un onglet précis d’un SuperTab monté (hors scope restreint) pour mesurer/capturer son contenu.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'pageId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant d’une page de pageCatalog à afficher.',
+          },
+          'routePath': <String, Object?>{
+            'type': 'string',
+            'description': 'Chemin de route débutant par "/" à afficher.',
+          },
+          'repositoryId': <String, Object?>{
+            'type': 'string',
+            'description': 'Repository contenant le tableau dont la sélection doit changer.',
+          },
+          'arrayTemplate': <String, Object?>{
+            'type': 'string',
+            'description': 'Chemin modèle du tableau (ex: clients ou clients[?].commandes).',
+          },
+          'index': <String, Object?>{
+            'type': 'integer',
+            'description':
+                'Indice 0-based de la ligne à sélectionner (défaut 0).',
+          },
+          'parentIndices': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'integer'},
+            'description':
+                'Indices parents éventuels pour un sous-tableau imbriqué.',
+          },
+          'clearSelection': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, efface la sélection du tableau.',
+          },
+          'tabComponentId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant d’un composant SuperTab monté dont on veut activer un onglet en aperçu.',
+          },
+          'tabIndex': <String, Object?>{
+            'type': 'integer',
+            'description':
+                'Indice 0-based de l’onglet à activer dans tabComponentId.',
+          },
+          'tabId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant technique (slotId) ou libellé exact de l’onglet à activer dans tabComponentId.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'select_editor_element',
+      description:
+          'Sélectionne et met en évidence à distance un élément monté sur le canevas du mode édition '
+          '(active le mode édition si nécessaire, fait défiler jusqu’à l’élément, met à jour le chemin '
+          'de la bannière et déclenche un halo visuel). Utile pour montrer ou cibler un composant précis.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'componentId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant du composant à sélectionner (requis sauf si clear=true).',
+          },
+          'zoneId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant optionnel d’une zone du conteneur (ex: west, center, header).',
+          },
+          'occurrenceIndex': <String, Object?>{
+            'type': 'integer',
+            'description': 'Indice 0-based de l’occurrence à sélectionner dans une liste/table (défaut 0).',
+          },
+          'enableEditMode': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Active automatiquement le mode édition s’il est désactivé (true par défaut).',
+          },
+          'scrollIntoView': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Fait défiler jusqu’à l’élément avant sélection (true par défaut).',
+          },
+          'pulseHighlight': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Déclenche un halo visuel temporaire sur l’élément (true par défaut).',
+          },
+          'setChatScope': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, restreint aussi le scope actif du chat Vibe à cet élément (false par défaut).',
+          },
+          'clear': <String, Object?>{
+            'type': 'boolean',
+            'description':
+                'Si true, efface toute sélection active sur le canevas.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'register_design_system',
+      description:
+          'Génère, valide et enregistre un nouveau système de design DESIGN.md dans la liste des choix '
+          'possibles du catalogue (et le sélectionne par défaut comme système actif du chat). '
+          'À appeler lorsqu’on te demande de créer, extraire ou ajouter un DESIGN.md / Design System '
+          'à partir de pièces jointes du chat (captures d’écran, maquettes, fichiers CSS/HTML, SVG, chartes) '
+          'ou d’une description. Essaie toujours de récupérer ou reconstruire le logo de la marque depuis les '
+          'pièces jointes (URL exacte, Data URI, <svg> inline joint ou extrait du HTML, ou SVG vectoriel minimal '
+          'fidèle au logo visible) via le paramètre "logo" et documente-le dans le DESIGN.md.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'required': <String>['name', 'markdown'],
+        'properties': <String, Object?>{
+          'name': <String, Object?>{
+            'type': 'string',
+            'description': 'Nom lisible du Design System (ex: "Acme Dashboard", "Aurora Dark").',
+          },
+          'markdown': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Contenu complet du document DESIGN.md en français (avec les 9 sections : '
+                '1. Visual Theme & Atmosphere, 2. Color Palette & Roles (+ Brand Logo / SVG ou URL si récupéré), '
+                '3. Typography Rules, 4. Component Stylings, 5. Layout Principles, 6. Depth & Elevation, '
+                '7. Do\'s and Don\'ts, 8. Responsive & Desktop Ergonomics, 9. Agent Prompt Guide incluant le logo si disponible).',
+          },
+          'slug': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Identifiant kebab-case optionnel (ex: "acme-dashboard").',
+          },
+          'category': <String, Object?>{
+            'type': 'string',
+            'enum': <String>[
+              'productivity-saas',
+              'developer-tools',
+              'ai-platforms',
+              'fintech',
+              'design-creative',
+              'media-retail',
+              'special-retro',
+              'custom',
+            ],
+            'description': 'Catégorie fonctionnelle ou esthétique du système de design (défaut "custom").',
+          },
+          'tagline': <String, Object?>{
+            'type': 'string',
+            'description': 'Accroche courte résumant la personnalité visuelle sur la carte d’aperçu.',
+          },
+          'description': <String, Object?>{
+            'type': 'string',
+            'description': 'Description synthétique de l’atmosphère, de la hiérarchie et des usages.',
+          },
+          'mode': <String, Object?>{
+            'type': 'string',
+            'enum': <String>['light', 'dark'],
+            'description': 'Mode lumineux principal ("light" ou "dark") extrait des pièces jointes.',
+          },
+          'accent': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Couleur d’accentuation principale au format #RRGGBB.',
+          },
+          'canvasColor': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Couleur d’arrière-plan globale (canvas) au format #RRGGBB.',
+          },
+          'surfaceColor': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Couleur des cartes et panneaux (surface) au format #RRGGBB.',
+          },
+          'textColor': <String, Object?>{
+            'type': 'string',
+            'description': 'Couleur du texte principal au format #RRGGBB.',
+          },
+          'mutedTextColor': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Couleur du texte secondaire/atténué au format #RRGGBB.',
+          },
+          'borderColor': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Couleur des bordures fines et séparateurs au format #RRGGBB.',
+          },
+          'cardRadius': <String, Object?>{
+            'type': 'number',
+            'description': 'Rayon d’arrondi représentatif des cartes en dp (ex: 8, 12, 16).',
+          },
+          'surfaceSystem': <String, Object?>{
+            'type': 'string',
+            'enum': <String>['material', 'neumorphism', 'liquidGlass'],
+            'description': 'Système de rendu de surface (défaut "material").',
+          },
+          'fontFamily': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Famille typographique principale recommandée (ex: "Inter").',
+          },
+          'logo': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Logo de la marque récupéré depuis les pièces jointes si disponible '
+                '(code <svg...>...</svg> inline compact, Data URI data:image/..., ou URL exacte https://... '
+                'extraite des pièces jointes — ne jamais inventer d’URL externe).',
+          },
+          'tags': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description':
+                'Mots-clés facilitant la recherche dans le catalogue.',
+          },
+          'select': <String, Object?>{
+            'type': 'boolean',
+            'description':
+                'Si true (défaut), active immédiatement ce Design System dans le chat Vibe ; '
+                'si false, l’ajoute uniquement à la liste des choix possibles.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'audit_active_page',
+      description:
+          'Exécute un audit déterministe complet sur la page active (ou le scope actif), en balayant '
+          'automatiquement tous les onglets des SuperTab de la page lorsqu’aucun scope n’est actif : '
+          'marges/paddings coupés, dépassements parent/viewport, budget de largeur en ligne (zoneAxes: row), '
+          'textes tronqués, erreurs runtime, attributs calculés @calculs manquants et contrastes WCAG AA.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{},
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'validate_or_list_icons',
+      description:
+          'Valide qu’un ou plusieurs identifiants d’icônes sont disponibles dans MaterialIconCatalog '
+          '(et retourne le canonicalId ou des suggestions proches si invalide) et/ou liste ou recherche '
+          'les icônes disponibles par mot-clé FR/EN ou catégorie. À appeler OBLIGATOIREMENT avant de '
+          'remonter un patch JSON d’écran ("vibe") contenant des icônes ("icon").',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'icons': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description': 'Liste d’identifiants d’icônes à valider (ex: ["save", "edit", "delete"]).',
+          },
+          'query': <String, Object?>{
+            'type': 'string',
+            'description': 'Mot-clé FR/EN optionnel pour rechercher des icônes (ex: "facture", "utilisateur", "chart").',
+          },
+          'category': <String, Object?>{
+            'type': 'string',
+            'enum': <String>[
+              'actions',
+              'navigation',
+              'communication',
+              'content',
+              'media',
+              'status',
+              'user',
+              'commerce',
+            ],
+            'description':
+                'Filtre optionnel par catégorie MaterialIconCategory.',
+          },
+          'includeAll': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true (ou si icons et query sont absents), liste les identifiants disponibles.',
+          },
+          'limit': <String, Object?>{
+            'type': 'integer',
+            'description': 'Nombre maximal d’icônes retournées dans le listing (1 à 500, défaut 200 ou 500 si includeAll=true).',
+          },
+          'offset': <String, Object?>{
+            'type': 'integer',
+            'description': 'Décalage de pagination (défaut 0).',
+          },
+        },
+      },
+    ),
+  ];
 
   /// Construit un registre avec les 5 déclarations standard liées aux [handlers] fournis.
   factory VibeAppToolRegistry.fromStandardHandlers(
@@ -1063,9 +1090,10 @@ class VibeAppToolRegistry {
   final Map<String, VibeRegisteredTool> _tools = <String, VibeRegisteredTool>{};
 
   /// Déclarations ordonnées de tous les outils disponibles.
-  List<VibeToolDeclaration> get declarations => List<VibeToolDeclaration>.unmodifiable([
-    for (final tool in _tools.values) tool.declaration,
-  ]);
+  List<VibeToolDeclaration> get declarations =>
+      List<VibeToolDeclaration>.unmodifiable([
+        for (final tool in _tools.values) tool.declaration,
+      ]);
 
   /// Indique si au moins un outil est enregistré.
   bool get isNotEmpty => _tools.isNotEmpty;
@@ -1074,8 +1102,7 @@ class VibeAppToolRegistry {
   bool get isEmpty => _tools.isEmpty;
 
   /// Retourne la déclaration associée à [name], ou `null`.
-  VibeToolDeclaration? declarationFor(String name) =>
-      _tools[name]?.declaration;
+  VibeToolDeclaration? declarationFor(String name) => _tools[name]?.declaration;
 
   /// Sérialise les outils au format `tools` attendu par l'API Gemini `v1beta`.
   List<Map<String, Object?>> toGeminiToolsPayload() {
@@ -1109,8 +1136,9 @@ class VibeAppToolRegistry {
       '(6) l’utilisateur demande où se trouve un élément ou de le sélectionner/pointer dans l’éditeur (`select_editor_element`), '
       '(7) l’utilisateur demande de consulter, inférer, valider, associer, modifier ou supprimer le JSON Schema d’un repository existant (`manage_repository_json_schema`), '
       '(8) l’utilisateur demande de générer, extraire ou ajouter un DESIGN.md / Design System dans la liste des choix possibles à partir de pièces jointes ou d’instructions (`register_design_system` — essaie toujours de récupérer aussi le logo via `logo` et de l’inclure dans le DESIGN.md), '
-      '(9) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière.\n'
-      '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples dont le JSON courant contient déjà toute l’information.\n'
+      '(9) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière, '
+      '(10) tu t’apprêtes à remonter un patch JSON d’écran ("vibe") utilisant des icônes ("icon" sur SuperAction, SuperIndicator, SuperChoice, onglet SuperTab, etc.) : appelle OBLIGATOIREMENT `validate_or_list_icons` AVANT de renvoyer le patch JSON final pour valider chaque identifiant d’icône et/ou lister les icônes disponibles dans MaterialIconCatalog.\n'
+      '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples sans icône à vérifier dont le JSON courant contient déjà toute l’information.\n'
       '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
       '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'
       'Catalogue des outils disponibles :\n',
@@ -1127,10 +1155,8 @@ class VibeAppToolRegistry {
   static String? _cachedStandardToolsGuide;
 
   /// Guide statique standard des outils d’introspection pour la mise en cache du prompt.
-  static String standardToolsGuide() =>
-      _cachedStandardToolsGuide ??= formatDeclarationsGuide(
-        standardDeclarations,
-      );
+  static String standardToolsGuide() => _cachedStandardToolsGuide ??=
+      formatDeclarationsGuide(standardDeclarations);
 
   /// Génère une description concise des outils utilisable en mode JSON `"toolCalls"`.
   String formatToolsGuideSection() => formatDeclarationsGuide(declarations);
