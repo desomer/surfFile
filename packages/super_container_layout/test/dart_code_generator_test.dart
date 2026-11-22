@@ -896,4 +896,121 @@ void main() {
       expect(find.text('panString'), findsOneWidget);
     },
   );
+
+  test(
+    'DartCodegenContext.formatBehavior emits BehaviorEvent and BehaviorValidator variants',
+    () {
+      final ctx = DartCodegenContext(
+        appearance: Appearance(),
+        registry: Registry(),
+      );
+
+      final simple = ComponentBehavior(
+        id: 'b-simple',
+        event: BehaviorEvent.onChanged,
+        validator: const ValueBehaviorValidator.isFill(),
+        action: EmitEventAction(eventId: 'changed'),
+      );
+      final simpleCode = ctx.formatBehavior(simple);
+      expect(simpleCode, contains('event: BehaviorEvent.onChanged'));
+      expect(simpleCode, isNot(contains('BehaviorTrigger')));
+      expect(
+        simpleCode,
+        contains('validator: const ValueBehaviorValidator.isFill()'),
+      );
+
+      expect(
+        ctx.formatBehaviorValidator(const ValueBehaviorValidator.isEmpty()),
+        'const ValueBehaviorValidator.isEmpty()',
+      );
+      expect(
+        ctx.formatBehaviorValidator(
+          const ValueBehaviorValidator.otherIsEmpty('email'),
+        ),
+        "const ValueBehaviorValidator.otherIsEmpty('email')",
+      );
+      expect(
+        ctx.formatBehaviorValidator(
+          const ValueBehaviorValidator.otherIsFill('email'),
+        ),
+        "const ValueBehaviorValidator.otherIsFill('email')",
+      );
+      expect(
+        ctx.formatBehaviorValidator(
+          const ValueBehaviorValidator(
+            source: BehaviorValueSource.component,
+            operator: BehaviorValidatorOperator.greaterThan,
+            targetComponentId: 'qty',
+            expectedValue: 5,
+          ),
+        ),
+        allOf(
+          contains('const ValueBehaviorValidator('),
+          contains('source: BehaviorValueSource.component'),
+          contains('operator: BehaviorValidatorOperator.greaterThan'),
+          contains("targetComponentId: 'qty'"),
+          contains('expectedValue: 5'),
+        ),
+      );
+      expect(
+        ctx.formatBehaviorValidator(
+          const ValueBehaviorValidator.bindingIsFill(
+            JsonTextBinding(repositoryId: 'crm', path: 'client.nom'),
+          ),
+        ),
+        allOf(
+          contains('const ValueBehaviorValidator.bindingIsFill('),
+          contains("repositoryId: 'crm'"),
+          contains("path: 'client.nom'"),
+        ),
+      );
+
+      final composite = AllBehaviorValidator(
+        validators: [
+          const ValueBehaviorValidator.otherIsFill('email'),
+          AnyBehaviorValidator(
+            validators: [
+              const NotBehaviorValidator(
+                validator: ValueBehaviorValidator.isEmpty(),
+              ),
+              const ValueBehaviorValidator.equals(['a', 'b']),
+            ],
+          ),
+        ],
+      );
+      final compositeCode = ctx.formatBehaviorValidator(composite);
+      expect(compositeCode, contains('AllBehaviorValidator('));
+      expect(compositeCode, contains('AnyBehaviorValidator('));
+      expect(compositeCode, contains('NotBehaviorValidator('));
+      expect(
+        compositeCode,
+        contains("ValueBehaviorValidator.equals(['a', 'b'])"),
+      );
+
+      final customCode = ctx.formatBehaviorValidator(
+        const _CustomValidatorForCodegenTest(),
+      );
+      expect(customCode, contains('BehaviorValidatorCatalog.decode('));
+      expect(customCode, contains("'type': 'customTest'"));
+    },
+  );
+}
+
+class _CustomValidatorForCodegenTest extends BehaviorValidator {
+  const _CustomValidatorForCodegenTest();
+
+  @override
+  String get type => 'customTest';
+
+  @override
+  String get label => 'Custom';
+
+  @override
+  String get description => 'Custom';
+
+  @override
+  void validate() {}
+
+  @override
+  Map<String, Object?> toJson() => const {'type': 'customTest', 'flag': true};
 }

@@ -3,6 +3,7 @@
 /// Convertit les composants [SuperAction] de sa région `destinations` en `BottomNavigationBarItem`.
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -12,10 +13,12 @@ import '../../../theme/theme_color.dart';
 import '../super_component.dart';
 import '../component_tooltip.dart';
 
+import '../../../models/component_behavior.dart';
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_action_config.dart';
+import '../../../services/behaviors/behavior_dispatcher.dart';
 import '../../../super_app.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_action.dart';
@@ -239,6 +242,9 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
           return NativeComponentEditor(
             id: widget.id,
             behaviours: widget.behaviours,
+            eventComponentType: 'bottomNavigationBar',
+            readValue: () => _selectedIndex,
+            eventData: () => {'value': _selectedIndex, 'index': _selectedIndex},
             label: widget.label,
             menuType: 'BottomNavigationBar',
             keyPrefix: 'super-bottom-navigation-bar',
@@ -394,6 +400,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                               .value ??
                           fallback;
                       if (!actionConfig.enabled) return;
+                      final previousIndex = effectiveIndex;
                       setState(() => _selectedIndex = index);
                       widget.onTap?.call(index);
                       executeSuperActionClick(
@@ -401,6 +408,33 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                         slot.id,
                         onPressed: action?.onPressed,
                         behaviours: action?.behaviours,
+                      );
+                      unawaited(
+                        BehaviorDispatcher.dispatch(
+                          context,
+                          componentId: widget.id,
+                          componentType: 'bottomNavigationBar',
+                          event: BehaviorEvent.onSelected,
+                          data: {
+                            'index': index,
+                            'previousIndex': previousIndex,
+                            'destinationId': slot.id,
+                          },
+                          behaviors: widget.behaviours,
+                        ),
+                      );
+                      unawaited(
+                        BehaviorDispatcher.dispatch(
+                          context,
+                          componentId: slot.id,
+                          componentType: 'action',
+                          event: BehaviorEvent.onSelected,
+                          data: {
+                            'index': index,
+                            'previousIndex': previousIndex,
+                          },
+                          behaviors: action?.behaviours,
+                        ),
                       );
                     },
                   );

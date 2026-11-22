@@ -54,7 +54,11 @@
 	const baseItemStyle = $derived(
 		player.appearance.styles[itemStyleId] ?? player.appearance.styles[id]
 	);
-	const itemGoToPageHref = $derived(player.getGoToPageHref(itemStyleId));
+	const itemGoToPageHref = $derived(
+		player.getGoToPageHref(itemStyleId, 'onTap') ??
+			player.getGoToPageHref(itemStyleId, 'onSelected') ??
+			player.getGoToPageHref(id, 'onSelected')
+	);
 
 	function getRowCss(index: number): string {
 		if (!baseItemStyle) {
@@ -74,11 +78,14 @@
 		});
 	}
 
-	function handleRowClick(index: number) {
+	function handleRowClick(index: number): boolean {
 		if (resolvedArray?.isResolved && repoStore) {
 			repoStore.selectRow(resolvedArray.repositoryId, resolvedArray.resolvedPath, index);
 		}
-		player.executeBehaviors(itemStyleId, 'click');
+		const tapHandled = player.executeBehaviors(itemStyleId, 'onTap');
+		const itemSelectedHandled = player.executeBehaviors(itemStyleId, 'onSelected');
+		const listSelectedHandled = player.executeBehaviors(id, 'onSelected');
+		return tapHandled || itemSelectedHandled || listSelectedHandled;
 	}
 
 	function handleAddRow() {
@@ -149,7 +156,9 @@
 							aria-label="Ouvrir l'élément {index + 1}"
 							onclick={(e) => {
 								e.stopPropagation();
-								handleRowClick(index);
+								if (!handleRowClick(index)) {
+									e.preventDefault();
+								}
 							}}
 						></a>
 					{/if}

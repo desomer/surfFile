@@ -51,6 +51,10 @@ class NativeComponentEditor extends StatefulWidget {
   const NativeComponentEditor({
     this.id,
     this.behaviours,
+    this.eventComponentType = 'component',
+    this.eventData,
+    this.readValue,
+    this.readIsValid,
     required this.label,
     required this.config,
     required this.onChanged,
@@ -93,6 +97,18 @@ class NativeComponentEditor extends StatefulWidget {
 
   /// Comportements explicites de la surface complete du composant.
   final List<ComponentBehavior>? behaviours;
+
+  /// Type de composant transmis aux enveloppes d'événements et au registre runtime.
+  final String eventComponentType;
+
+  /// Instantané des données runtime exposé à l'[EditorSlot] du composant.
+  final Map<String, Object?> Function()? eventData;
+
+  /// Lecteur paresseux de la valeur runtime courante pour [ComponentRuntimeValueRegistry].
+  final Object? Function()? readValue;
+
+  /// Lecteur paresseux de la validité native courante pour [ComponentRuntimeValueRegistry].
+  final bool Function()? readIsValid;
   final ValueChanged<NativeComponentConfig> onChanged;
   final List<NativeRegion> regions;
   final List<SlotImplementation> slots;
@@ -361,7 +377,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     _validate(widget.config);
     Widget wrapSurface(BuildContext context) {
       final child = widget.builder(context, this);
-      if (!widget.editSurface && widget.behaviours == null) {
+      if (!widget.editSurface &&
+          widget.behaviours == null &&
+          widget.readValue == null &&
+          widget.readIsValid == null &&
+          widget.eventData == null) {
         return ComponentTooltip(
           componentId: _effectiveComponentId ?? widget.keyPrefix,
           child: child,
@@ -372,6 +392,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           id: _effectiveComponentId,
           exportConfig: widget.exportConfig ?? () => _config.value,
           behaviors: widget.behaviours,
+          eventComponentType: widget.eventComponentType,
+          eventData: widget.eventData,
+          readValue: widget.readValue,
+          readIsValid: widget.readIsValid,
           editable: false,
           child: child,
         );
@@ -386,6 +410,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           id: _effectiveComponentId,
           exportConfig: widget.exportConfig ?? () => _config.value,
           behaviors: widget.behaviours,
+          eventComponentType: widget.eventComponentType,
+          eventData: widget.eventData,
+          readValue: widget.readValue,
+          readIsValid: widget.readIsValid,
           label: widget.settingsTitle,
           menuTitle: widget.label,
           menuType: widget.menuType,

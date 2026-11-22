@@ -59,6 +59,7 @@
 /// l'apparence sous [SuperListView.id].
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:flutter/gestures.dart'
@@ -66,13 +67,16 @@ import 'package:flutter/gestures.dart'
         GestureBinding,
         PointerScrollEvent,
         PointerSignalEvent,
+        kPrimaryButton,
         kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import 'super_component.dart';
 
+import '../../models/behaviours/behavior_event.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_layout_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/repository_array_creation.dart';
 import '../appearance/appearance_scope.dart';
 import '../../models/super_list_view_config.dart';
@@ -736,6 +740,7 @@ class _SuperListViewState extends State<SuperListView>
   }
 
   Widget _row(
+    BuildContext listContext,
     ValueNotifier<SuperLayoutConfig> layout,
     ValueNotifier<ContainerStyle> style,
     ValueNotifier<SuperListViewConfig> configuration,
@@ -896,25 +901,53 @@ class _SuperListViewState extends State<SuperListView>
                     index,
                     GlobalKey<_RowMeasureSubtreeState>.new,
                   ),
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (event) {
-                      final wasEditable = rowEditable;
-                      _select(index);
-                      if (editing &&
-                          !wasEditable &&
-                          event.buttons == kSecondaryMouseButton) {
-                        final pos = event.position;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          final rowCtx = _rowBoxKeys[index]?.currentContext;
-                          if (rowCtx != null && rowCtx.mounted) {
-                            EditorSlotState.openMenuFromContext(rowCtx, pos);
-                          }
-                        });
-                      }
-                    },
-                    child: row,
+                  child: Builder(
+                    builder: (rowContext) => Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (event) {
+                        final wasEditable = rowEditable;
+                        final previousIndex = _selectedRowIndex;
+                        _select(index);
+                        if (!editing && event.buttons == kPrimaryButton) {
+                          final data = <String, Object?>{
+                            'index': index,
+                            'previousIndex': ?previousIndex,
+                          };
+                          unawaited(
+                            BehaviorDispatcher.dispatch(
+                              listContext,
+                              componentId: widget.id,
+                              componentType: 'listView',
+                              event: BehaviorEvent.onSelected,
+                              behaviors: widget.behaviours,
+                              data: data,
+                            ),
+                          );
+                          unawaited(
+                            BehaviorDispatcher.dispatch(
+                              rowContext,
+                              componentId: effectiveItemId,
+                              componentType: 'iterableContent',
+                              event: BehaviorEvent.onSelected,
+                              data: data,
+                            ),
+                          );
+                        }
+                        if (editing &&
+                            !wasEditable &&
+                            event.buttons == kSecondaryMouseButton) {
+                          final pos = event.position;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            final rowCtx = _rowBoxKeys[index]?.currentContext;
+                            if (rowCtx != null && rowCtx.mounted) {
+                              EditorSlotState.openMenuFromContext(rowCtx, pos);
+                            }
+                          });
+                        }
+                      },
+                      child: row,
+                    ),
                   ),
                 ),
               ),
@@ -1077,6 +1110,7 @@ class _SuperListViewState extends State<SuperListView>
                       ),
                     )
                   : _row(
+                      context,
                       layout,
                       style,
                       configuration,
@@ -1099,6 +1133,8 @@ class _SuperListViewState extends State<SuperListView>
           exportConfig: () =>
               configuration.value.copyWith(template: layout.value),
           behaviors: widget.behaviours,
+          eventComponentType: 'listView',
+          readValue: () => _items ?? const [],
           label: 'Liste',
           menuType: 'ListView',
           scrollable: config.showScrollbar,

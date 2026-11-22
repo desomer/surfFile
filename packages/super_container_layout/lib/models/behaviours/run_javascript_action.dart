@@ -65,7 +65,8 @@ class RunJavaScriptAction extends BehaviorAction {
   ) => _execute(context, {
     'componentId': data.componentId,
     'componentType': data.componentType,
-    'trigger': data.trigger.name,
+    'event': data.event.name,
+    'trigger': data.event.legacyTriggerName,
     'data': data.data,
   }, componentId: data.componentId);
 

@@ -13,10 +13,12 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/theme_color.dart';
 
 import '../../models/automatic_state.dart';
+import '../../models/component_behavior.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_choice_config.dart';
 import '../../models/super_text_field_config.dart';
 import '../../models/super_value_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -144,6 +146,91 @@ class _SuperValueState extends State<SuperValue>
       JsonTextControllerBinding.defaultDebounceDuration;
   bool _requestedSaveOnBlurOnly = false;
   Future<void>? _pendingBindingFlush;
+  TextEditingController? _observedController;
+  String _lastControllerText = '';
+  String _previousControllerText = '';
+
+  void _syncObservedController() {
+    final current = _text;
+    if (identical(_observedController, current)) return;
+    _observedController?.removeListener(_handleControllerTextChanged);
+    _observedController = current;
+    _lastControllerText = current.text;
+    _previousControllerText = current.text;
+    current.addListener(_handleControllerTextChanged);
+  }
+
+  void _handleControllerTextChanged() {
+    final currentText = _observedController?.text ?? '';
+    if (currentText == _lastControllerText) return;
+    _previousControllerText = _lastControllerText;
+    _lastControllerText = currentText;
+  }
+
+  Object _decodeRuntimeValue(String rawText, SuperValueConfig config) {
+    if (config.kind.isBoolean) {
+      return rawText.trim().toLowerCase() == 'true';
+    }
+    if (config.kind.isChoice && config.choice.variant.isMultiple) {
+      return SuperChoiceConfig.parseSelectedValues(rawText);
+    }
+    if (config.kind.isText) {
+      return config.field.toStorageText(rawText);
+    }
+    return rawText;
+  }
+
+  Object _readCurrentRuntimeValue([SuperValueConfig? overrideConfig]) {
+    final current = overrideConfig ?? _currentEffectiveConfig;
+    final rawText = _editorText != null
+        ? _editorText!.text
+        : (_controlledText ?? _text.text);
+    return _decodeRuntimeValue(rawText, current);
+  }
+
+  bool _readCurrentIsValid() {
+    if (_bindingError != null || _binding?.error != null) return false;
+    final current = _currentEffectiveConfig;
+    if (current.kind.isText && current.mode == SuperValueMode.input) {
+      if (current.field.errorText.trim().isNotEmpty) return false;
+      final displayText = _editorText != null
+          ? _editorText!.text
+          : (_controlledText ?? _text.text);
+      final storageText = current.field.toStorageText(displayText);
+      return current.field.validateValue(
+            storageText,
+            displayValue: displayText,
+            obscureText: current.obscureText,
+          ) ==
+          null;
+    }
+    if (current.kind.isChoice &&
+        current.mode == SuperValueMode.input &&
+        current.choice.errorText.trim().isNotEmpty) {
+      return false;
+    }
+    return true;
+  }
+
+  void _dispatchValueEvent(
+    BehaviorEvent event, {
+    required Map<String, Object?> data,
+    BuildContext? targetContext,
+  }) {
+    if (_editorText != null) return;
+    final ctx = targetContext ?? _surface.currentContext ?? context;
+    if (!ctx.mounted) return;
+    unawaited(
+      BehaviorDispatcher.dispatch(
+        ctx,
+        componentId: widget.id,
+        componentType: 'value',
+        event: event,
+        data: data,
+        behaviors: widget.behaviours,
+      ),
+    );
+  }
 
   void _syncSchemaStoreListener(
     JsonRepositoryStore? store,
@@ -355,12 +442,14 @@ class _SuperValueState extends State<SuperValue>
         ? _displayControlledText(widget.config, _controlledText!)
         : _initialTextFor(widget.config);
     _internal = TextEditingController(text: initial);
+    _syncObservedController();
     _local = ValueNotifier(widget.config);
     _focusNode.addListener(_handleFocusChanged);
   }
 
   void _handleFocusChanged() {
     final hasFocus = _focusNode.hasFocus;
+    final focusChanged = hasFocus != _hadFocus;
     final current = _currentEffectiveConfig;
     if (_hadFocus && !hasFocus) {
       _touched = true;
@@ -395,6 +484,15 @@ class _SuperValueState extends State<SuperValue>
       }
     }
     _hadFocus = hasFocus;
+    if (focusChanged && mounted && _editorText == null) {
+      _dispatchValueEvent(
+        hasFocus ? BehaviorEvent.onFocus : BehaviorEvent.onBlur,
+        data: {
+          'value': _readCurrentRuntimeValue(current),
+          'hasFocus': hasFocus,
+        },
+      );
+    }
     onComponentStateChanged();
   }
 
@@ -409,6 +507,7 @@ class _SuperValueState extends State<SuperValue>
       throw ArgumentError('Use either value or boolValue, not both.');
     }
     widget.config.copyWith(clearStates: true).validate();
+    _syncObservedController();
     if (oldWidget.config != widget.config) _local.value = widget.config;
     if (oldWidget.id != widget.id) {
       _previousConfig = null;
@@ -419,6 +518,8 @@ class _SuperValueState extends State<SuperValue>
       _activeStates = null;
       _effectiveConfig = null;
       _touched = false;
+      _lastControllerText = _text.text;
+      _previousControllerText = _text.text;
     }
     final controlled = _controlledText;
     if (widget.controller == null) {
@@ -818,6 +919,8 @@ class _SuperValueState extends State<SuperValue>
 
   @override
   void dispose() {
+    _observedController?.removeListener(_handleControllerTextChanged);
+    _observedController = null;
     _schemaStore?.removeListener(_handleSchemaStoreChanged);
     _schemaStore = null;
     _focusNode.removeListener(_handleFocusChanged);
@@ -981,18 +1084,9 @@ class _SuperValueState extends State<SuperValue>
             exportConfig: () => configuration.value,
             eventComponentType: 'value',
             behaviors: widget.behaviours,
-            eventData: () {
-              final current = _currentEffectiveConfig;
-              return {
-                'value': current.kind.isBoolean
-                    ? _text.text.trim().toLowerCase() == 'true'
-                    : current.kind.isChoice && current.choice.variant.isMultiple
-                    ? SuperChoiceConfig.parseSelectedValues(_text.text)
-                    : current.kind.isText
-                    ? current.field.toStorageText(_text.text)
-                    : _text.text,
-              };
-            },
+            readValue: _readCurrentRuntimeValue,
+            readIsValid: _readCurrentIsValid,
+            eventData: () => {'value': _readCurrentRuntimeValue()},
             label: 'Valeur',
             menuType: 'Value',
             menuTooltip: () => formatSuperValueTooltip(
@@ -1074,11 +1168,19 @@ class _SuperValueState extends State<SuperValue>
                       !(config.binding != null && _binding?.loading == true);
                   void toggleBool(bool next) {
                     if (!interactive || _editorText != null) return;
+                    final previousValue = boolCurrent;
                     final nextText = next ? 'true' : 'false';
                     _setText(controller, nextText);
                     unawaited(_binding?.flush());
                     widget.onChanged?.call(nextText);
                     widget.onBoolChanged?.call(next);
+                    if (next != previousValue) {
+                      _dispatchValueEvent(
+                        BehaviorEvent.onChanged,
+                        data: {'value': next, 'previousValue': previousValue},
+                        targetContext: context,
+                      );
+                    }
                     if (_controlledText != null) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted &&
@@ -1173,10 +1275,35 @@ class _SuperValueState extends State<SuperValue>
                         enabled: choiceEnabled,
                         readOnly: _unselected || bindingReadOnly ? true : null,
                         bindingError: _bindingError ?? _binding?.error,
-                        onChanged: (text) {
+                        onChanged: (nextText) {
                           if (_editorText != null) return;
+                          final previousRaw = _lastControllerText == nextText
+                              ? _previousControllerText
+                              : _lastControllerText;
+                          final nextValue = _decodeRuntimeValue(
+                            nextText,
+                            config,
+                          );
+                          final previousValue = _decodeRuntimeValue(
+                            previousRaw,
+                            config,
+                          );
                           unawaited(_binding?.flush());
-                          widget.onChanged?.call(text);
+                          widget.onChanged?.call(nextText);
+                          final eventData = <String, Object?>{
+                            'value': nextValue,
+                            'previousValue': previousValue,
+                          };
+                          _dispatchValueEvent(
+                            BehaviorEvent.onChanged,
+                            data: eventData,
+                            targetContext: context,
+                          );
+                          _dispatchValueEvent(
+                            BehaviorEvent.onSelected,
+                            data: eventData,
+                            targetContext: context,
+                          );
                           if (_controlledText != null) {
                             WidgetsBinding.instance.addPostFrameCallback((_) {
                               if (mounted &&
@@ -1290,9 +1417,15 @@ class _SuperValueState extends State<SuperValue>
                             validationError: validationError,
                             onChanged: (nextText) {
                               if (_editorText != null) return;
+                              final previousRaw =
+                                  _lastControllerText == nextText
+                                  ? _previousControllerText
+                                  : _lastControllerText;
                               final nextStorage = config.field.toStorageText(
                                 nextText,
                               );
+                              final previousStorage = config.field
+                                  .toStorageText(previousRaw);
                               if (!_touched) {
                                 setState(() => _touched = true);
                               } else if (savedConfig.states?.automatic
@@ -1301,6 +1434,14 @@ class _SuperValueState extends State<SuperValue>
                                 setState(() {});
                               }
                               widget.onChanged?.call(nextStorage);
+                              _dispatchValueEvent(
+                                BehaviorEvent.onChanged,
+                                data: {
+                                  'value': nextStorage,
+                                  'previousValue': previousStorage,
+                                },
+                                targetContext: context,
+                              );
                               if (_controlledText != null) {
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
@@ -1320,6 +1461,17 @@ class _SuperValueState extends State<SuperValue>
                                   }
                                 });
                               }
+                            },
+                            onSubmitted: (submittedText) {
+                              if (_editorText != null) return;
+                              final currentStorage = config.field.toStorageText(
+                                submittedText,
+                              );
+                              _dispatchValueEvent(
+                                BehaviorEvent.onSubmitted,
+                                data: {'value': currentStorage},
+                                targetContext: context,
+                              );
                             },
                           ),
                         )

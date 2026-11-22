@@ -50,7 +50,7 @@ class ComponentTooltip extends StatefulWidget {
     TooltipAction? found;
     for (final behavior in items) {
       if (behavior.enabled &&
-          behavior.trigger == BehaviorTrigger.hover &&
+          behavior.event == BehaviorEvent.onHover &&
           behavior.action is TooltipAction) {
         found = behavior.action as TooltipAction;
         break;

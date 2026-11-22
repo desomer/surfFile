@@ -142,6 +142,12 @@
 			.join('; ')
 	);
 
+	$effect(() => {
+		const runtimeVal =
+			config.kind === 'checkbox' || config.kind === 'switchControl' ? currentBool : currentText;
+		player.setComponentValue(id, runtimeVal);
+	});
+
 	function handleTextInput(e: Event) {
 		const val = (e.currentTarget as HTMLInputElement | HTMLTextAreaElement).value;
 		if (config.binding && repoStore) {
@@ -149,6 +155,8 @@
 		} else {
 			localText = val;
 		}
+		player.setComponentValue(id, val);
+		player.executeBehaviors(id, 'onChanged');
 	}
 
 	function clearText() {
@@ -157,6 +165,8 @@
 		} else {
 			localText = '';
 		}
+		player.setComponentValue(id, '');
+		player.executeBehaviors(id, 'onChanged');
 	}
 
 	function handleBoolChange(e: Event) {
@@ -166,6 +176,8 @@
 		} else {
 			localBool = checked;
 		}
+		player.setComponentValue(id, checked);
+		player.executeBehaviors(id, 'onChanged');
 	}
 </script>
 

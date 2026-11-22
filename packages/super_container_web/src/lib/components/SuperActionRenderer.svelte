@@ -160,7 +160,10 @@
 		if (onclick) {
 			onclick(e);
 		}
-		player.executeBehaviors(id, 'click');
+		const handled = player.executeBehaviors(id, 'onTap');
+		if (goToPageHref && !handled) {
+			e.preventDefault();
+		}
 	}
 </script>
 

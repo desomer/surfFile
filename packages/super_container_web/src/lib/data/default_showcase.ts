@@ -183,7 +183,7 @@ export const DEFAULT_EXPORT_JSON: Record<string, unknown> = {
 			'btn-open-details': [
 				{
 					id: 'nav-details',
-					trigger: 'click',
+					event: 'onTap',
 					enabled: true,
 					action: {
 						type: 'goToPage',
@@ -196,7 +196,7 @@ export const DEFAULT_EXPORT_JSON: Record<string, unknown> = {
 			'btn-back-dashboard': [
 				{
 					id: 'nav-home',
-					trigger: 'click',
+					event: 'onTap',
 					enabled: true,
 					action: {
 						type: 'goToPage',
@@ -209,7 +209,7 @@ export const DEFAULT_EXPORT_JSON: Record<string, unknown> = {
 			'nav-item-dashboard': [
 				{
 					id: 'bottom-nav-home',
-					trigger: 'click',
+					event: 'onTap',
 					enabled: true,
 					action: {
 						type: 'goToPage',
@@ -221,7 +221,7 @@ export const DEFAULT_EXPORT_JSON: Record<string, unknown> = {
 			'nav-item-details': [
 				{
 					id: 'bottom-nav-details',
-					trigger: 'click',
+					event: 'onTap',
 					enabled: true,
 					action: {
 						type: 'goToPage',

@@ -25,6 +25,7 @@
 ///   la sélection partagée dans le `JsonArrayBinding` du repository.
 library;
 
+import 'dart:async' show scheduleMicrotask, unawaited;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -32,10 +33,12 @@ import 'package:material_ui/material_ui.dart';
 
 import 'super_component.dart';
 
+import '../../models/behaviours/behavior_event.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_table_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -159,6 +162,10 @@ class _SuperTableState extends State<SuperTable> {
   bool _loading = false;
   bool _busy = false;
   int _generation = 0;
+  final Map<int, GlobalKey> _bodyRowKeys = {};
+  final Map<int, GlobalKey> _frozenRowKeys = {};
+  int? _pointerDownSelectedRow;
+  int? _suppressTapRow;
 
   @override
   void didUpdateWidget(SuperTable oldWidget) {
@@ -240,6 +247,55 @@ class _SuperTableState extends State<SuperTable> {
       );
     }
     widget.onRowSelected?.call(dataIndex);
+  }
+
+  BuildContext? _rowContextFor(int dataIndex) {
+    final bodyCtx = _bodyRowKeys[dataIndex]?.currentContext;
+    if (bodyCtx != null && bodyCtx.mounted) return bodyCtx;
+    final frozenCtx = _frozenRowKeys[dataIndex]?.currentContext;
+    if (frozenCtx != null && frozenCtx.mounted) return frozenCtx;
+    return null;
+  }
+
+  void _dispatchRowSelected(
+    BuildContext tableContext, {
+    required String rowId,
+    required int dataIndex,
+    required int? previousIndex,
+  }) {
+    if (_suppressTapRow == dataIndex) {
+      _suppressTapRow = null;
+      return;
+    }
+    _pointerDownSelectedRow = dataIndex;
+    final data = <String, Object?>{
+      'index': dataIndex,
+      'previousIndex': ?previousIndex,
+    };
+    unawaited(
+      BehaviorDispatcher.dispatch(
+        tableContext,
+        componentId: widget.id,
+        componentType: 'table',
+        event: BehaviorEvent.onSelected,
+        behaviors: widget.behaviours,
+        data: data,
+      ),
+    );
+    if (rowId != widget.id) {
+      final rowContext = _rowContextFor(dataIndex);
+      if (rowContext != null) {
+        unawaited(
+          BehaviorDispatcher.dispatch(
+            rowContext,
+            componentId: rowId,
+            componentType: 'iterableContent',
+            event: BehaviorEvent.onSelected,
+            data: data,
+          ),
+        );
+      }
+    }
   }
 
   void _observe(
@@ -729,6 +785,13 @@ class _SuperTableState extends State<SuperTable> {
         : null;
     final basePath = _source?.binding?.path;
 
+    final rowScopeKey = templateMode
+        ? null
+        : (isStartCols ? _frozenRowKeys : _bodyRowKeys).putIfAbsent(
+            dataIndex,
+            GlobalKey.new,
+          );
+
     return JsonListScope(
       key: ValueKey(
         'super-table-row-${widget.id}-${isStartCols ? 'L' : 'R'}-${templateMode ? 'template' : dataIndex}',
@@ -745,29 +808,32 @@ class _SuperTableState extends State<SuperTable> {
       treeTemplatePath: _templatePath,
       arrayTemplate: _templatePath,
       placeholder: placeholder,
-      child: ValueListenableBuilder<ContainerStyle>(
-        valueListenable: style,
-        builder: (context, rowStyle, _) => IterableContent(
-          id: rowId,
-          label: 'Iterable Content',
-          style: rowStyle,
-          decorate: false,
-          applyPadding: false,
-          applyMargin: false,
-          resolveSelectionAndHover: false,
-          onStyleChanged: (next) => style.value = next,
-          child: CwTableRow(
-            info: CwRowInfo(
-              row: row,
-              isStartCols: isStartCols,
-              nbColFreeze: freezeCount,
-              propsRow: null,
-              tableState: tableState,
-              data: itemData,
-              style: rowStyle,
-              isHeader: false,
+      child: KeyedSubtree(
+        key: rowScopeKey,
+        child: ValueListenableBuilder<ContainerStyle>(
+          valueListenable: style,
+          builder: (context, rowStyle, _) => IterableContent(
+            id: rowId,
+            label: 'Iterable Content',
+            style: rowStyle,
+            decorate: false,
+            applyPadding: false,
+            applyMargin: false,
+            resolveSelectionAndHover: false,
+            onStyleChanged: (next) => style.value = next,
+            child: CwTableRow(
+              info: CwRowInfo(
+                row: row,
+                isStartCols: isStartCols,
+                nbColFreeze: freezeCount,
+                propsRow: null,
+                tableState: tableState,
+                data: itemData,
+                style: rowStyle,
+                isHeader: false,
+              ),
+              child: child,
             ),
-            child: child,
           ),
         ),
       ),
@@ -913,6 +979,8 @@ class _SuperTableState extends State<SuperTable> {
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
             behaviours: widget.behaviours,
+            eventComponentType: 'table',
+            readValue: () => _items ?? const [],
             exportConfig: () => controller.value,
             id: widget.id,
             label: widget.label,
@@ -992,43 +1060,69 @@ class _SuperTableState extends State<SuperTable> {
                       16.0;
                   final fallbackHeight = naturalTableHeight.clamp(120.0, 500.0);
 
-                  final tableWidget = FrozenTableView(
-                    key: ValueKey('super-table-view-${widget.id}'),
-                    rowCount: totalRowCount,
-                    colCount: config.columns.length,
-                    rowCountTop: rowCountTop,
-                    rowCountBottom: rowCountBottom,
-                    colFreezeLeftCount: freezeCount,
-                    rowWidthBorderL: 0,
-                    rowWidthBorderR: 0,
-                    initialSelectedRow: initialSelectedTableRow,
-                    animateSelectionAndHover: config.animateSelectionAndHover,
-                    selectionIndicatorBuilder: (ctx, _, isStartCols) =>
-                        _buildSelectionIndicator(
-                          ctx,
-                          currentRowStyle,
-                          isStartCols: isStartCols,
-                          freezeCount: freezeCount,
-                        ),
-                    hoverIndicatorBuilder: (ctx, _, isStartCols) =>
-                        _buildHoverIndicator(
-                          ctx,
-                          currentRowStyle,
-                          isStartCols: isStartCols,
-                          freezeCount: freezeCount,
-                        ),
-                    canHoverRow: (tableRow) =>
-                        !templateMode &&
-                        tableRow >= rowCountTop &&
-                        tableRow < totalRowCount - rowCountBottom,
-                    onRowTap: (tableRow) {
-                      final dataIndex = tableRow - rowCountTop;
-                      if (!templateMode &&
-                          dataIndex >= 0 &&
-                          dataIndex < dataRowCount) {
-                        _selectRow(dataIndex);
-                      }
+                  final tableWidget = Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerUp: (_) {
+                      final downRow = _pointerDownSelectedRow;
+                      if (downRow == null) return;
+                      _pointerDownSelectedRow = null;
+                      _suppressTapRow = downRow;
+                      scheduleMicrotask(() {
+                        if (_suppressTapRow == downRow) {
+                          _suppressTapRow = null;
+                        }
+                      });
                     },
+                    onPointerCancel: (_) {
+                      _pointerDownSelectedRow = null;
+                      _suppressTapRow = null;
+                    },
+                    child: FrozenTableView(
+                      key: ValueKey('super-table-view-${widget.id}'),
+                      rowCount: totalRowCount,
+                      colCount: config.columns.length,
+                      rowCountTop: rowCountTop,
+                      rowCountBottom: rowCountBottom,
+                      colFreezeLeftCount: freezeCount,
+                      rowWidthBorderL: 0,
+                      rowWidthBorderR: 0,
+                      initialSelectedRow: initialSelectedTableRow,
+                      animateSelectionAndHover: config.animateSelectionAndHover,
+                      selectionIndicatorBuilder: (ctx, _, isStartCols) =>
+                          _buildSelectionIndicator(
+                            ctx,
+                            currentRowStyle,
+                            isStartCols: isStartCols,
+                            freezeCount: freezeCount,
+                          ),
+                      hoverIndicatorBuilder: (ctx, _, isStartCols) =>
+                          _buildHoverIndicator(
+                            ctx,
+                            currentRowStyle,
+                            isStartCols: isStartCols,
+                            freezeCount: freezeCount,
+                          ),
+                      canHoverRow: (tableRow) =>
+                          !templateMode &&
+                          tableRow >= rowCountTop &&
+                          tableRow < totalRowCount - rowCountBottom,
+                      onRowTap: (tableRow) {
+                        final dataIndex = tableRow - rowCountTop;
+                        if (!templateMode &&
+                            dataIndex >= 0 &&
+                            dataIndex < dataRowCount) {
+                          final previousIndex = _selectedDataIndex;
+                          _selectRow(dataIndex);
+                          if (!editing) {
+                            _dispatchRowSelected(
+                              context,
+                              rowId: rowId,
+                              dataIndex: dataIndex,
+                              previousIndex: previousIndex,
+                            );
+                          }
+                        }
+                      },
                     onHeaderActionTap: widget.onHeaderActionTap,
                     onColumnWidthsChanged: (widths) {
                       final updated = controller.value.withColumnWidths(widths);
@@ -1118,6 +1212,7 @@ class _SuperTableState extends State<SuperTable> {
                           child: child,
                           tableState: tableState,
                         ),
+                    ),
                   );
 
                   return Column(

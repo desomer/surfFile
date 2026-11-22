@@ -482,19 +482,30 @@ void main() {
           await tester.tap(find.text('Open wizard'));
           await tester.pumpAndSettle();
           final next = find.byKey(const ValueKey('behavior-add-next'));
+          // Step 0 (target) -> Step 1 (event)
           await tester.ensureVisible(next);
           await tester.pumpAndSettle();
           await tester.tap(next);
           await tester.pumpAndSettle();
+
+          // Step 1 (event): select onHover -> Step 2 (action)
+          final hoverEvent = find.byKey(
+            const ValueKey('behavior-event-onHover'),
+          );
+          await tester.ensureVisible(hoverEvent);
+          await tester.pumpAndSettle();
+          await tester.tap(hoverEvent);
+          await tester.pumpAndSettle();
+          await tester.tap(next);
+          await settleRead(tester);
+
+          // Step 2 (action): onTooltip catalog + inline settings
           final catalogItem = find.byKey(
             const ValueKey('behavior-catalog-onTooltip'),
           );
           await tester.ensureVisible(catalogItem);
           await tester.pumpAndSettle();
           await tester.tap(catalogItem);
-          await tester.ensureVisible(next);
-          await tester.pumpAndSettle();
-          await tester.tap(next);
           await settleRead(tester);
           expect(
             tester
@@ -505,15 +516,20 @@ void main() {
             isNull,
           );
           if (linked) {
-            await tester.tap(
-              find.byKey(const ValueKey('behavior-tooltip-binding-repository')),
+            final repoField = find.byKey(
+              const ValueKey('behavior-tooltip-binding-repository'),
             );
+            await tester.ensureVisible(repoField);
+            await tester.pumpAndSettle();
+            await tester.tap(repoField);
             await tester.pumpAndSettle();
             await tester.tap(find.text('Tooltips').last);
             await tester.pumpAndSettle();
             final path = find.byKey(
               const ValueKey('behavior-tooltip-binding-repository-path'),
             );
+            await tester.ensureVisible(path);
+            await tester.pumpAndSettle();
             await tester.enterText(path, 'invalid..path');
             await tester.pumpAndSettle();
             expect(
@@ -526,19 +542,29 @@ void main() {
             );
             await tester.enterText(path, 'description');
           } else {
-            await tester.enterText(
-              find.byKey(const ValueKey('behavior-tooltip-message')),
-              'Wizard tooltip',
+            final msgField = find.byKey(
+              const ValueKey('behavior-tooltip-message'),
             );
+            await tester.ensureVisible(msgField);
+            await tester.pumpAndSettle();
+            await tester.enterText(msgField, 'Wizard tooltip');
           }
           await tester.pumpAndSettle();
+
+          // Step 2 (action) -> Step 3 (validator)
           await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
           await tester.pumpAndSettle();
+
+          // Step 3 (validator) -> Step 4 (summary)
+          await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+          await tester.pumpAndSettle();
+
+          // Step 4 (summary): check summary & submit
           expect(
             find.text(
               linked ? '$repositoryId : description' : 'Wizard tooltip',
             ),
-            findsOneWidget,
+            findsWidgets,
           );
           await tester.tap(find.byKey(const ValueKey('behavior-add-submit')));
           await tester.pumpAndSettle();

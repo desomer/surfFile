@@ -6,10 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/ai/vibe_stream_parser.dart';
+import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/datasources/datasource_config.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/providers/http_provider_config.dart';
 import 'package:super_container_layout/models/registry.dart';
+import 'package:super_container_layout/models/super_action_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
@@ -1341,6 +1343,97 @@ void main() {
           ),
           isFalse,
         );
+      },
+    );
+
+    test(
+      'inspect_bindings_and_diagnostics signale unknown_validator_target et audite les bindings des validateurs',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('vibe_val_diag_');
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final store = JsonRepositoryStore(tempDir);
+        addTearDown(store.dispose);
+        store.registerRepository(
+          RepositoryImpl(
+            id: 'crm',
+            json: {'client': {'nom': 'Alice'}},
+          ),
+        );
+
+        final appearance = Appearance(
+          components: {
+            'root': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['input_ok', 'btn_submit'],
+              },
+            ),
+            'input_ok': const SuperValueConfig(label: 'OK'),
+            'btn_submit': const SuperActionConfig(label: 'Valider'),
+          },
+          behaviors: {
+            'btn_submit': [
+              ComponentBehavior(
+                id: 'b-check',
+                event: BehaviorEvent.onTap,
+                validator: AllBehaviorValidator(
+                  validators: [
+                    const ValueBehaviorValidator.otherIsFill('input_ok'),
+                    const ValueBehaviorValidator.otherIsFill('missing_field'),
+                    const ValueBehaviorValidator.bindingIsFill(
+                      JsonTextBinding(
+                        repositoryId: 'unknown_repo',
+                        path: 'client.nom',
+                      ),
+                    ),
+                  ],
+                ),
+                action: EmitEventAction(eventId: 'submit'),
+              ),
+            ],
+          },
+        );
+
+        final inspector = VibeAppInspector(
+          readAppearance: () => appearance,
+          repositoryStore: store,
+        );
+        final audit = await inspector.inspectBindingsAndDiagnostics(const {});
+        final issues = (audit['issues'] as List).cast<Map<String, Object?>>();
+
+        expect(
+          issues.where(
+            (i) =>
+                i['kind'] == 'unknown_validator_target' &&
+                i['componentId'] == 'btn_submit' &&
+                i['location'] == 'behaviors[btn_submit].validator' &&
+                i['targetComponentId'] == 'missing_field',
+          ),
+          hasLength(1),
+        );
+        expect(
+          issues.any((i) => i['targetComponentId'] == 'input_ok'),
+          isFalse,
+        );
+        expect(
+          issues.where(
+            (i) =>
+                i['kind'] == 'unknown_repository' &&
+                i['componentId'] == 'btn_submit' &&
+                i['location'] == 'behaviors[btn_submit].validator' &&
+                i['repositoryId'] == 'unknown_repo',
+          ),
+          hasLength(1),
+        );
+
+        // Le filtre componentIds exclut les issues d'un autre composant
+        final filtered = await inspector.inspectBindingsAndDiagnostics(const {
+          'componentIds': ['input_ok'],
+        });
+        expect(filtered['issues'], isEmpty);
       },
     );
 

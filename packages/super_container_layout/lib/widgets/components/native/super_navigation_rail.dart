@@ -3,15 +3,19 @@
 /// Expose les régions `leading`, `destinations` (composants [SuperAction]) et `trailing`.
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:material_ui/material_ui.dart';
 import '../../../theme/theme_color.dart';
 
 import '../super_component.dart';
 
+import '../../../models/component_behavior.dart';
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/super_action_config.dart';
+import '../../../services/behaviors/behavior_dispatcher.dart';
 import '../../../super_app.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_action.dart';
@@ -153,6 +157,9 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
       builder: (context, config, _) => NativeComponentEditor(
         id: widget.id,
         behaviours: widget.behaviours,
+        eventComponentType: 'navigationRail',
+        readValue: () => _selectedIndex,
+        eventData: () => {'value': _selectedIndex, 'index': _selectedIndex},
         label: widget.label,
         menuType: 'NavigationRail',
         keyPrefix: 'super-navigation-rail',
@@ -262,6 +269,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                             .value ??
                         fallback;
                     if (!actionConfig.enabled) return;
+                    final previousIndex = effectiveIndex;
                     setState(() => _selectedIndex = index);
                     widget.onDestinationSelected?.call(index);
                     executeSuperActionClick(
@@ -269,6 +277,33 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                       slot.id,
                       onPressed: action?.onPressed,
                       behaviours: action?.behaviours,
+                    );
+                    unawaited(
+                      BehaviorDispatcher.dispatch(
+                        context,
+                        componentId: widget.id,
+                        componentType: 'navigationRail',
+                        event: BehaviorEvent.onSelected,
+                        data: {
+                          'index': index,
+                          'previousIndex': previousIndex,
+                          'destinationId': slot.id,
+                        },
+                        behaviors: widget.behaviours,
+                      ),
+                    );
+                    unawaited(
+                      BehaviorDispatcher.dispatch(
+                        context,
+                        componentId: slot.id,
+                        componentType: 'action',
+                        event: BehaviorEvent.onSelected,
+                        data: {
+                          'index': index,
+                          'previousIndex': previousIndex,
+                        },
+                        behaviors: action?.behaviours,
+                      ),
                     );
                   },
                 ),

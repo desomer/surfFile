@@ -356,8 +356,13 @@ class DartCodegenContext {
   String formatBehavior(ComponentBehavior behavior, {int indent = 0}) {
     final args = <String, String>{
       'id': formatString(behavior.id),
-      'trigger': 'BehaviorTrigger.${behavior.trigger.name}',
+      'event': 'BehaviorEvent.${behavior.event.name}',
       if (!behavior.enabled) 'enabled': 'false',
+      if (behavior.validator != null)
+        'validator': formatBehaviorValidator(
+          behavior.validator!,
+          indent: indent + 2,
+        ),
       'action': formatBehaviorAction(behavior.action, indent: indent + 2),
     };
     return formatCall(
@@ -368,6 +373,233 @@ class DartCodegenContext {
       forceMultiline: true,
     );
   }
+
+  /// Formate un [BehaviorValidator] polymorphe en expression Dart.
+  String formatBehaviorValidator(
+    BehaviorValidator validator, {
+    int indent = 0,
+  }) {
+    switch (validator) {
+      case final ValueBehaviorValidator value:
+        return _formatValueBehaviorValidator(value, indent: indent);
+      case final AllBehaviorValidator all:
+        return formatCall(
+          'AllBehaviorValidator',
+          const [],
+          {
+            'validators': formatList(
+              [
+                for (final child in all.validators)
+                  formatBehaviorValidator(child, indent: indent + 4),
+              ],
+              indent: indent + 2,
+              forceMultiline: true,
+            ),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final AnyBehaviorValidator any:
+        return formatCall(
+          'AnyBehaviorValidator',
+          const [],
+          {
+            'validators': formatList(
+              [
+                for (final child in any.validators)
+                  formatBehaviorValidator(child, indent: indent + 4),
+              ],
+              indent: indent + 2,
+              forceMultiline: true,
+            ),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final NotBehaviorValidator not:
+        return formatCall(
+          'NotBehaviorValidator',
+          const [],
+          {
+            'validator': formatBehaviorValidator(
+              not.validator,
+              indent: indent + 2,
+            ),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      default:
+        return formatCall(
+          'BehaviorValidatorCatalog.decode',
+          [formatLiteralValue(validator.toJson(), indent: indent + 2)],
+          const {},
+          indent: indent,
+        );
+    }
+  }
+
+  String _formatValueBehaviorValidator(
+    ValueBehaviorValidator validator, {
+    int indent = 0,
+  }) {
+    final isConstExpected = _isConstScalar(validator.expectedValue);
+    final expectedPrefix = isConstExpected ? 'const ' : '';
+
+    switch (validator.source) {
+      case BehaviorValueSource.self:
+        switch (validator.operator) {
+          case BehaviorValidatorOperator.isEmpty:
+            return 'const ValueBehaviorValidator.isEmpty()';
+          case BehaviorValidatorOperator.isFill:
+            return 'const ValueBehaviorValidator.isFill()';
+          case BehaviorValidatorOperator.isTrue:
+            return 'const ValueBehaviorValidator.isTrue()';
+          case BehaviorValidatorOperator.isFalse:
+            return 'const ValueBehaviorValidator.isFalse()';
+          case BehaviorValidatorOperator.isValid:
+            return 'const ValueBehaviorValidator.isValid()';
+          case BehaviorValidatorOperator.isInvalid:
+            return 'const ValueBehaviorValidator.isInvalid()';
+          case BehaviorValidatorOperator.equals:
+            return formatCall(
+              '${expectedPrefix}ValueBehaviorValidator.equals',
+              [formatLiteralValue(validator.expectedValue, indent: indent + 2)],
+              const {},
+              indent: indent,
+            );
+          case BehaviorValidatorOperator.notEquals:
+            return formatCall(
+              '${expectedPrefix}ValueBehaviorValidator.notEquals',
+              [formatLiteralValue(validator.expectedValue, indent: indent + 2)],
+              const {},
+              indent: indent,
+            );
+          default:
+            break;
+        }
+      case BehaviorValueSource.component:
+        final target = validator.targetComponentId?.trim();
+        if (target != null && target.isNotEmpty) {
+          final targetLiteral = formatString(target);
+          switch (validator.operator) {
+            case BehaviorValidatorOperator.isEmpty:
+              return 'const ValueBehaviorValidator.otherIsEmpty($targetLiteral)';
+            case BehaviorValidatorOperator.isFill:
+              return 'const ValueBehaviorValidator.otherIsFill($targetLiteral)';
+            case BehaviorValidatorOperator.isTrue:
+              return 'const ValueBehaviorValidator.otherIsTrue($targetLiteral)';
+            case BehaviorValidatorOperator.isFalse:
+              return 'const ValueBehaviorValidator.otherIsFalse($targetLiteral)';
+            case BehaviorValidatorOperator.isValid:
+              return 'const ValueBehaviorValidator.otherIsValid($targetLiteral)';
+            case BehaviorValidatorOperator.isInvalid:
+              return 'const ValueBehaviorValidator.otherIsInvalid($targetLiteral)';
+            case BehaviorValidatorOperator.equals:
+              return formatCall(
+                '${expectedPrefix}ValueBehaviorValidator.otherEquals',
+                [
+                  targetLiteral,
+                  formatLiteralValue(
+                    validator.expectedValue,
+                    indent: indent + 2,
+                  ),
+                ],
+                const {},
+                indent: indent,
+              );
+            case BehaviorValidatorOperator.notEquals:
+              return formatCall(
+                '${expectedPrefix}ValueBehaviorValidator.otherNotEquals',
+                [
+                  targetLiteral,
+                  formatLiteralValue(
+                    validator.expectedValue,
+                    indent: indent + 2,
+                  ),
+                ],
+                const {},
+                indent: indent,
+              );
+            default:
+              break;
+          }
+        }
+      case BehaviorValueSource.binding:
+        final binding = validator.binding;
+        if (binding != null) {
+          switch (validator.operator) {
+            case BehaviorValidatorOperator.isEmpty:
+              return formatCall(
+                'const ValueBehaviorValidator.bindingIsEmpty',
+                [formatBinding(binding, indent: indent + 2)],
+                const {},
+                indent: indent,
+              );
+            case BehaviorValidatorOperator.isFill:
+              return formatCall(
+                'const ValueBehaviorValidator.bindingIsFill',
+                [formatBinding(binding, indent: indent + 2)],
+                const {},
+                indent: indent,
+              );
+            case BehaviorValidatorOperator.equals:
+              return formatCall(
+                '${expectedPrefix}ValueBehaviorValidator.bindingEquals',
+                [
+                  formatBinding(
+                    binding,
+                    indent: indent + 2,
+                    includeConst: !isConstExpected,
+                  ),
+                  formatLiteralValue(
+                    validator.expectedValue,
+                    indent: indent + 2,
+                  ),
+                ],
+                const {},
+                indent: indent,
+              );
+            default:
+              break;
+          }
+        }
+    }
+
+    final isConstFull = !validator.operator.requiresValue || isConstExpected;
+    final fullPrefix = isConstFull ? 'const ' : '';
+    final target = validator.targetComponentId?.trim();
+    return formatCall(
+      '${fullPrefix}ValueBehaviorValidator',
+      const [],
+      {
+        if (validator.source != BehaviorValueSource.self)
+          'source': 'BehaviorValueSource.${validator.source.name}',
+        'operator': 'BehaviorValidatorOperator.${validator.operator.name}',
+        if (validator.source == BehaviorValueSource.component &&
+            target != null &&
+            target.isNotEmpty)
+          'targetComponentId': formatString(target),
+        if (validator.source == BehaviorValueSource.binding &&
+            validator.binding != null)
+          'binding': formatBinding(
+            validator.binding!,
+            indent: indent + 2,
+            includeConst: !isConstFull,
+          ),
+        if (validator.operator.requiresValue)
+          'expectedValue': formatLiteralValue(
+            validator.expectedValue,
+            indent: indent + 2,
+          ),
+      },
+      indent: indent,
+      forceMultiline: true,
+    );
+  }
+
+  static bool _isConstScalar(Object? value) =>
+      value == null || value is bool || value is num || value is String;
 
   /// Formate une [BehaviorAction] polymorphe en expression Dart.
   String formatBehaviorAction(BehaviorAction action, {int indent = 0}) {

@@ -806,8 +806,8 @@ class TreeViewState<T> extends State<TreeView<T>> {
           });
         });
       }
+      widget.onToggleNode?.call(node);
     }
-    widget.onToggleNode?.call(node);
   }
 
   // Widget _getJsonRowCached(NodeAttribut attr, ModelSchema schema) {
@@ -1292,6 +1292,9 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   Widget _getBtnToogle(TreeNodeData<T> node, bool expanded) {
+    if (node.children?.isNotEmpty != true) {
+      return const SizedBox(width: 40);
+    }
     return InkWell(
       onTap: () {
         doToogle(node);
@@ -1302,11 +1305,9 @@ class TreeViewState<T> extends State<TreeView<T>> {
           valueListenable: node.toggleNotifier,
           builder: (context, _, _) {
             final effectiveExpanded = node.isExpanded && !node.isToogleRequested;
-            return node.children?.isNotEmpty == true
-                ? (effectiveExpanded
-                      ? const Icon(Icons.arrow_drop_down)
-                      : const Icon(Icons.arrow_right_sharp))
-                : const Text('');
+            return effectiveExpanded
+                ? const Icon(Icons.arrow_drop_down)
+                : const Icon(Icons.arrow_right_sharp);
           },
         ),
       ),

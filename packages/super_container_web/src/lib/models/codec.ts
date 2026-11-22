@@ -1,6 +1,10 @@
 import type {
 	Appearance,
 	AutomaticState,
+	BehaviorValidator,
+	BehaviorValidatorOperator,
+	BehaviorValidatorShorthandType,
+	BehaviorValueSource,
 	ComponentBehavior,
 	ComponentConfig,
 	ComponentStates,
@@ -30,6 +34,7 @@ import type {
 	SurfaceStyleStates,
 	ThemeMode,
 	TransformSpec,
+	ValueBehaviorValidator,
 	ZoneFlowConfig
 } from './types.js';
 
@@ -1088,30 +1093,208 @@ export function parseComponentConfig(raw: Record<string, unknown>): ComponentCon
 	}
 }
 
+const BEHAVIOR_EVENT_ALIASES: Record<string, string> = {
+	click: 'onTap',
+	tap: 'onTap',
+	doubleClick: 'onDoubleTap',
+	doubleTap: 'onDoubleTap',
+	longPress: 'onLongPress',
+	hoverEnter: 'onHoverEnter',
+	hoverExit: 'onHoverExit',
+	selected: 'onSelected',
+	changed: 'onChanged',
+	submitted: 'onSubmitted',
+	focus: 'onFocus',
+	blur: 'onBlur',
+	expanded: 'onExpanded',
+	collapsed: 'onCollapsed',
+	mount: 'onMount',
+	hover: 'onHover',
+	binding: 'onBinding',
+	create: 'onCreate'
+};
+
+export function normalizeBehaviorEvent(raw: unknown): string {
+	if (typeof raw !== 'string') return 'onTap';
+	const trimmed = raw.trim();
+	if (!trimmed) return 'onTap';
+	return BEHAVIOR_EVENT_ALIASES[trimmed] ?? trimmed;
+}
+
+const VALIDATOR_OPERATORS: readonly BehaviorValidatorOperator[] = [
+	'isEmpty',
+	'isFill',
+	'isTrue',
+	'isFalse',
+	'equals',
+	'notEquals',
+	'contains',
+	'startsWith',
+	'greaterThan',
+	'lessThan',
+	'matchesRegex',
+	'isValid',
+	'isInvalid'
+];
+
+const VALIDATOR_OPERATOR_SET = new Set<string>(VALIDATOR_OPERATORS);
+
+interface ValidatorShorthandMeta {
+	source: BehaviorValueSource;
+	operator: BehaviorValidatorOperator;
+	canonicalType: BehaviorValidatorShorthandType;
+}
+
+function buildValidatorShorthandMap(): Record<string, ValidatorShorthandMeta> {
+	const map: Record<string, ValidatorShorthandMeta> = {};
+	for (const op of VALIDATOR_OPERATORS) {
+		const pascal = op[0].toUpperCase() + op.slice(1);
+		map[op] = { source: 'self', operator: op, canonicalType: op };
+		const otherKey = `other${pascal}` as BehaviorValidatorShorthandType;
+		map[otherKey] = { source: 'component', operator: op, canonicalType: otherKey };
+		if (op !== 'isValid' && op !== 'isInvalid') {
+			const bindingKey = `binding${pascal}` as BehaviorValidatorShorthandType;
+			map[bindingKey] = { source: 'binding', operator: op, canonicalType: bindingKey };
+		}
+	}
+	map.isFilled = { source: 'self', operator: 'isFill', canonicalType: 'isFill' };
+	map.isNotEmpty = { source: 'self', operator: 'isFill', canonicalType: 'isFill' };
+	map.otherIsFilled = { source: 'component', operator: 'isFill', canonicalType: 'otherIsFill' };
+	map.otherIsNotEmpty = { source: 'component', operator: 'isFill', canonicalType: 'otherIsFill' };
+	map.bindingIsFilled = { source: 'binding', operator: 'isFill', canonicalType: 'bindingIsFill' };
+	map.bindingIsNotEmpty = { source: 'binding', operator: 'isFill', canonicalType: 'bindingIsFill' };
+	return map;
+}
+
+const VALIDATOR_SHORTHAND_MAP = buildValidatorShorthandMap();
+
+export function resolveBehaviorValidatorShorthand(
+	rawType: string
+): ValidatorShorthandMeta | undefined {
+	return VALIDATOR_SHORTHAND_MAP[rawType.trim()];
+}
+
+export function normalizeValidatorOperator(raw: unknown): BehaviorValidatorOperator | undefined {
+	if (typeof raw !== 'string') return undefined;
+	const trimmed = raw.trim();
+	const normalized =
+		trimmed === 'isFilled' || trimmed === 'isNotEmpty' ? 'isFill' : trimmed;
+	return VALIDATOR_OPERATOR_SET.has(normalized)
+		? (normalized as BehaviorValidatorOperator)
+		: undefined;
+}
+
+function normalizeValidatorSource(raw: unknown): BehaviorValueSource | undefined {
+	if (raw === undefined || raw === null) return 'self';
+	if (typeof raw !== 'string') return undefined;
+	const trimmed = raw.trim();
+	if (trimmed === 'self' || trimmed === 'component' || trimmed === 'binding') {
+		return trimmed;
+	}
+	if (trimmed === 'other') return 'component';
+	return undefined;
+}
+
+export function parseBehaviorValidator(raw: unknown): BehaviorValidator | undefined {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+	const obj = raw as Record<string, unknown>;
+	const rawType = typeof obj.type === 'string' ? obj.type.trim() : '';
+	if (!rawType) return undefined;
+
+	if (rawType === 'all') {
+		if (!Array.isArray(obj.validators)) return undefined;
+		const validators = obj.validators
+			.map(parseBehaviorValidator)
+			.filter((v): v is BehaviorValidator => v !== undefined);
+		if (validators.length === 0) return undefined;
+		return { type: 'all', validators };
+	}
+
+	if (rawType === 'any') {
+		if (!Array.isArray(obj.validators)) return undefined;
+		const validators = obj.validators
+			.map(parseBehaviorValidator)
+			.filter((v): v is BehaviorValidator => v !== undefined);
+		if (validators.length === 0) return undefined;
+		return { type: 'any', validators };
+	}
+
+	if (rawType === 'not') {
+		const inner = parseBehaviorValidator(obj.validator);
+		if (!inner) return undefined;
+		return { type: 'not', validator: inner };
+	}
+
+	let source: BehaviorValueSource | undefined;
+	let operator: BehaviorValidatorOperator | undefined;
+	let type: ValueBehaviorValidator['type'];
+
+	if (rawType === 'value') {
+		source = normalizeValidatorSource(obj.source);
+		operator = normalizeValidatorOperator(obj.operator);
+		type = 'value';
+	} else {
+		const shorthand = resolveBehaviorValidatorShorthand(rawType);
+		if (!shorthand) return undefined;
+		source = shorthand.source;
+		operator = shorthand.operator;
+		type = shorthand.canonicalType;
+	}
+
+	if (!source || !operator) return undefined;
+
+	const rawTarget = obj.targetComponentId ?? obj.targetId;
+	const targetComponentId =
+		typeof rawTarget === 'string' && rawTarget.trim().length > 0 ? rawTarget.trim() : undefined;
+	const binding = parseJsonTextBinding(obj.binding);
+
+	if (source === 'component' && !targetComponentId) return undefined;
+	if (source === 'binding' && !binding) return undefined;
+
+	const hasValue = 'value' in obj || 'expectedValue' in obj;
+	const value = 'value' in obj ? obj.value : obj.expectedValue;
+
+	const result: ValueBehaviorValidator = {
+		type,
+		source,
+		operator
+	};
+	if (source === 'component' && targetComponentId) {
+		result.targetComponentId = targetComponentId;
+	}
+	if (source === 'binding' && binding) {
+		result.binding = binding;
+	}
+	if (hasValue) {
+		result.value = value;
+	}
+	return result;
+}
+
 export function parseComponentBehavior(raw: unknown): ComponentBehavior | undefined {
 	if (!raw || typeof raw !== 'object') return undefined;
 	const obj = raw as Record<string, unknown>;
+	const event = normalizeBehaviorEvent(obj.event ?? obj.trigger);
+	const validator = parseBehaviorValidator(obj.validator);
 	const actionRaw =
 		obj.action && typeof obj.action === 'object' ? (obj.action as Record<string, unknown>) : {};
 	const actionType = typeof actionRaw.type === 'string' ? actionRaw.type.trim() : 'goToPage';
-	if (actionType === 'goToPage') {
-		return {
-			id: typeof obj.id === 'string' ? obj.id : 'behavior',
-			trigger: typeof obj.trigger === 'string' ? obj.trigger : 'click',
-			enabled: obj.enabled !== false,
-			action: {
-				type: 'goToPage',
-				pagePath: String(actionRaw.pagePath ?? actionRaw.path ?? '/').trim() || '/',
-				pageId: typeof actionRaw.pageId === 'string' ? actionRaw.pageId : undefined,
-				pageName: typeof actionRaw.pageName === 'string' ? actionRaw.pageName : undefined
-			}
-		};
-	}
+	const action =
+		actionType === 'goToPage'
+			? {
+					type: 'goToPage' as const,
+					pagePath: String(actionRaw.pagePath ?? actionRaw.path ?? '/').trim() || '/',
+					pageId: typeof actionRaw.pageId === 'string' ? actionRaw.pageId : undefined,
+					pageName: typeof actionRaw.pageName === 'string' ? actionRaw.pageName : undefined
+				}
+			: { ...actionRaw, type: actionType };
 	return {
 		id: typeof obj.id === 'string' ? obj.id : 'behavior',
-		trigger: typeof obj.trigger === 'string' ? obj.trigger : 'click',
+		event,
+		trigger: event,
 		enabled: obj.enabled !== false,
-		action: { ...actionRaw, type: actionType }
+		...(validator ? { validator } : {}),
+		action
 	};
 }
 
@@ -1254,5 +1437,6 @@ export function extractReferencedRepositoryIds(appearance: Appearance): string[]
 	};
 	visit(appearance.components);
 	visit(appearance.styles);
+	visit(appearance.behaviors);
 	return Array.from(ids);
 }

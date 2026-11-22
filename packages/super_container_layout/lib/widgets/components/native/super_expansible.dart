@@ -11,9 +11,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../super_component.dart';
 
+import '../../../models/component_behavior.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
+import '../../../services/behaviors/behavior_dispatcher.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -142,6 +144,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
   NativeComponentConfig? _previousConfig;
   bool _initialExpansionSynced = false;
   bool _syncingFromBinding = false;
+  bool _programmaticChange = false;
   late bool _lastKnownExpanded;
 
   JsonTextControllerBinding? _binding;
@@ -197,10 +200,16 @@ class _SuperExpansibleState extends State<SuperExpansible> {
     );
   }
 
-  void _setExpanded(bool expanded, {required bool fromBinding}) {
+  void _setExpanded(
+    bool expanded, {
+    required bool fromBinding,
+    bool programmatic = false,
+  }) {
     if (_effectiveController.isExpanded == expanded) return;
     final previousSync = _syncingFromBinding;
+    final previousProgrammatic = _programmaticChange;
     _syncingFromBinding = fromBinding;
+    _programmaticChange = programmatic;
     try {
       if (expanded) {
         _effectiveController.expand();
@@ -209,7 +218,38 @@ class _SuperExpansibleState extends State<SuperExpansible> {
       }
     } finally {
       _syncingFromBinding = previousSync;
+      _programmaticChange = previousProgrammatic;
     }
+  }
+
+  void _dispatchExpansionEvents(bool expanded) {
+    final data = <String, Object?>{
+      'expanded': expanded,
+      'value': expanded,
+      'previousValue': !expanded,
+    };
+    final primaryEvent = expanded
+        ? BehaviorEvent.onExpanded
+        : BehaviorEvent.onCollapsed;
+    unawaited(() async {
+      await BehaviorDispatcher.dispatch(
+        context,
+        componentId: widget.id,
+        componentType: 'expansible',
+        event: primaryEvent,
+        data: data,
+        behaviors: widget.behaviours,
+      );
+      if (!mounted) return;
+      await BehaviorDispatcher.dispatch(
+        context,
+        componentId: widget.id,
+        componentType: 'expansible',
+        event: BehaviorEvent.onChanged,
+        data: data,
+        behaviors: widget.behaviours,
+      );
+    }());
   }
 
   void _handleExpansibleChanged() {
@@ -222,6 +262,9 @@ class _SuperExpansibleState extends State<SuperExpansible> {
     }
     if (changed) {
       widget.onExpansionChanged?.call(expanded);
+      if (!_syncingFromBinding && !_programmaticChange && mounted) {
+        _dispatchExpansionEvents(expanded);
+      }
     }
     if (!mounted) return;
     if (SchedulerBinding.instance.schedulerPhase ==
@@ -265,7 +308,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
     if (previousInitial != desiredInitial || previous?.binding != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _setExpanded(desiredInitial, fromBinding: false);
+        _setExpanded(desiredInitial, fromBinding: false, programmatic: true);
       });
     }
   }
@@ -518,6 +561,12 @@ class _SuperExpansibleState extends State<SuperExpansible> {
         return NativeComponentEditor(
           id: widget.id,
           behaviours: widget.behaviours,
+          eventComponentType: 'expansible',
+          readValue: () => _effectiveController.isExpanded,
+          eventData: () => {
+            'expanded': _effectiveController.isExpanded,
+            'value': _effectiveController.isExpanded,
+          },
           label: widget.label,
           menuType: 'Expansible',
           menuIcon: Icons.unfold_more_outlined,

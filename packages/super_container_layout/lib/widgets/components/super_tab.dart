@@ -13,12 +13,14 @@ import '../../theme/theme_color.dart';
 
 import 'super_component.dart';
 
+import '../../models/behaviours/behavior_event.dart';
 import '../../models/component_tag_filter.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_tab_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -1316,6 +1318,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                   }
                   return;
                 }
+                final previousIndex = _selectedIndex;
                 setState(() {
                   _selectedIndex = index;
                   _lastValidIndex = index;
@@ -1324,6 +1327,33 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                   _writeStaticBoundIndex(index);
                 }
                 widget.onTabSelected?.call(index);
+                unawaited(
+                  BehaviorDispatcher.dispatch(
+                    context,
+                    componentId: widget.id,
+                    componentType: 'tab',
+                    event: BehaviorEvent.onSelected,
+                    behaviors: widget.behaviours,
+                    data: {
+                      'index': index,
+                      'previousIndex': previousIndex,
+                      'tabId': slot.id,
+                    },
+                  ),
+                );
+                unawaited(
+                  BehaviorDispatcher.dispatch(
+                    context,
+                    componentId: slot.id,
+                    componentType: 'action',
+                    event: BehaviorEvent.onSelected,
+                    behaviors: action?.behaviours,
+                    data: {
+                      'index': index,
+                      'previousIndex': previousIndex,
+                    },
+                  ),
+                );
                 executeSuperActionClick(
                   context,
                   slot.id,
@@ -1589,6 +1619,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         tabs: tabs,
         hasBoundedWidth: hasBoundedWidth,
         onTap: (index) {
+          final previousIndex = _selectedIndex;
           setState(() {
             _selectedIndex = index;
             _lastValidIndex = index;
@@ -1597,6 +1628,22 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             _selectDynamicIndex(index);
           }
           widget.onTabSelected?.call(index);
+          if (!templateMode) {
+            unawaited(
+              BehaviorDispatcher.dispatch(
+                context,
+                componentId: widget.id,
+                componentType: 'tab',
+                event: BehaviorEvent.onSelected,
+                behaviors: widget.behaviours,
+                data: {
+                  'index': index,
+                  'previousIndex': previousIndex,
+                  'tabId': templateSlot.id,
+                },
+              ),
+            );
+          }
           final action = supplied[templateSlot.id];
           executeSuperActionClick(
             context,
@@ -1734,6 +1781,8 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           id: widget.id,
           exportConfig: () => controller.value,
           behaviours: widget.behaviours,
+          eventComponentType: 'tab',
+          readValue: () => _selectedIndex,
           label: widget.label,
           menuType: 'Tab',
           menuIcon: Icons.tab_outlined,

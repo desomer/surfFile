@@ -60,7 +60,7 @@ class EmitEventAction extends BehaviorAction {
         eventId: eventId,
         componentId: data.componentId,
         componentType: data.componentType,
-        trigger: data.trigger.name,
+        trigger: data.event.legacyTriggerName,
         data: data.data,
         custom: custom,
       ),

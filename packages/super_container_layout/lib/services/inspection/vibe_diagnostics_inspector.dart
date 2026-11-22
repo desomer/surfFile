@@ -604,6 +604,36 @@ class VibeDiagnosticsInspector {
 
       for (final behavior in appearance.behaviorsFor(id)) {
         if (!behavior.enabled) continue;
+        final validator = behavior.validator;
+        if (validator != null) {
+          for (final targetId in validator.referencedComponentIds) {
+            final targetExists =
+                appearance.components.containsKey(targetId) ||
+                appearance.styles.containsKey(targetId) ||
+                slotIndex.entriesFor(targetId).isNotEmpty;
+            if (!targetExists &&
+                (requestedIds.isEmpty || requestedIds.contains(id))) {
+              issues.add(<String, Object?>{
+                'componentId': id,
+                'location': 'behaviors[$id].validator',
+                'kind': 'unknown_validator_target',
+                'targetComponentId': targetId,
+                'message':
+                    'Composant cible "$targetId" référencé par le validateur du comportement "${behavior.id}" introuvable.',
+              });
+            }
+          }
+          for (final binding in validator.referencedBindings) {
+            checkBinding(
+              ownerId: id,
+              location: 'behaviors[$id].validator',
+              binding: binding,
+              inheritedRepoId: inheritedRepo,
+              inheritedWildcards: inheritedWildcards,
+              inTreeScope: inTreeScope,
+            );
+          }
+        }
         final action = behavior.action;
         if (action is TooltipAction) {
           checkBinding(

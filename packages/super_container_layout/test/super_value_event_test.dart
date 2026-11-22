@@ -78,7 +78,7 @@ void main() {
       appearance.value = appearance.value.withAddedBehavior(
         'source',
         ComponentBehavior(
-          id: trigger.name,
+          id: trigger.legacyTriggerName,
           trigger: trigger,
           enabled: enabled,
           action: EmitEventAction(
@@ -251,19 +251,38 @@ void main() {
       );
       await tester.pumpAndSettle();
       final next = find.byKey(const ValueKey('behavior-add-next'));
+      // Step 0 (target) -> Step 1 (event)
       await tester.tap(next);
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('behavior-catalog-emit_event')),
+
+      // Step 1 (event): select onDoubleTap -> Step 2 (action)
+      final doubleTapEvent = find.byKey(
+        const ValueKey('behavior-event-onDoubleTap'),
       );
+      await tester.ensureVisible(doubleTapEvent);
+      await tester.pumpAndSettle();
+      await tester.tap(doubleTapEvent);
+      await tester.pumpAndSettle();
       await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      // Step 2 (action): select emit_event and configure inline settings
+      final emitCatalog = find.byKey(
+        const ValueKey('behavior-catalog-emit_event'),
+      );
+      await tester.ensureVisible(emitCatalog);
+      await tester.pumpAndSettle();
+      await tester.tap(emitCatalog);
       await tester.pumpAndSettle();
       expect(tester.widget<FilledButton>(next).onPressed, isNull);
-      await tester.enterText(
-        find.byKey(const ValueKey('behavior-event-id')),
-        'node.changed',
-      );
+
+      final eventIdField = find.byKey(const ValueKey('behavior-event-id'));
+      await tester.ensureVisible(eventIdField);
+      await tester.pumpAndSettle();
+      await tester.enterText(eventIdField, 'node.changed');
       final custom = find.byKey(const ValueKey('behavior-event-custom'));
+      await tester.ensureVisible(custom);
+      await tester.pumpAndSettle();
       await tester.enterText(custom, '[]');
       await tester.pump();
       expect(find.text('Un objet JSON est requis.'), findsOneWidget);
@@ -276,12 +295,16 @@ void main() {
       expect(tester.widget<FilledButton>(next).onPressed, isNotNull);
       await tester.enterText(custom, '{"origin":"wizard"}');
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('behavior-event-trigger')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Double-clic').last);
-      await tester.pumpAndSettle();
+
+      // Step 2 (action) -> Step 3 (validator)
       await tester.tap(next);
       await tester.pumpAndSettle();
+
+      // Step 3 (validator) -> Step 4 (summary)
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      // Step 4 (summary): submit
       await tester.tap(find.byKey(const ValueKey('behavior-add-submit')));
       await tester.pumpAndSettle();
       final added = appearance.value.behaviorsFor('source').last;

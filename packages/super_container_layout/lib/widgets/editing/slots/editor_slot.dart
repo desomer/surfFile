@@ -12,7 +12,6 @@ import 'package:flutter/gestures.dart'
         PointerExitEvent,
         PointerHoverEvent,
         PointerSignalEvent,
-        kPrimaryButton,
         kSecondaryMouseButton,
         kTouchSlop;
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
@@ -35,7 +34,9 @@ import '../../../models/super_tree_view_config.dart';
 import '../../../services/codegen/dart_code_generator.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/appearance/appearance_store.dart';
+import '../../../services/behaviors/component_runtime_value_registry.dart';
 import '../../../services/inspection/vibe_mounted_slot_index.dart';
+import '../../../services/repositories/json_list_scope.dart';
 import '../../../models/super_renderer_config.dart';
 import '../../../super_app.dart';
 import '../../appearance/appearance_transfer_dialog.dart';
@@ -175,6 +176,9 @@ class EditorSlot extends StatefulWidget {
     this.onRemoveChild,
     this.wrapChildrenActions = const [],
     this.eventData,
+    this.readValue,
+    this.readIsValid,
+    this.handlesTapExternally = false,
     this.behaviors,
     this.eventComponentType = 'component',
     this.exportConfig,
@@ -193,6 +197,16 @@ class EditorSlot extends StatefulWidget {
 
   /// Instantane runtime fourni par l'instance, jamais par un registre partage.
   final Map<String, Object?> Function()? eventData;
+
+  /// Lecteur paresseux de la valeur runtime courante pour [ComponentRuntimeValueRegistry].
+  final Object? Function()? readValue;
+
+  /// Lecteur paresseux de la validité native courante pour [ComponentRuntimeValueRegistry].
+  final bool Function()? readIsValid;
+
+  /// Indique si le widget enfant gère déjà `onTap` lui-même (ex. `SuperAction`),
+  /// afin d'éviter un double déclenchement tout en conservant les autres événements.
+  final bool handlesTapExternally;
 
   /// Type du composant utilise dans l'enveloppe des evenements.
   final String eventComponentType;
@@ -688,6 +702,32 @@ class EditorSlotState extends State<EditorSlot> {
     );
   }
 
+  void _syncRuntimeValueRegistration() {
+    if (!mounted || !_active) {
+      ComponentRuntimeValueRegistry.instance.unregister(this);
+      return;
+    }
+    final explicitReadValue = widget.readValue;
+    final eventData = widget.eventData;
+    if (explicitReadValue == null && eventData == null) {
+      ComponentRuntimeValueRegistry.instance.unregister(this);
+      return;
+    }
+    final scope = context.getInheritedWidgetOfExactType<JsonListScope>();
+    final readValue =
+        explicitReadValue ?? () => widget.eventData?.call()['value'];
+    ComponentRuntimeValueRegistry.instance.register(
+      ComponentRuntimeValueEntry(
+        token: this,
+        componentId: effectiveComponentId,
+        componentType: widget.eventComponentType,
+        listScopeKey: ComponentRuntimeValueRegistry.scopeKeyOf(scope),
+        readValue: readValue,
+        readIsValid: widget.readIsValid,
+      ),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -695,13 +735,18 @@ class EditorSlotState extends State<EditorSlot> {
     _instanceResolved = true;
     _zoomScaleNotifier = EditorZoomScope.maybeAncestorControllerOf(context)
         ?.scale;
+    if (widget.readValue != null || widget.eventData != null) {
+      JsonListScope.maybeOf(context);
+    }
     _syncMountedSlotRegistration();
+    _syncRuntimeValueRegistration();
   }
 
   @override
   void didUpdateWidget(EditorSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncMountedSlotRegistration();
+    _syncRuntimeValueRegistration();
   }
 
   @override
@@ -711,12 +756,14 @@ class EditorSlotState extends State<EditorSlot> {
     _cachedInstance = _resolveDirectInstance(subscribe: false);
     _instanceResolved = true;
     _syncMountedSlotRegistration();
+    _syncRuntimeValueRegistration();
   }
 
   @override
   void deactivate() {
     _active = false;
     VibeMountedSlotIndex.instance.unregister(this);
+    ComponentRuntimeValueRegistry.instance.unregister(this);
     _removeHoveredSafely();
     super.deactivate();
   }
@@ -726,6 +773,7 @@ class EditorSlotState extends State<EditorSlot> {
     _detachAllPaintListeners();
     _painterNotifier.dispose();
     VibeMountedSlotIndex.instance.unregister(this);
+    ComponentRuntimeValueRegistry.instance.unregister(this);
     if (_ownsOpenMenu) {
       _ownsOpenMenu = false;
       _menuOpen = false;
@@ -1040,23 +1088,24 @@ class EditorSlotState extends State<EditorSlot> {
         widget.behaviors ??
         appearance?.behaviorsFor(effectiveComponentId) ??
         const [];
-    final clickBehaviors = behaviorDisabled
+    final imperativeBehaviors = inEditMode || behaviorDisabled
         ? const <ComponentBehavior>[]
         : behaviors
               .where(
                 (b) =>
                     b.enabled &&
-                    b.trigger == BehaviorTrigger.click &&
-                    b.action is! EmitEventAction,
+                    b.event.isImperative &&
+                    (!widget.handlesTapExternally ||
+                        b.event != BehaviorEvent.onTap),
               )
               .toList();
-    final eventBehaviors = inEditMode || behaviorDisabled
-        ? <ComponentBehavior>[]
-        : behaviors
-              .where((b) => b.enabled && b.action is EmitEventAction)
-              .toList();
-    final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
-    final interactive = canEditHere || hasClickBehaviors;
+    final hasGestureBehaviors =
+        !inEditMode &&
+        !behaviorDisabled &&
+        behaviors.any(
+          (b) => b.enabled && BehaviorEvent.gestures.contains(b.event),
+        );
+    final interactive = canEditHere || hasGestureBehaviors;
     final trackHover = canEditHere && editMode != null;
 
     if (!trackHover && _hovered.contains(this)) {
@@ -1103,9 +1152,10 @@ class EditorSlotState extends State<EditorSlot> {
       child: BehaviorEventListener(
         componentId: effectiveComponentId,
         componentType: widget.eventComponentType,
-        behaviors: eventBehaviors,
+        behaviors: imperativeBehaviors,
         readData: widget.eventData,
         sliver: isSliver,
+        handlesTapExternally: widget.handlesTapExternally,
         child:
             widget.child ??
             (isSliver
@@ -1120,20 +1170,20 @@ class EditorSlotState extends State<EditorSlot> {
     if (isSliver) {
       return SliverPointerRegion(
         enabled: interactive,
-        cursor: hasClickBehaviors
+        cursor: hasGestureBehaviors
             ? SystemMouseCursors.click
             : MouseCursor.defer,
         onEnter: trackHover ? _handlePointerEnter : null,
         onHover: trackHover ? _handlePointerHover : null,
         onExit: trackHover ? _handlePointerExit : null,
-        onPointerDown: interactive
+        onPointerDown: canEditHere
             ? (event) {
                 _sliverDown = event;
                 _sliverButtons = event.buttons;
                 _sliverMoved = false;
               }
             : null,
-        onPointerMove: interactive
+        onPointerMove: canEditHere
             ? (event) {
                 final down = _sliverDown;
                 if (down != null &&
@@ -1143,7 +1193,7 @@ class EditorSlotState extends State<EditorSlot> {
                 }
               }
             : null,
-        onPointerUp: interactive
+        onPointerUp: canEditHere
             ? (event) async {
                 final down = _sliverDown;
                 final buttons = _sliverButtons;
@@ -1157,16 +1207,12 @@ class EditorSlotState extends State<EditorSlot> {
                     (event.position - down.position).distance > kTouchSlop) {
                   return;
                 }
-                if (buttons == kSecondaryMouseButton && canEditHere) {
+                if (buttons == kSecondaryMouseButton) {
                   await openMenu(event.position);
-                } else if (buttons == kPrimaryButton && hasClickBehaviors) {
-                  for (final b in clickBehaviors) {
-                    await b.execute(context);
-                  }
                 }
               }
             : null,
-        onPointerCancel: interactive
+        onPointerCancel: canEditHere
             ? (_) {
                 _sliverDown = null;
                 _sliverButtons = 0;
@@ -1181,17 +1227,12 @@ class EditorSlotState extends State<EditorSlot> {
     return BoxPointerRegion(
       enabled: interactive,
       opaque: true,
-      cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,
+      cursor: hasGestureBehaviors
+          ? SystemMouseCursors.click
+          : MouseCursor.defer,
       onEnter: trackHover ? _handlePointerEnter : null,
       onHover: trackHover ? _handlePointerHover : null,
       onExit: trackHover ? _handlePointerExit : null,
-      onTap: hasClickBehaviors
-          ? () async {
-              for (final b in clickBehaviors) {
-                await b.execute(context);
-              }
-            }
-          : null,
       onSecondaryTapUp: canEditHere
           ? (details) => openMenu(details.globalPosition)
           : null,

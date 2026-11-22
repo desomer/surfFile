@@ -1,10 +1,14 @@
 /// Modélisation des comportements interactifs ([ComponentBehavior]) attachés aux composants.
 ///
-/// Associe un déclencheur ([BehaviorTrigger], ex. clic) à une action polymorphe
-/// ([BehaviorAction], telle que la navigation [GoToPageAction]), stockée dans
-/// `Appearance.behaviors`.
+/// Associe trois paramètres explicites stockés dans `Appearance.behaviors` :
+/// 1. L'événement déclencheur ([BehaviorEvent], ex. `onTap`, `onDoubleTap`, `onSelected`, `onChanged`) ;
+/// 2. L'action polymorphe à lancer ([BehaviorAction], telle que [GoToPageAction]) ;
+/// 3. Le validateur optionnel ([BehaviorValidator], ex. `isEmpty`, `isFill`, `otherIsEmpty`, `otherIsFill`)
+///    qui décide si l'action doit réellement être exécutée.
 ///
-/// Les actions concrètes vivent dans `models/behaviours/` et sont réexportées ici :
+/// Les éléments concrets vivent dans `models/behaviours/` et sont réexportés ici :
+/// - [BehaviorEvent] / [BehaviorTrigger] (`behaviours/behavior_event.dart`)
+/// - [BehaviorValidator] (`behaviours/behavior_validator.dart`)
 /// - [AddArrayItemAction] (`behaviours/add_array_item_action.dart`)
 /// - [CreationDefaultAction] (`behaviours/creation_default_action.dart`)
 /// - [DatasourceAction] (`behaviours/datasource_action.dart`)
@@ -21,6 +25,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../services/events/super_event_bus.dart';
 import 'behaviours/add_array_item_action.dart';
+import 'behaviours/behavior_event.dart';
+import 'behaviours/behavior_validator.dart';
 import 'behaviours/creation_default_action.dart';
 import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
@@ -33,6 +39,8 @@ import 'behaviours/tooltip_action.dart';
 import 'behaviours/zone_size_binding_action.dart';
 
 export 'behaviours/add_array_item_action.dart';
+export 'behaviours/behavior_event.dart';
+export 'behaviours/behavior_validator.dart';
 export 'behaviours/creation_default_action.dart';
 export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
@@ -43,30 +51,6 @@ export 'behaviours/run_javascript_action.dart';
 export 'behaviours/state_binding_action.dart';
 export 'behaviours/tooltip_action.dart';
 export 'behaviours/zone_size_binding_action.dart';
-
-/// Déclencheur d'un comportement sur un composant.
-enum BehaviorTrigger {
-  click('Clic', 'Sur un clic', Icons.touch_app_outlined),
-  doubleClick('Double-clic', 'Sur un double-clic', Icons.touch_app_outlined),
-
-  /// Affichage déclaratif d'une info-bulle au survol.
-  hover('Survol', 'Au survol du composant', Icons.info_outline),
-
-  /// Comportement réactif : appliqué quand la valeur liée change.
-  binding('Liaison', 'Quand la valeur liée change', Icons.link),
-
-  /// Comportement déclaratif : valeur par défaut lors de la création d'une ligne.
-  create('Création', 'À la création d’une ligne', Icons.add_box_outlined);
-
-  /// Déclencheurs provoqués par un geste de l'utilisateur.
-  static const gestures = [click, doubleClick];
-
-  const BehaviorTrigger(this.label, this.description, this.icon);
-
-  final String label;
-  final String description;
-  final IconData icon;
-}
 
 /// Action exécutée par un [ComponentBehavior].
 @immutable
@@ -94,13 +78,29 @@ class BehaviorExecutionData {
   BehaviorExecutionData({
     required this.componentId,
     required this.componentType,
-    required this.trigger,
+    BehaviorEvent? event,
+    BehaviorEvent? trigger,
     Map<String, Object?> data = const {},
-  }) : data = immutableEventJson(data);
+  }) : assert(
+         event != null || trigger != null,
+         'Renseignez event ou trigger.',
+       ),
+       assert(
+         event == null || trigger == null || event == trigger,
+         'event et trigger doivent être identiques lorsqu’ils sont tous deux fournis.',
+       ),
+       event = event ?? trigger!,
+       data = immutableEventJson(data);
 
   final String componentId;
   final String componentType;
-  final BehaviorTrigger trigger;
+
+  /// Événement ayant déclenché le comportement.
+  final BehaviorEvent event;
+
+  /// Alias de compatibilité vers [event].
+  BehaviorEvent get trigger => event;
+
   final Map<String, Object?> data;
 }
 
@@ -140,21 +140,45 @@ abstract final class BehaviorActionCatalog {
   }
 }
 
-/// Comportement attaché à un composant.
+/// Comportement attaché à un composant : associe un événement ([event]),
+/// un validateur optionnel ([validator]) et une action ([action]).
 @immutable
 class ComponentBehavior {
   const ComponentBehavior({
     required this.id,
-    this.trigger = BehaviorTrigger.click,
+    BehaviorEvent? event,
+    BehaviorEvent? trigger,
     required this.action,
+    this.validator,
     this.enabled = true,
-  });
+  }) : assert(
+         event == null || trigger == null || event == trigger,
+         'event et trigger doivent être identiques lorsqu’ils sont tous deux fournis.',
+       ),
+       event = event ?? trigger ?? BehaviorEvent.onTap;
 
   final String id;
-  final BehaviorTrigger trigger;
+
+  /// Événement déclencheur du comportement.
+  final BehaviorEvent event;
+
+  /// Alias de compatibilité vers [event].
+  BehaviorEvent get trigger => event;
+
+  /// Action lancée lorsque l'événement survient et que [validator] est satisfait.
   final BehaviorAction action;
+
+  /// Condition de garde optionnelle évaluée avant l'exécution de [action].
+  ///
+  /// Lorsque `null`, l'action s'exécute sans condition préalable.
+  final BehaviorValidator? validator;
+
   final bool enabled;
 
+  /// Exécute directement [action] si [enabled] vaut `true`.
+  ///
+  /// Pour évaluer [validator] et bénéficier de la garde d'édition / anti-boucle,
+  /// utiliser `BehaviorDispatcher.dispatch`.
   Future<void> execute(
     BuildContext context, {
     BehaviorExecutionData? data,
@@ -167,71 +191,80 @@ class ComponentBehavior {
     }
   }
 
-  /// Valide les invariants des comportements déclaratifs d'info-bulle, d'état lié et de recherche.
+  /// Remplace les identifiants de composants référencés dans [validator].
+  ComponentBehavior remapComponentIds(Map<String, String> idMap) {
+    final current = validator;
+    if (current == null || idMap.isEmpty) return this;
+    final remapped = current.remapComponentIds(idMap);
+    return remapped == current ? this : copyWith(validator: remapped);
+  }
+
+  /// Valide la cohérence entre [event], [action] et [validator].
   void validate() {
+    validator?.validate();
+
     if (action case final TooltipAction tooltip) {
       tooltip.validate();
-      if (trigger != BehaviorTrigger.hover) {
-        throw const FormatException('onTooltip exige le déclencheur hover.');
+      if (event != BehaviorEvent.onHover) {
+        throw const FormatException('onTooltip exige l’événement onHover.');
       }
-    } else if (trigger == BehaviorTrigger.hover) {
-      throw const FormatException('hover exige une action onTooltip.');
+      return;
+    } else if (event == BehaviorEvent.onHover) {
+      throw const FormatException(
+        'onHover est réservé à l’action onTooltip (utilisez onHoverEnter pour une action impérative).',
+      );
     }
+
     if (action case final StateBindingAction stateBinding) {
       stateBinding.validate();
-      if (trigger != BehaviorTrigger.binding) {
-        throw const FormatException('bindState exige le déclencheur binding.');
+      if (event != BehaviorEvent.onBinding) {
+        throw const FormatException('bindState exige l’événement onBinding.');
       }
+      return;
+    }
+
+    if (action case final ZoneSizeBindingAction zoneSize) {
+      zoneSize.binding.validate();
+      if (event != BehaviorEvent.onBinding) {
+        throw const FormatException('bindZoneSize exige l’événement onBinding.');
+      }
+      return;
+    } else if (event == BehaviorEvent.onBinding) {
+      throw const FormatException(
+        'onBinding est réservé aux actions réactives bindState et bindZoneSize.',
+      );
+    }
+
+    if (action case final CreationDefaultAction creationDefault) {
+      creationDefault.validate();
+      if (event != BehaviorEvent.onCreate) {
+        throw const FormatException(
+          'creationDefault exige l’événement onCreate.',
+        );
+      }
+      return;
+    } else if (event == BehaviorEvent.onCreate) {
+      throw const FormatException(
+        'onCreate est réservé à l’action creationDefault.',
+      );
+    }
+
+    // Actions impératives : autorisées sur tout événement impératif.
+    if (!event.isImperative) {
+      throw FormatException(
+        'L’action "${action.type}" exige un événement impératif (reçu : ${event.name}).',
+      );
     }
     if (action case final SearchProviderAction search) {
       search.validate();
-      if (!BehaviorTrigger.gestures.contains(trigger)) {
-        throw const FormatException(
-          'searchProvider exige le déclencheur click ou doubleClick.',
-        );
-      }
-    }
-    if (action case final DatasourceAction datasource) {
+    } else if (action case final DatasourceAction datasource) {
       datasource.validate();
-      if (!BehaviorTrigger.gestures.contains(trigger)) {
-        throw const FormatException(
-          'datasource exige le déclencheur click ou doubleClick.',
-        );
-      }
-    }
-    if (action case final GeneratePdfAction pdf) {
+    } else if (action case final GeneratePdfAction pdf) {
       pdf.validate();
-      if (!BehaviorTrigger.gestures.contains(trigger)) {
-        throw const FormatException(
-          'generatePdf exige le déclencheur click ou doubleClick.',
-        );
-      }
-    }
-    if (action case final AddArrayItemAction addArray) {
+    } else if (action case final AddArrayItemAction addArray) {
       addArray.validate();
-      if (!BehaviorTrigger.gestures.contains(trigger)) {
-        throw const FormatException(
-          'addArrayItem exige le déclencheur click ou doubleClick.',
-        );
-      }
-    }
-    if (action case final CreationDefaultAction creationDefault) {
-      creationDefault.validate();
-      if (trigger != BehaviorTrigger.create) {
-        throw const FormatException(
-          'creationDefault exige le déclencheur create.',
-        );
-      }
-    } else if (trigger == BehaviorTrigger.create) {
-      throw const FormatException('create exige une action creationDefault.');
-    }
-    if (action case final RunJavaScriptAction script) {
+    } else if (action case final RunJavaScriptAction script) {
       script.validate();
-      if (!BehaviorTrigger.gestures.contains(trigger)) {
-        throw const FormatException(
-          'runJavaScript exige le déclencheur click ou doubleClick.',
-        );
-      }
     }
   }
 
@@ -239,40 +272,59 @@ class ComponentBehavior {
     validate();
     return {
       'id': id,
-      'trigger': trigger.name,
+      'event': event.name,
       'enabled': enabled,
+      if (validator != null) 'validator': validator!.toJson(),
       'action': action.toJson(),
     };
   }
 
   /// Sérialisation compacte conservant le contrat du comportement.
-  Map<String, Object?> toCompactJson() => {
-    ...toJson(),
-    if (action case final TooltipAction tooltip)
-      'action': tooltip.toCompactJson(),
-    if (action case final StateBindingAction stateBinding)
-      'action': stateBinding.toCompactJson(),
-    if (action case final AddArrayItemAction addArray)
-      'action': addArray.toCompactJson(),
-    if (action case final CreationDefaultAction creationDefault)
-      'action': creationDefault.toCompactJson(),
-  };
+  Map<String, Object?> toCompactJson() {
+    validate();
+    return {
+      'id': id,
+      'event': event.name,
+      if (!enabled) 'enabled': enabled,
+      if (validator != null) 'validator': validator!.toCompactJson(),
+      'action': switch (action) {
+        final TooltipAction tooltip => tooltip.toCompactJson(),
+        final StateBindingAction stateBinding => stateBinding.toCompactJson(),
+        final AddArrayItemAction addArray => addArray.toCompactJson(),
+        final CreationDefaultAction creationDefault =>
+          creationDefault.toCompactJson(),
+        _ => action.toJson(),
+      },
+    };
+  }
 
   factory ComponentBehavior.fromJson(Map<String, dynamic> json) {
     final id = (json['id'] as String?) ?? '';
-    final triggerName = (json['trigger'] as String?) ?? 'click';
-    final trigger = BehaviorTrigger.values.firstWhere(
-      (t) => t.name == triggerName,
-      orElse: () => BehaviorTrigger.click,
-    );
+    final rawEvent = json.containsKey('event')
+        ? json['event']
+        : json['trigger'];
+    final event = BehaviorEvent.fromJson(rawEvent);
     final enabled = (json['enabled'] as bool?) ?? true;
+    final rawValidator = json['validator'];
+    BehaviorValidator? validator;
+    if (rawValidator != null) {
+      if (rawValidator is! Map) {
+        throw const FormatException(
+          'Le champ "validator" d’un comportement doit être un objet JSON.',
+        );
+      }
+      validator = BehaviorValidatorCatalog.decode(
+        Map<String, dynamic>.from(rawValidator),
+      );
+    }
     final actionJson = (json['action'] as Map<String, dynamic>?) ?? {};
     final action = BehaviorActionCatalog.decode(actionJson);
 
     final result = ComponentBehavior(
       id: id,
-      trigger: trigger,
+      event: event,
       action: action,
+      validator: validator,
       enabled: enabled,
     );
     result.validate();
@@ -281,13 +333,17 @@ class ComponentBehavior {
 
   ComponentBehavior copyWith({
     String? id,
-    BehaviorTrigger? trigger,
+    BehaviorEvent? event,
+    BehaviorEvent? trigger,
     BehaviorAction? action,
+    BehaviorValidator? validator,
+    bool clearValidator = false,
     bool? enabled,
   }) => ComponentBehavior(
     id: id ?? this.id,
-    trigger: trigger ?? this.trigger,
+    event: event ?? trigger ?? this.event,
     action: action ?? this.action,
+    validator: clearValidator ? null : (validator ?? this.validator),
     enabled: enabled ?? this.enabled,
   );
 
@@ -296,12 +352,13 @@ class ComponentBehavior {
       identical(this, other) ||
       other is ComponentBehavior &&
           other.id == id &&
-          other.trigger == trigger &&
+          other.event == event &&
           other.action == action &&
+          other.validator == validator &&
           other.enabled == enabled;
 
   @override
-  int get hashCode => Object.hash(id, trigger, action, enabled);
+  int get hashCode => Object.hash(id, event, action, validator, enabled);
 }
 
 /// Élément du catalogue de comportements proposés à l'utilisateur.
@@ -320,8 +377,21 @@ class BehaviorCatalogItem {
   final String title;
   final String description;
   final IconData icon;
-  final BehaviorTrigger trigger;
+
+  /// Événement par défaut (ou exclusif si déclaratif) pour cette action.
+  final BehaviorEvent trigger;
+
+  /// Alias explicite de [trigger].
+  BehaviorEvent get defaultEvent => trigger;
+
   final String actionType;
+
+  /// Indique si cette action est impérative (compatible avec tout événement impératif).
+  bool get isImperative => trigger.isImperative;
+
+  /// Indique si cette action peut être associée à [event].
+  bool supportsEvent(BehaviorEvent event) =>
+      isImperative ? event.isImperative : event == trigger;
 }
 
 /// Catalogue global des comportements disponibles.

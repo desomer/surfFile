@@ -13,9 +13,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../super_component.dart';
 
+import '../../../models/component_behavior.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
+import '../../../services/behaviors/behavior_dispatcher.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -162,6 +164,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
   bool _initialExpansionSynced = false;
   bool _syncingFromBinding = false;
   bool _changingProgrammatically = false;
+  bool _suppressBehaviorEvents = false;
   bool _isEditing = false;
   late bool _lastKnownExpanded;
 
@@ -186,7 +189,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
     if (widget.controller == null && widget.initiallyExpanded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _setExpanded(true, fromBinding: false);
+        _setExpanded(true, fromBinding: false, fromUser: false);
       });
     }
   }
@@ -219,7 +222,9 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
     bool expanded, {
     required bool fromBinding,
     bool notifyCallback = true,
+    bool? fromUser,
   }) {
+    final suppressBehavior = !(fromUser ?? (!fromBinding && notifyCallback));
     void apply() {
       if (!mounted) return;
       if (_effectiveController.isOpen == expanded &&
@@ -228,8 +233,10 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
       }
       final previousSync = _syncingFromBinding;
       final previousProgrammatic = _changingProgrammatically;
+      final previousSuppress = _suppressBehaviorEvents;
       _syncingFromBinding = fromBinding;
       _changingProgrammatically = true;
+      _suppressBehaviorEvents = suppressBehavior;
       try {
         if (expanded) {
           _effectiveController.open();
@@ -242,6 +249,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
       } finally {
         _syncingFromBinding = previousSync;
         _changingProgrammatically = previousProgrammatic;
+        _suppressBehaviorEvents = previousSuppress;
       }
     }
 
@@ -251,6 +259,36 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
     } else {
       apply();
     }
+  }
+
+  void _dispatchMenuEvents(bool expanded) {
+    final data = <String, Object?>{
+      'expanded': expanded,
+      'value': expanded,
+      'previousValue': !expanded,
+    };
+    final primaryEvent = expanded
+        ? BehaviorEvent.onExpanded
+        : BehaviorEvent.onCollapsed;
+    unawaited(() async {
+      await BehaviorDispatcher.dispatch(
+        context,
+        componentId: widget.id,
+        componentType: 'menu',
+        event: primaryEvent,
+        data: data,
+        behaviors: widget.behaviours,
+      );
+      if (!mounted) return;
+      await BehaviorDispatcher.dispatch(
+        context,
+        componentId: widget.id,
+        componentType: 'menu',
+        event: BehaviorEvent.onChanged,
+        data: data,
+        behaviors: widget.behaviours,
+      );
+    }());
   }
 
   void _toggleMenu() {
@@ -297,6 +335,9 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
         widget.onClose?.call();
       }
       widget.onExpansionChanged?.call(expanded);
+      if (!_syncingFromBinding && !_suppressBehaviorEvents && mounted) {
+        _dispatchMenuEvents(expanded);
+      }
     }
     if (!mounted) return;
     if (SchedulerBinding.instance.schedulerPhase ==
@@ -338,7 +379,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
     if (previousInitial != desiredInitial || previous?.binding != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _setExpanded(desiredInitial, fromBinding: false);
+        _setExpanded(desiredInitial, fromBinding: false, fromUser: false);
       });
     }
   }
@@ -604,6 +645,12 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
         return NativeComponentEditor(
           id: widget.id,
           behaviours: widget.behaviours,
+          eventComponentType: 'menu',
+          readValue: () => _lastKnownExpanded,
+          eventData: () => {
+            'expanded': _lastKnownExpanded,
+            'value': _lastKnownExpanded,
+          },
           label: widget.label,
           menuType: 'Menu',
           menuIcon: Icons.menu_open_outlined,

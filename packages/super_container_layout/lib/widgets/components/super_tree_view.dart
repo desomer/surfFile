@@ -20,6 +20,7 @@
 ///   directement l'attribut du nœud courant.
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:flutter/gestures.dart' show kPrimaryButton;
@@ -27,10 +28,12 @@ import 'package:material_ui/material_ui.dart';
 
 import 'super_component.dart';
 
+import '../../models/behaviours/behavior_event.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_tree_view_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -434,20 +437,28 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     }
   }
 
-  bool _isNodeSelected(SuperTreeNodeItem item) {
-    if (item.isTemplate) return false;
-    if (_selectedNodePath != null) {
-      return _selectedNodePath == item.nodePath;
-    }
+  String? get _currentSelectedNodePath {
+    if (_selectedNodePath != null) return _selectedNodePath;
     final source = _source;
-    if (source == null || _selection == null) return false;
-    final storePath = _selection!.nodePathFor(source.parents);
-    if (storePath != null) return storePath == item.nodePath;
-    return false;
+    if (source == null || _selection == null) return null;
+    return _selection!.nodePathFor(source.parents);
   }
 
-  void _selectNode(SuperTreeNodeItem item) {
+  bool _isNodeSelected(SuperTreeNodeItem item) {
+    if (item.isTemplate) return false;
+    final current = _currentSelectedNodePath;
+    return current != null && current == item.nodePath;
+  }
+
+  void _selectNode(
+    SuperTreeNodeItem item, {
+    BuildContext? treeContext,
+    BuildContext? rowContext,
+    String? rowId,
+    bool editing = false,
+  }) {
     if (item.isTemplate) return;
+    final previousPath = _currentSelectedNodePath;
     if (_selectedNodePath != item.nodePath) {
       final previous = _selectedNodePath;
       setState(() {
@@ -464,6 +475,34 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       );
     }
     widget.onNodeSelected?.call(item.nodePath);
+    if (!editing && treeContext != null) {
+      final data = <String, Object?>{
+        'nodePath': item.nodePath,
+        'rootIndex': item.rootIndex,
+        'previousNodePath': ?previousPath,
+      };
+      unawaited(
+        BehaviorDispatcher.dispatch(
+          treeContext,
+          componentId: widget.id,
+          componentType: 'treeView',
+          event: BehaviorEvent.onSelected,
+          behaviors: widget.behaviours,
+          data: data,
+        ),
+      );
+      if (rowId != null && rowId != widget.id && rowContext != null) {
+        unawaited(
+          BehaviorDispatcher.dispatch(
+            rowContext,
+            componentId: rowId,
+            componentType: 'iterableContent',
+            event: BehaviorEvent.onSelected,
+            data: data,
+          ),
+        );
+      }
+    }
   }
 
   TreeNodeData<SuperTreeNodeItem> _obtainNode({
@@ -691,6 +730,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     TreeNodeData<SuperTreeNodeItem> node,
     Widget rowContent, {
     required bool animateSelectionAndHover,
+    required bool editing,
   }) {
     final item = node.data;
     final selected = _isNodeSelected(item);
@@ -708,14 +748,22 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     );
     final interactive = placeholder
         ? iterableRow
-        : Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (event) {
-              if (event.buttons == kPrimaryButton) {
-                _selectNode(item);
-              }
-            },
-            child: iterableRow,
+        : Builder(
+            builder: (rowContext) => Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) {
+                if (event.buttons == kPrimaryButton) {
+                  _selectNode(
+                    item,
+                    treeContext: context,
+                    rowContext: rowContext,
+                    rowId: rowId,
+                    editing: editing,
+                  );
+                }
+              },
+              child: iterableRow,
+            ),
           );
     return JsonListScope(
       key: ValueKey('super-tree-row-${widget.id}-${item.nodePath}'),
@@ -805,6 +853,8 @@ class _SuperTreeViewState extends State<SuperTreeView> {
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
             behaviours: widget.behaviours,
+            eventComponentType: 'treeView',
+            readValue: () => _rawNodes ?? const [],
             exportConfig: () => controller.value,
             id: widget.id,
             label: widget.label,
@@ -914,8 +964,27 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                         enableContextMenu: !editing,
                         onToggleNode: (node) {
                           if (!node.data.isTemplate) {
-                            _expandedByPath[node.data.nodePath] =
+                            final expanded =
                                 !node.isToogleRequested && node.isExpanded;
+                            _expandedByPath[node.data.nodePath] = expanded;
+                            if (!editing) {
+                              unawaited(
+                                BehaviorDispatcher.dispatch(
+                                  context,
+                                  componentId: widget.id,
+                                  componentType: 'treeView',
+                                  event: expanded
+                                      ? BehaviorEvent.onExpanded
+                                      : BehaviorEvent.onCollapsed,
+                                  behaviors: widget.behaviours,
+                                  data: {
+                                    'nodePath': node.data.nodePath,
+                                    'rootIndex': node.data.rootIndex,
+                                    'expanded': expanded,
+                                  },
+                                ),
+                              );
+                            }
                           }
                         },
                         isRowCached: (node) => node.data.revision,
@@ -931,6 +1000,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                           node,
                           rowContent,
                           animateSelectionAndHover: animateIndicators,
+                          editing: editing,
                         ),
                         getHeader: (node) => _buildZoneContent(
                           context,

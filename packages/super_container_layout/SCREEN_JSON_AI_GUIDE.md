@@ -121,7 +121,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
-3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic ou script `"runJavaScript"`).
+3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements attachés aux composants, structurés en **3 paramètres** : événement déclencheur (`event`), condition de garde optionnelle (`validator`) et action polymorphe (`action`, ex. `"goToPage"`, `"runJavaScript"`, `"emitEvent"`, `"datasource"`, etc.).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`). Chaque page déclare `id`, `name`, `path`, et optionnellement `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
 5. **`responsiveLayout`** (optionnel à la racine) : configuration responsive globale du `body` des pages (`containerMode`: `"fullPage"` par défaut ou `"constrained"`, `maxWidth`: `1440` par défaut, `gutters`: `{"mobile": 24, "desktop": 32}`, `breakpoints`: `{"mobileWidth": 375, "tabletMinWidth": 768, "desktopMinWidth": 1280, "largeDesktopMinWidth": 1440}`).
 6. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
@@ -293,7 +293,7 @@ avec les composants Flutter).
     "list-clients:item": [
       {
         "id": "b-view-client",
-        "trigger": "click",
+        "event": "onTap",
         "action": { "type": "goToPage", "pagePath": "/details" }
       }
     ]
@@ -1558,55 +1558,167 @@ Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l
 
 Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
 
-### 4.12. Comportements (`behaviors`) : Actions, navigation et evenements
+### 4.12. Comportements (`behaviors`) : Événements, validateurs et actions
 
-Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs à n'importe quel composant par son ID technique :
-- **Déclencheurs (`trigger`)** :
-  - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
-  - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
-  - `"binding"` : Réactif, réservé aux actions `"bindZoneSize"` et `"bindState"` ; s'applique à chaque changement de la valeur liée (aucun clic).
-  - `"hover"` : Survol hors édition, réservé à l'action `"onTooltip"`, sans action au clic ni curseur de clic ajouté.
-  - `"create"` : Déclaratif, réservé à l'action `"creationDefault"` sur les `SuperValue`s ; appliqué automatiquement lors de la création d'une ligne dans le tableau associé.
-- **Actions polymorphes (`action`)** :
-  - `"onTooltip"` (`TooltipAction`, déclencheur `"hover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
-    - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
-    - `binding` (optionnel) : `{"repositoryId": "...", "path": "clients[?].description"}` ou forme courte `"clients[?].description"` avec repository hérité. La valeur doit être un texte ou `null`.
-    - Avec `binding`, `message` n'est pas un fallback. La liaison suit les données et le contexte courant/sélectionné ; une valeur vide/null ou une absence de sélection n'affiche rien. Une liaison invalide produit un diagnostic explicite.
-    - Le premier `onTooltip` activé remplace le tooltip natif de cette cible, mais pas ceux de ses composants enfants distincts. Délai du thème Flutter, aucun affichage en édition.
-  - `"goToPage"` (`GoToPageAction`) : Navigation vers une page ou une URL.
-    - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
-    - `pageId` (optionnel) : Identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
-    - `pageName` (optionnel) : Nom lisible de la page cible (ex. `"Détails"`).
-  - `"generatePdf"` (`GeneratePdfAction`, déclencheur `"click"` ou `"doubleClick"`) : Génère un PDF depuis une page de type `"a4Document"` (`pageCatalog.pages[*].pageType: "a4Document"`) en combinant traduction vectorielle et fallback raster haute résolution.
-    - `pageId` (optionnel) : Identifiant de la page A4 cible ; omis ou `null` utilise la page A4 courante (ou l'unique page A4 du catalogue).
-    - `pageName` (optionnel) : Nom lisible de la page A4 cible.
-    - `fileName` (optionnel) : Nom de fichier `.pdf` suggéré (sinon utilise `defaultFileName` de la `A4PageConfig`).
-    - `outputMode` (optionnel, défaut `"exportDialog"`) : `"exportDialog"` (boîte d'export en fichier `.pdf`) ou `"saveFile"` (enregistrement direct dans le dossier par défaut).
-  - `"emitEvent"` (`EmitEventAction`) : Publie sur le bus interne fourni a `SuperApp`.
-    - `eventId` : Identifiant non vide, sans espaces de debut/fin, filtre par egalite exacte.
-    - `custom` (optionnel) : Objet JSON statique, distinct des donnees automatiques.
-    - L'evenement expose `eventId`, `componentId`, `componentType`, `trigger`, `data`, `custom`.
-    - Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient `previousValue` et `value` (texte ou booleen). Ces valeurs encadrent le geste natif ; pour un double-clic elles encadrent la paire de clics. Un clic sans changement donne deux valeurs egales.
-    - L'interaction native (saisie, selection, checkbox/switch) est conservee. Ni mode edition, ni drag, ni appui long, ni clic secondaire ne publient d'evenement. Les changements clavier seuls ne sont pas des clics.
-    - Les autres composants fournissent seulement les metadonnees generiques, sans donnees specifiques garanties.
-  - `"bindZoneSize"` (`ZoneSizeBindingAction`, declencheur `"binding"`, sur l'ID d'un `SuperLayout`) : lie l'epaisseur d'un cote a une valeur numerique d'un repository et anime chaque changement (ouverture / fermeture en tiroir).
-    - `zone` : `"west"` | `"east"` | `"north"` | `"south"`.
-    - `binding` : `{"repositoryId": "...", "path": "ui.panneau.largeur"}` (`repositoryId` omis dans une liste : herite).
-    - `unit` (optionnel, defaut `"pixels"`) : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
-    - `durationMs` (optionnel, defaut `250`, `0` sans animation) et `curve` (optionnel, defaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`).
-    - `0` ferme la zone ; une valeur absente ou non numerique rend la taille de la configuration. La taille n'est jamais enregistree dans la configuration et la poignee de redimensionnement du cote est masquee. La premiere valeur s'applique sans animation.
-  - `"bindState"` (`StateBindingAction`, déclencheur `"binding"`, disponible sur tous les composants par ID) : change l'état d'un composant en fonction d'un booléen d'un repository JSON.
-    - `state` : `"invisible"` (masque le composant hors mode édition) | `"readOnly"` (passe en lecture seule et active `AutomaticState.readOnly`) | `"disabled"` (désactive les interactions et active `AutomaticState.disabled`).
-    - `binding` : `{"repositoryId": "...", "path": "clients[?].estVerrouille"}` ou forme courte `"clients[?].estVerrouille"` avec repository hérité.
-    - `whenValue` (optionnel, défaut `true`) : `true` applique l'état quand le booléen vaut `true`, `false` l'applique quand il vaut `false`.
-    - `maintainSize` (optionnel, défaut `false`, utilisé uniquement avec `state: "invisible"`) : conserve l'espace du composant dans la mise en page lorsqu'il est masqué.
-  - `"addArrayItem"` (`AddArrayItemAction`, déclencheur `"click"` ou `"doubleClick"`) : ajoute une nouvelle ligne dans un tableau JSON en initialisant ses champs depuis le JSON Schema associé au repository puis les éventuels comportements `"creationDefault"` des `SuperValue`s.
-    - `binding` : `{"repositoryId": "...", "path": "clients"}` ou `"clients[?].commandes"`.
-    - `selectCreated` (optionnel, défaut `true`) : sélectionne automatiquement la ligne créée dans le tableau.
-  - `"creationDefault"` (`CreationDefaultAction`, déclencheur `"create"`, sur une `SuperValue`) : définit la valeur par défaut écrite dans le champ lié de la `SuperValue` lorsqu'une ligne est créée dans le tableau associé (`addArrayItem` ou bouton `+` de liste/table).
-    - `defaultValue` : valeur par défaut JSON (`string`, `number`, `boolean`, `null`, etc.).
-    - `binding` (optionnel) : cible explicite si différente ou si la `SuperValue` n'a pas encore de `binding`.
-  - `"runJavaScript"` (`RunJavaScriptAction`, déclencheur `"click"` ou `"doubleClick"`) : exécute un script JavaScript explicite au geste utilisateur. Exemple : `{"type":"runJavaScript","repositoryId":"commandes","code":"ctx.set('statut', 'envoyée');"}`. `repositoryId` est optionnel dans une liste et hérite alors du repository de la ligne. Le script reçoit `ctx`, `doc` et `event` ; `doc` et `event` (métadonnées et `data` du geste) sont en lecture seule et la seule écriture autorisée est `ctx.set(chemin, valeur)`. Les chemins `@...` restent strictement en lecture seule, les valeurs sont validées comme JSON et les écritures sont appliquées atomiquement avec validation du schéma. Les chemins avec `[?]` utilisent les indices de lignes englobantes ou la sélection courante.
+Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs ou réactifs à n'importe quel composant par son ID technique. Chaque entrée repose sur une **architecture à 3 paramètres** (plus `"id"` et `"enabled"` optionnel, défaut `true`) :
+
+1. **`event`** — quand le comportement se déclenche ;
+2. **`validator`** *(optionnel)* — condition de garde évaluée avant d'exécuter l'action ;
+3. **`action`** — l'action polymorphe à lancer parmi les **11 actions** du catalogue.
+
+#### 1. Événement déclencheur (`event`)
+
+La clé canonique est **`"event"`** (l'ancienne clé `"trigger"` reste acceptée en lecture pour rétrocompatibilité, mais **toujours émettre `"event"`**).
+
+- **Événements impératifs** (compatibles avec **toutes** les actions impératives et un `validator` optionnel ; ignorés en mode édition) :
+  - **Gestes** :
+    - `"onTap"` *(alias : `"click"`, `"tap"`)* : clic simple ou tap. Le curseur passe automatiquement en pointeur (`click`).
+    - `"onDoubleTap"` *(alias : `"doubleClick"`, `"doubleTap"`)* : double-clic. Si un comportement `"onTap"` est aussi configuré, les clics simples restent émis et le double-clic s'exécute en supplément.
+    - `"onLongPress"` *(alias : `"longPress"`)* : appui long maintenu.
+  - **Survol impératif** :
+    - `"onHoverEnter"` *(alias : `"hoverEnter"`)* : entrée du pointeur sur le composant.
+    - `"onHoverExit"` *(alias : `"hoverExit"`)* : sortie du pointeur du composant.
+  - **Sélection** :
+    - `"onSelected"` *(alias : `"selected"`)* : sélection d'une ligne (`ListView`, `Table`, `TreeView`), d'un onglet (`Tab`), d'une destination (`BottomNavigationBar`, `NavigationRail`) ou d'une option (`Value`).
+  - **Valeur & saisie** :
+    - `"onChanged"` *(alias : `"changed"`)* : modification de valeur par l'utilisateur (`Value`, `Expansible`, `Menu`).
+    - `"onSubmitted"` *(alias : `"submitted"`)* : validation clavier (touche Entrée) dans un champ de saisie (`Value`).
+  - **Focus** :
+    - `"onFocus"` *(alias : `"focus"`)* : prise de focus d'un champ ou composant focusable.
+    - `"onBlur"` *(alias : `"blur"`)* : perte de focus d'un champ ou composant focusable.
+  - **Ouverture / Fermeture** :
+    - `"onExpanded"` *(alias : `"expanded"`)* : dépliage d'un `Expansible`, `Menu` ou nœud de `TreeView`.
+    - `"onCollapsed"` *(alias : `"collapsed"`)* : repliage d'un `Expansible`, `Menu` ou nœud de `TreeView`.
+  - **Cycle de vie** :
+    - `"onMount"` *(alias : `"mount"`)* : exécution unique lors de l'affichage initial du composant (hors mode édition).
+
+- **Événements déclaratifs / réactifs** (réservés exclusivement à leurs actions dédiées) :
+  - `"onHover"` *(alias : `"hover"`)* : réservé à `"onTooltip"` (sans action au clic ni curseur pointeur ; utiliser `"onHoverEnter"` pour une action impérative au survol).
+  - `"onBinding"` *(alias : `"binding"`)* : réservé aux actions réactives `"bindZoneSize"` et `"bindState"` ; s'applique à chaque changement de la valeur liée.
+  - `"onCreate"` *(alias : `"create"`)* : réservé à `"creationDefault"` sur une `SuperValue` ; appliqué automatiquement lors de la création d'une ligne dans le tableau associé.
+
+#### 2. Validateur conditionnel (`validator`, optionnel)
+
+Lorsqu'il est renseigné sur un comportement impératif, `validator` est évalué avant d'exécuter `action` : si la condition est fausse, l'action n'est pas exécutée. S'il est omis, l'action s'exécute sans condition.
+
+- **Sur le composant courant (`self`)** :
+  - Unaires (sans `"value"`) : `"isEmpty"`, `"isFill"` *(alias : `"isFilled"`, `"isNotEmpty"`)*, `"isTrue"`, `"isFalse"`, `"isValid"`, `"isInvalid"`.
+  - Binaires (avec `"value"`) : `"equals"`, `"notEquals"`, `"contains"`, `"startsWith"` *(chaîne)*, `"greaterThan"` *(nombre fini)*, `"lessThan"` *(nombre fini)*, `"matchesRegex"` *(RegExp non vide)*.
+- **Sur un autre composant (`component`, requiert `"targetComponentId"`)** :
+  - Unaires : `"otherIsEmpty"`, `"otherIsFill"` *(alias : `"otherIsFilled"`, `"otherIsNotEmpty"`)*, `"otherIsTrue"`, `"otherIsFalse"`, `"otherIsValid"`, `"otherIsInvalid"`.
+  - Binaires (avec `"value"`) : `"otherEquals"`, `"otherNotEquals"`, `"otherContains"`, `"otherStartsWith"`, `"otherGreaterThan"`, `"otherLessThan"`, `"otherMatchesRegex"`.
+- **Sur une liaison repository (`binding`, requiert `"binding"` : `{"repositoryId": "...", "path": "..."}` ou forme courte `"chemin"` héritée)** :
+  - Unaires : `"bindingIsEmpty"`, `"bindingIsFill"` *(alias : `"bindingIsFilled"`, `"bindingIsNotEmpty"`)*, `"bindingIsTrue"`, `"bindingIsFalse"`.
+  - Binaires (avec `"value"`) : `"bindingEquals"`, `"bindingNotEquals"`, `"bindingContains"`, `"bindingStartsWith"`, `"bindingGreaterThan"`, `"bindingLessThan"`, `"bindingMatchesRegex"`.
+  - *(Note : `isValid` et `isInvalid` exigent un composant `self` ou `component` et ne s'appliquent pas à une liaison brute.)*
+- **Composites logiques** :
+  - `"all"` *(ET logique)* : `{"type": "all", "validators": [ ... ]}` (au moins 1 sous-validateur).
+  - `"any"` *(OU logique)* : `{"type": "any", "validators": [ ... ]}` (au moins 1 sous-validateur).
+  - `"not"` *(NON logique)* : `{"type": "not", "validator": { ... }}`.
+- **Règle d'évaluation `isEmpty` / `isFill`** :
+  - **Vide** (`isEmpty` = vrai, `isFill` = faux) : `null`, chaîne vide `""` ou composée uniquement d'espaces, liste vide `[]`, map/objet vide `{}`.
+  - **Rempli** (`isFill` = vrai) : chaîne non blanche, collection non vide, et **tout nombre y compris `0`**.
+  - **Booléen** : ne pas utiliser `isEmpty`/`isFill` pour tester vrai/faux — utiliser `"isTrue"` / `"isFalse"` (ou `"otherIsTrue"` / `"otherIsFalse"`, `"bindingIsTrue"` / `"bindingIsFalse"`).
+
+#### 3. Actions polymorphes (`action` — 11 types)
+
+Toutes les **7 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`) acceptent désormais **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié.
+
+- **`"goToPage"`** (`GoToPageAction`, impérative) : navigation vers une page ou une URL.
+  - `pagePath` : chemin absolu cible (ex. `"/details"`, `"/clients"`).
+  - `pageId` *(optionnel)* : identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
+  - `pageName` *(optionnel)* : nom lisible de la page cible (ex. `"Détails"`).
+- **`"emitEvent"`** (`EmitEventAction`, impérative) : publie un événement sur le bus interne `SuperEventBus` fourni à `SuperApp`.
+  - `eventId` : identifiant non vide, sans espaces de début/fin, filtré par égalité exacte.
+  - `custom` *(optionnel)* : objet JSON statique, distinct des données automatiques.
+  - L'événement expose `eventId`, `componentId`, `componentType`, `trigger` *(nom historique pour compatibilité ou nom canonique pour les nouveaux événements)*, `data`, `custom`.
+  - Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient `previousValue` et `value` (texte ou booléen). L'interaction native (saisie, sélection, checkbox/switch) est conservée. Ne pas inventer d'action d'exécution Dart ni de binding dynamique dans `custom`.
+- **`"searchProvider"`** (`SearchProviderAction`, impérative) : déclenche la recherche d'un provider de données enregistré dans `store.providers` (alimente son repository cible depuis son repository de filtre).
+  - `providerId` : identifiant du provider (`a-z`, `0-9`, `_`, 32 caractères max).
+- **`"datasource"`** (`DatasourceAction`, impérative) : exécute une commande Search / Pagination / Tri / CRUD d'une datasource enregistrée dans `store.datasources` avec le contexte de ligne courant (`JsonListScope`).
+  - `datasourceId` : identifiant de la datasource (`a-z`, `0-9`, `_`, 32 caractères max).
+  - `command` *(optionnel, défaut `"search"`)* : `"search"`, `"refresh"`, `"firstPage"`, `"previousPage"`, `"nextPage"`, `"loadMore"`, `"sort"`, `"create"`, `"read"`, `"update"`, `"delete"`.
+  - `field` *(requis uniquement pour `"sort"`)* : champ trié.
+  - `direction` *(optionnel, uniquement pour `"sort"`)* : `"asc"` | `"desc"` (omis = alterne le sens au déclenchement suivant).
+- **`"generatePdf"`** (`GeneratePdfAction`, impérative) : génère un PDF depuis une page de type `"a4Document"` (`pageCatalog.pages[*].pageType: "a4Document"`) en combinant traduction vectorielle et fallback raster haute résolution.
+  - `pageId` *(optionnel)* : identifiant de la page A4 cible ; omis ou `null` utilise la page A4 courante (ou l'unique page A4 du catalogue).
+  - `pageName` *(optionnel)* : nom lisible de la page A4 cible.
+  - `fileName` *(optionnel)* : nom de fichier `.pdf` suggéré (sinon utilise `defaultFileName` de `A4PageConfig`).
+  - `outputMode` *(optionnel, défaut `"exportDialog"`)* : `"exportDialog"` (boîte d'export en fichier `.pdf`) ou `"saveFile"` (enregistrement direct dans le dossier par défaut).
+- **`"addArrayItem"`** (`AddArrayItemAction`, impérative) : ajoute une nouvelle ligne dans un tableau JSON en initialisant ses champs depuis le JSON Schema du repository puis les éventuels comportements `"creationDefault"` des `SuperValue`.
+  - `binding` : `{"repositoryId": "...", "path": "clients"}` ou `"clients[?].commandes"`.
+  - `selectCreated` *(optionnel, défaut `true`)* : sélectionne automatiquement la ligne créée dans le tableau.
+- **`"runJavaScript"`** (`RunJavaScriptAction`, impérative) : exécute un script JavaScript contrôlé. Exemple : `{"type":"runJavaScript","repositoryId":"commandes","code":"ctx.set('statut', 'envoyée');"}`. `repositoryId` est optionnel dans une liste et hérite alors du repository de la ligne. Le script reçoit `ctx`, `doc` et `event` ; `doc` et `event` (métadonnées et `data` de l'événement) sont en lecture seule et la seule écriture autorisée est `ctx.set(chemin, valeur)`. Les chemins `@...` restent strictement en lecture seule, les valeurs sont validées comme JSON et les écritures sont appliquées atomiquement avec validation du schéma. Les chemins avec `[?]` utilisent les indices de lignes englobantes ou la sélection courante.
+- **`"onTooltip"`** (`TooltipAction`, événement `"onHover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
+  - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
+  - `binding` *(optionnel)* : `{"repositoryId": "...", "path": "clients[?].description"}` ou forme courte `"clients[?].description"` avec repository hérité. La valeur doit être un texte ou `null`.
+  - Avec `binding`, `message` n'est pas un fallback. La liaison suit les données et le contexte courant/sélectionné ; une valeur vide/null ou une absence de sélection n'affiche rien. Le premier `onTooltip` activé remplace le tooltip natif de cette cible, sans affichage en édition.
+- **`"bindZoneSize"`** (`ZoneSizeBindingAction`, événement `"onBinding"`, sur l'ID d'un `SuperLayout`) : lie l'épaisseur d'un côté à une valeur numérique d'un repository et anime chaque changement (ouverture / fermeture en tiroir).
+  - `zone` : `"west"` | `"east"` | `"north"` | `"south"`.
+  - `binding` : `{"repositoryId": "...", "path": "ui.panneau.largeur"}` (`repositoryId` omis dans une liste : hérite).
+  - `unit` *(optionnel, défaut `"pixels"`)* : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
+  - `durationMs` *(optionnel, défaut `250`, `0` sans animation)* et `curve` *(optionnel, défaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`)*.
+  - `0` ferme la zone ; une valeur absente ou non numérique rend la taille de la configuration. La poignée de redimensionnement du côté est masquée et la première valeur s'applique sans animation.
+- **`"bindState"`** (`StateBindingAction`, événement `"onBinding"`, disponible sur tous les composants par ID) : change l'état d'un composant en fonction d'un booléen d'un repository JSON.
+  - `state` : `"invisible"` (masque hors mode édition) | `"readOnly"` (active `AutomaticState.readOnly`) | `"disabled"` (active `AutomaticState.disabled`).
+  - `binding` : `{"repositoryId": "...", "path": "clients[?].estVerrouille"}` ou forme courte `"clients[?].estVerrouille"` avec repository hérité.
+  - `whenValue` *(optionnel, défaut `true`)* : `true` applique l'état quand le booléen vaut `true`, `false` quand il vaut `false`.
+  - `maintainSize` *(optionnel, défaut `false`, uniquement avec `state: "invisible"`)* : conserve l'espace dans la mise en page.
+- **`"creationDefault"`** (`CreationDefaultAction`, événement `"onCreate"`, sur une `SuperValue`) : définit la valeur par défaut écrite dans le champ lié lorsqu'une ligne est créée dans le tableau associé (`addArrayItem` ou bouton `+` de liste/table).
+  - `defaultValue` : valeur par défaut JSON (`string`, `number`, `boolean`, `null`, etc.).
+  - `binding` *(optionnel)* : cible explicite si différente ou si la `SuperValue` n'a pas encore de `binding`.
+
+#### Exemple : clic gardé par `otherIsFill`, sélection sur une liste et saisie avec validateur `all`
+
+```json
+{
+  "behaviors": {
+    "btn-save-client": [
+      {
+        "id": "b-save-if-email-filled",
+        "event": "onTap",
+        "validator": {
+          "type": "otherIsFill",
+          "targetComponentId": "input-client-email"
+        },
+        "action": {
+          "type": "datasource",
+          "datasourceId": "clients",
+          "command": "update"
+        }
+      }
+    ],
+    "list-clients": [
+      {
+        "id": "b-select-client",
+        "event": "onSelected",
+        "action": {
+          "type": "goToPage",
+          "pagePath": "/clients/details",
+          "pageName": "Fiche Client"
+        }
+      }
+    ],
+    "input-search-query": [
+      {
+        "id": "b-live-search",
+        "event": "onChanged",
+        "validator": {
+          "type": "all",
+          "validators": [
+            { "type": "isFill" },
+            { "type": "otherIsValid", "targetComponentId": "input-min-amount" }
+          ]
+        },
+        "action": {
+          "type": "searchProvider",
+          "providerId": "clients_search"
+        }
+      }
+    ]
+  }
+}
+```
 
 #### Exemple : info-bulle fixe et info-bulle liée sur une ligne
 
@@ -1616,14 +1728,14 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     "main-layout": [
       {
         "id": "layout-tooltip",
-        "trigger": "hover",
+        "event": "onHover",
         "action": { "type": "onTooltip", "message": "Espace de travail" }
       }
     ],
     "list-clients:item": [
       {
         "id": "client-tooltip",
-        "trigger": "hover",
+        "event": "onHover",
         "action": {
           "type": "onTooltip",
           "binding": "clients[?].description"
@@ -1634,7 +1746,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 }
 ```
 
-#### Exemple : panneau ouest lie a un repository
+#### Exemple : panneau ouest lié à un repository
 
 ```json
 {
@@ -1642,7 +1754,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     "main-layout": [
       {
         "id": "b-west-panel",
-        "trigger": "binding",
+        "event": "onBinding",
         "enabled": true,
         "action": {
           "type": "bindZoneSize",
@@ -1658,7 +1770,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 }
 ```
 
-#### Exemple : evenement au double-clic d'une valeur
+#### Exemple : événement au double-clic d'une valeur
 
 ```json
 {
@@ -1666,7 +1778,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     "tree-node-name": [
       {
         "id": "b-node-open",
-        "trigger": "doubleClick",
+        "event": "onDoubleTap",
         "enabled": true,
         "action": {
           "type": "emitEvent",
@@ -1679,40 +1791,9 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 }
 ```
 
-L'application hote ecoute avec `eventBus.on('node.changed').listen(...)` et
-injecte ce meme bus dans `SuperApp(eventBus: eventBus, ...)`.
-Ne pas inventer d'action d'execution Dart ni de binding dynamique dans `custom`.
-
-#### Exemple : Action de navigation sur un bouton ou sur une ligne de liste
-
-```json
-{
-  "behaviors": {
-    "btn-home": [
-      {
-        "id": "b-home",
-        "trigger": "click",
-        "action": {
-          "type": "goToPage",
-          "pagePath": "/home",
-          "pageName": "Accueil"
-        }
-      }
-    ],
-    "list-clients:item": [
-      {
-        "id": "b-client-details",
-        "trigger": "click",
-        "action": {
-          "type": "goToPage",
-          "pagePath": "/clients/details",
-          "pageName": "Fiche Client"
-        }
-      }
-    ]
-  }
-}
-```
+L'application hôte écoute avec `eventBus.on('node.changed').listen(...)` et
+injecte ce même bus dans `SuperApp(eventBus: eventBus, ...)`.
+Ne pas inventer d'action d'exécution Dart ni de binding dynamique dans `custom`.
 
 ---
 

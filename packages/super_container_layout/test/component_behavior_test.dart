@@ -1,4 +1,4 @@
-import 'dart:convert';
+ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -71,6 +71,217 @@ void main() {
 
       expect(BehaviorCatalog.items, contains(BehaviorCatalog.goToPage));
       expect(BehaviorCatalog.items, contains(BehaviorCatalog.bindState));
+    });
+
+    test('BehaviorEvent parsing, legacy aliases and ComponentBehavior event/validator JSON', () {
+      for (final event in BehaviorEvent.values) {
+        expect(BehaviorEvent.fromJson(event.name), event);
+        expect(BehaviorEvent.tryParse(event.name), event);
+      }
+      expect(BehaviorEvent.fromJson(null), BehaviorEvent.onTap);
+      expect(BehaviorEvent.fromJson('click'), BehaviorEvent.onTap);
+      expect(BehaviorEvent.fromJson('doubleClick'), BehaviorEvent.onDoubleTap);
+      expect(BehaviorEvent.fromJson('hover'), BehaviorEvent.onHover);
+      expect(BehaviorEvent.fromJson('binding'), BehaviorEvent.onBinding);
+      expect(BehaviorEvent.fromJson('create'), BehaviorEvent.onCreate);
+      expect(BehaviorEvent.onTap.legacyTriggerName, 'click');
+      expect(BehaviorEvent.onDoubleTap.legacyTriggerName, 'doubleClick');
+      expect(BehaviorEvent.onHover.legacyTriggerName, 'hover');
+      expect(BehaviorEvent.onBinding.legacyTriggerName, 'binding');
+      expect(BehaviorEvent.onCreate.legacyTriggerName, 'create');
+      expect(BehaviorEvent.onSelected.legacyTriggerName, 'onSelected');
+      expect(BehaviorEvent.tryParse(''), isNull);
+      expect(BehaviorEvent.tryParse('unknownEvent'), isNull);
+      expect(
+        () => BehaviorEvent.fromJson('unknownEvent'),
+        throwsFormatException,
+      );
+      expect(() => BehaviorEvent.fromJson(42), throwsFormatException);
+
+      // Backwards compatibility with legacy "trigger" field in JSON
+      final fromLegacy = ComponentBehavior.fromJson({
+        'id': 'legacy-1',
+        'trigger': 'doubleClick',
+        'action': {'type': 'goToPage', 'pagePath': '/legacy'},
+      });
+      expect(fromLegacy.event, BehaviorEvent.onDoubleTap);
+      expect(fromLegacy.trigger, BehaviorTrigger.doubleClick);
+      expect(fromLegacy.validator, isNull);
+
+      // toJson and toCompactJson emit "event" and "validator"
+      const withValidator = ComponentBehavior(
+        id: 'b-validated',
+        event: BehaviorEvent.onDoubleTap,
+        validator: ValueBehaviorValidator.otherIsFill('email-input'),
+        action: GoToPageAction(pagePath: '/next'),
+      );
+      final fullJson = withValidator.toJson();
+      expect(fullJson.containsKey('trigger'), isFalse);
+      expect(fullJson['event'], 'onDoubleTap');
+      expect(fullJson['enabled'], isTrue);
+      expect(fullJson['validator'], {
+        'type': 'otherIsFill',
+        'targetComponentId': 'email-input',
+      });
+
+      final compactJson = withValidator.toCompactJson();
+      expect(compactJson.containsKey('trigger'), isFalse);
+      expect(compactJson.containsKey('enabled'), isFalse);
+      expect(compactJson['event'], 'onDoubleTap');
+      expect(compactJson['validator'], {
+        'type': 'otherIsFill',
+        'targetComponentId': 'email-input',
+      });
+
+      expect(ComponentBehavior.fromJson(fullJson), withValidator);
+      expect(
+        ComponentBehavior.fromJson(Map<String, dynamic>.from(compactJson)),
+        withValidator,
+      );
+    });
+
+    test('BehaviorValidator models, catalog decode, validation errors and remapComponentIds', () {
+      const isEmpty = ValueBehaviorValidator.isEmpty();
+      expect(BehaviorValidatorCatalog.decode(isEmpty.toJson()), isEmpty);
+
+      const isFill = ValueBehaviorValidator.isFill();
+      expect(BehaviorValidatorCatalog.decode(isFill.toJson()), isFill);
+      expect(BehaviorValidatorCatalog.decode({'type': 'isFilled'}), isFill);
+      expect(BehaviorValidatorCatalog.decode({'type': 'isNotEmpty'}), isFill);
+
+      const otherEmpty = ValueBehaviorValidator.otherIsEmpty('comp-a');
+      expect(BehaviorValidatorCatalog.decode(otherEmpty.toJson()), otherEmpty);
+
+      const otherFill = ValueBehaviorValidator.otherIsFill('comp-a');
+      expect(BehaviorValidatorCatalog.decode(otherFill.toJson()), otherFill);
+      expect(
+        BehaviorValidatorCatalog.decode({
+          'type': 'otherIsFilled',
+          'targetComponentId': 'comp-a',
+        }),
+        otherFill,
+      );
+      expect(
+        BehaviorValidatorCatalog.decode({
+          'type': 'otherIsNotEmpty',
+          'targetComponentId': 'comp-a',
+        }),
+        otherFill,
+      );
+
+      const otherEq = ValueBehaviorValidator.otherEquals('comp-b', 'VIP');
+      expect(BehaviorValidatorCatalog.decode(otherEq.toJson()), otherEq);
+      expect(otherEq.toJson(), {
+        'type': 'otherEquals',
+        'targetComponentId': 'comp-b',
+        'value': 'VIP',
+      });
+
+      const otherValid = ValueBehaviorValidator.otherIsValid('comp-c');
+      expect(BehaviorValidatorCatalog.decode(otherValid.toJson()), otherValid);
+
+      const binding = JsonTextBinding(
+        repositoryId: 'crm',
+        path: 'clients[?].nom',
+      );
+      const bindingFill = ValueBehaviorValidator.bindingIsFill(binding);
+      expect(
+        BehaviorValidatorCatalog.decode(
+          jsonDecode(jsonEncode(bindingFill.toJson())) as Map<String, dynamic>,
+        ),
+        bindingFill,
+      );
+      expect(
+        BehaviorValidatorCatalog.decode(
+          jsonDecode(jsonEncode(bindingFill.toCompactJson()))
+              as Map<String, dynamic>,
+        ),
+        bindingFill,
+      );
+      expect(bindingFill.referencedBindings, [binding]);
+
+      final composite = AllBehaviorValidator(
+        validators: [
+          isFill,
+          AnyBehaviorValidator(
+            validators: [
+              otherFill,
+              const NotBehaviorValidator(validator: otherValid),
+            ],
+          ),
+          bindingFill,
+        ],
+      );
+      expect(
+        BehaviorValidatorCatalog.decode(
+          jsonDecode(jsonEncode(composite.toJson())) as Map<String, dynamic>,
+        ),
+        composite,
+      );
+      expect(
+        BehaviorValidatorCatalog.decode(
+          jsonDecode(jsonEncode(composite.toCompactJson()))
+              as Map<String, dynamic>,
+        ),
+        composite,
+      );
+      expect(composite.referencedComponentIds, {'comp-a', 'comp-c'});
+
+      // remapComponentIds across nested validators and ComponentBehavior
+      final remapped = composite.remapComponentIds({
+        'comp-a': 'new-a',
+        'comp-c': 'new-c',
+      });
+      expect(remapped.referencedComponentIds, {'new-a', 'new-c'});
+
+      final behaviorWithComposite = ComponentBehavior(
+        id: 'b-remap',
+        event: BehaviorEvent.onTap,
+        validator: composite,
+        action: const GoToPageAction(pagePath: '/ok'),
+      );
+      final remappedBehavior = behaviorWithComposite.remapComponentIds({
+        'comp-a': 'mapped-a',
+      });
+      expect(remappedBehavior.validator!.referencedComponentIds, {
+        'mapped-a',
+        'comp-c',
+      });
+
+      // Validation errors
+      expect(
+        () => BehaviorValidatorCatalog.decode({'type': 'otherIsFill'}),
+        throwsFormatException,
+      );
+      expect(
+        () => BehaviorValidatorCatalog.decode({
+          'type': 'otherIsFill',
+          'targetComponentId': '   ',
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => BehaviorValidatorCatalog.decode({
+          'type': 'matchesRegex',
+          'value': '[unclosed',
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => AllBehaviorValidator(validators: const []).validate(),
+        throwsFormatException,
+      );
+      expect(
+        () => BehaviorValidatorCatalog.decode({
+          'type': 'all',
+          'validators': <Object?>[],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => AnyBehaviorValidator(validators: const []).validate(),
+        throwsFormatException,
+      );
     });
 
     test('RunJavaScriptAction serialization and validation', () {
@@ -590,15 +801,23 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
-      // Step 1: Comportement
+      // Step 1: Événement
       expect(
-        find.byKey(const ValueKey('behavior-catalog-go_to_page')),
+        find.byKey(const ValueKey('behavior-event-onTap')),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
-      // Step 2: Configuration
+      // Step 2: Action (catalog + inline settings)
+      expect(
+        find.byKey(const ValueKey('behavior-catalog-go_to_page')),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('behavior-page-dropdown')),
+      );
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('behavior-page-dropdown')),
         findsOneWidget,
@@ -606,7 +825,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
-      // Step 3: Récapitulatif
+      // Step 3: Validateur
+      expect(
+        find.byKey(const ValueKey('behavior-validator-mode-none')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await tester.pumpAndSettle();
+
+      // Step 4: Récapitulatif
       expect(find.byKey(const ValueKey('behavior-add-submit')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('behavior-add-submit')));
       await tester.pumpAndSettle();
@@ -692,6 +919,12 @@ void main() {
 
       await tapKey('open');
       await tapKey('behavior-edit-second');
+      // Edit opens on Step 1 (event)
+      expect(find.text('Double-clic (onDoubleTap)'), findsOneWidget);
+      await tapKey('behavior-add-next');
+      // Step 2 (action): inline settings
+      await tester.ensureVisible(keyed('behavior-event-id'));
+      await tester.pumpAndSettle();
       expect(
         tester.widget<TextField>(keyed('behavior-event-id')).controller!.text,
         'old.event',
@@ -703,7 +936,6 @@ void main() {
             .text,
         '{"count":2}',
       );
-      expect(find.text('Double-clic'), findsOneWidget);
       await tester.enterText(keyed('behavior-event-id'), 'discard.me');
       await tapKey('behavior-add-cancel');
       expect(current(), [first, original]);
@@ -711,13 +943,17 @@ void main() {
 
       await tapKey('open');
       await tapKey('behavior-edit-second');
-      await tapKey('behavior-add-back');
-      await tapKey('behavior-catalog-go_to_page');
+      // Step 1 (event): switch to onTap (click)
+      await tapKey('behavior-event-onTap');
       await tapKey('behavior-add-next');
-      await tapKey('behavior-gesture-trigger');
-      await tester.tap(find.text('Clic').last);
+      // Step 2 (action): switch to go_to_page and enter custom path
+      await tapKey('behavior-catalog-go_to_page');
+      await tester.ensureVisible(keyed('behavior-custom-path-input'));
       await tester.pumpAndSettle();
       await tester.enterText(keyed('behavior-custom-path-input'), '/changed');
+      await tester.pumpAndSettle();
+      // Step 2 -> Step 3 (validator) -> Step 4 (summary) -> submit
+      await tapKey('behavior-add-next');
       await tapKey('behavior-add-next');
       await tapKey('behavior-add-submit');
       const changed = ComponentBehavior(
@@ -824,6 +1060,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('style-menu-behavior')));
       await tester.pumpAndSettle();
+      // Step 0 (target) -> Step 1 (event) -> Step 2 (action)
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
       final card = find.byKey(
@@ -832,14 +1071,20 @@ void main() {
       await tester.ensureVisible(card);
       await tester.pumpAndSettle();
       await tester.tap(card);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await settle();
 
       final next = find.byKey(const ValueKey('behavior-add-next'));
       expect(tester.widget<FilledButton>(next).onPressed, isNull);
+      final providerTile = find.byKey(
+        const ValueKey('behavior-provider-clients'),
+      );
+      await tester.ensureVisible(providerTile);
+      await tester.pumpAndSettle();
       expect(find.text('clients · code'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('behavior-provider-clients')));
+      await tester.tap(providerTile);
+      await tester.pumpAndSettle();
+      // Step 2 (action) -> Step 3 (validator) -> Step 4 (summary)
+      await tester.tap(next);
       await tester.pumpAndSettle();
       await tester.tap(next);
       await tester.pumpAndSettle();
@@ -960,36 +1205,41 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('style-menu-behavior')));
       await tester.pumpAndSettle();
+      // Step 0 (target) -> Step 1 (event) -> Step 2 (action)
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
       final card = find.byKey(const ValueKey('behavior-catalog-datasource'));
       await tester.ensureVisible(card);
       await tester.pumpAndSettle();
       await tester.tap(card);
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await settle();
 
       final next = find.byKey(const ValueKey('behavior-add-next'));
       expect(tester.widget<FilledButton>(next).onPressed, isNull);
-      await tester.tap(
-        find.byKey(const ValueKey('behavior-datasource-clients')),
-      );
+      final dsTile = find.byKey(const ValueKey('behavior-datasource-clients'));
+      await tester.ensureVisible(dsTile);
+      await tester.pumpAndSettle();
+      await tester.tap(dsTile);
       await tester.pumpAndSettle();
       expect(tester.widget<FilledButton>(next).onPressed, isNotNull);
 
-      await tester.tap(
-        find.byKey(const ValueKey('behavior-datasource-command')),
+      final cmdField = find.byKey(
+        const ValueKey('behavior-datasource-command'),
       );
+      await tester.ensureVisible(cmdField);
+      await tester.pumpAndSettle();
+      await tester.tap(cmdField);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Trier').last);
       await tester.pumpAndSettle();
       expect(tester.widget<FilledButton>(next).onPressed, isNull);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('behavior-datasource-field')),
-        'ville',
-      );
+      final sortField = find.byKey(const ValueKey('behavior-datasource-field'));
+      await tester.ensureVisible(sortField);
+      await tester.pumpAndSettle();
+      await tester.enterText(sortField, 'ville');
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('behavior-datasource-error')),
@@ -997,16 +1247,18 @@ void main() {
       );
       expect(tester.widget<FilledButton>(next).onPressed, isNull);
 
-      await tester.enterText(
-        find.byKey(const ValueKey('behavior-datasource-field')),
-        'nom',
-      );
+      await tester.enterText(sortField, 'nom');
+      await tester.ensureVisible(find.text('Décroissant'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Décroissant'));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('behavior-datasource-error')),
         findsNothing,
       );
+      // Step 2 (action) -> Step 3 (validator) -> Step 4 (summary)
+      await tester.tap(next);
+      await tester.pumpAndSettle();
       await tester.tap(next);
       await tester.pumpAndSettle();
 
@@ -1253,15 +1505,19 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Move to step 1 (catalog)
+        // Move to step 1 (event)
         await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
         await tester.pumpAndSettle();
 
-        // Move to step 2 (settings)
+        // Move to step 2 (action)
         await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
         await tester.pumpAndSettle();
 
-        // Move to step 3 (summary)
+        // Move to step 3 (validator)
+        await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+        await tester.pumpAndSettle();
+
+        // Move to step 4 (summary)
         await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
         await tester.pumpAndSettle();
 
@@ -1784,6 +2040,8 @@ void main() {
     testWidgets(
       'ComponentBehaviorWizard exposes creationDefault on SuperValue and hides it on SuperAction',
       (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
         final appearance = ValueNotifier(
           Appearance(
             components: {
@@ -1833,24 +2091,217 @@ void main() {
           ),
         );
 
-        // Sur SuperValue : creationDefault est proposé.
+        // Sur SuperValue : onCreate et creationDefault sont proposés, ainsi que addArrayItem sur un événement impératif.
         await tester.tap(find.byKey(const ValueKey('open-value-wizard')));
+        await tester.pumpAndSettle();
+        // Step 0 -> Step 1 (event)
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        final onCreateCard = find.byKey(
+          const ValueKey('behavior-event-onCreate'),
+        );
+        await tester.ensureVisible(onCreateCard);
+        await tester.pumpAndSettle();
+        expect(onCreateCard, findsOneWidget);
+
+        // Avec onTap (par défaut), Step 2 expose addArrayItem
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('behavior-catalog-add_array_item')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Ajouter une ligne (JSON Schema)'), findsOneWidget);
+
+        // Retour à Step 1, sélection de onCreate -> Step 2 expose creationDefault
+        await tester.tap(find.text('Précédent'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(onCreateCard);
+        await tester.pumpAndSettle();
+        await tester.tap(onCreateCard);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Suivant'));
         await tester.pumpAndSettle();
-        expect(find.text('Valeur par défaut à la création'), findsOneWidget);
-        expect(find.text('Ajouter une ligne (JSON Schema)'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('behavior-catalog-creation_default')),
+          findsOneWidget,
+        );
+        expect(find.text('Valeur par défaut à la création'), findsWidgets);
 
         await tester.tap(find.text('Annuler'));
         await tester.pumpAndSettle();
 
-        // Sur SuperAction : creationDefault n'est pas proposé.
+        // Sur SuperAction : onCreate et creationDefault ne sont pas proposés.
         await tester.tap(find.byKey(const ValueKey('open-action-wizard')));
         await tester.pumpAndSettle();
+        // Step 0 -> Step 1 (event)
         await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('behavior-event-onCreate')),
+          findsNothing,
+        );
+        // Step 1 (onTap) -> Step 2 (action)
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('behavior-catalog-add_array_item')),
+        );
         await tester.pumpAndSettle();
         expect(find.text('Valeur par défaut à la création'), findsNothing);
         expect(find.text('Ajouter une ligne (JSON Schema)'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'ComponentBehaviorWizard configures event, action and validator end-to-end and supports editing validator',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final appearance = ValueNotifier(
+          Appearance(
+            pageCatalog: EditorPageCatalog(
+              pages: [
+                EditorPageConfig(
+                  id: 'confirm',
+                  name: 'Confirmation',
+                  path: '/confirm',
+                ),
+              ],
+            ),
+            components: {
+              'btn-submit': const SuperActionConfig(label: 'Valider'),
+              'email-input': const SuperValueConfig(
+                label: 'Email',
+                mode: SuperValueMode.input,
+              ),
+              'name-input': const SuperValueConfig(
+                label: 'Nom',
+                mode: SuperValueMode.input,
+              ),
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => ElevatedButton(
+                    key: const ValueKey('open-wizard'),
+                    onPressed: () => showComponentBehaviorEditor(
+                      context: context,
+                      componentId: 'btn-submit',
+                      componentLabel: 'Valider',
+                    ),
+                    child: const Text('Ouvrir Wizard'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        Finder keyed(String key) => find.byKey(ValueKey(key));
+        Future<void> tapKey(String key) async {
+          await tester.ensureVisible(keyed(key));
+          await tester.pumpAndSettle();
+          await tester.tap(keyed(key));
+          await tester.pumpAndSettle();
+        }
+
+        // Open wizard -> Step 0 (target)
+        await tapKey('open-wizard');
+        expect(keyed('behavior-target-btn-submit'), findsOneWidget);
+        await tapKey('behavior-add-next');
+
+        // Step 1 (event): select onDoubleTap
+        await tapKey('behavior-event-onDoubleTap');
+        await tapKey('behavior-add-next');
+
+        // Step 2 (action): select emit_event and configure payload
+        await tapKey('behavior-catalog-emit_event');
+        await tester.ensureVisible(keyed('behavior-event-id'));
+        await tester.pumpAndSettle();
+        await tester.enterText(keyed('behavior-event-id'), 'form.submitted');
+        await tester.ensureVisible(keyed('behavior-event-custom'));
+        await tester.pumpAndSettle();
+        await tester.enterText(keyed('behavior-event-custom'), '{"step":1}');
+        await tester.pumpAndSettle();
+        await tapKey('behavior-add-next');
+
+        // Step 3 (validator): Condition simple -> Autre composant -> email-input (otherIsFill)
+        await tapKey('behavior-validator-mode-simple');
+        await tapKey('behavior-validator-source-component');
+        // Without a targetComponentId, continuing is disabled and an error box is shown
+        expect(
+          tester.widget<FilledButton>(keyed('behavior-add-next')).onPressed,
+          isNull,
+        );
+        expect(keyed('behavior-validator-error'), findsOneWidget);
+
+        await tapKey('behavior-validator-target-option-email-input');
+        expect(keyed('behavior-validator-error'), findsNothing);
+        expect(
+          tester.widget<FilledButton>(keyed('behavior-add-next')).onPressed,
+          isNotNull,
+        );
+        await tapKey('behavior-add-next');
+
+        // Step 4 (summary): check summary & apply
+        expect(find.text('Double-clic (onDoubleTap)'), findsOneWidget);
+        expect(find.text('« email-input » est rempli'), findsOneWidget);
+        expect(find.text('form.submitted'), findsWidgets);
+        await tapKey('behavior-add-submit');
+
+        final saved = appearance.value.behaviorsFor('btn-submit').single;
+        expect(saved.event, BehaviorEvent.onDoubleTap);
+        expect(
+          saved.validator,
+          const ValueBehaviorValidator.otherIsFill('email-input'),
+        );
+        expect(
+          saved.action,
+          EmitEventAction(eventId: 'form.submitted', custom: {'step': 1}),
+        );
+
+        // Edit the existing behavior and update its validator target to name-input
+        await tapKey('open-wizard');
+        await tapKey('behavior-edit-${saved.id}');
+        // Step 1 (event) -> Step 2 (action) -> Step 3 (validator)
+        await tapKey('behavior-add-next');
+        await tapKey('behavior-add-next');
+        expect(
+          tester
+              .widget<TextField>(keyed('behavior-validator-target'))
+              .controller!
+              .text,
+          'email-input',
+        );
+        await tester.ensureVisible(keyed('behavior-validator-target'));
+        await tester.pumpAndSettle();
+        await tester.enterText(keyed('behavior-validator-target'), '');
+        await tester.pumpAndSettle();
+        await tapKey('behavior-validator-target-option-name-input');
+        await tapKey('behavior-add-next');
+        expect(find.text('« name-input » est rempli'), findsOneWidget);
+        await tapKey('behavior-add-submit');
+
+        final updated = appearance.value.behaviorsFor('btn-submit').single;
+        expect(updated.id, saved.id);
+        expect(updated.event, BehaviorEvent.onDoubleTap);
+        expect(
+          updated.validator,
+          const ValueBehaviorValidator.otherIsFill('name-input'),
+        );
+        expect(
+          updated.action,
+          EmitEventAction(eventId: 'form.submitted', custom: {'step': 1}),
+        );
       },
     );
   });

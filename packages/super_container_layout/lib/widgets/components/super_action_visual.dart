@@ -6,16 +6,18 @@
 /// [SuperTab] et l'aperçu de l'éditeur.
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/theme_color.dart';
 
 import '../../models/component_behavior.dart';
 import '../../models/super_action_config.dart';
+import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/style_extras.dart';
 import '../surfaces/styled_surface.dart';
-import '../appearance/appearance_scope.dart';
 
 /// Construit le rendu visuel d'un [SuperAction] (partagé entre le widget
 /// runtime et l'aperçu de l'éditeur).
@@ -545,8 +547,8 @@ class SuperActionNavigationScope extends InheritedWidget {
       part != oldWidget.part || selected != oldWidget.selected;
 }
 
-/// Executes [onPressed] and enabled click actions for [id].
-/// Event actions are observed separately by the slot without consuming gestures.
+/// Exécute [onPressed] puis répartit tous les comportements `onTap` activés
+/// pour [id] via [BehaviorDispatcher.dispatch] (incluant validateurs et gardes).
 void executeSuperActionClick(
   BuildContext context,
   String id, {
@@ -554,15 +556,13 @@ void executeSuperActionClick(
   List<ComponentBehavior>? behaviours,
 }) {
   onPressed?.call();
-  final appearance =
-      AppearanceScope.controllerOf(context)?.value ??
-      AppearanceScope.of(context);
-  final behaviors = behaviours ?? appearance.behaviorsFor(id);
-  for (final behavior in behaviors) {
-    if (behavior.enabled &&
-        behavior.trigger == BehaviorTrigger.click &&
-        behavior.action is! EmitEventAction) {
-      behavior.execute(context);
-    }
-  }
+  unawaited(
+    BehaviorDispatcher.dispatch(
+      context,
+      componentId: id,
+      componentType: 'action',
+      event: BehaviorEvent.onTap,
+      behaviors: behaviours,
+    ),
+  );
 }

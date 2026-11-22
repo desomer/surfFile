@@ -42,7 +42,7 @@
 	setRepositoryStoreContext(repoStore);
 
 	const player = untrack(
-		() => new PlayerRuntimeState(initialAppearance, currentPath, onNavigate)
+		() => new PlayerRuntimeState(initialAppearance, currentPath, onNavigate, repoStore)
 	);
 	setPlayerRuntimeContext(player);
 

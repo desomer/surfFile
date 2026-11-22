@@ -369,6 +369,8 @@ class _SuperActionState extends State<SuperAction>
               id: widget.id,
               exportConfig: () => configuration.value,
               behaviors: widget.behaviours,
+              eventComponentType: 'action',
+              handlesTapExternally: true,
               label: 'Action',
               menuType: 'Action',
               menuTooltip: () => formatSuperActionTooltip(
@@ -390,6 +392,8 @@ class _SuperActionState extends State<SuperAction>
               id: widget.id,
               exportConfig: () => configuration.value,
               behaviors: widget.behaviours,
+              eventComponentType: 'action',
+              handlesTapExternally: true,
               label: 'Action',
               menuType: 'Action',
               menuTooltip: () => formatSuperActionTooltip(
@@ -412,6 +416,8 @@ class _SuperActionState extends State<SuperAction>
             id: widget.id,
             exportConfig: () => configuration.value,
             behaviors: widget.behaviours,
+            eventComponentType: 'action',
+            handlesTapExternally: true,
             label: 'Action',
             menuType: 'Action',
             menuTooltip: () => formatSuperActionTooltip(

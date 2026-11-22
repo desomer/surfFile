@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **326 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **333 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -32,7 +32,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"treeView"` → `SuperTreeViewConfig`
      - `"table"` → `SuperTableConfig`
      - Extensions externes enregistrées via `SuperComponentExtension` / `ComponentConfigCatalog.register` (ex: `"chart"` → `SuperChartConfig` dans le package `super_container_extensions`)
-   - `behaviors` : `Map<String, List<ComponentBehavior>>` (navigation `GoToPageAction` au clic, ou `EmitEventAction` au clic/double-clic).
+   - `behaviors` : `Map<String, List<ComponentBehavior>>` (architecture à 3 paramètres : événement déclencheur `BehaviorEvent`, validateur conditionnel optionnel `BehaviorValidator` et action polymorphe `BehaviorAction` parmi 7 actions impératives et 4 actions déclaratives/réactives, orchestrés par `BehaviorDispatcher`, `BehaviorValidatorEvaluator` et `ComponentRuntimeValueRegistry`).
    - `usages` : `Map<String, ComponentUsage>` (usage déclaré d'une instance depuis le dialogue Renommer : explication traduite avec clé ARB, données dynamiques/statiques, saisie, action, mise en page, décoration, retour d'état). Métadonnée d'édition transférée avec le groupe `layouts`, exposée à l'IA (`exportCompactAi` / `exportScopedAi`) qui peut en proposer uniquement pour les composants sans liaison (`ComponentConfig.referencedBindings` vide, garanti par `applyVibe`), copiée par `EditorPageGraph.export`/`duplicate` et nettoyée à la suppression.
    - `pageCatalog` : `EditorPageCatalog` (liste des pages routées et `homePageId`).
    - `repositories` : `List<JsonRepositoryDocument>` (sources de données JSON réactives).
@@ -152,7 +152,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 324 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 333 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -176,21 +176,23 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `ai/vibe_speech_to_text.dart` | `VibeSpeechTranscriber`, `DefaultVibeSpeechTranscriber`, `VibeSpeechSession`, `ControllableVibeSpeechSession`, `VibeSpeechState`, `VibeAudioWavEncoder`, `VibeSpeechTextInsertion` : capture vocale microphone sous Windows (`winmm.dll` via `dart:ffi`) avec détection automatique de silence (VAD), encodage WAV PCM 16 kHz et transcription Speech-to-Text via Gemini Audio (`transcribeSpeechWithGemini`) ou repli local Windows (`System.Speech`). |
 | `ai/vibe_stream_parser.dart` | `VibeIncrementalStreamParser`, `VibeStreamSnapshot` : automate d'analyse JSON incrémentale caractère par caractère extrayant en temps réel le champ `"message"`, les entrées complètes de `"repositories"` (`partialRepositoriesPatch`, `repositoriesRevision`, `hasRepositoriesObject`), le patch `"vibe"` (`partialVibePatch`, `patchRevision`, `hasVibeObject`, nombre de composants), `hasPlanObject` et `hasAskUserObject`. |
 
-### 3.3. Modèles de données (`lib/models/` — 58 fichiers)
+### 3.3. Modèles de données (`lib/models/` — 60 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
-| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `BehaviorActionCatalog`, `BehaviorCatalogItem`, `BehaviorCatalog` : socle des comportements, catalogue polymorphe et réexport des actions (`models/behaviours/`). |
+| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorEvent` (alias `BehaviorTrigger`), `BehaviorValidator`, `BehaviorAction`, `BehaviorExecutionData`, `BehaviorActionCatalog`, `BehaviorCatalogItem`, `BehaviorCatalog` : socle à 3 paramètres (événement, validateur optionnel, action), catalogue polymorphe et réexport des éléments de `models/behaviours/`. |
 | `models/component_usage.dart` | `ComponentUsageKind`, `ComponentUsage` : usage déclaré d'une instance (8 types, saisi dans Renommer ou proposé par l'IA pour les composants sans liaison) avec clé de traduction ARB obligatoire pour `explanation`, validation stricte et suggestion lowerCamelCase depuis le nom. |
-| `models/behaviours/datasource_action.dart` | `DatasourceAction` : lance une commande de datasource (recherche, pagination, tri, CRUD) au clic ou double-clic (`datasource`). |
-| `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` (`click`, `doubleClick`). |
-| `models/behaviours/generate_pdf_action.dart` | `GeneratePdfAction`, `PdfOutputMode` : génération d'un document PDF hybride depuis une page A4 (`generatePdf`, `click` / `doubleClick`). |
-| `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
-| `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement (`searchProvider`). |
-| `models/behaviours/run_javascript_action.dart` | `RunJavaScriptAction` : exécute un script au clic/double-clic et délègue ses écritures contrôlées au store (`runJavaScript`), sans écriture sur `@calcul`. |
-| `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`binding`). |
-| `models/behaviours/tooltip_action.dart` | `TooltipAction` : info-bulle déclarative fixe ou liée à un repository JSON (`onTooltip`, `hover`). |
-| `models/behaviours/zone_size_binding_action.dart` | `ZoneSizeBindingAction`, `BehaviorCurve` : liaison réactive et animée de la taille d'une zone de `SuperLayout` (`binding`). |
+| `models/behaviours/behavior_event.dart` | `BehaviorEvent` (alias `BehaviorTrigger`), `BehaviorEventCategory` : événements déclencheurs impératifs (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) et déclaratifs (`onHover`, `onBinding`, `onCreate`), avec rétrocompatibilité JSON des noms historiques. |
+| `models/behaviours/behavior_validator.dart` | `BehaviorValidator`, `ValueBehaviorValidator`, `BehaviorValueSource`, `BehaviorValidatorOperator`, `AllBehaviorValidator`, `AnyBehaviorValidator`, `NotBehaviorValidator`, `BehaviorValidatorCatalog` : conditions de garde polymorphes évaluées sur le composant courant (`self`), un autre composant (`component`), une liaison repository (`binding`) ou des composites logiques (`all`, `any`, `not`). |
+| `models/behaviours/datasource_action.dart` | `DatasourceAction` : lance une commande de datasource (recherche, pagination, tri, CRUD) sur tout événement impératif (`datasource`). |
+| `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` sur tout événement impératif (`emitEvent`). |
+| `models/behaviours/generate_pdf_action.dart` | `GeneratePdfAction`, `PdfOutputMode` : génération d'un document PDF hybride depuis une page A4 sur tout événement impératif (`generatePdf`). |
+| `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée sur tout événement impératif (`goToPage`). |
+| `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement sur tout événement impératif (`searchProvider`). |
+| `models/behaviours/run_javascript_action.dart` | `RunJavaScriptAction` : exécute un script sur tout événement impératif et délègue ses écritures contrôlées au store (`runJavaScript`), sans écriture sur `@calcul`. |
+| `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`onBinding`). |
+| `models/behaviours/tooltip_action.dart` | `TooltipAction` : info-bulle déclarative fixe ou liée à un repository JSON (`onTooltip`, `onHover`). |
+| `models/behaviours/zone_size_binding_action.dart` | `ZoneSizeBindingAction`, `BehaviorCurve` : liaison réactive et animée de la taille d'une zone de `SuperLayout` (`onBinding`). |
 | `models/datasources/datasource_config.dart` | `DatasourceConfig`, `DatasourceSearchConfig`, `DatasourceSort`, `DatasourceSortOrder`, `DatasourceCreateConfig`, `DatasourceEntityConfig`, `DatasourceOperation`, `DatasourceCommand`, `DatasourceSortDirection`, `DatasourceInsert` : définition immuable et validée d'une datasource Search / CRUD. |
 | `models/datasources/datasource_pagination.dart` | `DatasourcePagination`, `DatasourcePaginationMode`, `validateDatasourcePath` : pagination par page, position ou curseur et chemins de total / curseur suivant. |
 | `models/datasources/datasource_state.dart` | `DatasourcePageState`, `DatasourceStatus` : état de recherche écrit dans `search.state` et état observable d'une datasource. |
@@ -265,9 +267,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
 
-### 3.5. Services (`lib/services/` — 43 fichiers)
+### 3.5. Services (`lib/services/` — 46 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
+| `services/behaviors/behavior_dispatcher.dart` | `BehaviorDispatcher` : point d'entrée unifié de déclenchement des comportements impératifs (garde hors édition, protection anti-boucle, évaluation du `BehaviorValidator` puis exécution des `BehaviorAction`). |
+| `services/behaviors/behavior_validator_evaluator.dart` | `BehaviorValidatorEvaluator` : évaluation runtime récursive des `BehaviorValidator` (`self`, `component` via `ComponentRuntimeValueRegistry`, `binding` via `JsonListScope`/`JsonRepositoryStore`, et composites `all`/`any`/`not`) avec sémantique `isEmpty`/`isFill`, comparaisons et validité native. |
+| `services/behaviors/component_runtime_value_registry.dart` | `ComponentRuntimeValueRegistry` : registre runtime permettant aux composants montés (`SuperValue`, collections, etc.) d'exposer leur valeur courante et leur état de validation aux validateurs de comportements (notamment les règles `other*`). |
 | `services/diagnostics/debug_entry.dart` | `DebugEntry`, `DebugEntryType`, `debugEntries`, `saveLog`, `saveError` : tampon circulaire en mémoire (plafonné à 1000 entrées) pour les journaux `print`/`debugPrint` et erreurs `FlutterError` / `runZonedGuarded`. |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
 | `services/appearance/appearance_store.dart` | `AppearanceStore`, `PersistentAppearanceController`, `AppearanceServicesScope` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`), contrôleur persistant avec hydratation à la demande (`ensurePageLoaded`, `ensureAllPagesLoaded`). |
@@ -387,7 +392,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/zone_interactions.dart` | Cibles de glisser-déposer (`DragTarget`) et retour visuel lors du déplacement de slots ou de zones. |
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
-### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 118 fichiers)
+### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 120 fichiers)
 
 Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
 expose `EditorNumberField` : badge cliquable et popup numérique ancré.
@@ -422,7 +427,9 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/ai/vibe_delta_recovery.dart` | `VibeDeltaRecovery`, `VibeSalvageOutcome` : récupération incrémentale des composants, styles, comportements, usages et repositories valides déjà streamés lorsqu'une tentative échoue (erreur de schéma, contrat de région, troncature JSON ou composant détaché), construction du prompt de relance delta ciblé et nettoyage final des brouillons non rattachés. |
 | `widgets/editing/ai/vibe_plan_card.dart` | `VibePlanCard` : carte interactive affichant les lots d'un `VibeExecutionPlan`, leur progression et les actions (`Exécuter les lots`, `Annuler`, `Arrêter`, `Réessayer ce lot`, `Ignorer ce lot`). |
 | `widgets/editing/ai/vibe_repository_applier.dart` | `VibeRepositoryPromptFormatter`, `VibeRepositoryPatchValidator`, `VibeRepositoryApplier`, `VibeRepositoryTurnTransaction`, `VibeRepositoryPatchEntry`, `VibeRepositoryPatchMode`, `rewriteVibePatchRepositoryAliases` : formatage borné de `REPOSITORIES DISPONIBLES` (données et `jsonSchema`), validation stricte des patches `"repositories"` (`merge`/`replace`, `"jsonSchema"`, interdiction du préfixe `@` et des caractères réservés de `JsonAttributePath`), réécriture des alias `snake_case` vers leurs identifiants 32 hex dans `"vibe"`, suivi transactionnel des schémas modifiés via outil (`applyJsonSchemaFromTool`, `assertAllSchemasValid`) et transaction idempotente SSE/finale avec `rollback()` et callbacks Undo/Redo. |
-| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, scripts JavaScript contrôlés, taille liée, info-bulle, recherche de provider et commande de datasource. |
+| `widgets/editing/behaviors/behavior_event_picker.dart` | `BehaviorEventPicker` : sélecteur catégorisé d'événement déclencheur (`BehaviorEvent` par `BehaviorEventCategory`) mettant en avant les événements recommandés pour le type de composant édité. |
+| `widgets/editing/behaviors/behavior_validator_editor.dart` | `BehaviorValidatorEditor` : éditeur visuel des conditions de garde (`BehaviorValidator` : source `self`/`component`/`binding`, opérateur, valeur attendue et composites `all`/`any`/`not`). |
+| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements à 3 paramètres (événement, validateur optionnel, action) couvrant navigation, événements, scripts JavaScript contrôlés, taille liée, état lié, info-bulle, recherche de provider, commande de datasource, génération PDF et création de ligne. |
 | `widgets/editing/behaviors/datasource_action_settings.dart` | `DatasourceActionSettings`, `DatasourceActionDraft` : sélection de la datasource, de la commande et du tri pour l'action `datasource`, avec accès au gestionnaire. |
 | `widgets/editing/behaviors/search_provider_settings.dart` | `SearchProviderSettings` : sélection d'un provider pour l'action `searchProvider`, avec accès au gestionnaire. |
 | `widgets/editing/components/native_component_editor.dart` | Point d'entrée public de l'éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
@@ -523,4 +530,5 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | **Ajouter ou modifier un provider / une recherche d'API** | `lib/models/providers/` → `lib/services/providers/` → `lib/models/behaviours/search_provider_action.dart` → `lib/widgets/editing/providers/` & `lib/widgets/editing/behaviors/search_provider_settings.dart` |
 | **Ajouter ou modifier une datasource Search / CRUD** | `lib/models/datasources/` → `lib/services/datasources/datasource_registry.dart` → `lib/models/behaviours/datasource_action.dart` → `lib/widgets/editing/datasources/` & `lib/widgets/editing/behaviors/datasource_action_settings.dart` |
 | **Modifier l'import/export JSON, le client Gemini, le catalogue `DESIGN.md` ou l'application d'un patch Vibe IA** | `lib/ai/gemini_rest_client.dart` → `lib/ai/call_gemini.dart` → `lib/ai/design_system_catalog.dart` & `lib/ai/design_md_parser.dart` → `lib/ai/vibe_ask_user.dart` → `lib/ai/vibe_stream_parser.dart` → `lib/services/appearance/appearance_codec.dart` & `default_appearance_codec.dart` → `lib/services/appearance/appearance_transfer.dart` → `lib/widgets/editing/ai/vibe_repository_applier.dart`, `design_system_catalog_dialog.dart`, `design_system_preview_card.dart` & `vibe_chat_dialog.dart` → `SCREEN_JSON_AI_GUIDE.md` & `REPOSITORY_JSON_AI_GUIDE.md` |
+| **Ajouter ou modifier un événement, validateur ou action de comportement** | `lib/models/behaviours/behavior_event.dart`, `behavior_validator.dart` & `lib/models/component_behavior.dart` → `lib/services/behaviors/` (`component_runtime_value_registry.dart`, `behavior_validator_evaluator.dart`, `behavior_dispatcher.dart`) → `lib/widgets/editing/behaviors/` (`component_behavior_editor.dart`, `behavior_event_picker.dart`, `behavior_validator_editor.dart`) → `SCREEN_JSON_AI_GUIDE.md` |
 | **Modifier la sélection, le glisser-déposer ou le redimensionnement en édition** | `lib/widgets/components/super_layout/layout_selection.dart` → `lib/widgets/components/super_layout/layout_view.dart` → `lib/widgets/editing/slots/editor_slot.dart` → `lib/widgets/editing/overlay/editor_resize_handle.dart` |

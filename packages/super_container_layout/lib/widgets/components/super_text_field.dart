@@ -174,6 +174,7 @@ class SuperTextField extends StatefulWidget {
     this.errorIndicatorKey,
     this.style,
     this.onChanged,
+    this.onSubmitted,
     this.enabled,
     this.readOnly,
     this.enableContextMenu = true,
@@ -191,6 +192,7 @@ class SuperTextField extends StatefulWidget {
   final Key? errorIndicatorKey;
   final TextStyle? style;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
   final bool? enabled, readOnly;
   final bool enableContextMenu;
   final String? bindingError;
@@ -583,6 +585,7 @@ class _SuperTextFieldState extends State<SuperTextField> {
         floatingLabelBehavior: field.floatingLabel,
       ),
       onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
     );
     final isOutlined =
         field.variant == TextFieldVariant.outlined ||

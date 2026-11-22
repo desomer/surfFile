@@ -500,7 +500,7 @@ abstract final class EditorPageGraph {
         behaviors: {
           for (final entry in snapshot.behaviors.entries)
             if (ids.contains(entry.key) || auxiliary.contains(entry.key))
-              remap(entry.key): entry.value,
+              remap(entry.key): _remapBehaviorList(entry.value, renamed),
         },
         usages: {
           for (final entry in snapshot.usages.entries)
@@ -534,7 +534,8 @@ abstract final class EditorPageGraph {
 
   /// Copies the graph of [sourcePageId] under [targetPageId] with new,
   /// unique instance IDs. The page catalog is left unchanged. Declared
-  /// usages (`Appearance.usages`) follow the copied instances.
+  /// usages (`Appearance.usages`) and behaviors (`Appearance.behaviors`,
+  /// with validator target IDs remapped) follow the copied instances.
   ///
   /// Throws a [FormatException] without changing anything when the graph
   /// contains a component without duplication contract, an unknown
@@ -670,6 +671,22 @@ abstract final class EditorPageGraph {
       }
       copies[refs[ref]!] = copy;
     }
+    final behaviorIdMap = <String, String>{
+      ...ids,
+      for (final MapEntry(key: source, value: target) in ids.entries)
+        if (source != target) ...{
+          if (!ids.containsKey('$source:item')) '$source:item': '$target:item',
+          if (!ids.containsKey('$source:layout'))
+            '$source:layout': '$target:layout',
+        },
+    };
+    final behaviorCopies = <String, List<ComponentBehavior>>{
+      for (final MapEntry(key: source, value: target) in behaviorIdMap.entries)
+        if (source != target)
+          if (appearance.behaviors[source] case final list?
+              when list.isNotEmpty)
+            target: _remapBehaviorList(list, behaviorIdMap),
+    };
     return _write(
       appearance,
       copies: copies,
@@ -677,6 +694,7 @@ abstract final class EditorPageGraph {
         for (final MapEntry(key: source, value: target) in ids.entries)
           if (source != target) target: source,
       },
+      behaviorCopies: behaviorCopies,
     );
   }
 
@@ -1409,12 +1427,30 @@ Object _copy(Object value, String Function(String) remap) {
   return value;
 }
 
+/// Remappe les identifiants de composants ciblés dans les validateurs d'une
+/// liste de [ComponentBehavior].
+List<ComponentBehavior> _remapBehaviorList(
+  List<ComponentBehavior> behaviors,
+  Map<String, String> idMap,
+) {
+  if (idMap.isEmpty || behaviors.isEmpty) return behaviors;
+  var changed = false;
+  final mapped = <ComponentBehavior>[];
+  for (final behavior in behaviors) {
+    final next = behavior.remapComponentIds(idMap);
+    if (!identical(next, behavior)) changed = true;
+    mapped.add(next);
+  }
+  return changed ? List<ComponentBehavior>.unmodifiable(mapped) : behaviors;
+}
+
 Appearance _write(
   Appearance appearance, {
   Map<EditorConfigRef, Object> copies = const {},
   Set<EditorConfigRef> removed = const {},
   Map<String, String> usageCopies = const {},
   Set<String> usageDrops = const {},
+  Map<String, List<ComponentBehavior>> behaviorCopies = const {},
 }) {
   final styleDrop = {
     for (final ref in removed)
@@ -1469,9 +1505,35 @@ Appearance _write(
           ..removeWhere((id, _) => dropped.contains(id))
           ..addAll(usageAdd));
 
+  // Les comportements suivent les instances : copiés (avec remapping des
+  // cibles de validateurs) et retirés lorsque l'instance n'existe plus.
+  final effectiveComponents = nextComponents ?? appearance.components;
+  final effectiveStyles = nextStyles ?? appearance.styles;
+  final behaviorDrop = <String>{
+    for (final id in {...compDrop, ...styleDrop, ...usageDrops})
+      if (!effectiveComponents.containsKey(id) &&
+          !effectiveStyles.containsKey(id)) ...[
+        id,
+        if (!effectiveComponents.containsKey('$id:item') &&
+            !effectiveStyles.containsKey('$id:item'))
+          '$id:item',
+        if (!effectiveComponents.containsKey('$id:layout') &&
+            !effectiveStyles.containsKey('$id:layout'))
+          '$id:layout',
+      ],
+  };
+  final nextBehaviors =
+      behaviorCopies.isEmpty &&
+          !appearance.behaviors.keys.any(behaviorDrop.contains)
+      ? null
+      : ({...appearance.behaviors}
+          ..removeWhere((id, _) => behaviorDrop.contains(id))
+          ..addAll(behaviorCopies));
+
   return appearance.copyWith(
     styles: nextStyles,
     components: nextComponents,
+    behaviors: nextBehaviors,
     usages: nextUsages,
   );
 }

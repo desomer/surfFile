@@ -1,6 +1,10 @@
 /// Éditeur des comportements interactifs ([ComponentBehaviorWizard]) d'un composant.
 ///
-/// Permet d'ajouter ou modifier des déclencheurs ([BehaviorTrigger]) et actions ([GoToPageAction]).
+/// Permet d'ajouter, activer/désactiver, modifier ou supprimer des comportements
+/// ([ComponentBehavior]) organisés autour de leurs 3 paramètres explicites :
+/// 1. Événement déclencheur ([BehaviorEvent]) ;
+/// 2. Action à exécuter ([BehaviorAction]) ;
+/// 3. Validateur optionnel ([BehaviorValidator]).
 library;
 
 import 'dart:convert';
@@ -9,16 +13,24 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../../models/component_behavior.dart';
+import '../../../models/component_config.dart';
 import '../../../models/datasources/datasource_config.dart';
 import '../../../models/editor_page_config.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../models/native_component_config.dart';
+import '../../../models/super_action_config.dart';
+import '../../../models/super_conditional_config.dart';
 import '../../../models/super_layout_config.dart';
+import '../../../models/super_tab_config.dart';
+import '../../../models/super_table_config.dart';
+import '../../../models/super_tree_view_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_schema_field_resolver.dart';
 import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
+import '../../appearance/appearance_scope.dart';
 import '../../components/super_layout/super_layout.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
@@ -26,13 +38,18 @@ import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
+import 'behavior_event_picker.dart';
+import 'behavior_validator_editor.dart';
 import 'datasource_action_settings.dart';
 import 'search_provider_settings.dart';
-import '../../appearance/appearance_scope.dart';
 
-/// Element cible pouvant recevoir un comportement.
+export 'behavior_event_picker.dart';
+export 'behavior_validator_editor.dart';
+
+/// Élément cible pouvant recevoir un comportement.
 @immutable
 class BehaviorTargetElement implements EditorTargetItem {
+  /// Crée une cible de comportement pour l'assistant.
   const BehaviorTargetElement({
     required this.id,
     required this.label,
@@ -52,17 +69,31 @@ class BehaviorTargetElement implements EditorTargetItem {
   final IconData? icon;
   @override
   final int depth;
+
+  /// Comportements déjà associés à cet élément.
   final List<ComponentBehavior> existingBehaviors;
 }
 
-/// Etapes du wizard d'ajout de comportement.
+/// Étapes du wizard d'ajout et d'édition de comportement.
 enum BehaviorWizardStage {
-  target('Element'),
-  catalog('Comportement'),
-  settings('Configuration'),
-  summary('Recapitulatif');
+  /// Étape 1 : sélection du composant cible et gestion des comportements existants.
+  target('Élément'),
+
+  /// Étape 2 : choix de l'événement déclencheur ([BehaviorEvent]).
+  event('Événement'),
+
+  /// Étape 3 : choix et paramétrage de l'action ([BehaviorAction]).
+  action('Action'),
+
+  /// Étape 4 : configuration du validateur conditionnel ([BehaviorValidator]).
+  validator('Validateur'),
+
+  /// Étape 5 : récapitulatif complet avant application.
+  summary('Récapitulatif');
 
   const BehaviorWizardStage(this.title);
+
+  /// Libellé français affiché dans le bandeau du stepper.
   final String title;
 }
 
@@ -75,7 +106,7 @@ Future<ComponentBehavior?> showComponentBehaviorWizard({
   String keyPrefix = 'behavior',
 }) async {
   if (targets.isEmpty) return null;
-  final widthNotifier = ValueNotifier(640.0);
+  final widthNotifier = ValueNotifier(680.0);
   try {
     return await showEditorDialog<ComponentBehavior>(
       context: context,
@@ -141,8 +172,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   late BehaviorTargetElement _selectedTarget;
   ComponentBehavior? _editing;
   String? _saveError;
+  BehaviorEvent _selectedEvent = BehaviorEvent.onTap;
   BehaviorCatalogItem _selectedCatalogItem = BehaviorCatalog.goToPage;
-  BehaviorTrigger _gestureTrigger = BehaviorTrigger.click;
+  BehaviorValidator? _validator;
+  bool _validatorValid = true;
   final _eventIdController = TextEditingController();
   final _customJsonController = TextEditingController(text: '{}');
   String? _selectedPageId;
@@ -218,12 +251,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   BehaviorWizardStage get _stage => BehaviorWizardStage.values[_step];
 
-  bool get _usesGesture =>
-      BehaviorTrigger.gestures.contains(_selectedCatalogItem.trigger);
-  BehaviorTrigger get _trigger =>
-      _usesGesture ? _gestureTrigger : _selectedCatalogItem.trigger;
-  int get _firstStep =>
-      _editing == null ? 0 : BehaviorWizardStage.catalog.index;
+  int get _firstStep => _editing == null ? 0 : BehaviorWizardStage.event.index;
 
   BehaviorCatalogItem? _editorFor(BehaviorAction action) => switch (action) {
     GoToPageAction() => BehaviorCatalog.goToPage,
@@ -243,11 +271,12 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   void _editBehavior(ComponentBehavior behavior, BehaviorCatalogItem item) {
     setState(() {
       _editing = behavior;
+      _saveError = null;
+      _selectedEvent = behavior.event;
+      _validator = behavior.validator;
+      _validatorValid = true;
       _selectedCatalogItem = item;
-      _step = BehaviorWizardStage.settings.index;
-      _gestureTrigger = BehaviorTrigger.gestures.contains(behavior.trigger)
-          ? behavior.trigger
-          : BehaviorTrigger.click;
+      _step = BehaviorWizardStage.event.index;
       switch (behavior.action) {
         case GoToPageAction a:
           _customPath = a.pageId == null;
@@ -355,9 +384,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   bool _isLayoutTarget(BehaviorTargetElement target) {
     final slot = target.slot;
-    return slot != null &&
+    if (slot != null &&
         slot.mounted &&
-        slot.widget.eventComponentType == 'layout';
+        slot.widget.eventComponentType == 'layout') {
+      return true;
+    }
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    return appearance?.components[target.id] is SuperLayoutConfig;
   }
 
   bool _isValueTarget(BehaviorTargetElement target) {
@@ -371,15 +404,63 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     return appearance?.components[target.id] is SuperValueConfig;
   }
 
-  List<BehaviorCatalogItem> get _catalogItems => [
+  String? _componentTypeFor(BehaviorTargetElement target) {
+    final slot = target.slot;
+    if (slot != null &&
+        slot.mounted &&
+        slot.widget.eventComponentType.isNotEmpty &&
+        slot.widget.eventComponentType != 'component') {
+      return slot.widget.eventComponentType;
+    }
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final config = appearance?.components[target.id];
+    if (config != null) return config.componentType;
+    return null;
+  }
+
+  List<BehaviorCatalogItem> _catalogItemsFor(
+    BehaviorEvent event,
+    BehaviorTargetElement target,
+  ) => [
     for (final item in BehaviorCatalog.items)
-      if (_editing?.action.type == item.actionType ||
-          ((item.actionType != 'bindZoneSize' ||
-                  _isLayoutTarget(_selectedTarget)) &&
-              (item.actionType != 'creationDefault' ||
-                  _isValueTarget(_selectedTarget))))
+      if (item.supportsEvent(event) &&
+          ((_editing?.action.type == item.actionType &&
+                  _editing?.event == event) ||
+              ((item.actionType != 'bindZoneSize' || _isLayoutTarget(target)) &&
+                  (item.actionType != 'creationDefault' ||
+                      _isValueTarget(target)))))
         item,
   ];
+
+  List<BehaviorCatalogItem> get _compatibleCatalogItems =>
+      _catalogItemsFor(_selectedEvent, _selectedTarget);
+
+  void _onEventSelected(BehaviorEvent event) {
+    setState(() {
+      _selectedEvent = event;
+      final compatible = _catalogItemsFor(event, _selectedTarget);
+      if (compatible.isNotEmpty &&
+          (!_selectedCatalogItem.supportsEvent(event) ||
+              !compatible.any((item) => item.id == _selectedCatalogItem.id))) {
+        _selectedCatalogItem = compatible.first;
+      }
+    });
+  }
+
+  void _onTargetSelected(BehaviorTargetElement target) {
+    setState(() {
+      _selectedTarget = target;
+      _saveError = null;
+      if (_selectedEvent == BehaviorEvent.onCreate && !_isValueTarget(target)) {
+        _selectedEvent = BehaviorEvent.onTap;
+      }
+      final compatible = _catalogItemsFor(_selectedEvent, target);
+      if (compatible.isNotEmpty &&
+          !compatible.any((item) => item.id == _selectedCatalogItem.id)) {
+        _selectedCatalogItem = compatible.first;
+      }
+    });
+  }
 
   JsonTextBinding? get _targetValueBinding {
     final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
@@ -466,35 +547,37 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     }
   }
 
+  bool get _isActionSettingsValid => _isTooltip
+      ? _tooltipError == null
+      : _isSearchProvider
+      ? _selectedProviderId != null
+      : _isDatasource
+      ? _datasourceAction != null
+      : _isGeneratePdf
+      ? true
+      : _isAddArrayItem
+      ? _addArrayBinding != null &&
+            _addArrayBinding!.path.trim().isNotEmpty &&
+            !JsonTextBinding.isCalculatedPath(_addArrayBinding!.path)
+      : _isCreationDefault
+      ? _effectiveCreationDefaultBinding != null
+      : _isJavaScriptAction
+      ? _isJavaScriptActionValid
+      : _isBindState
+      ? _stateBinding != null
+      : _isZoneSize
+      ? _zoneBinding != null && _durationMs != null
+      : _isEvent
+      ? _eventIdController.text.trim().isNotEmpty && _customJsonError == null
+      : (!_customPath ? _selectedPagePath != null : _isCustomPathValid);
+
   bool get _canContinue => switch (_stage) {
     BehaviorWizardStage.target => true,
-    BehaviorWizardStage.catalog => true,
-    BehaviorWizardStage.settings =>
-      _isTooltip
-          ? _tooltipError == null
-          : _isSearchProvider
-          ? _selectedProviderId != null
-          : _isDatasource
-          ? _datasourceAction != null
-          : _isGeneratePdf
-          ? true
-          : _isAddArrayItem
-          ? _addArrayBinding != null &&
-                _addArrayBinding!.path.trim().isNotEmpty &&
-                !JsonTextBinding.isCalculatedPath(_addArrayBinding!.path)
-          : _isCreationDefault
-          ? _effectiveCreationDefaultBinding != null
-          : _isJavaScriptAction
-          ? _isJavaScriptActionValid
-          : _isBindState
-          ? _stateBinding != null
-          : _isZoneSize
-          ? _zoneBinding != null && _durationMs != null
-          : _isEvent
-          ? _eventIdController.text.trim().isNotEmpty &&
-                _customJsonError == null
-          : (!_customPath ? _selectedPagePath != null : _isCustomPathValid),
-    BehaviorWizardStage.summary => true,
+    BehaviorWizardStage.event => _compatibleCatalogItems.isNotEmpty,
+    BehaviorWizardStage.action =>
+      _compatibleCatalogItems.isNotEmpty && _isActionSettingsValid,
+    BehaviorWizardStage.validator => _validatorValid,
+    BehaviorWizardStage.summary => _isActionSettingsValid && _validatorValid,
   };
 
   bool get _isCustomPathValid {
@@ -529,12 +612,12 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     if (_step > _firstStep) setState(() => _step--);
   }
 
-  void _apply() {
+  BehaviorAction _buildDraftAction() {
     final path = _customPath
         ? _customPathController.text.trim()
         : (_selectedPagePath ?? '/');
 
-    final BehaviorAction action = _isTooltip
+    return _isTooltip
         ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
         : _isSearchProvider
         ? SearchProviderAction(providerId: _selectedProviderId!)
@@ -593,13 +676,25 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             pageId: _customPath ? null : _selectedPageId,
             pageName: _customPath ? null : _selectedPageName,
           );
+  }
 
-    final behavior = ComponentBehavior(
-      id: _editing?.id ?? 'behavior-${shortid.generate()}',
-      enabled: _editing?.enabled ?? true,
-      trigger: _trigger,
-      action: action,
-    );
+  void _apply() {
+    final BehaviorAction action;
+    final ComponentBehavior behavior;
+    try {
+      action = _buildDraftAction();
+      behavior = ComponentBehavior(
+        id: _editing?.id ?? 'behavior-${shortid.generate()}',
+        event: _selectedEvent,
+        action: action,
+        validator: _validator,
+        enabled: _editing?.enabled ?? true,
+      );
+      behavior.validate();
+    } on FormatException catch (error) {
+      setState(() => _saveError = error.message);
+      return;
+    }
 
     final appearanceController = AppearanceScope.controllerOf(
       widget.ownerContext,
@@ -631,6 +726,24 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     Navigator.of(context).pop(behavior);
   }
 
+  void _toggleExistingBehavior(ComponentBehavior behavior, bool enabled) {
+    final appearanceController = AppearanceScope.controllerOf(
+      widget.ownerContext,
+    );
+    if (appearanceController == null) return;
+    final history = EditorHistoryScope.controllerOf(widget.ownerContext);
+    history?.beginTransaction();
+    try {
+      appearanceController.value = appearanceController.value
+          .withReplacedBehavior(
+            _selectedTarget.id,
+            behavior.copyWith(enabled: enabled),
+          );
+    } finally {
+      history?.commitTransaction();
+    }
+  }
+
   void _removeExistingBehavior(String behaviorId) {
     final appearanceController = AppearanceScope.controllerOf(
       widget.ownerContext,
@@ -646,6 +759,134 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       history?.commitTransaction();
     }
   }
+
+  List<ValidatorTargetComponentOption> _collectValidatorTargets(
+    Appearance? appearance,
+  ) {
+    final slotLabels = <String, String>{};
+    if (appearance != null) {
+      for (final config in appearance.components.values) {
+        final map = switch (config) {
+          SuperLayoutConfig c => c.slotLabels,
+          NativeComponentConfig c => c.slotLabels,
+          SuperConditionalConfig c => c.slotLabels,
+          SuperTableConfig c => c.slotLabels,
+          SuperTabConfig c => c.slotLabels,
+          SuperTreeViewConfig c => c.slotLabels,
+          _ => const <String, String>{},
+        };
+        for (final entry in map.entries) {
+          final label = entry.value.trim();
+          if (label.isNotEmpty) {
+            slotLabels.putIfAbsent(entry.key, () => label);
+          }
+        }
+      }
+    }
+
+    final referencedIds = _validator?.referencedComponentIds ?? const {};
+    final optionsById = <String, ValidatorTargetComponentOption>{};
+
+    if (appearance != null) {
+      for (final entry in appearance.components.entries) {
+        final id = entry.key;
+        if (id == _selectedTarget.id && !referencedIds.contains(id)) continue;
+        final config = entry.value;
+        final meta = _componentDisplayMeta(config);
+        final humanLabel = _humanLabelForComponent(id, config, slotLabels);
+        optionsById[id] = ValidatorTargetComponentOption(
+          id: id,
+          label: humanLabel,
+          typeLabel: meta.typeLabel,
+          icon: meta.icon,
+        );
+      }
+    }
+
+    for (final target in widget.targets) {
+      if (target.id == _selectedTarget.id &&
+          !referencedIds.contains(target.id)) {
+        continue;
+      }
+      optionsById.putIfAbsent(
+        target.id,
+        () => ValidatorTargetComponentOption(
+          id: target.id,
+          label: slotLabels[target.id] ?? target.label,
+          typeLabel: 'Composant',
+          icon: target.icon ?? Icons.widgets_outlined,
+        ),
+      );
+    }
+
+    int priorityOf(String id) {
+      final type = appearance?.components[id]?.componentType;
+      return switch (type) {
+        'value' => 0,
+        'list' || 'table' || 'treeView' || 'tab' => 1,
+        'action' || 'native' || 'indicator' => 2,
+        'layout' || 'scaffold' || 'a4Document' || 'separator' => 4,
+        _ => 3,
+      };
+    }
+
+    final list = optionsById.values.toList();
+    list.sort((a, b) {
+      final p = priorityOf(a.id).compareTo(priorityOf(b.id));
+      if (p != 0) return p;
+      return a.displayLabel.toLowerCase().compareTo(
+        b.displayLabel.toLowerCase(),
+      );
+    });
+    return list;
+  }
+
+  String _humanLabelForComponent(
+    String id,
+    ComponentConfig config,
+    Map<String, String> slotLabels,
+  ) {
+    final fromSlot = slotLabels[id]?.trim();
+    if (fromSlot != null && fromSlot.isNotEmpty) return fromSlot;
+    return switch (config) {
+      SuperValueConfig c when c.label.trim().isNotEmpty => c.label.trim(),
+      SuperValueConfig c when c.placeholder.trim().isNotEmpty =>
+        c.placeholder.trim(),
+      SuperValueConfig c when c.initialText.trim().isNotEmpty =>
+        c.initialText.trim(),
+      SuperActionConfig c when c.label.trim().isNotEmpty => c.label.trim(),
+      _ => id,
+    };
+  }
+
+  ({String typeLabel, IconData icon}) _componentDisplayMeta(
+    ComponentConfig config,
+  ) => switch (config.componentType) {
+    'value' => (typeLabel: 'Valeur / Champ', icon: Icons.text_fields_outlined),
+    'action' => (
+      typeLabel: 'Action / Bouton',
+      icon: Icons.smart_button_outlined,
+    ),
+    'list' => (typeLabel: 'Liste', icon: Icons.list_alt_outlined),
+    'table' => (typeLabel: 'Tableau', icon: Icons.table_chart_outlined),
+    'treeView' => (
+      typeLabel: 'Arborescence',
+      icon: Icons.account_tree_outlined,
+    ),
+    'tab' => (typeLabel: 'Onglets', icon: Icons.tab_outlined),
+    'layout' => (typeLabel: 'Layout', icon: Icons.dashboard_outlined),
+    'native' => (typeLabel: 'Composant natif', icon: Icons.widgets_outlined),
+    'indicator' => (typeLabel: 'Indicateur', icon: Icons.speed_outlined),
+    'conditional' => (typeLabel: 'Conditionnel', icon: Icons.rule_outlined),
+    'renderer' => (typeLabel: 'Rendu', icon: Icons.code_outlined),
+    'separator' => (typeLabel: 'Séparateur', icon: Icons.horizontal_rule),
+    'scaffold' => (typeLabel: 'Scaffold', icon: Icons.web_asset_outlined),
+    'a4Document' => (
+      typeLabel: 'Document A4',
+      icon: Icons.description_outlined,
+    ),
+    final other => (typeLabel: other, icon: Icons.widgets_outlined),
+  };
 
   bool _titlesFit(BuildContext context, double width) {
     final style = Theme.of(context).textTheme.bodyLarge;
@@ -668,13 +909,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   Widget build(BuildContext context) {
     return AlertDialog(
       key: ValueKey('${widget.keyPrefix}-add-wizard'),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       title: EditorDialogHeader(
         label: _editing == null ? widget.title : 'Modifier un comportement',
       ),
       contentPadding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
       content: SizedBox(
-        width: 640,
+        width: 680,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 560),
           child: LayoutBuilder(
@@ -684,8 +925,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               currentStep: _step,
               elevation: 0,
               onStepTapped: (step) {
-                if (step >= _firstStep &&
-                    (step < _step || (step == _step + 1 && _canContinue))) {
+                if (step < _firstStep) return;
+                if (step < _step ||
+                    ((step == _step + 1 || _editing != null) && _canContinue)) {
                   setState(() => _step = step);
                 }
               },
@@ -713,7 +955,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           TextButton(
             key: ValueKey('${widget.keyPrefix}-add-back'),
             onPressed: _back,
-            child: const Text('Precedent'),
+            child: const Text('Précédent'),
           ),
         FilledButton(
           key: ValueKey(
@@ -753,8 +995,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             ? const SizedBox.shrink()
             : switch (stage) {
                 BehaviorWizardStage.target => _buildTargetStep(context),
-                BehaviorWizardStage.catalog => _buildCatalogStep(context),
-                BehaviorWizardStage.settings => _buildSettingsStep(context),
+                BehaviorWizardStage.event => _buildEventStep(context),
+                BehaviorWizardStage.action => _buildActionStep(context),
+                BehaviorWizardStage.validator => _buildValidatorStep(context),
                 BehaviorWizardStage.summary => _buildSummaryStep(context),
               },
       ),
@@ -771,252 +1014,401 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   Widget _targetList(BuildContext context, Appearance? appearance) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          EditorTargetSelector<BehaviorTargetElement>(
-            targets: widget.targets,
-            selected: _selectedTarget,
-            onSelected: (target) => setState(() {
-              _selectedTarget = target;
-              if ((_isZoneSize && !_isLayoutTarget(target)) ||
-                  (_isCreationDefault && !_isValueTarget(target))) {
-                _selectedCatalogItem = BehaviorCatalog.goToPage;
-              }
-            }),
-            subtitle:
-                'Sélectionnez le composant qui déclenchera ce comportement :',
-            itemKeyBuilder: (target) =>
-                ValueKey('${widget.keyPrefix}-target-${target.id}'),
-            isSelectedPredicate: (target, selected) => target.id == selected.id,
-            trailingBuilder: (context, target) {
-              final existing =
-                  appearance?.behaviorsFor(target.id) ??
-                  target.existingBehaviors;
-              if (existing.isEmpty) return null;
-              return Chip(
-                label: Text(
-                  '${existing.length} comportement${existing.length > 1 ? 's' : ''}',
-                  style: theme.textTheme.labelSmall,
-                ),
-                padding: EdgeInsets.zero,
-              );
-            },
-          ),
-          Builder(
-            builder: (context) {
-              final existing =
-                  appearance?.behaviorsFor(_selectedTarget.id) ??
-                  _selectedTarget.existingBehaviors;
-              if (existing.isEmpty) return const SizedBox.shrink();
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 12),
-                  Text(
-                    'Comportements de cet élément',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  for (final b in existing)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      child: ListTile(
-                        dense: true,
-                        leading: Icon(b.action.icon, color: colors.primary),
-                        title: Text(b.action.label),
-                        subtitle: Text(
-                          '${b.trigger.description} -> ${b.action.description}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (b.trigger != BehaviorTrigger.binding &&
-                                b.trigger != BehaviorTrigger.create)
-                              IconButton(
-                                icon: const Icon(Icons.play_arrow_outlined),
-                                tooltip: 'Tester',
-                                onPressed: () => b.execute(widget.ownerContext),
-                              ),
-                            Builder(
-                              builder: (_) {
-                                final item = _editorFor(b.action);
-                                return IconButton(
-                                  key: ValueKey('behavior-edit-${b.id}'),
-                                  icon: const Icon(Icons.edit_outlined),
-                                  tooltip: item == null
-                                      ? 'Aucun éditeur disponible pour cette action'
-                                      : 'Modifier',
-                                  onPressed: item == null || appearance == null
-                                      ? null
-                                      : () => _editBehavior(b, item),
-                                );
-                              },
-                            ),
-                            IconButton(
-                              key: ValueKey('behavior-delete-${b.id}'),
-                              icon: const Icon(Icons.delete_outline),
-                              tooltip: 'Supprimer',
-                              color: colors.error,
-                              onPressed: appearance == null
-                                  ? null
-                                  : () => _removeExistingBehavior(b.id),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCatalogStep(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Catalogue de comportements',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Sélectionnez l’action à associer à « ${_selectedTarget.label} » :',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          for (final item in _catalogItems) ...[
-            Builder(
-              builder: (context) {
-                final isSelected = _selectedCatalogItem.id == item.id;
-                return Card(
-                  key: ValueKey('${widget.keyPrefix}-catalog-${item.id}'),
-                  elevation: isSelected ? 2 : 0,
-                  color: isSelected
-                      ? colors.primaryContainer.withValues(alpha: .3)
-                      : colors.surfaceContainerLow,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: isSelected
-                          ? colors.primary
-                          : colors.outlineVariant,
-                      width: isSelected ? 2 : 1,
-                    ),
-                  ),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => setState(() => _selectedCatalogItem = item),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isSelected
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            color: isSelected ? colors.primary : colors.outline,
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? colors.primary
-                                  : colors.surfaceContainerHigh,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              item.icon,
-                              size: 22,
-                              color: isSelected
-                                  ? colors.onPrimary
-                                  : colors.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.title,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  item.description,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Chip(
-                            label: Text(
-                              item.trigger.description,
-                              style: theme.textTheme.labelSmall,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _gestureField(String key) => DropdownButtonFormField<BehaviorTrigger>(
-    key: ValueKey(key),
-    initialValue: _gestureTrigger,
-    decoration: const InputDecoration(labelText: 'Déclencheur'),
-    items: [
-      for (final trigger in BehaviorTrigger.gestures)
-        DropdownMenuItem(value: trigger, child: Text(trigger.label)),
-    ],
-    onChanged: (value) {
-      if (value != null) setState(() => _gestureTrigger = value);
-    },
-  );
-
-  Widget _buildSettingsStep(BuildContext context) {
-    final settings = _buildActionSettings(context);
-    if (!_usesGesture || _isEvent || _isAddArrayItem) return settings;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _gestureField('behavior-gesture-trigger'),
-        const SizedBox(height: 12),
-        settings,
+        EditorTargetSelector<BehaviorTargetElement>(
+          targets: widget.targets,
+          selected: _selectedTarget,
+          onSelected: _onTargetSelected,
+          subtitle:
+              'Sélectionnez le composant qui déclenchera ce comportement :',
+          itemKeyBuilder: (target) =>
+              ValueKey('${widget.keyPrefix}-target-${target.id}'),
+          isSelectedPredicate: (target, selected) => target.id == selected.id,
+          trailingBuilder: (context, target) {
+            final existing =
+                appearance?.behaviorsFor(target.id) ?? target.existingBehaviors;
+            if (existing.isEmpty) return null;
+            return Chip(
+              label: Text(
+                '${existing.length} comportement${existing.length > 1 ? 's' : ''}',
+                style: theme.textTheme.labelSmall,
+              ),
+              padding: EdgeInsets.zero,
+            );
+          },
+        ),
+        Builder(
+          builder: (context) {
+            final existing =
+                appearance?.behaviorsFor(_selectedTarget.id) ??
+                _selectedTarget.existingBehaviors;
+            if (existing.isEmpty) return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Text(
+                  'Comportements de cet élément',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final b in existing)
+                  _buildExistingBehaviorCard(context, b, appearance),
+              ],
+            );
+          },
+        ),
       ],
+    );
+  }
+
+  Widget _buildExistingBehaviorCard(
+    BuildContext context,
+    ComponentBehavior b,
+    Appearance? appearance,
+  ) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final item = _editorFor(b.action);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: b.enabled
+          ? colors.surfaceContainerLow
+          : colors.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(
+                b.action.icon,
+                color: b.enabled ? colors.primary : colors.outline,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Opacity(
+                opacity: b.enabled ? 1.0 : 0.6,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _behaviorMetaLine(
+                      context,
+                      prefix: 'Quand',
+                      value: b.event.label,
+                      icon: b.event.icon,
+                    ),
+                    const SizedBox(height: 3),
+                    _behaviorMetaLine(
+                      context,
+                      prefix: 'Si',
+                      value: b.validator?.description ?? 'Toujours',
+                      icon: b.validator == null
+                          ? Icons.check_circle_outline
+                          : Icons.verified_user_outlined,
+                    ),
+                    const SizedBox(height: 3),
+                    _behaviorMetaLine(
+                      context,
+                      prefix: 'Alors',
+                      value: '${b.action.label} (${b.action.description})',
+                      icon: b.action.icon,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Switch(
+                  key: ValueKey('behavior-toggle-${b.id}'),
+                  value: b.enabled,
+                  onChanged: appearance == null
+                      ? null
+                      : (enabled) => _toggleExistingBehavior(b, enabled),
+                ),
+                if (b.event.isImperative)
+                  IconButton(
+                    icon: const Icon(Icons.play_arrow_outlined),
+                    tooltip: 'Tester',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => b.execute(widget.ownerContext),
+                  ),
+                IconButton(
+                  key: ValueKey('behavior-edit-${b.id}'),
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: item == null
+                      ? 'Aucun éditeur disponible pour cette action'
+                      : 'Modifier',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: item == null || appearance == null
+                      ? null
+                      : () => _editBehavior(b, item),
+                ),
+                IconButton(
+                  key: ValueKey('behavior-delete-${b.id}'),
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: 'Supprimer',
+                  color: colors.error,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: appearance == null
+                      ? null
+                      : () => _removeExistingBehavior(b.id),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _behaviorMetaLine(
+    BuildContext context, {
+    required String prefix,
+    required String value,
+    required IconData icon,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 13, color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '$prefix : ',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                TextSpan(text: value, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventStep(BuildContext context) {
+    return BehaviorEventPicker(
+      selectedEvent: _selectedEvent,
+      componentType: _componentTypeFor(_selectedTarget),
+      isLayoutTarget: _isLayoutTarget(_selectedTarget),
+      isValueTarget: _isValueTarget(_selectedTarget),
+      keyPrefix: widget.keyPrefix,
+      onSelected: _onEventSelected,
+    );
+  }
+
+  Widget _buildActionStep(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final items = _compatibleCatalogItems;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Action à exécuter',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Chip(
+              avatar: Icon(_selectedEvent.icon, size: 16),
+              label: Text(
+                _selectedEvent.label,
+                style: theme.textTheme.labelSmall,
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Choisissez et configurez l’action associée à « ${_selectedTarget.label} » :',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 10),
+        for (final item in items) ...[
+          Builder(
+            builder: (context) {
+              final isSelected = _selectedCatalogItem.id == item.id;
+              return Card(
+                key: ValueKey('${widget.keyPrefix}-catalog-${item.id}'),
+                elevation: isSelected ? 2 : 0,
+                color: isSelected
+                    ? colors.primaryContainer.withValues(alpha: .3)
+                    : colors.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: isSelected ? colors.primary : colors.outlineVariant,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                margin: const EdgeInsets.only(bottom: 6),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => setState(() => _selectedCatalogItem = item),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isSelected
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          size: 18,
+                          color: isSelected ? colors.primary : colors.outline,
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? colors.primary
+                                : colors.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            item.icon,
+                            size: 18,
+                            color: isSelected
+                                ? colors.onPrimary
+                                : colors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                item.description,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+        if (items.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Material(
+            color: colors.surfaceContainerLowest,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: colors.outlineVariant),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        _selectedCatalogItem.icon,
+                        size: 18,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Paramètres : ${_selectedCatalogItem.title}',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 16),
+                  _buildActionSettings(context),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildValidatorStep(BuildContext context) {
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return BehaviorValidatorEditor(
+      validator: _validator,
+      availableTargets: _collectValidatorTargets(appearance),
+      store: JsonRepositoryScope.maybeOf(targetContext),
+      listScope: JsonListScope.maybeOf(targetContext),
+      keyPrefix: widget.keyPrefix,
+      infoBanner: _selectedEvent.isImperative
+          ? null
+          : 'Note : « ${_selectedEvent.label} » est un événement déclaratif. '
+                'Le validateur est optionnel et surtout utilisé avec les '
+                'événements impératifs (clic, modification, sélection, etc.).',
+      onChanged: (validator, isValid) => setState(() {
+        _validator = validator;
+        _validatorValid = isValid;
+      }),
     );
   }
 
@@ -1250,249 +1642,318 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     final path = _customPath
         ? _customPathController.text.trim()
         : (_selectedPagePath ?? '/');
+    BehaviorAction? draftAction;
+    try {
+      draftAction = _buildDraftAction();
+    } catch (_) {
+      draftAction = null;
+    }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Recapitulatif du comportement',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Récapitulatif du comportement',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: colors.outlineVariant),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _summaryRow(
-                    context,
-                    icon: Icons.widgets_outlined,
-                    label: 'Element cible',
-                    value: '${_selectedTarget.label} (${_selectedTarget.id})',
-                  ),
-                  const Divider(height: 16),
-                  _summaryRow(
-                    context,
-                    icon: Icons.touch_app_outlined,
-                    label: 'Declencheur',
-                    value: _trigger.description,
-                  ),
-                  const Divider(height: 16),
-                  _summaryRow(
-                    context,
-                    icon: _selectedCatalogItem.icon,
-                    label: 'Action',
-                    value: _selectedCatalogItem.title,
-                  ),
-                  const Divider(height: 16),
-                  if (_isTooltip)
-                    _summaryRow(
-                      context,
-                      icon: _tooltipBinding == null
-                          ? Icons.text_fields
-                          : Icons.link,
-                      label: _tooltipBinding == null ? 'Texte' : 'Liaison',
-                      value: _tooltipBinding == null
-                          ? _tooltipMessage.text
-                          : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
-                                '${_tooltipBinding!.path}',
-                    )
-                  else if (_isSearchProvider)
-                    _summaryRow(
-                      context,
-                      icon: Icons.cloud_sync_outlined,
-                      label: 'Provider',
-                      value: _providerSummary,
-                    )
-                  else if (_isDatasource) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.dataset_outlined,
-                      label: 'Datasource',
-                      value: _datasourceSummary,
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.play_circle_outline,
-                      label: 'Commande',
-                      value: _datasourceCommandSummary,
-                    ),
-                  ] else if (_isGeneratePdf) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.description_outlined,
-                      label: 'Page A4 cible',
-                      value: _pdfPageName ?? _pdfPageId ?? 'Page A4 courante',
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.picture_as_pdf_outlined,
-                      label: 'Mode de sortie',
-                      value: _pdfOutputMode.label,
-                    ),
-                    if (_pdfFileNameController.text.trim().isNotEmpty) ...[
-                      const Divider(height: 16),
-                      _summaryRow(
-                        context,
-                        icon: Icons.insert_drive_file_outlined,
-                        label: 'Fichier',
-                        value: _pdfFileNameController.text.trim(),
-                      ),
-                    ],
-                  ] else if (_isAddArrayItem) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.link,
-                      label: 'Tableau cible',
-                      value: _addArrayBinding == null
-                          ? '-'
-                          : '${_addArrayBinding!.repositoryId ?? 'liste'} : '
-                                '${_addArrayBinding!.path}',
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.check_circle_outline,
-                      label: 'Sélection auto',
-                      value: _addArraySelectCreated ? 'Oui' : 'Non',
-                    ),
-                  ] else if (_isCreationDefault) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.link,
-                      label: 'Champ cible',
-                      value: _effectiveCreationDefaultBinding == null
-                          ? '-'
-                          : '${_effectiveCreationDefaultBinding!.repositoryId ?? 'liste'} : '
-                                '${_effectiveCreationDefaultBinding!.path}',
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.add_box_outlined,
-                      label: 'Valeur par défaut',
-                      value: '${_resolveCreationDefaultValue()}',
-                    ),
-                  ] else if (_isJavaScriptAction) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.storage_outlined,
-                      label: 'Repository',
-                      value: _scriptRepositoryController.text.trim().isEmpty
-                          ? 'Hérité de la liste englobante'
-                          : _scriptRepositoryController.text.trim(),
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.code,
-                      label: 'Écriture',
-                      value: 'ctx.set(chemin, valeur)',
-                    ),
-                  ] else if (_isBindState) ...[
-                    _summaryRow(
-                      context,
-                      icon: _boundState.icon,
-                      label: 'État appliqué',
-                      value: _boundState.label,
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.link,
-                      label: 'Liaison',
-                      value: _stateBinding == null
-                          ? '-'
-                          : '${_stateBinding!.repositoryId ?? 'liste'} : '
-                                '${_stateBinding!.path}',
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.rule_outlined,
-                      label: 'Condition',
-                      value: _stateWhenValue
-                          ? 'Quand vrai (true)'
-                          : 'Quand faux (false)',
-                    ),
-                    if (_boundState == BehaviorBoundState.invisible) ...[
-                      const Divider(height: 16),
-                      _summaryRow(
-                        context,
-                        icon: Icons.aspect_ratio_outlined,
-                        label: 'Encombrement',
-                        value: _stateMaintainSize
-                            ? 'Conserver l’espace'
-                            : 'Masquer sans occuper d’espace',
-                      ),
-                    ],
-                  ] else if (_isZoneSize) ...[
-                    _summaryRow(
-                      context,
-                      icon: Icons.view_sidebar_outlined,
-                      label: 'Zone',
-                      value: _effectiveZone.label,
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.link,
-                      label: 'Liaison',
-                      value: _zoneBinding == null
-                          ? '-'
-                          : '${_zoneBinding!.repositoryId ?? 'liste'} : '
-                                '${_zoneBinding!.path} '
-                                '(${_zoneUnit == SlotSizeUnit.percent ? '%' : 'px'})',
-                    ),
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.animation,
-                      label: 'Animation',
-                      value: '${_durationMs ?? '-'} ms, ${_curve.label}',
-                    ),
-                  ] else
-                    _summaryRow(
-                      context,
-                      icon: _isEvent ? Icons.bolt : Icons.alt_route,
-                      label: _isEvent ? 'Evenement' : 'Destination',
-                      value: _isEvent
-                          ? _eventIdController.text.trim()
-                          : _customPath
-                          ? path
-                          : (_selectedPageName != null
-                                ? '$_selectedPageName ($path)'
-                                : path),
-                    ),
-                  if (_isEvent) ...[
-                    const Divider(height: 16),
-                    _summaryRow(
-                      context,
-                      icon: Icons.data_object,
-                      label: 'Custom JSON',
-                      value: _customJsonController.text,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Donnees automatiques : componentId, componentType, trigger, '
-                      'data.previousValue et data.value pour SuperValue. '
-                      'Le double-clic conserve les deux clics simples.',
-                    ),
-                  ],
-                ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            Icon(Icons.widgets_outlined, size: 16, color: colors.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Élément cible : ${_selectedTarget.label} (${_selectedTarget.id})',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        _summarySectionCard(
+          context,
+          title: '1. Événement',
+          icon: _selectedEvent.icon,
+          children: [
+            _summaryRow(
+              context,
+              icon: _selectedEvent.icon,
+              label: _selectedEvent.label,
+              value: _selectedEvent.description,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summarySectionCard(
+          context,
+          title: '2. Validateur',
+          icon: _validator == null
+              ? Icons.check_circle_outline
+              : Icons.verified_user_outlined,
+          children: [
+            _summaryRow(
+              context,
+              icon: _validator == null
+                  ? Icons.all_inclusive
+                  : Icons.rule_outlined,
+              label: _validator == null ? 'Condition' : _validator!.label,
+              value: _validator == null
+                  ? 'Toujours exécuter'
+                  : _validator!.description,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summarySectionCard(
+          context,
+          title: '3. Action',
+          icon: _selectedCatalogItem.icon,
+          children: [
+            _summaryRow(
+              context,
+              icon: _selectedCatalogItem.icon,
+              label: draftAction?.label ?? _selectedCatalogItem.title,
+              value:
+                  draftAction?.description ?? _selectedCatalogItem.description,
+            ),
+            const Divider(height: 16),
+            if (_isTooltip)
+              _summaryRow(
+                context,
+                icon: _tooltipBinding == null ? Icons.text_fields : Icons.link,
+                label: _tooltipBinding == null ? 'Texte' : 'Liaison',
+                value: _tooltipBinding == null
+                    ? _tooltipMessage.text
+                    : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
+                          '${_tooltipBinding!.path}',
+              )
+            else if (_isSearchProvider)
+              _summaryRow(
+                context,
+                icon: Icons.cloud_sync_outlined,
+                label: 'Provider',
+                value: _providerSummary,
+              )
+            else if (_isDatasource) ...[
+              _summaryRow(
+                context,
+                icon: Icons.dataset_outlined,
+                label: 'Datasource',
+                value: _datasourceSummary,
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.play_circle_outline,
+                label: 'Commande',
+                value: _datasourceCommandSummary,
+              ),
+            ] else if (_isGeneratePdf) ...[
+              _summaryRow(
+                context,
+                icon: Icons.description_outlined,
+                label: 'Page A4 cible',
+                value: _pdfPageName ?? _pdfPageId ?? 'Page A4 courante',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.picture_as_pdf_outlined,
+                label: 'Mode de sortie',
+                value: _pdfOutputMode.label,
+              ),
+              if (_pdfFileNameController.text.trim().isNotEmpty) ...[
+                const Divider(height: 16),
+                _summaryRow(
+                  context,
+                  icon: Icons.insert_drive_file_outlined,
+                  label: 'Fichier',
+                  value: _pdfFileNameController.text.trim(),
+                ),
+              ],
+            ] else if (_isAddArrayItem) ...[
+              _summaryRow(
+                context,
+                icon: Icons.link,
+                label: 'Tableau cible',
+                value: _addArrayBinding == null
+                    ? '-'
+                    : '${_addArrayBinding!.repositoryId ?? 'liste'} : '
+                          '${_addArrayBinding!.path}',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.check_circle_outline,
+                label: 'Sélection auto',
+                value: _addArraySelectCreated ? 'Oui' : 'Non',
+              ),
+            ] else if (_isCreationDefault) ...[
+              _summaryRow(
+                context,
+                icon: Icons.link,
+                label: 'Champ cible',
+                value: _effectiveCreationDefaultBinding == null
+                    ? '-'
+                    : '${_effectiveCreationDefaultBinding!.repositoryId ?? 'liste'} : '
+                          '${_effectiveCreationDefaultBinding!.path}',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.add_box_outlined,
+                label: 'Valeur par défaut',
+                value: '${_resolveCreationDefaultValue()}',
+              ),
+            ] else if (_isJavaScriptAction) ...[
+              _summaryRow(
+                context,
+                icon: Icons.storage_outlined,
+                label: 'Repository',
+                value: _scriptRepositoryController.text.trim().isEmpty
+                    ? 'Hérité de la liste englobante'
+                    : _scriptRepositoryController.text.trim(),
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.code,
+                label: 'Écriture',
+                value: 'ctx.set(chemin, valeur)',
+              ),
+            ] else if (_isBindState) ...[
+              _summaryRow(
+                context,
+                icon: _boundState.icon,
+                label: 'État appliqué',
+                value: _boundState.label,
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.link,
+                label: 'Liaison',
+                value: _stateBinding == null
+                    ? '-'
+                    : '${_stateBinding!.repositoryId ?? 'liste'} : '
+                          '${_stateBinding!.path}',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.rule_outlined,
+                label: 'Condition',
+                value: _stateWhenValue
+                    ? 'Quand vrai (true)'
+                    : 'Quand faux (false)',
+              ),
+              if (_boundState == BehaviorBoundState.invisible) ...[
+                const Divider(height: 16),
+                _summaryRow(
+                  context,
+                  icon: Icons.aspect_ratio_outlined,
+                  label: 'Encombrement',
+                  value: _stateMaintainSize
+                      ? 'Conserver l’espace'
+                      : 'Masquer sans occuper d’espace',
+                ),
+              ],
+            ] else if (_isZoneSize) ...[
+              _summaryRow(
+                context,
+                icon: Icons.view_sidebar_outlined,
+                label: 'Zone',
+                value: _effectiveZone.label,
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.link,
+                label: 'Liaison',
+                value: _zoneBinding == null
+                    ? '-'
+                    : '${_zoneBinding!.repositoryId ?? 'liste'} : '
+                          '${_zoneBinding!.path} '
+                          '(${_zoneUnit == SlotSizeUnit.percent ? '%' : 'px'})',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.animation,
+                label: 'Animation',
+                value: '${_durationMs ?? '-'} ms, ${_curve.label}',
+              ),
+            ] else
+              _summaryRow(
+                context,
+                icon: _isEvent ? Icons.bolt : Icons.alt_route,
+                label: _isEvent ? 'Événement' : 'Destination',
+                value: _isEvent
+                    ? _eventIdController.text.trim()
+                    : _customPath
+                    ? path
+                    : (_selectedPageName != null
+                          ? '$_selectedPageName ($path)'
+                          : path),
+              ),
+            if (_isEvent) ...[
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.data_object,
+                label: 'Custom JSON',
+                value: _customJsonController.text,
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _summarySectionCard(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: colors.primary),
+                const SizedBox(width: 6),
+                Text(
+                  title,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -1862,45 +2323,41 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
-  Widget _buildEventSettings(BuildContext context) => SingleChildScrollView(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _gestureField('behavior-event-trigger'),
-        const SizedBox(height: 12),
-        TextField(
-          key: const ValueKey('behavior-event-id'),
-          controller: _eventIdController,
-          decoration: InputDecoration(
-            labelText: 'ID de l’evenement',
-            hintText: 'node.changed',
-            errorText: _eventIdController.text.trim().isEmpty
-                ? 'Un ID est requis.'
-                : null,
-          ),
-          onChanged: (_) => setState(() {}),
+  Widget _buildEventSettings(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      TextField(
+        key: const ValueKey('behavior-event-id'),
+        controller: _eventIdController,
+        decoration: InputDecoration(
+          labelText: 'ID de l’événement',
+          hintText: 'node.changed',
+          errorText: _eventIdController.text.trim().isEmpty
+              ? 'Un ID est requis.'
+              : null,
         ),
-        const SizedBox(height: 12),
-        TextField(
-          key: const ValueKey('behavior-event-custom'),
-          controller: _customJsonController,
-          minLines: 3,
-          maxLines: 8,
-          decoration: InputDecoration(
-            labelText: 'Donnees personnalisees (objet JSON)',
-            errorText: _customJsonError,
-          ),
-          onChanged: (_) => setState(() {}),
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        key: const ValueKey('behavior-event-custom'),
+        controller: _customJsonController,
+        minLines: 3,
+        maxLines: 8,
+        decoration: InputDecoration(
+          labelText: 'Données personnalisées (objet JSON)',
+          errorText: _customJsonError,
         ),
-        const SizedBox(height: 12),
-        const Text(
-          'Le bus recoit l’ID du composant, son type et le declencheur. '
-          'SuperValue fournit les valeurs avant et apres le clic dans data. '
-          'Le JSON personnalise reste dans custom, sans ecraser ces donnees. '
-          'Un double-clic emet aussi les deux clics simples configures.',
-        ),
-      ],
-    ),
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        'Le bus reçoit l’ID du composant, son type et l’événement. '
+        'SuperValue fournit les valeurs avant et après dans data. '
+        'Le JSON personnalisé reste dans custom, sans écraser ces données.',
+      ),
+    ],
   );
 
   Widget _buildAddArrayItemSettings(BuildContext context) {
@@ -1914,81 +2371,77 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         : listScope?.repositoryId?.trim();
     final arrayPath = _addArrayBinding?.path.trim() ?? '';
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _gestureField('behavior-add-array-trigger'),
-          const SizedBox(height: 12),
-          RepositoryBindingFields(
-            keyPrefix: 'behavior-add-array-binding',
-            binding: _addArrayBinding,
-            store: store,
-            listScope: listScope,
-            pathHint: 'clients ou clients[?].commandes',
-            helper:
-                'Tableau JSON cible dans le repository. Utilise le JSON Schema '
-                'associé au repository (et les valeurs par défaut des SuperValue) '
-                'pour construire la nouvelle ligne.',
-            onChanged: (binding) => setState(() => _addArrayBinding = binding),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RepositoryBindingFields(
+          keyPrefix: 'behavior-add-array-binding',
+          binding: _addArrayBinding,
+          store: store,
+          listScope: listScope,
+          pathHint: 'clients ou clients[?].commandes',
+          helper:
+              'Tableau JSON cible dans le repository. Utilise le JSON Schema '
+              'associé au repository (et les valeurs par défaut des SuperValue) '
+              'pour construire la nouvelle ligne.',
+          onChanged: (binding) => setState(() => _addArrayBinding = binding),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          key: const ValueKey('behavior-add-array-select-created'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Sélectionner la nouvelle ligne'),
+          subtitle: const Text(
+            'Met à jour la sélection Maître/Détail sur l’élément créé',
           ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            key: const ValueKey('behavior-add-array-select-created'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Sélectionner la nouvelle ligne'),
-            subtitle: const Text(
-              'Met à jour la sélection Maître/Détail sur l’élément créé',
-            ),
-            value: _addArraySelectCreated,
-            onChanged: (value) =>
-                setState(() => _addArraySelectCreated = value),
+          value: _addArraySelectCreated,
+          onChanged: (value) => setState(() => _addArraySelectCreated = value),
+        ),
+        if (store != null &&
+            repoId != null &&
+            repoId.isNotEmpty &&
+            arrayPath.isNotEmpty)
+          FutureBuilder<Map<String, Object?>?>(
+            future: store.readJsonSchema(repoId),
+            builder: (context, snapshot) {
+              final schema = snapshot.data;
+              if (schema == null) return const SizedBox.shrink();
+              final preview = JsonSchemaFieldResolver.buildDefaultArrayItem(
+                schema,
+                arrayPath,
+              );
+              if (preview == null) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: colors.outlineVariant),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Modèle déduit du JSON Schema :',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      const JsonEncoder.withIndent('  ').convert(preview),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-          if (store != null &&
-              repoId != null &&
-              repoId.isNotEmpty &&
-              arrayPath.isNotEmpty)
-            FutureBuilder<Map<String, Object?>?>(
-              future: store.readJsonSchema(repoId),
-              builder: (context, snapshot) {
-                final schema = snapshot.data;
-                if (schema == null) return const SizedBox.shrink();
-                final preview = JsonSchemaFieldResolver.buildDefaultArrayItem(
-                  schema,
-                  arrayPath,
-                );
-                if (preview == null) return const SizedBox.shrink();
-                return Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: colors.outlineVariant),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Modèle déduit du JSON Schema :',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        const JsonEncoder.withIndent('  ').convert(preview),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+      ],
     );
   }
 

@@ -398,6 +398,104 @@ export type ComponentConfig =
 	| SuperTabConfig
 	| GenericComponentConfig;
 
+export type BehaviorEvent =
+	| 'onTap'
+	| 'onDoubleTap'
+	| 'onLongPress'
+	| 'onHoverEnter'
+	| 'onHoverExit'
+	| 'onSelected'
+	| 'onChanged'
+	| 'onSubmitted'
+	| 'onFocus'
+	| 'onBlur'
+	| 'onExpanded'
+	| 'onCollapsed'
+	| 'onMount'
+	| 'onHover'
+	| 'onBinding'
+	| 'onCreate';
+
+export type BehaviorValueSource = 'self' | 'component' | 'binding';
+
+export type BehaviorValidatorOperator =
+	| 'isEmpty'
+	| 'isFill'
+	| 'isTrue'
+	| 'isFalse'
+	| 'equals'
+	| 'notEquals'
+	| 'contains'
+	| 'startsWith'
+	| 'greaterThan'
+	| 'lessThan'
+	| 'matchesRegex'
+	| 'isValid'
+	| 'isInvalid';
+
+export type BehaviorValidatorShorthandType =
+	| BehaviorValidatorOperator
+	| 'isFilled'
+	| 'isNotEmpty'
+	| 'otherIsEmpty'
+	| 'otherIsFill'
+	| 'otherIsFilled'
+	| 'otherIsNotEmpty'
+	| 'otherIsTrue'
+	| 'otherIsFalse'
+	| 'otherEquals'
+	| 'otherNotEquals'
+	| 'otherContains'
+	| 'otherStartsWith'
+	| 'otherGreaterThan'
+	| 'otherLessThan'
+	| 'otherMatchesRegex'
+	| 'otherIsValid'
+	| 'otherIsInvalid'
+	| 'bindingIsEmpty'
+	| 'bindingIsFill'
+	| 'bindingIsFilled'
+	| 'bindingIsNotEmpty'
+	| 'bindingIsTrue'
+	| 'bindingIsFalse'
+	| 'bindingEquals'
+	| 'bindingNotEquals'
+	| 'bindingContains'
+	| 'bindingStartsWith'
+	| 'bindingGreaterThan'
+	| 'bindingLessThan'
+	| 'bindingMatchesRegex';
+
+export interface ValueBehaviorValidator {
+	type: BehaviorValidatorShorthandType | 'value';
+	source?: BehaviorValueSource;
+	operator?: BehaviorValidatorOperator;
+	targetComponentId?: string;
+	binding?: JsonTextBinding;
+	value?: unknown;
+}
+
+export interface AllBehaviorValidator {
+	type: 'all';
+	validators: BehaviorValidator[];
+}
+
+export interface AnyBehaviorValidator {
+	type: 'any';
+	validators: BehaviorValidator[];
+}
+
+export interface NotBehaviorValidator {
+	type: 'not';
+	validator: BehaviorValidator;
+}
+
+export type BehaviorValidator =
+	| AllBehaviorValidator
+	| AnyBehaviorValidator
+	| NotBehaviorValidator
+	| ValueBehaviorValidator;
+
 export interface GoToPageAction {
 	type: 'goToPage';
 	pagePath: string;
@@ -409,8 +507,10 @@ export type BehaviorAction = GoToPageAction | { type: string; [key: string]: unk
 
 export interface ComponentBehavior {
 	id: string;
-	trigger: 'click' | string;
+	event: BehaviorEvent | string;
+	trigger?: string;
 	enabled: boolean;
+	validator?: BehaviorValidator;
 	action: BehaviorAction;
 }
 

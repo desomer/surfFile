@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:super_container_layout/models/native_component_config.dart';
 import 'package:super_container_layout/models/registry.dart';
+import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
@@ -807,5 +809,97 @@ void main() {
     expect(removed.usageFor('txt2'), isNull);
     expect(removed.usageFor(copiedTitle), title);
     expect(removed.usageFor('contA'), value);
+  });
+
+  test('behaviors and validator targetComponentIds are remapped on duplicate, export and remove', () {
+    final nestedValidator = AllBehaviorValidator(
+      validators: [
+        const ValueBehaviorValidator.otherIsFill('txt1'),
+        AnyBehaviorValidator(
+          validators: [
+            const NotBehaviorValidator(
+              validator: ValueBehaviorValidator.otherIsEmpty('txt2'),
+            ),
+            const ValueBehaviorValidator.otherIsFill('external_field'),
+          ],
+        ),
+      ],
+    );
+    final behavior = ComponentBehavior(
+      id: 'b-submit',
+      event: BehaviorEvent.onTap,
+      validator: nestedValidator,
+      action: EmitEventAction(eventId: 'submit'),
+    );
+    final source = _sample().withBehaviors('txt2', [behavior]);
+
+    final copy = EditorPageGraph.duplicate(
+      appearance: source,
+      registry: _registry(),
+      sourcePageId: 'p1',
+      targetPageId: 'p2',
+      generateId: _ids(),
+    );
+
+    final copiedBar = copy.nativeComponent('p2').slotsOf('appBar').single;
+    final copiedTxt1 = copy.nativeComponent(copiedBar).slotsOf('title').single;
+    final copiedLay1 = copy.nativeComponent('p2').slotsOf('body').single;
+    final copiedTxt2 = copy
+        .layout(copiedLay1)
+        .placements[SuperLayoutZone.center]![1];
+
+    expect(copy.behaviorsFor('txt2').single, behavior);
+    final copiedBehavior = copy.behaviorsFor(copiedTxt2).single;
+    expect(
+      copiedBehavior.validator!.referencedComponentIds,
+      unorderedEquals([copiedTxt1, copiedTxt2, 'external_field']),
+    );
+
+    final removed = EditorPageGraph.remove(
+      appearance: copy,
+      registry: _registry(),
+      pageId: 'p1',
+    );
+    expect(removed.behaviorsFor('txt2'), isEmpty);
+    expect(removed.behaviorsFor(copiedTxt2).single, copiedBehavior);
+
+    // Export d'un fragment avec identifiant réservé `scaffold:*`
+    final scaffoldSource = Appearance(
+      components: {
+        'page_root': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.body: ['scaffold:input', 'scaffold:btn'],
+          },
+          slotTypes: {
+            'scaffold:input': 'factory:Value',
+            'scaffold:btn': 'factory:Value',
+          },
+        ),
+        'scaffold:input': const SuperValueConfig(initialText: 'abc'),
+        'scaffold:btn': const SuperValueConfig(initialText: 'Go'),
+      },
+      behaviors: {
+        'scaffold:btn': [
+          ComponentBehavior(
+            id: 'b-scaffold',
+            event: BehaviorEvent.onTap,
+            validator: const NotBehaviorValidator(
+              validator: ValueBehaviorValidator.otherIsEmpty('scaffold:input'),
+            ),
+            action: EmitEventAction(eventId: 'go'),
+          ),
+        ],
+      },
+    );
+    final exported = EditorPageGraph.export(
+      appearance: scaffoldSource,
+      registry: _registry(),
+      componentId: 'page_root',
+    ).appearance;
+    final exportedBehavior = exported.behaviorsFor('btn').single;
+    expect(
+      exportedBehavior.validator!.referencedComponentIds,
+      unorderedEquals(['input']),
+    );
   });
 }

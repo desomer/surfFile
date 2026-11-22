@@ -51,6 +51,11 @@ class ComponentBehaviorStateScope extends InheritedWidget {
       context
           .dependOnInheritedWidgetOfExactType<ComponentBehaviorStateScope>();
 
+  /// Retourne la portée d'état de comportement la plus proche sans enregistrer
+  /// de dépendance de reconstruction (sûr dans les callbacks d'événements).
+  static ComponentBehaviorStateScope? maybeReadOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<ComponentBehaviorStateScope>();
+
   /// Indique si le contexte courant est marqué inactif par un comportement.
   static bool isDisabled(BuildContext context) =>
       maybeOf(context)?.disabled ?? false;
@@ -115,7 +120,7 @@ class ComponentStateBehavior extends StatefulWidget {
     final candidates = [
       for (final behavior in items)
         if (behavior.enabled &&
-            behavior.trigger == BehaviorTrigger.binding &&
+            behavior.event == BehaviorEvent.onBinding &&
             behavior.action is StateBindingAction)
           behavior.action as StateBindingAction,
     ];
