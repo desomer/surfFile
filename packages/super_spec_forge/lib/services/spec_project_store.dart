@@ -5,7 +5,11 @@
 /// - `spec/*.json` : domaines (lexique, cadrage, cahier des charges, préférences, cohérence) ;
 /// - `spec/business_objects/<slug>.json` : 1 fichier par objet métier (+ `_order.json`) ;
 /// - `spec/business_rules/<slug>.json` : 1 fichier par règle de gestion (+ `_order.json`) ;
-/// - `chats/*.json` : historique des conversations par étape et chat global ;
+/// - `ux/navigation.json` : étape UX courante, architecture de navigation et thème visuel ;
+/// - `ux/coherence_issues.json` : diagnostics de cohérence Métier↔UX ;
+/// - `ux/journeys/<slug>.json` : 1 fichier par parcours utilisateur (+ `_order.json`) ;
+/// - `ux/screens/<slug>.json` : 1 fichier par écran UX (+ `_order.json`) ;
+/// - `chats/*.json` : historique des conversations par étape (`stage_*.json`, `ux_*.json`) et chat global ;
 /// - `attachments/*` : contenu texte ou binaire des pièces jointes externalisées.
 ///
 /// L'état local machine (dernier projet actif) est stocké dans
@@ -29,6 +33,12 @@ import '../models/spec_forge_stage.dart';
 import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/spec_vision.dart';
+import '../models/ux/ux_coherence_issue.dart';
+import '../models/ux/ux_forge_spec.dart';
+import '../models/ux/ux_forge_stage.dart';
+import '../models/ux/ux_journey_spec.dart';
+import '../models/ux/ux_navigation_spec.dart';
+import '../models/ux/ux_screen_spec.dart';
 import 'spec_storage_slug.dart';
 import 'spec_workspace_store.dart';
 
@@ -44,6 +54,9 @@ class SpecProjectSummary {
     required this.updatedAt,
     required this.objectCount,
     required this.ruleCount,
+    this.journeyCount = 0,
+    this.screenCount = 0,
+    this.currentUxStage = UxForgeStage.userJourneys,
     this.folderName,
   });
 
@@ -68,6 +81,15 @@ class SpecProjectSummary {
   /// Nombre de règles de gestion formalisées.
   final int ruleCount;
 
+  /// Nombre de parcours utilisateurs UX formalisés.
+  final int journeyCount;
+
+  /// Nombre d'écrans UX modélisés.
+  final int screenCount;
+
+  /// Étape UX active lors de la dernière sauvegarde.
+  final UxForgeStage currentUxStage;
+
   /// Nom du dossier slug sous `projects/`, si disponible sur disque.
   final String? folderName;
 }
@@ -82,11 +104,30 @@ class SpecProjectStore {
   /// Identifiant de format du manifeste projet (`project.json`).
   static const String manifestFormat = 'super_spec_forge.project_manifest';
 
+  /// Identifiant de format historique d'un projet complet mono-fichier.
+  static const String legacyProjectFormat = 'super_spec_forge.project';
+
   /// Identifiant de format d'un fichier objet métier unitaire.
   static const String businessObjectFormat = 'super_spec_forge.business_object';
 
   /// Identifiant de format d'un fichier règle de gestion unitaire.
   static const String businessRuleFormat = 'super_spec_forge.business_rule';
+
+  /// Identifiant de format de la navigation et de l'étape UX (`ux/navigation.json`).
+  static const String uxNavigationFormat = 'super_spec_forge.ux_navigation';
+
+  /// Identifiant de format des diagnostics de cohérence UX (`ux/coherence_issues.json`).
+  static const String uxCoherenceIssuesFormat =
+      'super_spec_forge.ux_coherence_issues';
+
+  /// Identifiant de format d'un fichier parcours utilisateur UX unitaire (`ux/journeys/*.json`).
+  static const String uxJourneyFormat = 'super_spec_forge.ux_journey';
+
+  /// Identifiant de format d'un fichier écran UX unitaire (`ux/screens/*.json`).
+  static const String uxScreenFormat = 'super_spec_forge.ux_screen';
+
+  /// Identifiant de format d'un fichier de conversation d'étape UX (`chats/ux_*.json`).
+  static const String uxStageChatFormat = 'super_spec_forge.ux_stage_chat';
 
   /// Identifiant de format d'un fichier d'ordre `_order.json`.
   static const String orderFormat = 'super_spec_forge.order';
@@ -133,6 +174,23 @@ class SpecProjectStore {
     '${_specDir(projectDir).path}${Platform.pathSeparator}business_rules',
   );
 
+  Directory _uxDir(Directory projectDir) =>
+      Directory('${projectDir.path}${Platform.pathSeparator}ux');
+
+  File _uxNavigationFile(Directory projectDir) => File(
+    '${_uxDir(projectDir).path}${Platform.pathSeparator}navigation.json',
+  );
+
+  File _uxCoherenceIssuesFile(Directory projectDir) => File(
+    '${_uxDir(projectDir).path}${Platform.pathSeparator}coherence_issues.json',
+  );
+
+  Directory _uxJourneysDir(Directory projectDir) =>
+      Directory('${_uxDir(projectDir).path}${Platform.pathSeparator}journeys');
+
+  Directory _uxScreensDir(Directory projectDir) =>
+      Directory('${_uxDir(projectDir).path}${Platform.pathSeparator}screens');
+
   Directory _chatsDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}chats');
 
@@ -161,6 +219,10 @@ class SpecProjectStore {
     '${_chatsDir(projectDir).path}${Platform.pathSeparator}stage_${stage.name}.json',
   );
 
+  File _uxStageChatFile(Directory projectDir, UxForgeStage stage) => File(
+    '${_chatsDir(projectDir).path}${Platform.pathSeparator}ux_${stage.name}.json',
+  );
+
   File _globalChatFile(Directory projectDir) => File(
     '${_chatsDir(projectDir).path}${Platform.pathSeparator}global_chat.json',
   );
@@ -187,7 +249,9 @@ class SpecProjectStore {
     final cached = _projectDirsById[projectId];
     if (cached != null && await _projectManifestFile(cached).exists()) {
       try {
-        final raw = jsonDecode(await _projectManifestFile(cached).readAsString());
+        final raw = jsonDecode(
+          await _projectManifestFile(cached).readAsString(),
+        );
         if (raw is Map && (raw['id'] as String?)?.trim() == projectId) {
           return cached;
         }
@@ -208,6 +272,39 @@ class SpecProjectStore {
       } catch (_) {}
     }
     return null;
+  }
+
+  Future<File?> _findLegacyProjectFile(String projectId) async {
+    if (!await _projectsDir.exists()) return null;
+    await for (final entity in _projectsDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = SpecStorageIo.fileNameOf(entity.path);
+      if (name.contains('.tmp.') || !name.toLowerCase().endsWith('.json')) {
+        continue;
+      }
+      try {
+        final raw = jsonDecode(await entity.readAsString());
+        if (raw is Map && (raw['id'] as String?)?.trim() == projectId) {
+          return entity;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  Future<Set<UxForgeStage>> _findExistingUxChatStages(
+    Directory projectDir,
+  ) async {
+    final chatsDir = _chatsDir(projectDir);
+    if (!await chatsDir.exists()) return const <UxForgeStage>{};
+    final checks = await Future.wait<bool>([
+      for (final stage in UxForgeStage.values)
+        _uxStageChatFile(projectDir, stage).exists(),
+    ]);
+    return <UxForgeStage>{
+      for (var i = 0; i < UxForgeStage.values.length; i++)
+        if (checks[i]) UxForgeStage.values[i],
+    };
   }
 
   Future<Directory> _resolveOrAllocateProjectDir(
@@ -265,10 +362,16 @@ class SpecProjectStore {
           prev.initialIdea != project.initialIdea ||
           prev.createdAt != project.createdAt ||
           prev.updatedAt != project.updatedAt ||
-          prev.currentStage != project.currentStage;
+          prev.currentStage != project.currentStage ||
+          prev.uxSpec.currentStage != project.uxSpec.currentStage ||
+          prev.uxSpec.journeys.length != project.uxSpec.journeys.length ||
+          prev.uxSpec.screens.length != project.uxSpec.screens.length;
       if (manifestChanged) {
         writes.add(
-          _writeJson(_projectManifestFile(projectDir), _manifestToJson(project)),
+          _writeJson(
+            _projectManifestFile(projectDir),
+            _manifestToJson(project),
+          ),
         );
       }
 
@@ -335,17 +438,97 @@ class SpecProjectStore {
         );
       }
 
+      final uxHasState =
+          project.uxSpec.hasContent || project.uxSpec != UxForgeSpec.empty;
+      final prevHadUxState =
+          prev != null &&
+          (prev.uxSpec.hasContent || prev.uxSpec != UxForgeSpec.empty);
+      final uxDirExisted = prevHadUxState || await _uxDir(projectDir).exists();
+      final existingUxChatStages = (!uxHasState && !uxDirExisted)
+          ? await _findExistingUxChatStages(projectDir)
+          : const <UxForgeStage>{};
+      final shouldPersistUx =
+          uxHasState || uxDirExisted || existingUxChatStages.isNotEmpty;
+      final forceInitUx =
+          uxHasState && (prev == null || !prevHadUxState || !uxDirExisted);
+
+      if (shouldPersistUx) {
+        if (forceInitUx ||
+            (uxDirExisted && prev == null) ||
+            (prev != null &&
+                (prev.uxSpec.currentStage != project.uxSpec.currentStage ||
+                    prev.uxSpec.navigation != project.uxSpec.navigation))) {
+          writes.add(
+            _writeJson(_uxNavigationFile(projectDir), <String, Object?>{
+              'format': uxNavigationFormat,
+              'version': storageVersion,
+              'currentStage': project.uxSpec.currentStage.name,
+              'navigation': project.uxSpec.navigation.toJson(),
+            }),
+          );
+        }
+
+        if (forceInitUx ||
+            (uxDirExisted && prev == null) ||
+            (prev != null &&
+                !listEquals(
+                  prev.uxSpec.coherenceIssues,
+                  project.uxSpec.coherenceIssues,
+                ))) {
+          writes.add(
+            _writeJson(_uxCoherenceIssuesFile(projectDir), <String, Object?>{
+              'format': uxCoherenceIssuesFormat,
+              'version': storageVersion,
+              'items': [
+                for (final i in project.uxSpec.coherenceIssues) i.toJson(),
+              ],
+            }),
+          );
+        }
+
+        if ((forceInitUx && project.uxSpec.journeys.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.uxSpec.journeys, project.uxSpec.journeys)) {
+          writes.add(_syncUxJourneys(projectDir, project.uxSpec.journeys));
+        }
+
+        if ((forceInitUx && project.uxSpec.screens.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.uxSpec.screens, project.uxSpec.screens)) {
+          writes.add(_syncUxScreens(projectDir, project.uxSpec.screens));
+        }
+      }
+
       final changedStages = <SpecForgeStage>[
         for (final stage in SpecForgeStage.values)
           if (prev == null ||
               prev.stageStateFor(stage) != project.stageStateFor(stage))
             stage,
       ];
+      final changedUxStages = !shouldPersistUx
+          ? const <UxForgeStage>[]
+          : (forceInitUx
+                ? UxForgeStage.values
+                : (prev == null
+                      ? <UxForgeStage>[
+                          for (final stage in UxForgeStage.values)
+                            if (existingUxChatStages.contains(stage) ||
+                                uxDirExisted)
+                              stage,
+                        ]
+                      : <UxForgeStage>[
+                          for (final stage in UxForgeStage.values)
+                            if (prev.uxSpec.stageStateFor(stage) !=
+                                project.uxSpec.stageStateFor(stage))
+                              stage,
+                        ]));
       final globalChatChanged =
           prev == null ||
           !listEquals(prev.globalChatMessages, project.globalChatMessages);
 
-      if (changedStages.isNotEmpty || globalChatChanged) {
+      if (changedStages.isNotEmpty ||
+          changedUxStages.isNotEmpty ||
+          globalChatChanged) {
         final attachmentsToWrite = <String, _PendingAttachmentWrite>{};
         for (final stage in changedStages) {
           final state = project.stageStateFor(stage);
@@ -356,6 +539,27 @@ class SpecProjectStore {
           writes.add(
             _writeJson(_stageChatFile(projectDir, stage), <String, Object?>{
               'format': 'super_spec_forge.stage_chat',
+              'version': storageVersion,
+              'data': <String, Object?>{
+                'stage': state.stage.name,
+                'status': state.status.name,
+                'messages': serializedMessages,
+                'stageSummary': state.stageSummary,
+                'readyToAdvance': state.readyToAdvance,
+              },
+            }),
+          );
+        }
+
+        for (final stage in changedUxStages) {
+          final state = project.uxSpec.stageStateFor(stage);
+          final serializedMessages = <Map<String, Object?>>[
+            for (final msg in state.messages)
+              _serializeChatMessage(msg, attachmentsToWrite),
+          ];
+          writes.add(
+            _writeJson(_uxStageChatFile(projectDir, stage), <String, Object?>{
+              'format': uxStageChatFormat,
               'version': storageVersion,
               'data': <String, Object?>{
                 'stage': state.stage.name,
@@ -401,6 +605,14 @@ class SpecProjectStore {
       if (writes.isNotEmpty) {
         await Future.wait(writes);
       }
+      if (prev == null) {
+        final legacyFile = await _findLegacyProjectFile(project.id);
+        if (legacyFile != null && await legacyFile.exists()) {
+          try {
+            await legacyFile.delete();
+          } catch (_) {}
+        }
+      }
       _persistedSnapshots[project.id] = project;
       await setLastActiveProjectId(project.id);
     });
@@ -409,72 +621,89 @@ class SpecProjectStore {
   Future<void> _syncBusinessObjects(
     Directory projectDir,
     List<BusinessObjectSpec> objects,
-  ) async {
-    final dir = _businessObjectsDir(projectDir);
-    final fileMap = SpecStorageSlug.assignUniqueJsonFiles<BusinessObjectSpec>(
-      objects,
-      labelFor: (o) =>
-          o.technicalName.trim().isNotEmpty ? o.technicalName : o.name,
-      idFor: (o) => o.id,
-      fallback: 'object',
-      separator: '_',
-    );
-
-    final writes = <Future<void>>[];
-    final keepFiles = <String>{...fileMap.keys};
-    final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
-    if (objects.isNotEmpty) {
-      keepFiles.add('_order.json');
-      writes.add(
-        _writeJson(orderFile, <String, Object?>{
-          'format': orderFormat,
-          'version': storageVersion,
-          'ids': [for (final o in objects) o.id],
-        }),
-      );
-    }
-
-    for (final entry in fileMap.entries) {
-      writes.add(
-        _writeJson(
-          File('${dir.path}${Platform.pathSeparator}${entry.key}'),
-          <String, Object?>{
-            'format': businessObjectFormat,
-            'version': storageVersion,
-            'data': entry.value.toJson(),
-          },
-        ),
-      );
-    }
-
-    await Future.wait(writes);
-    await SpecStorageIo.pruneUnexpectedFiles(dir, keepFiles);
-  }
+  ) => _syncSplitEntities<BusinessObjectSpec>(
+    _businessObjectsDir(projectDir),
+    objects,
+    format: businessObjectFormat,
+    labelFor: (o) =>
+        o.technicalName.trim().isNotEmpty ? o.technicalName : o.name,
+    idFor: (o) => o.id,
+    toJson: (o) => o.toJson(),
+    fallback: 'object',
+    separator: '_',
+  );
 
   Future<void> _syncBusinessRules(
     Directory projectDir,
     List<BusinessRuleSpec> rules,
-  ) async {
-    final dir = _businessRulesDir(projectDir);
-    final fileMap = SpecStorageSlug.assignUniqueJsonFiles<BusinessRuleSpec>(
-      rules,
-      labelFor: (r) =>
-          r.code.trim().isNotEmpty ? '${r.code} ${r.title}' : r.title,
-      idFor: (r) => r.id,
-      fallback: 'rule',
-      separator: '-',
+  ) => _syncSplitEntities<BusinessRuleSpec>(
+    _businessRulesDir(projectDir),
+    rules,
+    format: businessRuleFormat,
+    labelFor: (r) =>
+        r.code.trim().isNotEmpty ? '${r.code} ${r.title}' : r.title,
+    idFor: (r) => r.id,
+    toJson: (r) => r.toJson(),
+    fallback: 'rule',
+    separator: '-',
+  );
+
+  Future<void> _syncUxJourneys(
+    Directory projectDir,
+    List<UxJourneySpec> journeys,
+  ) => _syncSplitEntities<UxJourneySpec>(
+    _uxJourneysDir(projectDir),
+    journeys,
+    format: uxJourneyFormat,
+    labelFor: (j) => j.code.trim().isNotEmpty ? '${j.code} ${j.name}' : j.name,
+    idFor: (j) => j.id,
+    toJson: (j) => j.toJson(),
+    fallback: 'journey',
+    separator: '-',
+  );
+
+  Future<void> _syncUxScreens(
+    Directory projectDir,
+    List<UxScreenSpec> screens,
+  ) => _syncSplitEntities<UxScreenSpec>(
+    _uxScreensDir(projectDir),
+    screens,
+    format: uxScreenFormat,
+    labelFor: (s) => s.code.trim().isNotEmpty ? '${s.code} ${s.name}' : s.name,
+    idFor: (s) => s.id,
+    toJson: (s) => s.toJson(),
+    fallback: 'screen',
+    separator: '-',
+  );
+
+  Future<void> _syncSplitEntities<T>(
+    Directory dir,
+    List<T> items, {
+    required String format,
+    required String Function(T item) labelFor,
+    required String Function(T item) idFor,
+    required Map<String, Object?> Function(T item) toJson,
+    required String fallback,
+    String separator = '-',
+  }) async {
+    final fileMap = SpecStorageSlug.assignUniqueJsonFiles<T>(
+      items,
+      labelFor: labelFor,
+      idFor: idFor,
+      fallback: fallback,
+      separator: separator,
     );
 
     final writes = <Future<void>>[];
     final keepFiles = <String>{...fileMap.keys};
     final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
-    if (rules.isNotEmpty) {
+    if (items.isNotEmpty) {
       keepFiles.add('_order.json');
       writes.add(
         _writeJson(orderFile, <String, Object?>{
           'format': orderFormat,
           'version': storageVersion,
-          'ids': [for (final r in rules) r.id],
+          'ids': [for (final item in items) idFor(item)],
         }),
       );
     }
@@ -484,15 +713,17 @@ class SpecProjectStore {
         _writeJson(
           File('${dir.path}${Platform.pathSeparator}${entry.key}'),
           <String, Object?>{
-            'format': businessRuleFormat,
+            'format': format,
             'version': storageVersion,
-            'data': entry.value.toJson(),
+            'data': toJson(entry.value),
           },
         ),
       );
     }
 
-    await Future.wait(writes);
+    if (writes.isNotEmpty) {
+      await Future.wait(writes);
+    }
     await SpecStorageIo.pruneUnexpectedFiles(dir, keepFiles);
   }
 
@@ -500,13 +731,28 @@ class SpecProjectStore {
   Future<SpecForgeProject?> loadProject(String projectId) {
     return _enqueueProjectOp(projectId, () async {
       final projectDir = await _findExistingProjectDir(projectId);
-      if (projectDir == null) return null;
+      if (projectDir == null) {
+        final legacyFile = await _findLegacyProjectFile(projectId);
+        if (legacyFile == null || !await legacyFile.exists()) return null;
+        final legacyRaw = jsonDecode(await legacyFile.readAsString());
+        return SpecForgeProject.fromJson(legacyRaw);
+      }
       final manifestFile = _projectManifestFile(projectDir);
       if (!await manifestFile.exists()) return null;
 
       final manifestRaw = jsonDecode(await manifestFile.readAsString());
       if (manifestRaw is! Map) {
         throw const FormatException('project.json doit être un objet JSON.');
+      }
+
+      final specDirExists = await _specDir(projectDir).exists();
+      final uxDirExists = await _uxDir(projectDir).exists();
+      if (!specDirExists &&
+          !uxDirExists &&
+          (manifestRaw['format'] == legacyProjectFormat ||
+              manifestRaw.containsKey('lexicon') ||
+              manifestRaw.containsKey('businessObjects'))) {
+        return SpecForgeProject.fromJson(manifestRaw);
       }
 
       final id = (manifestRaw['id'] as String?)?.trim() ?? '';
@@ -538,13 +784,35 @@ class SpecProjectStore {
       final issuesFuture = _readOptionalJsonMap(
         _coherenceIssuesFile(projectDir),
       );
+      final globalChatFuture = _readOptionalJsonMap(
+        _globalChatFile(projectDir),
+      );
       final stageFutures = <SpecForgeStage, Future<Map<dynamic, dynamic>?>>{
         for (final stage in SpecForgeStage.values)
           stage: _readOptionalJsonMap(_stageChatFile(projectDir, stage)),
       };
-      final globalChatFuture = _readOptionalJsonMap(
-        _globalChatFile(projectDir),
+
+      final uxNavFuture = _readOptionalJsonMap(_uxNavigationFile(projectDir));
+      final uxIssuesFuture = _readOptionalJsonValue(
+        _uxCoherenceIssuesFile(projectDir),
       );
+      final uxJourneysFuture = _loadSplitEntities<UxJourneySpec>(
+        _uxJourneysDir(projectDir),
+        parseItem: UxJourneySpec.fromJson,
+        idOf: (j) => j.id,
+      );
+      final uxScreensFuture = _loadSplitEntities<UxScreenSpec>(
+        _uxScreensDir(projectDir),
+        parseItem: UxScreenSpec.fromJson,
+        idOf: (s) => s.id,
+      );
+      final uxStageFutures = <UxForgeStage, Future<Map<dynamic, dynamic>?>>{
+        for (final stage in UxForgeStage.values)
+          stage: _readOptionalJsonMap(_uxStageChatFile(projectDir, stage)),
+      };
+
+      final specStageCount = SpecForgeStage.values.length;
+      final uxStageCount = UxForgeStage.values.length;
 
       final results = await Future.wait<Object?>([
         lexiconFuture,
@@ -555,7 +823,12 @@ class SpecProjectStore {
         prefsFuture,
         issuesFuture,
         globalChatFuture,
+        uxNavFuture,
+        uxIssuesFuture,
+        uxJourneysFuture,
+        uxScreensFuture,
         for (final stage in SpecForgeStage.values) stageFutures[stage]!,
+        for (final stage in UxForgeStage.values) uxStageFutures[stage]!,
       ]);
 
       final lexiconMap = results[0] as Map<dynamic, dynamic>?;
@@ -566,15 +839,20 @@ class SpecProjectStore {
       final prefsMap = results[5] as Map<dynamic, dynamic>?;
       final issuesMap = results[6] as Map<dynamic, dynamic>?;
       final globalChatMap = results[7] as Map<dynamic, dynamic>?;
+      final uxNavMap = results[8] as Map<dynamic, dynamic>?;
+      final uxIssuesRaw = results[9];
+      final uxJourneys = results[10] as List<UxJourneySpec>;
+      final uxScreens = results[11] as List<UxScreenSpec>;
 
       final stageStates = <SpecForgeStage, SpecStageState>{};
-      final stageHydrationFutures = <Future<void>>[];
-      for (var i = 0; i < SpecForgeStage.values.length; i++) {
+      final uxStageStates = <UxForgeStage, UxStageState>{};
+      final hydrationFutures = <Future<void>>[];
+      for (var i = 0; i < specStageCount; i++) {
         final stage = SpecForgeStage.values[i];
-        final rawStageWrapper = results[8 + i] as Map<dynamic, dynamic>?;
+        final rawStageWrapper = results[12 + i] as Map<dynamic, dynamic>?;
         final rawStageData = rawStageWrapper?['data'];
         if (rawStageData != null) {
-          stageHydrationFutures.add(
+          hydrationFutures.add(
             _deserializeStageState(
               rawStageData,
               fallbackStage: stage,
@@ -584,15 +862,72 @@ class SpecProjectStore {
         }
       }
 
+      for (var i = 0; i < uxStageCount; i++) {
+        final stage = UxForgeStage.values[i];
+        final rawUxWrapper =
+            results[12 + specStageCount + i] as Map<dynamic, dynamic>?;
+        if (rawUxWrapper != null) {
+          final rawUxData = rawUxWrapper['data'] is Map
+              ? rawUxWrapper['data']
+              : rawUxWrapper;
+          hydrationFutures.add(
+            _deserializeUxStageState(
+              rawUxData,
+              fallbackStage: stage,
+              attachmentsDir: attachmentsDir,
+            ).then((state) => uxStageStates[stage] = state),
+          );
+        }
+      }
+
       late final List<SpecChatMessage> globalChatMessages;
       final rawGlobalItems = globalChatMap?['items'];
       await Future.wait([
-        ...stageHydrationFutures,
+        ...hydrationFutures,
         _deserializeChatMessages(
           rawGlobalItems,
           attachmentsDir: attachmentsDir,
         ).then((msgs) => globalChatMessages = msgs),
       ]);
+
+      final hasModularUx =
+          uxDirExists ||
+          uxNavMap != null ||
+          uxIssuesRaw != null ||
+          uxJourneys.isNotEmpty ||
+          uxScreens.isNotEmpty ||
+          uxStageStates.isNotEmpty;
+
+      final UxForgeSpec uxSpec;
+      var loadedFromLegacyInlineUx = false;
+      if (hasModularUx) {
+        final rawCurrentUxStage =
+            uxNavMap?['currentStage'] ??
+            (uxNavMap?['data'] is Map
+                ? (uxNavMap!['data'] as Map)['currentStage']
+                : null) ??
+            manifestRaw['currentUxStage'];
+        uxSpec = UxForgeSpec(
+          currentStage: UxForgeStage.fromJson(rawCurrentUxStage),
+          journeys: uxJourneys,
+          navigation: UxNavigationSpec.fromJson(
+            _extractUxNavigationPayload(uxNavMap),
+          ),
+          screens: uxScreens,
+          stageStates: uxStageStates,
+          coherenceIssues: _parseUxCoherenceIssues(uxIssuesRaw),
+        );
+      } else if (manifestRaw['uxSpec'] != null) {
+        uxSpec = UxForgeSpec.fromJson(manifestRaw['uxSpec']);
+        loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
+      } else if (manifestRaw['currentUxStage'] != null) {
+        uxSpec = UxForgeSpec(
+          currentStage: UxForgeStage.fromJson(manifestRaw['currentUxStage']),
+        );
+        loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
+      } else {
+        uxSpec = UxForgeSpec.empty;
+      }
 
       final rawIssues = issuesMap?['items'];
 
@@ -617,9 +952,12 @@ class SpecProjectStore {
             for (final item in rawIssues) SpecCoherenceIssue.fromJson(item),
         ],
         globalChatMessages: globalChatMessages,
+        uxSpec: uxSpec,
       );
       project.validate();
-      _persistedSnapshots[project.id] = project;
+      if (specDirExists && !loadedFromLegacyInlineUx) {
+        _persistedSnapshots[project.id] = project;
+      }
       return project;
     });
   }
@@ -641,9 +979,10 @@ class SpecProjectStore {
       files.add(entity);
     }
     files.sort(
-      (a, b) => SpecStorageIo.fileNameOf(a.path)
-          .toLowerCase()
-          .compareTo(SpecStorageIo.fileNameOf(b.path).toLowerCase()),
+      (a, b) =>
+          SpecStorageIo.fileNameOf(a.path)
+              .toLowerCase()
+              .compareTo(SpecStorageIo.fileNameOf(b.path).toLowerCase()),
     );
 
     final parsedByFile = await Future.wait<T>(
@@ -697,6 +1036,10 @@ class SpecProjectStore {
       if (dir != null && await dir.exists()) {
         await dir.delete(recursive: true);
       }
+      final legacyFile = await _findLegacyProjectFile(projectId);
+      if (legacyFile != null && await legacyFile.exists()) {
+        await legacyFile.delete();
+      }
       final activeId = await getLastActiveProjectId();
       if (activeId == projectId) {
         await setLastActiveProjectId(null);
@@ -705,12 +1048,22 @@ class SpecProjectStore {
   }
 
   /// Liste tous les projets valides présents sur disque en lisant `project.json`
-  /// et en comptant les fichiers sous `spec/business_objects/` et `spec/business_rules/`,
+  /// et en comptant les fichiers sous `spec/` et `ux/` (avec repli sur le manifeste),
   /// triés du plus récent au plus ancien.
   Future<List<SpecProjectSummary>> listProjects() async {
     if (!await _projectsDir.exists()) return const <SpecProjectSummary>[];
     final summaries = <SpecProjectSummary>[];
+    final seenIds = <String>{};
+    final legacyFiles = <File>[];
     await for (final entity in _projectsDir.list(followLinks: false)) {
+      if (entity is File) {
+        final fileName = SpecStorageIo.fileNameOf(entity.path);
+        if (!fileName.contains('.tmp.') &&
+            fileName.toLowerCase().endsWith('.json')) {
+          legacyFiles.add(entity);
+        }
+        continue;
+      }
       if (entity is! Directory) continue;
       final manifest = _projectManifestFile(entity);
       if (!await manifest.exists()) continue;
@@ -722,14 +1075,37 @@ class SpecProjectStore {
         final initialIdea = (decoded['initialIdea'] as String?)?.trim() ?? '';
         if (id.isEmpty || name.isEmpty || initialIdea.isEmpty) continue;
         _projectDirsById[id] = entity;
+        seenIds.add(id);
 
         final updatedAt =
             _parseDateTime(decoded['updatedAt']) ??
             _parseDateTime(decoded['createdAt']) ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-        final counts = await Future.wait<int>([
-          _countJsonEntityFiles(_businessObjectsDir(entity)),
-          _countJsonEntityFiles(_businessRulesDir(entity)),
+        final rawUxSpec = decoded['uxSpec'] is Map
+            ? decoded['uxSpec'] as Map
+            : null;
+        final resolvedMeta = await Future.wait<Object>([
+          _resolveSummaryCount(
+            _businessObjectsDir(entity),
+            decoded['objectCount'],
+            fallbackList: decoded['businessObjects'],
+          ),
+          _resolveSummaryCount(
+            _businessRulesDir(entity),
+            decoded['ruleCount'],
+            fallbackList: decoded['businessRules'],
+          ),
+          _resolveSummaryCount(
+            _uxJourneysDir(entity),
+            decoded['journeyCount'],
+            fallbackList: rawUxSpec?['journeys'],
+          ),
+          _resolveSummaryCount(
+            _uxScreensDir(entity),
+            decoded['screenCount'],
+            fallbackList: rawUxSpec?['screens'],
+          ),
+          _resolveSummaryUxStage(entity, decoded),
         ]);
         summaries.add(
           SpecProjectSummary(
@@ -738,8 +1114,11 @@ class SpecProjectStore {
             initialIdea: initialIdea,
             currentStage: SpecForgeStage.fromJson(decoded['currentStage']),
             updatedAt: updatedAt,
-            objectCount: counts[0],
-            ruleCount: counts[1],
+            objectCount: resolvedMeta[0] as int,
+            ruleCount: resolvedMeta[1] as int,
+            journeyCount: resolvedMeta[2] as int,
+            screenCount: resolvedMeta[3] as int,
+            currentUxStage: resolvedMeta[4] as UxForgeStage,
             folderName: SpecStorageIo.fileNameOf(entity.path),
           ),
         );
@@ -747,8 +1126,111 @@ class SpecProjectStore {
         // Ignore un manifeste corrompu sans bloquer les autres projets.
       }
     }
+
+    for (final file in legacyFiles) {
+      try {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is! Map) continue;
+        final id = (decoded['id'] as String?)?.trim() ?? '';
+        final name = (decoded['name'] as String?)?.trim() ?? '';
+        final initialIdea = (decoded['initialIdea'] as String?)?.trim() ?? '';
+        if (id.isEmpty ||
+            name.isEmpty ||
+            initialIdea.isEmpty ||
+            !seenIds.add(id)) {
+          continue;
+        }
+        final updatedAt =
+            _parseDateTime(decoded['updatedAt']) ??
+            _parseDateTime(decoded['createdAt']) ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+        final rawUxSpec = decoded['uxSpec'] is Map
+            ? decoded['uxSpec'] as Map
+            : null;
+        summaries.add(
+          SpecProjectSummary(
+            id: id,
+            name: name,
+            initialIdea: initialIdea,
+            currentStage: SpecForgeStage.fromJson(decoded['currentStage']),
+            updatedAt: updatedAt,
+            objectCount: _parseManifestCount(
+              decoded['objectCount'],
+              fallbackList: decoded['businessObjects'],
+            ),
+            ruleCount: _parseManifestCount(
+              decoded['ruleCount'],
+              fallbackList: decoded['businessRules'],
+            ),
+            journeyCount: _parseManifestCount(
+              decoded['journeyCount'],
+              fallbackList: rawUxSpec?['journeys'],
+            ),
+            screenCount: _parseManifestCount(
+              decoded['screenCount'],
+              fallbackList: rawUxSpec?['screens'],
+            ),
+            currentUxStage: UxForgeStage.fromJson(
+              decoded['currentUxStage'] ?? rawUxSpec?['currentStage'],
+            ),
+          ),
+        );
+      } catch (_) {}
+    }
+
     summaries.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return List<SpecProjectSummary>.unmodifiable(summaries);
+  }
+
+  Future<int> _resolveSummaryCount(
+    Directory dir,
+    Object? manifestCount, {
+    Object? fallbackList,
+  }) async {
+    if (await dir.exists()) {
+      return _countJsonEntityFiles(dir);
+    }
+    return _parseManifestCount(manifestCount, fallbackList: fallbackList);
+  }
+
+  Future<UxForgeStage> _resolveSummaryUxStage(
+    Directory projectDir,
+    Map<dynamic, dynamic> manifest,
+  ) async {
+    final navFile = _uxNavigationFile(projectDir);
+    if (await navFile.exists()) {
+      try {
+        final navRaw = jsonDecode(await navFile.readAsString());
+        if (navRaw is Map) {
+          final rawStage =
+              navRaw['currentStage'] ??
+              (navRaw['data'] is Map
+                  ? (navRaw['data'] as Map)['currentStage']
+                  : null);
+          if (rawStage != null) {
+            return UxForgeStage.fromJson(rawStage);
+          }
+        }
+      } catch (_) {}
+    }
+    final rawUxSpec = manifest['uxSpec'] is Map
+        ? manifest['uxSpec'] as Map
+        : null;
+    return UxForgeStage.fromJson(
+      manifest['currentUxStage'] ?? rawUxSpec?['currentStage'],
+    );
+  }
+
+  static int _parseManifestCount(Object? raw, {Object? fallbackList}) {
+    final parsed = switch (raw) {
+      final int v => v,
+      final num v => v.toInt(),
+      final String s => int.tryParse(s.trim()),
+      _ => null,
+    };
+    if (parsed != null && parsed >= 0) return parsed;
+    if (fallbackList is List) return fallbackList.length;
+    return 0;
   }
 
   Future<int> _countJsonEntityFiles(Directory dir) async {
@@ -803,13 +1285,61 @@ class SpecProjectStore {
         'createdAt': project.createdAt.toUtc().toIso8601String(),
         'updatedAt': project.updatedAt.toUtc().toIso8601String(),
         'currentStage': project.currentStage.name,
+        'currentUxStage': project.uxSpec.currentStage.name,
+        'journeyCount': project.uxSpec.journeys.length,
+        'screenCount': project.uxSpec.screens.length,
       };
 
   Future<Map<dynamic, dynamic>?> _readOptionalJsonMap(File file) async {
-    if (!await file.exists()) return null;
-    final decoded = jsonDecode(await file.readAsString());
+    final decoded = await _readOptionalJsonValue(file);
     if (decoded is Map) return decoded;
     return null;
+  }
+
+  Future<Object?> _readOptionalJsonValue(File file) async {
+    if (!await file.exists()) return null;
+    return jsonDecode(await file.readAsString());
+  }
+
+  static Object? _extractUxNavigationPayload(Map<dynamic, dynamic>? raw) {
+    if (raw == null) return null;
+    if (raw['navigation'] != null) return raw['navigation'];
+    if (raw['data'] is Map) {
+      final data = raw['data'] as Map;
+      return data['navigation'] ?? data;
+    }
+    if (raw.containsKey('shellPattern') ||
+        raw.containsKey('routes') ||
+        raw.containsKey('visualTheme')) {
+      return raw;
+    }
+    return null;
+  }
+
+  static List<UxCoherenceIssue> _parseUxCoherenceIssues(Object? raw) {
+    final Object? items = switch (raw) {
+      final List<dynamic> list => list,
+      final Map<dynamic, dynamic> map =>
+        map['items'] ?? map['coherenceIssues'] ?? map['data'],
+      _ => null,
+    };
+    if (items is! List || items.isEmpty) {
+      return const <UxCoherenceIssue>[];
+    }
+    final parsed = <UxCoherenceIssue>[];
+    final seenIds = <String>{};
+    for (final item in items) {
+      var issue = UxCoherenceIssue.fromJson(item);
+      if (!seenIds.add(issue.id)) {
+        var suffix = 2;
+        while (!seenIds.add('${issue.id}_$suffix')) {
+          suffix++;
+        }
+        issue = issue.copyWith(id: '${issue.id}_$suffix');
+      }
+      parsed.add(issue);
+    }
+    return parsed;
   }
 
   Map<String, Object?> _serializeChatMessage(
@@ -860,6 +1390,31 @@ class SpecProjectStore {
       stageSummary: (raw['stageSummary'] as String?) ?? '',
       readyToAdvance: raw['readyToAdvance'] == true,
     );
+  }
+
+  Future<UxStageState> _deserializeUxStageState(
+    Object? raw, {
+    required UxForgeStage fallbackStage,
+    required Directory attachmentsDir,
+  }) async {
+    if (raw is! Map) {
+      return UxStageState(stage: fallbackStage);
+    }
+    final messages = await _deserializeChatMessages(
+      raw['messages'],
+      attachmentsDir: attachmentsDir,
+    );
+    final state = UxStageState(
+      stage: raw['stage'] != null
+          ? UxForgeStage.fromJson(raw['stage'])
+          : fallbackStage,
+      status: SpecStageStatus.fromJson(raw['status']),
+      messages: messages,
+      stageSummary: (raw['stageSummary'] as String?) ?? '',
+      readyToAdvance: raw['readyToAdvance'] == true,
+    );
+    state.validate();
+    return state;
   }
 
   Future<List<SpecChatMessage>> _deserializeChatMessages(
@@ -979,6 +1534,16 @@ class SpecProjectStore {
     final files = <String>{};
     for (final stageState in project.stageStates.values) {
       for (final msg in stageState.messages) {
+        for (final att in msg.attachments) {
+          final desc = _describeAttachment(att);
+          if (desc.bytes.isNotEmpty || desc.isText) {
+            files.add(desc.fileName);
+          }
+        }
+      }
+    }
+    for (final uxStageState in project.uxSpec.stageStates.values) {
+      for (final msg in uxStageState.messages) {
         for (final att in msg.attachments) {
           final desc = _describeAttachment(att);
           if (desc.bytes.isNotEmpty || desc.isText) {

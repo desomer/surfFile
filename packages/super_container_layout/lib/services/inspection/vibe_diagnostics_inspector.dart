@@ -38,6 +38,8 @@ import '../../widgets/components/component_state_behavior.dart';
 import '../../widgets/components/super_layout/layout_selection.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../../widgets/editing/ai/vibe_work_highlight.dart';
+import '../../widgets/editing/overlay/editor_overlay.dart'
+    show isRenderObjectOffstage;
 import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope;
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
@@ -51,20 +53,47 @@ import '../repositories/json_schema_validator.dart';
 import 'vibe_debug_capture.dart';
 import 'vibe_mounted_slot_index.dart';
 
-/// Mémorise les sélections de tableaux `JsonArrayBinding` modifiées en aperçu
+/// Mémorise les sélections de tableaux `JsonArrayBinding` et les onglets `SuperTab` modifiés en aperçu
 /// par l'outil `preview_navigation_or_selection` afin de pouvoir les restaurer au rollback.
 class VibePreviewStateTracker {
   final Map<(String, String), ({List<int>? selection, String? nodePath})>
   _initialSelections = {};
+  final Map<Object, ({VibeMountedTabEntry entry, int initialIndex})>
+  _initialTabStates = {};
 
   bool _navigatedByTool = false;
 
   /// Indique si au moins une navigation a été déclenchée via `preview_navigation_or_selection`.
   bool get hasNavigated => _navigatedByTool;
 
+  /// Indique si au moins un onglet `SuperTab` a été basculé en aperçu durant le tour.
+  bool get hasTabChanges => _initialTabStates.isNotEmpty;
+
   /// Indique qu'une navigation d'aperçu a eu lieu durant le tour.
   void markNavigated() {
     _navigatedByTool = true;
+  }
+
+  /// Sauvegarde l'onglet actif initial de [entry] avant sa première bascule d'aperçu.
+  void snapshotTabIfNeeded(VibeMountedTabEntry entry, int currentIndex) {
+    _initialTabStates.putIfAbsent(
+      entry.token,
+      () => (entry: entry, initialIndex: currentIndex),
+    );
+  }
+
+  /// Restaure tous les composants `SuperTab` basculés en aperçu vers leur onglet initial.
+  void restoreTabs() {
+    if (_initialTabStates.isEmpty) return;
+    for (final saved in _initialTabStates.values) {
+      try {
+        saved.entry.restoreTab(saved.initialIndex);
+      } catch (_) {
+        // Ignore si le SuperTab a été démonté entre-temps.
+      }
+    }
+    _initialTabStates.clear();
+    SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   /// Sauvegarde la sélection initiale de `(repositoryId, template)` avant sa première mutation.
@@ -121,10 +150,12 @@ class VibeDiagnosticsInspector {
     this.pageRouting,
     this.ensurePageLoaded,
     this.readScope,
+    this.readVisibleOnly,
     this.onSelectScope,
     this.turnStartMarker,
     this.previewTracker,
     this.fontManager,
+    this.waitForVisualFrame,
   });
 
   /// Fournisseur de l'[Appearance] courante.
@@ -151,6 +182,9 @@ class VibeDiagnosticsInspector {
   /// Fournisseur optionnel du `VibeChatScope` actif.
   final VibeChatScope? Function()? readScope;
 
+  /// Indique si le mode « Uniquement visible » verrouille l'onglet et le scroll courants.
+  final bool Function()? readVisibleOnly;
+
   /// Callback optionnel permettant de mettre à jour le `VibeChatScope` du chat.
   final ValueChanged<VibeChatScope?>? onSelectScope;
 
@@ -162,6 +196,9 @@ class VibeDiagnosticsInspector {
 
   /// Gestionnaire optionnel de polices dynamiques Google Fonts.
   final DynamicFontManager? fontManager;
+
+  /// Attente optionnelle d'une frame de rendu après navigation, sélection ou bascule d'onglet.
+  final Future<void> Function()? waitForVisualFrame;
 
   static final RegExp _sensitiveHeaderName = RegExp(
     r'auth|token|secret|password|cookie|api[-_]?key|credential|bearer',
@@ -1545,8 +1582,17 @@ class VibeDiagnosticsInspector {
 
     var didSomething = false;
     final actions = <String, Object?>{};
+    final visibleOnly = readVisibleOnly?.call() == true;
 
     if (pageId.isNotEmpty || routePath.isNotEmpty) {
+      if (visibleOnly) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Mode « Uniquement visible » actif : la navigation vers une autre page/route est désactivée.',
+        );
+      }
       final routing = pageRouting;
       if (routing == null) {
         return VibeToolResult.error(
@@ -1659,26 +1705,191 @@ class VibeDiagnosticsInspector {
       didSomething = true;
     }
 
+    final tabComponentId = args['tabComponentId'] is String
+        ? (args['tabComponentId'] as String).trim()
+        : '';
+    final tabIdArg = args['tabId'] is String
+        ? (args['tabId'] as String).trim()
+        : '';
+    final rawTabIndex = args['tabIndex'];
+    final wantsTabSwitch =
+        tabComponentId.isNotEmpty ||
+        tabIdArg.isNotEmpty ||
+        rawTabIndex is num;
+
+    if (wantsTabSwitch) {
+      if (visibleOnly) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Mode « Uniquement visible » actif : interdit de changer d’onglet. Reste sur l’onglet actif et la position de scroll courante.',
+        );
+      }
+      final activeScope = readScope?.call();
+      final rootCtx = slotIndex.activeAppRootKey?.currentContext;
+      final rootBox = rootCtx?.findRenderObject();
+      final stopAt = rootBox is RenderBox && rootBox.attached ? rootBox : null;
+      final activeTabs = <VibeMountedTabEntry>[];
+      final seenTabIds = <String>{};
+      for (final entry in slotIndex.allTabEntries.reversed) {
+        final ctx = entry.tabContext();
+        if (ctx == null || !ctx.mounted) continue;
+        final ro = ctx.findRenderObject();
+        if (ro != null &&
+            (!ro.attached || isRenderObjectOffstage(ro, stopAt: stopAt))) {
+          continue;
+        }
+        if (seenTabIds.add(entry.componentId)) {
+          activeTabs.add(entry);
+        }
+      }
+
+      VibeMountedTabEntry? targetEntry;
+      if (tabComponentId.isNotEmpty) {
+        targetEntry = activeTabs
+            .where((e) => e.componentId == tabComponentId)
+            .firstOrNull;
+        if (targetEntry == null) {
+          final available = activeTabs.map((e) => e.componentId).toList();
+          return VibeToolResult.error(
+            callId: callId,
+            name: toolName,
+            message: available.isEmpty
+                ? 'Aucun composant SuperTab monté à l’écran (demandé: "$tabComponentId").'
+                : 'SuperTab "$tabComponentId" introuvable ou non monté (disponibles: ${available.join(', ')}).',
+          );
+        }
+      } else if (activeTabs.length == 1) {
+        targetEntry = activeTabs.single;
+      } else {
+        final available = activeTabs.map((e) => e.componentId).toList();
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message: available.isEmpty
+              ? 'Aucun composant SuperTab monté à l’écran.'
+              : 'Plusieurs SuperTab sont montés (${available.join(', ')}) : précise tabComponentId.',
+        );
+      }
+
+      if (activeScope != null) {
+        final allowedScopeIds = <String>{};
+        final pending = <String>[...activeScope.canonicalComponentIds];
+        while (pending.isNotEmpty) {
+          final id = pending.removeLast();
+          if (!allowedScopeIds.add(id)) continue;
+          for (final childId in VibeScopeHelpers.childrenOfComponent(
+            appearance.components[id],
+          )) {
+            if (!allowedScopeIds.contains(childId)) {
+              pending.add(childId);
+            }
+          }
+        }
+        if (!allowedScopeIds.contains(targetEntry.componentId)) {
+          return VibeToolResult.error(
+            callId: callId,
+            name: toolName,
+            message:
+                'Le SuperTab "${targetEntry.componentId}" est en dehors du scope restreint actif "${activeScope.displayLabel}" : le balayage des onglets hors scope est désactivé.',
+          );
+        }
+      }
+
+      final snap = targetEntry.readSnapshot();
+      if (snap == null || snap.tabCount == 0) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Le SuperTab "${targetEntry.componentId}" ne contient aucun onglet actif.',
+        );
+      }
+
+      int? resolvedTabIndex;
+      if (rawTabIndex is num) {
+        final idx = rawTabIndex.toInt();
+        if (idx < 0 || idx >= snap.tabCount) {
+          final summary = snap.tabs
+              .map((t) => '[${t.index}] ${t.tabId} ("${t.label}")')
+              .join(', ');
+          return VibeToolResult.error(
+            callId: callId,
+            name: toolName,
+            message:
+                'tabIndex $idx hors bornes pour "${targetEntry.componentId}" (${snap.tabCount} onglet(s) : $summary).',
+          );
+        }
+        resolvedTabIndex = idx;
+      } else if (tabIdArg.isNotEmpty) {
+        final exactMatch = snap.tabs
+            .where((t) => t.tabId == tabIdArg || t.label == tabIdArg)
+            .firstOrNull;
+        final ciMatch = exactMatch ??
+            snap.tabs
+                .where(
+                  (t) =>
+                      t.tabId.toLowerCase() == tabIdArg.toLowerCase() ||
+                      t.label.toLowerCase() == tabIdArg.toLowerCase(),
+                )
+                .firstOrNull;
+        if (ciMatch == null) {
+          final summary = snap.tabs
+              .map((t) => '[${t.index}] ${t.tabId} ("${t.label}")')
+              .join(', ');
+          return VibeToolResult.error(
+            callId: callId,
+            name: toolName,
+            message:
+                'Onglet "$tabIdArg" introuvable dans "${targetEntry.componentId}" (disponibles : $summary).',
+          );
+        }
+        resolvedTabIndex = ciMatch.index;
+      } else {
+        resolvedTabIndex = 0;
+      }
+
+      final previousIndex = snap.activeIndex;
+      previewTracker?.snapshotTabIfNeeded(targetEntry, previousIndex);
+      targetEntry.selectTab(resolvedTabIndex);
+      final targetTab = snap.tabs[resolvedTabIndex];
+      actions['tabSelection'] = <String, Object?>{
+        'tabComponentId': targetEntry.componentId,
+        'previousIndex': previousIndex,
+        'activeIndex': resolvedTabIndex,
+        'tabId': targetTab.tabId,
+        'label': targetTab.label,
+        'contentZone': targetTab.contentZone,
+        'tabCount': snap.tabCount,
+      };
+      didSomething = true;
+    }
+
     if (!didSomething) {
       return VibeToolResult.error(
         callId: callId,
         name: toolName,
         message:
-            'Fournis pageId/routePath et/ou (repositoryId + arrayTemplate) à prévisualiser.',
+            'Fournis pageId/routePath, (repositoryId + arrayTemplate) et/ou (tabComponentId + tabIndex/tabId) à prévisualiser.',
       );
     }
 
-    SchedulerBinding.instance.ensureVisualUpdate();
-    final isWidgetTest = WidgetsBinding.instance.runtimeType
-        .toString()
-        .contains('TestWidgetsFlutterBinding');
-    if (!isWidgetTest && SchedulerBinding.instance.hasScheduledFrame) {
-      try {
-        await SchedulerBinding.instance.endOfFrame.timeout(
-          const Duration(milliseconds: 200),
-        );
-      } on TimeoutException {
-        // Poursuit sans blocage si aucune pompe de frame n'est active.
+    if (waitForVisualFrame != null) {
+      await waitForVisualFrame!();
+    } else {
+      SchedulerBinding.instance.ensureVisualUpdate();
+      final isWidgetTest = WidgetsBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgetsFlutterBinding');
+      if (!isWidgetTest && SchedulerBinding.instance.hasScheduledFrame) {
+        try {
+          await SchedulerBinding.instance.endOfFrame.timeout(
+            const Duration(milliseconds: 200),
+          );
+        } on TimeoutException {
+          // Poursuit sans blocage si aucune pompe de frame n'est active.
+        }
       }
     }
 
@@ -1774,9 +1985,12 @@ class VibeDiagnosticsInspector {
     final enableEditMode = args['enableEditMode'] is bool
         ? args['enableEditMode'] as bool
         : true;
-    final scrollIntoView = args['scrollIntoView'] is bool
-        ? args['scrollIntoView'] as bool
-        : true;
+    final scrollIntoView =
+        readVisibleOnly?.call() == true
+            ? false
+            : (args['scrollIntoView'] is bool
+                  ? args['scrollIntoView'] as bool
+                  : true);
     final pulseHighlight = args['pulseHighlight'] is bool
         ? args['pulseHighlight'] as bool
         : true;

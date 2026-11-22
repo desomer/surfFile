@@ -6,6 +6,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/ux/ux_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
 import '../services/spec_project_store.dart';
 import 'design/company_glossary_view.dart';
@@ -20,6 +21,12 @@ import 'spec_split_handle.dart';
 import 'spec_wizard_stepper.dart';
 import 'spec_workspace_selector_dialog.dart';
 import 'stage_ai_chat_pane.dart';
+import 'ux_stage_ai_chat_pane.dart';
+import 'ux_wizard_stepper.dart';
+import 'ux_workspace/ux_journeys_editor_view.dart';
+import 'ux_workspace/ux_navigation_editor_view.dart';
+import 'ux_workspace/ux_review_export_view.dart';
+import 'ux_workspace/ux_screens_editor_view.dart';
 import 'workspace/business_objects_editor_view.dart';
 import 'workspace/business_rules_editor_view.dart';
 import 'workspace/lexicon_editor_view.dart';
@@ -65,6 +72,7 @@ class SpecForgeShell extends StatefulWidget {
 
 class _SpecForgeShellState extends State<SpecForgeShell> {
   final GlobalKey _splitRowKey = GlobalKey();
+  final GlobalKey _uxSplitRowKey = GlobalKey();
   double _chatPaneFraction = 0.50;
   double _chatDragOffset = SpecSplitHandle.width / 2;
   int _selectedRailIndex = 0;
@@ -102,6 +110,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           'projects' => 'Spec › ${SpecLinksView.projectsLabel}',
           'wizard' when project != null =>
             '${project.currentStage.title} — ${project.name}',
+          'ux_wizard' when project != null =>
+            'UX · ${project.uxSpec.currentStage.title} — ${project.name}',
           _ => 'Spec',
         };
       case 1:
@@ -149,7 +159,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     );
     if (!changed || !mounted) return;
     setState(() {
-      if (_activeSpecLinkId == 'wizard' && widget.controller.project == null) {
+      if ((_activeSpecLinkId == 'wizard' || _activeSpecLinkId == 'ux_wizard') &&
+          widget.controller.project == null) {
         _activeSpecLinkId = 'projects';
       }
     });
@@ -402,6 +413,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     if (_activeSpecLinkId == 'wizard' && project != null) {
       return _buildSpecWizard(project, colors);
     }
+    if (_activeSpecLinkId == 'ux_wizard' && project != null) {
+      return _buildUxWizard(project, colors);
+    }
     return SpecLinksView(
       key: const ValueKey('spec-forge-spec-menu-view'),
       activeProject: project,
@@ -412,9 +426,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           setState(() => _activeSpecLinkId = item.id);
           return;
         }
-        if (item.id == 'wizard') {
+        if (item.id == 'wizard' || item.id == 'ux_wizard') {
           if (project != null) {
-            setState(() => _activeSpecLinkId = 'wizard');
+            setState(() => _activeSpecLinkId = item.id);
             return;
           }
           ScaffoldMessenger.maybeOf(context)
@@ -439,6 +453,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         SpecWizardStepper(
           project: project,
           onBack: () => setState(() => _activeSpecLinkId = null),
+          onSwitchToUxWizard: () =>
+              setState(() => _activeSpecLinkId = 'ux_wizard'),
           disabled: widget.controller.isSending,
           onSelectStage: (stage) => widget.controller.goToStage(
             stage,
@@ -588,6 +604,192 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       controller: widget.controller,
     ),
     SpecForgeStage.reviewExport => ReviewExportView(
+      controller: widget.controller,
+      onContinueToUxWizard: widget.controller.isSending
+          ? null
+          : () {
+              final current = widget.controller.project;
+              if (current != null) {
+                final state = current.stageStateFor(SpecForgeStage.reviewExport);
+                if (state.status != SpecStageStatus.validated) {
+                  widget.controller.updateProject(
+                    current.withStageState(
+                      state.copyWith(status: SpecStageStatus.validated),
+                    ),
+                    recordUndo: false,
+                  );
+                }
+              }
+              setState(() => _activeSpecLinkId = 'ux_wizard');
+            },
+    ),
+  };
+
+  Widget _buildUxWizard(SpecForgeProject project, ColorScheme colors) {
+    return Column(
+      key: const ValueKey('spec-forge-ux-wizard-view'),
+      children: [
+        UxWizardStepper(
+          project: project,
+          onBack: () => setState(() => _activeSpecLinkId = null),
+          onSwitchToSpecWizard: () =>
+              setState(() => _activeSpecLinkId = 'wizard'),
+          disabled: widget.controller.isSending,
+          onSelectStage: (stage) => widget.controller.goToUxStage(
+            stage,
+            validateCurrent: stage.index > project.uxSpec.currentStage.index,
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const dividerWidth = SpecSplitHandle.width;
+              const collapsedRailWidth = 38.0;
+              const minChatWidth = 240.0;
+              const minWorkspaceWidth = 360.0;
+              final totalWidth = constraints.maxWidth;
+              final availableWidth = (totalWidth - dividerWidth).clamp(
+                0.0,
+                double.infinity,
+              );
+              final isCollapsed = _chatPaneFraction <= 0.0;
+              final chatWidth = isCollapsed
+                  ? 0.0
+                  : (availableWidth <= minChatWidth + minWorkspaceWidth
+                        ? availableWidth * _chatPaneFraction
+                        : (availableWidth * _chatPaneFraction).clamp(
+                            minChatWidth,
+                            availableWidth - minWorkspaceWidth,
+                          ));
+
+              return Row(
+                key: _uxSplitRowKey,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isCollapsed)
+                    Container(
+                      key: const ValueKey('ux-chat-collapsed-bar'),
+                      width: collapsedRailWidth,
+                      color: colors.surfaceContainerLow,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        children: [
+                          IconButton(
+                            key: const ValueKey('ux-chat-expand-btn'),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Afficher le chat IA UX (50 %)',
+                            onPressed: _cycleChatPaneSize,
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 16,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      key: const ValueKey('ux-chat-pane'),
+                      width: chatWidth,
+                      child: UxStageAiChatPane(
+                        controller: widget.controller,
+                        chatWidthFraction: _chatPaneFraction,
+                        onCycleChatSize: _cycleChatPaneSize,
+                        pickAttachments: widget.pickAttachments,
+                        pasteAttachments: widget.pasteAttachments,
+                        hasClipboardMedia: widget.hasClipboardMedia,
+                        pasteClipboardMedia: widget.pasteClipboardMedia,
+                      ),
+                    ),
+                  SpecSplitHandle(
+                    key: const ValueKey('ux-chat-split-handle'),
+                    onDoubleTap: () => setState(() => _chatPaneFraction = 0.50),
+                    onHorizontalDragDown: (details) {
+                      final box =
+                          _uxSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box != null && !isCollapsed) {
+                        final localX = box
+                            .globalToLocal(details.globalPosition)
+                            .dx;
+                        _chatDragOffset = (localX - chatWidth).clamp(
+                          0.0,
+                          SpecSplitHandle.width,
+                        );
+                      } else {
+                        _chatDragOffset = SpecSplitHandle.width / 2;
+                      }
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      final box =
+                          _uxSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box == null || availableWidth <= 0) return;
+                      final localX = box
+                          .globalToLocal(details.globalPosition)
+                          .dx;
+                      final nextWidth = localX - _chatDragOffset;
+                      final minFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? (minChatWidth / availableWidth)
+                          : 0.20;
+                      final maxFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? ((availableWidth - minWorkspaceWidth) /
+                                availableWidth)
+                          : 0.72;
+                      setState(() {
+                        if (isCollapsed) {
+                          if (nextWidth > 60) {
+                            _chatPaneFraction = (nextWidth / availableWidth)
+                                .clamp(minFrac, maxFrac);
+                          }
+                          return;
+                        }
+                        if (nextWidth < 140) {
+                          _chatPaneFraction = 0.0;
+                        } else {
+                          _chatPaneFraction = (nextWidth / availableWidth)
+                              .clamp(minFrac, maxFrac);
+                        }
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: _buildWorkspaceForUxStage(
+                      project.uxSpec.currentStage,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWorkspaceForUxStage(UxForgeStage stage) => switch (stage) {
+    UxForgeStage.userJourneys => UxJourneysEditorView(
+      controller: widget.controller,
+    ),
+    UxForgeStage.iaNavigation => UxNavigationEditorView(
+      controller: widget.controller,
+    ),
+    UxForgeStage.screenBlueprints => UxScreensEditorView(
+      controller: widget.controller,
+      onJumpToSpecStage: (targetStage, {objectId}) {
+        if (objectId != null && objectId.isNotEmpty) {
+          widget.controller.focusBusinessObject(objectId);
+        }
+        widget.controller.goToStage(targetStage);
+        setState(() => _activeSpecLinkId = 'wizard');
+      },
+    ),
+    UxForgeStage.uxReviewExport => UxReviewExportView(
       controller: widget.controller,
     ),
   };

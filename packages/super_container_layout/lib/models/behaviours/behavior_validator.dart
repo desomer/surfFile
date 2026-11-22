@@ -67,11 +67,46 @@ enum BehaviorValidatorOperator {
   /// Vérifie que la chaîne commence par [ValueBehaviorValidator.expectedValue].
   startsWith('Commence par', 'startsWith', requiresValue: true),
 
-  /// Vérifie que la valeur numérique est strictement supérieure à [ValueBehaviorValidator.expectedValue].
+  /// Vérifie que la valeur numérique ou date ISO est strictement supérieure à [ValueBehaviorValidator.expectedValue].
   greaterThan('Est supérieur à', 'greaterThan', requiresValue: true),
 
-  /// Vérifie que la valeur numérique est strictement inférieure à [ValueBehaviorValidator.expectedValue].
+  /// Vérifie que la valeur numérique ou date ISO est strictement inférieure à [ValueBehaviorValidator.expectedValue].
   lessThan('Est inférieur à', 'lessThan', requiresValue: true),
+
+  /// Vérifie que la valeur numérique ou date ISO est supérieure ou égale à [ValueBehaviorValidator.expectedValue].
+  greaterOrEqual(
+    'Est supérieur ou égal à',
+    'greaterOrEqual',
+    requiresValue: true,
+  ),
+
+  /// Vérifie que la valeur numérique ou date ISO est inférieure ou égale à [ValueBehaviorValidator.expectedValue].
+  lessOrEqual(
+    'Est inférieur ou égal à',
+    'lessOrEqual',
+    requiresValue: true,
+  ),
+
+  /// Vérifie que le nombre d'éléments ou de caractères est égal à [ValueBehaviorValidator.expectedValue].
+  countEquals(
+    'A un nombre d’éléments égal à',
+    'countEquals',
+    requiresValue: true,
+  ),
+
+  /// Vérifie que le nombre d'éléments ou de caractères est strictement supérieur à [ValueBehaviorValidator.expectedValue].
+  countGreaterThan(
+    'A plus d’éléments que',
+    'countGreaterThan',
+    requiresValue: true,
+  ),
+
+  /// Vérifie que le nombre d'éléments ou de caractères est strictement inférieur à [ValueBehaviorValidator.expectedValue].
+  countLessThan(
+    'A moins d’éléments que',
+    'countLessThan',
+    requiresValue: true,
+  ),
 
   /// Vérifie que la chaîne correspond à l'expression régulière [ValueBehaviorValidator.expectedValue].
   matchesRegex('Correspond au motif (RegExp)', 'matchesRegex', requiresValue: true),
@@ -582,11 +617,28 @@ class ValueBehaviorValidator extends BehaviorValidator {
       }
     }
     if (operator == BehaviorValidatorOperator.greaterThan ||
-        operator == BehaviorValidatorOperator.lessThan) {
+        operator == BehaviorValidatorOperator.lessThan ||
+        operator == BehaviorValidatorOperator.greaterOrEqual ||
+        operator == BehaviorValidatorOperator.lessOrEqual) {
       final numeric = _tryParseNum(expectedValue);
-      if (numeric == null || !numeric.isFinite) {
+      final isValidNum = numeric != null && numeric.isFinite;
+      final isValidDate = _tryParseIsoDate(expectedValue) != null;
+      if (!isValidNum && !isValidDate) {
         throw FormatException(
-          'L’opérateur "${operator.shortName}" attend une valeur numérique finie.',
+          'L’opérateur "${operator.shortName}" attend une valeur numérique finie ou une date ISO 8601.',
+        );
+      }
+    }
+    if (operator == BehaviorValidatorOperator.countEquals ||
+        operator == BehaviorValidatorOperator.countGreaterThan ||
+        operator == BehaviorValidatorOperator.countLessThan) {
+      final n = expectedValue;
+      final isValidCount =
+          (n is int && n >= 0) ||
+          (n is num && n.isFinite && n >= 0 && n == n.roundToDouble());
+      if (!isValidCount) {
+        throw FormatException(
+          'L’opérateur "${operator.shortName}" attend un entier positif ou nul.',
         );
       }
     }
@@ -1101,6 +1153,8 @@ abstract final class BehaviorValidatorCatalog {
 
 const Object _keepExpectedValue = Object();
 
+final RegExp _isoDatePrefix = RegExp(r'^\d{4}-\d{2}-\d{2}');
+
 num? _tryParseNum(Object? value) {
   if (value is num) return value;
   if (value is String) {
@@ -1109,6 +1163,13 @@ num? _tryParseNum(Object? value) {
     return num.tryParse(trimmed);
   }
   return null;
+}
+
+DateTime? _tryParseIsoDate(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  if (!_isoDatePrefix.hasMatch(trimmed)) return null;
+  return DateTime.tryParse(trimmed);
 }
 
 void _ensureJsonValue(Object? value) {

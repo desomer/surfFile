@@ -1,5 +1,7 @@
 [CmdletBinding()]
 param(
+    [ValidateSet('SurfFile', 'SuperDesigner', 'SuperSpecForge', 'All')]
+    [string[]]$App = @('SurfFile'),
     [string]$FlutterPath,
     [string]$IsccPath,
     [string]$RuntimePath
@@ -70,43 +72,77 @@ foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
     }
 }
 
-$manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'pubspec.yaml') -Raw
-$versionMatch = [regex]::Match($manifest, '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$')
-if (-not $versionMatch.Success) {
-    throw 'La version du pubspec doit avoir la forme major.minor.patch+build.'
+$targets = @{
+    SurfFile = @{
+        AppRoot        = $projectRoot
+        IssFile        = 'SurfFile.iss'
+        ExeName        = 'surf_file.exe'
+        OutputPrefix   = 'SurfFile'
+    }
+    SuperDesigner = @{
+        AppRoot        = Join-Path $projectRoot 'packages\super_designer'
+        IssFile        = 'SuperDesigner.iss'
+        ExeName        = 'super_designer.exe'
+        OutputPrefix   = 'SuperDesigner'
+    }
+    SuperSpecForge = @{
+        AppRoot        = Join-Path $projectRoot 'packages\super_spec_forge'
+        IssFile        = 'SuperSpecForge.iss'
+        ExeName        = 'super_spec_forge.exe'
+        OutputPrefix   = 'SuperSpecForge'
+    }
 }
-$versionName = $versionMatch.Groups[1].Value
-$buildNumber = $versionMatch.Groups[2].Value
-$appVersion = "$versionName+$buildNumber"
-$versionNumber = "$versionName.$buildNumber"
 
-Push-Location $projectRoot
-try {
-    & $FlutterPath build windows --release "--build-name=$versionName" "--build-number=$buildNumber"
-    if ($LASTEXITCODE -ne 0) {
-        throw "La compilation Flutter a echoue (code $LASTEXITCODE)."
+$selectedApps = if ($App -contains 'All') {
+    @('SurfFile', 'SuperDesigner', 'SuperSpecForge')
+} else {
+    @($App | Select-Object -Unique)
+}
+
+foreach ($appKey in $selectedApps) {
+    $cfg = $targets[$appKey]
+    $appRoot = $cfg.AppRoot
+    $pubspecPath = Join-Path $appRoot 'pubspec.yaml'
+    $manifest = Get-Content -LiteralPath $pubspecPath -Raw
+    $versionMatch = [regex]::Match($manifest, '(?m)^version:\s*(\d+\.\d+\.\d+)(?:\+(\d+))?\s*$')
+    if (-not $versionMatch.Success) {
+        throw "La version de $pubspecPath doit avoir la forme major.minor.patch[+build]."
     }
-    $release = Join-Path $projectRoot 'build\windows\x64\runner\Release'
-    foreach ($file in @('surf_file.exe', 'flutter_windows.dll', 'data\app.so', 'data\icudtl.dat')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $release $file) -PathType Leaf)) {
-            throw "La compilation Release est incomplete : $file."
+    $versionName = $versionMatch.Groups[1].Value
+    $hasBuildNumber = $versionMatch.Groups[2].Success
+    $buildNumber = if ($hasBuildNumber) { $versionMatch.Groups[2].Value } else { '0' }
+    $appVersion = if ($hasBuildNumber) { "$versionName+$buildNumber" } else { $versionName }
+    $versionNumber = "$versionName.$buildNumber"
+
+    Write-Host "=== Generation de l'installateur $appKey ($appVersion) ==="
+    Push-Location $appRoot
+    try {
+        & $FlutterPath build windows --release "--build-name=$versionName" "--build-number=$buildNumber"
+        if ($LASTEXITCODE -ne 0) {
+            throw "La compilation Flutter de $appKey a echoue (code $LASTEXITCODE)."
         }
+        $release = Join-Path $appRoot 'build\windows\x64\runner\Release'
+        foreach ($file in @($cfg.ExeName, 'flutter_windows.dll', 'data\app.so', 'data\icudtl.dat')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $release $file) -PathType Leaf)) {
+                throw "La compilation Release de $appKey est incomplete : $file."
+            }
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $release 'data\flutter_assets') -PathType Container)) {
+            throw "Les assets Flutter sont absents de la compilation Release de $appKey."
+        }
+        & $IsccPath "/DAppVersion=$appVersion" "/DAppVersionNumber=$versionNumber" `
+            "/DReleaseDir=$release" "/DRuntimeDir=$RuntimePath" `
+            (Join-Path $PSScriptRoot $cfg.IssFile)
+        if ($LASTEXITCODE -ne 0) {
+            throw "La compilation Inno Setup de $appKey a echoue (code $LASTEXITCODE)."
+        }
+        $installer = Join-Path $projectRoot "build\installer\$($cfg.OutputPrefix)-$appVersion-windows-x64-setup.exe"
+        if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "L'installateur attendu est introuvable : $installer."
+        }
+        Write-Host "Installateur cree : $installer"
+        Get-FileHash -LiteralPath $installer -Algorithm SHA256
+    } finally {
+        Pop-Location
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $release 'data\flutter_assets') -PathType Container)) {
-        throw 'Les assets Flutter sont absents de la compilation Release.'
-    }
-    & $IsccPath "/DAppVersion=$appVersion" "/DAppVersionNumber=$versionNumber" `
-        "/DReleaseDir=$release" "/DRuntimeDir=$RuntimePath" `
-        (Join-Path $PSScriptRoot 'SurfFile.iss')
-    if ($LASTEXITCODE -ne 0) {
-        throw "La compilation Inno Setup a echoue (code $LASTEXITCODE)."
-    }
-    $installer = Join-Path $projectRoot "build\installer\SurfFile-$appVersion-windows-x64-setup.exe"
-    if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
-        throw "L'installateur attendu est introuvable : $installer."
-    }
-    Write-Host "Installateur cree : $installer"
-    Get-FileHash -LiteralPath $installer -Algorithm SHA256
-} finally {
-    Pop-Location
 }

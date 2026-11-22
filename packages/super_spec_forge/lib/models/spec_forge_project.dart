@@ -13,6 +13,7 @@ import 'spec_forge_stage.dart';
 import 'spec_lexicon.dart';
 import 'spec_stage_chat.dart';
 import 'spec_vision.dart';
+import 'ux/ux_forge_spec.dart';
 
 /// Projet complet de spécification construit au fil des 6 étapes du wizard IA.
 @immutable
@@ -35,6 +36,7 @@ class SpecForgeProject {
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue> coherenceIssues = const <SpecCoherenceIssue>[],
     List<SpecChatMessage> globalChatMessages = const <SpecChatMessage>[],
+    UxForgeSpec? uxSpec,
   }) : lexicon = lexicon ?? SpecLexicon.empty,
        vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
@@ -50,7 +52,8 @@ class SpecForgeProject {
        coherenceIssues = List<SpecCoherenceIssue>.unmodifiable(coherenceIssues),
        globalChatMessages = List<SpecChatMessage>.unmodifiable(
          globalChatMessages,
-       );
+       ),
+       uxSpec = uxSpec ?? UxForgeSpec.empty;
 
   /// Crée un nouveau projet à partir d'une idée initiale saisie par l'utilisateur.
   factory SpecForgeProject.fromIdea({
@@ -139,6 +142,9 @@ class SpecForgeProject {
   /// Historique des échanges du chat global de questions sur le projet.
   final List<SpecChatMessage> globalChatMessages;
 
+  /// Spécification UX en 4 étapes (parcours, architecture/navigation, écrans et audit UX).
+  final UxForgeSpec uxSpec;
+
   /// Retourne l'état d'une étape donnée (garanti non nul).
   SpecStageState stageStateFor(SpecForgeStage stage) =>
       stageStates[stage] ?? SpecStageState(stage: stage);
@@ -223,6 +229,8 @@ class SpecForgeProject {
         throw FormatException('Règle de gestion dupliquée : ${rule.id}');
       }
     }
+
+    uxSpec.validate();
   }
 
   /// Produit un instantané JSON concis adapté à l'injection dans le prompt de [stage].
@@ -249,6 +257,43 @@ class SpecForgeProject {
           'businessRules': [for (final r in businessRules) r.toJson()],
         if (stage == SpecForgeStage.reviewExport && coherenceIssues.isNotEmpty)
           'coherenceIssues': [for (final i in coherenceIssues) i.toJson()],
+        if (uxSpec.hasContent)
+          'uxSummary': <String, Object?>{
+            'currentStage': uxSpec.currentStage.name,
+            'journeyCount': uxSpec.journeys.length,
+            'routeCount': uxSpec.navigation.routes.length,
+            'screenCount': uxSpec.screens.length,
+            'shellPattern': uxSpec.navigation.shellPattern.name,
+            if (uxSpec.journeys.isNotEmpty)
+              'journeys': [
+                for (final j in uxSpec.journeys)
+                  <String, Object?>{
+                    'id': j.id,
+                    'code': j.code,
+                    'name': j.name,
+                  },
+              ],
+            if (uxSpec.navigation.routes.isNotEmpty)
+              'routes': [
+                for (final r in uxSpec.navigation.routes)
+                  <String, Object?>{
+                    'id': r.id,
+                    'path': r.path,
+                    'title': r.title,
+                  },
+              ],
+            if (uxSpec.screens.isNotEmpty)
+              'screens': [
+                for (final s in uxSpec.screens)
+                  <String, Object?>{
+                    'id': s.id,
+                    'code': s.code,
+                    'name': s.name,
+                    'routeId': s.routeId,
+                    'pattern': s.pattern.name,
+                  },
+              ],
+          },
       };
 
   /// Copie modifiée (met à jour [updatedAt] automatiquement si non fourni).
@@ -269,6 +314,7 @@ class SpecForgeProject {
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue>? coherenceIssues,
     List<SpecChatMessage>? globalChatMessages,
+    UxForgeSpec? uxSpec,
   }) => SpecForgeProject(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -288,6 +334,7 @@ class SpecForgeProject {
     stageStates: stageStates ?? this.stageStates,
     coherenceIssues: coherenceIssues ?? this.coherenceIssues,
     globalChatMessages: globalChatMessages ?? this.globalChatMessages,
+    uxSpec: uxSpec ?? this.uxSpec,
   );
 
   /// Sérialise le projet complet en JSON.
@@ -314,6 +361,7 @@ class SpecForgeProject {
     'coherenceIssues': [for (final i in coherenceIssues) i.toJson()],
     if (globalChatMessages.isNotEmpty)
       'globalChatMessages': [for (final m in globalChatMessages) m.toJson()],
+    if (uxSpec.hasContent) 'uxSpec': uxSpec.toJson(),
   };
 
   /// Désérialise et valide un projet depuis JSON.
@@ -378,6 +426,7 @@ class SpecForgeProject {
           for (final item in raw['globalChatMessages'] as List)
             SpecChatMessage.fromJson(item),
       ],
+      uxSpec: UxForgeSpec.fromJson(raw['uxSpec']),
     );
     project.validate();
     return project;
@@ -420,7 +469,8 @@ class SpecForgeProject {
               businessObjectModelPreferences &&
           mapEquals(other.stageStates, stageStates) &&
           listEquals(other.coherenceIssues, coherenceIssues) &&
-          listEquals(other.globalChatMessages, globalChatMessages);
+          listEquals(other.globalChatMessages, globalChatMessages) &&
+          other.uxSpec == uxSpec;
 
   @override
   int get hashCode => Object.hash(
@@ -439,5 +489,6 @@ class SpecForgeProject {
     Object.hashAll(stageStates.values),
     Object.hashAll(coherenceIssues),
     Object.hashAll(globalChatMessages),
+    uxSpec,
   );
 }

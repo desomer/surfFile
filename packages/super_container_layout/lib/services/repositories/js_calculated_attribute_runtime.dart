@@ -55,6 +55,62 @@ abstract interface class JsRepositoryActionEvaluator {
 /// Écriture JSON demandée par un script de comportement.
 typedef JsRepositoryScriptWrite = ({String path, Object? value});
 
+/// Suppression d'un élément de tableau demandée par un script de comportement.
+///
+/// Lorsque [index] vaut `null`, [arrayPath] contient déjà le modèle de chemin
+/// suivi d'un `[?]` à résoudre à l'exécution via `ctx.remove(...)`.
+typedef JsRepositoryScriptRemoval = ({String arrayPath, int? index});
+
+/// Sélection d'un élément de tableau demandée par un script de comportement.
+typedef JsRepositoryScriptSelection = ({
+  String arrayPath,
+  int index,
+  String? repositoryId,
+});
+
+/// Résultat structuré d'un script d'action JavaScript sur les repositories.
+class JsRepositoryActionResult {
+  /// Crée un résultat regroupant écritures, suppressions et sélections.
+  const JsRepositoryActionResult({
+    this.writes = const [],
+    this.removals = const [],
+    this.selections = const [],
+  });
+
+  /// Écritures JSON demandées via `ctx.set(path, value)`.
+  final List<JsRepositoryScriptWrite> writes;
+
+  /// Suppressions d'éléments de tableau demandées via `ctx.removeAt` / `ctx.remove`.
+  final List<JsRepositoryScriptRemoval> removals;
+
+  /// Sélections d'éléments de tableau demandées via `ctx.select`.
+  final List<JsRepositoryScriptSelection> selections;
+
+  /// Vrai si le script n'a demandé aucune écriture, suppression ni sélection.
+  bool get isEmpty => writes.isEmpty && removals.isEmpty && selections.isEmpty;
+}
+
+/// Callback de lecture utilisé par `ctx.get(...)` dans un script d'action.
+typedef JsRepositoryScriptReader = FutureOr<Object?> Function(
+  String path,
+  String? repositoryId,
+);
+
+/// Évaluateur enrichi supportant lectures cross-repository (`ctx.get`),
+/// suppressions (`ctx.removeAt`/`ctx.remove`) et sélections (`ctx.select`).
+abstract interface class JsRepositoryRichActionEvaluator
+    implements JsRepositoryActionEvaluator {
+  /// Exécute un script de comportement et retourne ses écritures, suppressions
+  /// et sélections.
+  FutureOr<JsRepositoryActionResult> executeRichAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+    JsRepositoryScriptReader? readValue,
+  });
+}
+
 /// Exception levée lors d'une erreur de syntaxe ou d'exécution JavaScript.
 class JsCalculationException extends FormatException {
   /// Crée une exception de calcul JavaScript avec un message affichable.
@@ -71,7 +127,7 @@ typedef _CtxReadRequest = ({
 
 /// Évaluateur QuickJS embarqué s'appuyant sur `flutter_js` ([QuickJsRuntime2]).
 class QuickJsCalculatedEvaluator
-    implements JsCalculatedEvaluator, JsRepositoryActionEvaluator {
+    implements JsCalculatedEvaluator, JsRepositoryRichActionEvaluator {
   /// Crée un évaluateur QuickJS ; [runtimeFactory] permet d'injecter un
   /// runtime personnalisé dans les tests.
   QuickJsCalculatedEvaluator({JavascriptRuntime Function()? runtimeFactory})
@@ -380,7 +436,68 @@ class QuickJsCalculatedEvaluator
 
   globalThis.__sclRunRepositoryAction = function(payloadJson) {
     const payload = JSON.parse(payloadJson);
+    const resolved = payload.resolved || {};
     const writes = new Map();
+    const removals = [];
+    const selections = [];
+    const missing = [];
+    const seenMissing = Object.create(null);
+
+    function __hasCalculatedSegment(path) {
+      return String(path)
+        .split('.')
+        .some(segment => segment.startsWith('@') || segment.includes('@'));
+    }
+
+    function readCtx(kind, path, repoOrOpts, maybeDefault, hasExplicitDefault) {
+      let repositoryId = null;
+      let defaultValue = undefined;
+      let hasDefault = hasExplicitDefault;
+      if (repoOrOpts !== null && typeof repoOrOpts === 'object' && !Array.isArray(repoOrOpts)) {
+        repositoryId = typeof repoOrOpts.repositoryId === 'string' && repoOrOpts.repositoryId.length > 0
+          ? repoOrOpts.repositoryId
+          : null;
+        if (Object.prototype.hasOwnProperty.call(repoOrOpts, 'defaultValue')) {
+          defaultValue = repoOrOpts.defaultValue;
+          hasDefault = true;
+        }
+      } else if (typeof repoOrOpts === 'string') {
+        if (repoOrOpts.length > 0) {
+          repositoryId = repoOrOpts;
+        }
+        if (hasExplicitDefault) {
+          defaultValue = maybeDefault;
+        }
+      } else if (hasExplicitDefault) {
+        defaultValue = maybeDefault;
+      } else if (repoOrOpts !== undefined) {
+        defaultValue = repoOrOpts;
+        hasDefault = true;
+      }
+      const key = JSON.stringify([kind, path, repositoryId, hasDefault, hasDefault ? defaultValue : null]);
+      if (Object.prototype.hasOwnProperty.call(resolved, key)) {
+        const entry = resolved[key];
+        if (entry && entry.error) {
+          throw new Error(entry.error);
+        }
+        return readonly(entry ? entry.value : null);
+      }
+      if (!Object.prototype.hasOwnProperty.call(seenMissing, key)) {
+        seenMissing[key] = true;
+        missing.push({
+          key: key,
+          kind: kind,
+          path: String(path ?? ''),
+          repositoryId: repositoryId,
+          hasDefault: hasDefault,
+          defaultValue: hasDefault ? defaultValue : null,
+        });
+      }
+      const err = new Error('__SCL_DEFERRED__');
+      err.__sclDeferred = true;
+      throw err;
+    }
+
     function readonly(value) {
       if (value === null || typeof value !== 'object') return value;
       return new Proxy(value, {
@@ -407,16 +524,91 @@ class QuickJsCalculatedEvaluator
     try {
       const ctx = {
         repositoryId: payload.repositoryId,
+        get(path, repoOrOpts, defaultValue) {
+          return readCtx('value', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getValue(path, repoOrOpts, defaultValue) {
+          return readCtx('value', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getString(path, repoOrOpts, defaultValue) {
+          return readCtx('string', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getNum(path, repoOrOpts, defaultValue) {
+          return readCtx('num', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getInt(path, repoOrOpts, defaultValue) {
+          return readCtx('int', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getDouble(path, repoOrOpts, defaultValue) {
+          return readCtx('double', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getBool(path, repoOrOpts, defaultValue) {
+          return readCtx('bool', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getList(path, repoOrOpts, defaultValue) {
+          return readCtx('list', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
+        getObject(path, repoOrOpts, defaultValue) {
+          return readCtx('object', path, repoOrOpts, defaultValue, arguments.length >= 3);
+        },
         set(path, value) {
           if (typeof path !== 'string' || path.trim() === '') {
             throw new TypeError('ctx.set attend un chemin JSON non vide.');
           }
           const cleanPath = path.trim();
-          if (cleanPath.split('.').some(segment => segment.startsWith('@'))) {
+          if (__hasCalculatedSegment(cleanPath)) {
             throw new TypeError('Les attributs calculés (@) sont en lecture seule.');
           }
           writes.set(cleanPath, __assertJsonCompatible(value));
           return value;
+        },
+        remove(path) {
+          if (typeof path !== 'string' || path.trim() === '') {
+            throw new TypeError('ctx.remove attend un chemin d’élément de tableau non vide.');
+          }
+          const cleanPath = path.trim();
+          if (__hasCalculatedSegment(cleanPath)) {
+            throw new TypeError('Les attributs calculés (@) sont en lecture seule.');
+          }
+          const match = /\[(\d+|\?)\]$/.exec(cleanPath);
+          if (!match || match.index === 0) {
+            throw new TypeError('ctx.remove attend un chemin se terminant par [index] ou [?].');
+          }
+          const arrayPath = cleanPath.slice(0, match.index);
+          const index = match[1] === '?' ? null : Number(match[1]);
+          if (index !== null && (!Number.isInteger(index) || index < 0)) {
+            throw new RangeError('ctx.remove attend un indice entier positif ou nul.');
+          }
+          removals.push({arrayPath: arrayPath, index: index});
+        },
+        removeAt(arrayPath, index) {
+          if (typeof arrayPath !== 'string' || arrayPath.trim() === '') {
+            throw new TypeError('ctx.removeAt attend un chemin de tableau JSON non vide.');
+          }
+          const cleanPath = arrayPath.trim();
+          if (__hasCalculatedSegment(cleanPath)) {
+            throw new TypeError('Les attributs calculés (@) sont en lecture seule.');
+          }
+          if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+            throw new RangeError('ctx.removeAt attend un indice entier positif ou nul.');
+          }
+          removals.push({arrayPath: cleanPath, index: index});
+        },
+        select(arrayPath, index, repositoryId) {
+          if (typeof arrayPath !== 'string' || arrayPath.trim() === '') {
+            throw new TypeError('ctx.select attend un chemin de tableau JSON non vide.');
+          }
+          const cleanPath = arrayPath.trim();
+          if (__hasCalculatedSegment(cleanPath)) {
+            throw new TypeError('Les attributs calculés (@) sont en lecture seule.');
+          }
+          if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+            throw new RangeError('ctx.select attend un indice entier positif ou nul.');
+          }
+          const targetRepo = typeof repositoryId === 'string' && repositoryId.trim() !== ''
+            ? repositoryId.trim()
+            : null;
+          selections.push({arrayPath: cleanPath, index: index, repositoryId: targetRepo});
         },
       };
       const fn = new Function(
@@ -429,8 +621,16 @@ class QuickJsCalculatedEvaluator
       return JSON.stringify({
         status: 'ok',
         writes: Array.from(writes, ([path, value]) => ({path, value})),
+        removals: removals,
+        selections: selections,
       });
     } catch (error) {
+      if (error && error.__sclDeferred) {
+        return JSON.stringify({
+          status: 'deferred',
+          missing: missing,
+        });
+      }
       const message = error && error.message ? String(error.message) : String(error);
       const name = error && error.name ? String(error.name) : 'Error';
       return JSON.stringify({status: 'error', error: name + ': ' + message});
@@ -716,59 +916,362 @@ class QuickJsCalculatedEvaluator
     required Map<String, Object?> eventData,
     required String repositoryId,
   }) {
-    final runtime = _ensureRuntime();
-    final payload = jsonEncode(<String, Object?>{
-      'code': code,
-      'rootData': rootData,
-      'eventData': eventData,
-      'repositoryId': repositoryId,
-    });
-    final result = runtime.evaluate(
-      'globalThis.__sclRunRepositoryAction(${jsonEncode(payload)})',
+    final result = executeRichAction(
+      code: code,
+      rootData: rootData,
+      eventData: eventData,
+      repositoryId: repositoryId,
     );
-    if (result.isError) {
-      throw JsCalculationException(
-        'Erreur JavaScript : ${result.stringResult}',
-      );
+    if (result is Future<JsRepositoryActionResult>) {
+      return result.then((r) => r.writes);
     }
-    final rawText = result.rawResult is String
-        ? result.rawResult as String
-        : result.stringResult;
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(rawText);
-    } on FormatException {
-      throw const JsCalculationException(
-        'Réponse interne du script JavaScript invalide.',
-      );
-    }
-    if (decoded is! Map<String, dynamic>) {
-      throw const JsCalculationException(
-        'Réponse interne du script JavaScript invalide.',
-      );
-    }
-    if (decoded['status'] != 'ok') {
-      throw JsCalculationException(
-        decoded['error']?.toString() ?? 'Erreur JavaScript inconnue.',
-      );
-    }
-    final rawWrites = decoded['writes'];
-    if (rawWrites is! List) {
-      throw const JsCalculationException(
-        'La liste des écritures JavaScript est invalide.',
-      );
-    }
-    return List<JsRepositoryScriptWrite>.unmodifiable([
-      for (final rawWrite in rawWrites)
-        if (rawWrite is Map &&
-            rawWrite['path'] is String &&
-            rawWrite.containsKey('value'))
-          (path: rawWrite['path'] as String, value: rawWrite['value'])
-        else
+    return result.writes;
+  }
+
+  @override
+  FutureOr<JsRepositoryActionResult> executeRichAction({
+    required String code,
+    required Object? rootData,
+    required Map<String, Object?> eventData,
+    required String repositoryId,
+    JsRepositoryScriptReader? readValue,
+  }) {
+    final runtime = _ensureRuntime();
+    final resolved = <String, Map<String, Object?>>{};
+    var pass = 0;
+
+    FutureOr<JsRepositoryActionResult> step() {
+      while (true) {
+        if (_disposed) {
+          throw const FormatException('Le runtime JavaScript est fermé.');
+        }
+        if (++pass > _maxResolutionPasses) {
           throw const JsCalculationException(
-            'Une écriture JavaScript est invalide.',
-          ),
-    ]);
+            'Trop de dépendances imbriquées dans le script JavaScript.',
+          );
+        }
+        final payload = jsonEncode(<String, Object?>{
+          'code': code,
+          'rootData': rootData,
+          'eventData': eventData,
+          'repositoryId': repositoryId,
+          if (resolved.isNotEmpty) 'resolved': resolved,
+        });
+        final result = runtime.evaluate(
+          'globalThis.__sclRunRepositoryAction(${jsonEncode(payload)})',
+        );
+        if (result.isError) {
+          throw JsCalculationException(
+            'Erreur JavaScript : ${result.stringResult}',
+          );
+        }
+        final rawText = result.rawResult is String
+            ? result.rawResult as String
+            : result.stringResult;
+        final Object? decoded;
+        try {
+          decoded = jsonDecode(rawText);
+        } on FormatException {
+          throw const JsCalculationException(
+            'Réponse interne du script JavaScript invalide.',
+          );
+        }
+        if (decoded is! Map<String, dynamic>) {
+          throw const JsCalculationException(
+            'Réponse interne du script JavaScript invalide.',
+          );
+        }
+        final status = decoded['status'];
+        if (status == 'error') {
+          throw JsCalculationException(
+            decoded['error']?.toString() ?? 'Erreur JavaScript inconnue.',
+          );
+        }
+        if (status == 'deferred') {
+          final missing = decoded['missing'];
+          if (missing is! List || missing.isEmpty) {
+            throw const JsCalculationException(
+              'Dépendance JavaScript différée vide.',
+            );
+          }
+          final futures = <Future<void>>[];
+          for (final item in missing) {
+            if (item is! Map) continue;
+            final key = item['key'] as String?;
+            final path = item['path'] as String?;
+            if (key == null || path == null || path.isEmpty) {
+              throw const JsCalculationException(
+                'Chemin de lecture JavaScript invalide.',
+              );
+            }
+            final request = (
+              kind: item['kind'] as String? ?? 'value',
+              path: path,
+              repositoryId: item['repositoryId'] as String?,
+              hasDefault: item['hasDefault'] == true,
+              defaultValue: item['defaultValue'],
+            );
+            try {
+              final readResult = _resolveActionRead(
+                request: request,
+                defaultRepositoryId: repositoryId,
+                rootData: rootData,
+                readValue: readValue,
+              );
+              if (readResult is Future<Object?>) {
+                futures.add(
+                  readResult.then<void>(
+                    (val) => resolved[key] = <String, Object?>{'value': val},
+                    onError: (Object err, StackTrace _) {
+                      if (err is FormatException) {
+                        resolved[key] = <String, Object?>{'error': err.message};
+                      } else {
+                        resolved[key] = <String, Object?>{
+                          'error': err.toString(),
+                        };
+                      }
+                    },
+                  ),
+                );
+              } else {
+                resolved[key] = <String, Object?>{'value': readResult};
+              }
+            } on FormatException catch (err) {
+              resolved[key] = <String, Object?>{'error': err.message};
+            }
+          }
+          if (futures.isEmpty) continue;
+          return Future.wait(futures).then((_) => step());
+        }
+        if (status != 'ok') {
+          throw JsCalculationException(
+            decoded['error']?.toString() ?? 'Erreur JavaScript inconnue.',
+          );
+        }
+
+        final rawWrites = decoded['writes'];
+        if (rawWrites is! List) {
+          throw const JsCalculationException(
+            'La liste des écritures JavaScript est invalide.',
+          );
+        }
+        final writes = List<JsRepositoryScriptWrite>.unmodifiable([
+          for (final rawWrite in rawWrites)
+            if (rawWrite is Map &&
+                rawWrite['path'] is String &&
+                rawWrite.containsKey('value'))
+              (path: rawWrite['path'] as String, value: rawWrite['value'])
+            else
+              throw const JsCalculationException(
+                'Une écriture JavaScript est invalide.',
+              ),
+        ]);
+
+        final rawRemovals = decoded['removals'];
+        if (rawRemovals != null && rawRemovals is! List) {
+          throw const JsCalculationException(
+            'La liste des suppressions JavaScript est invalide.',
+          );
+        }
+        final removals = List<JsRepositoryScriptRemoval>.unmodifiable([
+          if (rawRemovals is List)
+            for (final rawRemoval in rawRemovals)
+              if (rawRemoval is Map &&
+                  rawRemoval['arrayPath'] is String &&
+                  (rawRemoval['index'] == null || rawRemoval['index'] is int))
+                (
+                  arrayPath: rawRemoval['arrayPath'] as String,
+                  index: rawRemoval['index'] as int?,
+                )
+              else
+                throw const JsCalculationException(
+                  'Une suppression JavaScript est invalide.',
+                ),
+        ]);
+
+        final rawSelections = decoded['selections'];
+        if (rawSelections != null && rawSelections is! List) {
+          throw const JsCalculationException(
+            'La liste des sélections JavaScript est invalide.',
+          );
+        }
+        final selections = List<JsRepositoryScriptSelection>.unmodifiable([
+          if (rawSelections is List)
+            for (final rawSelection in rawSelections)
+              if (rawSelection is Map &&
+                  rawSelection['arrayPath'] is String &&
+                  rawSelection['index'] is int &&
+                  (rawSelection['repositoryId'] == null ||
+                      rawSelection['repositoryId'] is String))
+                (
+                  arrayPath: rawSelection['arrayPath'] as String,
+                  index: rawSelection['index'] as int,
+                  repositoryId: rawSelection['repositoryId'] as String?,
+                )
+              else
+                throw const JsCalculationException(
+                  'Une sélection JavaScript est invalide.',
+                ),
+        ]);
+
+        return JsRepositoryActionResult(
+          writes: writes,
+          removals: removals,
+          selections: selections,
+        );
+      }
+    }
+
+    return step();
+  }
+
+  static FutureOr<Object?> _resolveActionRead({
+    required _CtxReadRequest request,
+    required String defaultRepositoryId,
+    required Object? rootData,
+    required JsRepositoryScriptReader? readValue,
+  }) {
+    final FutureOr<Object?> rawFutureOr;
+    if (readValue != null) {
+      rawFutureOr = readValue(request.path, request.repositoryId);
+    } else {
+      final repoId = request.repositoryId;
+      if (repoId != null &&
+          repoId.isNotEmpty &&
+          repoId != defaultRepositoryId) {
+        throw const FormatException(
+          'Lecture cross-repository indisponible sans store.',
+        );
+      }
+      final parsed = JsonAttributePath(request.path)..requireResolved();
+      if (parsed.calculated != null) {
+        throw FormatException(
+          'Lecture de l’attribut calculé « ${request.path} » indisponible sans store.',
+        );
+      }
+      rawFutureOr = parsed.readNode(rootData);
+    }
+
+    Object? convert(Object? raw) => _convertTypedActionValue(request, raw);
+
+    if (rawFutureOr is Future<Object?>) {
+      return rawFutureOr.then(convert);
+    }
+    return convert(rawFutureOr);
+  }
+
+  static Object? _convertTypedActionValue(
+    _CtxReadRequest request,
+    Object? raw,
+  ) {
+    final path = request.path;
+    switch (request.kind) {
+      case 'string':
+        if (request.hasDefault && request.defaultValue is! String?) {
+          throw const FormatException(
+            'defaultValue de ctx.getString doit être une chaîne ou null.',
+          );
+        }
+        if (raw == null) {
+          return request.hasDefault ? request.defaultValue as String? : null;
+        }
+        if (raw is String) return raw;
+        throw FormatException('L’attribut « $path » doit être de type String.');
+      case 'num':
+        if (request.hasDefault && request.defaultValue is! num?) {
+          throw const FormatException(
+            'defaultValue de ctx.getNum doit être un nombre ou null.',
+          );
+        }
+        if (raw == null) {
+          return request.hasDefault ? request.defaultValue as num? : null;
+        }
+        if (raw is num) return raw;
+        throw FormatException('L’attribut « $path » doit être de type num.');
+      case 'int':
+        if (request.hasDefault && request.defaultValue is! int?) {
+          throw const FormatException(
+            'defaultValue de ctx.getInt doit être un entier ou null.',
+          );
+        }
+        if (raw == null) {
+          return request.hasDefault ? request.defaultValue as int? : null;
+        }
+        if (raw is int) return raw;
+        throw FormatException('L’attribut « $path » doit être de type int.');
+      case 'double':
+        if (request.hasDefault && request.defaultValue is! num?) {
+          throw const FormatException(
+            'defaultValue de ctx.getDouble doit être un nombre ou null.',
+          );
+        }
+        if (raw == null) {
+          return request.hasDefault
+              ? (request.defaultValue as num?)?.toDouble()
+              : null;
+        }
+        if (raw is num) return raw.toDouble();
+        throw FormatException('L’attribut « $path » doit être de type double.');
+      case 'bool':
+        if (request.hasDefault && request.defaultValue is! bool?) {
+          throw const FormatException(
+            'defaultValue de ctx.getBool doit être un booléen ou null.',
+          );
+        }
+        if (raw == null) {
+          return request.hasDefault ? request.defaultValue as bool? : null;
+        }
+        if (raw is bool) return raw;
+        throw FormatException('L’attribut « $path » doit être de type bool.');
+      case 'list':
+        final rawDefault = request.defaultValue;
+        List<Map<String, Object?>>? listDefault;
+        if (request.hasDefault && rawDefault != null) {
+          if (rawDefault is! List) {
+            throw const FormatException(
+              'defaultValue de ctx.getList doit être un tableau ou null.',
+            );
+          }
+          listDefault = [
+            for (final item in rawDefault)
+              item is Map
+                  ? Map<String, Object?>.from(item)
+                  : throw const FormatException(
+                      'defaultValue de ctx.getList ne doit contenir que des objets.',
+                    ),
+          ];
+        }
+        if (raw == null) return request.hasDefault ? listDefault : null;
+        if (raw is List) {
+          return [
+            for (final item in raw)
+              item is Map
+                  ? Map<String, Object?>.from(item)
+                  : throw FormatException(
+                      'L’attribut « $path » doit être un tableau d’objets.',
+                    ),
+          ];
+        }
+        throw FormatException('L’attribut « $path » doit être une liste.');
+      case 'object':
+        final rawDefault = request.defaultValue;
+        Map<String, Object?>? objDefault;
+        if (request.hasDefault && rawDefault != null) {
+          if (rawDefault is! Map) {
+            throw const FormatException(
+              'defaultValue de ctx.getObject doit être un objet ou null.',
+            );
+          }
+          objDefault = Map<String, Object?>.from(rawDefault);
+        }
+        if (raw == null) return request.hasDefault ? objDefault : null;
+        if (raw is Map) return Map<String, Object?>.from(raw);
+        throw FormatException('L’attribut « $path » doit être un objet JSON.');
+      case 'value':
+      default:
+        if (raw == null && request.hasDefault) return request.defaultValue;
+        return raw;
+    }
   }
 
   static FutureOr<Object?> _readTyped(

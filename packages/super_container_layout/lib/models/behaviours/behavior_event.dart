@@ -371,6 +371,7 @@ enum BehaviorEvent {
             normalized == 'bottomnavigationbar' ||
             normalized == 'navigationrail' ||
             normalized == 'iterablecontent' ||
+            normalized == 'chart' ||
             normalized.isEmpty,
       onExpanded ||
       onCollapsed =>

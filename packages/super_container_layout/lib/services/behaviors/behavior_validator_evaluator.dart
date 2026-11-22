@@ -9,16 +9,25 @@ import 'dart:io' show FileSystemException;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/a4_page_config.dart';
 import '../../models/behaviours/behavior_event.dart';
 import '../../models/behaviours/behavior_validator.dart';
+import '../../models/component_config.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/native_component_config.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../models/super_conditional_config.dart';
+import '../../models/super_layout_config.dart';
 import '../../models/super_list_view_config.dart';
+import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
+import '../../models/super_text_field_config.dart';
 import '../../models/super_tree_view_config.dart';
 import '../../models/super_value_config.dart';
 import '../../theme/appearance.dart';
 import '../repositories/json_list_scope.dart';
 import '../repositories/json_repository_store.dart';
+import '../repositories/json_schema_field_resolver.dart';
 import 'component_runtime_value_registry.dart';
 
 /// Contexte d'évaluation transmis à [BehaviorValidatorEvaluator.evaluate].
@@ -76,6 +85,7 @@ typedef _ResolvedValue = ({Object? value, bool isValid, bool found});
 abstract final class BehaviorValidatorEvaluator {
   static const Set<String> _truthyStrings = {'true', '1', 'yes', 'oui'};
   static const Set<String> _falsyStrings = {'false', '0', 'no', 'non'};
+  static final RegExp _isoDatePrefix = RegExp(r'^\d{4}-\d{2}-\d{2}');
 
   /// Tente d'évaluer [validator] de manière purement synchrone à partir du cache
   /// et des valeurs runtime en mémoire ; retourne `null` si une lecture
@@ -169,6 +179,9 @@ abstract final class BehaviorValidatorEvaluator {
     BehaviorValidationContext ctx,
   ) async {
     final scopeKey = ComponentRuntimeValueRegistry.scopeKeyOf(ctx.listScope);
+    final isValidityCheck =
+        validator.operator == BehaviorValidatorOperator.isValid ||
+        validator.operator == BehaviorValidatorOperator.isInvalid;
 
     switch (validator.source) {
       case BehaviorValueSource.self:
@@ -187,11 +200,30 @@ abstract final class BehaviorValidatorEvaluator {
           );
         }
         if (entry != null) {
+          if (isValidityCheck &&
+              entry.readIsValid == null &&
+              _isContainerConfig(ctx.appearance?.components[ctx.componentId])) {
+            final containerResult = await _resolveContainerValidity(
+              ctx.componentId,
+              ctx,
+              scopeKey: scopeKey,
+            );
+            if (containerResult.found) return containerResult;
+          }
           return (
             value: entry.readValue(),
             isValid: entry.readIsValid?.call() ?? true,
             found: true,
           );
+        }
+        if (isValidityCheck &&
+            _isContainerConfig(ctx.appearance?.components[ctx.componentId])) {
+          final containerResult = await _resolveContainerValidity(
+            ctx.componentId,
+            ctx,
+            scopeKey: scopeKey,
+          );
+          if (containerResult.found) return containerResult;
         }
         return _resolveFromAppearance(ctx.componentId, ctx);
 
@@ -205,11 +237,30 @@ abstract final class BehaviorValidatorEvaluator {
           preferredScopeKey: scopeKey,
         );
         if (entry != null) {
+          if (isValidityCheck &&
+              entry.readIsValid == null &&
+              _isContainerConfig(ctx.appearance?.components[targetId])) {
+            final containerResult = await _resolveContainerValidity(
+              targetId,
+              ctx,
+              scopeKey: scopeKey,
+            );
+            if (containerResult.found) return containerResult;
+          }
           return (
             value: entry.readValue(),
             isValid: entry.readIsValid?.call() ?? true,
             found: true,
           );
+        }
+        if (isValidityCheck &&
+            _isContainerConfig(ctx.appearance?.components[targetId])) {
+          final containerResult = await _resolveContainerValidity(
+            targetId,
+            ctx,
+            scopeKey: scopeKey,
+          );
+          if (containerResult.found) return containerResult;
         }
         final fallback = await _resolveFromAppearance(targetId, ctx);
         if (!fallback.found) {
@@ -234,6 +285,9 @@ abstract final class BehaviorValidatorEvaluator {
     BehaviorValidationContext ctx,
   ) {
     final scopeKey = ComponentRuntimeValueRegistry.scopeKeyOf(ctx.listScope);
+    final isValidityCheck =
+        validator.operator == BehaviorValidatorOperator.isValid ||
+        validator.operator == BehaviorValidatorOperator.isInvalid;
 
     switch (validator.source) {
       case BehaviorValueSource.self:
@@ -252,11 +306,32 @@ abstract final class BehaviorValidatorEvaluator {
           );
         }
         if (entry != null) {
+          if (isValidityCheck &&
+              entry.readIsValid == null &&
+              _isContainerConfig(ctx.appearance?.components[ctx.componentId])) {
+            final containerResult = _tryResolveContainerValiditySync(
+              ctx.componentId,
+              ctx,
+              scopeKey: scopeKey,
+            );
+            if (containerResult == null) return null;
+            if (containerResult.found) return containerResult;
+          }
           return (
             value: entry.readValue(),
             isValid: entry.readIsValid?.call() ?? true,
             found: true,
           );
+        }
+        if (isValidityCheck &&
+            _isContainerConfig(ctx.appearance?.components[ctx.componentId])) {
+          final containerResult = _tryResolveContainerValiditySync(
+            ctx.componentId,
+            ctx,
+            scopeKey: scopeKey,
+          );
+          if (containerResult == null) return null;
+          if (containerResult.found) return containerResult;
         }
         return _tryResolveFromAppearanceSync(ctx.componentId, ctx);
 
@@ -270,11 +345,32 @@ abstract final class BehaviorValidatorEvaluator {
           preferredScopeKey: scopeKey,
         );
         if (entry != null) {
+          if (isValidityCheck &&
+              entry.readIsValid == null &&
+              _isContainerConfig(ctx.appearance?.components[targetId])) {
+            final containerResult = _tryResolveContainerValiditySync(
+              targetId,
+              ctx,
+              scopeKey: scopeKey,
+            );
+            if (containerResult == null) return null;
+            if (containerResult.found) return containerResult;
+          }
           return (
             value: entry.readValue(),
             isValid: entry.readIsValid?.call() ?? true,
             found: true,
           );
+        }
+        if (isValidityCheck &&
+            _isContainerConfig(ctx.appearance?.components[targetId])) {
+          final containerResult = _tryResolveContainerValiditySync(
+            targetId,
+            ctx,
+            scopeKey: scopeKey,
+          );
+          if (containerResult == null) return null;
+          if (containerResult.found) return containerResult;
         }
         return _tryResolveFromAppearanceSync(targetId, ctx);
 
@@ -744,15 +840,32 @@ abstract final class BehaviorValidatorEvaluator {
             ? haystack.startsWith(prefix)
             : haystack.toLowerCase().startsWith(prefix.toLowerCase());
       case BehaviorValidatorOperator.greaterThan:
-        final left = _tryParseNum(value);
-        final right = _tryParseNum(expected);
-        if (left == null || right == null) return false;
-        return left > right;
+        final cmp = _compareOrderable(value, expected);
+        return cmp != null && cmp > 0;
       case BehaviorValidatorOperator.lessThan:
-        final left = _tryParseNum(value);
-        final right = _tryParseNum(expected);
-        if (left == null || right == null) return false;
-        return left < right;
+        final cmp = _compareOrderable(value, expected);
+        return cmp != null && cmp < 0;
+      case BehaviorValidatorOperator.greaterOrEqual:
+        final cmp = _compareOrderable(value, expected);
+        return cmp != null && cmp >= 0;
+      case BehaviorValidatorOperator.lessOrEqual:
+        final cmp = _compareOrderable(value, expected);
+        return cmp != null && cmp <= 0;
+      case BehaviorValidatorOperator.countEquals:
+        final count = _countOf(value);
+        final target = _tryParseInt(expected);
+        if (count == null || target == null) return false;
+        return count == target;
+      case BehaviorValidatorOperator.countGreaterThan:
+        final count = _countOf(value);
+        final target = _tryParseInt(expected);
+        if (count == null || target == null) return false;
+        return count > target;
+      case BehaviorValidatorOperator.countLessThan:
+        final count = _countOf(value);
+        final target = _tryParseInt(expected);
+        if (count == null || target == null) return false;
+        return count < target;
       case BehaviorValidatorOperator.matchesRegex:
         if (value == null || expected == null) return false;
         final pattern = expected.toString();
@@ -768,11 +881,303 @@ abstract final class BehaviorValidatorEvaluator {
     }
   }
 
+  static bool _isContainerConfig(ComponentConfig? config) =>
+      config is SuperLayoutConfig ||
+      config is NativeComponentConfig ||
+      config is ScaffoldPageConfig ||
+      config is SuperTabConfig ||
+      config is SuperConditionalConfig ||
+      config is A4PageConfig;
+
+  static Iterable<String> _placedChildIdsOf(ComponentConfig config) =>
+      switch (config) {
+        SuperLayoutConfig() => [
+          ...config.placements.values.expand((ids) => ids),
+          ...?config.grid?.items.keys,
+        ],
+        NativeComponentConfig() =>
+          config.placements.values.expand((ids) => ids),
+        ScaffoldPageConfig() =>
+          config.native.placements.values.expand((ids) => ids),
+        SuperTabConfig() => config.placements.values.expand((ids) => ids),
+        SuperConditionalConfig() =>
+          config.placements.values.expand((ids) => ids),
+        A4PageConfig() => config.childSlots.keys,
+        _ => const <String>[],
+      };
+
+  static _ResolvedValue? _tryResolveContainerValiditySync(
+    String rootContainerId,
+    BehaviorValidationContext ctx, {
+    required String? scopeKey,
+  }) {
+    final appearance = ctx.appearance;
+    if (appearance == null) return (value: null, isValid: false, found: false);
+    final rootConfig = appearance.components[rootContainerId];
+    if (rootConfig == null || !_isContainerConfig(rootConfig)) {
+      return (value: null, isValid: false, found: false);
+    }
+
+    final visited = <String>{rootContainerId};
+    final validities = <bool>[];
+    final queue = <String>[rootContainerId];
+
+    while (queue.isNotEmpty) {
+      final currentId = queue.removeAt(0);
+      final currentConfig = appearance.components[currentId];
+      if (currentConfig == null || !_isContainerConfig(currentConfig)) continue;
+
+      for (final childId in _placedChildIdsOf(currentConfig)) {
+        if (!visited.add(childId)) continue;
+        final childEntry = ctx.valueRegistry.resolve(
+          childId,
+          preferredScopeKey: scopeKey,
+        );
+        final childConfig = appearance.components[childId];
+        if (childEntry != null) {
+          if (childEntry.readIsValid != null) {
+            validities.add(childEntry.readIsValid!());
+            continue;
+          }
+          if (_isContainerConfig(childConfig)) {
+            queue.add(childId);
+            continue;
+          }
+          validities.add(true);
+          continue;
+        }
+        if (_isContainerConfig(childConfig)) {
+          queue.add(childId);
+          continue;
+        }
+        if (childConfig is SuperValueConfig) {
+          final childValid = _tryValidateUnmountedValueSync(childConfig, ctx);
+          if (childValid == null) return null;
+          validities.add(childValid);
+        }
+      }
+    }
+
+    if (validities.isEmpty) {
+      return (value: null, isValid: false, found: false);
+    }
+    return (
+      value: null,
+      isValid: validities.every((isValid) => isValid),
+      found: true,
+    );
+  }
+
+  static Future<_ResolvedValue> _resolveContainerValidity(
+    String rootContainerId,
+    BehaviorValidationContext ctx, {
+    required String? scopeKey,
+  }) async {
+    final appearance = ctx.appearance;
+    if (appearance == null) return (value: null, isValid: false, found: false);
+    final rootConfig = appearance.components[rootContainerId];
+    if (rootConfig == null || !_isContainerConfig(rootConfig)) {
+      return (value: null, isValid: false, found: false);
+    }
+
+    final visited = <String>{rootContainerId};
+    final validities = <bool>[];
+    final queue = <String>[rootContainerId];
+
+    while (queue.isNotEmpty) {
+      final currentId = queue.removeAt(0);
+      final currentConfig = appearance.components[currentId];
+      if (currentConfig == null || !_isContainerConfig(currentConfig)) continue;
+
+      for (final childId in _placedChildIdsOf(currentConfig)) {
+        if (!visited.add(childId)) continue;
+        final childEntry = ctx.valueRegistry.resolve(
+          childId,
+          preferredScopeKey: scopeKey,
+        );
+        final childConfig = appearance.components[childId];
+        if (childEntry != null) {
+          if (childEntry.readIsValid != null) {
+            validities.add(childEntry.readIsValid!());
+            continue;
+          }
+          if (_isContainerConfig(childConfig)) {
+            queue.add(childId);
+            continue;
+          }
+          validities.add(true);
+          continue;
+        }
+        if (_isContainerConfig(childConfig)) {
+          queue.add(childId);
+          continue;
+        }
+        if (childConfig is SuperValueConfig) {
+          validities.add(await _validateUnmountedValue(childConfig, ctx));
+        }
+      }
+    }
+
+    if (validities.isEmpty) {
+      return (value: null, isValid: false, found: false);
+    }
+    return (
+      value: null,
+      isValid: validities.every((isValid) => isValid),
+      found: true,
+    );
+  }
+
+  static SuperTextFieldConfig _effectiveTextFieldConfig(
+    SuperValueConfig config,
+    BehaviorValidationContext ctx, {
+    Map<String, Object?>? resolvedSchema,
+  }) {
+    final field = config.field;
+    if (!config.kind.isText || !field.useRepositorySchema) return field;
+    final binding = config.binding;
+    final store = ctx.repositoryStore;
+    if (binding == null || store == null) return field;
+    final repoId = binding.repositoryId ?? ctx.listScope?.repositoryId;
+    if (repoId == null || repoId.isEmpty) return field;
+    final schema = resolvedSchema ?? store.jsonSchemaOf(repoId);
+    if (schema == null) return field;
+    final profile = JsonSchemaFieldResolver.resolve(schema, binding.path);
+    if (profile == null) return field;
+    return field.applySchemaProfile(
+      profile,
+      allowMaskAndFormat: !config.obscureText && config.maxLines == 1,
+    );
+  }
+
+  static bool? _tryValidateUnmountedValueSync(
+    SuperValueConfig config,
+    BehaviorValidationContext ctx,
+  ) {
+    if (config.kind.isText && config.mode == SuperValueMode.input) {
+      final field = _effectiveTextFieldConfig(config, ctx);
+      if (field.errorText.trim().isNotEmpty) return false;
+      if (!field.hasConstraints) return true;
+      final String storageText;
+      if (config.binding != null) {
+        final resolved = _tryReadBindingValueSync(config.binding!, ctx);
+        if (resolved == null) return null;
+        storageText = resolved.value?.toString() ?? '';
+      } else {
+        storageText = config.initialText;
+      }
+      return field.validateValue(
+            storageText,
+            obscureText: config.obscureText,
+          ) ==
+          null;
+    }
+    if (config.kind.isChoice &&
+        config.mode == SuperValueMode.input &&
+        config.choice.errorText.trim().isNotEmpty) {
+      return false;
+    }
+    return true;
+  }
+
+  static Future<bool> _validateUnmountedValue(
+    SuperValueConfig config,
+    BehaviorValidationContext ctx,
+  ) async {
+    if (config.kind.isText && config.mode == SuperValueMode.input) {
+      Map<String, Object?>? schema;
+      final binding = config.binding;
+      final store = ctx.repositoryStore;
+      if (config.field.useRepositorySchema && binding != null && store != null) {
+        final repoId = binding.repositoryId ?? ctx.listScope?.repositoryId;
+        if (repoId != null && repoId.isNotEmpty) {
+          schema = store.jsonSchemaOf(repoId);
+          if (schema == null && !store.isMemoryOnlyRepository(repoId)) {
+            schema = await store.readJsonSchema(repoId);
+          }
+        }
+      }
+      final field = _effectiveTextFieldConfig(
+        config,
+        ctx,
+        resolvedSchema: schema,
+      );
+      if (field.errorText.trim().isNotEmpty) return false;
+      if (!field.hasConstraints) return true;
+      final String storageText;
+      if (binding != null) {
+        final resolved = await _readBindingValue(binding, ctx);
+        storageText = resolved.value?.toString() ?? '';
+      } else {
+        storageText = config.initialText;
+      }
+      return field.validateValue(
+            storageText,
+            obscureText: config.obscureText,
+          ) ==
+          null;
+    }
+    if (config.kind.isChoice &&
+        config.mode == SuperValueMode.input &&
+        config.choice.errorText.trim().isNotEmpty) {
+      return false;
+    }
+    return true;
+  }
+
   static num? _tryParseNum(Object? value) {
     if (value is num) return value.isFinite ? value : null;
     if (value is String) {
       final parsed = num.tryParse(value.trim());
       if (parsed != null && parsed.isFinite) return parsed;
+    }
+    return null;
+  }
+
+  static DateTime? _tryParseIsoDate(Object? value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    if (!_isoDatePrefix.hasMatch(trimmed)) return null;
+    return DateTime.tryParse(trimmed);
+  }
+
+  static int? _compareOrderable(Object? leftVal, Object? rightVal) {
+    final leftNum = _tryParseNum(leftVal);
+    final rightNum = _tryParseNum(rightVal);
+    if (leftNum != null && rightNum != null) {
+      return leftNum.compareTo(rightNum);
+    }
+    final leftDate = _tryParseIsoDate(leftVal);
+    final rightDate = _tryParseIsoDate(rightVal);
+    if (leftDate != null && rightDate != null) {
+      return leftDate.compareTo(rightDate);
+    }
+    return null;
+  }
+
+  static int? _countOf(Object? value) {
+    if (value == null) return 0;
+    if (value is Iterable) return value.length;
+    if (value is Map) return value.length;
+    if (value is String) return value.length;
+    return null;
+  }
+
+  static int? _tryParseInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) {
+      if (!value.isFinite || value != value.roundToDouble()) return null;
+      return value.toInt();
+    }
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      final asInt = int.tryParse(trimmed);
+      if (asInt != null) return asInt;
+      final asNum = num.tryParse(trimmed);
+      if (asNum != null && asNum.isFinite && asNum == asNum.roundToDouble()) {
+        return asNum.toInt();
+      }
     }
     return null;
   }

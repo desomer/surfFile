@@ -156,14 +156,24 @@ class _SimpleRuleDraft {
       return text;
     }
     final trimmed = text.trim();
+    if (operator == BehaviorValidatorOperator.countEquals ||
+        operator == BehaviorValidatorOperator.countGreaterThan ||
+        operator == BehaviorValidatorOperator.countLessThan) {
+      if (trimmed.isEmpty) return null;
+      final asInt = int.tryParse(trimmed);
+      if (asInt != null && trimmed == '$asInt') return asInt;
+      return text;
+    }
     if (operator == BehaviorValidatorOperator.greaterThan ||
-        operator == BehaviorValidatorOperator.lessThan) {
+        operator == BehaviorValidatorOperator.lessThan ||
+        operator == BehaviorValidatorOperator.greaterOrEqual ||
+        operator == BehaviorValidatorOperator.lessOrEqual) {
       if (trimmed.isEmpty) return null;
       final asInt = int.tryParse(trimmed);
       if (asInt != null && trimmed == '$asInt') return asInt;
       final asDouble = double.tryParse(trimmed.replaceAll(',', '.'));
       if (asDouble != null && asDouble.isFinite) return asDouble;
-      return text;
+      return trimmed;
     }
     if (trimmed.isNotEmpty) {
       final asInt = int.tryParse(trimmed);
@@ -807,7 +817,13 @@ class _BehaviorValidatorEditorState extends State<BehaviorValidatorEditor> {
                     labelText: 'Valeur attendue',
                     hintText: switch (effectiveOperator) {
                       BehaviorValidatorOperator.greaterThan ||
-                      BehaviorValidatorOperator.lessThan => 'Ex. 10 ou 3.5',
+                      BehaviorValidatorOperator.lessThan ||
+                      BehaviorValidatorOperator.greaterOrEqual ||
+                      BehaviorValidatorOperator.lessOrEqual =>
+                        'Ex. 10, 3.5 ou 2026-12-31',
+                      BehaviorValidatorOperator.countEquals ||
+                      BehaviorValidatorOperator.countGreaterThan ||
+                      BehaviorValidatorOperator.countLessThan => 'Ex. 1, 0, 5',
                       BehaviorValidatorOperator.matchesRegex =>
                         r'Ex. ^[A-Z0-9._%+-]+@',
                       _ => 'Ex. actif, 42, true…',

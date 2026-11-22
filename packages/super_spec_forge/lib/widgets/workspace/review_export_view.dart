@@ -24,6 +24,7 @@ class ReviewExportView extends StatelessWidget {
   /// Crée la vue connectée au [controller].
   const ReviewExportView({
     required this.controller,
+    this.onContinueToUxWizard,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
     super.key,
@@ -31,6 +32,9 @@ class ReviewExportView extends StatelessWidget {
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Callback optionnel permettant d'enchaîner directement vers le Wizard UX & Parcours.
+  final VoidCallback? onContinueToUxWizard;
 
   /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
   final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
@@ -75,26 +79,45 @@ class ReviewExportView extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-            child: Row(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Text(
-                    'Revue, Cohérence & Export',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                Text(
+                  'Revue, Cohérence & Export',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                FilledButton.icon(
-                  onPressed: () => _exportAllDialog(
-                    context,
-                    project: project,
-                    markdown: markdown,
-                    yamlSchema: yamlSchema,
-                    fullJson: fullJson,
-                  ),
-                  icon: const Icon(Icons.save_alt_rounded, size: 16),
-                  label: const Text('Exporter sur disque'),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (onContinueToUxWizard != null)
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('spec-review-continue-to-ux-btn'),
+                        onPressed: onContinueToUxWizard,
+                        icon: const Icon(
+                          Icons.design_services_rounded,
+                          size: 16,
+                        ),
+                        label: const Text('Poursuivre vers le Wizard UX'),
+                      ),
+                    FilledButton.icon(
+                      onPressed: () => _exportAllDialog(
+                        context,
+                        project: project,
+                        markdown: markdown,
+                        yamlSchema: yamlSchema,
+                        fullJson: fullJson,
+                      ),
+                      icon: const Icon(Icons.save_alt_rounded, size: 16),
+                      label: const Text('Exporter sur disque'),
+                    ),
+                  ],
                 ),
               ],
             ),

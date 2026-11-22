@@ -1,6 +1,6 @@
 # Guide pour IA : Modéliser les Comportements, Événements, Validateurs et Actions (`super_container_layout`)
 
-Ce document est la spécification technique normative destinée à une Intelligence Artificielle. Il définit comment **concevoir, cibler, combiner et sérialiser en JSON les comportements interactifs et réactifs** (`behaviors`) dans `super_container_layout` : événements déclencheurs (`BehaviorEvent`), conditions de garde et prédicats (`BehaviorValidator`), actions polymorphes (`BehaviorAction` — 16 types), transformation de vue de collections côté client (`CollectionViewTransform`) et scripts contrôlés QuickJS.
+Ce document est la spécification technique normative destinée à une Intelligence Artificielle. Il définit comment **concevoir, cibler, combiner et sérialiser en JSON les comportements interactifs et réactifs** (`behaviors`) dans `super_container_layout` : événements déclencheurs (`BehaviorEvent`), conditions de garde et prédicats (`BehaviorValidator`), actions polymorphes (`BehaviorAction` — 20 types), branche `elseAction`, anti-rebond `debounceMs`, transformation de vue de collections côté client (`CollectionViewTransform`) et scripts contrôlés QuickJS.
 
 Il complète :
 - [`SCREEN_JSON_AI_GUIDE.md`](SCREEN_JSON_AI_GUIDE.md) (grammaire GenUI des composants, layouts, styles et états visuels) ;
@@ -40,15 +40,17 @@ Dans le modèle GenUI plat (`Appearance`), tous les comportements vivent dans le
 }
 ```
 
-Chaque objet `ComponentBehavior` possède **5 propriétés possibles** :
+Chaque objet `ComponentBehavior` possède **7 propriétés possibles** :
 
 | Clé JSON | Type | Requis | Défaut | Rôle et contraintes |
 | :--- | :--- | :---: | :---: | :--- |
 | **`id`** | `string` | Oui | `""` | Identifiant unique et descriptif du comportement en `kebab-case` (ex. `"b-save-client"`, `"b-filter-search"`). |
 | **`event`** | `string` | Oui | `"onTap"` | Événement déclencheur canonique parmi les **16 `BehaviorEvent`** (l'ancienne clé `"trigger"` est acceptée en lecture seule pour rétrocompatibilité : **toujours émettre `"event"`**). |
 | **`enabled`** | `boolean` | Non | `true` | Active ou suspend le comportement (omis en export compact lorsqu'il vaut `true`). |
-| **`validator`** | `object` | Non | `null` | Condition de garde polymorphe (`BehaviorValidator`). Pour un événement impératif, l'`action` ne s'exécute que si `validator` s'évalue à `true`. Pour `onBinding` sur `sortCollection` / `filterCollection`, sert de condition d'activation ou de prédicat par ligne (voir section 4.5). |
-| **`action`** | `object` | Oui | — | Action polymorphe identifiée par son discriminateur `"type"` parmi les **16 `BehaviorAction`**. |
+| **`validator`** | `object` | Non | `null` | Condition de garde polymorphe (`BehaviorValidator`). Pour un événement impératif, l'`action` ne s'exécute que si `validator` s'évalue à `true` (et `elseAction` éventuelle si `false`). Pour `onBinding` sur `sortCollection` / `filterCollection`, sert de condition d'activation ou de prédicat par ligne (voir section 4.5). |
+| **`action`** | `object` | Oui | — | Action polymorphe identifiée par son discriminateur `"type"` parmi les **20 `BehaviorAction`**. |
+| **`elseAction`** | `object` | Non | `null` | Action impérative exécutée lorsque `validator` s'évalue à `false`. Requiert `validator != null`, un événement impératif, et une action non purement déclarative. |
+| **`debounceMs`** | `integer` | Non | `null` | Anti-rebond en millisecondes (`>= 0`) sur un événement impératif (ex. `300` sur `onChanged` $\rightarrow$ `searchProvider`). Annule le déclenchement précédent et réévalue `validator` à l'échéance. |
 
 ### 1.2. Quel identifiant cibler dans `behaviors["<id>"]` ?
 
@@ -87,14 +89,14 @@ Lorsqu'un événement impératif survient sur un composant :
 1. **Garde du mode édition (`StyleEditScope`)** : tous les comportements impératifs, les états `invisible` et les tris/filtres `CollectionViewTransform` sont **suspendus en mode édition visuelle** afin que l'utilisateur puisse sélectionner, inspecter et éditer librement chaque composant sans déclencher de navigation ni masquer d'éléments.
 2. **Garde d'état (`ComponentBehaviorStateScope`)** : si le composant (ou l'un de ses ancêtres) est actuellement `disabled` ou `invisible`, aucun comportement impératif ne se déclenche.
 3. **Protection anti-boucle (`maxReentrancyDepth = 8`)** : `BehaviorDispatcher` bloque toute réentrance dépassant une profondeur de 8 pour une même paire `(componentId, event)` (empêche par exemple une boucle infinie `onChanged` $\rightarrow$ script $\rightarrow$ `onChanged`).
-4. **Exécution séquentielle ordonnée** : les comportements activés (`enabled: true`) correspondant à `event` sont parcourus **dans l'ordre exact de la liste JSON**. Pour chacun, `BehaviorValidatorEvaluator` évalue `validator` (chemin rapide synchrone en mémoire si possible, sinon asynchrone) ; si le résultat est `true` (ou si `validator` est absent), `action` est exécutée avec le contexte de ligne courant (`JsonListScope`) et les métadonnées runtime (`BehaviorExecutionData`).
+4. **Exécution séquentielle ordonnée & anti-rebond** : les comportements activés (`enabled: true`) correspondant à `event` sont parcourus **dans l'ordre exact de la liste JSON**. Les comportements avec `debounceMs > 0` planifient un timer par `(componentId, behavior.id, event)` sans bloquer les comportements immédiats. À l'exécution, `BehaviorValidatorEvaluator` évalue `validator` : si `true` (ou absent), `action` s'exécute ; si `false` et `elseAction` est définie, `elseAction` s'exécute.
 
 ---
 
 ## 2. Référence exhaustive des Événements (`BehaviorEvent` — 16 types)
 
 Le moteur distingue strictement **deux familles d'événements** qui ne se mélangent pas (sauf `sortCollection` et `filterCollection`, hybrides par conception) :
-- **13 événements impératifs** (`isImperative: true`) : compatibles avec les **12 actions impératives** et un `validator` de garde optionnel ;
+- **13 événements impératifs** (`isImperative: true`) : compatibles avec les **16 actions impératives** et un `validator` de garde optionnel (plus `elseAction` et `debounceMs`) ;
 - **3 événements déclaratifs / réactifs** (`isImperative: false`) : réservés exclusivement à leurs actions dédiées.
 
 ### 2.1. Les 13 événements impératifs
@@ -106,7 +108,7 @@ Le moteur distingue strictement **deux familles d'événements** qui ne se méla
 | **`"onLongPress"`** | `"longPress"` | Gestes | Appui maintenu (`kLongPressTimeout`). Active le curseur pointeur et annule le clic simple associé. | **Tous composants** (actions secondaires, menu contextuel métier). |
 | **`"onHoverEnter"`** | `"hoverEnter"` | Survol | Entrée du pointeur souris dans la boîte du composant (**sans** curseur pointeur forcé). | **Tous composants** (prévisualisation, mise en évidence croisée). |
 | **`"onHoverExit"`** | `"hoverExit"` | Survol | Sortie du pointeur souris hors de la boîte du composant. | **Tous composants** (nettoyage / `reset` d'une mise en évidence). |
-| **`"onSelected"`** | `"selected"` | Sélection | Sélection d'un élément de collection, d'un onglet, d'une destination ou d'un choix. | - `SuperListView` & `<listId>:item` : `{index, previousIndex}` *(toujours l'**indice source** du repository, même trié/filtré)*<br>- `SuperTable` & `<itemId>` : `{index, previousIndex}`<br>- `SuperTreeView` & `<itemId>` : `{nodePath, rootIndex, previousNodePath}`<br>- `SuperTab` : `{index, previousIndex, tabId}` (et `{index, previousIndex}` sur l'onglet `"action"`)<br>- `NavigationRail` / `BottomNavigationBar` : `{index, previousIndex, destinationId}`<br>- `SuperValue` (`choice`) : `{value, previousValue, isValid}` |
+| **`"onSelected"`** | `"selected"` | Sélection | Sélection d'un élément de collection, d'un onglet, d'une destination, d'un choix ou d'un point de graphique. | - `SuperListView` & `<listId>:item` : `{index, previousIndex}` *(toujours l'**indice source** du repository, même trié/filtré)*<br>- `SuperTable` & `<itemId>` : `{index, previousIndex}`<br>- `SuperTreeView` & `<itemId>` : `{nodePath, rootIndex, previousNodePath}`<br>- `SuperChart` : `{index, previousIndex?, label?}`<br>- `SuperTab` : `{index, previousIndex, tabId}` (et `{index, previousIndex}` sur l'onglet `"action"`)<br>- `NavigationRail` / `BottomNavigationBar` : `{index, previousIndex, destinationId}`<br>- `SuperValue` (`choice`) : `{value, previousValue, isValid}` |
 | **`"onChanged"`** | `"changed"` | Valeur & saisie | Modification de la valeur par une action directe de l'utilisateur (ne se redéclenche **pas** lors d'une mise à jour externe du repository). | - `SuperValue` (`input`, `checkbox`, `switch`, `choice`) : `{value, previousValue, isValid}`<br>- `Expansible` & `Menu` : `{expanded, value, previousValue}` |
 | **`"onSubmitted"`** | `"submitted"` | Valeur & saisie | Validation clavier (touche `Entrée`) dans un champ de saisie texte. | `SuperValue` (`kind: "text"`, `mode: "input"`) : `{value, isValid}`. |
 | **`"onFocus"`** | `"focus"` | Focus | Prise du focus clavier par le composant. | `SuperValue` focusable : `{value, isValid}`. |
@@ -140,12 +142,12 @@ Chaque validateur unitaire (`ValueBehaviorValidator`) inspecte une valeur issue 
 | Source | Préfixe du `type` | Champs requis / interdits sur le validateur | Résolution runtime (`BehaviorValidatorEvaluator`) |
 | :--- | :--- | :--- | :--- |
 | **1. Composant courant (`self`)** | `<opérateur>`<br>*(ex. `"isFill"`, `"equals"`, `"isTrue"`, `"isValid"`)* | - `targetComponentId` **interdit**<br>- `binding` **interdit** | Lit `executionData["value"]` / `executionData["isValid"]` de l'événement courant en priorité, sinon l'instance montée dans `ComponentRuntimeValueRegistry` (même ligne `JsonListScope` puis global), sinon le `binding` déclaré sur `Appearance.components[id]`. |
-| **2. Autre composant (`component`)** | `other<Opérateur>`<br>*(ex. `"otherIsFill"`, `"otherEquals"`, `"otherIsValid"`)* | - **`"targetComponentId"` requis** *(chaîne non vide ; alias `"targetId"` toléré)*<br>- `binding` **interdit** | Résout `"targetComponentId"` dans `ComponentRuntimeValueRegistry` en privilégiant **l'instance montée dans la même ligne `JsonListScope`** (idéal à l'intérieur d'un template de liste !), puis l'instance globale hors liste, puis le `binding` configuré dans `Appearance.components[targetComponentId]`. |
+| **2. Autre composant (`component`)** | `other<Opérateur>`<br>*(ex. `"otherIsFill"`, `"otherEquals"`, `"otherIsValid"`)* | - **`"targetComponentId"` requis** *(chaîne non vide ; alias `"targetId"` toléré)*<br>- `binding` **interdit** | Résout `"targetComponentId"` dans `ComponentRuntimeValueRegistry` en privilégiant **l'instance montée dans la même ligne `JsonListScope`**, puis l'instance globale hors liste, puis le `binding` configuré dans `Appearance.components[targetComponentId]`. **Bonus conteneur (`otherIsValid` / `otherIsInvalid`)** : si `targetComponentId` désigne un conteneur (`Layout`, `Card`, `Tab`, `Conditional`, `Scaffold`, `A4`), vérifie récursivement la validité de tous ses descendants validables ! |
 | **3. Liaison repository (`binding`)** | `binding<Opérateur>`<br>*(ex. `"bindingIsFill"`, `"bindingEquals"`, `"bindingContains"`)* | - **`"binding"` requis** *(chaîne `"repo:chemin"` / `"chemin"` ou objet `{"repositoryId", "path"}`)*<br>- `targetComponentId` **interdit**<br>- **`isValid` et `isInvalid` interdits** | En filtrage de ligne, lit d'abord directement le champ en mémoire dans `rowItem` (ultra-rapide, synchrone), sinon résout les `[?]` via `JsonListScope.resolveSelected` + `JsonRepositoryStore` (supporte les scalaires, tableaux, objets et `@calculs`). |
 
 *(Note : la forme générique verbeuse `{"type": "value", "source": "self"|"component"|"binding", "operator": "equals", ...}` est aussi décodée, mais le moteur normalise toujours vers le `type` court canonique comme `"otherEquals"` ou `"bindingEquals"`.)*
 
-### 3.2. Matrice complète des 13 opérateurs (`37` types courts canoniques)
+### 3.2. Matrice complète des 18 opérateurs (`52` types courts canoniques)
 
 | Opérateur | `self` | `component` (`+ targetComponentId`) | `binding` (`+ binding`) | Valeur attendue (`value` / dynamique) | Sémantique exacte & contraintes `validate()` |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -153,19 +155,24 @@ Chaque validateur unitaire (`ValueBehaviorValidator`) inspecte une valeur issue 
 | **Est rempli** | `"isFill"` *(alias `"isFilled"`, `"isNotEmpty"`)* | `"otherIsFill"` *(alias `"otherIsFilled"`, `"otherIsNotEmpty"`)* | `"bindingIsFill"` *(alias `"bindingIsFilled"`, `"bindingIsNotEmpty"`)* | **Interdite** | Exactement `!isEmpty` : chaîne contenant au moins 1 caractère non blanc, collection non vide, ou tout nombre/booléen non nul (y compris `0`). |
 | **Est vrai** | `"isTrue"` | `"otherIsTrue"` | `"bindingIsTrue"` | **Interdite** | `true` si booléen `true` ou chaîne insensible à la casse parmi `"true"`, `"1"`, `"yes"`, `"oui"`. |
 | **Est faux** | `"isFalse"` | `"otherIsFalse"` | `"bindingIsFalse"` | **Interdite** | `true` si booléen `false` ou chaîne insensible à la casse parmi `"false"`, `"0"`, `"no"`, `"non"`. *(Note : `null` retourne `false` à la fois pour `isTrue` et `isFalse`.)* |
-| **Est valide** | `"isValid"` | `"otherIsValid"` | *(Interdit)* | **Interdite** | `true` si le composant existe et satisfait toutes ses contraintes natives (`required`, `minLength`, `pattern`, `format`, `minimum`/`maximum` et `jsonSchema` lié). |
-| **Est invalide** | `"isInvalid"` | `"otherIsInvalid"` | *(Interdit)* | **Interdite** | `true` si le composant est introuvable ou en erreur de validation native (`!isValid`). |
+| **Est valide** | `"isValid"` | `"otherIsValid"` | *(Interdit)* | **Interdite** | `true` si le composant existe et satisfait ses contraintes natives (`required`, `minLength`, `pattern`, `format`, `minimum`/`maximum` et `jsonSchema` lié). Sur un conteneur (`Layout`, `Card`, `Tab`…), vérifie récursivement tous ses champs descendants validables. |
+| **Est invalide** | `"isInvalid"` | `"otherIsInvalid"` | *(Interdit)* | **Interdite** | `true` si le composant (ou au moins un descendant validable d'un conteneur) est introuvable ou en erreur de validation native (`!isValid`). |
 | **Est égal à** | `"equals"` | `"otherEquals"` | `"bindingEquals"` | **Requise** *(`null` autorisé)* | Égalité JSON profonde avec coercition souple nombre $\leftrightarrow$ chaîne numérique (`42` == `"42"`) et booléen $\leftrightarrow$ `"true"`/`"false"`. Supporte `"caseSensitive"`. |
 | **Est différent de** | `"notEquals"` | `"otherNotEquals"` | `"bindingNotEquals"` | **Requise** *(`null` autorisé)* | Négation exacte de `equals`. Supporte `"caseSensitive"`. |
 | **Contient** | `"contains"` | `"otherContains"` | `"bindingContains"` | **Requise** *(non `null`)* | - Si la valeur inspectée est une **`List` / `Iterable`** (ex. choix multiple ou tableau JSON de tags) : `true` si au moins un élément est égal à la cible (`_valuesEqual`).<br>- Sinon : sous-chaîne sur `toString()`. Supporte `"caseSensitive"`. |
 | **Commence par** | `"startsWith"` | `"otherStartsWith"` | `"bindingStartsWith"` | **Requise** *(`string` si statique)* | Préfixe textuel (`toString().startsWith(...)`). Supporte `"caseSensitive"`. |
-| **Strictement `>`** | `"greaterThan"` | `"otherGreaterThan"` | `"bindingGreaterThan"` | **Requise** *(nombre fini si statique)* | Compare deux nombres finis (convertit aussi les chaînes numériques). Retourne `false` si l'un des deux opérandes est `null` ou non numérique. *(Pour $\ge$, combine avec `any` ou `not` + `lessThan`.)* |
-| **Strictement `<`** | `"lessThan"` | `"otherLessThan"` | `"bindingLessThan"` | **Requise** *(nombre fini si statique)* | Compare deux nombres finis (`left < right`). *(Pour $\le$, utilise `{"type": "not", "validator": {"type": "...GreaterThan", ...}}`.)* |
+| **Strictement `>`** | `"greaterThan"` | `"otherGreaterThan"` | `"bindingGreaterThan"` | **Requise** *(nombre fini ou date ISO 8601)* | Compare deux nombres finis (ou chaînes numériques) **ou** deux dates ISO 8601 (`"2026-05-19"` / `DateTime`). Retourne `false` si incompatible. |
+| **Strictement `<`** | `"lessThan"` | `"otherLessThan"` | `"bindingLessThan"` | **Requise** *(nombre fini ou date ISO 8601)* | Compare deux nombres finis **ou** deux dates ISO 8601 (`left < right`). |
+| **Supérieur ou égal `>=`** | `"greaterOrEqual"` | `"otherGreaterOrEqual"` | `"bindingGreaterOrEqual"` | **Requise** *(nombre fini ou date ISO 8601)* | Compare deux nombres finis **ou** deux dates ISO 8601 (`left >= right`). |
+| **Inférieur ou égal `<=`** | `"lessOrEqual"` | `"otherLessOrEqual"` | `"bindingLessOrEqual"` | **Requise** *(nombre fini ou date ISO 8601)* | Compare deux nombres finis **ou** deux dates ISO 8601 (`left <= right`). |
+| **Nombre d'éléments `=`** | `"countEquals"` | `"otherCountEquals"` | `"bindingCountEquals"` | **Requise** *(entier `>= 0`)* | Compare la taille (`List.length`, `Map.length`, `String.length`, `null` $\rightarrow$ `0`) à un entier. |
+| **Nombre d'éléments `>`** | `"countGreaterThan"` | `"otherCountGreaterThan"` | `"bindingCountGreaterThan"` | **Requise** *(entier `>= 0`)* | Vérifie `count > expected` (ex. `"bindingCountGreaterThan"` avec `"value": 0` pour vérifier qu'un tableau contient au moins 1 ligne). |
+| **Nombre d'éléments `<`** | `"countLessThan"` | `"otherCountLessThan"` | `"bindingCountLessThan"` | **Requise** *(entier `>= 0`)* | Vérifie `count < expected`. |
 | **Expression régulière** | `"matchesRegex"` | `"otherMatchesRegex"` | `"bindingMatchesRegex"` | **Requise** *(`string` RegExp valide non vide)* | Teste `RegExp(pattern, caseSensitive: caseSensitive).hasMatch(value.toString())`. Une regex invalide lève `FormatException` dès `validate()`. |
 
 ### 3.3. Valeur attendue statique vs dynamique & sensibilité à la casse
 
-Sur les **7 opérateurs binaires** (`equals`, `notEquals`, `contains`, `startsWith`, `greaterThan`, `lessThan`, `matchesRegex`), la valeur de droite peut provenir d'**exactement une seule** des 3 propriétés mutuellement exclusives suivantes :
+Sur les **12 opérateurs binaires** (`equals`, `notEquals`, `contains`, `startsWith`, `greaterThan`, `lessThan`, `greaterOrEqual`, `lessOrEqual`, `countEquals`, `countGreaterThan`, `countLessThan`, `matchesRegex`), la valeur de droite peut provenir d'**exactement une seule** des 3 propriétés mutuellement exclusives suivantes :
 
 1. **`"value"`** *(constante JSON statique : `string`, `number`, `boolean`, `list`, `map`, ou `null` sur `equals`/`notEquals` ; alias `"expectedValue"` toléré)* :
    ```json
@@ -235,15 +242,18 @@ Les validateurs peuvent s'imbriquer sans limite de profondeur avec évaluation c
 
 ---
 
-## 4. Catalogue exhaustif des 16 Actions (`BehaviorAction`)
+## 4. Catalogue exhaustif des 20 Actions (`BehaviorAction`)
 
-### Vue synoptique des 16 actions et de leurs événements autorisés
+### Vue synoptique des 20 actions et de leurs événements autorisés
 
 | `action.type` | Mode | Événements (`event`) autorisés | Rôle résumé |
 | :--- | :---: | :--- | :--- |
 | **`"goToPage"`** | Impératif | Les 13 événements impératifs | Naviguer vers une page standard, A4 ou modale (`dialog`, `bottomSheet`, `sideSheet`). |
+| **`"goBack"`** | Impératif | Les 13 événements impératifs | Fermer une page modale (`dialog`, `bottomSheet`, `sideSheet`) ou revenir à la page précédente (`fallbackPagePath` optionnel). |
 | **`"generatePdf"`** | Impératif | Les 13 événements impératifs | Générer et exporter un fichier `.pdf` depuis une page `"a4Document"`. |
 | **`"emitEvent"`** | Impératif | Les 13 événements impératifs | Publier un événement métier sur le `SuperEventBus` de l'application hôte. |
+| **`"showMessage"`** | Impératif | Les 13 événements impératifs | Afficher un toast / `SnackBar` Material 3 (`info`, `success`, `warning`, `error`), fixe ou lié. |
+| **`"copyToClipboard"`** | Impératif | Les 13 événements impératifs | Copier un texte fixe, la valeur d'un composant ou d'une liaison dans le presse-papiers. |
 | **`"setStyle"`** | Impératif | Les 13 événements impératifs | Appliquer, basculer ou réinitialiser en mémoire un patch de style visuel ou un `namedState`. |
 | **`"setVisibility"`** | Impératif | Les 13 événements impératifs | Afficher, masquer, basculer ou réinitialiser la visibilité en mémoire. |
 | **`"setState"`** | Impératif | Les 13 événements impératifs | Forcer, basculer ou réinitialiser `disabled` ou `readOnly` en mémoire. |
@@ -251,8 +261,9 @@ Les validateurs peuvent s'imbriquer sans limite de profondeur avec évaluation c
 | **`"bindState"`** | Réactif | **Uniquement `"onBinding"`** | Lier réactivement `invisible`, `readOnly` ou `disabled` à un booléen de repository. |
 | **`"bindZoneSize"`** | Réactif | **Uniquement `"onBinding"`** | Lier et animer l'épaisseur d'un côté (`west`/`east`/`north`/`south`) d'un `SuperLayout`. |
 | **`"addArrayItem"`** | Impératif | Les 13 événements impératifs | Créer et sélectionner une nouvelle ligne dans un tableau JSON (`jsonSchema` + `creationDefault`). |
+| **`"removeArrayItem"`** | Impératif | Les 13 événements impératifs | Supprimer la ligne courante ou sélectionnée d'un tableau JSON (immédiat par défaut, `confirm: false`). |
 | **`"creationDefault"`** | Déclaratif | **Uniquement `"onCreate"`** | Définir la valeur initiale d'un champ `SuperValue` lors d'une création de ligne. |
-| **`"runJavaScript"`** | Impératif | Les 13 événements impératifs | Exécuter un script QuickJS contrôlé modifiant atomiquement un repository via `ctx.set(...)`. |
+| **`"runJavaScript"`** | Impératif | Les 13 événements impératifs | Exécuter un script QuickJS contrôlé (`ctx.set`, `ctx.get`, `ctx.removeAt`, `ctx.select`). |
 | **`"sortCollection"`** | **Hybride** | **`"onBinding"` OU les 13 événements impératifs** | Trier côté client un `SuperListView` ou `SuperTable` sans altérer le repository. |
 | **`"filterCollection"`** | **Hybride** | **`"onBinding"` OU les 13 événements impératifs** | Filtrer côté client un `SuperListView` ou `SuperTable` via un `BehaviorValidator`. |
 | **`"searchProvider"`** | Impératif | Les 13 événements impératifs | Exécuter un provider de recherche (`store.providers.search`). |
@@ -290,6 +301,25 @@ Génère un document PDF multi-feuilles via `A4PdfGenerator` à partir d'une pag
 Publie un `SuperComponentEvent` sur le bus `SuperApp.eventBus` écouté par le code Dart de l'application hôte (`eventBus.on('<eventId>').listen(...)`).
 - `"eventId"` *(requis, `string`)* : identifiant non vide **sans espaces en début ni fin** (ex. `"explorer.openItem"`).
 - `"custom"` *(optionnel, `object`, défaut `{}`)* : charge utile JSON statique libre transmise telle quelle dans `event.custom` à côté des données automatiques `event.data`.
+
+#### 4. `"goBack"` (`GoBackAction`)
+Ferme la page modale courante (`dialog`, `bottomSheet`, `sideSheet`) ou revient à l'écran précédent dans la pile de navigation (`Navigator` puis `GoRouter`).
+- `"fallbackPagePath"` *(optionnel, `string` non vide sans espaces superflus ; alias `"fallbackPath"` accepté)* : route absolue de secours (ex. `"/"` ou `"/accueil"`) si aucune vue ne peut être dépilée.
+
+#### 5. `"showMessage"` (`ShowMessageAction`)
+Affiche un retour visuel non bloquant (`SnackBar` Material 3). Très utile comme feedback de succès ou dans `elseAction` lorsque `validator` échoue !
+- `"severity"` *(optionnel, défaut `"info"`)* : `"info"` | `"success"` | `"warning"` | `"error"`.
+- `"message"` *(requis si `"binding"` est omis, sinon repli si la liaison est vide/nulle)* : texte affiché.
+- `"binding"` *(optionnel)* : liaison réactive vers un message du repository.
+- `"durationMs"` *(optionnel, `int > 0`, défaut `3000`)* : durée d'affichage en millisecondes.
+
+#### 6. `"copyToClipboard"` (`CopyToClipboardAction`)
+Copie une valeur textuelle dans le presse-papiers système (`Clipboard.setData`).
+- **Source mutuellement exclusive (exactement 1 requise)** :
+  - `"text"` *(chaîne non vide)* ;
+  - `"targetComponentId"` *(ID d'un composant monté ou lié)* ;
+  - `"binding"` *(liaison JSON résolue via `JsonListScope`)*.
+- `"feedbackMessage"` *(optionnel, `string`)* : affiche une `SnackBar` de confirmation après la copie.
 
 ---
 
@@ -357,12 +387,16 @@ Lie l'épaisseur d'un volet latéral ou horizontal d'un `SuperLayout` à un attr
 
 ### 4.4. Création de lignes JSON Schema & Scripts contrôlés QuickJS
 
-#### 10. `"addArrayItem"` (`AddArrayItemAction`) & 11. `"creationDefault"` (`CreationDefaultAction`)
-Permettent d'ajouter proprement une nouvelle entité dans un tableau JSON (racine comme `"crm:clients"` ou imbriqué Maître/Esclave comme `"crm:clients[?].commandes"`) depuis n'importe quel bouton d'action :
+#### 10. `"addArrayItem"`, `"removeArrayItem"` & 11. `"creationDefault"`
+Permettent d'ajouter ou de supprimer proprement une entité dans un tableau JSON (racine comme `"crm:clients"` ou imbriqué Maître/Esclave comme `"crm:clients[?].commandes"`) depuis n'importe quel bouton d'action :
 
 - **`"addArrayItem"`** (impératif, typiquement sur `"event": "onTap"` d'un bouton « Nouveau client ») :
   - **`"binding"`** *(**requis**)* : chemin du tableau cible (ne peut jamais cibler un `@calcul`).
   - `"selectCreated"` *(optionnel, `boolean`, défaut `true`)* : sélectionne immédiatement la ligne créée dans `JsonArrayBinding`, ce qui met à jour instantanément la fiche Maître / Détail ou le formulaire d'édition !
+- **`"removeArrayItem"`** (`RemoveArrayItemAction`, impératif) : supprime l'élément courant (dans une ligne `JsonListScope`) ou sélectionné (Maître/Détail) dans le tableau cible :
+  - **`"binding"`** *(**requis**)* : chemin du tableau (`"crm:clients"`, `"clients[?].commandes"`) ou de l'élément (`"crm:clients[?]"`). Interdit sur `@...`.
+  - `"confirm"` *(optionnel, `boolean`, **défaut `false`**)* : suppression immédiate par défaut ; passer `true` pour demander confirmation via un dialogue modal (`"confirmTitle"`, `"confirmMessage"` optionnels).
+  - `"selectAdjacent"` *(optionnel, `boolean`, défaut `true`)* : repositionne la sélection sur la ligne voisine (ou vide la sélection si le tableau devient vide).
 - **`"creationDefault"`** (déclaratif, **exige `"event": "onCreate"`** sur un composant `SuperValue`) :
   - **`"defaultValue"`** : valeur JSON initiale (`string`, `number`, `boolean`, `list`, `map` ou `null`) injectée dans le champ lié lors de la création d'une ligne.
   - `"binding"` *(optionnel)* : omis par défaut (utilise automatiquement le `SuperValueConfig.binding` du champ porteur, y compris avec héritage de repository dans un template de liste).
@@ -422,10 +456,13 @@ Exécute un script JavaScript synchrone dans le moteur embarqué QuickJS pour ef
 >   - **`doc`** : `Proxy` profond **en lecture seule** sur le document racine complet du repository ciblé (ex. `doc.clients`, `doc.ui.westWidth`). Toute tentative de mutation directe (`doc.ui.westWidth = 0` ou `doc.clients.push(...)`) lève immédiatement une `TypeError` !
 >   - **`event`** : `Proxy` **en lecture seule** contenant `event.componentId`, `event.componentType`, `event.event` (nom canonique, ex. `"onTap"`), `event.trigger` et `event.data` (ex. `event.data.value`, `event.data.index`).
 >   - **`ctx.repositoryId`** : identifiant du repository ciblé.
->   - **`ctx.set(path, value)`** : **unique API d'écriture**. Enregistre l'écriture demandée sur `path` avec une valeur sérialisable en JSON (nombres finis uniquement, pas de `NaN`/`Infinity`/`Function`/`Promise`).
+>   - **`ctx.get(path, repositoryId?, defaultValue?)`** *(+ `getString`, `getNum`, `getInt`, `getDouble`, `getBool`, `getList`, `getObject`)* : lecture seule sur le repository courant ou un **autre repository** du store (y compris ses attributs calculés `@...`).
+>   - **`ctx.set(path, value)`** : écrit une valeur JSON sur `path` dans le repository ciblé (nombres finis uniquement, pas de `NaN`/`Infinity`/`Function`/`Promise`).
+>   - **`ctx.removeAt(arrayPath, index)`** / **`ctx.remove(path)`** : supprime un élément d'un tableau source (`arrayPath` + indice, ou `path` avec `[?]` / `[index]`), en rejetant tout chemin `@...`.
+>   - **`ctx.select(arrayPath, index, repositoryId?)`** : met à jour la sélection Maître / Détail dans `JsonArrayBinding` après la transaction.
 > - **Attention — Ne confonds JAMAIS les deux signatures QuickJS** :
->   - Dans `"repositories.*.calculatedAttributes"`, la formule reçoit `(row, ctx, doc)` avec `ctx.get(...)` / `ctx.getNum(...)` et **aucun** `ctx.set`.
->   - Dans `"behaviors.*.action"` (`"runJavaScript"`), le script reçoit **`(ctx, doc, event)`** : **`row` et `ctx.get` n'existent pas** dans `runJavaScript` ! Lis les données via `doc` (ou `event.data`) et écris via `ctx.set("chemin", valeur)`.
+>   - Dans `"repositories.*.calculatedAttributes"`, la formule reçoit `(row, ctx, doc)` avec `ctx.get(...)` et **aucun** `ctx.set`.
+>   - Dans `"behaviors.*.action"` (`"runJavaScript"`), le script reçoit **`(ctx, doc, event)`** : **`row` n'existe pas** dans `runJavaScript` (lis via `doc`, `event.data` ou `ctx.get(...)`, et écris via `ctx.set` / `ctx.removeAt` / `ctx.select`).
 > - **Support des jokers `[?]` dans `ctx.set`** :
 >   - `ctx.set("clients[?].statut", "valide")` résout automatiquement `[?]` avec l'indice de la ligne englobante (si le bouton est dans `<listId>:item` ou le template de la liste) **ou** avec la ligne actuellement sélectionnée dans le `JsonArrayBinding` Maître / Détail (si le bouton est dans la fiche détail en zone `center` !).
 > - **Atomicité, Compare-And-Swap & Validation Schema** :
@@ -571,14 +608,15 @@ Exécute `store.datasources.run(datasourceId, command, scope: ...)` en transmett
 2. **`"onBinding"` restreint à 4 actions** : seuls `"bindState"`, `"bindZoneSize"`, `"sortCollection"` et `"filterCollection"` acceptent `"event": "onBinding"`.
 3. **`"not"` prend `"validator"` (singulier), `"all"` / `"any"` prennent `"validators"` (pluriel)** : inverser les deux lève immédiatement une `FormatException`.
 4. **Casse des validateurs de recherche** : `ValueBehaviorValidator.caseSensitive` vaut `true` par défaut $\rightarrow$ mets toujours `"caseSensitive": false` sur `"bindingContains"` / `"bindingStartsWith"` lorsqu'ils sont reliés à une saisie utilisateur.
-5. **Pas de `isEmpty` / `isFill` sur un booléen ou le nombre `0`** : `0` et `false` sont considérés **remplis** (`isFill == true`). Utilise `"isTrue"` / `"isFalse"` pour les booléens et `"greaterThan"` (`"value": 0`) pour tester un nombre strictement positif.
-6. **Pas de `isValid` / `isInvalid` sur une liaison brute** : `"bindingIsValid"` n'existe pas ; teste la validité sur le composant (`"isValid"` ou `"otherIsValid"` avec `"targetComponentId"`).
+5. **Pas de `isEmpty` / `isFill` sur un booléen ou le nombre `0`** : `0` et `false` sont considérés **remplis** (`isFill == true`). Utilise `"isTrue"` / `"isFalse"` pour les booléens et `"greaterThan"` / `"greaterOrEqual"` pour tester un nombre.
+6. **Pas de `isValid` / `isInvalid` sur une liaison brute** : `"bindingIsValid"` n'existe pas ; teste la validité sur un composant (`"isValid"`) ou sur un champ/conteneur (`"otherIsValid"` avec `"targetComponentId"`).
 7. **Exclusivité de la cible de comparaison** : ne fournis jamais simultanément `"value"` et `"expectedComponentId"` (ni `"expectedBinding"`), et n'ajoute jamais `"expectedComponentId"` sur un opérateur unaire (`isFill`, `isEmpty`, `isTrue`, `isValid`…).
 8. **Interdictions en mode `"onBinding"` sur les collections** : sur `sortCollection` et `filterCollection` avec `"event": "onBinding"`, ne mets **jamais** `"targetComponentId"`, ni `"mode": "clear"` / `"toggle"` / `"clearAll"`, ni `"direction": "toggle"`.
 9. **`"mode"` obligatoire dans `"setVisibility"` et `"state"` obligatoire dans `"setState"`** : fournis toujours explicitement `"mode": "show" | "hide" | "toggle" | "reset"` pour `setVisibility`, et `"state": "disabled" | "readOnly"` pour `setState`.
 10. **Unités de `"bindZoneSize"`** : écris `"unit": "pixels"` ou `"unit": "percent"` (jamais `"px"` ni `"%"`), et cible uniquement `"west"`, `"east"`, `"north"` ou `"south"` (jamais `"center"`).
-11. **Signature QuickJS de `"runJavaScript"`** : utilise exclusivement `(ctx, doc, event)` et `ctx.set("chemin", valeur)` ; n'utilise jamais `row`, `ctx.get(...)`, `doc.x = ...`, `async`/`await`, ni de chemin contenant `@`.
-12. **Préservation des behaviors existants lors d'un patch Vibe** : `behaviors["<id>"]` remplace toute la liste de `<id>` ; relis toujours `behaviors["<id>"]` dans l'état courant avant d'y ajouter une entrée.
+11. **Signature QuickJS de `"runJavaScript"`** : utilise exclusivement `(ctx, doc, event)` avec `ctx.get(...)`, `ctx.set(...)`, `ctx.removeAt(...)` et `ctx.select(...)` ; n'utilise jamais `row`, `doc.x = ...`, `async`/`await`, ni d'écriture sur un chemin `@`.
+12. **`elseAction` exige `validator`** : ne définis jamais `"elseAction"` sans `"validator"` ni sur un événement déclaratif (`onHover`, `onBinding`, `onCreate`).
+13. **Préservation des behaviors existants lors d'un patch Vibe** : `behaviors["<id>"]` remplace toute la liste de `<id>` ; relis toujours `behaviors["<id>"]` dans l'état courant avant d'y ajouter une entrée.
 
 ---
 

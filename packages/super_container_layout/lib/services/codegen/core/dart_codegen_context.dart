@@ -364,6 +364,13 @@ class DartCodegenContext {
           indent: indent + 2,
         ),
       'action': formatBehaviorAction(behavior.action, indent: indent + 2),
+      if (behavior.elseAction != null)
+        'elseAction': formatBehaviorAction(
+          behavior.elseAction!,
+          indent: indent + 2,
+        ),
+      if (behavior.debounceMs != null && behavior.debounceMs! > 0)
+        'debounceMs': '${behavior.debounceMs}',
     };
     return formatCall(
       'ComponentBehavior',
@@ -638,6 +645,58 @@ class DartCodegenContext {
           if (go.pageId != null) 'pageId': formatString(go.pageId!),
           if (go.pageName != null) 'pageName': formatString(go.pageName!),
         }, indent: indent);
+      case final GoBackAction back:
+        return formatCall('const GoBackAction', const [], {
+          if (back.fallbackPagePath != null)
+            'fallbackPagePath': formatString(back.fallbackPagePath!),
+        }, indent: indent);
+      case final ShowMessageAction msg:
+        return formatCall('const ShowMessageAction', const [], {
+          if (msg.message.isNotEmpty) 'message': formatString(msg.message),
+          if (msg.binding != null)
+            'binding': formatBinding(msg.binding!, indent: indent + 2),
+          if (msg.severity != BehaviorMessageSeverity.info)
+            'severity': 'BehaviorMessageSeverity.${msg.severity.name}',
+          if (msg.durationMs != 3000) 'durationMs': '${msg.durationMs}',
+        }, indent: indent, forceMultiline: true);
+      case final CopyToClipboardAction copy:
+        return formatCall('const CopyToClipboardAction', const [], {
+          if (copy.text != null) 'text': formatString(copy.text!),
+          if (copy.targetComponentId != null)
+            'targetComponentId': formatString(copy.targetComponentId!),
+          if (copy.binding != null)
+            'binding': formatBinding(copy.binding!, indent: indent + 2),
+          if (copy.feedbackMessage != null)
+            'feedbackMessage': formatString(copy.feedbackMessage!),
+        }, indent: indent, forceMultiline: true);
+      case final RemoveArrayItemAction removeArray:
+        return formatCall('const RemoveArrayItemAction', const [], {
+          'binding': formatBinding(
+            removeArray.binding,
+            indent: indent + 2,
+            includeConst: true,
+          ),
+          if (removeArray.confirm) 'confirm': 'true',
+          if (removeArray.confirmTitle != null)
+            'confirmTitle': formatString(removeArray.confirmTitle!),
+          if (removeArray.confirmMessage != null)
+            'confirmMessage': formatString(removeArray.confirmMessage!),
+          if (!removeArray.selectAdjacent) 'selectAdjacent': 'false',
+        }, indent: indent, forceMultiline: true);
+      case final GeneratePdfAction pdf:
+        return formatCall('const GeneratePdfAction', const [], {
+          if (pdf.pageId != null) 'pageId': formatString(pdf.pageId!),
+          if (pdf.pageName != null) 'pageName': formatString(pdf.pageName!),
+          if (pdf.fileName != null) 'fileName': formatString(pdf.fileName!),
+          if (pdf.outputMode != PdfOutputMode.exportDialog)
+            'outputMode': 'PdfOutputMode.${pdf.outputMode.name}',
+        }, indent: indent, forceMultiline: true);
+      case final RunJavaScriptAction script:
+        return formatCall('const RunJavaScriptAction', const [], {
+          'code': formatString(script.code),
+          if (script.repositoryId != null)
+            'repositoryId': formatString(script.repositoryId!),
+        }, indent: indent, forceMultiline: true);
       case final SearchProviderAction search:
         return formatCall('const SearchProviderAction', const [], {
           'providerId': formatString(search.providerId),

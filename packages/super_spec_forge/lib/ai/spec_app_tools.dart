@@ -16,11 +16,50 @@ import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/ux/ux_coherence_issue.dart';
+import '../models/ux/ux_forge_stage.dart';
+import '../models/ux/ux_screen_spec.dart';
 import '../services/spec_coherence_analyzer.dart';
 import '../services/spec_schema_dsl_bridge.dart';
 
 /// Construit et documente les outils exposés aux agents IA de `super_spec_forge`.
 abstract final class SpecForgeToolRegistry {
+  /// Ensemble des 10 outils historiques du wizard de spécification métier.
+  static const Set<String> specToolNames = <String>{
+    'get_lexicon_and_synonyms',
+    'get_requirements_summary',
+    'inspect_business_object',
+    'get_business_rules',
+    'get_debug_entries',
+    'run_coherence_audit',
+    'validate_yaml_light_schema',
+    'extract_array_to_business_object',
+    'focus_stage_or_object',
+    'filter_business_objects',
+  };
+
+  /// Ensemble des 4 outils dédiés au volet de conception UX.
+  static const Set<String> uxToolNames = <String>{
+    'get_ux_overview',
+    'inspect_ux_screen',
+    'run_ux_coherence_audit',
+    'focus_ux_item',
+  };
+
+  /// Ensemble recommandé d'outils pour les 4 agents du wizard UX (outils UX + introspection Spec en lecture/audit).
+  static const Set<String> uxStageToolNames = <String>{
+    'get_ux_overview',
+    'inspect_ux_screen',
+    'run_ux_coherence_audit',
+    'focus_ux_item',
+    'get_lexicon_and_synonyms',
+    'get_requirements_summary',
+    'inspect_business_object',
+    'get_business_rules',
+    'run_coherence_audit',
+    'get_debug_entries',
+  };
+
   /// Ligne de guide (nom → rôle) de chaque outil, dans l'ordre de [declarations].
   static const List<(String, String)> _toolGuideLines = <(String, String)>[
     (
@@ -63,6 +102,22 @@ abstract final class SpecForgeToolRegistry {
       'filter_business_objects',
       'filtre les objets métiers et attributs affichés dans « Arbre & Inspecteur » (ou efface le filtre avec `query: ""`).',
     ),
+    (
+      'get_ux_overview',
+      'synthétise les parcours utilisateurs (`JRN-xxx`), le shell applicatif, le thème visuel Material 3, les routes (`UxRouteNode`) et les écrans (`SCR-xxx`).',
+    ),
+    (
+      'inspect_ux_screen',
+      'lit le détail complet d\'un écran UX (`UxScreenSpec`) ou d\'un parcours utilisateur (`UxJourneySpec`) par identifiant, code (`SCR-001` / `JRN-001`), `routeId` ou nom.',
+    ),
+    (
+      'run_ux_coherence_audit',
+      'exécute l\'audit de cohérence et de traçabilité Métier↔UX (personas, EXF, cas d\'usage, routes, objets/attributs et règles `RG-xxx`).',
+    ),
+    (
+      'focus_ux_item',
+      'positionne l\'atelier UX sur une étape, un parcours (`journeyId`), une route (`routeId`), un écran (`screenId`) et/ou une zone (`zone`).',
+    ),
   ];
 
   /// Guide succinct injecté dans le guide statique des agents, restreint aux
@@ -79,7 +134,7 @@ abstract final class SpecForgeToolRegistry {
     ].join('\n');
   }
 
-  /// Déclarations statiques des 10 outils exposés au modèle Gemini.
+  /// Déclarations statiques des 14 outils (10 Spec + 4 UX) exposés au modèle Gemini.
   static const List<VibeToolDeclaration> declarations = <VibeToolDeclaration>[
     VibeToolDeclaration(
       name: 'get_lexicon_and_synonyms',
@@ -248,23 +303,157 @@ abstract final class SpecForgeToolRegistry {
         'required': <String>['query'],
       },
     ),
+    VibeToolDeclaration(
+      name: 'get_ux_overview',
+      description: 'Retourne un aperçu synthétique du volet UX : parcours utilisateurs (JRN-xxx), shell applicatif, thème visuel Material 3, catalogue des routes (UxRouteNode) et écrans (SCR-xxx).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'personaId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant de persona.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'inspect_ux_screen',
+      description: 'Inspecte le détail complet d’un écran UX (UxScreenSpec) ou d’un parcours utilisateur (UxJourneySpec) par identifiant, code (SCR-001 / JRN-001), routeId ou nom.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'idOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant, code (SCR-001 / JRN-001), routeId ou nom de l’écran ou du parcours UX à inspecter.',
+          },
+          'screenId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un écran UX.',
+          },
+          'journeyId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un parcours UX.',
+          },
+          'routeId': <String, Object?>{
+            'type': 'string',
+            'description': 'Alias optionnel de idOrCode pour cibler l’écran associé à une route.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'run_ux_coherence_audit',
+      description: 'Exécute le contrôle de cohérence et de traçabilité Métier↔UX (parcours, routes, écrans, attributs métiers et règles RG-xxx).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par étape UX (userJourneys, iaNavigation, screenBlueprints, uxReviewExport).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'focus_ux_item',
+      description: 'Bascule l’atelier UX sur une étape donnée et sélectionne éventuellement un parcours (journeyId), une route (routeId), un écran (screenId) et/ou une zone cardinale (zone).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Étape UX cible (userJourneys, iaNavigation, screenBlueprints, uxReviewExport).',
+          },
+          'journeyId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code JRN-xxx du parcours à sélectionner (optionnel).',
+          },
+          'routeId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou chemin "/..." de la route à sélectionner (optionnel).',
+          },
+          'screenId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant, code SCR-xxx ou routeId de l’écran à sélectionner (optionnel).',
+          },
+          'zone': <String, Object?>{
+            'type': 'string',
+            'description': 'Zone cardinale de l’écran à sélectionner (north, west, center, east, south).',
+          },
+        },
+      },
+    ),
   ];
 
-  /// Construit un [VibeAppToolRegistry] connecté au projet courant et aux callbacks de mutation/navigation.
-  ///
-  /// [toolNames] restreint les outils enregistrés (tous par défaut) et
-  /// [coherenceIssueFilter] limite les diagnostics renvoyés par `run_coherence_audit`.
-  static VibeAppToolRegistry build({
+  /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec et les 4 outils UX.
+  static VibeAppToolRegistry create({
     required SpecForgeProject? Function() readProject,
-    required Future<void> Function(SpecForgeProject updated) onUpdateProject,
-    required Future<void> Function(SpecForgeStage stage) onNavigateStage,
-    required void Function(String? objectId) onFocusObject,
+    Future<void> Function(SpecForgeProject updated)? onUpdateProject,
+    Future<void> Function(SpecForgeStage stage)? onNavigateStage,
+    void Function(String? objectId)? onFocusObject,
     void Function({String? objectId, List<String> attributePath})?
     onFocusSelection,
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
+    List<UxCoherenceIssue> Function(SpecForgeProject project)?
+    onRunUxCoherenceAudit,
+    void Function({
+      UxForgeStage? stage,
+      String? journeyId,
+      String? routeId,
+      String? screenId,
+      UxLayoutZoneName? zone,
+    })?
+    onFocusUxItem,
     Set<String>? toolNames,
+    bool includeUxTools = true,
+    bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
+  }) => build(
+    readProject: readProject,
+    onUpdateProject: onUpdateProject,
+    onNavigateStage: onNavigateStage,
+    onFocusObject: onFocusObject,
+    onFocusSelection: onFocusSelection,
+    onFilterBusinessObjects: onFilterBusinessObjects,
+    readCompanyGlossary: readCompanyGlossary,
+    readModelPreferences: readModelPreferences,
+    onRunUxCoherenceAudit: onRunUxCoherenceAudit,
+    onFocusUxItem: onFocusUxItem,
+    toolNames: toolNames,
+    includeUxTools: includeUxTools,
+    coherenceIssueFilter: coherenceIssueFilter,
+  );
+
+  /// Construit un [VibeAppToolRegistry] connecté au projet courant et aux callbacks de mutation/navigation.
+  ///
+  /// [toolNames] restreint les outils enregistrés ; lorsqu'il est omis, les 4
+  /// outils UX sont activés dès que [includeUxTools] vaut `true` ou qu'un
+  /// callback UX ([onRunUxCoherenceAudit] / [onFocusUxItem]) est fourni.
+  static VibeAppToolRegistry build({
+    required SpecForgeProject? Function() readProject,
+    Future<void> Function(SpecForgeProject updated)? onUpdateProject,
+    Future<void> Function(SpecForgeStage stage)? onNavigateStage,
+    void Function(String? objectId)? onFocusObject,
+    void Function({String? objectId, List<String> attributePath})?
+    onFocusSelection,
+    void Function(String query)? onFilterBusinessObjects,
+    CompanyGlossary Function()? readCompanyGlossary,
+    BusinessObjectModelPreferences Function()? readModelPreferences,
+    List<UxCoherenceIssue> Function(SpecForgeProject project)?
+    onRunUxCoherenceAudit,
+    void Function({
+      UxForgeStage? stage,
+      String? journeyId,
+      String? routeId,
+      String? screenId,
+      UxLayoutZoneName? zone,
+    })?
+    onFocusUxItem,
+    Set<String>? toolNames,
+    bool? includeUxTools,
     bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) {
     final handlers = <String, VibeToolHandler>{
@@ -666,8 +855,10 @@ abstract final class SpecForgeToolRegistry {
             if (o.id == updatedParent.id) updatedParent else o,
           newObj,
         ];
-        await onUpdateProject(project.copyWith(businessObjects: nextObjects));
-        onFocusObject(newId);
+        if (onUpdateProject != null) {
+          await onUpdateProject(project.copyWith(businessObjects: nextObjects));
+        }
+        onFocusObject?.call(newId);
         return VibeToolResult(
           callId: call.id,
           name: call.name,
@@ -691,7 +882,9 @@ abstract final class SpecForgeToolRegistry {
         final stage = stageName.isEmpty
             ? project.currentStage
             : SpecForgeStage.fromJson(stageName);
-        await onNavigateStage(stage);
+        if (onNavigateStage != null) {
+          await onNavigateStage(stage);
+        }
         final objKey = (call.arguments['objectId'] as String?)?.trim() ?? '';
         final attrQuery =
             (call.arguments['attributePath'] as String?)?.trim() ?? '';
@@ -758,7 +951,7 @@ abstract final class SpecForgeToolRegistry {
               attributePath: resolvedAttrPath,
             );
           } else {
-            onFocusObject(resolvedId);
+            onFocusObject?.call(resolvedId);
           }
         }
         return VibeToolResult(
@@ -809,11 +1002,317 @@ abstract final class SpecForgeToolRegistry {
           },
         );
       },
+      'get_ux_overview': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final ux = project.uxSpec;
+        final personaFilter =
+            (call.arguments['personaId'] as String?)?.trim() ?? '';
+        final journeys = personaFilter.isEmpty
+            ? ux.journeys
+            : ux.journeys.where((j) => j.personaId == personaFilter).toList();
+        final routes = personaFilter.isEmpty
+            ? ux.navigation.routes
+            : ux.navigation.routes
+                  .where(
+                    (r) =>
+                        r.allowedPersonaIds.isEmpty ||
+                        r.allowedPersonaIds.contains(personaFilter),
+                  )
+                  .toList();
+        final screens = personaFilter.isEmpty
+            ? ux.screens
+            : ux.screens
+                  .where(
+                    (s) =>
+                        s.personaIds.isEmpty ||
+                        s.personaIds.contains(personaFilter),
+                  )
+                  .toList();
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'currentUxStage': ux.currentStage.name,
+            'hasContent': ux.hasContent,
+            'journeyCount': journeys.length,
+            'journeys': [
+              for (final j in journeys)
+                <String, Object?>{
+                  'id': j.id,
+                  'code': j.code,
+                  'name': j.name,
+                  'personaId': j.personaId,
+                  'channel': j.channel.name,
+                  'stepCount': j.steps.length,
+                  'useCaseIds': j.useCaseIds,
+                  'requirementIds': j.requirementIds,
+                },
+            ],
+            'shell': <String, Object?>{
+              'shellPattern': ux.navigation.shellPattern.name,
+              'hasAppBar': ux.navigation.hasAppBar,
+              'hasBreadcrumbs': ux.navigation.hasBreadcrumbs,
+              'hasGlobalSearch': ux.navigation.hasGlobalSearch,
+              'homeRouteId': ux.navigation.homeRouteId,
+            },
+            'visualTheme': ux.navigation.visualTheme.toJson(),
+            'routeCount': routes.length,
+            'routes': [for (final r in routes) r.toJson()],
+            'screenCount': screens.length,
+            'screens': [
+              for (final s in screens)
+                <String, Object?>{
+                  'id': s.id,
+                  'code': s.code,
+                  'name': s.name,
+                  'routeId': s.routeId,
+                  'pattern': s.pattern.name,
+                  'primaryObjectId': s.primaryObjectId,
+                  'zoneCount': s.zones.length,
+                  'actionCount': s.actions.length,
+                },
+            ],
+            'coherenceIssueCount': ux.coherenceIssues.length,
+          },
+        );
+      },
+      'inspect_ux_screen': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final ux = project.uxSpec;
+        String readArg(List<String> keys) {
+          for (final key in keys) {
+            final v = call.arguments[key];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          return '';
+        }
+
+        final needle = readArg(const <String>[
+          'idOrCode',
+          'screenId',
+          'journeyId',
+          'routeId',
+          'target',
+          'id',
+          'code',
+          'name',
+        ]);
+
+        if (needle.isEmpty) {
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'screenCount': ux.screens.length,
+              'journeyCount': ux.journeys.length,
+              'screens': [
+                for (final s in ux.screens)
+                  <String, Object?>{
+                    'id': s.id,
+                    'code': s.code,
+                    'name': s.name,
+                    'routeId': s.routeId,
+                    'pattern': s.pattern.name,
+                  },
+              ],
+              'journeys': [
+                for (final j in ux.journeys)
+                  <String, Object?>{
+                    'id': j.id,
+                    'code': j.code,
+                    'name': j.name,
+                    'personaId': j.personaId,
+                  },
+              ],
+            },
+          );
+        }
+
+        final preferJourney =
+            call.arguments['journeyId'] is String &&
+            (call.arguments['journeyId'] as String).trim().isNotEmpty;
+
+        if (preferJourney) {
+          final journey = ux.findJourney(needle);
+          if (journey != null) {
+            return VibeToolResult(
+              callId: call.id,
+              name: call.name,
+              data: <String, Object?>{
+                'kind': 'journey',
+                'journey': journey.toJson(),
+              },
+            );
+          }
+        }
+
+        var screen = ux.findScreen(needle);
+        if (screen == null) {
+          final matchedRoute = ux.navigation.findRoute(needle);
+          if (matchedRoute != null) {
+            screen = ux.findScreen(matchedRoute.id);
+          }
+        }
+        if (screen != null) {
+          final linkedRoute = screen.routeId.isNotEmpty
+              ? ux.navigation.findRoute(screen.routeId)
+              : null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'screen',
+              'screen': screen.toJson(),
+              if (linkedRoute != null) 'route': linkedRoute.toJson(),
+            },
+          );
+        }
+
+        final journey = ux.findJourney(needle);
+        if (journey != null) {
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'journey',
+              'journey': journey.toJson(),
+            },
+          );
+        }
+
+        return VibeToolResult.error(
+          callId: call.id,
+          name: call.name,
+          message: 'Écran ou parcours UX introuvable : $needle',
+        );
+      },
+      'run_ux_coherence_audit': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final allIssues = onRunUxCoherenceAudit != null
+            ? onRunUxCoherenceAudit(project)
+            : project.uxSpec.coherenceIssues;
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final stageFilter = stageRaw.isEmpty
+            ? null
+            : UxForgeStage.fromJson(stageRaw);
+        final issues = stageFilter == null
+            ? allIssues
+            : allIssues.where((i) => i.stage == stageFilter).toList();
+        final errorCount = issues
+            .where((i) => i.severity == CoherenceSeverity.error)
+            .length;
+        final warningCount = issues
+            .where((i) => i.severity == CoherenceSeverity.warning)
+            .length;
+        final infoCount = issues
+            .where((i) => i.severity == CoherenceSeverity.info)
+            .length;
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'issueCount': issues.length,
+            'errorCount': errorCount,
+            'warningCount': warningCount,
+            'infoCount': infoCount,
+            'issues': [for (final i in issues) i.toJson()],
+          },
+        );
+      },
+      'focus_ux_item': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final ux = project.uxSpec;
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final journeyRaw =
+            (call.arguments['journeyId'] as String?)?.trim() ?? '';
+        final routeRaw = (call.arguments['routeId'] as String?)?.trim() ?? '';
+        final screenRaw = (call.arguments['screenId'] as String?)?.trim() ?? '';
+        final zoneRaw = (call.arguments['zone'] as String?)?.trim() ?? '';
+
+        UxForgeStage? resolvedStage = stageRaw.isEmpty
+            ? null
+            : UxForgeStage.fromJson(stageRaw);
+        final resolvedJourneyId = journeyRaw.isEmpty
+            ? null
+            : (ux.findJourney(journeyRaw)?.id ?? journeyRaw);
+        final resolvedRouteId = routeRaw.isEmpty
+            ? null
+            : (ux.navigation.findRoute(routeRaw)?.id ?? routeRaw);
+        final resolvedScreenId = screenRaw.isEmpty
+            ? null
+            : (ux.findScreen(screenRaw)?.id ?? screenRaw);
+        final UxLayoutZoneName? resolvedZone = zoneRaw.isEmpty
+            ? null
+            : UxLayoutZoneName.fromJson(zoneRaw);
+
+        if (resolvedStage == null) {
+          if (resolvedScreenId != null || resolvedZone != null) {
+            resolvedStage = UxForgeStage.screenBlueprints;
+          } else if (resolvedRouteId != null) {
+            resolvedStage = UxForgeStage.iaNavigation;
+          } else if (resolvedJourneyId != null) {
+            resolvedStage = UxForgeStage.userJourneys;
+          }
+        }
+
+        onFocusUxItem?.call(
+          stage: resolvedStage,
+          journeyId: resolvedJourneyId,
+          routeId: resolvedRouteId,
+          screenId: resolvedScreenId,
+          zone: resolvedZone,
+        );
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            if (resolvedStage != null) 'stage': resolvedStage.name,
+            'focusedJourneyId': ?resolvedJourneyId,
+            'focusedRouteId': ?resolvedRouteId,
+            'focusedScreenId': ?resolvedScreenId,
+            if (resolvedZone != null) 'focusedZone': resolvedZone.name,
+          },
+        );
+      },
     };
+
+    final enableUx =
+        includeUxTools ??
+        (onRunUxCoherenceAudit != null || onFocusUxItem != null);
+    final effectiveNames = toolNames ?? (enableUx ? null : specToolNames);
 
     return VibeAppToolRegistry([
       for (final decl in declarations)
-        if (toolNames == null || toolNames.contains(decl.name))
+        if (effectiveNames == null || effectiveNames.contains(decl.name))
           VibeRegisteredTool(declaration: decl, handler: handlers[decl.name]!),
     ]);
   }
@@ -857,6 +1356,34 @@ abstract final class SpecForgeToolRegistry {
         final q = (data['query'] as String?) ?? '';
         if (q.isEmpty) return 'Filtre réinitialisé';
         return 'Filtre "$q" (${data['matchingObjectCount'] ?? 0} obj.)';
+      case 'get_ux_overview':
+        return '${data['journeyCount'] ?? 0} parcours, ${data['routeCount'] ?? 0} route(s), ${data['screenCount'] ?? 0} écran(s)';
+      case 'inspect_ux_screen':
+        if (data['screen'] is Map) {
+          final scr = data['screen'] as Map;
+          return 'Écran ${scr['code'] ?? ''} — ${scr['name'] ?? ''}'.trim();
+        }
+        if (data['journey'] is Map) {
+          final jrn = data['journey'] as Map;
+          return 'Parcours ${jrn['code'] ?? ''} — ${jrn['name'] ?? ''}'.trim();
+        }
+        return '${data['screenCount'] ?? 0} écran(s), ${data['journeyCount'] ?? 0} parcours';
+      case 'run_ux_coherence_audit':
+        return '${data['issueCount'] ?? 0} point(s) UX (${data['errorCount'] ?? 0} erreur(s))';
+      case 'focus_ux_item':
+        if (data['focusedScreenId'] is String) {
+          final z = data['focusedZone'];
+          return z is String
+              ? 'Focus écran ${data['focusedScreenId']} ($z)'
+              : 'Focus écran ${data['focusedScreenId']}';
+        }
+        if (data['focusedRouteId'] is String) {
+          return 'Focus route ${data['focusedRouteId']}';
+        }
+        if (data['focusedJourneyId'] is String) {
+          return 'Focus parcours ${data['focusedJourneyId']}';
+        }
+        return 'Focus UX ${data['stage'] ?? 'atelier'}';
     }
     return 'OK';
   }

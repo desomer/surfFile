@@ -4370,10 +4370,7 @@ void main() {
         withDisabledLot.copyWith(status: VibePlanStatus.running).finishedCount,
         1,
       );
-      expect(
-        withDisabledLot.formatLotContextPrompt(1),
-        contains('Désactivé'),
-      );
+      expect(withDisabledLot.formatLotContextPrompt(1), contains('Désactivé'));
       expect(
         plan.formatLotContextPrompt(1),
         contains('>>> À EXÉCUTER MAINTENANT'),
@@ -4565,7 +4562,9 @@ void main() {
                       onClose: () {},
                       onDrag: (_) {},
                       generate: (prompt) async {
-                        fail('generate ne doit pas être appelé quand streamGenerate est fourni');
+                        fail(
+                          'generate ne doit pas être appelé quand streamGenerate est fourni',
+                        );
                       },
                       streamGenerate:
                           (
@@ -4604,7 +4603,8 @@ void main() {
                                     {
                                       'id': 'lot-1',
                                       'title': 'Repository & En-tête',
-                                      'description': 'Créer le repo clients et le titre',
+                                      'description':
+                                          'Créer le repo clients et le titre',
                                     },
                                     {
                                       'id': 'lot-2',
@@ -4622,9 +4622,7 @@ void main() {
                                   'crm_clients': {
                                     'name': 'Clients CRM',
                                     'mode': 'merge',
-                                    'data': {
-                                      'title': 'Portefeuille Clients',
-                                    },
+                                    'data': {'title': 'Portefeuille Clients'},
                                   },
                                 },
                                 'vibe': {
@@ -4705,9 +4703,14 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Vérifie la position de la puce « Plan » juste à droite de « Précis » et avant « À l’identique ».
+        // Vérifie le séparateur vertical entre la dernière puce vitesse (« Précis »)
+        // et « Plan », puis le passage de « À l’identique » et des actions suivantes
+        // sur la ligne du dessous.
         final reasoningRect = tester.getRect(
           find.byKey(const ValueKey('vibe-chat-speed-reasoning')),
+        );
+        final dividerRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-speed-plan-divider')),
         );
         final planRect = tester.getRect(
           find.byKey(const ValueKey('vibe-chat-plan-mode')),
@@ -4715,8 +4718,23 @@ void main() {
         final exactRect = tester.getRect(
           find.byKey(const ValueKey('vibe-chat-reproduce-exact')),
         );
-        expect(planRect.left, greaterThan(reasoningRect.left));
-        expect(exactRect.left, greaterThan(planRect.left));
+        final reactiveRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-reactive-values')),
+        );
+        final auditRect = tester.getRect(
+          find.byKey(const ValueKey('vibe-chat-audit-page')),
+        );
+        expect(dividerRect.left, greaterThanOrEqualTo(reasoningRect.right));
+        expect(planRect.left, greaterThanOrEqualTo(dividerRect.right));
+        expect(
+          (planRect.center.dy - reasoningRect.center.dy).abs(),
+          lessThan(4),
+        );
+        expect(exactRect.top, greaterThanOrEqualTo(planRect.bottom));
+        expect(reactiveRect.top, greaterThanOrEqualTo(planRect.bottom));
+        expect(auditRect.top, greaterThanOrEqualTo(planRect.bottom));
+        expect(reactiveRect.left, greaterThan(exactRect.right));
+        expect(auditRect.left, greaterThan(reactiveRect.right));
 
         await tester.tap(find.byKey(const ValueKey('vibe-chat-plan-mode')));
         await tester.pumpAndSettle();
@@ -4738,8 +4756,10 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
         await pumpRealAsync(
           tester,
-          until: () =>
-              find.byKey(const ValueKey('vibe-ask-user-card')).evaluate().isNotEmpty,
+          until: () => find
+              .byKey(const ValueKey('vibe-ask-user-card'))
+              .evaluate()
+              .isNotEmpty,
         );
         await tester.pumpAndSettle();
 
@@ -4751,21 +4771,28 @@ void main() {
           isNot(contains('MODE « REPRODUIRE À L’IDENTIQUE »')),
         );
         expect(prompts[0], contains('de proposer le plan par lots ("plan")'));
-        expect(find.byKey(const ValueKey('vibe-ask-user-card')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-ask-user-card')),
+          findsOneWidget,
+        );
 
         // Validation du questionnaire -> Tour 2 produit le plan.
         await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
         await pumpRealAsync(
           tester,
-          until: () =>
-              find.byKey(const ValueKey('vibe-plan-start')).evaluate().isNotEmpty,
+          until: () => find
+              .byKey(const ValueKey('vibe-plan-start'))
+              .evaluate()
+              .isNotEmpty,
         );
         await tester.pumpAndSettle();
 
         expect(callCount, 2);
         expect(
           prompts[1],
-          contains('Génère directement le plan par lots ("plan") correspondant'),
+          contains(
+            'Génère directement le plan par lots ("plan") correspondant',
+          ),
         );
         expect(find.byKey(const ValueKey('vibe-plan-card')), findsOneWidget);
         expect(find.byKey(const ValueKey('vibe-plan-start')), findsOneWidget);

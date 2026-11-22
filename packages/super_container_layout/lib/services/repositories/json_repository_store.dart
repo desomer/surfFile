@@ -1472,10 +1472,17 @@ class JsonRepositoryStore extends ChangeNotifier {
     );
   }
 
-  /// Exécute un comportement JavaScript et applique ses écritures en une seule
-  /// transaction du repository. `ctx.set(path, value)` est la seule API
-  /// d'écriture ; `eventData` est l'objet lu par le script sous `event`.
-  /// Les chemins calculés `@...` restent toujours en lecture seule.
+  /// Exécute un comportement JavaScript et applique ses écritures et
+  /// suppressions en une seule transaction atomique du repository, puis les
+  /// éventuelles sélections demandées via `ctx.select(...)`.
+  ///
+  /// API exposée au script sous `ctx` :
+  /// - `ctx.get(path, repositoryId?, defaultValue?)` : lecture seule
+  ///   cross-repository (avec résolution `[?]` et attributs calculés `@`) ;
+  /// - `ctx.set(path, value)` : écriture JSON (hors `@...`) ;
+  /// - `ctx.removeAt(arrayPath, index)` / `ctx.remove(path)` : suppression
+  ///   d'élément de tableau ;
+  /// - `ctx.select(arrayPath, index, repositoryId?)` : sélection de ligne.
   Future<void> runJavaScriptAction({
     required String repositoryId,
     required String code,
@@ -1490,16 +1497,73 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     final expectedDocument = await readDocument(repositoryId);
-    final writes = await _scriptEvaluator.executeAction(
-      code: code,
-      rootData: expectedDocument,
-      eventData: eventData,
-      repositoryId: repositoryId,
-    );
-    if (writes.isEmpty) return;
+    final extraDocs = <String, Object?>{};
+
+    Future<Object?> readScriptValue(
+      String rawPath,
+      String? targetRepoId,
+    ) async {
+      final explicitRepo =
+          targetRepoId != null && targetRepoId.trim().isNotEmpty
+          ? targetRepoId.trim()
+          : null;
+      final target = explicitRepo ?? repositoryId;
+      JsonTextBinding(repositoryId: target, path: rawPath).validate();
+      final effectiveScope =
+          target == repositoryId &&
+              (scope?.repositoryId == null ||
+                  scope?.repositoryId == repositoryId)
+          ? scope
+          : null;
+      final selected = JsonListScope.resolveSelected(
+        JsonTextBinding(repositoryId: target, path: rawPath),
+        effectiveScope,
+        this,
+      );
+      final binding = selected.binding;
+      if (binding == null) return null;
+      binding.validateResolved();
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        if (!_allCalculatedLoaded && !_loadedCalculatedRepos.contains(target)) {
+          await ensureCalculatedAttributesLoaded();
+        }
+        return _calculatedEngine.read(binding.path, repositoryId: target);
+      }
+      final Object? doc;
+      if (target == repositoryId) {
+        doc = expectedDocument;
+      } else if (extraDocs.containsKey(target)) {
+        doc = extraDocs[target];
+      } else {
+        doc = await readDocument(target);
+        extraDocs[target] = doc;
+      }
+      return JsonAttributePath(binding.path).readNode(doc);
+    }
+
+    final evaluator = _scriptEvaluator;
+    final JsRepositoryActionResult actionResult;
+    if (evaluator case final JsRepositoryRichActionEvaluator richEvaluator) {
+      actionResult = await richEvaluator.executeRichAction(
+        code: code,
+        rootData: expectedDocument,
+        eventData: eventData,
+        repositoryId: repositoryId,
+        readValue: readScriptValue,
+      );
+    } else {
+      final writes = await evaluator.executeAction(
+        code: code,
+        rootData: expectedDocument,
+        eventData: eventData,
+        repositoryId: repositoryId,
+      );
+      actionResult = JsRepositoryActionResult(writes: writes);
+    }
+    if (actionResult.isEmpty) return;
 
     final resolvedWrites = <JsRepositoryScriptWrite>[];
-    for (final write in writes) {
+    for (final write in actionResult.writes) {
       final selected = JsonListScope.resolveSelected(
         JsonTextBinding(repositoryId: repositoryId, path: write.path),
         scope,
@@ -1520,18 +1584,151 @@ class JsonRepositoryStore extends ChangeNotifier {
       resolvedWrites.add((path: binding.path, value: write.value));
     }
 
-    await _applyScriptWrites(
-      repositoryId,
-      expectedDocument,
-      resolvedWrites,
-      componentId: componentId,
-    );
+    final resolvedRemovals = <({String arrayPath, int index})>[];
+    for (final removal in actionResult.removals) {
+      final removalIndex = removal.index;
+      if (removalIndex == null) {
+        final pattern = '${removal.arrayPath}[?]';
+        final selected = JsonListScope.resolveSelected(
+          JsonTextBinding(repositoryId: repositoryId, path: pattern),
+          scope,
+          this,
+        );
+        final binding = selected.binding;
+        if (binding == null) {
+          throw FormatException(
+            'Aucune ligne sélectionnée pour le chemin « $pattern ».',
+          );
+        }
+        binding.validateResolved();
+        if (JsonTextBinding.isCalculatedPath(binding.path)) {
+          throw FormatException(
+            'L’attribut calculé « ${binding.path} » est en lecture seule.',
+          );
+        }
+        final steps = JsonAttributePath(binding.path).steps;
+        if (steps.length < 2 || steps.last.index == null) {
+          throw FormatException(
+            'Le chemin de suppression « ${binding.path} » doit désigner un élément de tableau.',
+          );
+        }
+        final arrayPath = _formatPathSteps(steps.sublist(0, steps.length - 1));
+        resolvedRemovals.add((arrayPath: arrayPath, index: steps.last.index!));
+      } else {
+        if (removalIndex < 0) {
+          throw RangeError.value(removalIndex, 'index');
+        }
+        final selected = JsonListScope.resolveSelected(
+          JsonTextBinding(repositoryId: repositoryId, path: removal.arrayPath),
+          scope,
+          this,
+        );
+        final binding = selected.binding;
+        if (binding == null) {
+          throw FormatException(
+            'Aucune ligne sélectionnée pour le chemin « ${removal.arrayPath} ».',
+          );
+        }
+        binding.validateResolved();
+        if (JsonTextBinding.isCalculatedPath(binding.path)) {
+          throw FormatException(
+            'L’attribut calculé « ${binding.path} » est en lecture seule.',
+          );
+        }
+        resolvedRemovals.add((arrayPath: binding.path, index: removalIndex));
+      }
+    }
+
+    for (final sel in actionResult.selections) {
+      final targetRepo =
+          sel.repositoryId != null && sel.repositoryId!.trim().isNotEmpty
+          ? sel.repositoryId!.trim()
+          : repositoryId;
+      JsonTextBinding(repositoryId: targetRepo, path: sel.arrayPath).validate();
+      if (JsonTextBinding.isCalculatedPath(sel.arrayPath)) {
+        throw FormatException(
+          'L’attribut calculé « ${sel.arrayPath} » ne peut pas être sélectionné.',
+        );
+      }
+      if (sel.index < 0) {
+        throw RangeError.value(sel.index, 'index');
+      }
+    }
+
+    if (resolvedWrites.isNotEmpty || resolvedRemovals.isNotEmpty) {
+      await _applyScriptWrites(
+        repositoryId,
+        expectedDocument,
+        resolvedWrites,
+        removals: resolvedRemovals,
+        componentId: componentId,
+      );
+    }
+
+    for (final sel in actionResult.selections) {
+      final targetRepo =
+          sel.repositoryId != null && sel.repositoryId!.trim().isNotEmpty
+          ? sel.repositoryId!.trim()
+          : repositoryId;
+      final effectiveScope =
+          targetRepo == repositoryId &&
+              (scope?.repositoryId == null ||
+                  scope?.repositoryId == repositoryId)
+          ? scope
+          : null;
+      final selected = JsonListScope.resolveSelected(
+        JsonTextBinding(repositoryId: targetRepo, path: sel.arrayPath),
+        effectiveScope,
+        this,
+      );
+      final binding = selected.binding;
+      if (binding == null) {
+        throw FormatException(
+          'Aucune ligne sélectionnée pour le chemin « ${sel.arrayPath} ».',
+        );
+      }
+      binding.validateResolved();
+      final resolvedPath = JsonAttributePath(binding.path);
+      final template = _arrayTemplateFromResolvedPath(resolvedPath);
+      bindingOf(targetRepo)
+          .array(template)
+          .select(resolvedPath.indices, sel.index);
+    }
+  }
+
+  static String _formatPathSteps(
+    List<({String? key, int? index, bool isWildcard})> steps,
+  ) {
+    final buffer = StringBuffer();
+    for (final step in steps) {
+      if (step.key != null) {
+        if (buffer.isNotEmpty) buffer.write('.');
+        buffer.write(step.key);
+      } else {
+        buffer.write(step.isWildcard ? '[?]' : '[${step.index}]');
+      }
+    }
+    return buffer.toString();
+  }
+
+  static String _arrayTemplateFromResolvedPath(JsonAttributePath path) {
+    final buffer = StringBuffer();
+    for (final step in path.steps) {
+      if (step.key != null) {
+        if (buffer.isNotEmpty) buffer.write('.');
+        buffer.write(step.key);
+      } else {
+        buffer.write('[?]');
+      }
+    }
+    return buffer.toString();
   }
 
   Future<void> _applyScriptWrites(
     String repositoryId,
     Object? expectedDocument,
     List<JsRepositoryScriptWrite> writes, {
+    List<({String arrayPath, int index})> removals = const [],
     String? componentId,
   }) => _exclusive(() async {
     Object? current;
@@ -1568,6 +1765,58 @@ class JsonRepositoryStore extends ChangeNotifier {
       if (!jsonEquals(updated, next)) changedPaths.add(binding.path);
       updated = next;
     }
+
+    final appliedRemovals =
+        <({String template, List<int> parents, List<int> indices})>[];
+    if (removals.isNotEmpty) {
+      final grouped = <String, Set<int>>{};
+      for (final removal in removals) {
+        final binding = JsonTextBinding(
+          repositoryId: repositoryId,
+          path: removal.arrayPath,
+        )..validateResolved();
+        if (JsonTextBinding.isCalculatedPath(binding.path)) {
+          throw FormatException(
+            'L’attribut calculé « ${binding.path} » est en lecture seule.',
+          );
+        }
+        grouped.putIfAbsent(binding.path, () => <int>{}).add(removal.index);
+      }
+      final sortedEntries = grouped.entries.toList()
+        ..sort(
+          (a, b) =>
+              JsonAttributePath(b.key).steps.length
+                  .compareTo(JsonAttributePath(a.key).steps.length),
+        );
+      for (final entry in sortedEntries) {
+        final path = JsonAttributePath(entry.key);
+        final node = path.readNode(updated);
+        if (node is! List) {
+          throw FormatException(
+            'Le chemin « ${entry.key} » doit être un tableau JSON.',
+          );
+        }
+        final indicesDesc = entry.value.toList()
+          ..sort((a, b) => b.compareTo(a));
+        for (final idx in indicesDesc) {
+          if (idx < 0 || idx >= node.length) {
+            throw const FormatException('Indice de tableau JSON inexistant.');
+          }
+        }
+        final nextList = List<Object?>.of(node);
+        for (final idx in indicesDesc) {
+          nextList.removeAt(idx);
+        }
+        updated = path.replaceNode(updated, nextList);
+        changedPaths.add(entry.key);
+        appliedRemovals.add((
+          template: _arrayTemplateFromResolvedPath(path),
+          parents: path.indices,
+          indices: indicesDesc,
+        ));
+      }
+    }
+
     if (changedPaths.isEmpty) return;
     await _assertValidDocument(repositoryId, updated);
 
@@ -1577,6 +1826,14 @@ class JsonRepositoryStore extends ChangeNotifier {
       _documentCache[repositoryId] = updated;
       for (final path in changedPaths) {
         _invalidateCalculated(repositoryId, path);
+      }
+      final repoBinding = _bindings[repositoryId];
+      if (repoBinding != null) {
+        for (final removed in appliedRemovals) {
+          for (final idx in removed.indices) {
+            repoBinding.removed(removed.template, removed.parents, idx);
+          }
+        }
       }
       _changed();
       _notifyMemoryRepositoryChanged(
@@ -1599,6 +1856,14 @@ class JsonRepositoryStore extends ChangeNotifier {
     );
     for (final path in changedPaths.skip(1)) {
       _invalidateCalculated(repositoryId, path);
+    }
+    final repoBinding = _bindings[repositoryId];
+    if (repoBinding != null) {
+      for (final removed in appliedRemovals) {
+        for (final idx in removed.indices) {
+          repoBinding.removed(removed.template, removed.parents, idx);
+        }
+      }
     }
   });
 

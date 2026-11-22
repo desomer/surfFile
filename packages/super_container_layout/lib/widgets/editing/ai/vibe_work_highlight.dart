@@ -101,6 +101,9 @@ class VibeWorkHighlightController extends ChangeNotifier {
   /// conteneurs à onglets de ne basculer qu'au changement réel de cible IA.
   int get focusRevision => _focusRevision;
 
+  /// Verrouille la bascule automatique d'onglets sur les `SuperTab` pendant un tour « Uniquement visible ».
+  bool suppressAutoTabSwitch = false;
+
   /// Identifiants actifs classés du plus prioritaire/récent au plus ancien
   /// (cibles en cours de streaming d'abord, puis pulses actifs les plus récents).
   List<String> get orderedActiveTargets => List<String>.unmodifiable([

@@ -4,14 +4,23 @@ Application Flutter Desktop et bibliothèque Dart de conception de cahier des ch
 
 La barre d’application indique la page visible (`Spec › Projets`), l’étape et le projet dans le wizard (`Lexique métier — Atlas`), ou la sélection dans Design (`Modèles & Contrats › Client`). Le workspace actif reste affiché à droite.
 
-## Étapes du wizard IA
+## Étapes du wizard IA de spécification métier
 
 1. **Lexique métier** (`Ubiquitous Language Expert`) : définition des termes canoniques, synonymes à unifier, sigles et conventions de vocabulaire.
 2. **Cadrage & Acteurs** (`Product Strategist`) : clarification de l'idée, objectifs, personas, contraintes et hors-périmètre.
 3. **Cahier des charges** (`Business Analyst`) : modules fonctionnels, exigences (MoSCoW), cas d'usage et exigences non fonctionnelles.
 4. **Objets métiers** (`Domain Modeler`) : entités structurées JSON Schema avec sous-objets, attributs typés (≤ 200/objet, ≤ 200 lignes/tableau), relations (`1:1`, `1:N`, `N:M`) et cycles de vie.
 5. **Règles de gestion** (`Rule Architect`) : règles `RG-xxx` de validation, calcul, transition d'état, permission et déclencheur (`Quand / Si / Alors`).
-6. **Revue & Export** (`Consistency Auditor`) : analyse de cohérence inter-étapes et export en Markdown (`.md`), JSON (`.json`), YAML « JSON Schemas Light » (`super_designer`) et dossier d'application sandboxée (`super_container_layout`).
+6. **Revue & Export** (`Consistency Auditor`) : analyse de cohérence inter-étapes, export des livrables et passerelle directe vers le **Wizard UX & Parcours**.
+
+## Wizard UX & Parcours (4 étapes en aval)
+
+Accessible dans l'onglet **Spec** via la carte **Wizard UX & Parcours** ou le bouton **Poursuivre vers le Wizard UX** à l'étape 6, ce second wizard exploite directement le `SpecForgeProject` actif (personas, cas d'usage, exigences, objets métiers et règles `RG-xxx`) et permet un enrichissement additif non destructif (`additive_safe`) des objets/attributs métiers et des règles `RG-xxx` :
+
+1. **Parcours utilisateurs & Flows** (`User Journey Architect`) : parcours bout-en-bout (`JRN-xxx`), étapes séquentielles, embranchements et critères de succès par persona et canal cible.
+2. **Architecture & Navigation** (`Information Architect`) : configuration du shell applicatif, identité visuelle avec aperçu live Material 3 (clair/sombre) & typographie, arborescence des routes typées (`EditorPageType`) et matrice d'accès par rôle.
+3. **Écrans, Zones & Interactions** (`Interaction & Screen Designer`) : fiches d'écrans (`SCR-xxx`), schéma visuel interactif des 5 zones (`north`, `west`, `center`, `east`, `south`), blocs composants liés aux objets/attributs métiers, actions `RG-xxx` et états UX (vide, chargement, erreur, lecture seule).
+4. **Audit UX & Export SuperDesigner** (`UX Auditor & Handoff Lead`) : audit croisé Métier↔UX (`UxCoherenceAnalyzer`), prompt clé-en-main pour le Vibe Chat (`prompt_super_designer.md`), schémas et repositories JSON (`json_schemas/*.schema.json`, `repositories/*.json`, `repositories_bundle.json`, `schema_light.yaml`), spécification UX Markdown (`specification_ux.md`), charte `DESIGN.md` et génération complète dans le dossier d'application sandboxée (`EditorPageCatalog`, thème `appearance.json` et squelettes d'écrans `SuperLayout` dans `pages/*.json` pré-liés aux `repositories/`).
 
 ## Persistance par dossier & intégration Git
 
@@ -41,7 +50,12 @@ Les données sont stockées dans un **dossier Workspace sélectionnable** (par d
     │   ├── coherence_issues.json
     │   ├── business_objects/<slug>.json
     │   └── business_rules/<slug>.json
-    ├── chats/                          # Historiques IA par étape et chat global
+    ├── ux/
+    │   ├── navigation.json             # Shell, routes & thème visuel UX
+    │   ├── coherence_issues.json       # Diagnostics UX
+    │   ├── journeys/<slug>.json        # 1 fichier par parcours (JRN-xxx)
+    │   └── screens/<slug>.json         # 1 fichier par écran (SCR-xxx)
+    ├── chats/                          # Historiques IA par étape (Spec, UX & global)
     └── attachments/                    # Pièces jointes dédupliquées
 ```
 
@@ -127,4 +141,15 @@ flutter analyze
 flutter test
 flutter run -d windows
 ```
+
+## Installateur Windows (Inno Setup)
+
+Prérequis : Visual Studio avec les outils C++ de bureau et Inno Setup 6 (`winget install --id JRSoftware.InnoSetup --exact`).
+Depuis la racine du dépôt :
+
+```powershell
+.\installer\build-installer.ps1 -App SuperSpecForge
+```
+
+L'installateur généré est créé dans `..\..\build\installer\SuperSpecForge-<version>-windows-x64-setup.exe` (à partir du script [SuperSpecForge.iss](../../installer/SuperSpecForge.iss)) et installe l'application dans `%LOCALAPPDATA%\Programs\SuperSpecForge` sans élévation.
 

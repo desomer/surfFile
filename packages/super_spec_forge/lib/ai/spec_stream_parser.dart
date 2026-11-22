@@ -15,6 +15,7 @@ class SpecStreamSnapshot {
     this.isMessageComplete = false,
     this.hasAskUser = false,
     this.hasSpecPatch = false,
+    this.hasUxPatch = false,
     this.receivedChars = 0,
   });
 
@@ -33,6 +34,9 @@ class SpecStreamSnapshot {
   /// Vrai si une clé `"specPatch": {` a été détectée dans le flux.
   final bool hasSpecPatch;
 
+  /// Vrai si une clé `"uxPatch": {` a été détectée dans le flux.
+  final bool hasUxPatch;
+
   /// Nombre total de caractères reçus.
   final int receivedChars;
 }
@@ -45,6 +49,7 @@ class SpecAgentResponse {
     required this.message,
     this.askUser,
     this.specPatch,
+    this.uxPatch,
     this.toolCalls = const <VibeToolCall>[],
     this.stageSummary = '',
     this.stageReadyToAdvance = false,
@@ -59,6 +64,9 @@ class SpecAgentResponse {
 
   /// Patch structuré à appliquer sur le [SpecForgeProject].
   final Map<String, Object?>? specPatch;
+
+  /// Patch structuré à appliquer sur le volet UX du [SpecForgeProject].
+  final Map<String, Object?>? uxPatch;
 
   /// Appels d'outils éventuels émis via le repli JSON `"toolCalls"`.
   final List<VibeToolCall> toolCalls;
@@ -104,6 +112,14 @@ class SpecAgentResponse {
           }
         : null;
 
+    final rawUxPatch = map['uxPatch'];
+    final Map<String, Object?>? uxPatch = rawUxPatch is Map
+        ? <String, Object?>{
+            for (final entry in rawUxPatch.entries)
+              if (entry.key is String) entry.key as String: entry.value,
+          }
+        : null;
+
     final toolCalls = VibeToolCall.tryListFromJson(map['toolCalls']);
 
     final rawSummary = map['stageSummary'];
@@ -113,6 +129,7 @@ class SpecAgentResponse {
       message: message,
       askUser: askUser,
       specPatch: specPatch,
+      uxPatch: uxPatch,
       toolCalls: toolCalls,
       stageSummary: stageSummary,
       stageReadyToAdvance: map['stageReadyToAdvance'] == true,
@@ -162,12 +179,14 @@ class SpecStreamParser {
     final extracted = _extractTopLevelStringField(text, 'message');
     final hasAskUser = RegExp(r'"askUser"\s*:\s*[\{\[]').hasMatch(text);
     final hasSpecPatch = RegExp(r'"specPatch"\s*:\s*\{').hasMatch(text);
+    final hasUxPatch = RegExp(r'"uxPatch"\s*:\s*\{').hasMatch(text);
 
     return SpecStreamSnapshot(
       message: extracted?.value,
       isMessageComplete: extracted?.complete ?? false,
       hasAskUser: hasAskUser,
       hasSpecPatch: hasSpecPatch,
+      hasUxPatch: hasUxPatch,
       receivedChars: text.length,
     );
   }

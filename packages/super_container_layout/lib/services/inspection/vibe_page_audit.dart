@@ -9,8 +9,16 @@
 library;
 
 import 'package:flutter/foundation.dart' show immutable, listEquals;
+import 'package:material_ui/material_ui.dart' show Axis;
 
+import '../../models/super_layout_config.dart';
+import '../../models/super_tab_config.dart';
+import '../../theme/appearance.dart';
+import '../../widgets/editing/ai/vibe_scope_helpers.dart';
+import '../diagnostics/debug_entry.dart';
 import 'vibe_app_inspector.dart';
+import 'vibe_debug_capture.dart';
+import 'vibe_mounted_slot_index.dart';
 
 /// Niveau de gravité d'une anomalie détectée lors du pré-audit.
 enum VibeAuditSeverity {
@@ -64,6 +72,7 @@ class VibeAuditFinding {
     this.componentId,
     this.zoneId,
     this.location,
+    this.tabContext,
   });
 
   /// Catégorie de l'anomalie.
@@ -87,6 +96,9 @@ class VibeAuditFinding {
   /// Chemin logique dans l'`Appearance` (ex. `components[kpi1].binding`).
   final String? location;
 
+  /// Contexte d'onglet éventuel lorsque l'anomalie a été relevée lors du balayage d'un `SuperTab`.
+  final String? tabContext;
+
   /// Sérialise cette anomalie en JSON.
   Map<String, Object?> toJson() => <String, Object?>{
     'category': category.name,
@@ -96,6 +108,7 @@ class VibeAuditFinding {
     if (componentId != null) 'componentId': componentId,
     if (zoneId != null) 'zoneId': zoneId,
     if (location != null) 'location': location,
+    if (tabContext != null) 'tabContext': tabContext,
   };
 
   @override
@@ -108,7 +121,8 @@ class VibeAuditFinding {
           other.message == message &&
           other.componentId == componentId &&
           other.zoneId == zoneId &&
-          other.location == location;
+          other.location == location &&
+          other.tabContext == tabContext;
 
   @override
   int get hashCode => Object.hash(
@@ -119,7 +133,59 @@ class VibeAuditFinding {
     componentId,
     zoneId,
     location,
+    tabContext,
   );
+}
+
+/// Résumé immuable d'un onglet inspecté lors du balayage automatique hors scope.
+@immutable
+class VibeSweptTabSummary {
+  /// Construit le résumé d'un onglet balayé pendant l'audit.
+  const VibeSweptTabSummary({
+    required this.tabComponentId,
+    required this.tabIndex,
+    required this.tabId,
+    required this.label,
+    required this.contentZone,
+  });
+
+  /// Identifiant du composant `SuperTab`.
+  final String tabComponentId;
+
+  /// Indice 0-based de l'onglet balayé.
+  final int tabIndex;
+
+  /// Identifiant technique du slot d'onglet.
+  final String tabId;
+
+  /// Libellé lisible de l'onglet.
+  final String label;
+
+  /// Zone de contenu inspectée (`content:<tabId>` ou `content`).
+  final String contentZone;
+
+  /// Sérialise ce résumé en JSON.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'tabComponentId': tabComponentId,
+    'tabIndex': tabIndex,
+    'tabId': tabId,
+    'label': label,
+    'contentZone': contentZone,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VibeSweptTabSummary &&
+          other.tabComponentId == tabComponentId &&
+          other.tabIndex == tabIndex &&
+          other.tabId == tabId &&
+          other.label == label &&
+          other.contentZone == contentZone;
+
+  @override
+  int get hashCode =>
+      Object.hash(tabComponentId, tabIndex, tabId, label, contentZone);
 }
 
 /// Rapport complet d'un pré-audit de page ou de scope.
@@ -132,12 +198,21 @@ class VibePageAuditReport {
     this.pageName,
     this.pagePath,
     this.isScoped = false,
+    this.visibleOnly = false,
     List<String> auditedComponentIds = const <String>[],
     List<VibeAuditFinding> findings = const <VibeAuditFinding>[],
+    List<VibeSweptTabSummary> sweptTabs = const <VibeSweptTabSummary>[],
     this.viewportWidth,
     this.viewportHeight,
   }) : auditedComponentIds = List<String>.unmodifiable(auditedComponentIds),
-       findings = List<VibeAuditFinding>.unmodifiable(findings);
+       findings = List<VibeAuditFinding>.unmodifiable(findings),
+       sweptTabs = List<VibeSweptTabSummary>.unmodifiable(sweptTabs);
+
+  /// Onglets inspectés séquentiellement lors du balayage automatique (hors scope).
+  final List<VibeSweptTabSummary> sweptTabs;
+
+  /// Indique si l'audit était restreint à la zone visible (onglet actif et scroll courant).
+  final bool visibleOnly;
 
   /// Libellé humain du périmètre audité (ex. `Page "Tableau de bord" (/dashboard)`).
   final String targetLabel;
@@ -184,12 +259,17 @@ class VibePageAuditReport {
     if (pageName != null) 'pageName': pageName,
     if (pagePath != null) 'pagePath': pagePath,
     'isScoped': isScoped,
+    if (visibleOnly) 'visibleOnly': true,
     if (viewportWidth != null && viewportHeight != null)
       'viewport': <String, Object?>{
         'width': viewportWidth,
         'height': viewportHeight,
       },
     'auditedComponentCount': auditedComponentIds.length,
+    if (sweptTabs.isNotEmpty) ...<String, Object?>{
+      'sweptTabCount': sweptTabs.length,
+      'sweptTabs': [for (final t in sweptTabs) t.toJson()],
+    },
     'findingCount': findings.length,
     'errorCount': errorCount,
     'warningCount': warningCount,
@@ -204,6 +284,21 @@ class VibePageAuditReport {
         'COMPOSANTS DANS LE PÉRIMÈTRE : ${auditedComponentIds.length}'
         '${viewportWidth != null && viewportHeight != null ? ' | VIEWPORT : ${viewportWidth!.round()}×${viewportHeight!.round()} dp' : ''}',
       );
+    if (sweptTabs.isNotEmpty) {
+      final byTabComponent = <String, List<VibeSweptTabSummary>>{};
+      for (final item in sweptTabs) {
+        byTabComponent
+            .putIfAbsent(item.tabComponentId, () => <VibeSweptTabSummary>[])
+            .add(item);
+      }
+      final groups = byTabComponent.entries
+          .map(
+            (e) =>
+                '${e.key} (${e.value.map((t) => '[${t.tabIndex}] "${t.label}"').join(', ')})',
+          )
+          .join(' ; ');
+      buffer.writeln('ONGLETS BALAYÉS (${sweptTabs.length}) : $groups');
+    }
 
     if (findings.isEmpty) {
       buffer.writeln(
@@ -227,11 +322,14 @@ class VibePageAuditReport {
             : item.zoneId != null && item.zoneId!.isNotEmpty
             ? '[${item.componentId}::${item.zoneId}] '
             : '[${item.componentId}] ';
+        final tabTag = item.tabContext != null && item.tabContext!.isNotEmpty
+            ? '[Onglet ${item.tabContext}] '
+            : '';
         final loc = item.location != null && item.location!.isNotEmpty
             ? ' (${item.location})'
             : '';
         buffer.writeln(
-          '  - [${item.severity.label}] $target${item.kind}$loc : ${item.message}',
+          '  - [${item.severity.label}] $tabTag$target${item.kind}$loc : ${item.message}',
         );
       }
     }
@@ -247,10 +345,12 @@ class VibePageAuditReport {
           other.pageName == pageName &&
           other.pagePath == pagePath &&
           other.isScoped == isScoped &&
+          other.visibleOnly == visibleOnly &&
           other.viewportWidth == viewportWidth &&
           other.viewportHeight == viewportHeight &&
           listEquals(other.auditedComponentIds, auditedComponentIds) &&
-          listEquals(other.findings, findings);
+          listEquals(other.findings, findings) &&
+          listEquals(other.sweptTabs, sweptTabs);
 
   @override
   int get hashCode => Object.hash(
@@ -259,25 +359,392 @@ class VibePageAuditReport {
     pageName,
     pagePath,
     isScoped,
+    visibleOnly,
     viewportWidth,
     viewportHeight,
     Object.hashAll(auditedComponentIds),
     Object.hashAll(findings),
+    Object.hashAll(sweptTabs),
   );
 }
 
 /// Exécute un pré-audit déterministe complet sur la page active ou le scope actif.
 abstract final class VibePageAuditService {
   static const int _maxGeometryIds = 60;
+  static const int _maxTabSwitches = 24;
+  static const int _maxNestedTabDepth = 3;
+
+  static Set<String> _collectSubtreeFromRoots(
+    Appearance appearance,
+    Iterable<String> roots,
+  ) {
+    final collected = <String>{};
+    final queue = <String>[...roots];
+    while (queue.isNotEmpty) {
+      final id = queue.removeLast();
+      if (!collected.add(id)) continue;
+      final cfg = appearance.components[id];
+      if (cfg != null) {
+        for (final childId in VibeScopeHelpers.childrenOfComponent(cfg)) {
+          if (!collected.contains(childId)) {
+            queue.add(childId);
+          }
+        }
+      }
+    }
+    return collected;
+  }
+
+  static Set<String> _collectTabZoneSubtreeIds(
+    Appearance appearance,
+    String tabComponentId,
+    String contentZone,
+  ) {
+    final cfg = appearance.components[tabComponentId];
+    if (cfg is! SuperTabConfig) return const <String>{};
+    return _collectSubtreeFromRoots(appearance, cfg.slotsOf(contentZone));
+  }
+
+  static Set<String> _collectAllTabContentSubtreeIds(
+    Appearance appearance,
+    String tabComponentId,
+  ) {
+    final cfg = appearance.components[tabComponentId];
+    if (cfg is! SuperTabConfig) return const <String>{};
+    final roots = <String>{
+      for (final entry in cfg.placements.entries)
+        if (entry.key == SuperTabConfig.dynamicContentZone ||
+            entry.key.startsWith('content:'))
+          ...entry.value,
+    };
+    return _collectSubtreeFromRoots(appearance, roots);
+  }
+
+  static void _recordDebugEntryFinding(
+    DebugEntry entry, {
+    required void Function(VibeAuditFinding finding) addFinding,
+    String? tabContext,
+  }) {
+    if (entry.category == DebugErrorCategory.userInput) return;
+    final msg = entry.message.trim();
+    if (msg.isEmpty) return;
+    final cid = entry.componentId;
+    final firstLine = msg.split('\n').first.trim();
+    final isLayoutOverflow =
+        firstLine.contains('overflowed') ||
+        firstLine.contains('RenderFlex') ||
+        firstLine.contains('RenderBox');
+    final VibeAuditCategory auditCategory = switch (entry.category) {
+      DebugErrorCategory.binding => VibeAuditCategory.bindingAndSchema,
+      DebugErrorCategory.font => VibeAuditCategory.contrastAndStyle,
+      DebugErrorCategory.rendering when isLayoutOverflow =>
+        VibeAuditCategory.layoutAndClipping,
+      _ =>
+        isLayoutOverflow
+            ? VibeAuditCategory.layoutAndClipping
+            : VibeAuditCategory.runtimeError,
+    };
+    final VibeAuditSeverity auditSeverity = switch (entry.severity) {
+      DebugSeverity.warning => VibeAuditSeverity.warning,
+      DebugSeverity.info => VibeAuditSeverity.info,
+      _ => VibeAuditSeverity.error,
+    };
+    final String auditKind = switch (entry.category) {
+      DebugErrorCategory.javascript => 'javascript_runtime_error',
+      DebugErrorCategory.font => 'missing_or_invalid_font',
+      DebugErrorCategory.binding => 'ui_binding_runtime_error',
+      _ =>
+        isLayoutOverflow
+            ? 'render_overflow_debug_error'
+            : 'runtime_debug_error',
+    };
+    addFinding(
+      VibeAuditFinding(
+        category: auditCategory,
+        severity: auditSeverity,
+        kind: auditKind,
+        componentId: cid,
+        location: cid != null ? 'components[$cid]' : null,
+        tabContext: tabContext,
+        message: firstLine.length > 180
+            ? '${firstLine.substring(0, 177)}…'
+            : firstLine,
+      ),
+    );
+  }
+
+  static Future<void> _collectGeometryPass({
+    required VibeAppInspector inspector,
+    required Appearance appearance,
+    required Iterable<String> candidateIds,
+    required void Function(VibeAuditFinding finding) addFinding,
+    Set<String> skipContentZonesForTabIds = const <String>{},
+    String? onlyZoneFilter,
+    String? tabContext,
+    bool visibleOnly = false,
+  }) async {
+    final mountedSet = inspector.slotIndex.mountedComponentIds.toSet();
+    final geometryIds = <String>[
+      for (final id in candidateIds)
+        if (mountedSet.contains(id)) id,
+    ].take(_maxGeometryIds).toList(growable: false);
+    if (geometryIds.isEmpty) return;
+
+    final geo = await inspector.getComponentGeometry(<String, Object?>{
+      'ids': geometryIds,
+      'zoneId': ?onlyZoneFilter,
+      'includeZones': true,
+      'includeScroll': true,
+    });
+    final comps = geo['components'];
+    if (comps is! Map) return;
+
+    for (final entry in comps.entries) {
+      final id = entry.key is String ? entry.key as String : '${entry.key}';
+      final compData = entry.value;
+      if (compData is! Map) continue;
+      final occurrences = compData['occurrences'];
+      if (occurrences is! List) continue;
+      for (final occ in occurrences) {
+        if (occ is! Map) continue;
+        final zoneId = occ['zoneId'] as String?;
+        if (zoneId != null &&
+            skipContentZonesForTabIds.contains(id) &&
+            (zoneId == SuperTabConfig.dynamicContentZone ||
+                zoneId.startsWith('content:'))) {
+          continue;
+        }
+        final diag = occ['diagnostics'];
+        if (diag is Map) {
+          if (visibleOnly &&
+              diag['isVisibleInViewport'] == false &&
+              diag['isZeroSized'] != true) {
+            continue;
+          }
+          if (diag['isZeroSized'] == true) {
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.error,
+                kind: 'zero_sized_component',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Le composant ou sa zone a une taille rendue nulle (0 px), ce qui le rend invisible ou écrasé.',
+              ),
+            );
+          }
+          if (diag['exceedsParentWidth'] == true ||
+              diag['exceedsParentHeight'] == true) {
+            final axes = <String>[
+              if (diag['exceedsParentWidth'] == true) 'largeur',
+              if (diag['exceedsParentHeight'] == true) 'hauteur',
+            ].join(' et ');
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.error,
+                kind: 'exceeds_parent_bounds',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Déborde des bornes de son conteneur parent ($axes) : risque de coupure par les marges ou contraintes.',
+              ),
+            );
+          }
+          if (diag['isClippedByAncestor'] == true) {
+            final edges = diag['clippedEdges'];
+            final edgeLabel = edges is List && edges.isNotEmpty
+                ? ' (bords : ${edges.join(', ')})'
+                : '';
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.error,
+                kind: 'clipped_by_ancestor',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Contenu rogné par un ancêtre clippé$edgeLabel : ajuster les marges, le padding ou `fitContent` / la taille du slot.',
+              ),
+            );
+          }
+          if (diag['clipsChildContent'] == true) {
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.warning,
+                kind: 'clips_child_content',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Un ou plusieurs enfants dépassent la boîte rendue de ce conteneur (marge/padding ou contrainte fixe trop serrée).',
+              ),
+            );
+          }
+          if (diag['exceedsViewportWidth'] == true ||
+              diag['exceedsViewportHeight'] == true) {
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.error,
+                kind: 'exceeds_viewport',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Dépasse les limites visibles du viewport (horizontalement ou verticalement sans scroll adapté).',
+              ),
+            );
+          }
+          if (diag['hasTruncatedText'] == true) {
+            final samples = diag['truncatedTextSamples'];
+            final preview = samples is List && samples.isNotEmpty
+                ? ' (« ${samples.first} »)'
+                : '';
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.warning,
+                kind: 'truncated_text',
+                componentId: id,
+                zoneId: zoneId,
+                tabContext: tabContext,
+                message:
+                    'Texte tronqué ou coupé par manque d’espace/hauteur$preview.',
+              ),
+            );
+          }
+        }
+        final sliver = occ['sliver'];
+        if (sliver is Map && sliver['hasVisualOverflow'] == true) {
+          addFinding(
+            VibeAuditFinding(
+              category: VibeAuditCategory.layoutAndClipping,
+              severity: VibeAuditSeverity.warning,
+              kind: 'sliver_visual_overflow',
+              componentId: id,
+              zoneId: zoneId,
+              tabContext: tabContext,
+              message:
+                  'Sliver présentant un débordement visuel dans sa zone de défilement.',
+            ),
+          );
+        }
+      }
+    }
+
+    // Contrôle budgétaire de largeur sur les zones horizontales (`zoneAxes: 'row'`).
+    if (onlyZoneFilter == null) {
+      final queriedSet = geometryIds.toSet();
+      for (final layoutId in geometryIds) {
+        final cfg = appearance.components[layoutId];
+        if (cfg is! SuperLayoutConfig) continue;
+        final layoutData = comps[layoutId];
+        if (layoutData is! Map) continue;
+        final layoutOccs = layoutData['occurrences'];
+        if (layoutOccs is! List) continue;
+
+        for (final placementEntry in cfg.placements.entries) {
+          final zone = placementEntry.key;
+          final childIds = placementEntry.value;
+          if (childIds.isEmpty) continue;
+          final contentZone = cfg.contentZone(zone);
+          if (cfg.axisOf(contentZone) != Axis.horizontal) continue;
+          final flow = cfg.flowOf(contentZone);
+          if (flow.scrollable) continue;
+          if (!childIds.every(queriedSet.contains)) continue;
+
+          double? parentWidth;
+          for (final occ in layoutOccs) {
+            if (occ is! Map || occ['zoneId'] != contentZone.name) continue;
+            final diag = occ['diagnostics'];
+            if (diag is Map && diag['isOffscreen'] == true) continue;
+            final sz = occ['size'];
+            if (sz is Map && sz['width'] is num) {
+              final w = (sz['width'] as num).toDouble();
+              if (w > 0) {
+                parentWidth = w;
+                break;
+              }
+            }
+          }
+          if (parentWidth == null) continue;
+
+          final pad = flow.contentPadding;
+          final availableWidth = parentWidth - pad.left - pad.right;
+          if (availableWidth <= 0) continue;
+
+          var measuredChildren = 0;
+          var childrenWidthSum = 0.0;
+          for (final childId in childIds) {
+            final childData = comps[childId];
+            if (childData is! Map) continue;
+            final childOccs = childData['occurrences'];
+            if (childOccs is! List) continue;
+            for (final childOcc in childOccs) {
+              if (childOcc is! Map || childOcc['zoneId'] != null) continue;
+              final diag = childOcc['diagnostics'];
+              if (diag is Map && diag['isOffscreen'] == true) continue;
+              final sz = childOcc['size'];
+              if (sz is Map && sz['width'] is num) {
+                final w = (sz['width'] as num).toDouble();
+                if (w > 0) {
+                  childrenWidthSum += w;
+                  measuredChildren++;
+                  break;
+                }
+              }
+            }
+          }
+          if (measuredChildren < 2) continue;
+          final totalRequired =
+              childrenWidthSum + flow.spacing * (measuredChildren - 1);
+          if (totalRequired > availableWidth + 1.5) {
+            addFinding(
+              VibeAuditFinding(
+                category: VibeAuditCategory.layoutAndClipping,
+                severity: VibeAuditSeverity.error,
+                kind: 'row_width_budget_exceeded',
+                componentId: layoutId,
+                zoneId: contentZone.name,
+                location: 'components[$layoutId].zoneFlows.${contentZone.name}',
+                tabContext: tabContext,
+                message:
+                    'Budget de largeur en ligne dépassé (${totalRequired.round()} dp mesurés [enfants + espacements] pour ${availableWidth.round()} dp disponibles = ${parentWidth.round()} dp - padding horizontal ${(pad.left + pad.right).round()} dp).',
+              ),
+            );
+          }
+        }
+      }
+    }
+  }
 
   /// Collecte les anomalies géométriques, runtime, de calculs/bindings et de contraste.
   static Future<VibePageAuditReport> collect(VibeAppInspector inspector) async {
     final appearance = inspector.readAppearance();
     final scope = inspector.readScope?.call();
+    final visibleOnly = inspector.readVisibleOnly?.call() == true;
     final activePage = inspector.resolveActivePage(appearance);
-    final scopedIds = inspector
+    final rawScopedIds = inspector
         .collectScopeOrActivePageComponentIds(appearance)
         .toList(growable: false);
+    final visibleSnapshot = visibleOnly
+        ? inspector.captureVisibleViewportSnapshot(appearance)
+        : null;
+    final scopedIds =
+        visibleSnapshot != null && visibleSnapshot.hasMeasuredViewport
+        ? <String>[
+            for (final id in rawScopedIds)
+              if (!visibleSnapshot.protectedOffscreenComponentIds.contains(id))
+                id,
+          ]
+        : rawScopedIds;
+    final scopedIdSet = scopedIds.toSet();
 
     final viewportRoute = await inspector.getViewportAndRoute();
     final vp = viewportRoute['viewport'];
@@ -288,162 +755,191 @@ abstract final class VibePageAuditService {
         ? (vp['height'] as num).toDouble()
         : null;
 
-    final String targetLabel;
+    final String baseTargetLabel;
     if (scope != null) {
-      targetLabel = 'Scope "${scope.displayLabel}"';
+      baseTargetLabel = 'Scope "${scope.displayLabel}"';
     } else if (activePage != null) {
-      targetLabel = 'Page "${activePage.name}" (${activePage.path})';
+      baseTargetLabel = 'Page "${activePage.name}" (${activePage.path})';
     } else {
-      targetLabel = 'Écran actif';
+      baseTargetLabel = 'Écran actif';
     }
+    final targetLabel = visibleOnly
+        ? '$baseTargetLabel [Uniquement visible — onglet & scroll courants]'
+        : baseTargetLabel;
 
     final findings = <VibeAuditFinding>[];
     final seenSignatures = <String>{};
+    final sweptTabs = <VibeSweptTabSummary>[];
 
     void addFinding(VibeAuditFinding finding) {
       final sig =
-          '${finding.kind}|${finding.componentId ?? ''}|${finding.zoneId ?? ''}|${finding.location ?? ''}|${finding.message}';
+          '${finding.kind}|${finding.componentId ?? ''}|${finding.zoneId ?? ''}|${finding.location ?? ''}|${finding.tabContext ?? ''}|${finding.message}';
       if (seenSignatures.add(sig)) {
         findings.add(finding);
       }
     }
 
-    // 1. Géométrie, marges coupées, dépassements parent/viewport et troncatures.
-    final mountedSet = inspector.slotIndex.mountedComponentIds.toSet();
-    final geometryIds = <String>[
-      for (final id in scopedIds)
-        if (mountedSet.contains(id)) id,
-    ].take(_maxGeometryIds).toList(growable: false);
+    // 1. Géométrie, marges coupées, dépassements parent/viewport, budget de largeur `row`
+    //    et balayage automatique des onglets `SuperTab` lorsqu'aucun scope ni mode « Uniquement visible » n'est actif.
+    if (scope == null && !visibleOnly) {
+      final rootTabs = inspector.collectActiveMountedTabEntries(
+        allowedComponentIds: scopedIdSet,
+      );
+      final rootTabIds = <String>{for (final t in rootTabs) t.componentId};
+      final allRootTabContentIds = <String>{
+        for (final t in rootTabs)
+          ..._collectAllTabContentSubtreeIds(appearance, t.componentId),
+      };
 
-    if (geometryIds.isNotEmpty) {
-      final geo = await inspector.getComponentGeometry(<String, Object?>{
-        'ids': geometryIds,
-        'includeZones': true,
-        'includeScroll': true,
-      });
-      final comps = geo['components'];
-      if (comps is Map) {
-        for (final entry in comps.entries) {
-          final id = entry.key is String ? entry.key as String : '${entry.key}';
-          final compData = entry.value;
-          if (compData is! Map) continue;
-          final occurrences = compData['occurrences'];
-          if (occurrences is! List) continue;
-          for (final occ in occurrences) {
-            if (occ is! Map) continue;
-            final zoneId = occ['zoneId'] as String?;
-            final diag = occ['diagnostics'];
-            if (diag is Map) {
-              if (diag['isZeroSized'] == true) {
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.error,
-                    kind: 'zero_sized_component',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Le composant ou sa zone a une taille rendue nulle (0 px), ce qui le rend invisible ou écrasé.',
-                  ),
-                );
-              }
-              if (diag['exceedsParentWidth'] == true ||
-                  diag['exceedsParentHeight'] == true) {
-                final axes = <String>[
-                  if (diag['exceedsParentWidth'] == true) 'largeur',
-                  if (diag['exceedsParentHeight'] == true) 'hauteur',
-                ].join(' et ');
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.error,
-                    kind: 'exceeds_parent_bounds',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Déborde des bornes de son conteneur parent ($axes) : risque de coupure par les marges ou contraintes.',
-                  ),
-                );
-              }
-              if (diag['isClippedByAncestor'] == true) {
-                final edges = diag['clippedEdges'];
-                final edgeLabel = edges is List && edges.isNotEmpty
-                    ? ' (bords : ${edges.join(', ')})'
-                    : '';
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.error,
-                    kind: 'clipped_by_ancestor',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Contenu rogné par un ancêtre clippé$edgeLabel : ajuster les marges, le padding ou `fitContent` / la taille du slot.',
-                  ),
-                );
-              }
-              if (diag['clipsChildContent'] == true) {
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.warning,
-                    kind: 'clips_child_content',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Un ou plusieurs enfants dépassent la boîte rendue de ce conteneur (marge/padding ou contrainte fixe trop serrée).',
-                  ),
-                );
-              }
-              if (diag['exceedsViewportWidth'] == true ||
-                  diag['exceedsViewportHeight'] == true) {
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.error,
-                    kind: 'exceeds_viewport',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Dépasse les limites visibles du viewport (horizontalement ou verticalement sans scroll adapté).',
-                  ),
-                );
-              }
-              if (diag['hasTruncatedText'] == true) {
-                final samples = diag['truncatedTextSamples'];
-                final preview = samples is List && samples.isNotEmpty
-                    ? ' (« ${samples.first} »)'
-                    : '';
-                addFinding(
-                  VibeAuditFinding(
-                    category: VibeAuditCategory.layoutAndClipping,
-                    severity: VibeAuditSeverity.warning,
-                    kind: 'truncated_text',
-                    componentId: id,
-                    zoneId: zoneId,
-                    message:
-                        'Texte tronqué ou coupé par manque d’espace/hauteur$preview.',
-                  ),
-                );
-              }
-            }
-            final sliver = occ['sliver'];
-            if (sliver is Map && sliver['hasVisualOverflow'] == true) {
-              addFinding(
-                VibeAuditFinding(
-                  category: VibeAuditCategory.layoutAndClipping,
-                  severity: VibeAuditSeverity.warning,
-                  kind: 'sliver_visual_overflow',
-                  componentId: id,
-                  zoneId: zoneId,
-                  message:
-                      'Sliver présentant un débordement visuel dans sa zone de défilement.',
+      // 1a. Passe sur la coque de page (hors contenus internes des SuperTab).
+      await _collectGeometryPass(
+        inspector: inspector,
+        appearance: appearance,
+        candidateIds: scopedIds.where(
+          (id) => !allRootTabContentIds.contains(id),
+        ),
+        skipContentZonesForTabIds: rootTabIds,
+        addFinding: addFinding,
+      );
+
+      // 1b. Balayage séquentiel de tous les onglets montés (et sous-onglets éventuels).
+      var tabSwitches = 0;
+      final visitedTabIds = <String>{};
+
+      Future<void> sweepTabEntries(
+        List<VibeMountedTabEntry> entries, {
+        required int depth,
+      }) async {
+        for (final tabEntry in entries) {
+          if (!visitedTabIds.add(tabEntry.componentId)) continue;
+          final snap = tabEntry.readSnapshot();
+          if (snap == null || snap.tabCount == 0) continue;
+          final initialIndex = snap.activeIndex;
+          var didSwitch = false;
+          try {
+            for (final tabItem in snap.tabs) {
+              sweptTabs.add(
+                VibeSweptTabSummary(
+                  tabComponentId: snap.componentId,
+                  tabIndex: tabItem.index,
+                  tabId: tabItem.tabId,
+                  label: tabItem.label,
+                  contentZone: tabItem.contentZone,
                 ),
               );
+              final tabLabelContext =
+                  '${snap.componentId}[${tabItem.index}] "${tabItem.label}"';
+              final currentActive = tabEntry.readSnapshot()?.activeIndex;
+              VibeDebugMarker? beforeSwitch;
+              if (currentActive != tabItem.index) {
+                if (tabSwitches >= _maxTabSwitches) continue;
+                beforeSwitch = VibeDebugCapture.markNow();
+                if (tabEntry.selectTab(tabItem.index)) {
+                  didSwitch = true;
+                  tabSwitches++;
+                  await inspector.waitForVisualFrame();
+                }
+              }
+
+              final zoneSubtreeIds = _collectTabZoneSubtreeIds(
+                appearance,
+                snap.componentId,
+                tabItem.contentZone,
+              );
+              final nestedTabs = depth + 1 < _maxNestedTabDepth
+                  ? inspector
+                        .collectActiveMountedTabEntries(
+                          allowedComponentIds: zoneSubtreeIds,
+                        )
+                        .where((e) => !visitedTabIds.contains(e.componentId))
+                        .toList(growable: false)
+                  : const <VibeMountedTabEntry>[];
+              final nestedTabIds = <String>{
+                for (final n in nestedTabs) n.componentId,
+              };
+              final nestedContentIds = <String>{
+                for (final n in nestedTabs)
+                  ..._collectAllTabContentSubtreeIds(appearance, n.componentId),
+              };
+
+              await _collectGeometryPass(
+                inspector: inspector,
+                appearance: appearance,
+                candidateIds: <String>[snap.componentId],
+                onlyZoneFilter: tabItem.contentZone,
+                tabContext: tabLabelContext,
+                addFinding: addFinding,
+              );
+              await _collectGeometryPass(
+                inspector: inspector,
+                appearance: appearance,
+                candidateIds: zoneSubtreeIds.where(
+                  (id) => !nestedContentIds.contains(id),
+                ),
+                skipContentZonesForTabIds: nestedTabIds,
+                tabContext: tabLabelContext,
+                addFinding: addFinding,
+              );
+
+              if (beforeSwitch != null) {
+                final switchErrors = VibeDebugCapture.entriesSince(
+                  beforeSwitch,
+                  type: DebugEntryType.error,
+                );
+                for (final err in switchErrors) {
+                  _recordDebugEntryFinding(
+                    err,
+                    addFinding: addFinding,
+                    tabContext: tabLabelContext,
+                  );
+                }
+              }
+
+              if (nestedTabs.isNotEmpty) {
+                await sweepTabEntries(nestedTabs, depth: depth + 1);
+              }
+            }
+          } finally {
+            if (didSwitch) {
+              tabEntry.restoreTab(initialIndex);
+              await inspector.waitForVisualFrame();
             }
           }
         }
       }
+
+      if (rootTabs.isNotEmpty) {
+        await sweepTabEntries(rootTabs, depth: 0);
+      }
+    } else {
+      // Scope actif : pas de balayage des autres onglets, et exclusion des zones d'onglets inactifs gardées en vie.
+      final activeTabsInScope = inspector.collectActiveMountedTabEntries(
+        allowedComponentIds: scopedIdSet,
+      );
+      final inactiveTabContentIds = <String>{};
+      for (final tabEntry in activeTabsInScope) {
+        final snap = tabEntry.readSnapshot();
+        if (snap == null || snap.isDynamic) continue;
+        for (final tabItem in snap.tabs) {
+          if (tabItem.index == snap.activeIndex) continue;
+          inactiveTabContentIds.addAll(
+            _collectTabZoneSubtreeIds(
+              appearance,
+              snap.componentId,
+              tabItem.contentZone,
+            ),
+          );
+        }
+      }
+      await _collectGeometryPass(
+        inspector: inspector,
+        appearance: appearance,
+        candidateIds: scopedIds.where(
+          (id) => !inactiveTabContentIds.contains(id),
+        ),
+        visibleOnly: visibleOnly,
+        addFinding: addFinding,
+      );
     }
 
     // 2. Diagnostics de bindings, schémas, marges/tailles fixes et @calculs manquants.
@@ -589,8 +1085,10 @@ abstract final class VibePageAuditService {
       pageName: activePage?.name,
       pagePath: activePage?.path,
       isScoped: scope != null,
+      visibleOnly: visibleOnly,
       auditedComponentIds: scopedIds,
       findings: findings,
+      sweptTabs: sweptTabs,
       viewportWidth: viewportWidth,
       viewportHeight: viewportHeight,
     );

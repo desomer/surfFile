@@ -245,6 +245,23 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool _filterPredicateValid = true;
   String? _filterTargetId;
   String? _filterKey;
+  final _goBackFallbackController = TextEditingController();
+  JsonTextBinding? _removeArrayBinding;
+  bool _removeArrayConfirm = false;
+  final _removeArrayConfirmTitleController = TextEditingController();
+  final _removeArrayConfirmMessageController = TextEditingController();
+  bool _removeArraySelectAdjacent = true;
+  final _showMessageController = TextEditingController();
+  JsonTextBinding? _showMessageBinding;
+  BehaviorMessageSeverity _showMessageSeverity = BehaviorMessageSeverity.info;
+  final _showMessageDurationController = TextEditingController(text: '3000');
+  String _copySourceMode = 'text';
+  final _copyTextController = TextEditingController();
+  final _copyTargetController = TextEditingController();
+  JsonTextBinding? _copyBinding;
+  final _copyFeedbackController = TextEditingController();
+  final _debounceMsController = TextEditingController();
+  BehaviorAction? _elseAction;
 
   @override
   void initState() {
@@ -280,6 +297,15 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     _creationDefaultController.dispose();
     _scriptRepositoryController.dispose();
     _scriptCodeController.dispose();
+    _goBackFallbackController.dispose();
+    _removeArrayConfirmTitleController.dispose();
+    _removeArrayConfirmMessageController.dispose();
+    _showMessageController.dispose();
+    _showMessageDurationController.dispose();
+    _copyTextController.dispose();
+    _copyTargetController.dispose();
+    _copyFeedbackController.dispose();
+    _debounceMsController.dispose();
     super.dispose();
   }
 
@@ -289,7 +315,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   BehaviorCatalogItem? _editorFor(BehaviorAction action) => switch (action) {
     GoToPageAction() => BehaviorCatalog.goToPage,
+    GoBackAction() => BehaviorCatalog.goBack,
     EmitEventAction() => BehaviorCatalog.emitEvent,
+    ShowMessageAction() => BehaviorCatalog.showMessage,
+    CopyToClipboardAction() => BehaviorCatalog.copyToClipboard,
     TooltipAction() => BehaviorCatalog.onTooltip,
     StateBindingAction() => BehaviorCatalog.bindState,
     ZoneSizeBindingAction() => BehaviorCatalog.zoneSize,
@@ -297,6 +326,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     DatasourceAction() => BehaviorCatalog.datasource,
     GeneratePdfAction() => BehaviorCatalog.generatePdf,
     AddArrayItemAction() => BehaviorCatalog.addArrayItem,
+    RemoveArrayItemAction() => BehaviorCatalog.removeArrayItem,
     CreationDefaultAction() => BehaviorCatalog.creationDefault,
     RunJavaScriptAction() => BehaviorCatalog.runJavaScript,
     SetStyleAction() => BehaviorCatalog.setStyle,
@@ -314,6 +344,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       _selectedEvent = behavior.event;
       _validator = behavior.validator;
       _validatorValid = true;
+      _elseAction = behavior.elseAction;
+      _debounceMsController.text = behavior.debounceMs == null
+          ? ''
+          : '${behavior.debounceMs}';
       _selectedCatalogItem = item;
       _step = BehaviorWizardStage.event.index;
       switch (behavior.action) {
@@ -323,6 +357,31 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           _selectedPageId = a.pageId;
           _selectedPagePath = a.pagePath;
           _selectedPageName = a.pageName;
+        case GoBackAction a:
+          _goBackFallbackController.text = a.fallbackPagePath ?? '';
+        case ShowMessageAction a:
+          _showMessageController.text = a.message;
+          _showMessageBinding = a.binding;
+          _showMessageSeverity = a.severity;
+          _showMessageDurationController.text = '${a.durationMs}';
+        case CopyToClipboardAction a:
+          if (a.binding != null) {
+            _copySourceMode = 'binding';
+          } else if (a.targetComponentId != null) {
+            _copySourceMode = 'component';
+          } else {
+            _copySourceMode = 'text';
+          }
+          _copyTextController.text = a.text ?? '';
+          _copyTargetController.text = a.targetComponentId ?? '';
+          _copyBinding = a.binding;
+          _copyFeedbackController.text = a.feedbackMessage ?? '';
+        case RemoveArrayItemAction a:
+          _removeArrayBinding = a.binding;
+          _removeArrayConfirm = a.confirm;
+          _removeArrayConfirmTitleController.text = a.confirmTitle ?? '';
+          _removeArrayConfirmMessageController.text = a.confirmMessage ?? '';
+          _removeArraySelectAdjacent = a.selectAdjacent;
         case EmitEventAction a:
           _eventIdController.text = a.eventId;
           _customJsonController.text = jsonEncode(a.custom);
@@ -436,6 +495,84 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       _selectedCatalogItem.actionType == 'sortCollection';
   bool get _isFilterCollection =>
       _selectedCatalogItem.actionType == 'filterCollection';
+  bool get _isGoBack => _selectedCatalogItem.actionType == 'goBack';
+  bool get _isRemoveArrayItem =>
+      _selectedCatalogItem.actionType == 'removeArrayItem';
+  bool get _isShowMessage => _selectedCatalogItem.actionType == 'showMessage';
+  bool get _isCopyToClipboard =>
+      _selectedCatalogItem.actionType == 'copyToClipboard';
+
+  int? get _parsedDebounceMs {
+    final raw = _debounceMsController.text.trim();
+    if (raw.isEmpty) return null;
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed < 0) return -1;
+    return parsed == 0 ? null : parsed;
+  }
+
+  bool get _isGoBackValid {
+    try {
+      final raw = _goBackFallbackController.text.trim();
+      GoBackAction(fallbackPagePath: raw.isEmpty ? null : raw).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isRemoveArrayItemValid {
+    if (_removeArrayBinding == null) return false;
+    try {
+      RemoveArrayItemAction(
+        binding: _removeArrayBinding!,
+        confirm: _removeArrayConfirm,
+        confirmTitle: _removeArrayConfirmTitleController.text.trim().isEmpty
+            ? null
+            : _removeArrayConfirmTitleController.text.trim(),
+        confirmMessage: _removeArrayConfirmMessageController.text.trim().isEmpty
+            ? null
+            : _removeArrayConfirmMessageController.text.trim(),
+        selectAdjacent: _removeArraySelectAdjacent,
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isShowMessageValid {
+    final duration = int.tryParse(_showMessageDurationController.text.trim());
+    if (duration == null) return false;
+    try {
+      ShowMessageAction(
+        message: _showMessageController.text,
+        binding: _showMessageBinding,
+        severity: _showMessageSeverity,
+        durationMs: duration,
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isCopyToClipboardValid {
+    try {
+      CopyToClipboardAction(
+        text: _copySourceMode == 'text' ? _copyTextController.text : null,
+        targetComponentId: _copySourceMode == 'component'
+            ? _copyTargetController.text.trim()
+            : null,
+        binding: _copySourceMode == 'binding' ? _copyBinding : null,
+        feedbackMessage: _copyFeedbackController.text.trim().isEmpty
+            ? null
+            : _copyFeedbackController.text.trim(),
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
 
   bool get _isSortCollectionValid {
     final isDeclarative = _selectedEvent == BehaviorEvent.onBinding;
@@ -738,6 +875,14 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       ? _datasourceAction != null
       : _isGeneratePdf
       ? true
+      : _isGoBack
+      ? _isGoBackValid
+      : _isRemoveArrayItem
+      ? _isRemoveArrayItemValid
+      : _isShowMessage
+      ? _isShowMessageValid
+      : _isCopyToClipboard
+      ? _isCopyToClipboardValid
       : _isAddArrayItem
       ? _addArrayBinding != null &&
             _addArrayBinding!.path.trim().isNotEmpty &&
@@ -766,7 +911,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   bool get _canContinue => switch (_stage) {
     BehaviorWizardStage.target => true,
-    BehaviorWizardStage.event => _compatibleCatalogItems.isNotEmpty,
+    BehaviorWizardStage.event =>
+      _compatibleCatalogItems.isNotEmpty &&
+          (!_selectedEvent.isImperative || _parsedDebounceMs != -1),
     BehaviorWizardStage.action =>
       _compatibleCatalogItems.isNotEmpty && _isActionSettingsValid,
     BehaviorWizardStage.validator =>
@@ -814,6 +961,45 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
     return _isTooltip
         ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
+        : _isGoBack
+        ? GoBackAction(
+            fallbackPagePath: _goBackFallbackController.text.trim().isEmpty
+                ? null
+                : _goBackFallbackController.text.trim(),
+          )
+        : _isRemoveArrayItem
+        ? RemoveArrayItemAction(
+            binding: _removeArrayBinding!,
+            confirm: _removeArrayConfirm,
+            confirmTitle: _removeArrayConfirmTitleController.text.trim().isEmpty
+                ? null
+                : _removeArrayConfirmTitleController.text.trim(),
+            confirmMessage:
+                _removeArrayConfirmMessageController.text.trim().isEmpty
+                ? null
+                : _removeArrayConfirmMessageController.text.trim(),
+            selectAdjacent: _removeArraySelectAdjacent,
+          )
+        : _isShowMessage
+        ? ShowMessageAction(
+            message: _showMessageController.text,
+            binding: _showMessageBinding,
+            severity: _showMessageSeverity,
+            durationMs:
+                int.tryParse(_showMessageDurationController.text.trim()) ??
+                3000,
+          )
+        : _isCopyToClipboard
+        ? CopyToClipboardAction(
+            text: _copySourceMode == 'text' ? _copyTextController.text : null,
+            targetComponentId: _copySourceMode == 'component'
+                ? _copyTargetController.text.trim()
+                : null,
+            binding: _copySourceMode == 'binding' ? _copyBinding : null,
+            feedbackMessage: _copyFeedbackController.text.trim().isEmpty
+                ? null
+                : _copyFeedbackController.text.trim(),
+          )
         : _isSearchProvider
         ? SearchProviderAction(providerId: _selectedProviderId!)
         : _isDatasource
@@ -936,11 +1122,16 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     final ComponentBehavior behavior;
     try {
       action = _buildDraftAction();
+      final debounce = _selectedEvent.isImperative ? _parsedDebounceMs : null;
       behavior = ComponentBehavior(
         id: _editing?.id ?? 'behavior-${shortid.generate()}',
         event: _selectedEvent,
         action: action,
         validator: _validator,
+        elseAction: _validator != null && _selectedEvent.isImperative
+            ? _elseAction
+            : null,
+        debounceMs: debounce != null && debounce > 0 ? debounce : null,
         enabled: _editing?.enabled ?? true,
       );
       behavior.validate();
@@ -1394,6 +1585,24 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                       value: '${b.action.label} (${b.action.description})',
                       icon: b.action.icon,
                     ),
+                    if (b.elseAction case final elseAct?) ...[
+                      const SizedBox(height: 3),
+                      _behaviorMetaLine(
+                        context,
+                        prefix: 'Sinon',
+                        value: '${elseAct.label} (${elseAct.description})',
+                        icon: elseAct.icon,
+                      ),
+                    ],
+                    if (b.debounceMs case final delay? when delay > 0) ...[
+                      const SizedBox(height: 3),
+                      _behaviorMetaLine(
+                        context,
+                        prefix: 'Délai',
+                        value: '$delay ms',
+                        icon: Icons.timer_outlined,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1482,13 +1691,37 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   }
 
   Widget _buildEventStep(BuildContext context) {
-    return BehaviorEventPicker(
-      selectedEvent: _selectedEvent,
-      componentType: _componentTypeFor(_selectedTarget),
-      isLayoutTarget: _isLayoutTarget(_selectedTarget),
-      isValueTarget: _isValueTarget(_selectedTarget),
-      keyPrefix: widget.keyPrefix,
-      onSelected: _onEventSelected,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        BehaviorEventPicker(
+          selectedEvent: _selectedEvent,
+          componentType: _componentTypeFor(_selectedTarget),
+          isLayoutTarget: _isLayoutTarget(_selectedTarget),
+          isValueTarget: _isValueTarget(_selectedTarget),
+          keyPrefix: widget.keyPrefix,
+          onSelected: _onEventSelected,
+        ),
+        if (_selectedEvent.isImperative) ...[
+          const SizedBox(height: 12),
+          TextField(
+            key: ValueKey('${widget.keyPrefix}-debounce-ms'),
+            controller: _debounceMsController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(),
+              labelText: 'Anti-rebond (debounceMs, optionnel)',
+              hintText: 'Ex. 300 (laisser vide pour immédiat)',
+              errorText: _parsedDebounceMs == -1
+                  ? 'Entrez un entier positif ou nul en millisecondes.'
+                  : null,
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1724,14 +1957,18 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   Widget _buildActionSettings(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
+    if (_isGoBack) return _buildGoBackSettings(context);
+    if (_isRemoveArrayItem) return _buildRemoveArrayItemSettings(context);
+    if (_isShowMessage) return _buildShowMessageSettings(context);
+    if (_isCopyToClipboard) return _buildCopyToClipboardSettings(context);
     if (_isSearchProvider) return _buildSearchProviderSettings();
     if (_isDatasource) return _buildDatasourceSettings();
     if (_isGeneratePdf) return _buildGeneratePdfSettings(context);
     if (_isAddArrayItem) return _buildAddArrayItemSettings(context);
     if (_isJavaScriptAction) return _buildJavaScriptSettings(context);
     if (_isSetStyle) {
-      final appearance =
-          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final appearance = AppearanceScope.controllerOf(widget.ownerContext)
+          ?.value;
       final resolvedTargetId = _styleTargetId ?? _selectedTarget.id;
       return SetStyleBehaviorSettings(
         operation: _styleOperation,
@@ -1741,52 +1978,54 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         availableTargets: _collectValidatorTargets(appearance),
         availableNamedStates: _namedStatesFor(appearance, resolvedTargetId),
         keyPrefix: widget.keyPrefix,
-        onChanged: ({
-          operation,
-          style,
-          targetComponentId,
-          clearTargetComponentId = false,
-          durationMs,
-        }) => setState(() {
-          if (operation != null) _styleOperation = operation;
-          if (style != null) _stylePatch = style;
-          if (clearTargetComponentId) {
-            _styleTargetId = null;
-          } else if (targetComponentId != null) {
-            _styleTargetId = targetComponentId;
-          }
-          if (durationMs != null) _styleDurationMs = durationMs;
-        }),
+        onChanged:
+            ({
+              operation,
+              style,
+              targetComponentId,
+              clearTargetComponentId = false,
+              durationMs,
+            }) => setState(() {
+              if (operation != null) _styleOperation = operation;
+              if (style != null) _stylePatch = style;
+              if (clearTargetComponentId) {
+                _styleTargetId = null;
+              } else if (targetComponentId != null) {
+                _styleTargetId = targetComponentId;
+              }
+              if (durationMs != null) _styleDurationMs = durationMs;
+            }),
       );
     }
     if (_isSetVisibility) {
-      final appearance =
-          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final appearance = AppearanceScope.controllerOf(widget.ownerContext)
+          ?.value;
       return SetVisibilityBehaviorSettings(
         mode: _visibilityMode,
         targetComponentId: _visibilityTargetId,
         maintainSize: _visibilityMaintainSize,
         availableTargets: _collectValidatorTargets(appearance),
         keyPrefix: widget.keyPrefix,
-        onChanged: ({
-          mode,
-          targetComponentId,
-          clearTargetComponentId = false,
-          maintainSize,
-        }) => setState(() {
-          if (mode != null) _visibilityMode = mode;
-          if (clearTargetComponentId) {
-            _visibilityTargetId = null;
-          } else if (targetComponentId != null) {
-            _visibilityTargetId = targetComponentId;
-          }
-          if (maintainSize != null) _visibilityMaintainSize = maintainSize;
-        }),
+        onChanged:
+            ({
+              mode,
+              targetComponentId,
+              clearTargetComponentId = false,
+              maintainSize,
+            }) => setState(() {
+              if (mode != null) _visibilityMode = mode;
+              if (clearTargetComponentId) {
+                _visibilityTargetId = null;
+              } else if (targetComponentId != null) {
+                _visibilityTargetId = targetComponentId;
+              }
+              if (maintainSize != null) _visibilityMaintainSize = maintainSize;
+            }),
       );
     }
     if (_isSetState) {
-      final appearance =
-          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final appearance = AppearanceScope.controllerOf(widget.ownerContext)
+          ?.value;
       return SetStateBehaviorSettings(
         state: _setStateKind,
         operation: _setStateOperation,
@@ -1794,27 +2033,28 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         targetComponentId: _setStateTargetId,
         availableTargets: _collectValidatorTargets(appearance),
         keyPrefix: widget.keyPrefix,
-        onChanged: ({
-          state,
-          operation,
-          value,
-          targetComponentId,
-          clearTargetComponentId = false,
-        }) => setState(() {
-          if (state != null) _setStateKind = state;
-          if (operation != null) _setStateOperation = operation;
-          if (value != null) _setStateValue = value;
-          if (clearTargetComponentId) {
-            _setStateTargetId = null;
-          } else if (targetComponentId != null) {
-            _setStateTargetId = targetComponentId;
-          }
-        }),
+        onChanged:
+            ({
+              state,
+              operation,
+              value,
+              targetComponentId,
+              clearTargetComponentId = false,
+            }) => setState(() {
+              if (state != null) _setStateKind = state;
+              if (operation != null) _setStateOperation = operation;
+              if (value != null) _setStateValue = value;
+              if (clearTargetComponentId) {
+                _setStateTargetId = null;
+              } else if (targetComponentId != null) {
+                _setStateTargetId = targetComponentId;
+              }
+            }),
       );
     }
     if (_isSortCollection) {
-      final appearance =
-          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final appearance = AppearanceScope.controllerOf(widget.ownerContext)
+          ?.value;
       return SortCollectionBehaviorSettings(
         isDeclarative: _selectedEvent == BehaviorEvent.onBinding,
         mode: _sortMode,
@@ -1822,25 +2062,26 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         targetComponentId: _sortTargetId,
         availableCollections: _collectCollectionTargets(appearance),
         keyPrefix: widget.keyPrefix,
-        onChanged: ({
-          mode,
-          criteria,
-          targetComponentId,
-          clearTargetComponentId = false,
-        }) => setState(() {
-          if (mode != null) _sortMode = mode;
-          if (criteria != null) _sortCriteria = criteria;
-          if (clearTargetComponentId) {
-            _sortTargetId = null;
-          } else if (targetComponentId != null) {
-            _sortTargetId = targetComponentId;
-          }
-        }),
+        onChanged:
+            ({
+              mode,
+              criteria,
+              targetComponentId,
+              clearTargetComponentId = false,
+            }) => setState(() {
+              if (mode != null) _sortMode = mode;
+              if (criteria != null) _sortCriteria = criteria;
+              if (clearTargetComponentId) {
+                _sortTargetId = null;
+              } else if (targetComponentId != null) {
+                _sortTargetId = targetComponentId;
+              }
+            }),
       );
     }
     if (_isFilterCollection) {
-      final appearance =
-          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final appearance = AppearanceScope.controllerOf(widget.ownerContext)
+          ?.value;
       final targetContext = _targetSlot?.context ?? widget.ownerContext;
       return FilterCollectionBehaviorSettings(
         isDeclarative: _selectedEvent == BehaviorEvent.onBinding,
@@ -1853,34 +2094,37 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         store: JsonRepositoryScope.maybeOf(targetContext),
         listScope: JsonListScope.maybeOf(targetContext),
         keyPrefix: widget.keyPrefix,
-        onChanged: ({
-          mode,
-          predicate,
-          clearPredicate = false,
-          predicateValid,
-          targetComponentId,
-          clearTargetComponentId = false,
-          filterKey,
-          clearFilterKey = false,
-        }) => setState(() {
-          if (mode != null) _filterMode = mode;
-          if (clearPredicate) {
-            _filterPredicate = null;
-          } else if (predicate != null) {
-            _filterPredicate = predicate;
-          }
-          if (predicateValid != null) _filterPredicateValid = predicateValid;
-          if (clearTargetComponentId) {
-            _filterTargetId = null;
-          } else if (targetComponentId != null) {
-            _filterTargetId = targetComponentId;
-          }
-          if (clearFilterKey) {
-            _filterKey = null;
-          } else if (filterKey != null) {
-            _filterKey = filterKey;
-          }
-        }),
+        onChanged:
+            ({
+              mode,
+              predicate,
+              clearPredicate = false,
+              predicateValid,
+              targetComponentId,
+              clearTargetComponentId = false,
+              filterKey,
+              clearFilterKey = false,
+            }) => setState(() {
+              if (mode != null) _filterMode = mode;
+              if (clearPredicate) {
+                _filterPredicate = null;
+              } else if (predicate != null) {
+                _filterPredicate = predicate;
+              }
+              if (predicateValid != null) {
+                _filterPredicateValid = predicateValid;
+              }
+              if (clearTargetComponentId) {
+                _filterTargetId = null;
+              } else if (targetComponentId != null) {
+                _filterTargetId = targetComponentId;
+              }
+              if (clearFilterKey) {
+                _filterKey = null;
+              } else if (filterKey != null) {
+                _filterKey = filterKey;
+              }
+            }),
       );
     }
     if (_isCreationDefault) return _buildCreationDefaultSettings(context);
@@ -2068,9 +2312,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           Text('Script JavaScript', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           const Text(
-            'Utilisez ctx.set("chemin", valeur) pour écrire. doc et event '
-            '(componentId, componentType, trigger, data) sont en lecture seule ; '
-            'les chemins @calcul ne peuvent pas être modifiés.',
+            'Utilisez ctx.set("chemin", valeur) pour écrire, '
+            'ctx.get("chemin", repoId?, defaut?) pour lire un autre repository, '
+            'ctx.removeAt("tableau", index) pour supprimer et '
+            'ctx.select("tableau", index) pour sélectionner. doc et event sont '
+            'en lecture seule ; les chemins @calcul restent non modifiables.',
           ),
           const SizedBox(height: 8),
           TextFormField(
@@ -2196,6 +2442,61 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                     ? _tooltipMessage.text
                     : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
                           '${_tooltipBinding!.path}',
+              )
+            else if (_isGoBack)
+              _summaryRow(
+                context,
+                icon: Icons.arrow_back,
+                label: 'Repli si impossible',
+                value: _goBackFallbackController.text.trim().isEmpty
+                    ? 'Aucun'
+                    : _goBackFallbackController.text.trim(),
+              )
+            else if (_isRemoveArrayItem) ...[
+              _summaryRow(
+                context,
+                icon: Icons.link,
+                label: 'Cible',
+                value: _removeArrayBinding == null
+                    ? '-'
+                    : '${_removeArrayBinding!.repositoryId ?? 'liste'} : '
+                          '${_removeArrayBinding!.path}',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.help_outline,
+                label: 'Confirmation',
+                value: _removeArrayConfirm ? 'Oui' : 'Immédiate',
+              ),
+            ] else if (_isShowMessage) ...[
+              _summaryRow(
+                context,
+                icon: _showMessageSeverity.icon,
+                label: 'Sévérité',
+                value: _showMessageSeverity.label,
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.message_outlined,
+                label: 'Message',
+                value: _showMessageBinding != null
+                    ? '${_showMessageBinding!.repositoryId ?? 'liste'} : '
+                          '${_showMessageBinding!.path}'
+                    : _showMessageController.text.trim(),
+              ),
+            ] else if (_isCopyToClipboard)
+              _summaryRow(
+                context,
+                icon: Icons.content_copy_outlined,
+                label: 'Source',
+                value: _copySourceMode == 'text'
+                    ? _copyTextController.text
+                    : _copySourceMode == 'component'
+                    ? _copyTargetController.text.trim()
+                    : '${_copyBinding?.repositoryId ?? 'liste'} : '
+                          '${_copyBinding?.path ?? '-'}',
               )
             else if (_isSearchProvider)
               _summaryRow(
@@ -2373,6 +2674,25 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 icon: Icons.data_object,
                 label: 'Custom JSON',
                 value: _customJsonController.text,
+              ),
+            ],
+            if (_elseAction != null && _validator != null) ...[
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: _elseAction!.icon,
+                label: 'Sinon (elseAction)',
+                value: '${_elseAction!.label} (${_elseAction!.description})',
+              ),
+            ],
+            if (_selectedEvent.isImperative &&
+                (_parsedDebounceMs ?? 0) > 0) ...[
+              const Divider(height: 16),
+              _summaryRow(
+                context,
+                icon: Icons.timer_outlined,
+                label: 'Anti-rebond',
+                value: '$_parsedDebounceMs ms',
               ),
             ],
           ],
@@ -3131,6 +3451,226 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             textAlign: TextAlign.end,
             style: theme.textTheme.bodyMedium,
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGoBackSettings(BuildContext context) {
+    return TextField(
+      key: ValueKey('${widget.keyPrefix}-goback-fallback'),
+      controller: _goBackFallbackController,
+      decoration: const InputDecoration(
+        isDense: true,
+        border: OutlineInputBorder(),
+        labelText: 'Chemin de repli (optionnel)',
+        hintText: '/accueil',
+        helperText:
+            'Ferme la modale ou revient à la page précédente ; navigue vers ce '
+            'chemin uniquement s’il n’y a plus de page à dépiler.',
+      ),
+      onChanged: (_) => setState(() {}),
+    );
+  }
+
+  Widget _buildRemoveArrayItemSettings(BuildContext context) {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final store = JsonRepositoryScope.maybeOf(targetContext);
+    final listScope = JsonListScope.maybeOf(targetContext);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RepositoryBindingFields(
+          keyPrefix: '${widget.keyPrefix}-remove-array-binding',
+          binding: _removeArrayBinding,
+          store: store,
+          listScope: listScope,
+          pathHint: 'clients ou clients[?]',
+          helper:
+              'Tableau ou ligne à supprimer (utilise le contexte de ligne ou la '
+              'sélection Maître/Détail courante).',
+          onChanged: (binding) => setState(() => _removeArrayBinding = binding),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          key: ValueKey('${widget.keyPrefix}-remove-array-confirm'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Demander confirmation'),
+          subtitle: const Text('Désactivé par défaut (suppression immédiate)'),
+          value: _removeArrayConfirm,
+          onChanged: (value) => setState(() => _removeArrayConfirm = value),
+        ),
+        if (_removeArrayConfirm) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: _removeArrayConfirmTitleController,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Titre du dialogue (optionnel)',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _removeArrayConfirmMessageController,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Message de confirmation (optionnel)',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+        SwitchListTile(
+          key: ValueKey('${widget.keyPrefix}-remove-array-select-adjacent'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Sélectionner la ligne voisine'),
+          value: _removeArraySelectAdjacent,
+          onChanged: (value) =>
+              setState(() => _removeArraySelectAdjacent = value),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShowMessageSettings(BuildContext context) {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final store = JsonRepositoryScope.maybeOf(targetContext);
+    final listScope = JsonListScope.maybeOf(targetContext);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DropdownButtonFormField<BehaviorMessageSeverity>(
+          key: ValueKey('${widget.keyPrefix}-show-message-severity'),
+          isExpanded: true,
+          initialValue: _showMessageSeverity,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            labelText: 'Niveau du message',
+          ),
+          items: [
+            for (final s in BehaviorMessageSeverity.values)
+              DropdownMenuItem(value: s, child: Text(s.label)),
+          ],
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _showMessageSeverity = value);
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          key: ValueKey('${widget.keyPrefix}-show-message-text'),
+          controller: _showMessageController,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            labelText: 'Message (ou repli si liaison vide)',
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 10),
+        RepositoryBindingFields(
+          keyPrefix: '${widget.keyPrefix}-show-message-binding',
+          binding: _showMessageBinding,
+          store: store,
+          listScope: listScope,
+          pathHint: 'ui.notification (optionnel)',
+          onChanged: (binding) => setState(() => _showMessageBinding = binding),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          key: ValueKey('${widget.keyPrefix}-show-message-duration'),
+          controller: _showMessageDurationController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            labelText: 'Durée (ms)',
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCopyToClipboardSettings(BuildContext context) {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final store = JsonRepositoryScope.maybeOf(targetContext);
+    final listScope = JsonListScope.maybeOf(targetContext);
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final targets = _collectValidatorTargets(appearance);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'text', label: Text('Texte fixe')),
+            ButtonSegment(value: 'component', label: Text('Composant')),
+            ButtonSegment(value: 'binding', label: Text('Liaison')),
+          ],
+          selected: {_copySourceMode},
+          onSelectionChanged: (s) => setState(() => _copySourceMode = s.first),
+        ),
+        const SizedBox(height: 10),
+        if (_copySourceMode == 'text')
+          TextField(
+            key: ValueKey('${widget.keyPrefix}-copy-text'),
+            controller: _copyTextController,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Texte à copier',
+            ),
+            onChanged: (_) => setState(() {}),
+          )
+        else if (_copySourceMode == 'component')
+          DropdownButtonFormField<String>(
+            key: ValueKey('${widget.keyPrefix}-copy-target'),
+            isExpanded: true,
+            initialValue:
+                targets.any((t) => t.id == _copyTargetController.text.trim())
+                ? _copyTargetController.text.trim()
+                : null,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Composant source',
+            ),
+            items: [
+              for (final option in targets)
+                DropdownMenuItem(
+                  value: option.id,
+                  child: Text(option.displayLabel),
+                ),
+            ],
+            onChanged: (value) =>
+                setState(() => _copyTargetController.text = value ?? ''),
+          )
+        else
+          RepositoryBindingFields(
+            keyPrefix: '${widget.keyPrefix}-copy-binding',
+            binding: _copyBinding,
+            store: store,
+            listScope: listScope,
+            pathHint: 'clients[?].email',
+            onChanged: (binding) => setState(() => _copyBinding = binding),
+          ),
+        const SizedBox(height: 10),
+        TextField(
+          key: ValueKey('${widget.keyPrefix}-copy-feedback'),
+          controller: _copyFeedbackController,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+            labelText: 'Message de confirmation (optionnel)',
+            hintText: 'Ex. Copié dans le presse-papiers',
+          ),
+          onChanged: (_) => setState(() {}),
         ),
       ],
     );

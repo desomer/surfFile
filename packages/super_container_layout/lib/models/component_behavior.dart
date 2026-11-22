@@ -10,12 +10,16 @@
 /// - [BehaviorEvent] / [BehaviorTrigger] (`behaviours/behavior_event.dart`)
 /// - [BehaviorValidator] (`behaviours/behavior_validator.dart`)
 /// - [AddArrayItemAction] (`behaviours/add_array_item_action.dart`)
+/// - [CopyToClipboardAction] (`behaviours/copy_to_clipboard_action.dart`)
 /// - [CreationDefaultAction] (`behaviours/creation_default_action.dart`)
 /// - [DatasourceAction] (`behaviours/datasource_action.dart`)
 /// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
 /// - [FilterCollectionAction] (`behaviours/filter_collection_action.dart`)
+/// - [GoBackAction] (`behaviours/go_back_action.dart`)
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
+/// - [RemoveArrayItemAction] (`behaviours/remove_array_item_action.dart`)
 /// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
+/// - [ShowMessageAction] (`behaviours/show_message_action.dart`)
 /// - [SortCollectionAction] (`behaviours/sort_collection_action.dart`)
 /// - [RunJavaScriptAction] (`behaviours/run_javascript_action.dart`)
 /// - [BehaviorStylePatch] (`behaviours/behavior_style_patch.dart`)
@@ -34,13 +38,17 @@ import 'behaviours/add_array_item_action.dart';
 import 'behaviours/behavior_event.dart';
 import 'behaviours/behavior_style_patch.dart';
 import 'behaviours/behavior_validator.dart';
+import 'behaviours/copy_to_clipboard_action.dart';
 import 'behaviours/creation_default_action.dart';
 import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
 import 'behaviours/filter_collection_action.dart';
 import 'behaviours/generate_pdf_action.dart';
+import 'behaviours/go_back_action.dart';
 import 'behaviours/go_to_page_action.dart';
+import 'behaviours/remove_array_item_action.dart';
 import 'behaviours/search_provider_action.dart';
+import 'behaviours/show_message_action.dart';
 import 'behaviours/sort_collection_action.dart';
 import 'behaviours/run_javascript_action.dart';
 import 'behaviours/set_state_action.dart';
@@ -54,13 +62,17 @@ export 'behaviours/add_array_item_action.dart';
 export 'behaviours/behavior_event.dart';
 export 'behaviours/behavior_style_patch.dart';
 export 'behaviours/behavior_validator.dart';
+export 'behaviours/copy_to_clipboard_action.dart';
 export 'behaviours/creation_default_action.dart';
 export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
 export 'behaviours/filter_collection_action.dart';
 export 'behaviours/generate_pdf_action.dart';
+export 'behaviours/go_back_action.dart';
 export 'behaviours/go_to_page_action.dart';
+export 'behaviours/remove_array_item_action.dart';
 export 'behaviours/search_provider_action.dart';
+export 'behaviours/show_message_action.dart';
 export 'behaviours/sort_collection_action.dart';
 export 'behaviours/run_javascript_action.dart';
 export 'behaviours/set_state_action.dart';
@@ -133,6 +145,7 @@ abstract final class BehaviorActionCatalog {
   static final Map<String, BehaviorAction Function(Map<String, dynamic> json)>
   _codecs = {
     'goToPage': GoToPageAction.fromJson,
+    'goBack': GoBackAction.fromJson,
     'emitEvent': EmitEventAction.fromJson,
     'bindZoneSize': ZoneSizeBindingAction.fromJson,
     'bindState': StateBindingAction.fromJson,
@@ -141,6 +154,7 @@ abstract final class BehaviorActionCatalog {
     'datasource': DatasourceAction.fromJson,
     'generatePdf': GeneratePdfAction.fromJson,
     'addArrayItem': AddArrayItemAction.fromJson,
+    'removeArrayItem': RemoveArrayItemAction.fromJson,
     'creationDefault': CreationDefaultAction.fromJson,
     'runJavaScript': RunJavaScriptAction.fromJson,
     'sortCollection': SortCollectionAction.fromJson,
@@ -148,6 +162,8 @@ abstract final class BehaviorActionCatalog {
     'setStyle': SetStyleAction.fromJson,
     'setVisibility': SetVisibilityAction.fromJson,
     'setState': SetStateAction.fromJson,
+    'showMessage': ShowMessageAction.fromJson,
+    'copyToClipboard': CopyToClipboardAction.fromJson,
   };
 
   static void register(
@@ -178,8 +194,10 @@ class ComponentBehavior {
     BehaviorEvent? event,
     BehaviorEvent? trigger,
     required this.action,
+    this.elseAction,
     this.validator,
     this.enabled = true,
+    this.debounceMs,
   }) : assert(
          event == null || trigger == null || event == trigger,
          'event et trigger doivent être identiques lorsqu’ils sont tous deux fournis.',
@@ -197,12 +215,18 @@ class ComponentBehavior {
   /// Action lancée lorsque l'événement survient et que [validator] est satisfait.
   final BehaviorAction action;
 
+  /// Action de repli exécutée lorsque [validator] s'évalue à `false`.
+  final BehaviorAction? elseAction;
+
   /// Condition de garde optionnelle évaluée avant l'exécution de [action].
   ///
   /// Lorsque `null`, l'action s'exécute sans condition préalable.
   final BehaviorValidator? validator;
 
   final bool enabled;
+
+  /// Délai optionnel de temporisation anti-rebond (en ms, `>= 0`) pour les événements impératifs.
+  final int? debounceMs;
 
   /// Exécute directement [action] si [enabled] vaut `true`.
   ///
@@ -220,21 +244,46 @@ class ComponentBehavior {
     }
   }
 
-  /// Remplace les identifiants de composants référencés dans [validator] et [action].
+  /// Remplace les identifiants de composants référencés dans [validator], [action] et [elseAction].
   ComponentBehavior remapComponentIds(Map<String, String> idMap) {
     if (idMap.isEmpty) return this;
     final remappedValidator = validator?.remapComponentIds(idMap);
     final remappedAction = action.remapComponentIds(idMap);
-    if (remappedValidator == validator && remappedAction == action) {
+    final remappedElseAction = elseAction?.remapComponentIds(idMap);
+    if (remappedValidator == validator &&
+        remappedAction == action &&
+        remappedElseAction == elseAction) {
       return this;
     }
-    return copyWith(validator: remappedValidator, action: remappedAction);
+    return copyWith(
+      validator: remappedValidator,
+      action: remappedAction,
+      elseAction: remappedElseAction,
+    );
   }
 
-  /// Valide la cohérence entre [event], [action] et [validator].
+  /// Valide la cohérence entre [event], [action], [elseAction], [debounceMs] et [validator].
   void validate() {
     validator?.validate();
 
+    if (debounceMs != null) {
+      if (debounceMs! < 0) {
+        throw const FormatException(
+          'Le délai debounceMs d’un comportement doit être supérieur ou égal à 0.',
+        );
+      }
+      if (debounceMs! > 0 && !event.isImperative) {
+        throw FormatException(
+          'debounceMs est réservé aux événements impératifs (reçu : ${event.name}).',
+        );
+      }
+    }
+
+    _validatePrimaryAction();
+    _validateElseAction();
+  }
+
+  void _validatePrimaryAction() {
     if (action case final TooltipAction tooltip) {
       tooltip.validate();
       if (event != BehaviorEvent.onHover) {
@@ -323,24 +372,88 @@ class ComponentBehavior {
         'L’action "${action.type}" exige un événement impératif (reçu : ${event.name}).',
       );
     }
-    if (action case final SearchProviderAction search) {
+    _validateImperativeAction(action);
+  }
+
+  void _validateElseAction() {
+    final fallback = elseAction;
+    if (fallback == null) return;
+    if (validator == null) {
+      throw const FormatException('elseAction exige un validateur (validator).');
+    }
+    if (!event.isImperative) {
+      throw FormatException(
+        'elseAction exige un événement impératif (reçu : ${event.name}).',
+      );
+    }
+    if (fallback is TooltipAction ||
+        fallback is StateBindingAction ||
+        fallback is ZoneSizeBindingAction ||
+        fallback is CreationDefaultAction) {
+      throw FormatException(
+        'L’action déclarative "${fallback.type}" ne peut pas être utilisée comme elseAction.',
+      );
+    }
+    _validateImperativeAction(fallback);
+  }
+
+  void _validateImperativeAction(BehaviorAction act) {
+    if (act case final GoBackAction goBack) {
+      goBack.validate();
+    } else if (act case final SearchProviderAction search) {
       search.validate();
-    } else if (action case final DatasourceAction datasource) {
+    } else if (act case final DatasourceAction datasource) {
       datasource.validate();
-    } else if (action case final GeneratePdfAction pdf) {
+    } else if (act case final GeneratePdfAction pdf) {
       pdf.validate();
-    } else if (action case final AddArrayItemAction addArray) {
+    } else if (act case final AddArrayItemAction addArray) {
       addArray.validate();
-    } else if (action case final RunJavaScriptAction script) {
+    } else if (act case final RemoveArrayItemAction removeArray) {
+      removeArray.validate();
+    } else if (act case final RunJavaScriptAction script) {
       script.validate();
-    } else if (action case final SetStyleAction setStyle) {
+    } else if (act case final SetStyleAction setStyle) {
       setStyle.validate();
-    } else if (action case final SetVisibilityAction setVisibility) {
+    } else if (act case final SetVisibilityAction setVisibility) {
       setVisibility.validate();
-    } else if (action case final SetStateAction setState) {
+    } else if (act case final SetStateAction setState) {
       setState.validate();
+    } else if (act case final ShowMessageAction showMessage) {
+      showMessage.validate();
+    } else if (act case final CopyToClipboardAction copyToClipboard) {
+      copyToClipboard.validate();
+    } else if (act case final SortCollectionAction sortCollection) {
+      sortCollection.validate(declarative: false);
+    } else if (act case final FilterCollectionAction filterCollection) {
+      filterCollection.validate(
+        declarative: false,
+        hasBehaviorValidator: validator != null,
+      );
     }
   }
+
+  static Map<String, Object?> _actionToCompactJson(BehaviorAction act) =>
+      switch (act) {
+        final TooltipAction tooltip => tooltip.toCompactJson(),
+        final StateBindingAction stateBinding => stateBinding.toCompactJson(),
+        final GoBackAction goBack => goBack.toCompactJson(),
+        final AddArrayItemAction addArray => addArray.toCompactJson(),
+        final RemoveArrayItemAction removeArray => removeArray.toCompactJson(),
+        final CreationDefaultAction creationDefault =>
+          creationDefault.toCompactJson(),
+        final SetStyleAction setStyle => setStyle.toCompactJson(),
+        final SetVisibilityAction setVisibility =>
+          setVisibility.toCompactJson(),
+        final SetStateAction setState => setState.toCompactJson(),
+        final SortCollectionAction sortCollection =>
+          sortCollection.toCompactJson(),
+        final FilterCollectionAction filterCollection =>
+          filterCollection.toCompactJson(),
+        final ShowMessageAction showMessage => showMessage.toCompactJson(),
+        final CopyToClipboardAction copyToClipboard =>
+          copyToClipboard.toCompactJson(),
+        _ => act.toJson(),
+      };
 
   Map<String, Object?> toJson() {
     validate();
@@ -350,6 +463,8 @@ class ComponentBehavior {
       'enabled': enabled,
       if (validator != null) 'validator': validator!.toJson(),
       'action': action.toJson(),
+      if (elseAction != null) 'elseAction': elseAction!.toJson(),
+      'debounceMs': ?debounceMs,
     };
   }
 
@@ -361,22 +476,9 @@ class ComponentBehavior {
       'event': event.name,
       if (!enabled) 'enabled': enabled,
       if (validator != null) 'validator': validator!.toCompactJson(),
-      'action': switch (action) {
-        final TooltipAction tooltip => tooltip.toCompactJson(),
-        final StateBindingAction stateBinding => stateBinding.toCompactJson(),
-        final AddArrayItemAction addArray => addArray.toCompactJson(),
-        final CreationDefaultAction creationDefault =>
-          creationDefault.toCompactJson(),
-        final SetStyleAction setStyle => setStyle.toCompactJson(),
-        final SetVisibilityAction setVisibility =>
-          setVisibility.toCompactJson(),
-        final SetStateAction setState => setState.toCompactJson(),
-        final SortCollectionAction sortCollection =>
-          sortCollection.toCompactJson(),
-        final FilterCollectionAction filterCollection =>
-          filterCollection.toCompactJson(),
-        _ => action.toJson(),
-      },
+      'action': _actionToCompactJson(action),
+      if (elseAction != null) 'elseAction': _actionToCompactJson(elseAction!),
+      if (debounceMs != null && debounceMs! > 0) 'debounceMs': debounceMs!,
     };
   }
 
@@ -402,12 +504,34 @@ class ComponentBehavior {
     final actionJson = (json['action'] as Map<String, dynamic>?) ?? {};
     final action = BehaviorActionCatalog.decode(actionJson);
 
+    final rawElseAction = json['elseAction'];
+    BehaviorAction? elseAction;
+    if (rawElseAction != null) {
+      if (rawElseAction is! Map) {
+        throw const FormatException(
+          'Le champ "elseAction" d’un comportement doit être un objet JSON.',
+        );
+      }
+      elseAction = BehaviorActionCatalog.decode(
+        Map<String, dynamic>.from(rawElseAction),
+      );
+    }
+
+    final rawDebounce = json['debounceMs'];
+    if (rawDebounce != null && rawDebounce is! int) {
+      throw const FormatException(
+        'Le champ "debounceMs" d’un comportement doit être un entier.',
+      );
+    }
+
     final result = ComponentBehavior(
       id: id,
       event: event,
       action: action,
+      elseAction: elseAction,
       validator: validator,
       enabled: enabled,
+      debounceMs: rawDebounce as int?,
     );
     result.validate();
     return result;
@@ -418,15 +542,21 @@ class ComponentBehavior {
     BehaviorEvent? event,
     BehaviorEvent? trigger,
     BehaviorAction? action,
+    BehaviorAction? elseAction,
+    bool clearElseAction = false,
     BehaviorValidator? validator,
     bool clearValidator = false,
     bool? enabled,
+    int? debounceMs,
+    bool clearDebounceMs = false,
   }) => ComponentBehavior(
     id: id ?? this.id,
     event: event ?? trigger ?? this.event,
     action: action ?? this.action,
+    elseAction: clearElseAction ? null : (elseAction ?? this.elseAction),
     validator: clearValidator ? null : (validator ?? this.validator),
     enabled: enabled ?? this.enabled,
+    debounceMs: clearDebounceMs ? null : (debounceMs ?? this.debounceMs),
   );
 
   @override
@@ -436,11 +566,21 @@ class ComponentBehavior {
           other.id == id &&
           other.event == event &&
           other.action == action &&
+          other.elseAction == elseAction &&
           other.validator == validator &&
-          other.enabled == enabled;
+          other.enabled == enabled &&
+          other.debounceMs == debounceMs;
 
   @override
-  int get hashCode => Object.hash(id, event, action, validator, enabled);
+  int get hashCode => Object.hash(
+    id,
+    event,
+    action,
+    elseAction,
+    validator,
+    enabled,
+    debounceMs,
+  );
 }
 
 /// Élément du catalogue de comportements proposés à l'utilisateur.
@@ -490,6 +630,16 @@ abstract final class BehaviorCatalog {
     icon: Icons.alt_route,
     trigger: BehaviorTrigger.click,
     actionType: 'goToPage',
+  );
+
+  /// Revient à la page précédente dans l'historique de navigation.
+  static const goBack = BehaviorCatalogItem(
+    id: 'go_back',
+    title: 'Revenir en arrière',
+    description: 'Revenir à la page précédente dans l’historique de navigation',
+    icon: Icons.arrow_back,
+    trigger: BehaviorTrigger.click,
+    actionType: 'goBack',
   );
 
   static const emitEvent = BehaviorCatalogItem(
@@ -661,19 +811,56 @@ abstract final class BehaviorCatalog {
     supportsBinding: true,
   );
 
+  /// Supprime une ligne d'un tableau JSON dans un repository.
+  static const removeArrayItem = BehaviorCatalogItem(
+    id: 'remove_array_item',
+    title: 'Supprimer une ligne',
+    description:
+        'Supprimer la ligne courante ou sélectionnée dans un tableau de repository',
+    icon: Icons.playlist_remove_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'removeArrayItem',
+  );
+
+  /// Affiche un message temporaire (`SnackBar`) avec sévérité configurable.
+  static const showMessage = BehaviorCatalogItem(
+    id: 'show_message',
+    title: 'Afficher un message',
+    description:
+        'Afficher une notification temporaire (info, succès, avertissement, erreur)',
+    icon: Icons.feedback_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'showMessage',
+  );
+
+  /// Copie un texte statique, la valeur d'un composant ou d'une liaison dans le presse-papiers.
+  static const copyToClipboard = BehaviorCatalogItem(
+    id: 'copy_to_clipboard',
+    title: 'Copier dans le presse-papiers',
+    description:
+        'Copier un texte, la valeur d’un composant ou d’un repository dans le presse-papiers',
+    icon: Icons.content_copy_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'copyToClipboard',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
+    goBack,
     generatePdf,
     emitEvent,
     setStyle,
     setVisibility,
     setState,
+    showMessage,
+    copyToClipboard,
     zoneSize,
     bindState,
     onTooltip,
     searchProvider,
     datasource,
     addArrayItem,
+    removeArrayItem,
     creationDefault,
     runJavaScript,
     sortCollection,

@@ -81,6 +81,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   VibeAiSpeedMode _chatSpeedMode = VibeAiSpeedMode.fast;
   VibeQuestioningLevel _chatQuestioningLevel = VibeQuestioningLevel.balanced;
   bool _chatPlanMode = false;
+  bool _chatVisibleOnlyMode = false;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
@@ -161,6 +162,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       _chatSpeedMode = VibeAiSpeedMode.fast;
       _chatQuestioningLevel = VibeQuestioningLevel.balanced;
       _chatPlanMode = false;
+      _chatVisibleOnlyMode = false;
       if (_chatOpen) {
         _chatExpanded = true;
         _expandedChatPosition = null;
@@ -755,6 +757,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     initialPlanMode: _chatPlanMode,
                     onPlanModeChanged: (enabled) =>
                         setState(() => _chatPlanMode = enabled),
+                    initialVisibleOnlyMode: _chatVisibleOnlyMode,
+                    onVisibleOnlyModeChanged: (enabled) =>
+                        setState(() => _chatVisibleOnlyMode = enabled),
                     initialDesignSystem: _selectedDesignSystem,
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),
@@ -791,6 +796,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                       _chatSpeedMode = VibeAiSpeedMode.fast;
                       _chatQuestioningLevel = VibeQuestioningLevel.balanced;
                       _chatPlanMode = false;
+                      _chatVisibleOnlyMode = false;
                     }),
                     onDrag: (delta) => setState(() {
                       final nextPosition = _chatLayout.resolvedPosition + delta;

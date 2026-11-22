@@ -25,6 +25,7 @@ class SpecLinksView extends StatelessWidget {
   /// Libellés partagés par les cartes et le titre de la page ouverte.
   static const projectsLabel = 'Projets';
   static const glossaryLabel = 'Glossaire d’entreprise';
+  static const uxWizardLabel = 'Wizard UX & Parcours';
 
   /// Nombre de projets récents enregistrés.
   final int recentProjectsCount;
@@ -50,8 +51,7 @@ class SpecLinksView extends StatelessWidget {
             subtitle: companyGlossaryTermsCount > 0
                 ? '$companyGlossaryTermsCount terme(s)'
                 : 'Référentiel partagé',
-            tooltip:
-                'Gérer le glossaire terminologique d’entreprise partagé entre tous les projets',
+            tooltip: 'Gérer le glossaire terminologique d’entreprise partagé entre tous les projets',
           ),
         ],
       ),
@@ -66,18 +66,26 @@ class SpecLinksView extends StatelessWidget {
             subtitle: recentProjectsCount > 0
                 ? '$recentProjectsCount projet(s) récent(s)'
                 : 'Nouvelle idée ou ouverture',
-            tooltip:
-                'Démarrer une nouvelle forge depuis une idée ou reprendre un projet récent',
+            tooltip: 'Démarrer une nouvelle forge depuis une idée ou reprendre un projet récent',
           ),
           DesignLinkItem(
             id: 'wizard',
             label: 'Wizard de spécification',
             icon: Icons.auto_awesome_rounded,
-            subtitle: project != null
-                ? project.name
-                : 'Aucun projet actif',
+            subtitle: project != null ? project.name : 'Aucun projet actif',
             tooltip: project != null
                 ? 'Ouvrir le wizard du projet « ${project.name} »'
+                : 'Ouvrez ou créez d’abord un projet dans Projets',
+          ),
+          DesignLinkItem(
+            id: 'ux_wizard',
+            label: uxWizardLabel,
+            icon: Icons.design_services_rounded,
+            subtitle: project == null
+                ? 'Parcours, navigation & écrans'
+                : '${project.uxSpec.journeys.length} parcours · ${project.uxSpec.screens.length} écran(s)',
+            tooltip: project != null
+                ? 'Concevoir les parcours, la navigation et les écrans UX du projet « ${project.name} »'
                 : 'Ouvrez ou créez d’abord un projet dans Projets',
           ),
         ],

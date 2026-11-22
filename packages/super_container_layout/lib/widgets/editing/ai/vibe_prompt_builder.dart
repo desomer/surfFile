@@ -69,6 +69,17 @@ PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
   static const String reproduceExactPlanningDirective =
       planModePlanningDirective;
 
+  /// Directive stricte injectée lorsque le mode « Uniquement visible » est actif.
+  static const String visibleOnlyDirective = '''
+MODE « UNIQUEMENT VISIBLE » ACTIF (RESTRICTION STRICTE À L’ONGLET ET AU SCROLL COURANTS) :
+L’utilisateur travaille exclusivement sur ce qui est actuellement affiché dans la fenêtre courante (onglet actif et position de défilement actuelle) :
+1. VERROUILLAGE ONGLET & SCROLL :
+   - Reste strictement sur l’onglet actif et la position de scroll courante : n’appelle JAMAIS `preview_navigation_or_selection` pour changer de route ou d’onglet, et ne fais jamais défiler la vue (`scrollIntoView: false`).
+   - Ne crée ni ne modifie aucune autre page (`pageCatalog` inchangé) et ne modifie jamais `initialIndex` ni les zones `content:*` des onglets inactifs d’un `SuperTab`.
+2. PÉRIMÈTRE DES AJOUTS, MODIFICATIONS, PLANS & AUDITS :
+   - Pour un **ajout** : rattache les nouveaux composants directement dans le conteneur ou la zone d’onglet actuellement visible à la position de scroll courante (à l’endroit cohérent parmi les éléments visibles listés), tout en réémettant INTÉGRALEMENT dans `placements` tous les autres slots existants du conteneur parent (y compris ceux hors scroll) afin de ne rien supprimer hors champ.
+   - Pour une **modification, un style, une valeur réactive, un plan ou un audit** : cible uniquement les composants et zones visibles à l’écran ; laisse strictement intacts tous les composants situés dans des onglets masqués ou hors de la fenêtre de scroll actuelle.''';
+
   /// Directive d'édition des calculs JavaScript réactifs et de leurs champs IHM.
   static const String reactiveValuesDirective = '''
 MODE « VALEURS RÉACTIVES » :
@@ -143,6 +154,8 @@ Configure les repositories et l’interface afin que les valeurs dérivées rest
     String? repositoriesContext,
     bool planMode = false,
     bool reproduceExactMode = false,
+    bool visibleOnlyMode = false,
+    String? visibleViewportContext,
   }) {
     final trimmedRepositories = repositoriesContext?.trim() ?? '';
     final repositoriesSection = trimmedRepositories.isEmpty
@@ -154,6 +167,11 @@ Configure les repositories et l’interface afin que les valeurs dérivées rest
         ? reproduceExactCommonDirective
         : null;
     final planSection = planMode ? planModePlanningDirective : null;
+    final visibleOnlySection = visibleOnlyMode ? visibleOnlyDirective : null;
+    final trimmedVisibleCtx = visibleViewportContext?.trim() ?? '';
+    final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
+        ? trimmedVisibleCtx
+        : null;
     final mountedHint = mountedSlotSummaries.isEmpty
         ? null
         : 'Slots montés actuellement à l’écran (utilisables avec get_component_geometry / capture_screenshot) : '
@@ -184,7 +202,9 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
         questioningDirective,
         ?exactSection,
         ?planSection,
+        ?visibleOnlySection,
         scopeDirective,
+        ?visibleCtxSection,
         ?mountedHint,
         ?repositoriesSection,
         'ÉTAT DU SCOPE CIBLÉ (JSON) :\n${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}',
@@ -200,6 +220,8 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
       questioningDirective,
       ?exactSection,
       ?planSection,
+      ?visibleOnlySection,
+      ?visibleCtxSection,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les modifications à ces composants ou aux pages déclarées ; '
@@ -223,6 +245,8 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
+    bool visibleOnlyMode = false,
+    String? visibleViewportContext,
   }) {
     final trimmedRepositories = repositoriesContext?.trim() ?? '';
     final repositoriesSection = trimmedRepositories.isEmpty
@@ -235,6 +259,11 @@ L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${scope.displayL
         : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
     final effectiveExact = plan.reproduceExact;
     final exactSection = effectiveExact ? reproduceExactCommonDirective : null;
+    final visibleOnlySection = visibleOnlyMode ? visibleOnlyDirective : null;
+    final trimmedVisibleCtx = visibleViewportContext?.trim() ?? '';
+    final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
+        ? trimmedVisibleCtx
+        : null;
     final lotDirective =
         '''
 PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
@@ -267,8 +296,10 @@ ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DE
       return [
         ?exactSection,
         lotDirective,
+        ?visibleOnlySection,
         '''RESTRICTION STRICTE DE SCOPE :
 Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).''',
+        ?visibleCtxSection,
         ?mountedHint,
         ?repositoriesSection,
         'ÉTAT ACTUEL DU SCOPE APRÈS LES LOTS PRÉCÉDENTS (JSON) :\n'
@@ -284,6 +315,8 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
     return [
       ?exactSection,
       lotDirective,
+      ?visibleOnlySection,
+      ?visibleCtxSection,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}. '
             'Rattache les nouvelles sections à ces conteneurs existants.',
@@ -297,7 +330,7 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
   /// Directive de phase 1 pour l'audit complet et la planification de corrections.
   static const String auditPlanDirective = '''
 MODE « AUDIT & CORRECTION » — PHASE 1 (ANALYSE + PLAN DE CORRECTION PAR LOTS) :
-Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré-audit déterministe ci-dessous, de l’instantané JSON et, si utile, des outils d’inspection (`get_component_geometry`, `capture_element_screenshot`, `capture_screenshot`, `query_repository_data`, `inspect_bindings_and_diagnostics`).
+Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré-audit déterministe ci-dessous, de l’instantané JSON et, si utile, des outils d’inspection (`preview_navigation_or_selection`, `get_component_geometry`, `capture_element_screenshot`, `capture_screenshot`, `query_repository_data`, `inspect_bindings_and_diagnostics`).
 
 RÈGLES OBLIGATOIRES :
 1. NE génère PAS encore de patch `"vibe"` ni `"repositories"` sur ce tour (`"vibe": null`, `"askUser": null`).
@@ -310,9 +343,16 @@ RÈGLES OBLIGATOIRES :
 3. Si des anomalies sont confirmées, renvoie UNIQUEMENT un plan de correction structuré en lots cohérents :
    {"message":"Résumé clair des anomalies trouvées en français","plan":{"title":"Plan d’audit et correction","lots":[{"id":"lot-1","title":"...","description":"Liste précise des IDs de composants/styles/repositories et corrections exactes à appliquer"}]},"vibe":null}
    - Regroupe logiquement : par ex. Lot 1 = Mise en page, marges, paddings, contraintes et coupures ; Lot 2 = Repositories, attributs `@calculs` et liaisons manquantes ; Lot 3 = Contrastes WCAG AA et finitions (ou 1 seul lot s’il y a peu de corrections).
-   - Indique dans la description des lots corrigeant des marges/débordements, une zone en ligne (`zoneAxes: 'row'`), un en-tête ou une barre d’outils de recontrôler le rendu après application (`"verifyRender": true`).
+   - Indique dans la description des lots corrigeant des marges/débordements, une zone en ligne (`zoneAxes: 'row'`), un onglet, un en-tête ou une barre d’outils de recontrôler le rendu après application (`"verifyRender": true`).
 4. Si aucune anomalie réelle n’est détectée après vérification, renvoie :
    {"message":"Audit terminé : aucune anomalie détectée sur ce périmètre.","plan":null,"vibe":null}''';
+
+  /// Consigne de balayage systématique des onglets (`SuperTab`) injectée uniquement hors scope.
+  static const String auditTabSweepDirective = '''
+BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE) :
+- Aucun scope restreint n’est actif : l’audit couvre TOUS les onglets (`SuperTab` / `"type": "tab"`) de la page active en les balayant un par un, y compris les onglets initialement masqués.
+- Le pré-audit déterministe ci-dessus a déjà balayé chaque onglet monté (voir `ONGLETS BALAYÉS`), mais dès qu’une mesure géométrique (`get_component_geometry` sur `zoneAxes: 'row'`, tailles, débordements) ou une capture isolée (`capture_element_screenshot`) est utile sur un onglet non affiché, bascule d’abord dessus via `preview_navigation_or_selection` (`{"tabComponentId": "<idDuSuperTab>", "tabIndex": <0..N-1>}` ou `"tabId": "<idOuLabel>"`) afin de monter réellement cet onglet à l’écran avant de l’inspecter.
+- Mentionne explicitement l’onglet concerné dans la description des lots de correction.''';
 
   /// Assemble le prompt spécialisé d'audit de la page active (ou du [scope] actif).
   static String buildAuditTurnPrompt({
@@ -324,6 +364,8 @@ RÈGLES OBLIGATOIRES :
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
+    bool visibleOnlyMode = false,
+    String? visibleViewportContext,
   }) {
     final trimmedRepositories = repositoriesContext?.trim() ?? '';
     final repositoriesSection = trimmedRepositories.isEmpty
@@ -336,6 +378,11 @@ RÈGLES OBLIGATOIRES :
         : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
     final reportSection =
         'RAPPORT DE PRÉ-AUDIT DÉTERMINISTE :\n${report.toPromptSummary()}';
+    final visibleOnlySection = visibleOnlyMode ? visibleOnlyDirective : null;
+    final trimmedVisibleCtx = visibleViewportContext?.trim() ?? '';
+    final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
+        ? trimmedVisibleCtx
+        : null;
 
     if (scope != null) {
       final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
@@ -350,7 +397,9 @@ Le périmètre modifiable autorisé couvre uniquement ${scope.isMultiTarget ? ta
 Ne propose aucune modification en dehors de ce scope ni sur les paramètres globaux de thème ou pageCatalog.''';
       return [
         auditPlanDirective,
+        ?visibleOnlySection,
         scopeDirective,
+        ?visibleCtxSection,
         reportSection,
         ?mountedHint,
         ?repositoriesSection,
@@ -365,6 +414,8 @@ Ne propose aucune modification en dehors de ce scope ni sur les paramètres glob
     );
     return [
       auditPlanDirective,
+      if (visibleOnlyMode) visibleOnlyDirective else auditTabSweepDirective,
+      ?visibleCtxSection,
       if (instantiatedComponentIds != null)
         'Les composants instanciés sont : ${jsonEncode(instantiatedComponentIds.toList())}.',
       reportSection,

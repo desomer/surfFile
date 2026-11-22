@@ -54,6 +54,130 @@ import 'vibe_diagnostics_inspector.dart';
 import 'vibe_mounted_slot_index.dart';
 import 'vibe_page_audit.dart';
 
+/// État immuable d'un composant `SuperTab` visible en mode « Uniquement visible ».
+@immutable
+class VibeVisibleTabState {
+  /// Construit le descripteur de l'onglet actif à conserver.
+  VibeVisibleTabState({
+    required this.tabComponentId,
+    required this.activeIndex,
+    required this.tabId,
+    required this.label,
+    required this.contentZone,
+    List<String> inactiveZones = const <String>[],
+  }) : inactiveZones = List<String>.unmodifiable(inactiveZones);
+
+  /// Identifiant du composant `SuperTab`.
+  final String tabComponentId;
+
+  /// Indice 0-based de l'onglet actuellement affiché.
+  final int activeIndex;
+
+  /// Identifiant du slot d'onglet actif.
+  final String tabId;
+
+  /// Libellé lisible de l'onglet actif.
+  final String label;
+
+  /// Zone de contenu active (`content:<tabId>` ou `content`).
+  final String contentZone;
+
+  /// Zones de contenu des onglets inactifs (à préserver sans modification).
+  final List<String> inactiveZones;
+}
+
+/// Instantané immuable de l'onglet actif, de la position de scroll et des composants
+/// réellement visibles à l'écran pour le mode « Uniquement visible ».
+@immutable
+class VibeVisibleViewportSnapshot {
+  /// Construit un instantané de visibilité viewport.
+  VibeVisibleViewportSnapshot({
+    required this.hasMeasuredViewport,
+    Set<String> visibleComponentIds = const <String>{},
+    Set<String> ancestorComponentIds = const <String>{},
+    Set<String> protectedOffscreenComponentIds = const <String>{},
+    List<String> orderedVisibleSlotSummaries = const <String>[],
+    List<VibeVisibleTabState> activeTabs = const <VibeVisibleTabState>[],
+    List<String> scrollPositionSummaries = const <String>[],
+  }) : visibleComponentIds = Set<String>.unmodifiable(visibleComponentIds),
+       ancestorComponentIds = Set<String>.unmodifiable(ancestorComponentIds),
+       protectedOffscreenComponentIds = Set<String>.unmodifiable(
+         protectedOffscreenComponentIds,
+       ),
+       orderedVisibleSlotSummaries = List<String>.unmodifiable(
+         orderedVisibleSlotSummaries,
+       ),
+       activeTabs = List<VibeVisibleTabState>.unmodifiable(activeTabs),
+       scrollPositionSummaries = List<String>.unmodifiable(
+         scrollPositionSummaries,
+       );
+
+  /// Indique si au moins un `RenderBox` monté a pu être mesuré à l'écran.
+  final bool hasMeasuredViewport;
+
+  /// Identifiants des composants ayant une surface effectivement visible dans le viewport courant.
+  final Set<String> visibleComponentIds;
+
+  /// Conteneurs ancêtres menant aux composants visibles (ex. `root`, `mainLayout`, `SuperTab` actif).
+  final Set<String> ancestorComponentIds;
+
+  /// Composants existants de la page situés hors champ (onglet inactif ou hors scroll courant),
+  /// à ne ni modifier ni supprimer.
+  final Set<String> protectedOffscreenComponentIds;
+
+  /// Résumés ordonnés (haut → bas, gauche → droite) des slots et zones visibles à l'écran.
+  final List<String> orderedVisibleSlotSummaries;
+
+  /// Onglets actuellement affichés dans les `SuperTab` visibles.
+  final List<VibeVisibleTabState> activeTabs;
+
+  /// Positions actuelles des zones défilables montées.
+  final List<String> scrollPositionSummaries;
+
+  /// Formate le contexte runtime injecté dans le prompt IA en mode « Uniquement visible ».
+  String toPromptContext() {
+    final buffer = StringBuffer()
+      ..writeln(
+        'CONTEXTE RUNTIME « UNIQUEMENT VISIBLE » (ONGLET & SCROLL COURANTS) :',
+      );
+    if (activeTabs.isNotEmpty) {
+      buffer.writeln('• Onglet(s) actif(s) verrouillé(s) :');
+      for (final tab in activeTabs) {
+        final inactiveInfo = tab.inactiveZones.isEmpty
+            ? ''
+            : ' | zones inactives interdites : ${tab.inactiveZones.join(', ')}';
+        buffer.writeln(
+          '  - ${tab.tabComponentId} → onglet actif [${tab.activeIndex}] "${tab.label}" '
+          '(zone active : "${tab.contentZone}"$inactiveInfo)',
+        );
+      }
+    }
+    if (scrollPositionSummaries.isNotEmpty) {
+      buffer.writeln('• Position(s) de scroll courante(s) verrouillée(s) :');
+      for (final s in scrollPositionSummaries) {
+        buffer.writeln('  - $s');
+      }
+    }
+    if (orderedVisibleSlotSummaries.isNotEmpty) {
+      buffer.writeln(
+        '• Éléments et zones actuellement visibles à l’écran (${orderedVisibleSlotSummaries.length}) : '
+        '${orderedVisibleSlotSummaries.take(45).join(', ')}',
+      );
+    }
+    if (protectedOffscreenComponentIds.isNotEmpty) {
+      final sample = protectedOffscreenComponentIds.take(35).join(', ');
+      final more = protectedOffscreenComponentIds.length > 35
+          ? ' (+${protectedOffscreenComponentIds.length - 35} autres)'
+          : '';
+      buffer.writeln(
+        '• Composants hors champ (onglets masqués ou hors scroll courant — NE PAS modifier ni retirer des placements) : '
+        '$sample$more',
+      );
+    }
+    return buffer.toString().trimRight();
+  }
+}
+
 /// Service d'introspection runtime de l'application Flutter exposé à Vibe IA.
 class VibeAppInspector {
   /// Crée un inspecteur connecté à l'état courant de l'application.
@@ -65,6 +189,7 @@ class VibeAppInspector {
     this.pageRouting,
     this.ensurePageLoaded,
     this.readScope,
+    this.readVisibleOnly,
     this.onSelectScope,
     this.fallbackContext,
     this.turnStartMarker,
@@ -73,6 +198,8 @@ class VibeAppInspector {
     this.customDesignSystemStore,
     this.onRegisterDesignSystem,
     this.fontManager,
+    this.waitForFrame,
+    this.allowEndOfFrameInWidgetTests = false,
   }) : slotIndex = slotIndex ?? VibeMountedSlotIndex.instance;
 
   /// Fournisseur de l'[Appearance] active (incluant les éventuels défauts runtime).
@@ -99,6 +226,9 @@ class VibeAppInspector {
   /// Fournisseur optionnel du périmètre restreint actif dans le chat Vibe.
   final VibeChatScope? Function()? readScope;
 
+  /// Indique si le mode « Uniquement visible » restreint l'IA à l'onglet et au scroll courants.
+  final bool Function()? readVisibleOnly;
+
   /// Callback optionnel permettant de mettre à jour le `VibeChatScope` du chat.
   final ValueChanged<VibeChatScope?>? onSelectScope;
 
@@ -124,6 +254,13 @@ class VibeAppInspector {
   /// Gestionnaire optionnel de polices dynamiques utilisé pour le préchargement et les diagnostics.
   final DynamicFontManager? fontManager;
 
+  /// Callback optionnel d'attente d'une frame de rendu (utile notamment en test).
+  final Future<void> Function()? waitForFrame;
+
+  /// Autorise l'attente de `SchedulerBinding.endOfFrame` sous `TestWidgetsFlutterBinding`
+  /// lorsqu'une boucle `pumpUntil` / `pumpAndSettle` pompe activement les frames.
+  final bool allowEndOfFrameInWidgetTests;
+
   late final VibeDiagnosticsInspector _diagnostics = VibeDiagnosticsInspector(
     readAppearance: readAppearance,
     slotIndex: slotIndex,
@@ -133,10 +270,12 @@ class VibeAppInspector {
     pageRouting: pageRouting,
     ensurePageLoaded: ensurePageLoaded,
     readScope: readScope,
+    readVisibleOnly: readVisibleOnly,
     onSelectScope: onSelectScope,
     turnStartMarker: turnStartMarker,
     previewTracker: previewTracker,
     fontManager: fontManager,
+    waitForVisualFrame: waitForVisualFrame,
   );
 
   /// Construit le [VibeAppToolRegistry] complet exposant l'ensemble des outils d'introspection.
@@ -339,7 +478,13 @@ class VibeAppInspector {
       seeds.add('root');
     } else if (appearance.components.containsKey('mainLayout')) {
       seeds.add('mainLayout');
-    } else {
+    }
+    for (final mountedId in slotIndex.mountedComponentIds) {
+      if (appearance.components.containsKey(mountedId)) {
+        seeds.add(mountedId);
+      }
+    }
+    if (seeds.isEmpty) {
       seeds.addAll(slotIndex.mountedComponentIds);
     }
 
@@ -348,6 +493,11 @@ class VibeAppInspector {
     while (queue.isNotEmpty) {
       final id = queue.removeLast();
       if (!collected.add(id)) continue;
+      if (id == 'scaffold:body' &&
+          appearance.components.containsKey('mainLayout') &&
+          !collected.contains('mainLayout')) {
+        queue.add('mainLayout');
+      }
       final config = appearance.components[id];
       for (final childId in VibeScopeHelpers.childrenOfComponent(config)) {
         if (!collected.contains(childId)) {
@@ -440,7 +590,74 @@ class VibeAppInspector {
             ],
         },
       'mountedComponentCount': slotIndex.mountedComponentIds.length,
+      if (collectActiveMountedTabEntries(
+            allowedComponentIds: collectScopeOrActivePageComponentIds(
+              appearance,
+            ),
+          )
+          case final activeTabs when activeTabs.isNotEmpty)
+        'mountedTabs': [
+          for (final entry in activeTabs)
+            if (entry.readSnapshot() case final snap? when snap.tabCount > 0)
+              snap.toJson(),
+        ],
     };
+  }
+
+  /// Attend la fin de la frame de rendu planifiée après une bascule d'aperçu ou d'onglet.
+  Future<void> waitForVisualFrame() async {
+    if (waitForFrame != null) {
+      await waitForFrame!();
+      return;
+    }
+    final scheduler = SchedulerBinding.instance;
+    scheduler.ensureVisualUpdate();
+    final isWidgetTest = WidgetsBinding.instance.runtimeType
+        .toString()
+        .contains('TestWidgetsFlutterBinding');
+    if (isWidgetTest && !allowEndOfFrameInWidgetTests) {
+      return;
+    }
+    if (scheduler.hasScheduledFrame) {
+      try {
+        await scheduler.endOfFrame.timeout(const Duration(milliseconds: 250));
+      } on TimeoutException {
+        return;
+      }
+    }
+    if (scheduler.hasScheduledFrame) {
+      try {
+        await scheduler.endOfFrame.timeout(const Duration(milliseconds: 250));
+      } on TimeoutException {
+        // Poursuit sans blocage.
+      }
+    }
+  }
+
+  /// Retourne les entrées `SuperTab` montées et visibles (non offstage), filtrées le cas échéant sur [allowedComponentIds].
+  List<VibeMountedTabEntry> collectActiveMountedTabEntries({
+    Set<String>? allowedComponentIds,
+  }) {
+    final rootBox = _resolveRootBox(_resolvePrimaryContext());
+    final active = <VibeMountedTabEntry>[];
+    final seenIds = <String>{};
+    for (final entry in slotIndex.allTabEntries.reversed) {
+      if (allowedComponentIds != null &&
+          !allowedComponentIds.contains(entry.componentId)) {
+        continue;
+      }
+      final ctx = entry.tabContext();
+      if (ctx == null || !ctx.mounted) continue;
+      final ro = ctx.findRenderObject();
+      if (ro != null &&
+          (!ro.attached || isRenderObjectOffstage(ro, stopAt: rootBox))) {
+        continue;
+      }
+      if (seenIds.add(entry.componentId)) {
+        active.add(entry);
+      }
+    }
+    return active.reversed.toList(growable: false);
   }
 
   /// Mesure la géométrie réelle des composants demandés ou du périmètre actif.
@@ -603,9 +820,18 @@ class VibeAppInspector {
           final truncatedTexts = !isOffstage
               ? _inspectTruncatedTexts(renderObj)
               : const <String>[];
+          final visibleRectInViewport = !isOffstage
+              ? _computeViewportVisibleRect(
+                  renderObj,
+                  size,
+                  rootBox,
+                  viewportSize,
+                )
+              : null;
 
           item['diagnostics'] = <String, Object?>{
             'isZeroSized': size.width <= 0.0 || size.height <= 0.0,
+            'isVisibleInViewport': visibleRectInViewport != null,
             if (exceedsParentWidth) 'exceedsParentWidth': true,
             if (exceedsParentHeight) 'exceedsParentHeight': true,
             if (ancestorClip.clipped) ...<String, Object?>{
@@ -617,7 +843,7 @@ class VibeAppInspector {
               'hasTruncatedText': true,
               'truncatedTextSamples': truncatedTexts,
             },
-            if (globalRect == null)
+            if (globalRect == null || visibleRectInViewport == null)
               'isOffscreen': true
             else if (viewportSize != null) ...<String, Object?>{
               'exceedsViewportWidth':
@@ -626,11 +852,7 @@ class VibeAppInspector {
               'exceedsViewportHeight':
                   globalRect.bottom > viewportSize.height + 0.5 ||
                   globalRect.top < -0.5,
-              'isOffscreen':
-                  globalRect.right <= 0 ||
-                  globalRect.bottom <= 0 ||
-                  globalRect.left >= viewportSize.width ||
-                  globalRect.top >= viewportSize.height,
+              'isOffscreen': false,
             },
           };
         } else if (renderObj is RenderSliver) {
@@ -1041,8 +1263,7 @@ class VibeAppInspector {
       return VibeToolResult.error(
         callId: callId,
         name: toolName,
-        message:
-            'Paramètre "action" requis ("get", "create", "update", "delete", "validate" ou "infer").',
+        message: 'Paramètre "action" requis ("get", "create", "update", "delete", "validate" ou "infer").',
       );
     }
     final action = rawAction.trim();
@@ -1061,9 +1282,7 @@ class VibeAppInspector {
     final entry =
         catalog.where((e) => e.id == requestedRepo).firstOrNull ??
         catalog
-            .where(
-              (e) => e.name.toLowerCase() == requestedRepo.toLowerCase(),
-            )
+            .where((e) => e.name.toLowerCase() == requestedRepo.toLowerCase())
             .firstOrNull;
     if (entry == null) {
       return VibeToolResult.error(
@@ -1434,9 +1653,12 @@ class VibeAppInspector {
     }
 
     final entry = entries[occurrenceIndex];
-    final scrollIntoView = args['scrollIntoView'] is bool
-        ? args['scrollIntoView'] as bool
-        : true;
+    final visibleOnly = readVisibleOnly?.call() == true;
+    final scrollIntoView = visibleOnly
+        ? false
+        : (args['scrollIntoView'] is bool
+              ? args['scrollIntoView'] as bool
+              : true);
     final rawPadding = args['contextPadding'];
     final contextPadding = (rawPadding is num ? rawPadding.toDouble() : 0.0)
         .clamp(0.0, 200.0);
@@ -1473,6 +1695,10 @@ class VibeAppInspector {
     }
 
     final devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(ctx) ?? 1.0;
+    final rootBoxForVisibility = visibleOnly ? _resolveRootBox(ctx) : null;
+    final viewportSizeForVisibility = visibleOnly
+        ? MediaQuery.maybeSizeOf(ctx)
+        : null;
     final renderObj = ctx.findRenderObject();
     final directAncestorBoundary = ctx
         .findAncestorRenderObjectOfType<RenderRepaintBoundary>();
@@ -1484,6 +1710,24 @@ class VibeAppInspector {
         name: toolName,
         message: 'Objet de rendu de "$componentId" détaché.',
       );
+    }
+
+    if (visibleOnly && renderObj is RenderBox && renderObj.hasSize) {
+      if (isRenderObjectOffstage(renderObj, stopAt: rootBoxForVisibility) ||
+          _computeViewportVisibleRect(
+                renderObj,
+                renderObj.size,
+                rootBoxForVisibility,
+                viewportSizeForVisibility,
+              ) ==
+              null) {
+        return VibeToolResult.error(
+          callId: callId,
+          name: toolName,
+          message:
+              'Mode « Uniquement visible » actif : "$componentId" est hors de la zone actuellement visible (onglet masqué ou hors du scroll courant).',
+        );
+      }
     }
 
     // Chemin rapide isolé : le contenu du slot possède son propre RenderRepaintBoundary
@@ -2004,8 +2248,7 @@ class VibeAppInspector {
       return VibeToolResult.error(
         callId: callId,
         name: toolName,
-        message:
-            'Aucun gestionnaire de systèmes de design n’est disponible dans ce contexte.',
+        message: 'Aucun gestionnaire de systèmes de design n’est disponible dans ce contexte.',
       );
     }
 
@@ -2034,7 +2277,8 @@ class VibeAppInspector {
     }
 
     final rawSlug = optionalString('slug');
-    final slugBase = rawSlug != null && rawSlug.toLowerCase().startsWith('custom:')
+    final slugBase =
+        rawSlug != null && rawSlug.toLowerCase().startsWith('custom:')
         ? rawSlug.substring('custom:'.length)
         : (rawSlug ?? rawName);
     final normalizedSlug = DesignMdParser.slugify(slugBase);
@@ -2144,7 +2388,8 @@ class VibeAppInspector {
           'logo': ?normalizedPreset.logo,
           'totalCustomPresets': totalCustomPresets,
           'persistedPath': ?persistedPath,
-          if (extractedFonts.isNotEmpty) 'extractedFontFamilies': extractedFonts,
+          if (extractedFonts.isNotEmpty)
+            'extractedFontFamilies': extractedFonts,
           'fonts': ?fontsReport,
           'palette': <String, Object?>{
             'mode': palette.isDark ? 'dark' : 'light',
@@ -2173,6 +2418,226 @@ class VibeAppInspector {
     }
   }
 
+  /// Capture l'instantané exact des onglets actifs, des positions de scroll et des
+  /// composants effectivement visibles dans le viewport courant.
+  VibeVisibleViewportSnapshot captureVisibleViewportSnapshot(
+    Appearance appearance,
+  ) {
+    final primaryCtx = _resolvePrimaryContext();
+    final viewportSize = primaryCtx != null
+        ? MediaQuery.maybeSizeOf(primaryCtx)
+        : null;
+    final rootBox = _resolveRootBox(primaryCtx);
+    final pageIds = collectScopeOrActivePageComponentIds(appearance);
+
+    var measuredAny = false;
+    final visibleIds = <String>{};
+    final visibleEntriesWithBounds = <({Rect rect, String summary})>[];
+    final seenCompositeSummaries = <String>{};
+    final seenScrollPositions = <ScrollPosition>{};
+    final scrollSummaries = <String>[];
+
+    for (final entry in slotIndex.allEntries) {
+      final slotCtx = entry.slotContext();
+      final contentCtx = entry.contentKey.currentContext;
+      final targetCtx = (contentCtx != null && contentCtx.mounted)
+          ? contentCtx
+          : slotCtx;
+      if (targetCtx == null || !targetCtx.mounted) continue;
+
+      if (slotCtx != null && slotCtx.mounted) {
+        final scrollable = Scrollable.maybeOf(slotCtx);
+        if (scrollable != null && scrollable.position.hasPixels) {
+          final pos = scrollable.position;
+          if (pos.hasContentDimensions &&
+              pos.maxScrollExtent > 1.0 &&
+              seenScrollPositions.add(pos)) {
+            final axisLabel =
+                axisDirectionToAxis(pos.axisDirection) == Axis.horizontal
+                ? 'horizontal'
+                : 'vertical';
+            scrollSummaries.add(
+              'scroll $axisLabel à ${pos.pixels.round()} dp / ${pos.maxScrollExtent.round()} dp '
+              '(fenêtre ${pos.viewportDimension.round()} dp)',
+            );
+          }
+        }
+      }
+
+      final ro = targetCtx.findRenderObject();
+      if (ro is! RenderBox || !ro.attached || !ro.hasSize) continue;
+      if (ro.size.width <= 0 || ro.size.height <= 0) continue;
+      measuredAny = true;
+      if (isRenderObjectOffstage(ro, stopAt: rootBox)) continue;
+
+      final visibleRect = _computeViewportVisibleRect(
+        ro,
+        ro.size,
+        rootBox,
+        viewportSize,
+      );
+      if (visibleRect == null) continue;
+
+      visibleIds.add(entry.componentId);
+      final key = entry.compositeKey;
+      if (seenCompositeSummaries.add(key)) {
+        final label = entry.label.trim();
+        final hasDistinctLabel =
+            label.isNotEmpty &&
+            label != entry.componentId &&
+            label != 'Editable component';
+        visibleEntriesWithBounds.add((
+          rect: visibleRect,
+          summary: hasDistinctLabel ? '$key ($label)' : key,
+        ));
+      }
+    }
+
+    visibleEntriesWithBounds.sort((a, b) {
+      final dy = a.rect.top.compareTo(b.rect.top);
+      return dy != 0 ? dy : a.rect.left.compareTo(b.rect.left);
+    });
+
+    final activeTabStates = <VibeVisibleTabState>[];
+    final hiddenTabSubtreeIds = <String>{};
+    for (final tabEntry in collectActiveMountedTabEntries(
+      allowedComponentIds: pageIds,
+    )) {
+      final snap = tabEntry.readSnapshot();
+      if (snap == null || snap.tabCount == 0) continue;
+      final activeItem =
+          snap.tabs[snap.activeIndex.clamp(0, snap.tabCount - 1)];
+      final inactiveZones = <String>[];
+      if (!snap.isDynamic) {
+        for (final t in snap.tabs) {
+          if (t.index == activeItem.index) continue;
+          inactiveZones.add(t.contentZone);
+          final cfg = appearance.components[snap.componentId];
+          if (cfg is SuperTabConfig) {
+            final queue = <String>[...cfg.slotsOf(t.contentZone)];
+            while (queue.isNotEmpty) {
+              final cid = queue.removeLast();
+              if (!hiddenTabSubtreeIds.add(cid)) continue;
+              for (final child in VibeScopeHelpers.childrenOfComponent(
+                appearance.components[cid],
+              )) {
+                if (!hiddenTabSubtreeIds.contains(child)) {
+                  queue.add(child);
+                }
+              }
+            }
+          }
+        }
+      }
+      activeTabStates.add(
+        VibeVisibleTabState(
+          tabComponentId: snap.componentId,
+          activeIndex: activeItem.index,
+          tabId: activeItem.tabId,
+          label: activeItem.label,
+          contentZone: activeItem.contentZone,
+          inactiveZones: inactiveZones,
+        ),
+      );
+    }
+
+    // Tout composant situé dans un onglet inactif est retiré de visibleIds par sécurité.
+    visibleIds.removeAll(hiddenTabSubtreeIds);
+
+    // Remonte la chaîne des conteneurs parents des composants visibles.
+    final parentByChild = <String, Set<String>>{};
+    for (final entry in appearance.components.entries) {
+      for (final childId in VibeScopeHelpers.childrenOfComponent(entry.value)) {
+        parentByChild.putIfAbsent(childId, () => <String>{}).add(entry.key);
+      }
+    }
+    final ancestorIds = <String>{};
+    final queue = <String>[...visibleIds];
+    while (queue.isNotEmpty) {
+      final current = queue.removeLast();
+      final parents = parentByChild[current];
+      if (parents == null) continue;
+      for (final p in parents) {
+        if (ancestorIds.add(p)) {
+          queue.add(p);
+        }
+      }
+    }
+
+    final protectedOffscreen = <String>{
+      ...hiddenTabSubtreeIds,
+      if (measuredAny)
+        for (final id in pageIds)
+          if (!visibleIds.contains(id) && !ancestorIds.contains(id)) id,
+    };
+
+    return VibeVisibleViewportSnapshot(
+      hasMeasuredViewport: measuredAny,
+      visibleComponentIds: visibleIds,
+      ancestorComponentIds: ancestorIds,
+      protectedOffscreenComponentIds: protectedOffscreen,
+      orderedVisibleSlotSummaries: [
+        for (final item in visibleEntriesWithBounds) item.summary,
+      ],
+      activeTabs: activeTabStates,
+      scrollPositionSummaries: scrollSummaries,
+    );
+  }
+
+  static Rect? _computeViewportVisibleRect(
+    RenderBox target,
+    Size targetSize,
+    RenderBox? rootBox,
+    Size? viewportSize,
+  ) {
+    if (targetSize.width <= 0 || targetSize.height <= 0) return null;
+    var visibleLocal = Rect.fromLTWH(0, 0, targetSize.width, targetSize.height);
+    RenderObject? current = target.parent;
+    var hops = 0;
+    while (current != null && current != rootBox && hops < 32) {
+      hops++;
+      final clipsViewport =
+          current is RenderAbstractViewport ||
+          (current is RenderClipRect && current.clipBehavior != Clip.none) ||
+          (current is RenderClipRRect && current.clipBehavior != Clip.none) ||
+          (current is RenderClipPath && current.clipBehavior != Clip.none) ||
+          (current is RenderClipOval && current.clipBehavior != Clip.none);
+      if (clipsViewport &&
+          current is RenderBox &&
+          current.attached &&
+          current.hasSize) {
+        final offset = target.localToGlobal(Offset.zero, ancestor: current);
+        if (!offset.isFinite) return null;
+        final clipLocal = Rect.fromLTWH(
+          -offset.dx,
+          -offset.dy,
+          current.size.width,
+          current.size.height,
+        );
+        visibleLocal = visibleLocal.intersect(clipLocal);
+        if (visibleLocal.width <= 1.0 || visibleLocal.height <= 1.0) {
+          return null;
+        }
+      }
+      current = current.parent;
+    }
+
+    final origin = rootBox != null
+        ? target.localToGlobal(Offset.zero, ancestor: rootBox)
+        : target.localToGlobal(Offset.zero);
+    if (!origin.isFinite) return null;
+    var globalVisible = visibleLocal.shift(origin);
+    final maxW = rootBox?.size.width ?? viewportSize?.width;
+    final maxH = rootBox?.size.height ?? viewportSize?.height;
+    if (maxW != null && maxH != null && maxW > 0 && maxH > 0) {
+      globalVisible = globalVisible.intersect(Rect.fromLTWH(0, 0, maxW, maxH));
+      if (globalVisible.width <= 1.0 || globalVisible.height <= 1.0) {
+        return null;
+      }
+    }
+    return globalVisible;
+  }
+
   static ({bool clipped, List<String> edges}) _inspectAncestorClipping(
     RenderBox target,
     Size targetSize,
@@ -2195,7 +2660,10 @@ class VibeAppInspector {
           (current is RenderClipRRect && current.clipBehavior != Clip.none) ||
           (current is RenderClipPath && current.clipBehavior != Clip.none) ||
           (current is RenderClipOval && current.clipBehavior != Clip.none);
-      if (isClipNode && current is RenderBox && current.attached && current.hasSize) {
+      if (isClipNode &&
+          current is RenderBox &&
+          current.attached &&
+          current.hasSize) {
         final offset = target.localToGlobal(Offset.zero, ancestor: current);
         if (offset.isFinite) {
           if (offset.dx < -eps) clippedEdges.add('left');

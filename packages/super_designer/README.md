@@ -62,3 +62,14 @@ compilez avec flutter build windows --release --dart-define=GEMINI_API_KEY=..., 
 placez un fichier env ou .env à côté de super_designer.exe, ou
 placez un fichier env dans %USERPROFILE%\.super_container_layout\env, ou
 définissez la variable d'environnement Windows GEMINI_API_KEY.
+
+## Installateur Windows (Inno Setup)
+
+Prérequis : Visual Studio avec les outils C++ de bureau et Inno Setup 6 (`winget install --id JRSoftware.InnoSetup --exact`).
+Depuis la racine du dépôt :
+
+```powershell
+.\installer\build-installer.ps1 -App SuperDesigner
+```
+
+L'installateur généré est créé dans `..\..\build\installer\SuperDesigner-<version>-windows-x64-setup.exe` (à partir du script [SuperDesigner.iss](../../installer/SuperDesigner.iss)) et installe l'application dans `%LOCALAPPDATA%\Programs\SuperDesigner` sans élévation.

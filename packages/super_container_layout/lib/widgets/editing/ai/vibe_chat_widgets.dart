@@ -885,6 +885,88 @@ class VibeReproduceExactChip extends StatelessWidget {
   }
 }
 
+/// Sélecteur activant ou désactivant le mode « Uniquement visible »
+/// (verrouille l'onglet actif et la position de scroll courante pour le chat).
+class VibeVisibleOnlyChip extends StatelessWidget {
+  /// Crée une puce bascule pour le mode « Uniquement visible ».
+  const VibeVisibleOnlyChip({
+    required this.selected,
+    required this.enabled,
+    required this.onToggle,
+    super.key,
+  });
+
+  /// Indique si le mode « Uniquement visible » est actif.
+  final bool selected;
+
+  /// Indique si le basculement est autorisé (désactivé pendant la génération).
+  final bool enabled;
+
+  /// Callback appelé au clic.
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.primary : scheme.outlineVariant;
+    return Tooltip(
+      message:
+          'Mode Uniquement visible : reste sur l’onglet actif et la position de scroll '
+          'actuelle pour toutes les opérations du chat (ajout, modification, audit, plan)',
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: 'Uniquement visible',
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-visible-only'),
+            onTap: enabled ? onToggle : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected ? Icons.visibility : Icons.visibility_outlined,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Uniquement visible',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bouton lançant une génération orientée vers les valeurs calculées réactives.
 class VibeReactiveValuesActionChip extends StatelessWidget {
   /// Crée la puce « Valeur réactif ».
@@ -945,6 +1027,14 @@ class VibeReactiveValuesActionChip extends StatelessWidget {
                           : foreground.withValues(alpha: 0.5),
                     ),
                   ),
+                  const SizedBox(width: 3),
+                  Icon(
+                    Icons.play_arrow_rounded,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
                 ],
               ),
             ),
@@ -963,6 +1053,7 @@ class VibeAuditActionChip extends StatelessWidget {
     required this.enabled,
     required this.onPressed,
     this.scoped = false,
+    this.visibleOnly = false,
     super.key,
   });
 
@@ -971,6 +1062,9 @@ class VibeAuditActionChip extends StatelessWidget {
 
   /// Indique si l'audit porte sur un `VibeChatScope` restreint.
   final bool scoped;
+
+  /// Indique si l'audit est restreint à l'onglet et au scroll actuellement visibles.
+  final bool visibleOnly;
 
   /// Callback déclenché au clic.
   final VoidCallback onPressed;
@@ -984,6 +1078,8 @@ class VibeAuditActionChip extends StatelessWidget {
     return Tooltip(
       message: scoped
           ? 'Auditer ce périmètre (marges coupées, débordements, calculs @calculs manquants, contrastes) et préparer un plan de correction'
+          : visibleOnly
+          ? 'Auditer uniquement la zone visible (onglet actif et position de scroll courante) et préparer un plan de correction'
           : 'Auditer la page active (marges coupées, débordements, calculs @calculs manquants, contrastes) et préparer un plan de correction',
       child: Semantics(
         button: true,
@@ -1021,6 +1117,14 @@ class VibeAuditActionChip extends StatelessWidget {
                           ? foreground
                           : foreground.withValues(alpha: 0.5),
                     ),
+                  ),
+                  const SizedBox(width: 3),
+                  Icon(
+                    Icons.play_arrow_rounded,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
                   ),
                 ],
               ),

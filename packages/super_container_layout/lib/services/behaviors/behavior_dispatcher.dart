@@ -6,8 +6,12 @@
 /// - la garde d'état désactivé / invisible ([ComponentBehaviorStateScope]) sans
 ///   enregistrer de dépendance d'arbre pendant les callbacks ;
 /// - la protection anti-réentrance par `(componentId, event)` ;
-/// - l'évaluation optionnelle des validateurs ([BehaviorValidatorEvaluator]).
+/// - la temporisation anti-rebond par comportement ([ComponentBehavior.debounceMs]) ;
+/// - l'évaluation optionnelle des validateurs ([BehaviorValidatorEvaluator]) et
+///   le repli sur [ComponentBehavior.elseAction].
 library;
+
+import 'dart:async' show Timer, unawaited;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -19,6 +23,7 @@ import '../diagnostics/debug_entry.dart';
 import '../inspection/vibe_debug_capture.dart';
 import '../repositories/json_list_scope.dart';
 import '../repositories/json_repository_scope.dart';
+import '../repositories/json_repository_store.dart';
 import 'behavior_validator_evaluator.dart';
 
 /// Point d'entrée unique pour déclencher les comportements impératifs d'un composant.
@@ -28,6 +33,16 @@ abstract final class BehaviorDispatcher {
   static const int maxReentrancyDepth = 8;
 
   static final Map<String, int> _activeDepth = <String, int>{};
+  static final Map<String, Timer> _debounceTimers = <String, Timer>{};
+
+  /// Annule tous les minuteurs de temporisation (`debounceMs`) en attente.
+  @visibleForTesting
+  static void cancelPendingDebounces() {
+    for (final timer in _debounceTimers.values) {
+      timer.cancel();
+    }
+    _debounceTimers.clear();
+  }
 
   /// Indique si [behaviors] contient au moins un comportement impératif activé
   /// associé à [event].
@@ -90,23 +105,11 @@ abstract final class BehaviorDispatcher {
     if (matching.isEmpty) return false;
 
     final guardKey = '$componentId::${event.name}';
-    final depth = _activeDepth[guardKey] ?? 0;
-    if (depth >= maxReentrancyDepth) {
-      final msg =
-          'BehaviorDispatcher: profondeur maximale ($maxReentrancyDepth) atteinte '
-          'pour "$guardKey" ; déclenchement ignoré.';
-      debugPrint(msg);
-      VibeDebugCapture.recordTypedError(
-        message: msg,
-        category: DebugErrorCategory.system,
-        severity: DebugSeverity.warning,
-        componentId: componentId,
-        source: 'BehaviorDispatcher.reentrancy',
-      );
+    if (!_canEnterReentrancy(guardKey, componentId: componentId)) {
       return false;
     }
 
-    _activeDepth[guardKey] = depth + 1;
+    _activeDepth[guardKey] = (_activeDepth[guardKey] ?? 0) + 1;
     var executed = false;
     try {
       final appearance = context
@@ -131,61 +134,241 @@ abstract final class BehaviorDispatcher {
 
       for (final behavior in matching) {
         if (!context.mounted) break;
-        final validator = behavior.validator;
-        if (validator != null) {
-          final valid = await BehaviorValidatorEvaluator.evaluate(
-            validator,
-            validationContext,
+        final delayMs = behavior.debounceMs;
+        if (delayMs != null && delayMs > 0) {
+          _scheduleDebouncedBehavior(
+            context,
+            behavior: behavior,
+            componentId: componentId,
+            componentType: componentType,
+            event: event,
+            data: data,
+            ignoreEditMode: ignoreEditMode,
+            delayMs: delayMs,
           );
-          if (!valid || !context.mounted) continue;
+          continue;
         }
+
+        final targetAction = await _resolveActionForBehavior(
+          context,
+          behavior: behavior,
+          validationContext: validationContext,
+        );
+        if (targetAction == null || !context.mounted) continue;
+
         final execData = BehaviorExecutionData(
           componentId: componentId,
           componentType: componentType,
           event: event,
           data: data,
         );
-        try {
-          await behavior.action.executeWithData(context, execData);
-          executed = true;
-        } catch (error, stack) {
-          final isJs = behavior.action is RunJavaScriptAction;
-          final category = isJs
-              ? DebugErrorCategory.javascript
-              : DebugErrorCategory.system;
-          final message = error is FormatException
-              ? error.message
-              : 'Échec de l’action ${behavior.action.type} sur $componentId : $error';
-          if (store != null) {
-            store.reportBindingError(
-              message,
-              category: category,
-              severity: DebugSeverity.critical,
-              componentId: componentId,
-              source: 'BehaviorDispatcher.${behavior.action.type}',
-              stackTrace: stack,
-            );
-          } else {
-            VibeDebugCapture.recordTypedError(
-              message: message,
-              category: category,
-              severity: DebugSeverity.critical,
-              stackTrace: stack,
-              componentId: componentId,
-              source: 'BehaviorDispatcher.${behavior.action.type}',
-            );
-          }
-          rethrow;
-        }
+        await _executeAction(
+          context,
+          targetAction: targetAction,
+          componentId: componentId,
+          execData: execData,
+          store: store,
+        );
+        executed = true;
       }
     } finally {
-      final remaining = (_activeDepth[guardKey] ?? 1) - 1;
-      if (remaining <= 0) {
-        _activeDepth.remove(guardKey);
-      } else {
-        _activeDepth[guardKey] = remaining;
-      }
+      _leaveReentrancy(guardKey);
     }
     return executed;
+  }
+
+  static void _scheduleDebouncedBehavior(
+    BuildContext context, {
+    required ComponentBehavior behavior,
+    required String componentId,
+    required String componentType,
+    required BehaviorEvent event,
+    required Map<String, Object?> data,
+    required bool ignoreEditMode,
+    required int delayMs,
+  }) {
+    final debounceKey = '$componentId::${behavior.id}::${event.name}';
+    _debounceTimers.remove(debounceKey)?.cancel();
+    late final Timer timer;
+    timer = Timer(Duration(milliseconds: delayMs), () {
+      if (identical(_debounceTimers[debounceKey], timer)) {
+        _debounceTimers.remove(debounceKey);
+      }
+      unawaited(
+        _runDebouncedBehavior(
+          context,
+          behavior: behavior,
+          componentId: componentId,
+          componentType: componentType,
+          event: event,
+          data: data,
+          ignoreEditMode: ignoreEditMode,
+        ),
+      );
+    });
+    _debounceTimers[debounceKey] = timer;
+  }
+
+  static Future<void> _runDebouncedBehavior(
+    BuildContext context, {
+    required ComponentBehavior behavior,
+    required String componentId,
+    required String componentType,
+    required BehaviorEvent event,
+    required Map<String, Object?> data,
+    required bool ignoreEditMode,
+  }) async {
+    if (!context.mounted || !event.isImperative) return;
+    if (!ignoreEditMode &&
+        (StyleEditScope.maybeReadOf(context)?.value ?? false)) {
+      return;
+    }
+
+    final stateScope = ComponentBehaviorStateScope.maybeReadOf(context);
+    if (stateScope != null && (stateScope.disabled || stateScope.invisible)) {
+      return;
+    }
+
+    final guardKey = '$componentId::${event.name}';
+    if (!_canEnterReentrancy(guardKey, componentId: componentId)) {
+      return;
+    }
+
+    _activeDepth[guardKey] = (_activeDepth[guardKey] ?? 0) + 1;
+    try {
+      final appearance = context
+          .getInheritedWidgetOfExactType<AppearanceScope>()
+          ?.notifier
+          ?.value;
+      final store = context
+          .getInheritedWidgetOfExactType<JsonRepositoryScope>()
+          ?.store;
+      final listScope = context.getInheritedWidgetOfExactType<JsonListScope>();
+
+      final validationContext = BehaviorValidationContext(
+        context: context,
+        componentId: componentId,
+        componentType: componentType,
+        event: event,
+        executionData: data,
+        appearance: appearance,
+        repositoryStore: store,
+        listScope: listScope,
+      );
+
+      final targetAction = await _resolveActionForBehavior(
+        context,
+        behavior: behavior,
+        validationContext: validationContext,
+      );
+      if (targetAction == null || !context.mounted) return;
+
+      final execData = BehaviorExecutionData(
+        componentId: componentId,
+        componentType: componentType,
+        event: event,
+        data: data,
+      );
+      try {
+        await _executeAction(
+          context,
+          targetAction: targetAction,
+          componentId: componentId,
+          execData: execData,
+          store: store,
+        );
+      } catch (_) {
+        // L'erreur a déjà été consignée dans _executeAction ; ne pas propager
+        // dans la zone asynchrone du minuteur.
+      }
+    } finally {
+      _leaveReentrancy(guardKey);
+    }
+  }
+
+  static Future<BehaviorAction?> _resolveActionForBehavior(
+    BuildContext context, {
+    required ComponentBehavior behavior,
+    required BehaviorValidationContext validationContext,
+  }) async {
+    final validator = behavior.validator;
+    if (validator == null) return behavior.action;
+    final valid = await BehaviorValidatorEvaluator.evaluate(
+      validator,
+      validationContext,
+    );
+    if (!context.mounted) return null;
+    return valid ? behavior.action : behavior.elseAction;
+  }
+
+  static Future<void> _executeAction(
+    BuildContext context, {
+    required BehaviorAction targetAction,
+    required String componentId,
+    required BehaviorExecutionData execData,
+    required JsonRepositoryStore? store,
+  }) async {
+    try {
+      await targetAction.executeWithData(context, execData);
+    } catch (error, stack) {
+      final isJs = targetAction is RunJavaScriptAction;
+      final category = isJs
+          ? DebugErrorCategory.javascript
+          : DebugErrorCategory.system;
+      final message = error is FormatException
+          ? error.message
+          : 'Échec de l’action ${targetAction.type} sur $componentId : $error';
+      if (store != null) {
+        store.reportBindingError(
+          message,
+          category: category,
+          severity: DebugSeverity.critical,
+          componentId: componentId,
+          source: 'BehaviorDispatcher.${targetAction.type}',
+          stackTrace: stack,
+        );
+      } else {
+        VibeDebugCapture.recordTypedError(
+          message: message,
+          category: category,
+          severity: DebugSeverity.critical,
+          stackTrace: stack,
+          componentId: componentId,
+          source: 'BehaviorDispatcher.${targetAction.type}',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  static bool _canEnterReentrancy(
+    String guardKey, {
+    required String componentId,
+  }) {
+    final depth = _activeDepth[guardKey] ?? 0;
+    if (depth >= maxReentrancyDepth) {
+      final msg =
+          'BehaviorDispatcher: profondeur maximale ($maxReentrancyDepth) atteinte '
+          'pour "$guardKey" ; déclenchement ignoré.';
+      debugPrint(msg);
+      VibeDebugCapture.recordTypedError(
+        message: msg,
+        category: DebugErrorCategory.system,
+        severity: DebugSeverity.warning,
+        componentId: componentId,
+        source: 'BehaviorDispatcher.reentrancy',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  static void _leaveReentrancy(String guardKey) {
+    final remaining = (_activeDepth[guardKey] ?? 1) - 1;
+    if (remaining <= 0) {
+      _activeDepth.remove(guardKey);
+    } else {
+      _activeDepth[guardKey] = remaining;
+    }
   }
 }

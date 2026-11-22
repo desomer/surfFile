@@ -138,6 +138,20 @@ Depuis la racine du projet, executer dans PowerShell :
 Le script compile en Release puis cree
 `build\installer\SurfFile-0.3.2+5-windows-x64-setup.exe`. La version provient de
 `pubspec.yaml` ; modifier ce champ avant de publier une nouvelle version.
+Le parametre `-App` permet egalement de generer les installateurs des
+applications compagnons (`SuperDesigner`, `SuperSpecForge` ou `All`) :
+
+```powershell
+.\installer\build-installer.ps1 -App SuperDesigner
+.\installer\build-installer.ps1 -App SuperSpecForge
+.\installer\build-installer.ps1 -App All
+```
+
+Les installateurs generes sont places dans `build\installer\` :
+- `SurfFile-<version>-windows-x64-setup.exe`
+- `SuperDesigner-<version>-windows-x64-setup.exe`
+- `SuperSpecForge-<version>-windows-x64-setup.exe`
+
 Les parametres `-FlutterPath`, `-IsccPath` et `-RuntimePath` permettent de
 preciser les outils et le dossier des DLL CRT Visual C++ redistribuables x64.
 Le script recherche sinon Flutter dans le PATH ou dans le dossier voisin

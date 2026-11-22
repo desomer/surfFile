@@ -321,14 +321,15 @@ class VibeToolTrace {
       case 'preview_navigation_or_selection':
         final nav = data['navigatedTo'];
         final sel = data['selection'];
-        if (nav is String && sel is Map) {
-          return 'route $nav + sélection ${sel['arrayTemplate']}';
-        }
-        if (nav is String) return 'route $nav';
-        if (sel is Map) {
-          return '${sel['repositoryId']}:${sel['arrayTemplate']} → ${sel['selection'] ?? 'aucune'}';
-        }
-        return 'aperçu mis à jour';
+        final tabSel = data['tabSelection'];
+        final parts = <String>[
+          if (nav is String) 'route $nav',
+          if (sel is Map)
+            '${sel['repositoryId']}:${sel['arrayTemplate']} → ${sel['selection'] ?? 'aucune'}',
+          if (tabSel is Map)
+            '${tabSel['tabComponentId']}[${tabSel['activeIndex']}] "${tabSel['label'] ?? tabSel['tabId']}"',
+        ];
+        return parts.isNotEmpty ? parts.join(' + ') : 'aperçu mis à jour';
       case 'select_editor_element':
         if (data['cleared'] == true) return 'sélection effacée';
         final cid = data['componentId'] ?? '';
@@ -345,7 +346,11 @@ class VibeToolTrace {
       case 'audit_active_page':
         final count = data['findingCount'] ?? 0;
         final errors = data['errorCount'] ?? 0;
-        return '$count anomalie(s) détectée(s) ($errors critique(s))';
+        final swept = data['sweptTabCount'];
+        final sweptLabel = swept is num && swept > 0
+            ? ', ${swept.toInt()} onglet(s) balayé(s)'
+            : '';
+        return '$count anomalie(s) détectée(s) ($errors critique(s)$sweptLabel)';
     }
     return 'OK';
   }
@@ -769,7 +774,8 @@ class VibeAppToolRegistry {
           name: 'preview_navigation_or_selection',
           description:
               'Action d’aperçu non destructive (annulée en cas de rollback) : navigue vers une page du '
-              'catalogue ou sélectionne une ligne d’un tableau JSON pour alimenter et inspecter une vue Détail.',
+              'catalogue, sélectionne une ligne d’un tableau JSON pour alimenter une vue Détail, ou bascule '
+              'sur un onglet précis d’un SuperTab monté (hors scope restreint) pour mesurer/capturer son contenu.',
           parametersSchema: <String, Object?>{
             'type': 'object',
             'properties': <String, Object?>{
@@ -801,6 +807,21 @@ class VibeAppToolRegistry {
               'clearSelection': <String, Object?>{
                 'type': 'boolean',
                 'description': 'Si true, efface la sélection du tableau.',
+              },
+              'tabComponentId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant d’un composant SuperTab monté dont on veut activer un onglet en aperçu.',
+              },
+              'tabIndex': <String, Object?>{
+                'type': 'integer',
+                'description':
+                    'Indice 0-based de l’onglet à activer dans tabComponentId.',
+              },
+              'tabId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Identifiant technique (slotId) ou libellé exact de l’onglet à activer dans tabComponentId.',
               },
             },
           },
@@ -989,9 +1010,10 @@ class VibeAppToolRegistry {
         VibeToolDeclaration(
           name: 'audit_active_page',
           description:
-              'Exécute un audit déterministe complet sur la page active (ou le scope actif) : '
-              'marges/paddings coupés, dépassements parent/viewport, textes tronqués, erreurs runtime, '
-              'attributs calculés @calculs manquants ou non déclarés et contrastes WCAG AA.',
+              'Exécute un audit déterministe complet sur la page active (ou le scope actif), en balayant '
+              'automatiquement tous les onglets des SuperTab de la page lorsqu’aucun scope n’est actif : '
+              'marges/paddings coupés, dépassements parent/viewport, budget de largeur en ligne (zoneAxes: row), '
+              'textes tronqués, erreurs runtime, attributs calculés @calculs manquants et contrastes WCAG AA.',
           parametersSchema: <String, Object?>{
             'type': 'object',
             'properties': <String, Object?>{},
@@ -1053,7 +1075,7 @@ class VibeAppToolRegistry {
       '(`get_debug_entries`, `inspect_bindings_and_diagnostics`, `get_component_geometry`), '
       '(3) tu dois câbler ou diagnostiquer une API / recherche / CRUD (`get_datasources_and_providers`), '
       '(4) tu dois vérifier des couleurs/contrastes (`get_theme_and_contrast`), connaître les extensions/polices ou la sélection (`get_registry_and_selection`), '
-      '(5) un tableau de repository est tronqué ("truncatedArrays" -> `query_repository_data`) ou une vue Détail/page secondaire doit être prévisualisée (`preview_navigation_or_selection`), '
+      '(5) un tableau de repository est tronqué ("truncatedArrays" -> `query_repository_data`) ou une vue Détail, une page secondaire ou un onglet masqué d’un SuperTab (hors scope) doit être prévisualisé (`preview_navigation_or_selection`), '
       '(6) l’utilisateur demande où se trouve un élément ou de le sélectionner/pointer dans l’éditeur (`select_editor_element`), '
       '(7) l’utilisateur demande de consulter, inférer, valider, associer, modifier ou supprimer le JSON Schema d’un repository existant (`manage_repository_json_schema`), '
       '(8) l’utilisateur demande de générer, extraire ou ajouter un DESIGN.md / Design System dans la liste des choix possibles à partir de pièces jointes ou d’instructions (`register_design_system` — essaie toujours de récupérer aussi le logo via `logo` et de l’inclure dans le DESIGN.md), '

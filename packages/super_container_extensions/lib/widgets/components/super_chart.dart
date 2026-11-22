@@ -17,6 +17,7 @@
 /// valeur l'élément actuellement sélectionné.
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -203,9 +204,7 @@ class _SuperChartState extends State<SuperChart> {
     _observedConfig = config;
     final nextCalcPaths = _calculatedRelativePaths(config);
     final calcPathsChanged = !_setEquals(_lastCalculatedPaths, nextCalcPaths);
-    if (_source == source &&
-        identical(_store, store) &&
-        !calcPathsChanged) {
+    if (_source == source && identical(_store, store) && !calcPathsChanged) {
       return;
     }
     _lastCalculatedPaths = nextCalcPaths;
@@ -283,10 +282,7 @@ class _SuperChartState extends State<SuperChart> {
   static bool _setEquals(Set<String> a, Set<String> b) =>
       a.length == b.length && a.containsAll(b);
 
-  static bool _mapJsonEquals(
-    Map<String, Object?> a,
-    Map<String, Object?> b,
-  ) {
+  static bool _mapJsonEquals(Map<String, Object?> a, Map<String, Object?> b) {
     if (a.length != b.length) return false;
     for (final entry in a.entries) {
       if (!b.containsKey(entry.key) ||
@@ -423,7 +419,41 @@ class _SuperChartState extends State<SuperChart> {
     if (source == null || index < 0) return;
     final maxCount = _items?.length ?? 0;
     if (index >= maxCount) return;
+    final previousIndex = _selection?.indexFor(source.parents);
+    final label = _labelForRow(index, config);
     _selection?.select(source.parents, index);
+    if (StyleEditScope.maybeReadOf(context)?.value ?? false) return;
+    unawaited(
+      BehaviorDispatcher.dispatch(
+        context,
+        componentId: widget.id,
+        componentType: 'chart',
+        event: BehaviorEvent.onSelected,
+        behaviors: widget.behaviours,
+        data: <String, Object?>{
+          'index': index,
+          'previousIndex': ?previousIndex,
+          'label': ?label,
+        },
+      ),
+    );
+  }
+
+  String? _labelForRow(int index, SuperChartConfig config) {
+    final rawItems = _items;
+    if (rawItems == null || index < 0 || index >= rawItems.length) {
+      return null;
+    }
+    final item = rawItems[index];
+    if (config.labelPath.trim().isNotEmpty) {
+      final rawLabel = _readRelative(index, item, config.labelPath);
+      if (rawLabel != null && rawLabel.toString().trim().isNotEmpty) {
+        return rawLabel.toString().trim();
+      }
+    } else if (item is Map && item['label'] != null) {
+      return item['label'].toString();
+    }
+    return '${index + 1}';
   }
 
   Future<void> _edit(ValueNotifier<SuperChartConfig> configuration) async {
@@ -557,7 +587,9 @@ class _SuperChartState extends State<SuperChart> {
 
   Color _seriesColor(SuperChartConfig config, int seriesIndex) {
     final explicit = config.series[seriesIndex].color;
-    if (explicit != null) return resolveThemeColor(explicit, Theme.of(context).colorScheme);
+    if (explicit != null) {
+      return resolveThemeColor(explicit, Theme.of(context).colorScheme);
+    }
     return defaultChartSeriesPalette[seriesIndex %
         defaultChartSeriesPalette.length];
   }

@@ -16,6 +16,8 @@ import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
+import '../../../services/inspection/vibe_app_inspector.dart'
+    show VibeVisibleTabState, VibeVisibleViewportSnapshot;
 import '../../../theme/appearance.dart';
 import '../slots/editor_context_menu.dart';
 
@@ -479,5 +481,223 @@ abstract final class VibeScopeHelpers {
         }
       }
     }
+  }
+
+  static String? _slotItemId(Object? item) {
+    if (item is String && item.trim().isNotEmpty) return item.trim();
+    if (item is Map && item['id'] is String) {
+      final id = (item['id'] as String).trim();
+      if (id.isNotEmpty) return id;
+    }
+    return null;
+  }
+
+  static List<Object?> _preserveProtectedSlotsInList(
+    List<String> existingSlots,
+    List<Object?> nextRawSlots,
+    Set<String> protectedIds, {
+    required ComponentConfig? existingContainer,
+  }) {
+    if (existingSlots.isEmpty || protectedIds.isEmpty) return nextRawSlots;
+    final nextIds = <String>{for (final raw in nextRawSlots) ?_slotItemId(raw)};
+    final missingProtected = <String>[
+      for (final s in existingSlots)
+        if (protectedIds.contains(s) && !nextIds.contains(s)) s,
+    ];
+    if (missingProtected.isEmpty) return nextRawSlots;
+
+    Object wrapRestoredSlot(String id) {
+      String? slotType;
+      String? slotLabel;
+      switch (existingContainer) {
+        case final SuperLayoutConfig c:
+          slotType = c.slotTypes[id];
+          slotLabel = c.slotLabels[id];
+        case final SuperTabConfig c:
+          slotType = c.slotTypes[id];
+          slotLabel = c.slotLabels[id];
+        case final NativeComponentConfig c:
+          slotType = c.slotTypes[id];
+          slotLabel = c.slotLabels[id];
+        case final ScaffoldPageConfig c:
+          slotType = c.native.slotTypes[id];
+          slotLabel = c.native.slotLabels[id];
+        default:
+          break;
+      }
+      if (slotType == null && slotLabel == null) return id;
+      return <String, Object?>{
+        'id': id,
+        'type': ?slotType,
+        'label': ?slotLabel,
+      };
+    }
+
+    final sharedSurviving = <String>[
+      for (final s in existingSlots)
+        if (nextIds.contains(s)) s,
+    ];
+    if (sharedSurviving.isEmpty) {
+      return <Object?>[
+        for (final s in missingProtected) wrapRestoredSlot(s),
+        ...nextRawSlots,
+      ];
+    }
+
+    final beforeAnchor = <String, List<String>>{};
+    final afterAll = <String>[];
+    var anchorIdx = 0;
+    for (final s in existingSlots) {
+      if (anchorIdx < sharedSurviving.length &&
+          s == sharedSurviving[anchorIdx]) {
+        anchorIdx++;
+        continue;
+      }
+      if (!protectedIds.contains(s) || nextIds.contains(s)) continue;
+      if (anchorIdx < sharedSurviving.length) {
+        beforeAnchor
+            .putIfAbsent(sharedSurviving[anchorIdx], () => <String>[])
+            .add(s);
+      } else {
+        afterAll.add(s);
+      }
+    }
+
+    final merged = <Object?>[];
+    for (final raw in nextRawSlots) {
+      final id = _slotItemId(raw);
+      if (id != null) {
+        final preceding = beforeAnchor.remove(id);
+        if (preceding != null) {
+          for (final p in preceding) {
+            merged.add(wrapRestoredSlot(p));
+          }
+        }
+      }
+      merged.add(raw);
+    }
+    for (final s in afterAll) {
+      merged.add(wrapRestoredSlot(s));
+    }
+    return merged;
+  }
+
+  /// Protège les onglets inactifs, les composants hors du scroll courant et `pageCatalog`
+  /// lorsqu'un patch Vibe est généré en mode « Uniquement visible ».
+  static Map<String, dynamic> filterPatchToVisibleViewport(
+    Appearance current,
+    Map<String, dynamic> patch,
+    VibeVisibleViewportSnapshot snapshot,
+  ) {
+    final isWrapped = patch['data'] is Map<String, dynamic>;
+    final payload = isWrapped
+        ? Map<String, dynamic>.of(patch['data'] as Map<String, dynamic>)
+        : Map<String, dynamic>.of(patch);
+    payload.remove('pageCatalog');
+
+    if (!snapshot.hasMeasuredViewport) {
+      return isWrapped ? <String, dynamic>{...patch, 'data': payload} : payload;
+    }
+
+    final protectedIds = snapshot.protectedOffscreenComponentIds;
+    final tabById = <String, VibeVisibleTabState>{
+      for (final t in snapshot.activeTabs) t.tabComponentId: t,
+    };
+
+    bool isProtectedStyleOrBehavior(String key) {
+      if (protectedIds.contains(key)) return true;
+      if (key.endsWith(':item')) {
+        final base = key.substring(0, key.length - 5);
+        if (protectedIds.contains(base)) return true;
+      }
+      return false;
+    }
+
+    if (payload['components'] case final Map rawComponents) {
+      final nextComponents = <String, Object?>{};
+      for (final entry in rawComponents.entries) {
+        final cid = entry.key;
+        final cval = entry.value;
+        if (cid is! String) continue;
+        if (protectedIds.contains(cid)) continue;
+        if (snapshot.ancestorComponentIds.contains(cid) && cval == null) {
+          continue;
+        }
+
+        if (cval is Map) {
+          final copy = Map<String, Object?>.from(cval);
+          final existingComp = current.components[cid];
+          final activeTabState = tabById[cid];
+          if (activeTabState != null && existingComp is SuperTabConfig) {
+            copy.remove('initialIndex');
+          }
+
+          final placementsKey = copy.containsKey('placements')
+              ? 'placements'
+              : (copy.containsKey('zones') ? 'zones' : null);
+          if (placementsKey != null && copy[placementsKey] is Map) {
+            final rawPl = Map<String, Object?>.from(copy[placementsKey] as Map);
+            if (activeTabState != null && existingComp is SuperTabConfig) {
+              rawPl[SuperTabConfig.tabsZone] = List<String>.of(
+                existingComp.tabSlotIds,
+              );
+              for (final inactiveZone in activeTabState.inactiveZones) {
+                rawPl[inactiveZone] = List<String>.of(
+                  existingComp.slotsOf(inactiveZone),
+                );
+              }
+            }
+            if (existingComp != null) {
+              for (final zEntry in rawPl.entries.toList()) {
+                if (activeTabState != null &&
+                    (zEntry.key == SuperTabConfig.tabsZone ||
+                        activeTabState.inactiveZones.contains(zEntry.key))) {
+                  continue;
+                }
+                if (zEntry.value is List) {
+                  final oldZoneSlots = childrenOfComponent(
+                    existingComp,
+                    onlyZoneId: zEntry.key,
+                  ).toList(growable: false);
+                  rawPl[zEntry.key] = _preserveProtectedSlotsInList(
+                    oldZoneSlots,
+                    zEntry.value as List<Object?>,
+                    protectedIds,
+                    existingContainer: existingComp,
+                  );
+                }
+              }
+            }
+            copy[placementsKey] = rawPl;
+          }
+          nextComponents[cid] = copy;
+        } else {
+          nextComponents[cid] = cval;
+        }
+      }
+      if (nextComponents.isEmpty) {
+        payload.remove('components');
+      } else {
+        payload['components'] = nextComponents;
+      }
+    }
+
+    for (final section in const <String>['styles', 'behaviors', 'usages']) {
+      if (payload[section] case final Map rawMap) {
+        final filtered = <String, Object?>{
+          for (final entry in rawMap.entries)
+            if (entry.key is String &&
+                !isProtectedStyleOrBehavior(entry.key as String))
+              entry.key as String: entry.value,
+        };
+        if (filtered.isEmpty) {
+          payload.remove(section);
+        } else {
+          payload[section] = filtered;
+        }
+      }
+    }
+
+    return isWrapped ? <String, dynamic>{...patch, 'data': payload} : payload;
   }
 }

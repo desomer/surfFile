@@ -8,6 +8,38 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
+class _CaptureChartSelectionAction extends BehaviorAction {
+  const _CaptureChartSelectionAction(this.captured);
+
+  final List<BehaviorExecutionData> captured;
+
+  @override
+  String get type => 'captureChartSelection';
+
+  @override
+  String get label => 'Capture';
+
+  @override
+  String get description => 'Capture';
+
+  @override
+  IconData get icon => Icons.bolt;
+
+  @override
+  Future<void> execute(BuildContext context) async {}
+
+  @override
+  Future<void> executeWithData(
+    BuildContext context,
+    BehaviorExecutionData data,
+  ) async {
+    captured.add(data);
+  }
+
+  @override
+  Map<String, Object?> toJson() => {'type': type};
+}
+
 void main() {
   late Directory directory;
   late JsonRepositoryStore store;
@@ -357,7 +389,10 @@ void main() {
         expect(find.byType(LineChart), findsOneWidget);
 
         // Clic droit au centre du LineChart (qui enregistre ses propres recognizers)
-        await tester.tap(find.byType(LineChart), buttons: kSecondaryMouseButton);
+        await tester.tap(
+          find.byType(LineChart),
+          buttons: kSecondaryMouseButton,
+        );
         await tester.pumpAndSettle();
 
         final menuEntry = find.byKey(const ValueKey('style-menu-Graphique'));
@@ -498,9 +533,7 @@ void main() {
             home: Scaffold(
               body: Column(
                 children: [
-                  Builder(
-                    builder: registry.registry['Chart']!.previewBuilder!,
-                  ),
+                  Builder(builder: registry.registry['Chart']!.previewBuilder!),
                   Expanded(
                     child: ChartAddForm(
                       draft: draft,
@@ -519,27 +552,28 @@ void main() {
     testWidgets(
       'SuperChart evaluates calculated @valuePath/@labelPath and SuperChartEditor suggests row calculations',
       (tester) async {
-        final calcRepo = RepositoryImpl(
-          id: 'chart_calc_repo',
-          json: {
-            'ventes': [
-              {'mois': 'Jan', 'ca': 100, 'cout': 40},
-              {'mois': 'Fév', 'ca': 150, 'cout': 50},
-            ],
-          },
-        )
-          ..addCalculatedAttribute(
-            'marge',
-            scope: 'ventes[?]',
-            (ctx) =>
-                (ctx.sync.getNum('ca', defaultValue: 0)!) -
-                (ctx.sync.getNum('cout', defaultValue: 0)!),
-          )
-          ..addCalculatedAttribute(
-            'libelle',
-            scope: 'ventes[?]',
-            (ctx) => '${ctx.sync.getString('mois')}-calc',
-          );
+        final calcRepo =
+            RepositoryImpl(
+                id: 'chart_calc_repo',
+                json: {
+                  'ventes': [
+                    {'mois': 'Jan', 'ca': 100, 'cout': 40},
+                    {'mois': 'Fév', 'ca': 150, 'cout': 50},
+                  ],
+                },
+              )
+              ..addCalculatedAttribute(
+                'marge',
+                scope: 'ventes[?]',
+                (ctx) =>
+                    (ctx.sync.getNum('ca', defaultValue: 0)!) -
+                    (ctx.sync.getNum('cout', defaultValue: 0)!),
+              )
+              ..addCalculatedAttribute(
+                'libelle',
+                scope: 'ventes[?]',
+                (ctx) => '${ctx.sync.getString('mois')}-calc',
+              );
         store.registerRepository(calcRepo);
 
         SuperChartConfig? saved;
@@ -608,7 +642,9 @@ void main() {
           await tester.tap(find.text('Configurer'));
         });
         expect(
-          find.byKey(const ValueKey('super-chart-label-calculated-suggestions')),
+          find.byKey(
+            const ValueKey('super-chart-label-calculated-suggestions'),
+          ),
           findsOneWidget,
         );
         expect(
@@ -628,6 +664,83 @@ void main() {
         expect(saved, isNotNull);
         expect(saved!.series.first.valuePath, '@marge');
         expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'SuperChart dispatches BehaviorEvent.onSelected with index, previousIndex, and label on category tap',
+      (tester) async {
+        final received = <BehaviorExecutionData>[];
+        final behavior = ComponentBehavior(
+          id: 'b-chart-select',
+          event: BehaviorEvent.onSelected,
+          action: _CaptureChartSelectionAction(received),
+        );
+        final appearance = ValueNotifier(
+          Appearance().withAddedBehavior('sales-chart', behavior),
+        );
+        final editMode = ValueNotifier(false);
+        addTearDown(appearance.dispose);
+        addTearDown(editMode.dispose);
+
+        await real(tester, () async {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: AppearanceScope(
+                controller: appearance,
+                child: StyleEditScope(
+                  controller: editMode,
+                  child: Scaffold(
+                    body: JsonRepositoryScope(
+                      store: store,
+                      child: SuperChart(
+                        id: 'sales-chart',
+                        config: SuperChartConfig(
+                          binding: JsonTextBinding(
+                            repositoryId: repository,
+                            path: 'ventes',
+                          ),
+                          kind: SuperChartKind.bar,
+                          labelPath: 'mois',
+                          enableSelection: true,
+                          series: const [
+                            SuperChartSeries(
+                              id: 'ca',
+                              label: 'CA',
+                              valuePath: 'ca',
+                            ),
+                          ],
+                        ),
+                        behaviours: [behavior],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        });
+
+        await real(tester, () async {
+          await tester.tap(
+            find.byKey(const ValueKey('super-chart-item-sales-chart-1')),
+          );
+        });
+        expect(received, hasLength(1));
+        expect(received.single.componentId, 'sales-chart');
+        expect(received.single.componentType, 'chart');
+        expect(received.single.data['index'], 1);
+        expect(received.single.data['label'], 'Février');
+
+        await real(tester, () async {
+          await tester.tap(
+            find.byKey(const ValueKey('super-chart-item-sales-chart-2')),
+          );
+        });
+        expect(received, hasLength(2));
+        expect(received.last.data['index'], 2);
+        expect(received.last.data['previousIndex'], 1);
+        expect(received.last.data['label'], 'Mars');
       },
     );
   });

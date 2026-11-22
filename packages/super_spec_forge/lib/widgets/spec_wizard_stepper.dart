@@ -13,6 +13,7 @@ class SpecWizardStepper extends StatelessWidget {
     required this.project,
     required this.onSelectStage,
     this.onBack,
+    this.onSwitchToUxWizard,
     this.disabled = false,
     super.key,
   });
@@ -25,6 +26,9 @@ class SpecWizardStepper extends StatelessWidget {
 
   /// Callback optionnel de retour vers le menu Spec.
   final VoidCallback? onBack;
+
+  /// Callback optionnel de bascule rapide vers le Wizard UX & Parcours.
+  final VoidCallback? onSwitchToUxWizard;
 
   /// Désactive le changement d'étape pendant une génération IA si souhaité.
   final bool disabled;
@@ -70,6 +74,15 @@ class SpecWizardStepper extends StatelessWidget {
                     ? null
                     : () => onSelectStage(SpecForgeStage.values[i]),
               ),
+            ),
+          ],
+          if (onSwitchToUxWizard != null) ...[
+            const SizedBox(width: 12),
+            TextButton.icon(
+              key: const ValueKey('spec-switch-to-ux-wizard-btn'),
+              onPressed: disabled ? null : onSwitchToUxWizard,
+              icon: const Icon(Icons.design_services_outlined, size: 16),
+              label: const Text('Wizard UX'),
             ),
           ],
         ],

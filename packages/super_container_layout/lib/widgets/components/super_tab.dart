@@ -23,6 +23,7 @@ import '../../models/super_tab_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
+import '../../services/inspection/vibe_mounted_slot_index.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -164,12 +165,17 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   SuperTabConfig? _lastObservedConfig;
   int? _pendingAutoTabIndex;
   bool _autoTabSwitchScheduled = false;
+  final Object _vibeTabToken = Object();
+  int? _inspectionOverrideIndex;
 
   @override
   void initState() {
     super.initState();
     _lastValidIndex = _selectedIndex;
-    VibeWorkHighlightController.instance.addListener(_onVibeWorkHighlightChanged);
+    _registerMountedTab();
+    VibeWorkHighlightController.instance.addListener(
+      _onVibeWorkHighlightChanged,
+    );
   }
 
   @override
@@ -181,13 +187,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       _lastValidIndex = _selectedIndex;
       _lastObservedConfig = null;
       _pendingAutoTabIndex = null;
+      _inspectionOverrideIndex = null;
       _disposeStaticBinding();
       _disposeDynamicBinding();
+      _registerMountedTab();
     }
   }
 
   @override
   void dispose() {
+    VibeMountedSlotIndex.instance.unregisterTab(_vibeTabToken);
     VibeDebugCapture.clearComponentDiagnostics(widget.id);
     VibeWorkHighlightController.instance.removeListener(
       _onVibeWorkHighlightChanged,
@@ -199,6 +208,154 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     _staticBindingText.dispose();
     _localConfig.dispose();
     super.dispose();
+  }
+
+  void _registerMountedTab() {
+    VibeMountedSlotIndex.instance.registerTab(
+      VibeMountedTabEntry(
+        token: _vibeTabToken,
+        componentId: widget.id,
+        tabContext: () => mounted ? context : null,
+        readSnapshot: _readMountedTabSnapshot,
+        selectTab: _selectTabForInspection,
+        restoreTab: _restoreTabAfterInspection,
+      ),
+    );
+  }
+
+  static String _extractDynamicTabLabel(
+    Object? rawItem,
+    String baseLabel,
+    int index,
+  ) {
+    if (rawItem is Map) {
+      for (final key in const <String>[
+        'label',
+        'title',
+        'name',
+        'nom',
+        'titre',
+      ]) {
+        final value = rawItem[key];
+        if (value is String && value.trim().isNotEmpty) {
+          return value.trim();
+        }
+      }
+    }
+    return '$baseLabel #${index + 1}';
+  }
+
+  VibeMountedTabSnapshot? _readMountedTabSnapshot() {
+    if (!mounted) return null;
+    final registry = context
+        .getInheritedWidgetOfExactType<SuperAppScope>()
+        ?.app
+        .registry;
+    final config =
+        _previewConfig ??
+        registry
+            ?.tabController(widget.id, fallback: widget._initialConfig)
+            .value ??
+        _localConfig.value;
+    if (config.mode == SuperTabMode.dynamic) {
+      final items = _dynamicItems;
+      final count = items?.length ?? 0;
+      final templateId = config.tabSlotIds.firstOrNull ?? 'tab';
+      final baseLabel = config.tabSlotIds.isNotEmpty
+          ? _resolveTabLabel(config.tabSlotIds.first, config, registry)
+          : 'Onglet';
+      final selectedFromStore = _dynamicSource == null
+          ? null
+          : _dynamicSelection?.indexFor(_dynamicSource!.parents);
+      final active = count == 0
+          ? 0
+          : (_inspectionOverrideIndex ?? selectedFromStore ?? _selectedIndex)
+                .clamp(0, count - 1);
+      return VibeMountedTabSnapshot(
+        componentId: widget.id,
+        isDynamic: true,
+        activeIndex: active,
+        tabs: [
+          for (var i = 0; i < count; i++)
+            VibeMountedTabItem(
+              index: i,
+              tabId: '$templateId[$i]',
+              label: _extractDynamicTabLabel(items![i], baseLabel, i),
+              contentZone: SuperTabConfig.dynamicContentZone,
+            ),
+        ],
+      );
+    }
+    final tabIds = config.tabSlotIds;
+    final active = tabIds.isEmpty
+        ? 0
+        : (_inspectionOverrideIndex ?? _selectedIndex).clamp(
+            0,
+            tabIds.length - 1,
+          );
+    return VibeMountedTabSnapshot(
+      componentId: widget.id,
+      isDynamic: false,
+      activeIndex: active,
+      tabs: [
+        for (final (i, tabId) in tabIds.indexed)
+          VibeMountedTabItem(
+            index: i,
+            tabId: tabId,
+            label: _resolveTabLabel(tabId, config, registry),
+            contentZone: SuperTabConfig.contentZoneFor(tabId),
+          ),
+      ],
+    );
+  }
+
+  void _replaceTabControllerImmediate(int length, int targetIndex) {
+    final safeLength = length < 0 ? 0 : length;
+    final clamped = safeLength == 0 ? 0 : targetIndex.clamp(0, safeLength - 1);
+    _tabController?.removeListener(_handleTabControllerTick);
+    _tabController?.dispose();
+    _tabController = safeLength > 0
+        ? (TabController(
+            length: safeLength,
+            initialIndex: clamped,
+            animationDuration: Duration.zero,
+            vsync: this,
+          )..addListener(_handleTabControllerTick))
+        : null;
+  }
+
+  bool _selectTabForInspection(int targetIndex) {
+    final snap = _readMountedTabSnapshot();
+    if (snap == null || targetIndex < 0 || targetIndex >= snap.tabCount) {
+      return false;
+    }
+    setState(() {
+      _inspectionOverrideIndex = targetIndex;
+      _selectedIndex = targetIndex;
+      _lastValidIndex = targetIndex;
+      _replaceTabControllerImmediate(snap.tabCount, targetIndex);
+    });
+    return true;
+  }
+
+  void _restoreTabAfterInspection(int initialIndex) {
+    if (!mounted) return;
+    final snap = _readMountedTabSnapshot();
+    final maxCount = snap?.tabCount ?? (_tabController?.length ?? 0);
+    final clamped = maxCount > 0
+        ? initialIndex.clamp(0, maxCount - 1)
+        : (initialIndex < 0 ? 0 : initialIndex);
+    setState(() {
+      _inspectionOverrideIndex = null;
+      _selectedIndex = clamped;
+      _lastValidIndex = clamped;
+      _tabController?.removeListener(_handleTabControllerTick);
+      _tabController?.dispose();
+      _tabController = maxCount > 0
+          ? (TabController(length: maxCount, initialIndex: clamped, vsync: this)
+              ..addListener(_handleTabControllerTick))
+          : null;
+    });
   }
 
   bool _subtreeContainsTarget(
@@ -304,6 +461,10 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   void _onVibeWorkHighlightChanged() {
     if (!mounted) return;
     final highlights = VibeWorkHighlightController.instance;
+    if (highlights.suppressAutoTabSwitch) {
+      _lastHandledHighlightRevision = highlights.focusRevision;
+      return;
+    }
     if (highlights.focusRevision == _lastHandledHighlightRevision) return;
     _lastHandledHighlightRevision = highlights.focusRevision;
     final targets = highlights.orderedActiveTargets;
@@ -753,7 +914,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           (store == null && _dynamicSource?.unselected == true
               ? 'Service de repositories indisponible.'
               : null);
-      if (_dynamicItems != null || _dynamicLoading || _dynamicError != nextError) {
+      if (_dynamicItems != null ||
+          _dynamicLoading ||
+          _dynamicError != nextError) {
         setState(() {
           _dynamicItems = null;
           _dynamicLoading = false;
@@ -1095,7 +1258,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     return switch (config.indicatorKind) {
       SuperTabIndicatorKind.none => const BoxDecoration(),
       SuperTabIndicatorKind.box => BoxDecoration(
-        color: config.indicatorColor.resolveTheme(context) ?? scheme.primaryContainer,
+        color:
+            config.indicatorColor.resolveTheme(context) ??
+            scheme.primaryContainer,
         borderRadius: BorderRadius.circular(config.indicatorRadius),
       ),
       SuperTabIndicatorKind.underline =>
@@ -1268,7 +1433,8 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             ),
       ]),
       builder: (context, _) {
-        final effectiveIndex = _selectedIndex.clamp(0, tabSlots.length - 1);
+        final effectiveIndex = (_inspectionOverrideIndex ?? _selectedIndex)
+            .clamp(0, tabSlots.length - 1);
         _ensureTabController(tabSlots.length, effectiveIndex);
         final tabController = _tabController!;
 
@@ -1323,6 +1489,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                 }
                 final previousIndex = _selectedIndex;
                 setState(() {
+                  _inspectionOverrideIndex = null;
                   _selectedIndex = index;
                   _lastValidIndex = index;
                 });
@@ -1351,10 +1518,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                     componentType: 'action',
                     event: BehaviorEvent.onSelected,
                     behaviors: action?.behaviours,
-                    data: {
-                      'index': index,
-                      'previousIndex': previousIndex,
-                    },
+                    data: {'index': index, 'previousIndex': previousIndex},
                   ),
                 );
                 executeSuperActionClick(
@@ -1571,10 +1735,11 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     final selectedFromStore = _dynamicSource == null
         ? null
         : _dynamicSelection?.indexFor(_dynamicSource!.parents);
-    final effectiveIndex = (selectedFromStore ?? _selectedIndex).clamp(
-      0,
-      count - 1,
-    );
+    final effectiveIndex =
+        (_inspectionOverrideIndex ?? selectedFromStore ?? _selectedIndex).clamp(
+          0,
+          count - 1,
+        );
     _ensureTabController(count, effectiveIndex);
     final tabController = _tabController!;
 
@@ -1648,6 +1813,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         onTap: (index) {
           final previousIndex = _selectedIndex;
           setState(() {
+            _inspectionOverrideIndex = null;
             _selectedIndex = index;
             _lastValidIndex = index;
           });
@@ -1788,7 +1954,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
         final highlights = VibeWorkHighlightController.instance;
         int? autoSwitchIndex;
-        if (highlights.focusRevision != _lastHandledHighlightRevision) {
+        if (highlights.suppressAutoTabSwitch) {
+          _lastHandledHighlightRevision = highlights.focusRevision;
+        } else if (highlights.focusRevision != _lastHandledHighlightRevision) {
           _lastHandledHighlightRevision = highlights.focusRevision;
           if (highlights.orderedActiveTargets.isNotEmpty) {
             autoSwitchIndex = _resolveTabIndexForTargets(

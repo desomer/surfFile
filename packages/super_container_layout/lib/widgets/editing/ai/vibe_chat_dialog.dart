@@ -128,6 +128,8 @@ class VibeChatDialog extends StatefulWidget {
     this.onPlanModeChanged,
     this.initialReproduceExactMode = false,
     this.onReproduceExactModeChanged,
+    this.initialVisibleOnlyMode = false,
+    this.onVisibleOnlyModeChanged,
     this.scope,
     this.onScopeChanged,
     this.pickAttachments,
@@ -281,6 +283,12 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Callback optionnel notifié lorsque le mode « Reproduire à l'identique » change.
   final ValueChanged<bool>? onReproduceExactModeChanged;
+
+  /// Active par défaut le mode « Uniquement visible » (verrouillant l'onglet actif et le scroll courant).
+  final bool initialVisibleOnlyMode;
+
+  /// Callback optionnel notifié lorsque le mode « Uniquement visible » change.
+  final ValueChanged<bool>? onVisibleOnlyModeChanged;
 
   /// Périmètre restreint optionnel limitant les modifications de l'IA à un sous-arbre.
   final VibeChatScope? scope;
@@ -873,6 +881,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       : widget.initialQuestioningLevel;
   late bool _planMode = widget.initialPlanMode;
   late bool _reproduceExactMode = widget.initialReproduceExactMode;
+  late bool _visibleOnlyMode = widget.initialVisibleOnlyMode;
   late VibeQuestioningLevel? _questioningLevelBeforeExactMode =
       widget.initialReproduceExactMode ? widget.initialQuestioningLevel : null;
   int? _activePlanMessageIndex;
@@ -1226,6 +1235,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         notifyCallback: false,
       );
     }
+    if (oldWidget.initialVisibleOnlyMode != widget.initialVisibleOnlyMode) {
+      _setVisibleOnlyMode(
+        widget.initialVisibleOnlyMode,
+        notifyCallback: false,
+      );
+    }
     if (widget.expanded != null &&
         widget.expanded != oldWidget.expanded &&
         widget.expanded != _expanded) {
@@ -1318,6 +1333,26 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       widget.onReproduceExactModeChanged?.call(enabled);
     }
   }
+
+  void _setVisibleOnlyMode(bool enabled, {bool notifyCallback = true}) {
+    if (_visibleOnlyMode == enabled || _isBusy) return;
+    setState(() => _visibleOnlyMode = enabled);
+    if (notifyCallback) {
+      widget.onVisibleOnlyModeChanged?.call(enabled);
+    }
+  }
+
+  VibeVisibleViewportSnapshot _captureVisibleViewportSnapshot(
+    Appearance appearance,
+  ) => VibeAppInspector(
+    readAppearance: () => appearance,
+    registry: widget.registry,
+    repositoryStore: _resolveRepositoryStore(),
+    pageRouting: widget.pageRouting ?? SuperApp.maybeOf(context)?.pageRouting,
+    readScope: () => _scope,
+    readVisibleOnly: () => _visibleOnlyMode,
+    fallbackContext: () => mounted ? context : null,
+  ).captureVisibleViewportSnapshot(appearance);
 
   void _publishStreamSnapshot(VibeStreamSnapshot snapshot) {
     if (!_frameSnapshotScheduled) {
@@ -1483,9 +1518,16 @@ class _VibeChatDialogState extends State<VibeChatDialog>
   ) {
     final base = session.checkpointAppearance;
     final activeScope = _scope;
-    final effectivePatch = activeScope == null
+    var effectivePatch = activeScope == null
         ? rawPatch
         : VibeChatDialog.filterPatchToScope(base, rawPatch, activeScope);
+    if (_visibleOnlyMode && session.visibleViewportSnapshot != null) {
+      effectivePatch = VibeScopeHelpers.filterPatchToVisibleViewport(
+        base,
+        effectivePatch,
+        session.visibleViewportSnapshot!,
+      );
+    }
     if (!_hasPatchChanges(effectivePatch)) return;
 
     try {
@@ -1651,6 +1693,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       // Ignore les erreurs éventuelles de la file live.
     }
     _rollbackLivePreview(session);
+    session.previewTracker.restoreTabs();
     session.previewTracker.restoreSelections(session.repoTransaction?.store);
     try {
       await session.repoTransaction?.rollback();
@@ -1899,9 +1942,11 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     });
 
     final activeScope = _scope;
-    final displayUserText = activeScope == null
-        ? 'Audit & correction de la page active.'
-        : 'Audit & correction de ${activeScope.displayLabel}.';
+    final displayUserText = activeScope != null
+        ? 'Audit & correction de ${activeScope.displayLabel}.'
+        : _visibleOnlyMode
+        ? 'Audit & correction de la zone visible (onglet et scroll courants).'
+        : 'Audit & correction de la page active.';
 
     await _runGenerationTurn(
       displayUserText: displayUserText,
@@ -1913,9 +1958,11 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     if (_isBusy) return;
     _cancelSpeechDictation();
     final activeScope = _scope;
-    final displayUserText = activeScope == null
-        ? 'Configurer les valeurs réactives de la page.'
-        : 'Configurer les valeurs réactives de ${activeScope.displayLabel}.';
+    final displayUserText = activeScope != null
+        ? 'Configurer les valeurs réactives de ${activeScope.displayLabel}.'
+        : _visibleOnlyMode
+        ? 'Configurer les valeurs réactives de la zone visible.'
+        : 'Configurer les valeurs réactives de la page.';
     await _runGenerationTurn(
       displayUserText: displayUserText,
       promptOverride: VibePromptBuilder.reactiveValuesDirective,
@@ -2503,8 +2550,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       repoTransaction: resolvedRepositoryStore == null
           ? null
           : VibeRepositoryTurnTransaction(resolvedRepositoryStore),
+      visibleViewportSnapshot: _visibleOnlyMode
+          ? _captureVisibleViewportSnapshot(baseAppearance)
+          : null,
     );
 
+    VibeWorkHighlightController.instance.suppressAutoTabSwitch =
+        _visibleOnlyMode;
     _lastFailedResponse = null;
     _activeTurnSession = session;
     _clearCompletionAlert();
@@ -2542,8 +2594,10 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           repositoryStore: resolvedRepositoryStore,
           pageRouting: resolvedPageRouting,
           readScope: () => _scope,
+          readVisibleOnly: () => _visibleOnlyMode,
           fallbackContext: () => mounted ? context : null,
           turnStartMarker: session.turnStartMarker,
+          allowEndOfFrameInWidgetTests: true,
         );
         final auditReport = await VibePageAuditService.collect(auditInspector);
         final auditSummaryPrompt =
@@ -2567,6 +2621,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           mountedSlotSummaries: VibeMountedSlotIndex.instance
               .mountedSlotSummaries(),
           repositoriesContext: repositoriesContext,
+          visibleOnlyMode: _visibleOnlyMode,
+          visibleViewportContext: session.visibleViewportSnapshot
+              ?.toPromptContext(),
         );
       } else {
         turnPrompt = _buildTurnPrompt(
@@ -2594,7 +2651,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             }
           }
           _pulseAppearanceDiff(session, appearance);
-          if (_scope == null) {
+          if (_scope == null && !_visibleOnlyMode) {
             _maybeNavigateToNewLivePage(session, appearance);
           }
           debugPrint(
@@ -2802,6 +2859,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         detail: cause,
       );
     } finally {
+      VibeWorkHighlightController.instance.suppressAutoTabSwitch = false;
       VibeWorkHighlightController.instance.clearStreamingTargets();
       _activeTurnSession = null;
       _pendingSnapshot = null;
@@ -3217,8 +3275,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       repoTransaction: resolvedRepositoryStore == null
           ? null
           : VibeRepositoryTurnTransaction(resolvedRepositoryStore),
+      visibleViewportSnapshot: _visibleOnlyMode
+          ? _captureVisibleViewportSnapshot(baseAppearance)
+          : null,
     );
 
+    VibeWorkHighlightController.instance.suppressAutoTabSwitch =
+        _visibleOnlyMode;
     _lastFailedResponse = null;
     _activeTurnSession = session;
     setState(() => _sending = true);
@@ -3254,6 +3317,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         mountedSlotSummaries: VibeMountedSlotIndex.instance
             .mountedSlotSummaries(),
         repositoriesContext: repositoriesContext,
+        visibleOnlyMode: _visibleOnlyMode,
+        visibleViewportContext: session.visibleViewportSnapshot
+            ?.toPromptContext(),
       );
 
       final turnPrompt = buildLotPrompt(
@@ -3284,7 +3350,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           }
         }
         _pulseAppearanceDiff(session, appearance);
-        if (_scope == null) {
+        if (_scope == null && !_visibleOnlyMode) {
           _maybeNavigateToNewLivePage(session, appearance);
         }
       } else {
@@ -3317,6 +3383,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       await _rollbackTurnSession(session);
       return _describeErrorCause(error);
     } finally {
+      VibeWorkHighlightController.instance.suppressAutoTabSwitch = false;
       VibeWorkHighlightController.instance.clearStreamingTargets();
       _activeTurnSession = null;
       _pendingSnapshot = null;
@@ -3388,9 +3455,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           if (!before.usages.containsKey(entry.key)) entry.key: entry.value,
       },
     );
-    session.rawInitialAppearance = slice.mergeInto(session.rawInitialAppearance);
+    session.rawInitialAppearance = slice.mergeInto(
+      session.rawInitialAppearance,
+    );
     session.baseAppearance = slice.mergeInto(session.baseAppearance);
-    session.checkpointAppearance = slice.mergeInto(session.checkpointAppearance);
+    session.checkpointAppearance = slice.mergeInto(
+      session.checkpointAppearance,
+    );
     session.lastPreviewAppearance = slice.mergeInto(
       session.lastPreviewAppearance,
     );
@@ -3406,6 +3477,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       pageRouting: session.pageRouting,
       ensurePageLoaded: (pageId) => _ensureSessionPageLoaded(session, pageId),
       readScope: () => _scope,
+      readVisibleOnly: () => _visibleOnlyMode,
       onSelectScope: (nextScope) {
         if (mounted) {
           setState(() => _scope = nextScope);
@@ -3420,6 +3492,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       repoTransaction: session.repoTransaction,
       customDesignSystemStore: _resolveCustomDesignSystemStore(),
       fontManager: mounted ? DynamicFontScope.readOf(context) : null,
+      allowEndOfFrameInWidgetTests: true,
       onRegisterDesignSystem: (preset, {required select}) =>
           _registerDesignSystemFromTool(
             preset,
@@ -3450,8 +3523,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           'Lecture du registre et de la sélection…',
         'preview_navigation_or_selection' =>
           'Mise à jour de la route / sélection d’aperçu…',
-        'select_editor_element' =>
-          'Sélection de l’élément dans l’éditeur…',
+        'select_editor_element' => 'Sélection de l’élément dans l’éditeur…',
         'register_design_system' =>
           'Génération et ajout du Design System DESIGN.md…',
         'audit_active_page' => 'Audit complet de la page active…',
@@ -3489,13 +3561,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     required bool useStreaming,
     List<DebugEntry> detectedErrors = const <DebugEntry>[],
   }) async {
-    const maxVerifyToolRounds = 2;
+    const maxVerifyToolRounds = 5;
     try {
       session.checkpointAppearance = candidateAppearance;
       session.hasCheckpoint = true;
       _setPreviewAppearance(candidateAppearance);
       _pulseAppearanceDiff(session, candidateAppearance);
-      if (_scope == null) {
+      if (_scope == null && !_visibleOnlyMode) {
         _maybeNavigateToNewLivePage(session, candidateAppearance);
       }
 
@@ -3535,6 +3607,10 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         'Appelle si besoin `get_component_geometry`, `get_debug_entries` ou `capture_element_screenshot` pour vérifier les dimensions réelles et détecter tout débordement, zone de taille nulle ou chevauchement.',
         "- **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants [somme(width) + espacements] reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`).",
         "- **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte.",
+        if (_visibleOnlyMode)
+          "- **Mode Uniquement visible** : Reste strictement sur l'onglet actif et la position de scroll courante ; vérifie uniquement les éléments actuellement visibles à l'écran sans changer d'onglet ni faire défiler la vue."
+        else if (_scope == null)
+          "- **Balayage des onglets (hors scope)** : Si la page contient un `SuperTab` et que plusieurs onglets sont concernés, balaie chaque onglet via `preview_navigation_or_selection` (`tabComponentId` + `tabIndex` ou `tabId`) avant d'appeler `get_component_geometry` ou `capture_element_screenshot` dessus.",
         '- Si le rendu est correct et sans erreur, renvoie {"message":"Rendu vérifié.","vibe":null}.',
         '- Si un ajustement est nécessaire, renvoie uniquement un petit patch delta correctif dans "vibe" (avec "verifyRender": false).',
       ].join('\n');
@@ -3748,13 +3824,20 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       final rewritten = session.repoTransaction != null
           ? session.repoTransaction!.rewriteVibePatchBindings(patch)
           : patch;
-      final effectivePatch = activeScope == null
+      var effectivePatch = activeScope == null
           ? rewritten
           : VibeChatDialog.filterPatchToScope(
               candidateAppearance,
               rewritten,
               activeScope,
             );
+      if (_visibleOnlyMode && session.visibleViewportSnapshot != null) {
+        effectivePatch = VibeScopeHelpers.filterPatchToVisibleViewport(
+          candidateAppearance,
+          effectivePatch,
+          session.visibleViewportSnapshot!,
+        );
+      }
       if (!_hasPatchChanges(effectivePatch)) {
         return (correctedAppearance: null, summaryMessage: summary);
       }
@@ -3777,6 +3860,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         '[Vibe IA] Passe de vérification post-rendu ignorée après erreur : $error',
       );
       return (correctedAppearance: null, summaryMessage: null);
+    } finally {
+      session.previewTracker.restoreTabs();
     }
   }
 
@@ -4349,6 +4434,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
                   rewrittenPatch,
                   activeScope,
                 );
+          if (_visibleOnlyMode && session.visibleViewportSnapshot != null) {
+            effectivePatch = VibeScopeHelpers.filterPatchToVisibleViewport(
+              current,
+              effectivePatch,
+              session.visibleViewportSnapshot!,
+            );
+          }
           if (activeScope != null && !_hasPatchChanges(effectivePatch)) {
             final parents = VibeChatDialog.parentIdsOfScope(
               current,
@@ -5004,6 +5096,15 @@ $response
       repositoriesContext: repositoriesContext,
       planMode: _planMode,
       reproduceExactMode: _reproduceExactMode,
+      visibleOnlyMode: _visibleOnlyMode,
+      visibleViewportContext:
+          (_activeTurnSession?.visibleViewportSnapshot ??
+                  (_visibleOnlyMode
+                      ? _captureVisibleViewportSnapshot(
+                          appearanceOverride ?? _currentAppearance,
+                        )
+                      : null))
+              ?.toPromptContext(),
     );
   }
 
@@ -5206,9 +5307,12 @@ $response
                         ),
                       ),
                     ),
-                    if (completionEvent != null && headerBadgePalette != null) ...[
+                    if (completionEvent != null &&
+                        headerBadgePalette != null) ...[
                       Container(
-                        key: const ValueKey('vibe-chat-header-completion-badge'),
+                        key: const ValueKey(
+                          'vibe-chat-header-completion-badge',
+                        ),
                         padding: const EdgeInsets.symmetric(
                           horizontal: 7,
                           vertical: 2,
@@ -5255,7 +5359,11 @@ $response
                         size: 18,
                       ),
                     ),
-                    Icon(Icons.drag_indicator, color: scheme.onPrimary, size: 18),
+                    Icon(
+                      Icons.drag_indicator,
+                      color: scheme.onPrimary,
+                      size: 18,
+                    ),
                     if (widget.onExpandedChanged != null)
                       IconButton(
                         key: const ValueKey('vibe-chat-toggle-expand'),
@@ -5264,7 +5372,9 @@ $response
                             : 'Agrandir au centre',
                         onPressed: () => _setExpanded(!_expanded),
                         icon: Icon(
-                          _expanded ? Icons.close_fullscreen : Icons.open_in_full,
+                          _expanded
+                              ? Icons.close_fullscreen
+                              : Icons.open_in_full,
                           color: scheme.onPrimary,
                           size: 18,
                         ),
@@ -5273,7 +5383,11 @@ $response
                       key: const ValueKey('vibe-chat-close'),
                       tooltip: 'Fermer le chat',
                       onPressed: widget.onClose,
-                      icon: Icon(Icons.close, color: scheme.onPrimary, size: 20),
+                      icon: Icon(
+                        Icons.close,
+                        color: scheme.onPrimary,
+                        size: 20,
+                      ),
                     ),
                   ],
                 ),
@@ -5285,250 +5399,309 @@ $response
                 onDismiss: _clearCompletionAlert,
               ),
             Expanded(
-            child: LayoutBuilder(
-              builder: (context, middleConstraints) => Column(
-                children: [
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: middleConstraints.maxHeight,
-                    ),
-                    child: SingleChildScrollView(
-                      primary: false,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
-                            child: Text(
-                              'Votre demande et la configuration de l’écran sont envoyées à Gemini.',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
+              child: LayoutBuilder(
+                builder: (context, middleConstraints) => Column(
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: middleConstraints.maxHeight,
+                      ),
+                      child: SingleChildScrollView(
+                        primary: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+                              child: Text(
+                                'Votre demande et la configuration de l’écran sont envoyées à Gemini.',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    for (final (index, mode)
-                                        in VibeAiSpeedMode.values.indexed) ...[
-                                      if (index > 0) const SizedBox(width: 6),
-                                      VibeSpeedModeChip(
-                                        mode: mode,
-                                        icon: _iconForSpeedMode(mode),
-                                        selected: _speedMode == mode,
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      for (final (index, mode)
+                                          in VibeAiSpeedMode
+                                              .values
+                                              .indexed) ...[
+                                        if (index > 0) const SizedBox(width: 6),
+                                        VibeSpeedModeChip(
+                                          mode: mode,
+                                          icon: _iconForSpeedMode(mode),
+                                          selected: _speedMode == mode,
+                                          enabled: !_isBusy,
+                                          onSelected: () => _setSpeedMode(mode),
+                                        ),
+                                      ],
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                        ),
+                                        child: SizedBox(
+                                          height: 18,
+                                          child: VerticalDivider(
+                                            key: const ValueKey(
+                                              'vibe-chat-speed-plan-divider',
+                                            ),
+                                            width: 1,
+                                            thickness: 1,
+                                            color: scheme.outlineVariant,
+                                          ),
+                                        ),
+                                      ),
+                                      VibePlanModeChip(
+                                        selected: _planMode,
                                         enabled: !_isBusy,
-                                        onSelected: () => _setSpeedMode(mode),
+                                        onToggle: () =>
+                                            _setPlanMode(!_planMode),
                                       ),
                                     ],
-                                    const SizedBox(width: 6),
-                                    VibePlanModeChip(
-                                      selected: _planMode,
-                                      enabled: !_isBusy,
-                                      onToggle: () => _setPlanMode(!_planMode),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    VibeReproduceExactChip(
-                                      selected: _reproduceExactMode,
-                                      enabled: !_isBusy,
-                                      onToggle: () => _setReproduceExactMode(
-                                        !_reproduceExactMode,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      VibeReproduceExactChip(
+                                        selected: _reproduceExactMode,
+                                        enabled: !_isBusy,
+                                        onToggle: () => _setReproduceExactMode(
+                                          !_reproduceExactMode,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 6),
+                                      const SizedBox(width: 6),
+                                      VibeVisibleOnlyChip(
+                                        selected: _visibleOnlyMode,
+                                        enabled: !_isBusy,
+                                        onToggle: () => _setVisibleOnlyMode(
+                                          !_visibleOnlyMode,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
                                       VibeReactiveValuesActionChip(
                                         enabled: !_isBusy,
                                         onPressed: _runReactiveValues,
                                       ),
                                       const SizedBox(width: 6),
-                                    VibeAuditActionChip(
-                                      enabled: !_isBusy,
-                                      scoped: _scope != null,
-                                      onPressed: _runPageAudit,
-                                    ),
-                                  ],
+                                      VibeAuditActionChip(
+                                        enabled: !_isBusy,
+                                        scoped: _scope != null,
+                                        visibleOnly: _visibleOnlyMode,
+                                        onPressed: _runPageAudit,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Padding(
-                            key: const ValueKey('vibe-chat-questioning-row'),
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _iconForQuestioningLevel(_questioningLevel),
-                                  size: 15,
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'Questions',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 3,
-                                      thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 6.5,
-                                      ),
-                                      overlayShape:
-                                          const RoundSliderOverlayShape(
-                                            overlayRadius: 12,
-                                          ),
-                                    ),
-                                    child: Slider(
-                                      key: const ValueKey(
-                                        'vibe-chat-questioning-slider',
-                                      ),
-                                      value: _questioningLevel.index.toDouble(),
-                                      min: 0,
-                                      max:
-                                          (VibeQuestioningLevel.values.length -
-                                                  1)
-                                              .toDouble(),
-                                      divisions:
-                                          VibeQuestioningLevel.values.length -
-                                          1,
-                                      label: _questioningLevel.label,
-                                      onChanged: _isBusy || _reproduceExactMode
-                                          ? null
-                                          : (value) => _setQuestioningLevel(
-                                              VibeQuestioningLevel.fromSliderValue(
-                                                value,
-                                              ),
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                                Tooltip(
-                                  message: _reproduceExactMode
-                                      ? 'Désactivé en mode « Reproduire à l’identique »'
-                                      : _questioningLevel.tooltip,
-                                  child: Container(
-                                    key: const ValueKey(
-                                      'vibe-chat-questioning-label',
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          _questioningLevel ==
-                                              VibeQuestioningLevel.none
-                                          ? scheme.surfaceContainerHighest
-                                          : scheme.secondaryContainer,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      _questioningLevel.label,
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w600,
-                                        color:
-                                            _questioningLevel ==
-                                                VibeQuestioningLevel.none
-                                            ? scheme.onSurfaceVariant
-                                            : scheme.onSecondaryContainer,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-                            child: _reproduceExactMode
-                                ? Container(
-                                    key: const ValueKey(
-                                      'vibe-chat-exact-design-notice',
-                                    ),
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: scheme.tertiaryContainer
-                                          .withValues(alpha: 0.65),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.straighten_outlined,
-                                          size: 15,
-                                          color: scheme.onTertiaryContainer,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            _planMode
-                                                ? 'Style fidèle à la source (Design System ignoré) • Plan & lots auto'
-                                                : 'Style fidèle à la source (Design System ignoré)',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: scheme.onTertiaryContainer,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : VibeDesignSystemBar(
-                                    selectedPreset: _selectedDesignSystem,
-                                    sending: _isBusy,
-                                    onOpenCatalog: _openDesignSystemCatalog,
-                                    onClear: _clearDesignSystem,
-                                    onRestyle: _restyleWithSelectedDesignSystem,
-                                  ),
-                          ),
-                          if (_scope case final activeScope?)
-                            Container(
-                              key: const ValueKey('vibe-chat-scope-banner'),
-                              width: double.infinity,
-                              margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: scheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                            Padding(
+                              key: const ValueKey('vibe-chat-questioning-row'),
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
                               child: Row(
                                 children: [
                                   Icon(
-                                    Icons.filter_center_focus_outlined,
-                                    size: 16,
-                                    color: scheme.onSecondaryContainer,
+                                    _iconForQuestioningLevel(_questioningLevel),
+                                    size: 15,
+                                    color: scheme.onSurfaceVariant,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Questions',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
                                   Expanded(
-                                    child: activeScope.isMultiTarget
-                                        ? Tooltip(
-                                            message: activeScope.allTargets
-                                                .map(
-                                                  (t) => '• ${t.displayLabel}',
-                                                )
-                                                .join('\n'),
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 3,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 6.5,
+                                        ),
+                                        overlayShape:
+                                            const RoundSliderOverlayShape(
+                                              overlayRadius: 12,
+                                            ),
+                                      ),
+                                      child: Slider(
+                                        key: const ValueKey(
+                                          'vibe-chat-questioning-slider',
+                                        ),
+                                        value: _questioningLevel.index
+                                            .toDouble(),
+                                        min: 0,
+                                        max:
+                                            (VibeQuestioningLevel
+                                                        .values
+                                                        .length -
+                                                    1)
+                                                .toDouble(),
+                                        divisions:
+                                            VibeQuestioningLevel.values.length -
+                                            1,
+                                        label: _questioningLevel.label,
+                                        onChanged:
+                                            _isBusy || _reproduceExactMode
+                                            ? null
+                                            : (value) => _setQuestioningLevel(
+                                                VibeQuestioningLevel.fromSliderValue(
+                                                  value,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: _reproduceExactMode
+                                        ? 'Désactivé en mode « Reproduire à l’identique »'
+                                        : _questioningLevel.tooltip,
+                                    child: Container(
+                                      key: const ValueKey(
+                                        'vibe-chat-questioning-label',
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            _questioningLevel ==
+                                                VibeQuestioningLevel.none
+                                            ? scheme.surfaceContainerHighest
+                                            : scheme.secondaryContainer,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        _questioningLevel.label,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w600,
+                                          color:
+                                              _questioningLevel ==
+                                                  VibeQuestioningLevel.none
+                                              ? scheme.onSurfaceVariant
+                                              : scheme.onSecondaryContainer,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                              child: _reproduceExactMode
+                                  ? Container(
+                                      key: const ValueKey(
+                                        'vibe-chat-exact-design-notice',
+                                      ),
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: scheme.tertiaryContainer
+                                            .withValues(alpha: 0.65),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.straighten_outlined,
+                                            size: 15,
+                                            color: scheme.onTertiaryContainer,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
                                             child: Text(
+                                              _planMode
+                                                  ? 'Style fidèle à la source (Design System ignoré) • Plan & lots auto'
+                                                  : 'Style fidèle à la source (Design System ignoré)',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    scheme.onTertiaryContainer,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : VibeDesignSystemBar(
+                                      selectedPreset: _selectedDesignSystem,
+                                      sending: _isBusy,
+                                      onOpenCatalog: _openDesignSystemCatalog,
+                                      onClear: _clearDesignSystem,
+                                      onRestyle:
+                                          _restyleWithSelectedDesignSystem,
+                                    ),
+                            ),
+                            if (_scope case final activeScope?)
+                              Container(
+                                key: const ValueKey('vibe-chat-scope-banner'),
+                                width: double.infinity,
+                                margin: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.filter_center_focus_outlined,
+                                      size: 16,
+                                      color: scheme.onSecondaryContainer,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: activeScope.isMultiTarget
+                                          ? Tooltip(
+                                              message: activeScope.allTargets
+                                                  .map(
+                                                    (t) =>
+                                                        '• ${t.displayLabel}',
+                                                  )
+                                                  .join('\n'),
+                                              child: Text(
+                                                'Scope : ${activeScope.displayLabel}',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: scheme
+                                                      .onSecondaryContainer,
+                                                ),
+                                              ),
+                                            )
+                                          : Text(
                                               'Scope : ${activeScope.displayLabel}',
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -5539,283 +5712,281 @@ $response
                                                     scheme.onSecondaryContainer,
                                               ),
                                             ),
-                                          )
-                                        : Text(
-                                            'Scope : ${activeScope.displayLabel}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color:
-                                                  scheme.onSecondaryContainer,
-                                            ),
+                                    ),
+                                    IconButton(
+                                      key: const ValueKey(
+                                        'vibe-chat-clear-scope',
+                                      ),
+                                      tooltip:
+                                          'Retirer la restriction de scope',
+                                      visualDensity: VisualDensity.compact,
+                                      iconSize: 16,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 24,
+                                            height: 24,
                                           ),
-                                  ),
-                                  IconButton(
-                                    key: const ValueKey(
-                                      'vibe-chat-clear-scope',
+                                      color: scheme.onSecondaryContainer,
+                                      onPressed: _isBusy ? null : _clearScope,
+                                      icon: const Icon(Icons.close),
                                     ),
-                                    tooltip: 'Retirer la restriction de scope',
-                                    visualDensity: VisualDensity.compact,
-                                    iconSize: 16,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 24,
-                                      height: 24,
-                                    ),
-                                    color: scheme.onSecondaryContainer,
-                                    onPressed: _isBusy ? null : _clearScope,
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        reverse: true,
+                        padding: const EdgeInsets.all(12),
+                        children: [
+                          if (_sending)
+                            VibeStreamingAssistantBubble(
+                              snapshot: _streamingSnapshot,
+                            ),
+                          for (var i = _messages.length - 1; i >= 0; i--)
+                            VibeMessageBubble(
+                              message: _messages[i],
+                              sending: _isBusy,
+                              isActivePlan: _activePlanMessageIndex == i,
+                              speechTranscriber: widget.speechTranscriber,
+                              onSpeechError: (message) {
+                                if (mounted) {
+                                  setState(() => _attachmentError = message);
+                                }
+                              },
+                              onSubmitAskUser: (answers) => _submitAskUser(
+                                i,
+                                answers,
+                                usedDefaults: false,
+                              ),
+                              onSkipAskUser: () {
+                                final askUser = _messages[i].askUser;
+                                if (askUser == null) return;
+                                _submitAskUser(
+                                  i,
+                                  askUser.defaultAnswers(),
+                                  usedDefaults: true,
+                                );
+                              },
+                              onAskMoreAskUser: _reproduceExactMode
+                                  ? null
+                                  : (answers) =>
+                                        _submitAskMoreFromCard(i, answers),
+                              onRequestMoreQuestions:
+                                  _canShowMessageMoreQuestions(i)
+                                  ? _requestMoreQuestionsFromChat
+                                  : null,
+                              onStartPlan: () => _startPlanExecution(i),
+                              onCancelPlan: () => _cancelPlan(i),
+                              onStopPlan: () => _stopPlan(i),
+                              onRetryPlanLot: () => _retryPlanLot(i),
+                              onSkipPlanLot: () => _skipPlanLot(i),
+                              onTogglePlanLot: (lotIndex) =>
+                                  _togglePlanLot(i, lotIndex),
                             ),
                         ],
                       ),
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView(
-                      reverse: true,
-                      padding: const EdgeInsets.all(12),
-                      children: [
-                        if (_sending)
-                          VibeStreamingAssistantBubble(
-                            snapshot: _streamingSnapshot,
-                          ),
-                        for (var i = _messages.length - 1; i >= 0; i--)
-                          VibeMessageBubble(
-                            message: _messages[i],
-                            sending: _isBusy,
-                            isActivePlan: _activePlanMessageIndex == i,
-                            speechTranscriber: widget.speechTranscriber,
-                            onSpeechError: (message) {
-                              if (mounted) {
-                                setState(() => _attachmentError = message);
-                              }
-                            },
-                            onSubmitAskUser: (answers) =>
-                                _submitAskUser(i, answers, usedDefaults: false),
-                            onSkipAskUser: () {
-                              final askUser = _messages[i].askUser;
-                              if (askUser == null) return;
-                              _submitAskUser(
-                                i,
-                                askUser.defaultAnswers(),
-                                usedDefaults: true,
-                              );
-                            },
-                            onAskMoreAskUser: _reproduceExactMode
-                                ? null
-                                : (answers) => _submitAskMoreFromCard(i, answers),
-                            onRequestMoreQuestions:
-                                _canShowMessageMoreQuestions(i)
-                                ? _requestMoreQuestionsFromChat
-                                : null,
-                            onStartPlan: () => _startPlanExecution(i),
-                            onCancelPlan: () => _cancelPlan(i),
-                            onStopPlan: () => _stopPlan(i),
-                            onRetryPlanLot: () => _retryPlanLot(i),
-                            onSkipPlanLot: () => _skipPlanLot(i),
-                              onTogglePlanLot: (lotIndex) =>
-                                  _togglePlanLot(i, lotIndex),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          if (_attachmentError != null)
-            Container(
-              key: const ValueKey('vibe-chat-attachment-error'),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: scheme.errorContainer,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 16,
-                    color: scheme.onErrorContainer,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _attachmentError!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onErrorContainer,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 16,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 24,
-                      height: 24,
-                    ),
-                    color: scheme.onErrorContainer,
-                    onPressed: () => setState(() => _attachmentError = null),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-          if (_pendingAttachments.isNotEmpty)
-            Container(
-              key: const ValueKey('vibe-chat-pending-attachments'),
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final (index, attachment)
-                        in _pendingAttachments.indexed)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: VibePendingAttachmentChip(
-                          index: index,
-                          attachment: attachment,
-                          onRemove: _isBusy
-                              ? null
-                              : () => _removePendingAttachment(index),
-                        ),
-                      ),
-                    ActionChip(
-                      key: const ValueKey('vibe-chat-generate-design-md'),
-                      avatar: Icon(
-                        Icons.palette_outlined,
-                        size: 16,
-                        color: scheme.primary,
-                      ),
-                      label: const Text('Générer DESIGN.md'),
-                      tooltip:
-                          'Analyser les pièces jointes pour générer et ajouter un DESIGN.md à la liste des Design Systems',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _isBusy
-                          ? null
-                          : _generateDesignSystemFromAttachments,
                     ),
                   ],
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                IconButton(
-                  key: const ValueKey('vibe-chat-attach'),
-                  tooltip: 'Joindre un fichier (image ou texte)',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _isBusy ? null : _attachFromPicker,
-                  icon: const Icon(Icons.attach_file),
+            const Divider(height: 1),
+            if (_attachmentError != null)
+              Container(
+                key: const ValueKey('vibe-chat-attachment-error'),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-                IconButton(
-                  key: const ValueKey('vibe-chat-paste-attachment'),
-                  tooltip: 'Coller une image, un fichier ou du texte du presse-papiers',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _isBusy ? null : _attachFromClipboard,
-                  icon: const Icon(Icons.content_paste),
+                color: scheme.errorContainer,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 16,
+                      color: scheme.onErrorContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _attachmentError!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onErrorContainer,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 16,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 24,
+                      ),
+                      color: scheme.onErrorContainer,
+                      onPressed: () => setState(() => _attachmentError = null),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Focus(
-                    onKeyEvent: _handleInputKeyEvent,
-                    skipTraversal: true,
-                    child: TextField(
-                      key: const ValueKey('vibe-chat-input'),
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
-                      decoration: InputDecoration(
-                        hintText: _speechState == VibeSpeechState.listening
-                            ? 'Écoute en cours… (parlez puis faites une pause)'
-                            : _speechState == VibeSpeechState.transcribing
-                            ? 'Transcription en cours…'
-                            : _reproduceExactMode
-                            ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
-                            : _planMode
-                            ? 'Décris l’écran ou les changements à planifier par lots…'
-                            : 'Décris l’écran souhaité…',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+              ),
+            if (_pendingAttachments.isNotEmpty)
+              Container(
+                key: const ValueKey('vibe-chat-pending-attachments'),
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final (index, attachment)
+                          in _pendingAttachments.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: VibePendingAttachmentChip(
+                            index: index,
+                            attachment: attachment,
+                            onRemove: _isBusy
+                                ? null
+                                : () => _removePendingAttachment(index),
+                          ),
+                        ),
+                      ActionChip(
+                        key: const ValueKey('vibe-chat-generate-design-md'),
+                        avatar: Icon(
+                          Icons.palette_outlined,
+                          size: 16,
+                          color: scheme.primary,
+                        ),
+                        label: const Text('Générer DESIGN.md'),
+                        tooltip: 'Analyser les pièces jointes pour générer et ajouter un DESIGN.md à la liste des Design Systems',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _isBusy
+                            ? null
+                            : _generateDesignSystemFromAttachments,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  IconButton(
+                    key: const ValueKey('vibe-chat-attach'),
+                    tooltip: 'Joindre un fichier (image ou texte)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _isBusy ? null : _attachFromPicker,
+                    icon: const Icon(Icons.attach_file),
+                  ),
+                  IconButton(
+                    key: const ValueKey('vibe-chat-paste-attachment'),
+                    tooltip: 'Coller une image, un fichier ou du texte du presse-papiers',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _isBusy ? null : _attachFromClipboard,
+                    icon: const Icon(Icons.content_paste),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Focus(
+                      onKeyEvent: _handleInputKeyEvent,
+                      skipTraversal: true,
+                      child: TextField(
+                        key: const ValueKey('vibe-chat-input'),
+                        controller: _input,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          hintText: _speechState == VibeSpeechState.listening
+                              ? 'Écoute en cours… (parlez puis faites une pause)'
+                              : _speechState == VibeSpeechState.transcribing
+                              ? 'Transcription en cours…'
+                              : _reproduceExactMode
+                              ? 'Décris ou joins un .md / capture à reproduire à l’identique…'
+                              : _planMode
+                              ? 'Décris l’écran ou les changements à planifier par lots…'
+                              : _visibleOnlyMode
+                              ? 'Décris les ajouts ou retouches sur l’onglet et le scroll visibles…'
+                              : 'Décris l’écran souhaité…',
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  key: const ValueKey('vibe-chat-mic'),
-                  isSelected: _speechSession != null,
-                  tooltip: _speechState == VibeSpeechState.listening
-                      ? 'Arrêter la dictée (arrêt auto après silence)'
-                      : _speechState == VibeSpeechState.transcribing
-                      ? 'Transcription vocale en cours…'
-                      : 'Dicter au microphone',
-                  visualDensity: VisualDensity.compact,
-                  style: _speechState == VibeSpeechState.listening
-                      ? IconButton.styleFrom(
-                          backgroundColor: scheme.errorContainer,
-                          foregroundColor: scheme.onErrorContainer,
-                        )
-                      : null,
-                  onPressed:
-                      _isBusy || _speechState == VibeSpeechState.transcribing
-                      ? null
-                      : _toggleSpeechDictation,
-                  icon: _speechState == VibeSpeechState.transcribing
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          _speechState == VibeSpeechState.listening
-                              ? Icons.stop_circle_outlined
-                              : Icons.mic_none_outlined,
-                        ),
-                ),
-                const SizedBox(width: 4),
-                IconButton(
-                  key: const ValueKey('vibe-chat-ask-more'),
-                  tooltip: _reproduceExactMode
-                      ? 'Questions désactivées en mode « Reproduire à l’identique »'
-                      : '+ de questions (poser 2 à 4 questions ciblées avant de générer)',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _isBusy || _reproduceExactMode
-                      ? null
-                      : _requestMoreQuestionsFromChat,
-                  icon: const Icon(Icons.add_comment_outlined),
-                ),
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  key: const ValueKey('vibe-chat-send'),
-                  tooltip: _planMode
-                      ? 'Analyser et préparer le plan par lots'
-                      : 'Générer et appliquer',
-                  onPressed: _isBusy ? null : _send,
-                  icon: _isBusy
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send),
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: const ValueKey('vibe-chat-mic'),
+                    isSelected: _speechSession != null,
+                    tooltip: _speechState == VibeSpeechState.listening
+                        ? 'Arrêter la dictée (arrêt auto après silence)'
+                        : _speechState == VibeSpeechState.transcribing
+                        ? 'Transcription vocale en cours…'
+                        : 'Dicter au microphone',
+                    visualDensity: VisualDensity.compact,
+                    style: _speechState == VibeSpeechState.listening
+                        ? IconButton.styleFrom(
+                            backgroundColor: scheme.errorContainer,
+                            foregroundColor: scheme.onErrorContainer,
+                          )
+                        : null,
+                    onPressed:
+                        _isBusy || _speechState == VibeSpeechState.transcribing
+                        ? null
+                        : _toggleSpeechDictation,
+                    icon: _speechState == VibeSpeechState.transcribing
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _speechState == VibeSpeechState.listening
+                                ? Icons.stop_circle_outlined
+                                : Icons.mic_none_outlined,
+                          ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    key: const ValueKey('vibe-chat-ask-more'),
+                    tooltip: _reproduceExactMode
+                        ? 'Questions désactivées en mode « Reproduire à l’identique »'
+                        : '+ de questions (poser 2 à 4 questions ciblées avant de générer)',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _isBusy || _reproduceExactMode
+                        ? null
+                        : _requestMoreQuestionsFromChat,
+                    icon: const Icon(Icons.add_comment_outlined),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filled(
+                    key: const ValueKey('vibe-chat-send'),
+                    tooltip: _planMode
+                        ? 'Analyser et préparer le plan par lots'
+                        : 'Générer et appliquer',
+                    onPressed: _isBusy ? null : _send,
+                    icon: _isBusy
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -5830,6 +6001,7 @@ final class _LiveTurnSession {
     required this.initialRouteLocation,
     required this.initialPageIds,
     this.repoTransaction,
+    this.visibleViewportSnapshot,
   }) : checkpointAppearance = baseAppearance,
        lastPreviewAppearance = baseAppearance;
 
@@ -5840,6 +6012,7 @@ final class _LiveTurnSession {
   final String? initialRouteLocation;
   final Set<String> initialPageIds;
   final VibeRepositoryTurnTransaction? repoTransaction;
+  final VibeVisibleViewportSnapshot? visibleViewportSnapshot;
 
   Appearance checkpointAppearance;
   bool hasCheckpoint = false;
