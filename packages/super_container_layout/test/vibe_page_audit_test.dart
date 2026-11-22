@@ -450,6 +450,22 @@ void main() {
       expect(capturedPrompts[1], contains('MODE « AUDIT & CORRECTION »'));
       expect(
         capturedPrompts[1],
+        contains("Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)"),
+      );
+      expect(
+        capturedPrompts[1],
+        contains('parentWidth - paddingLeft - paddingRight'),
+      );
+      expect(
+        capturedPrompts[1],
+        contains('Inspection visuelle par élément'),
+      );
+      expect(
+        capturedPrompts[1],
+        contains('capture_element_screenshot'),
+      );
+      expect(
+        capturedPrompts[1],
         contains('excessive_margin_or_padding_for_fixed_size'),
       );
       expect(find.text('Plan d’audit et correction'), findsOneWidget);

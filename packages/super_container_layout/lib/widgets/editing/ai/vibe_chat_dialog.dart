@@ -3471,6 +3471,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         if (mountedSummaries.isNotEmpty)
           'Slots montés actuellement à l’écran : ${jsonEncode(mountedSummaries)}.',
         'Appelle si besoin `get_component_geometry`, `get_debug_entries` ou `capture_element_screenshot` pour vérifier les dimensions réelles et détecter tout débordement, zone de taille nulle ou chevauchement.',
+        "- **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants [somme(width) + espacements] reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`).",
+        "- **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte.",
         '- Si le rendu est correct et sans erreur, renvoie {"message":"Rendu vérifié.","vibe":null}.',
         '- Si un ajustement est nécessaire, renvoie uniquement un petit patch delta correctif dans "vibe" (avec "verifyRender": false).',
       ].join('\n');

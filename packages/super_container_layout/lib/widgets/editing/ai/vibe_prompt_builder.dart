@@ -241,7 +241,7 @@ PHASE 2 — EXÉCUTION DU LOT ${lotIndex + 1}/${plan.lots.length} :
 ${plan.formatLotContextPrompt(lotIndex)}
 
 RÈGLES D’EXÉCUTION DU LOT :
-- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null).
+- Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null ; ajoute "verifyRender": true si le lot le demande ou s’il modifie une zone en ligne `zoneAxes: 'row'`, un en-tête ou une barre d’outils).
 ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DESIGN.md sélectionné) et les règles d’atomicité GenUI.\n'}- PRÉSERVATION OBLIGATOIRE DES LOTS PRÉCÉDENTS : lorsque tu modifies "placements" ou "regions" d’un conteneur existant ("root", "mainLayout", etc.), réémets INTÉGRALEMENT tous les placements existants à conserver dans l’ordre (y compris ceux déjà construits par les lots précédents et "scaffold:body"), en ajoutant uniquement les nouvelles sections de ce lot.
 - Renseigne systématiquement "slotLabels" sur le parent et "usages" pour chaque nouveau composant sans liaison.''';
 
@@ -303,12 +303,14 @@ RÈGLES OBLIGATOIRES :
 1. NE génère PAS encore de patch `"vibe"` ni `"repositories"` sur ce tour (`"vibe": null`, `"askUser": null`).
 2. Vérifie notamment :
    - Les marges/paddings qui coupent le contenu, dépassements parent/viewport, contraintes `slotSizeConstraints` trop serrées (`fitContent: false`), textes tronqués et `RenderFlex` overflows ;
+   - **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants [somme(width) + espacements] reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`) ;
+   - **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte ;
    - Les calculs manquants (`@calculs` non déclarés sur les repositories, KPIs/totaux statiques ou placeholders sans binding calculé, bindings cassés) ;
    - Les erreurs runtime, problèmes de schémas/liaisons et défauts de contraste WCAG AA.
 3. Si des anomalies sont confirmées, renvoie UNIQUEMENT un plan de correction structuré en lots cohérents :
    {"message":"Résumé clair des anomalies trouvées en français","plan":{"title":"Plan d’audit et correction","lots":[{"id":"lot-1","title":"...","description":"Liste précise des IDs de composants/styles/repositories et corrections exactes à appliquer"}]},"vibe":null}
    - Regroupe logiquement : par ex. Lot 1 = Mise en page, marges, paddings, contraintes et coupures ; Lot 2 = Repositories, attributs `@calculs` et liaisons manquantes ; Lot 3 = Contrastes WCAG AA et finitions (ou 1 seul lot s’il y a peu de corrections).
-   - Indique dans la description des lots corrigeant des marges/débordements de recontrôler le rendu après application (`"verifyRender": true`).
+   - Indique dans la description des lots corrigeant des marges/débordements, une zone en ligne (`zoneAxes: 'row'`), un en-tête ou une barre d’outils de recontrôler le rendu après application (`"verifyRender": true`).
 4. Si aucune anomalie réelle n’est détectée après vérification, renvoie :
    {"message":"Audit terminé : aucune anomalie détectée sur ce périmètre.","plan":null,"vibe":null}''';
 

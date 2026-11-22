@@ -1564,7 +1564,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 
 1. **`event`** — quand le comportement se déclenche ;
 2. **`validator`** *(optionnel)* — condition de garde évaluée avant d'exécuter l'action ;
-3. **`action`** — l'action polymorphe à lancer parmi les **11 actions** du catalogue.
+3. **`action`** — l'action polymorphe à lancer parmi les **14 actions** du catalogue.
 
 #### 1. Événement déclencheur (`event`)
 
@@ -1620,9 +1620,9 @@ Lorsqu'il est renseigné sur un comportement impératif, `validator` est évalu�
   - **Rempli** (`isFill` = vrai) : chaîne non blanche, collection non vide, et **tout nombre y compris `0`**.
   - **Booléen** : ne pas utiliser `isEmpty`/`isFill` pour tester vrai/faux — utiliser `"isTrue"` / `"isFalse"` (ou `"otherIsTrue"` / `"otherIsFalse"`, `"bindingIsTrue"` / `"bindingIsFalse"`).
 
-#### 3. Actions polymorphes (`action` — 11 types)
+#### 3. Actions polymorphes (`action` — 14 types)
 
-Toutes les **7 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`) acceptent désormais **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié.
+Toutes les **10 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`, `setStyle`, `setVisibility`, `setState`) acceptent **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié.
 
 - **`"goToPage"`** (`GoToPageAction`, impérative) : navigation vers une page ou une URL.
   - `pagePath` : chemin absolu cible (ex. `"/details"`, `"/clients"`).
@@ -1649,6 +1649,25 @@ Toutes les **7 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`
   - `binding` : `{"repositoryId": "...", "path": "clients"}` ou `"clients[?].commandes"`.
   - `selectCreated` *(optionnel, défaut `true`)* : sélectionne automatiquement la ligne créée dans le tableau.
 - **`"runJavaScript"`** (`RunJavaScriptAction`, impérative) : exécute un script JavaScript contrôlé. Exemple : `{"type":"runJavaScript","repositoryId":"commandes","code":"ctx.set('statut', 'envoyée');"}`. `repositoryId` est optionnel dans une liste et hérite alors du repository de la ligne. Le script reçoit `ctx`, `doc` et `event` ; `doc` et `event` (métadonnées et `data` de l'événement) sont en lecture seule et la seule écriture autorisée est `ctx.set(chemin, valeur)`. Les chemins `@...` restent strictement en lecture seule, les valeurs sont validées comme JSON et les écritures sont appliquées atomiquement avec validation du schéma. Les chemins avec `[?]` utilisent les indices de lignes englobantes ou la sélection courante.
+- **`"setStyle"`** (`SetStyleAction`, impérative) : modifie dynamiquement le style visuel d'un composant ou d'une surface en mémoire (sans muter `Appearance` ; suspendu en mode édition).
+  - `operation` *(optionnel, défaut `"apply"`)* : `"apply"` (fusionne le patch), `"toggle"` (applique ou retire uniquement les propriétés portées par le patch), ou `"reset"` (efface toutes les surcharges runtime de la cible).
+  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (omis ou `null` = le composant déclencheur). Dans une liste/arbre, cible en priorité l'instance de la même ligne si elle existe, sinon la cible globale.
+  - `durationMs` *(optionnel, défaut `0`)* : durée d'animation en millisecondes (`>= 0`).
+  - `style` *(requis sauf si `operation: "reset"`)* : objet `BehaviorStylePatch` contenant au moins une propriété parmi :
+    - `backgroundColor` *(alias `"color"`)*, `foregroundColor` *(alias `"textColor"`)*, `borderColor` : couleurs hex (`"#FF0000"`) ou tokens thème (`"theme:primary"`, `"theme:errorContainer"`, etc.) ;
+    - `borderWidth` (`>= 0`), `radius` (`>= 0`), `opacity` (`0.0..1.0`), `elevation` (`>= 0`) ;
+    - `fontSize` (`> 0`), `fontWeight` (`"w100"`..`"w900"`, `"bold"`, `"normal"`) ;
+    - `namedState` : nom d'un état métier existant dans `states.named` du composant ou de la surface ;
+    - `fill`, `shadow`, `neon` : effets avancés de surface au même format que `ContainerStyle`.
+- **`"setVisibility"`** (`SetVisibilityAction`, impérative) : contrôle la visibilité d'un composant en mémoire (suspendu en mode édition).
+  - `mode` : `"show"` (afficher) | `"hide"` (masquer) | `"toggle"` (basculer) | `"reset"` (restaurer la visibilité par défaut / `bindState`).
+  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (`null`/omis = soi-même).
+  - `maintainSize` *(optionnel, défaut `false`, utilisé avec `"hide"` / `"toggle"`)* : conserve l'espace dans la mise en page lorsque masqué.
+- **`"setState"`** (`SetStateAction`, impérative) : contrôle l'état interactif (`disabled` ou `readOnly`) d'un composant en mémoire (suspendu en mode édition).
+  - `state` : `"disabled"` (bloque pointeur, focus, comportements et passe les composants interactifs en état inactif) | `"readOnly"` (lecture seule).
+  - `operation` *(optionnel, défaut `"set"`)* : `"set"` (force à `value`) | `"toggle"` (bascule) | `"reset"` (restaure l'état par défaut / `bindState`).
+  - `value` *(optionnel, défaut `true`, utilisé uniquement avec `operation: "set"`)* : `true` active `disabled`/`readOnly`, `false` réactive le composant / autorise la modification.
+  - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (`null`/omis = soi-même).
 - **`"onTooltip"`** (`TooltipAction`, événement `"onHover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
   - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
   - `binding` *(optionnel)* : `{"repositoryId": "...", "path": "clients[?].description"}` ou forme courte `"clients[?].description"` avec repository hérité. La valeur doit être un texte ou `null`.
@@ -1713,6 +1732,66 @@ Toutes les **7 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`
         "action": {
           "type": "searchProvider",
           "providerId": "clients_search"
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Exemple : changer le style, la visibilité et l'état `disabled` d'autres composants
+
+```json
+{
+  "behaviors": {
+    "btn-toggle-advanced": [
+      {
+        "id": "b-toggle-panel-visibility",
+        "event": "onTap",
+        "action": {
+          "type": "setVisibility",
+          "mode": "toggle",
+          "targetComponentId": "card-advanced-options"
+        }
+      },
+      {
+        "id": "b-highlight-button",
+        "event": "onTap",
+        "action": {
+          "type": "setStyle",
+          "operation": "toggle",
+          "style": {
+            "backgroundColor": "theme:primaryContainer",
+            "foregroundColor": "theme:onPrimaryContainer",
+            "borderColor": "theme:primary",
+            "borderWidth": 2
+          }
+        }
+      }
+    ],
+    "switch-lock-form": [
+      {
+        "id": "b-disable-submit",
+        "event": "onChanged",
+        "validator": { "type": "isTrue" },
+        "action": {
+          "type": "setState",
+          "state": "disabled",
+          "operation": "set",
+          "value": true,
+          "targetComponentId": "btn-submit"
+        }
+      },
+      {
+        "id": "b-enable-submit",
+        "event": "onChanged",
+        "validator": { "type": "isFalse" },
+        "action": {
+          "type": "setState",
+          "state": "disabled",
+          "operation": "set",
+          "value": false,
+          "targetComponentId": "btn-submit"
         }
       }
     ]
@@ -1837,4 +1916,6 @@ Lorsque des informations d'exécution manquent dans le JSON déclaratif, l'IA di
 - **Quand les appeler** : questions portant sur la taille/position réelle d'un composant ou d'un slot applicatif monté hors JSON, erreurs Flutter/overflow (`get_debug_entries`), liaisons ou données vides (`inspect_bindings_and_diagnostics`, `get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne/page (`preview_navigation_or_selection`) ou inspection visuelle ciblée (`capture_element_screenshot`).
 - **Quand ne pas les appeler** : modifications purement déclaratives simples dont le JSON courant suffit déjà.
 - **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également déclenché automatiquement en mode « Reproduire à l'identique » ou dès qu'une nouvelle erreur `critical`, `error` ou `warning` — hors `userInput` — apparaît dans `debugEntries` après l'aperçu, y compris erreurs rouges IHM, JS, binding ou police indisponible) pour inspecter le rendu réel et se corriger en 1 passe avant validation finale.
+- **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), vérifie systématiquement via `get_component_geometry` que la somme des largeurs mesurées des enfants `[somme(width) + espacements]` reste strictement inférieure à la largeur disponible du parent (`parentWidth - paddingLeft - paddingRight`).
+- **Inspection visuelle par élément** : En cas de modification d'en-tête ou de barre d'outils, capture un aperçu isolé avec `capture_element_screenshot` sur le conteneur pour valider l'alignement et l'absence de débordement au bord de carte.
 

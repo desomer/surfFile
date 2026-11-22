@@ -7,7 +7,6 @@
 /// par `componentId` afin de ne reconstruire que les composants ciblés.
 library;
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/behaviours/behavior_style_patch.dart';

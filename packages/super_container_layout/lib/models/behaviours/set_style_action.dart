@@ -16,7 +16,6 @@ import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../component_behavior.dart';
-import 'behavior_style_patch.dart';
 
 /// Opération appliquée par une [SetStyleAction] sur le style runtime cible.
 enum BehaviorStyleOperation {

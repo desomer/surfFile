@@ -250,6 +250,7 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
   bool _lastEffectiveVisible = true;
   bool _lastEffectiveDisabled = false;
   bool _lastEffectiveReadOnly = false;
+  bool _hasActiveRuntimeStyle = false;
 
   List<StateBindingAction> _actions = const [];
   JsonRepositoryStore? _store;
@@ -310,8 +311,11 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
   void _detachOverride() {
     final owner = _overrideOwner;
     _overrideOwner = null;
-    if (owner?._overrides.remove(this) != null) {
-      owner!._markDirtyAndRebuild();
+    final removed = owner?._overrides.remove(this);
+    if (removed != null &&
+        owner!.mounted &&
+        (removed.behaviors != null || owner._hasActiveRuntimeStyle)) {
+      owner._markDirtyAndRebuild();
     }
   }
 
@@ -329,8 +333,15 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
         previous.styleHandling == value.styleHandling) {
       return;
     }
+    final behaviorsOrScopeChanged =
+        (previous?.behaviors != null || value.behaviors != null) &&
+        (!listEquals(previous?.behaviors, value.behaviors) ||
+            !identical(previous?.store, value.store) ||
+            !identical(previous?.scope, value.scope));
     owner._overrides[this] = value;
-    owner._markDirtyAndRebuild();
+    if (behaviorsOrScopeChanged || owner._hasActiveRuntimeStyle) {
+      owner._markDirtyAndRebuild();
+    }
   }
 
   void _markDirtyAndRebuild() {
@@ -733,6 +744,7 @@ class _ComponentStateBehaviorState extends State<ComponentStateBehavior> {
     _lastEffectiveVisible = !effectiveInvisible;
     _lastEffectiveDisabled = effectiveDisabled;
     _lastEffectiveReadOnly = effectiveReadOnly;
+    _hasActiveRuntimeStyle = localStyle != null && !localStyle.isEmpty;
 
     final isSliver = widget.sliver ?? SliverSlotScope.isSliver(context);
     Widget content = child;
