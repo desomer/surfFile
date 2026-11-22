@@ -917,13 +917,13 @@ class VibeVisibleOnlyChip extends StatelessWidget {
     final borderColor = selected ? scheme.primary : scheme.outlineVariant;
     return Tooltip(
       message:
-          'Mode Uniquement visible : reste sur l’onglet actif et la position de scroll '
+          'Mode Scope Uniquement visible : reste sur l’onglet actif et la position de scroll '
           'actuelle pour toutes les opérations du chat (ajout, modification, audit, plan)',
       child: Semantics(
         button: true,
         selected: selected,
         enabled: enabled,
-        label: 'Uniquement visible',
+        label: 'Scope visible',
         child: Material(
           color: background,
           shape: RoundedRectangleBorder(
@@ -948,7 +948,7 @@ class VibeVisibleOnlyChip extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Uniquement visible',
+                    'Scope visible',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,

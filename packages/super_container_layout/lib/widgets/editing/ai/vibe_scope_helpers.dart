@@ -4,6 +4,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:material_ui/material_ui.dart' show Axis;
+
 import '../../../models/a4_page_config.dart';
 import '../../../models/component_config.dart';
 import '../../../models/json_numbers.dart';
@@ -496,41 +498,37 @@ abstract final class VibeScopeHelpers {
     List<String> existingSlots,
     List<Object?> nextRawSlots,
     Set<String> protectedIds, {
-    required ComponentConfig? existingContainer,
+    required Map<String, String> existingSlotTypes,
   }) {
-    if (existingSlots.isEmpty || protectedIds.isEmpty) return nextRawSlots;
+    Object? normalizeItem(Object? raw) {
+      if (raw is String && raw.trim().isNotEmpty) {
+        final id = raw.trim();
+        final knownType = existingSlotTypes[id];
+        if (knownType != null && knownType != id) {
+          return <String, Object?>{'id': id, 'type': knownType};
+        }
+        return id;
+      }
+      if (raw is Map && raw['id'] is String && raw['type'] == null) {
+        final id = (raw['id'] as String).trim();
+        final knownType = existingSlotTypes[id];
+        if (knownType != null && knownType != id) {
+          return <String, Object?>{...raw, 'type': knownType};
+        }
+      }
+      return raw;
+    }
+
+    if (existingSlots.isEmpty) {
+      return [for (final item in nextRawSlots) normalizeItem(item)];
+    }
     final nextIds = <String>{for (final raw in nextRawSlots) ?_slotItemId(raw)};
     final missingProtected = <String>[
       for (final s in existingSlots)
         if (protectedIds.contains(s) && !nextIds.contains(s)) s,
     ];
-    if (missingProtected.isEmpty) return nextRawSlots;
-
-    Object wrapRestoredSlot(String id) {
-      String? slotType;
-      String? slotLabel;
-      switch (existingContainer) {
-        case final SuperLayoutConfig c:
-          slotType = c.slotTypes[id];
-          slotLabel = c.slotLabels[id];
-        case final SuperTabConfig c:
-          slotType = c.slotTypes[id];
-          slotLabel = c.slotLabels[id];
-        case final NativeComponentConfig c:
-          slotType = c.slotTypes[id];
-          slotLabel = c.slotLabels[id];
-        case final ScaffoldPageConfig c:
-          slotType = c.native.slotTypes[id];
-          slotLabel = c.native.slotLabels[id];
-        default:
-          break;
-      }
-      if (slotType == null && slotLabel == null) return id;
-      return <String, Object?>{
-        'id': id,
-        'type': ?slotType,
-        'label': ?slotLabel,
-      };
+    if (missingProtected.isEmpty) {
+      return [for (final item in nextRawSlots) normalizeItem(item)];
     }
 
     final sharedSurviving = <String>[
@@ -539,8 +537,8 @@ abstract final class VibeScopeHelpers {
     ];
     if (sharedSurviving.isEmpty) {
       return <Object?>[
-        for (final s in missingProtected) wrapRestoredSlot(s),
-        ...nextRawSlots,
+        for (final s in missingProtected) normalizeItem(s),
+        for (final raw in nextRawSlots) normalizeItem(raw),
       ];
     }
 
@@ -570,16 +568,101 @@ abstract final class VibeScopeHelpers {
         final preceding = beforeAnchor.remove(id);
         if (preceding != null) {
           for (final p in preceding) {
-            merged.add(wrapRestoredSlot(p));
+            merged.add(normalizeItem(p));
           }
         }
       }
-      merged.add(raw);
+      merged.add(normalizeItem(raw));
     }
     for (final s in afterAll) {
-      merged.add(wrapRestoredSlot(s));
+      merged.add(normalizeItem(s));
     }
     return merged;
+  }
+
+  static void _preserveContainerSlotMetadata(
+    Map<String, Object?> copy,
+    ComponentConfig existingComp,
+    Set<String> protectedIds,
+  ) {
+    final (
+      Map<String, String> oldTypes,
+      Map<String, String> oldLabels,
+      Map<String, SlotSizeConstraints> oldConstraints,
+    ) = switch (existingComp) {
+      final SuperLayoutConfig c => (
+        c.slotTypes,
+        c.slotLabels,
+        c.slotSizeConstraints,
+      ),
+      final SuperTabConfig c => (
+        c.slotTypes,
+        c.slotLabels,
+        c.slotSizeConstraints,
+      ),
+      final NativeComponentConfig c => (
+        c.slotTypes,
+        c.slotLabels,
+        c.slotSizeConstraints,
+      ),
+      final ScaffoldPageConfig c => (
+        c.native.slotTypes,
+        c.native.slotLabels,
+        c.native.slotSizeConstraints,
+      ),
+      _ => (
+        const <String, String>{},
+        const <String, String>{},
+        const <String, SlotSizeConstraints>{},
+      ),
+    };
+
+    if (oldTypes.isNotEmpty && existingComp is! SuperLayoutConfig) {
+      final nextTypes = <String, Object?>{
+        ...oldTypes,
+        if (copy['slotTypes'] case final Map m)
+          for (final e in m.entries)
+            if (e.key is String && !protectedIds.contains(e.key))
+              e.key as String: e.value,
+      };
+      copy['slotTypes'] = nextTypes;
+    }
+    if (oldLabels.isNotEmpty) {
+      final nextLabels = <String, Object?>{
+        ...oldLabels,
+        if (copy['slotLabels'] case final Map m)
+          for (final e in m.entries)
+            if (e.key is String && !protectedIds.contains(e.key))
+              e.key as String: e.value,
+      };
+      copy['slotLabels'] = nextLabels;
+    }
+    if (oldConstraints.isNotEmpty) {
+      final nextConstraints = <String, Object?>{
+        for (final e in oldConstraints.entries) e.key: e.value.toJson(),
+        if (copy['slotSizeConstraints'] case final Map m)
+          for (final e in m.entries)
+            if (e.key is String && !protectedIds.contains(e.key))
+              e.key as String: e.value,
+      };
+      copy['slotSizeConstraints'] = nextConstraints;
+    }
+    if (existingComp is SuperLayoutConfig && !copy.containsKey('zoneFlows')) {
+      if (existingComp.zoneFlows.isNotEmpty) {
+        copy['zoneFlows'] = <String, Object?>{
+          for (final e in existingComp.zoneFlows.entries)
+            e.key.name: e.value.toJson(),
+        };
+      }
+    }
+    if (existingComp is SuperLayoutConfig && !copy.containsKey('zoneAxes')) {
+      if (existingComp.zoneAxes.isNotEmpty) {
+        copy['zoneAxes'] = <String, Object?>{
+          for (final e in existingComp.zoneAxes.entries)
+            e.key.name: e.value == Axis.horizontal ? 'row' : 'column',
+        };
+      }
+    }
   }
 
   /// Protège les onglets inactifs, les composants hors du scroll courant et `pageCatalog`
@@ -625,11 +708,20 @@ abstract final class VibeScopeHelpers {
         }
 
         if (cval is Map) {
-          final copy = Map<String, Object?>.from(cval);
+          final rawCopy = Map<String, Object?>.from(cval);
           final existingComp = current.components[cid];
           final activeTabState = tabById[cid];
           if (activeTabState != null && existingComp is SuperTabConfig) {
-            copy.remove('initialIndex');
+            rawCopy.remove('initialIndex');
+            if (rawCopy.keys.every((k) => k == 'type')) {
+              continue;
+            }
+          }
+          final copy = existingComp != null
+              ? <String, Object?>{...existingComp.toJson(), ...rawCopy}
+              : rawCopy;
+          if (activeTabState != null && existingComp is SuperTabConfig) {
+            copy['initialIndex'] = existingComp.initialIndex;
           }
 
           final placementsKey = copy.containsKey('placements')
@@ -659,14 +751,22 @@ abstract final class VibeScopeHelpers {
                     existingComp,
                     onlyZoneId: zEntry.key,
                   ).toList(growable: false);
+                  final existingSlotTypes = switch (existingComp) {
+                    final SuperLayoutConfig c => c.slotTypes,
+                    final SuperTabConfig c => c.slotTypes,
+                    final NativeComponentConfig c => c.slotTypes,
+                    final ScaffoldPageConfig c => c.native.slotTypes,
+                    _ => const <String, String>{},
+                  };
                   rawPl[zEntry.key] = _preserveProtectedSlotsInList(
                     oldZoneSlots,
                     zEntry.value as List<Object?>,
                     protectedIds,
-                    existingContainer: existingComp,
+                    existingSlotTypes: existingSlotTypes,
                   );
                 }
               }
+              _preserveContainerSlotMetadata(copy, existingComp, protectedIds);
             }
             copy[placementsKey] = rawPl;
           }
