@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
+import '../models/qa/qa_forge_stage.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../models/ux/ux_forge_stage.dart';
@@ -16,6 +17,12 @@ import 'design/models_contracts_view.dart';
 import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
+import 'qa_stage_ai_chat_pane.dart';
+import 'qa_wizard_stepper.dart';
+import 'qa_workspace/qa_fixtures_editor_view.dart';
+import 'qa_workspace/qa_gherkin_editor_view.dart';
+import 'qa_workspace/qa_review_export_view.dart';
+import 'qa_workspace/qa_tdd_editor_view.dart';
 import 'spec_links_view.dart';
 import 'spec_split_handle.dart';
 import 'spec_wizard_stepper.dart';
@@ -73,6 +80,7 @@ class SpecForgeShell extends StatefulWidget {
 class _SpecForgeShellState extends State<SpecForgeShell> {
   final GlobalKey _splitRowKey = GlobalKey();
   final GlobalKey _uxSplitRowKey = GlobalKey();
+  final GlobalKey _qaSplitRowKey = GlobalKey();
   double _chatPaneFraction = 0.50;
   double _chatDragOffset = SpecSplitHandle.width / 2;
   int _selectedRailIndex = 0;
@@ -107,11 +115,15 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       case 0:
         return switch (_activeSpecLinkId) {
           'company_glossary' => 'Spec › ${SpecLinksView.glossaryLabel}',
+          'modeling_dictionary' =>
+            'Spec › ${SpecLinksView.modelingDictionaryLabel}',
           'projects' => 'Spec › ${SpecLinksView.projectsLabel}',
           'wizard' when project != null =>
             '${project.currentStage.title} — ${project.name}',
           'ux_wizard' when project != null =>
             'UX · ${project.uxSpec.currentStage.title} — ${project.name}',
+          'qa_wizard' when project != null =>
+            'BDD/TDD · ${project.qaSpec.currentStage.title} — ${project.name}',
           _ => 'Spec',
         };
       case 1:
@@ -159,7 +171,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     );
     if (!changed || !mounted) return;
     setState(() {
-      if ((_activeSpecLinkId == 'wizard' || _activeSpecLinkId == 'ux_wizard') &&
+      if ((_activeSpecLinkId == 'wizard' ||
+              _activeSpecLinkId == 'ux_wizard' ||
+              _activeSpecLinkId == 'qa_wizard') &&
           widget.controller.project == null) {
         _activeSpecLinkId = 'projects';
       }
@@ -358,19 +372,10 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         onDomainSelected: (id) => _selectDesignDetail(id, null),
       );
     }
-    if (_activeDesignLinkId == 'modeling_dictionary') {
-      return ModelDictionaryView(
-        controller: widget.controller,
-        onBack: () => _selectDesignPage(null),
-        pickAttachments: widget.pickAttachments,
-      );
-    }
     return DesignLinksView(
       key: const ValueKey('spec-forge-design-view'),
       onLinkTap: (item) {
-        if (item.id == 'domain_management' ||
-            item.id == 'modeling_dictionary' ||
-            item.id == 'models_contracts') {
+        if (item.id == 'domain_management' || item.id == 'models_contracts') {
           _selectDesignPage(item.id);
           return;
         }
@@ -392,6 +397,13 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     SpecForgeProject? project,
     ColorScheme colors,
   ) {
+    if (_activeSpecLinkId == 'modeling_dictionary') {
+      return ModelDictionaryView(
+        controller: widget.controller,
+        onBack: () => setState(() => _activeSpecLinkId = null),
+        pickAttachments: widget.pickAttachments,
+      );
+    }
     if (_activeSpecLinkId == 'company_glossary') {
       return CompanyGlossaryView(
         controller: widget.controller,
@@ -416,17 +428,24 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     if (_activeSpecLinkId == 'ux_wizard' && project != null) {
       return _buildUxWizard(project, colors);
     }
+    if (_activeSpecLinkId == 'qa_wizard' && project != null) {
+      return _buildQaWizard(project, colors);
+    }
     return SpecLinksView(
       key: const ValueKey('spec-forge-spec-menu-view'),
       activeProject: project,
       recentProjectsCount: widget.controller.recentProjects.length,
       companyGlossaryTermsCount: widget.controller.companyGlossary.terms.length,
       onLinkTap: (item) {
-        if (item.id == 'projects' || item.id == 'company_glossary') {
+        if (item.id == 'projects' ||
+            item.id == 'company_glossary' ||
+            item.id == 'modeling_dictionary') {
           setState(() => _activeSpecLinkId = item.id);
           return;
         }
-        if (item.id == 'wizard' || item.id == 'ux_wizard') {
+        if (item.id == 'wizard' ||
+            item.id == 'ux_wizard' ||
+            item.id == 'qa_wizard') {
           if (project != null) {
             setState(() => _activeSpecLinkId = item.id);
             return;
@@ -455,6 +474,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           onBack: () => setState(() => _activeSpecLinkId = null),
           onSwitchToUxWizard: () =>
               setState(() => _activeSpecLinkId = 'ux_wizard'),
+          onSwitchToQaWizard: () =>
+              setState(() => _activeSpecLinkId = 'qa_wizard'),
           disabled: widget.controller.isSending,
           onSelectStage: (stage) => widget.controller.goToStage(
             stage,
@@ -610,7 +631,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           : () {
               final current = widget.controller.project;
               if (current != null) {
-                final state = current.stageStateFor(SpecForgeStage.reviewExport);
+                final state = current.stageStateFor(
+                  SpecForgeStage.reviewExport,
+                );
                 if (state.status != SpecStageStatus.validated) {
                   widget.controller.updateProject(
                     current.withStageState(
@@ -621,6 +644,25 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                 }
               }
               setState(() => _activeSpecLinkId = 'ux_wizard');
+            },
+      onContinueToQaWizard: widget.controller.isSending
+          ? null
+          : () {
+              final current = widget.controller.project;
+              if (current != null) {
+                final state = current.stageStateFor(
+                  SpecForgeStage.reviewExport,
+                );
+                if (state.status != SpecStageStatus.validated) {
+                  widget.controller.updateProject(
+                    current.withStageState(
+                      state.copyWith(status: SpecStageStatus.validated),
+                    ),
+                    recordUndo: false,
+                  );
+                }
+              }
+              setState(() => _activeSpecLinkId = 'qa_wizard');
             },
     ),
   };
@@ -634,6 +676,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           onBack: () => setState(() => _activeSpecLinkId = null),
           onSwitchToSpecWizard: () =>
               setState(() => _activeSpecLinkId = 'wizard'),
+          onSwitchToQaWizard: () =>
+              setState(() => _activeSpecLinkId = 'qa_wizard'),
           disabled: widget.controller.isSending,
           onSelectStage: (stage) => widget.controller.goToUxStage(
             stage,
@@ -790,6 +834,196 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       },
     ),
     UxForgeStage.uxReviewExport => UxReviewExportView(
+      controller: widget.controller,
+      onContinueToQaWizard: widget.controller.isSending
+          ? null
+          : () {
+              final current = widget.controller.project;
+              if (current != null) {
+                final state = current.uxSpec.stageStateFor(
+                  UxForgeStage.uxReviewExport,
+                );
+                if (state.status != SpecStageStatus.validated) {
+                  widget.controller.updateUxSpec(
+                    current.uxSpec.withStageState(
+                      state.copyWith(status: SpecStageStatus.validated),
+                    ),
+                    recordUndo: false,
+                  );
+                }
+              }
+              setState(() => _activeSpecLinkId = 'qa_wizard');
+            },
+    ),
+  };
+
+  Widget _buildQaWizard(SpecForgeProject project, ColorScheme colors) {
+    return Column(
+      key: const ValueKey('spec-forge-qa-wizard-view'),
+      children: [
+        QaWizardStepper(
+          project: project,
+          onBack: () => setState(() => _activeSpecLinkId = null),
+          onSwitchToSpecWizard: () =>
+              setState(() => _activeSpecLinkId = 'wizard'),
+          onSwitchToUxWizard: () =>
+              setState(() => _activeSpecLinkId = 'ux_wizard'),
+          disabled: widget.controller.isSending,
+          onSelectStage: (stage) => widget.controller.goToQaStage(
+            stage,
+            validateCurrent: stage.index > project.qaSpec.currentStage.index,
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const dividerWidth = SpecSplitHandle.width;
+              const collapsedRailWidth = 38.0;
+              const minChatWidth = 240.0;
+              const minWorkspaceWidth = 360.0;
+              final totalWidth = constraints.maxWidth;
+              final availableWidth = (totalWidth - dividerWidth).clamp(
+                0.0,
+                double.infinity,
+              );
+              final isCollapsed = _chatPaneFraction <= 0.0;
+              final chatWidth = isCollapsed
+                  ? 0.0
+                  : (availableWidth <= minChatWidth + minWorkspaceWidth
+                        ? availableWidth * _chatPaneFraction
+                        : (availableWidth * _chatPaneFraction).clamp(
+                            minChatWidth,
+                            availableWidth - minWorkspaceWidth,
+                          ));
+
+              return Row(
+                key: _qaSplitRowKey,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isCollapsed)
+                    Container(
+                      key: const ValueKey('qa-chat-collapsed-bar'),
+                      width: collapsedRailWidth,
+                      color: colors.surfaceContainerLow,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        children: [
+                          IconButton(
+                            key: const ValueKey('qa-chat-expand-btn'),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Afficher le chat IA BDD / TDD (50 %)',
+                            onPressed: _cycleChatPaneSize,
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 16,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      key: const ValueKey('qa-chat-pane'),
+                      width: chatWidth,
+                      child: QaStageAiChatPane(
+                        controller: widget.controller,
+                        chatWidthFraction: _chatPaneFraction,
+                        onCycleChatSize: _cycleChatPaneSize,
+                        pickAttachments: widget.pickAttachments,
+                        pasteAttachments: widget.pasteAttachments,
+                        hasClipboardMedia: widget.hasClipboardMedia,
+                        pasteClipboardMedia: widget.pasteClipboardMedia,
+                      ),
+                    ),
+                  SpecSplitHandle(
+                    key: const ValueKey('qa-chat-split-handle'),
+                    onDoubleTap: () => setState(() => _chatPaneFraction = 0.50),
+                    onHorizontalDragDown: (details) {
+                      final box =
+                          _qaSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box != null && !isCollapsed) {
+                        final localX = box
+                            .globalToLocal(details.globalPosition)
+                            .dx;
+                        _chatDragOffset = (localX - chatWidth).clamp(
+                          0.0,
+                          SpecSplitHandle.width,
+                        );
+                      } else {
+                        _chatDragOffset = SpecSplitHandle.width / 2;
+                      }
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      final box =
+                          _qaSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box == null || availableWidth <= 0) return;
+                      final localX = box
+                          .globalToLocal(details.globalPosition)
+                          .dx;
+                      final nextWidth = localX - _chatDragOffset;
+                      final minFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? (minChatWidth / availableWidth)
+                          : 0.20;
+                      final maxFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? ((availableWidth - minWorkspaceWidth) /
+                                availableWidth)
+                          : 0.72;
+                      setState(() {
+                        if (isCollapsed) {
+                          if (nextWidth > 60) {
+                            _chatPaneFraction = (nextWidth / availableWidth)
+                                .clamp(minFrac, maxFrac);
+                          }
+                          return;
+                        }
+                        if (nextWidth < 140) {
+                          _chatPaneFraction = 0.0;
+                        } else {
+                          _chatPaneFraction = (nextWidth / availableWidth)
+                              .clamp(minFrac, maxFrac);
+                        }
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: _buildWorkspaceForQaStage(
+                      project.qaSpec.currentStage,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWorkspaceForQaStage(QaForgeStage stage) => switch (stage) {
+    QaForgeStage.testFixtures => QaFixturesEditorView(
+      controller: widget.controller,
+    ),
+    QaForgeStage.gherkinFeatures => QaGherkinEditorView(
+      controller: widget.controller,
+    ),
+    QaForgeStage.tddSuites => QaTddEditorView(
+      controller: widget.controller,
+      onJumpToSpecStage: (targetStage, {objectId}) {
+        if (objectId != null && objectId.isNotEmpty) {
+          widget.controller.focusBusinessObject(objectId);
+        }
+        widget.controller.goToStage(targetStage);
+        setState(() => _activeSpecLinkId = 'wizard');
+      },
+    ),
+    QaForgeStage.qaReviewExport => QaReviewExportView(
       controller: widget.controller,
     ),
   };

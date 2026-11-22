@@ -12,6 +12,9 @@ import 'package:super_schema_dsl/super_schema_dsl.dart' show JsonNode;
 
 import '../ai/company_glossary_ai.dart';
 import '../ai/domain_model_ai.dart';
+import '../ai/qa_patch_applier.dart';
+import '../ai/qa_prompt_builder.dart';
+import '../ai/qa_stage_agent.dart';
 import '../ai/spec_ai_service.dart';
 import '../ai/spec_app_tools.dart';
 import '../ai/spec_delta_recovery.dart';
@@ -28,6 +31,9 @@ import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
 import '../models/domain_catalog.dart';
 import '../models/domain_contracts.dart';
+import '../models/qa/qa_coherence_issue.dart';
+import '../models/qa/qa_forge_spec.dart';
+import '../models/qa/qa_forge_stage.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
@@ -41,7 +47,9 @@ import '../models/ux/ux_screen_spec.dart';
 import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
 import 'domain_catalog_store.dart';
+import 'exporters/qa_tdd_prompt_exporter.dart';
 import 'model_dictionary_store.dart';
+import 'qa_coherence_analyzer.dart';
 import 'spec_coherence_analyzer.dart';
 import 'spec_project_store.dart';
 import 'spec_workspace_store.dart';
@@ -129,6 +137,7 @@ class SpecForgeController extends ChangeNotifier {
   String? _sendingDomainModelKey;
   SpecForgeStage? _sendingStage;
   UxForgeStage? _sendingUxStage;
+  QaForgeStage? _sendingQaStage;
   String? _streamingMessage;
   String _streamingStatus = '';
   List<VibeToolTrace> _streamingToolTraces = const <VibeToolTrace>[];
@@ -139,6 +148,10 @@ class SpecForgeController extends ChangeNotifier {
   String? _focusedRouteId;
   String? _focusedScreenId;
   UxLayoutZoneName? _focusedScreenZone;
+  String? _focusedFixtureId;
+  String? _focusedFeatureId;
+  String? _focusedScenarioId;
+  String? _focusedTddSuiteId;
 
   /// Sélection et filtre de l'arbre de chaque fiche, indexés par `domaine/entrée`.
   final Map<String, ({List<String> attributePath, String filter})>
@@ -298,6 +311,12 @@ class SpecForgeController extends ChangeNotifier {
   /// Vrai lorsqu'un tour IA de l'atelier UX est en cours.
   bool get isSendingUx => _isSending && _sendingUxStage != null;
 
+  /// Étape QA en cours de génération IA.
+  QaForgeStage? get sendingQaStage => _sendingQaStage;
+
+  /// Vrai lorsqu'un tour IA de l'atelier QA est en cours.
+  bool get isSendingQa => _isSending && _sendingQaStage != null;
+
   /// Texte streaming reçu jusqu'ici pour le message en cours.
   String? get streamingMessage => _streamingMessage;
 
@@ -345,6 +364,38 @@ class SpecForgeController extends ChangeNotifier {
     _focusedRouteId = routeId;
     _focusedScreenId = screenId;
     _focusedScreenZone = zone;
+    notifyListeners();
+  }
+
+  /// Identifiant de la fixture focalisée dans l'atelier QA.
+  String? get focusedFixtureId => _focusedFixtureId;
+
+  /// Identifiant de la feature Gherkin focalisée dans l'atelier QA.
+  String? get focusedFeatureId => _focusedFeatureId;
+
+  /// Identifiant du scénario Gherkin focalisé dans l'atelier QA.
+  String? get focusedScenarioId => _focusedScenarioId;
+
+  /// Identifiant de la suite TDD focalisée dans l'atelier QA.
+  String? get focusedTddSuiteId => _focusedTddSuiteId;
+
+  /// Met à jour la sélection courante dans l'atelier QA (fixture, feature, scénario et/ou suite TDD).
+  void focusQaItem({
+    String? fixtureId,
+    String? featureId,
+    String? scenarioId,
+    String? tddSuiteId,
+  }) {
+    if (_focusedFixtureId == fixtureId &&
+        _focusedFeatureId == featureId &&
+        _focusedScenarioId == scenarioId &&
+        _focusedTddSuiteId == tddSuiteId) {
+      return;
+    }
+    _focusedFixtureId = fixtureId;
+    _focusedFeatureId = featureId;
+    _focusedScenarioId = scenarioId;
+    _focusedTddSuiteId = tddSuiteId;
     notifyListeners();
   }
 
@@ -474,6 +525,10 @@ class SpecForgeController extends ChangeNotifier {
     _focusedRouteId = null;
     _focusedScreenId = null;
     _focusedScreenZone = null;
+    _focusedFixtureId = null;
+    _focusedFeatureId = null;
+    _focusedScenarioId = null;
+    _focusedTddSuiteId = null;
   }
 
   void _resetInMemoryState() {
@@ -719,6 +774,68 @@ class SpecForgeController extends ChangeNotifier {
     final next = current.copyWith(uxSpec: updatedUx);
     next.validate();
     await updateProject(next, recordUndo: recordUndo);
+  }
+
+  /// Valide et met à jour le volet QA BDD/TDD du projet actif (avec support Undo/Redo unifié et sauvegarde automatique).
+  Future<void> updateQaSpec(
+    QaForgeSpec updatedQa, {
+    bool recordUndo = true,
+  }) async {
+    updatedQa.validate();
+    final current = _project;
+    if (current == null || current.qaSpec == updatedQa) return;
+    final next = current.copyWith(qaSpec: updatedQa);
+    next.validate();
+    await updateProject(next, recordUndo: recordUndo);
+  }
+
+  /// Définit la langue officielle des mots-clés Gherkin (`fr` / `en`) du projet actif (annulable via Undo/Redo).
+  Future<void> setGherkinLanguage(GherkinKeywordLanguage language) async {
+    final current = _project;
+    if (current == null || current.qaSpec.gherkinLanguage == language) return;
+    await updateQaSpec(current.qaSpec.copyWith(gherkinLanguage: language));
+  }
+
+  /// Génère en 1 clic des fixtures déterministes nominales et aux bornes/invalides pour les objets métiers non couverts.
+  Future<int> seedQaFixturesFromSchema() async {
+    final current = _project;
+    if (current == null) return 0;
+    final added = QaAutoSeeder.seedFixturesFromSchema(current);
+    if (added.isEmpty) return 0;
+    await updateQaSpec(
+      current.qaSpec.copyWith(
+        fixtures: [...current.qaSpec.fixtures, ...added],
+      ),
+    );
+    return added.length;
+  }
+
+  /// Génère en 1 clic des fonctionnalités Gherkin initiales à partir des parcours UX, cas d'usage et exigences non couverts.
+  Future<int> seedQaFeaturesFromSpecAndUx() async {
+    final current = _project;
+    if (current == null) return 0;
+    final added = QaAutoSeeder.seedFeaturesFromSpecAndUx(current);
+    if (added.isEmpty) return 0;
+    await updateQaSpec(
+      current.qaSpec.copyWith(
+        features: [...current.qaSpec.features, ...added],
+      ),
+    );
+    return added.length;
+  }
+
+  /// Génère en 1 clic des suites TDD unitaires initiales à partir des règles de gestion actives non couvertes.
+  Future<int> seedQaTddSuitesFromRules() async {
+    final current = _project;
+    if (current == null) return 0;
+    final added = QaAutoSeeder.seedTddSuitesFromRules(current);
+    if (added.isEmpty) return 0;
+    await updateQaSpec(
+      current.qaSpec.copyWith(
+        tddSuites: [...current.qaSpec.tddSuites, ...added],
+      ),
+    );
+    return added.length;
   }
 
   /// Crée ou met à jour un objet métier depuis l'atelier UX (annulable en 1 clic via Undo/Redo).
@@ -978,7 +1095,7 @@ class SpecForgeController extends ChangeNotifier {
     if (!_isSending) return;
     _stopRequested = true;
     debugPrint(
-      '[SpecForge IA] Réflexion interrompue par l’utilisateur (${_sendingStage?.agentTitle ?? _sendingUxStage?.agentTitle ?? 'agent'}).',
+      '[SpecForge IA] Réflexion interrompue par l’utilisateur (${_sendingStage?.agentTitle ?? _sendingUxStage?.agentTitle ?? _sendingQaStage?.agentTitle ?? 'agent'}).',
     );
     final sub = _activeStreamSubscription;
     _activeStreamSubscription = null;
@@ -1096,6 +1213,7 @@ class SpecForgeController extends ChangeNotifier {
     _stopRequested = false;
     _sendingStage = null;
     _sendingUxStage = null;
+    _sendingQaStage = null;
     _streamingMessage = null;
     _streamingStatus = 'Analyse transverse du projet…';
     _streamingToolTraces = const <VibeToolTrace>[];
@@ -1110,67 +1228,10 @@ class SpecForgeController extends ChangeNotifier {
     );
     final turnToolTraces = <VibeToolTrace>[];
 
-    final registry =
-        _customToolRegistry ??
-        SpecForgeToolRegistry.build(
-          readProject: () => workingProject,
-          readCompanyGlossary: () => _companyGlossary,
-          readModelPreferences: () => _modelPreferences,
-          onUpdateProject: (updated) async {
-            _pushUndo(workingProject);
-            workingProject = updated;
-            _project = updated;
-            notifyListeners();
-            await _persistProject(updated);
-          },
-          onNavigateStage: (targetStage) async {
-            final moved = workingProject.moveToStage(targetStage);
-            workingProject = moved;
-            _project = moved;
-            notifyListeners();
-          },
-          onFocusObject: focusBusinessObject,
-          onFocusSelection: focusBusinessSelection,
-          onFilterBusinessObjects: setBusinessObjectFilter,
-          onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(
-            p,
-            companyGlossary: _companyGlossary,
-          ),
-          onFocusUxItem: ({
-            stage,
-            journeyId,
-            routeId,
-            screenId,
-            zone,
-          }) {
-            var stageChanged = false;
-            if (stage != null) {
-              final movedUx = workingProject.uxSpec.moveToStage(stage);
-              if (movedUx != workingProject.uxSpec) {
-                workingProject = workingProject.copyWith(uxSpec: movedUx);
-                _project = workingProject;
-                stageChanged = true;
-              }
-            }
-            final nextScreenId =
-                screenId ?? (zone != null ? _focusedScreenId : null);
-            final hadFocusChange =
-                _focusedJourneyId != journeyId ||
-                _focusedRouteId != routeId ||
-                _focusedScreenId != nextScreenId ||
-                _focusedScreenZone != zone;
-            if (hadFocusChange) {
-              focusUxItem(
-                journeyId: journeyId,
-                routeId: routeId,
-                screenId: nextScreenId,
-                zone: zone,
-              );
-            } else if (stageChanged) {
-              notifyListeners();
-            }
-          },
-        );
+    final registry = _buildProjectToolRegistry(
+      readWorkingProject: () => workingProject,
+      writeWorkingProject: (next) => workingProject = next,
+    );
 
     try {
       for (var attempt = 0; attempt < 2; attempt++) {
@@ -1272,6 +1333,7 @@ class SpecForgeController extends ChangeNotifier {
             if (callsToRun.isEmpty && parser.rawText.trim().isNotEmpty) {
               roundParsed = SpecAgentResponse.parse(parser.rawText);
               if (roundParsed.uxPatch == null &&
+                  roundParsed.qaPatch == null &&
                   roundParsed.specPatch == null &&
                   roundParsed.toolCalls.isNotEmpty) {
                 callsToRun = roundParsed.toolCalls;
@@ -1394,6 +1456,8 @@ class SpecForgeController extends ChangeNotifier {
       _isSending = false;
       _sendingGlobalQuestion = false;
       _sendingStage = null;
+      _sendingUxStage = null;
+      _sendingQaStage = null;
       _streamingMessage = null;
       _streamingStatus = '';
       _streamingToolTraces = const <VibeToolTrace>[];
@@ -1417,6 +1481,16 @@ class SpecForgeController extends ChangeNotifier {
     final current = _project;
     if (current == null) return const <UxCoherenceIssue>[];
     return UxCoherenceAnalyzer.analyze(
+      current,
+      companyGlossary: _companyGlossary,
+    );
+  }
+
+  /// Exécute immédiatement l'analyse déterministe de couverture 360° et cohérence Métier+UX↔QA sur le projet actif.
+  List<QaCoherenceIssue> runLocalQaCoherenceAudit() {
+    final current = _project;
+    if (current == null) return const <QaCoherenceIssue>[];
+    return QaCoherenceAnalyzer.analyze(
       current,
       companyGlossary: _companyGlossary,
     );
@@ -1652,6 +1726,7 @@ class SpecForgeController extends ChangeNotifier {
     _isSending = true;
     _stopRequested = false;
     _sendingUxStage = stage;
+    _sendingQaStage = null;
     _sendingStage = null;
     _streamingMessage = null;
     _streamingStatus = 'Analyse par ${stage.agentTitle}…';
@@ -1687,62 +1762,11 @@ class SpecForgeController extends ChangeNotifier {
     final turnToolTraces = <VibeToolTrace>[];
     var recovered = false;
 
-    final registry =
-        _customToolRegistry ??
-        SpecForgeToolRegistry.build(
-          readProject: () => workingProject,
-          readCompanyGlossary: () => _companyGlossary,
-          readModelPreferences: () => _modelPreferences,
-          onUpdateProject: (updated) async {
-            _pushUndo(workingProject);
-            workingProject = updated;
-            _project = updated;
-            notifyListeners();
-            await _persistProject(updated);
-          },
-          onNavigateStage: (targetStage) async {
-            final moved = workingProject.moveToStage(targetStage);
-            workingProject = moved;
-            _project = moved;
-            notifyListeners();
-          },
-          onFocusObject: focusBusinessObject,
-          onFocusSelection: focusBusinessSelection,
-          onFilterBusinessObjects: setBusinessObjectFilter,
-          onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(
-            p,
-            companyGlossary: _companyGlossary,
-          ),
-          onFocusUxItem: ({stage, journeyId, routeId, screenId, zone}) {
-            var stageChanged = false;
-            if (stage != null) {
-              final movedUx = workingProject.uxSpec.moveToStage(stage);
-              if (movedUx != workingProject.uxSpec) {
-                workingProject = workingProject.copyWith(uxSpec: movedUx);
-                _project = workingProject;
-                stageChanged = true;
-              }
-            }
-            final nextScreenId =
-                screenId ?? (zone != null ? _focusedScreenId : null);
-            final hadFocusChange =
-                _focusedJourneyId != journeyId ||
-                _focusedRouteId != routeId ||
-                _focusedScreenId != nextScreenId ||
-                _focusedScreenZone != zone;
-            if (hadFocusChange) {
-              focusUxItem(
-                journeyId: journeyId,
-                routeId: routeId,
-                screenId: nextScreenId,
-                zone: zone,
-              );
-            } else if (stageChanged) {
-              notifyListeners();
-            }
-          },
-          toolNames: SpecForgeToolRegistry.uxStageToolNames,
-        );
+    final registry = _buildProjectToolRegistry(
+      readWorkingProject: () => workingProject,
+      writeWorkingProject: (next) => workingProject = next,
+      toolNames: SpecForgeToolRegistry.uxStageToolNames,
+    );
 
     try {
       for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
@@ -1972,6 +1996,514 @@ class SpecForgeController extends ChangeNotifier {
       _stopRequested = false;
       _isSending = false;
       _sendingUxStage = null;
+      _sendingQaStage = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  /// Navigue vers l'étape QA [targetStage], valide optionnellement l'étape QA courante
+  /// et amorce l'agent spécialisé de [targetStage] si [autoKickoffIfEmpty] vaut `true`
+  /// et que sa conversation est vide.
+  Future<void> goToQaStage(
+    QaForgeStage targetStage, {
+    bool validateCurrent = false,
+    bool autoKickoffIfEmpty = false,
+  }) async {
+    final current = _project;
+    if (current == null) return;
+    final movedQa = current.qaSpec.moveToStage(
+      targetStage,
+      validateCurrentStage: validateCurrent,
+    );
+    var effectiveProject = current;
+    if (movedQa != current.qaSpec) {
+      effectiveProject = current.copyWith(qaSpec: movedQa);
+      await updateProject(effectiveProject, recordUndo: false);
+    }
+    if (autoKickoffIfEmpty &&
+        !_isSending &&
+        effectiveProject.qaSpec.stageStateFor(targetStage).messages.isEmpty) {
+      await kickoffQaStageIfEmpty(targetStage);
+    }
+  }
+
+  /// Déclenche le message initial de l'agent QA spécialisé si l'étape [stage] n'a aucun échange.
+  Future<void> kickoffQaStageIfEmpty(QaForgeStage stage) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    if (current.qaSpec.stageStateFor(stage).messages.isNotEmpty) return;
+    final kickoffPrompt = QaPromptBuilder.buildStageKickoffPrompt(
+      current,
+      stage,
+      modelPreferencesOverride: _modelPreferences,
+    );
+    await _runQaAgentTurn(
+      stage: stage,
+      userDisplayText: switch (stage) {
+        QaForgeStage.testFixtures =>
+          'Concevoir les jeux d’essais déterministes et cas aux bornes à partir du modèle métier.',
+        QaForgeStage.gherkinFeatures =>
+          'Structurer les fonctionnalités et scénarios Gherkin BDD exécutables (.feature).',
+        QaForgeStage.tddSuites =>
+          'Formaliser les suites unitaires TDD Arrange / Act / Assert en progression Red → Green → Refactor.',
+        QaForgeStage.qaReviewExport =>
+          'Lancer l’audit de couverture 360° Métier+UX↔QA et préparer l’export BDD/TDD.',
+      },
+      promptInput: kickoffPrompt,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  /// Envoie un message utilisateur libre (avec pièces jointes éventuelles) à l'agent de l'étape QA courante.
+  Future<void> sendQaUserMessage(
+    String text, {
+    bool requestsMoreQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && !requestsMoreQuestions && attachments.isEmpty) {
+      return;
+    }
+    final stage = current.qaSpec.currentStage;
+    final effectiveDisplay = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour approfondir cette étape QA.'
+              : 'Analyse les pièces jointes et mets à jour les spécifications BDD / TDD correspondantes.');
+    await _runQaAgentTurn(
+      stage: stage,
+      userDisplayText: effectiveDisplay,
+      promptInput: effectiveDisplay,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` à l'agent de l'étape QA courante.
+  Future<void> submitQaAskUserAnswers(
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.qaSpec.currentStage;
+    final stageState = current.qaSpec.stageStateFor(stage);
+    final idx = stageState.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = stageState.messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final updatedMsg = targetMsg.copyWith(
+      askUserAnswers: answers,
+      askUserUsedDefaults: usedDefaults,
+      askUserRequestedMore: askMore,
+    );
+    final updatedMessages = List<SpecChatMessage>.from(stageState.messages)
+      ..[idx] = updatedMsg;
+    _project = current.copyWith(
+      qaSpec: current.qaSpec.withStageState(
+        stageState.copyWith(messages: updatedMessages),
+      ),
+    );
+    notifyListeners();
+
+    final formattedSummary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    final displaySummary = askMore
+        ? '$formattedSummary\n(+ questions complémentaires demandées)'
+        : formattedSummary;
+
+    await _runQaAgentTurn(
+      stage: stage,
+      userDisplayText: displaySummary,
+      promptInput: formattedSummary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+    );
+  }
+
+  /// Ignore un questionnaire QA en appliquant ses valeurs par défaut pour passer à la génération.
+  Future<void> skipQaAskUser(String messageId) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.qaSpec.currentStage;
+    final stageState = current.qaSpec.stageStateFor(stage);
+    final idx = stageState.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = stageState.messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final defaults = askUser.defaultAnswers();
+    final updatedMessages = List<SpecChatMessage>.from(stageState.messages)
+      ..[idx] = targetMsg.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      );
+    _project = current.copyWith(
+      qaSpec: current.qaSpec.withStageState(
+        stageState.copyWith(messages: updatedMessages),
+      ),
+    );
+    notifyListeners();
+
+    final formatted =
+        'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}';
+    await _runQaAgentTurn(
+      stage: stage,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput: formatted,
+      afterAskUserReply: true,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  /// Relance manuellement le dernier tour en erreur sur l'étape QA active avec contexte de correction.
+  Future<void> retryLastFailedQaTurn() async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.qaSpec.currentStage;
+    final messages = current.qaSpec.stageStateFor(stage).messages;
+    String retryInput =
+        'La tentative précédente a échoué. Corrige le format JSON et applique la mise à jour QA demandée.';
+    List<VibeChatAttachment> lastAttachments = const <VibeChatAttachment>[];
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final msg = messages[i];
+      if (msg.isUser) {
+        retryInput = (msg.promptText ?? msg.text).trim();
+        lastAttachments = msg.attachments;
+        break;
+      }
+    }
+    await _runQaAgentTurn(
+      stage: stage,
+      userDisplayText: 'Reprise de la génération QA suite à erreur…',
+      promptInput:
+          '$retryInput\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastAttachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  Future<void> _runQaAgentTurn({
+    required QaForgeStage stage,
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    required bool forceFollowUpQuestions,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final initialProject = _project;
+    if (initialProject == null) return;
+
+    final userMessage = SpecChatMessage(
+      id: 'qamsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+
+    final initialStageState = initialProject.qaSpec.stageStateFor(stage);
+    final withUserMsg = initialProject.copyWith(
+      qaSpec: initialProject.qaSpec.withStageState(
+        initialStageState.copyWith(
+          status: initialStageState.status == SpecStageStatus.notStarted
+              ? SpecStageStatus.inProgress
+              : initialStageState.status,
+          messages: [...initialStageState.messages, userMessage],
+        ),
+      ),
+    );
+    _project = withUserMsg;
+    _isSending = true;
+    _stopRequested = false;
+    _sendingQaStage = stage;
+    _sendingUxStage = null;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Analyse par ${stage.agentTitle}…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    final qaAgent = QaStageAgent.forStage(stage);
+    final staticGuide =
+        '${qaAgent.patchSchemaGuide}\n\n---\n\n'
+        '${SpecForgeToolRegistry.toolsGuide(toolNames: SpecForgeToolRegistry.qaStageToolNames)}';
+
+    var workingProject = withUserMsg;
+    final baseSnapshotBeforeTurn = initialProject;
+    var currentPrompt = QaPromptBuilder.buildTurnPrompt(
+      project: initialProject,
+      stage: stage,
+      userInput: promptInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterAskUserReply,
+      forceFollowUpQuestions: forceFollowUpQuestions,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
+      focusedFixtureId: _focusedFixtureId,
+      focusedFeatureId: _focusedFeatureId,
+      focusedScenarioId: _focusedScenarioId,
+      focusedTddSuiteId: _focusedTddSuiteId,
+      toolNames: SpecForgeToolRegistry.qaStageToolNames,
+    );
+
+    final priorCauses = <String>[];
+    final checkpointSummaries = <String>[];
+    final turnToolTraces = <VibeToolTrace>[];
+    var recovered = false;
+
+    final registry = _buildProjectToolRegistry(
+      readWorkingProject: () => workingProject,
+      writeWorkingProject: (next) => workingProject = next,
+      toolNames: SpecForgeToolRegistry.qaStageToolNames,
+    );
+
+    try {
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        debugPrint(
+          '[SpecForge QA IA] Tentative ${attempt + 1}/$maxRecoveryAttempts '
+          '(${stage.agentTitle}) — prompt ${currentPrompt.length} car., '
+          'pièces jointes: ${attachments.length}…',
+        );
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.reviewExport,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour des tests BDD / TDD…',
+            writingStatus: 'Rédaction de la réponse…',
+            systemInstructionOverride: qaAgent.systemInstruction,
+            staticGuideOverride: staticGuide,
+            allowedToolNames: SpecForgeToolRegistry.qaStageToolNames,
+          );
+          if (response == null) {
+            final partialText = parser.snapshot().message?.trim() ?? '';
+            if (checkpointSummaries.isNotEmpty) {
+              _pushUndo(baseSnapshotBeforeTurn);
+            }
+            final stoppedMessage = SpecChatMessage(
+              id: 'qamsg_${shortid.generate()}',
+              isUser: false,
+              text: partialText.isNotEmpty
+                  ? '$partialText\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                  : 'Réflexion IA interrompue par l’utilisateur.',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              appliedPatchSummary: checkpointSummaries.join(', '),
+            );
+            final currentStageState = workingProject.qaSpec.stageStateFor(
+              stage,
+            );
+            _project = workingProject.copyWith(
+              qaSpec: workingProject.qaSpec.withStageState(
+                currentStageState.copyWith(
+                  messages: [...currentStageState.messages, stoppedMessage],
+                ),
+              ),
+            );
+            await _persistProject(_project!);
+            recovered = true;
+            break;
+          }
+          parsedResponse = response;
+
+          var updatedProject = workingProject;
+          var patchSummary = '';
+          final hasQaPatch =
+              response.qaPatch != null && response.qaPatch!.isNotEmpty;
+          final hasSpecPatch =
+              response.specPatch != null && response.specPatch!.isNotEmpty;
+
+          if (hasQaPatch || hasSpecPatch) {
+            final applied = QaPatchApplier.apply(
+              workingProject,
+              qaPatch: response.qaPatch,
+              specPatch: response.specPatch,
+            );
+            final didMutate = applied.project != workingProject;
+            if (didMutate || checkpointSummaries.isNotEmpty) {
+              _pushUndo(baseSnapshotBeforeTurn);
+            }
+            updatedProject = applied.project;
+            patchSummary = [
+              ...checkpointSummaries,
+              if (didMutate && applied.summary.isNotEmpty) applied.summary,
+            ].join(', ');
+          } else if (checkpointSummaries.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+            patchSummary = checkpointSummaries.join(', ');
+          }
+
+          final assistantMessage = SpecChatMessage(
+            id: 'qamsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+            stageReadyToAdvance: response.stageReadyToAdvance,
+          );
+
+          final currentStageState = updatedProject.qaSpec.stageStateFor(stage);
+          updatedProject = updatedProject.copyWith(
+            qaSpec: updatedProject.qaSpec.withStageState(
+              currentStageState.copyWith(
+                messages: [...currentStageState.messages, assistantMessage],
+                stageSummary: response.stageSummary.isNotEmpty
+                    ? response.stageSummary
+                    : currentStageState.stageSummary,
+                readyToAdvance:
+                    response.stageReadyToAdvance ||
+                    currentStageState.readyToAdvance,
+              ),
+            ),
+          );
+
+          _project = updatedProject;
+          await _persistProject(updatedProject);
+          recovered = true;
+          break;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+
+          debugPrint(
+            '[SpecForge QA IA] Échec tentative ${attempt + 1}/$maxRecoveryAttempts '
+            '(${stage.agentTitle}) : $cause',
+          );
+          saveError(
+            '[SpecForge QA IA] Tentative ${attempt + 1}/$maxRecoveryAttempts '
+            '(${stage.name}) : $cause',
+            stack,
+          );
+
+          final salvage = QaPatchApplier.salvageFailedAttempt(
+            workingProject: workingProject,
+            rawResponse: parser.rawText,
+            decodedQaPatch: parsedResponse?.qaPatch,
+            decodedSpecPatch: parsedResponse?.specPatch,
+          );
+          if (salvage.hasCheckpoint) {
+            workingProject = salvage.checkpointProject;
+            if (salvage.appliedSummary.isNotEmpty) {
+              checkpointSummaries.add(salvage.appliedSummary);
+            }
+            _project = workingProject;
+            notifyListeners();
+          }
+
+          if (attempt < maxRecoveryAttempts - 1 && isValidationError) {
+            debugPrint(
+              salvage.hasCheckpoint
+                  ? '[SpecForge QA IA] Checkpoint partiel conservé (${salvage.appliedSummary}), relance delta…'
+                  : '[SpecForge QA IA] Aucun checkpoint partiel, relance corrective…',
+            );
+
+            final refreshedTurnPrompt = QaPromptBuilder.buildTurnPrompt(
+              project: workingProject,
+              stage: stage,
+              userInput: promptInput,
+              questioningLevel: _questioningLevel,
+              afterAskUserReply: afterAskUserReply || salvage.hasCheckpoint,
+              forceFollowUpQuestions: forceFollowUpQuestions,
+              companyGlossary: _companyGlossary,
+              modelPreferencesOverride: _modelPreferences,
+              focusedFixtureId: _focusedFixtureId,
+              focusedFeatureId: _focusedFeatureId,
+              focusedScenarioId: _focusedScenarioId,
+              focusedTddSuiteId: _focusedTddSuiteId,
+              toolNames: SpecForgeToolRegistry.qaStageToolNames,
+            );
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: refreshedTurnPrompt,
+              priorCauses: priorCauses,
+              salvage: salvage,
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+
+          if (checkpointSummaries.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+          }
+
+          final failedDetail = priorCauses.length > 1
+              ? priorCauses.join('\n')
+              : cause;
+          final errMessage = SpecChatMessage(
+            id: 'qamsg_${shortid.generate()}',
+            isUser: false,
+            text:
+                'Erreur lors de l’appel à ${stage.agentTitle} '
+                '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n$failedDetail',
+            toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+            appliedPatchSummary: checkpointSummaries.join(', '),
+            failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+          );
+          final currentStageState = workingProject.qaSpec.stageStateFor(stage);
+          _project = workingProject.copyWith(
+            qaSpec: workingProject.qaSpec.withStageState(
+              currentStageState.copyWith(
+                messages: [...currentStageState.messages, errMessage],
+              ),
+            ),
+          );
+          _lastError = cause;
+          await _persistProject(_project!);
+          break;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+
+      if (!recovered && _lastError != null) {
+        debugPrint(
+          '[SpecForge QA IA] Fin du tour en erreur (${stage.agentTitle}) : $_lastError',
+        );
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingQaStage = null;
+      _sendingUxStage = null;
       _sendingStage = null;
       _streamingMessage = null;
       _streamingStatus = '';
@@ -2014,6 +2546,7 @@ class SpecForgeController extends ChangeNotifier {
     _stopRequested = false;
     _sendingStage = stage;
     _sendingUxStage = null;
+    _sendingQaStage = null;
     _streamingMessage = null;
     _streamingStatus = 'Analyse par ${stage.agentTitle}…';
     _streamingToolTraces = const <VibeToolTrace>[];
@@ -2041,61 +2574,10 @@ class SpecForgeController extends ChangeNotifier {
     final turnToolTraces = <VibeToolTrace>[];
     var recovered = false;
 
-    final registry =
-        _customToolRegistry ??
-        SpecForgeToolRegistry.build(
-          readProject: () => workingProject,
-          readCompanyGlossary: () => _companyGlossary,
-          readModelPreferences: () => _modelPreferences,
-          onUpdateProject: (updated) async {
-            _pushUndo(workingProject);
-            workingProject = updated;
-            _project = updated;
-            notifyListeners();
-            await _persistProject(updated);
-          },
-          onNavigateStage: (targetStage) async {
-            final moved = workingProject.moveToStage(targetStage);
-            workingProject = moved;
-            _project = moved;
-            notifyListeners();
-          },
-          onFocusObject: focusBusinessObject,
-          onFocusSelection: focusBusinessSelection,
-          onFilterBusinessObjects: setBusinessObjectFilter,
-          onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(
-            p,
-            companyGlossary: _companyGlossary,
-          ),
-          onFocusUxItem: ({stage, journeyId, routeId, screenId, zone}) {
-            var stageChanged = false;
-            if (stage != null) {
-              final movedUx = workingProject.uxSpec.moveToStage(stage);
-              if (movedUx != workingProject.uxSpec) {
-                workingProject = workingProject.copyWith(uxSpec: movedUx);
-                _project = workingProject;
-                stageChanged = true;
-              }
-            }
-            final nextScreenId =
-                screenId ?? (zone != null ? _focusedScreenId : null);
-            final hadFocusChange =
-                _focusedJourneyId != journeyId ||
-                _focusedRouteId != routeId ||
-                _focusedScreenId != nextScreenId ||
-                _focusedScreenZone != zone;
-            if (hadFocusChange) {
-              focusUxItem(
-                journeyId: journeyId,
-                routeId: routeId,
-                screenId: nextScreenId,
-                zone: zone,
-              );
-            } else if (stageChanged) {
-              notifyListeners();
-            }
-          },
-        );
+    final registry = _buildProjectToolRegistry(
+      readWorkingProject: () => workingProject,
+      writeWorkingProject: (next) => workingProject = next,
+    );
 
     try {
       for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
@@ -2303,6 +2785,8 @@ class SpecForgeController extends ChangeNotifier {
       _stopRequested = false;
       _isSending = false;
       _sendingStage = null;
+      _sendingUxStage = null;
+      _sendingQaStage = null;
       _streamingMessage = null;
       _streamingStatus = '';
       _streamingToolTraces = const <VibeToolTrace>[];
@@ -2310,10 +2794,114 @@ class SpecForgeController extends ChangeNotifier {
     }
   }
 
+  VibeAppToolRegistry _buildProjectToolRegistry({
+    required SpecForgeProject Function() readWorkingProject,
+    required void Function(SpecForgeProject next) writeWorkingProject,
+    Set<String>? toolNames,
+  }) {
+    if (_customToolRegistry != null) return _customToolRegistry;
+    return SpecForgeToolRegistry.build(
+      readProject: readWorkingProject,
+      readCompanyGlossary: () => _companyGlossary,
+      readModelPreferences: () => _modelPreferences,
+      onUpdateProject: (updated) async {
+        _pushUndo(readWorkingProject());
+        writeWorkingProject(updated);
+        _project = updated;
+        notifyListeners();
+        await _persistProject(updated);
+      },
+      onNavigateStage: (targetStage) async {
+        final moved = readWorkingProject().moveToStage(targetStage);
+        writeWorkingProject(moved);
+        _project = moved;
+        notifyListeners();
+      },
+      onFocusObject: focusBusinessObject,
+      onFocusSelection: focusBusinessSelection,
+      onFilterBusinessObjects: setBusinessObjectFilter,
+      onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(
+        p,
+        companyGlossary: _companyGlossary,
+      ),
+      onFocusUxItem: ({stage, journeyId, routeId, screenId, zone}) {
+        var stageChanged = false;
+        final currentWorking = readWorkingProject();
+        if (stage != null) {
+          final movedUx = currentWorking.uxSpec.moveToStage(stage);
+          if (movedUx != currentWorking.uxSpec) {
+            final nextProject = currentWorking.copyWith(uxSpec: movedUx);
+            writeWorkingProject(nextProject);
+            _project = nextProject;
+            stageChanged = true;
+          }
+        }
+        final nextScreenId =
+            screenId ?? (zone != null ? _focusedScreenId : null);
+        final hadFocusChange =
+            _focusedJourneyId != journeyId ||
+            _focusedRouteId != routeId ||
+            _focusedScreenId != nextScreenId ||
+            _focusedScreenZone != zone;
+        if (hadFocusChange) {
+          focusUxItem(
+            journeyId: journeyId,
+            routeId: routeId,
+            screenId: nextScreenId,
+            zone: zone,
+          );
+        } else if (stageChanged) {
+          notifyListeners();
+        }
+      },
+      onRunQaCoherenceAudit: (p) => QaCoherenceAnalyzer.analyze(
+        p,
+        companyGlossary: _companyGlossary,
+      ),
+      onFocusQaItem: ({
+        stage,
+        fixtureId,
+        featureId,
+        scenarioId,
+        tddSuiteId,
+      }) {
+        var stageChanged = false;
+        final currentWorking = readWorkingProject();
+        if (stage != null) {
+          final movedQa = currentWorking.qaSpec.moveToStage(stage);
+          if (movedQa != currentWorking.qaSpec) {
+            final nextProject = currentWorking.copyWith(qaSpec: movedQa);
+            writeWorkingProject(nextProject);
+            _project = nextProject;
+            stageChanged = true;
+          }
+        }
+        final nextFeatureId =
+            featureId ?? (scenarioId != null ? _focusedFeatureId : null);
+        final hadFocusChange =
+            _focusedFixtureId != fixtureId ||
+            _focusedFeatureId != nextFeatureId ||
+            _focusedScenarioId != scenarioId ||
+            _focusedTddSuiteId != tddSuiteId;
+        if (hadFocusChange) {
+          focusQaItem(
+            fixtureId: fixtureId,
+            featureId: nextFeatureId,
+            scenarioId: scenarioId,
+            tddSuiteId: tddSuiteId,
+          );
+        } else if (stageChanged) {
+          notifyListeners();
+        }
+      },
+      toolNames: toolNames,
+    );
+  }
+
   /// Diffuse un tour IA avec function calling : exécute les appels d'outils de
   /// [registry] (tracés dans [toolTraces] et le flux) jusqu'à la réponse JSON
   /// finale, en au plus [maxToolRounds] rounds. Partagé par les agents de la
-  /// spec, de l'atelier UX et des modèles de domaine ; renvoie `null` si
+  /// spec, de l'atelier UX, de l'atelier QA et des modèles de domaine ; renvoie `null` si
   /// l'utilisateur a arrêté la génération, [parser] conservant le texte du
   /// dernier round.
   Future<SpecAgentResponse?> _streamAgentResponse({
@@ -2336,7 +2924,8 @@ class SpecForgeController extends ChangeNotifier {
             for (final decl in registry.declarations)
               if (allowedToolNames.contains(decl.name) ||
                   (!SpecForgeToolRegistry.specToolNames.contains(decl.name) &&
-                      !SpecForgeToolRegistry.uxToolNames.contains(decl.name)))
+                      !SpecForgeToolRegistry.uxToolNames.contains(decl.name) &&
+                      !SpecForgeToolRegistry.qaToolNames.contains(decl.name)))
                 decl,
           ];
     final conversationContents = <Map<String, Object?>>[
@@ -2381,6 +2970,8 @@ class SpecForgeController extends ChangeNotifier {
                 _streamingMessage = snap.message;
                 if (snap.hasAskUser) {
                   _streamingStatus = 'Préparation des questions…';
+                } else if (snap.hasQaPatch) {
+                  _streamingStatus = 'Mise à jour des tests BDD / TDD…';
                 } else if (snap.hasUxPatch || snap.hasSpecPatch) {
                   _streamingStatus = patchStatus;
                 } else if (snap.message != null) {
@@ -2414,6 +3005,7 @@ class SpecForgeController extends ChangeNotifier {
       if (callsToRun.isEmpty && parser.rawText.trim().isNotEmpty) {
         roundParsed = SpecAgentResponse.parse(parser.rawText);
         if (roundParsed.uxPatch == null &&
+            roundParsed.qaPatch == null &&
             roundParsed.specPatch == null &&
             roundParsed.toolCalls.isNotEmpty) {
           callsToRun = roundParsed.toolCalls;

@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'vibe_app_tools.dart';
+import 'vibe_plan.dart';
 
 /// État instantané immuable décodé par [VibeIncrementalStreamParser] pendant le streaming SSE.
 @immutable
@@ -37,6 +38,9 @@ class VibeStreamSnapshot {
     this.activeEntryKey,
     this.activeToolStatus,
     this.toolTraces = const <VibeToolTrace>[],
+    this.elapsedMs,
+    this.activePhaseLabel,
+    this.timedTraces = const <VibeTimedTrace>[],
   });
 
   /// Instantané initial vide avant réception de tout fragment.
@@ -110,6 +114,15 @@ class VibeStreamSnapshot {
   /// Liste cumulative des appels d'outils déjà exécutés durant le tour en cours.
   final List<VibeToolTrace> toolTraces;
 
+  /// Temps écoulé en millisecondes depuis le début du tour ou du lot courant.
+  final int? elapsedMs;
+
+  /// Libellé de la phase active (ex. `Planification (Phase 1)` ou `Lot 2/4 · Tentative 1/4`).
+  final String? activePhaseLabel;
+
+  /// Traces chronométrées déjà complétées durant la génération en cours.
+  final List<VibeTimedTrace> timedTraces;
+
   /// Retourne une copie modifiée de cet instantané.
   VibeStreamSnapshot copyWith({
     String? message,
@@ -135,6 +148,10 @@ class VibeStreamSnapshot {
     String? activeToolStatus,
     bool clearActiveToolStatus = false,
     List<VibeToolTrace>? toolTraces,
+    int? elapsedMs,
+    String? activePhaseLabel,
+    bool clearActivePhaseLabel = false,
+    List<VibeTimedTrace>? timedTraces,
   }) => VibeStreamSnapshot(
     message: clearMessage ? null : (message ?? this.message),
     isMessageComplete: isMessageComplete ?? this.isMessageComplete,
@@ -164,6 +181,11 @@ class VibeStreamSnapshot {
         ? null
         : (activeToolStatus ?? this.activeToolStatus),
     toolTraces: toolTraces ?? this.toolTraces,
+    elapsedMs: elapsedMs ?? this.elapsedMs,
+    activePhaseLabel: clearActivePhaseLabel
+        ? null
+        : (activePhaseLabel ?? this.activePhaseLabel),
+    timedTraces: timedTraces ?? this.timedTraces,
   );
 
   /// Compare deux instantanés par égalité de valeur.
@@ -186,6 +208,9 @@ class VibeStreamSnapshot {
           other.activeEntryKey == activeEntryKey &&
           other.activeToolStatus == activeToolStatus &&
           listEquals(other.toolTraces, toolTraces) &&
+          other.elapsedMs == elapsedMs &&
+          other.activePhaseLabel == activePhaseLabel &&
+          listEquals(other.timedTraces, timedTraces) &&
           (other.partialVibePatch == null) == (partialVibePatch == null) &&
           (other.partialRepositoriesPatch == null) ==
               (partialRepositoriesPatch == null);
@@ -208,6 +233,9 @@ class VibeStreamSnapshot {
     activeEntryKey,
     activeToolStatus,
     Object.hashAll(toolTraces),
+    elapsedMs,
+    activePhaseLabel,
+    Object.hashAll(timedTraces),
     partialVibePatch != null,
     partialRepositoriesPatch != null,
   );

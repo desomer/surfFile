@@ -94,13 +94,6 @@ class DesignLinksView extends StatefulWidget {
       title: 'Pour le concepteur backend',
       items: <DesignLinkItem>[
         DesignLinkItem(
-          id: 'modeling_dictionary',
-          label: 'Dictionnaire technique & Modèle',
-          icon: Icons.rule_folder_outlined,
-          tooltip:
-              'Règles techniques (Id, Ref, Code, Number, dates, booléens) et préférences globales de modélisation',
-        ),
-        DesignLinkItem(
           id: 'models_contracts',
           label: 'Modèles & Contrats',
           icon: Icons.data_object_rounded,
@@ -354,11 +347,7 @@ class _DesignLinkPillCardState extends State<_DesignLinkPillCard> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  Icon(
-                    widget.item.icon,
-                    size: 24,
-                    color: colors.onSurface,
-                  ),
+                  Icon(widget.item.icon, size: 24, color: colors.onSurface),
                   const SizedBox(width: 12),
                   Expanded(
                     child: widget.item.subtitle == null

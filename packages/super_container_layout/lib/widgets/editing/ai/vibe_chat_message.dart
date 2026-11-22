@@ -10,6 +10,34 @@ import '../../../ai/vibe_ask_user.dart';
 import '../../../ai/vibe_chat_attachment.dart';
 import '../../../ai/vibe_plan.dart';
 
+/// Paramètres mémorisés pour relancer manuellement un tour Vibe IA ayant échoué.
+@immutable
+class VibeRetryTurnPayload {
+  /// Crée une charge utile immuable de relance de tour.
+  const VibeRetryTurnPayload({
+    required this.displayUserText,
+    this.promptOverride,
+    this.attachments = const [],
+    this.requestsMoreQuestions = false,
+    this.runPageAudit = false,
+  });
+
+  /// Libellé utilisateur d'origine.
+  final String displayUserText;
+
+  /// Prompt substitué éventuel (ex. réponses `askUser` ou relance delta).
+  final String? promptOverride;
+
+  /// Pièces jointes associées au tour d'origine.
+  final List<VibeChatAttachment> attachments;
+
+  /// Indique si le tour forçait une série de questions complémentaires.
+  final bool requestsMoreQuestions;
+
+  /// Indique si le tour provenait de l'audit de page.
+  final bool runPageAudit;
+}
+
 /// Message de conversation temporaire affiché par le dialogue Vibe.
 @immutable
 class VibeChatMessage {
@@ -30,6 +58,9 @@ class VibeChatMessage {
     this.planSourcePrompt,
     this.planSourceAttachments = const [],
     this.toolTraces = const [],
+    this.timedTraces = const [],
+    this.generationDurationMs,
+    this.retryTurn,
   });
 
   /// Texte affiché dans la bulle.
@@ -77,6 +108,15 @@ class VibeChatMessage {
   /// Appels d'outils d'introspection exécutés pour produire cette réponse.
   final List<VibeToolTrace> toolTraces;
 
+  /// Traces chronométrées du tour (contexte, LLM, outils, reprises, application).
+  final List<VibeTimedTrace> timedTraces;
+
+  /// Durée totale de génération de cette réponse en millisecondes.
+  final int? generationDurationMs;
+
+  /// Charge utile permettant de relancer ce tour lorsqu'il a échoué.
+  final VibeRetryTurnPayload? retryTurn;
+
   /// Copie ce message en conservant les valeurs non spécifiées.
   VibeChatMessage copyWith({
     String? text,
@@ -94,6 +134,10 @@ class VibeChatMessage {
     String? planSourcePrompt,
     List<VibeChatAttachment>? planSourceAttachments,
     List<VibeToolTrace>? toolTraces,
+    List<VibeTimedTrace>? timedTraces,
+    int? generationDurationMs,
+    VibeRetryTurnPayload? retryTurn,
+    bool clearRetryTurn = false,
   }) => VibeChatMessage(
     text: text ?? this.text,
     isUser: isUser ?? this.isUser,
@@ -111,6 +155,9 @@ class VibeChatMessage {
     planSourceAttachments:
         planSourceAttachments ?? this.planSourceAttachments,
     toolTraces: toolTraces ?? this.toolTraces,
+    timedTraces: timedTraces ?? this.timedTraces,
+    generationDurationMs: generationDurationMs ?? this.generationDurationMs,
+    retryTurn: clearRetryTurn ? null : (retryTurn ?? this.retryTurn),
   );
 
   /// Formate le message à inclure dans l'historique transmis à l'IA.

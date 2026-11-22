@@ -1114,6 +1114,8 @@ class VibeRepositoryTurnTransaction {
 
   /// Restaure le store et les tables internes exactement à l'état de [savepoint].
   Future<void> restoreSavepoint(VibeRepositorySavepoint savepoint) async {
+    final currentCatalog = await store.catalog();
+    final currentRepoIds = {for (final entry in currentCatalog) entry.id};
     final extraCreated = [
       for (final entry in _createdRepositories.entries)
         if (!savepoint._createdRepositories.containsKey(entry.key)) entry.value,
@@ -1183,6 +1185,21 @@ class VibeRepositoryTurnTransaction {
       ..clear()
       ..addAll(savepoint._pendingSchemaValidationRepoIds);
 
+    final recreatedIds = <String>{};
+    for (final repo in savepoint._createdRepositories.values) {
+      if (currentRepoIds.contains(repo.id)) continue;
+      final doc =
+          savepoint._finalDocuments[repo.id] ?? const <String, Object?>{};
+      final schema = savepoint._finalJsonSchemas[repo.id];
+      await store.createWithId(
+        repo.name,
+        id: repo.id,
+        initialDocument: doc,
+        jsonSchema: schema,
+      );
+      recreatedIds.add(repo.id);
+    }
+
     for (final entry in restoreSchemaToBaseline) {
       if (!store.isCodeJsonSchema(entry.key)) {
         await store.saveJsonSchema(
@@ -1193,6 +1210,7 @@ class VibeRepositoryTurnTransaction {
       }
     }
     for (final entry in savepoint._finalJsonSchemas.entries) {
+      if (recreatedIds.contains(entry.key)) continue;
       if (!store.isCodeJsonSchema(entry.key)) {
         await store.saveJsonSchema(
           entry.key,
@@ -1205,6 +1223,7 @@ class VibeRepositoryTurnTransaction {
       await store.replaceDocumentById(entry.key, entry.value);
     }
     for (final entry in savepoint._finalDocuments.entries) {
+      if (recreatedIds.contains(entry.key)) continue;
       await store.replaceDocumentById(entry.key, entry.value);
     }
     for (final entry in restoreCalcToBaseline) {

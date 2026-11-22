@@ -71,7 +71,7 @@ enum _DictionarySection {
   final IconData icon;
 }
 
-/// Vue avancée de l'onglet Design permettant de configurer le dictionnaire
+/// Vue avancée de l'onglet Spec permettant de configurer le dictionnaire
 /// technique de modélisation et les préférences globales héritées par tous les projets.
 class ModelDictionaryView extends StatefulWidget {
   /// Crée la vue connectée au [controller].
@@ -85,7 +85,7 @@ class ModelDictionaryView extends StatefulWidget {
   /// Contrôleur principal.
   final SpecForgeController controller;
 
-  /// Callback de retour vers la grille des cartes Design.
+  /// Callback de retour vers le menu Spec.
   final VoidCallback onBack;
 
   /// Sélecteur optionnel de fichiers pour l'import JSON.
@@ -189,7 +189,9 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
     final project = widget.controller.project;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final activeRulesCount = prefs.technicalRules.where((r) => r.enabled).length;
+    final activeRulesCount = prefs.technicalRules
+        .where((r) => r.enabled)
+        .length;
 
     return Column(
       key: const ValueKey('model-dictionary-view'),
@@ -215,12 +217,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildSectionNav(
-                    theme,
-                    colors,
-                    prefs,
-                    compact: compactNav,
-                  ),
+                  _buildSectionNav(theme, colors, prefs, compact: compactNav),
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(
                     child: _buildActiveSection(context, theme, colors, prefs),
@@ -262,7 +259,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             mainAxisSize: MainAxisSize.min,
             children: [
               OutlinedButton.icon(
-                key: const ValueKey('design-subview-back-btn'),
+                key: const ValueKey('spec-subview-back-btn'),
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
                 label: const Text('Design'),
@@ -300,7 +297,9 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                 onPressed: widget.controller.canUndoModelPreferences
                     ? () async {
                         await widget.controller.undoModelPreferences();
-                        _syncControllersFrom(widget.controller.modelPreferences);
+                        _syncControllersFrom(
+                          widget.controller.modelPreferences,
+                        );
                       }
                     : null,
               ),
@@ -310,7 +309,9 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                 onPressed: widget.controller.canRedoModelPreferences
                     ? () async {
                         await widget.controller.redoModelPreferences();
-                        _syncControllersFrom(widget.controller.modelPreferences);
+                        _syncControllersFrom(
+                          widget.controller.modelPreferences,
+                        );
                       }
                     : null,
               ),
@@ -332,7 +333,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                 onPressed: prefs.isDefault
                     ? null
                     : () async {
-                        await widget.controller.resetModelPreferencesToDefaults();
+                        await widget.controller
+                            .resetModelPreferencesToDefaults();
                         _syncControllersFrom(
                           BusinessObjectModelPreferences.defaults,
                         );
@@ -452,14 +454,24 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
     BusinessObjectModelPreferences prefs,
   ) => switch (_section) {
     _DictionarySection.naming => _buildNamingSection(theme, colors, prefs),
-    _DictionarySection.identifiers =>
-      _buildIdentifiersSection(theme, colors, prefs),
+    _DictionarySection.identifiers => _buildIdentifiersSection(
+      theme,
+      colors,
+      prefs,
+    ),
     _DictionarySection.types => _buildTypesUnitsSection(theme, colors, prefs),
-    _DictionarySection.lifecycle =>
-      _buildLifecycleSection(theme, colors, prefs),
+    _DictionarySection.lifecycle => _buildLifecycleSection(
+      theme,
+      colors,
+      prefs,
+    ),
     _DictionarySection.schema => _buildSchemaSection(theme, colors, prefs),
-    _DictionarySection.rules =>
-      _buildRulesDictionarySection(context, theme, colors, prefs),
+    _DictionarySection.rules => _buildRulesDictionarySection(
+      context,
+      theme,
+      colors,
+      prefs,
+    ),
     _DictionarySection.locale => _buildLocaleSection(theme, colors, prefs),
   };
 
@@ -483,8 +495,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Langues & Conventions de casse',
-          subtitle:
-              'Sépare la langue des identifiants techniques (JSON/YAML) de celle des libellés, descriptions et exemples.',
+          subtitle: 'Sépare la langue des identifiants techniques (JSON/YAML) de celle des libellés, descriptions et exemples.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -500,7 +511,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  for (final lang in BusinessObjectModelPreferences.commonLanguages)
+                  for (final lang
+                      in BusinessObjectModelPreferences.commonLanguages)
                     DropdownMenuItem(
                       value: lang.code,
                       child: Text('${lang.label} (${lang.code})'),
@@ -548,7 +560,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  for (final lang in BusinessObjectModelPreferences.commonLanguages)
+                  for (final lang
+                      in BusinessObjectModelPreferences.commonLanguages)
                     DropdownMenuItem(
                       value: lang.code,
                       child: Text('${lang.label} (${lang.code})'),
@@ -594,7 +607,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  for (final lang in BusinessObjectModelPreferences.commonLanguages)
+                  for (final lang
+                      in BusinessObjectModelPreferences.commonLanguages)
                     DropdownMenuItem(
                       value: lang.code,
                       child: Text('${lang.label} (${lang.code})'),
@@ -697,8 +711,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Identifiants : quand mettre Id, Ref, Code, Number ou Key',
-          subtitle:
-              'Règles d’arbitrage sémantique et technique entre clé primaire, clé étrangère, référence externe, code nomenclature et numéro métier.',
+          subtitle: 'Règles d’arbitrage sémantique et technique entre clé primaire, clé étrangère, référence externe, code nomenclature et numéro métier.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -773,10 +786,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             _IdentifierDecisionCard(
               badge: '*Id',
               title: 'Identifiant technique interne',
-              whenToUse:
-                  'Clé primaire technique générée (UUID/ULID/Int) ou clé étrangère relationnelle interne.',
-              avoid:
-                  'Numéro de facture lu par le client, code pays/devise ou référence partenaire.',
+              whenToUse: 'Clé primaire technique générée (UUID/ULID/Int) ou clé étrangère relationnelle interne.',
+              avoid: 'Numéro de facture lu par le client, code pays/devise ou référence partenaire.',
               formatHint: 'uuid / ULID (readOnly: true)',
               examples: 'id, customerId, orderId',
               accentColor: Colors.indigo,
@@ -784,10 +795,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             _IdentifierDecisionCard(
               badge: '*Ref',
               title: 'Référence externe / tiers',
-              whenToUse:
-                  'Identifiant provenant d’un partenaire, transporteur, ERP ou document fourni par le client.',
-              avoid:
-                  'Clé étrangère interne ou numéro généré par votre application.',
+              whenToUse: 'Identifiant provenant d’un partenaire, transporteur, ERP ou document fourni par le client.',
+              avoid: 'Clé étrangère interne ou numéro généré par votre application.',
               formatHint: 'string (maxLength: 64..128)',
               examples: 'externalRef, trackingRef, poRef',
               accentColor: Colors.teal,
@@ -795,10 +804,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             _IdentifierDecisionCard(
               badge: '*Code',
               title: 'Code nomenclature court',
-              whenToUse:
-                  'Valeur courte normalisée d’un référentiel stable (pays, devise, TVA, SKU, motif).',
-              avoid:
-                  'Séquence chronologique de documents (ex. FAC-2026-001).',
+              whenToUse: 'Valeur courte normalisée d’un référentiel stable (pays, devise, TVA, SKU, motif).',
+              avoid: 'Séquence chronologique de documents (ex. FAC-2026-001).',
               formatHint: r'string (^[A-Z0-9_-]+$, maxLength: 64)',
               examples: 'countryCode, currencyCode, skuCode',
               accentColor: Colors.deepPurple,
@@ -806,8 +813,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             _IdentifierDecisionCard(
               badge: '*Number',
               title: 'Numéro séquentiel métier',
-              whenToUse:
-                  'Numéro lisible généré selon une règle métier ou légale (facture, devis, BL, contrat).',
+              whenToUse: 'Numéro lisible généré selon une règle métier ou légale (facture, devis, BL, contrat).',
               avoid:
                   'Clé étrangère entre tables ou compteur de lignes (*Count).',
               formatHint: 'string (unique: true, pattern structuré)',
@@ -817,8 +823,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             _IdentifierDecisionCard(
               badge: '*Key',
               title: 'Clé fonctionnelle / idempotence',
-              whenToUse:
-                  'Clé d’idempotence API, clé de partition, slug stable ou clé de routage URL-safe.',
+              whenToUse: 'Clé d’idempotence API, clé de partition, slug stable ou clé de routage URL-safe.',
               avoid: 'Clé primaire standard d’une entité métier.',
               formatHint: r'string (^[a-z0-9._:-]+$)',
               examples: 'idempotencyKey, tenantKey',
@@ -840,8 +845,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Dates, Booléens & Unités explicites',
-          subtitle:
-              'Évite les ambiguïtés de fuseau horaire, de négations booléennes et d’unités de mesure.',
+          subtitle: 'Évite les ambiguïtés de fuseau horaire, de négations booléennes et d’unités de mesure.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -921,8 +925,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Audit, Soft-delete & Concurrence optimiste',
-          subtitle:
-              'Champs techniques injectés sur les agrégats racines pour la traçabilité, la suppression logique et le contrôle de version.',
+          subtitle: 'Champs techniques injectés sur les agrégats racines pour la traçabilité, la suppression logique et le contrôle de version.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -1002,8 +1005,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Contraintes & Bornes JSON Schema par défaut',
-          subtitle:
-              'Rigueur de validation, nullabilité, style des relations et longueurs maximales recommandées.',
+          subtitle: 'Rigueur de validation, nullabilité, style des relations et longueurs maximales recommandées.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -1080,9 +1082,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
               'Déplier un repository dans « Arbre & Inspecteur » replie automatiquement les autres.',
             ),
             value: prefs.singleExpandedBusinessObject,
-            onChanged: (v) => _updatePrefs(
-              prefs.copyWith(singleExpandedBusinessObject: v),
-            ),
+            onChanged: (v) =>
+                _updatePrefs(prefs.copyWith(singleExpandedBusinessObject: v)),
           ),
         ),
         const SizedBox(height: 14),
@@ -1179,9 +1180,9 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _SectionTitle(
-              title: 'Dictionnaire des règles techniques (${prefs.technicalRules.length})',
-              subtitle:
-                  'Chaque règle active est injectée dans les instructions du Domain Modeler IA.',
+              title:
+                  'Dictionnaire des règles techniques (${prefs.technicalRules.length})',
+              subtitle: 'Chaque règle active est injectée dans les instructions du Domain Modeler IA.',
             ),
             FilledButton.icon(
               key: const ValueKey('model-dict-add-rule-btn'),
@@ -1196,7 +1197,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
           key: const ValueKey('model-dict-rules-search'),
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.search_rounded),
-            hintText: 'Filtrer par motif (*Id, *Ref, *Number…), règle ou exemple…',
+            hintText:
+                'Filtrer par motif (*Id, *Ref, *Number…), règle ou exemple…',
             border: OutlineInputBorder(),
             isDense: true,
           ),
@@ -1217,8 +1219,9 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                 label: Text(cat.label),
                 selected: _ruleCategoryFilter == cat,
                 onSelected: (_) => setState(
-                  () => _ruleCategoryFilter =
-                      _ruleCategoryFilter == cat ? null : cat,
+                  () => _ruleCategoryFilter = _ruleCategoryFilter == cat
+                      ? null
+                      : cat,
                 ),
               ),
           ],
@@ -1394,8 +1397,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
       children: [
         _SectionTitle(
           title: 'Profil régional, Monétaire & Consignes libres',
-          subtitle:
-              'Formats régionaux des exemples/seeds et instructions d’architecture complémentaires pour l’IA.',
+          subtitle: 'Formats régionaux des exemples/seeds et instructions d’architecture complémentaires pour l’IA.',
         ),
         const SizedBox(height: 16),
         _PreferenceCard(
@@ -1423,7 +1425,8 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
                 TextField(
                   controller: _customLocaleCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Libellé régional personnalisé (ex. Canada FR/CAD)',
+                    labelText:
+                        'Libellé régional personnalisé (ex. Canada FR/CAD)',
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (v) =>
@@ -1458,8 +1461,7 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
             controller: _customInstructionsCtrl,
             maxLines: 5,
             decoration: const InputDecoration(
-              hintText:
-                  'Ex. Séparer systématiquement AdresseFacturation et AdresseLivraison ; utiliser des montants HT + taux TVA explicite…',
+              hintText: 'Ex. Séparer systématiquement AdresseFacturation et AdresseLivraison ; utiliser des montants HT + taux TVA explicite…',
               border: OutlineInputBorder(),
             ),
             onChanged: (v) =>
@@ -1813,16 +1815,11 @@ class _IdentifierDecisionCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(
-                'Quand : $whenToUse',
-                style: theme.textTheme.bodySmall,
-              ),
+              Text('Quand : $whenToUse', style: theme.textTheme.bodySmall),
               const SizedBox(height: 4),
               Text(
                 'À éviter : $avoid',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.error,
-                ),
+                style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
               ),
               const SizedBox(height: 6),
               Text(
@@ -1893,11 +1890,8 @@ class _EditTechnicalRuleDialogState extends State<_EditTechnicalRuleDialog> {
     super.dispose();
   }
 
-  List<String> _split(String raw) => raw
-      .split(',')
-      .map((s) => s.trim())
-      .where((s) => s.isNotEmpty)
-      .toList();
+  List<String> _split(String raw) =>
+      raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -2167,9 +2161,9 @@ class _ModelDictionaryImportExportDialogState
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.outlineVariant,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant,
                               ),
                             ),
                             child: SingleChildScrollView(
@@ -2224,7 +2218,10 @@ class _ModelDictionaryImportExportDialogState
                                   );
                                 }
                               },
-                              icon: const Icon(Icons.save_alt_rounded, size: 16),
+                              icon: const Icon(
+                                Icons.save_alt_rounded,
+                                size: 16,
+                              ),
                               label: const Text('Enregistrer'),
                             ),
                           ],
@@ -2259,7 +2256,10 @@ class _ModelDictionaryImportExportDialogState
                                 _validateImport();
                               }
                             },
-                            icon: const Icon(Icons.upload_file_rounded, size: 16),
+                            icon: const Icon(
+                              Icons.upload_file_rounded,
+                              size: 16,
+                            ),
                             label: const Text('Charger un fichier JSON…'),
                           ),
                         ),

@@ -8,6 +8,87 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+/// Formate une durée exprimée en millisecondes de façon lisible (`142 ms`, `3.4 s`, `1m 12s`).
+String formatVibeDuration(int durationMs) {
+  final safeMs = durationMs < 0 ? 0 : durationMs;
+  if (safeMs < 1000) return '$safeMs ms';
+  if (safeMs < 60000) {
+    return '${(safeMs / 1000).toStringAsFixed(1)} s';
+  }
+  final totalSeconds = safeMs ~/ 1000;
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  return '${minutes}m ${seconds.toString().padLeft(2, '0')}s';
+}
+
+/// Trace chronométrée d'une étape d'orchestration, d'appel IA, d'outil ou de reprise.
+@immutable
+class VibeTimedTrace {
+  /// Construit une trace timée immuable.
+  const VibeTimedTrace({
+    required this.label,
+    required this.durationMs,
+    this.phase = 'step',
+    this.elapsedFromStartMs,
+    this.detail,
+    this.isError = false,
+  });
+
+  /// Libellé synthétique de l'étape mesurée.
+  final String label;
+
+  /// Durée propre de cette étape en millisecondes.
+  final int durationMs;
+
+  /// Catégorie technique (`context`, `llm`, `tool`, `salvage`, `apply`, `verify`, `retry`, `step`).
+  final String phase;
+
+  /// Décalage cumulé en millisecondes depuis le début du tour ou du lot.
+  final int? elapsedFromStartMs;
+
+  /// Précision optionnelle (ex. TTFT, nombre de composants, erreur).
+  final String? detail;
+
+  /// Indique si cette étape s'est terminée en erreur ou en rejet.
+  final bool isError;
+
+  /// Formate cette trace sur une ligne compacte horodatée.
+  String formatLine() {
+    final offsetPrefix = elapsedFromStartMs == null
+        ? ''
+        : '+${formatVibeDuration(elapsedFromStartMs!)} · ';
+    final detailSuffix = detail != null && detail!.trim().isNotEmpty
+        ? ' (${detail!.trim()})'
+        : '';
+    return '$offsetPrefix$label · ${formatVibeDuration(durationMs)}$detailSuffix';
+  }
+
+  /// Sérialise cette trace en JSON.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'phase': phase,
+    'label': label,
+    'durationMs': durationMs,
+    if (elapsedFromStartMs != null) 'elapsedFromStartMs': elapsedFromStartMs,
+    if (detail != null && detail!.isNotEmpty) 'detail': detail,
+    if (isError) 'isError': true,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VibeTimedTrace &&
+          other.label == label &&
+          other.durationMs == durationMs &&
+          other.phase == phase &&
+          other.elapsedFromStartMs == elapsedFromStartMs &&
+          other.detail == detail &&
+          other.isError == isError;
+
+  @override
+  int get hashCode =>
+      Object.hash(label, durationMs, phase, elapsedFromStartMs, detail, isError);
+}
+
 /// État d'exécution d'un lot individuel au sein d'un [VibeExecutionPlan].
 enum VibeLotStatus {
   /// En attente d'exécution.
@@ -69,6 +150,11 @@ class VibePlanLot {
     this.description = '',
     this.status = VibeLotStatus.pending,
     this.errorMessage,
+    this.durationMs,
+    this.attempts = 0,
+    this.hasPartialCheckpoint = false,
+    this.partialCheckpointSummary,
+    this.traces = const <VibeTimedTrace>[],
   });
 
   /// Identifiant technique unique du lot (ex. `"lot-1"`).
@@ -85,6 +171,21 @@ class VibePlanLot {
 
   /// Cause détaillée de l'échec lorsque [status] vaut [VibeLotStatus.failed].
   final String? errorMessage;
+
+  /// Durée totale d'exécution de ce lot en millisecondes, lorsqu'elle est mesurée.
+  final int? durationMs;
+
+  /// Nombre de tentatives IA consommées lors de la dernière exécution du lot.
+  final int attempts;
+
+  /// Indique qu'un checkpoint partiel valide est conservé pour un retry partiel (delta).
+  final bool hasPartialCheckpoint;
+
+  /// Résumé lisible du checkpoint partiel conservé (ex. `6 comp., 2 styles`).
+  final String? partialCheckpointSummary;
+
+  /// Journal chronométré des étapes exécutées sur ce lot.
+  final List<VibeTimedTrace> traces;
 
   /// Analyse un objet JSON brut en [VibePlanLot], ou retourne `null` si invalide.
   static VibePlanLot? tryFromJson(Object? raw, {int fallbackIndex = 1}) {
@@ -120,6 +221,14 @@ class VibePlanLot {
     'title': title,
     if (description.isNotEmpty) 'description': description,
     'status': status.name,
+    if (durationMs != null) 'durationMs': durationMs,
+    if (attempts > 0) 'attempts': attempts,
+    if (hasPartialCheckpoint) 'hasPartialCheckpoint': true,
+    if (partialCheckpointSummary != null &&
+        partialCheckpointSummary!.isNotEmpty)
+      'partialCheckpointSummary': partialCheckpointSummary,
+    if (traces.isNotEmpty)
+      'traces': [for (final trace in traces) trace.toJson()],
   };
 
   /// Retourne une copie modifiée de ce lot.
@@ -130,12 +239,28 @@ class VibePlanLot {
     VibeLotStatus? status,
     String? errorMessage,
     bool clearErrorMessage = false,
+    int? durationMs,
+    bool clearDuration = false,
+    int? attempts,
+    bool? hasPartialCheckpoint,
+    String? partialCheckpointSummary,
+    bool clearPartialCheckpoint = false,
+    List<VibeTimedTrace>? traces,
   }) => VibePlanLot(
     id: id ?? this.id,
     title: title ?? this.title,
     description: description ?? this.description,
     status: status ?? this.status,
     errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
+    durationMs: clearDuration ? null : (durationMs ?? this.durationMs),
+    attempts: attempts ?? this.attempts,
+    hasPartialCheckpoint: clearPartialCheckpoint
+        ? false
+        : (hasPartialCheckpoint ?? this.hasPartialCheckpoint),
+    partialCheckpointSummary: clearPartialCheckpoint
+        ? null
+        : (partialCheckpointSummary ?? this.partialCheckpointSummary),
+    traces: List<VibeTimedTrace>.unmodifiable(traces ?? this.traces),
   );
 
   @override
@@ -146,11 +271,26 @@ class VibePlanLot {
           other.title == title &&
           other.description == description &&
           other.status == status &&
-          other.errorMessage == errorMessage;
+          other.errorMessage == errorMessage &&
+          other.durationMs == durationMs &&
+          other.attempts == attempts &&
+          other.hasPartialCheckpoint == hasPartialCheckpoint &&
+          other.partialCheckpointSummary == partialCheckpointSummary &&
+          listEquals(other.traces, traces);
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, description, status, errorMessage);
+  int get hashCode => Object.hash(
+    id,
+    title,
+    description,
+    status,
+    errorMessage,
+    durationMs,
+    attempts,
+    hasPartialCheckpoint,
+    partialCheckpointSummary,
+    Object.hashAll(traces),
+  );
 }
 
 /// Plan de génération découpé en lots séquentiels pour le chat Vibe IA.
@@ -162,7 +302,11 @@ class VibeExecutionPlan {
     required List<VibePlanLot> lots,
     this.status = VibePlanStatus.awaitingConfirmation,
     this.reproduceExact = false,
-  }) : lots = List<VibePlanLot>.unmodifiable(lots);
+    this.planningDurationMs,
+    this.executionDurationMs,
+    List<VibeTimedTrace> planningTraces = const <VibeTimedTrace>[],
+  }) : lots = List<VibePlanLot>.unmodifiable(lots),
+       planningTraces = List<VibeTimedTrace>.unmodifiable(planningTraces);
 
   /// Titre global du plan affiché en tête de carte.
   final String title;
@@ -175,6 +319,23 @@ class VibeExecutionPlan {
 
   /// Indique si ce plan a été généré en mode « À l’identique » (pixel-perfect).
   final bool reproduceExact;
+
+  /// Durée de la Phase 1 (analyse et découpage du plan) en millisecondes.
+  final int? planningDurationMs;
+
+  /// Durée totale d'exécution de la Phase 2 (boucle des lots) en millisecondes.
+  final int? executionDurationMs;
+
+  /// Traces chronométrées de la Phase 1 (planification).
+  final List<VibeTimedTrace> planningTraces;
+
+  /// Somme des durées mesurées (planification + exécution des lots).
+  int get totalMeasuredDurationMs {
+    final exec =
+        executionDurationMs ??
+        lots.fold<int>(0, (sum, lot) => sum + (lot.durationMs ?? 0));
+    return (planningDurationMs ?? 0) + exec;
+  }
 
   /// Nombre de lots terminés avec succès.
   int get doneCount =>
@@ -253,6 +414,11 @@ class VibeExecutionPlan {
     'title': title,
     'status': status.name,
     if (reproduceExact) 'reproduceExact': true,
+    if (planningDurationMs != null) 'planningDurationMs': planningDurationMs,
+    if (executionDurationMs != null)
+      'executionDurationMs': executionDurationMs,
+    if (planningTraces.isNotEmpty)
+      'planningTraces': [for (final t in planningTraces) t.toJson()],
     'lots': [for (final lot in lots) lot.toJson()],
   };
 
@@ -262,11 +428,20 @@ class VibeExecutionPlan {
     List<VibePlanLot>? lots,
     VibePlanStatus? status,
     bool? reproduceExact,
+    int? planningDurationMs,
+    int? executionDurationMs,
+    bool clearExecutionDuration = false,
+    List<VibeTimedTrace>? planningTraces,
   }) => VibeExecutionPlan(
     title: title ?? this.title,
     lots: lots ?? this.lots,
     status: status ?? this.status,
     reproduceExact: reproduceExact ?? this.reproduceExact,
+    planningDurationMs: planningDurationMs ?? this.planningDurationMs,
+    executionDurationMs: clearExecutionDuration
+        ? null
+        : (executionDurationMs ?? this.executionDurationMs),
+    planningTraces: planningTraces ?? this.planningTraces,
   );
 
   /// Retourne une copie du plan après mise à jour du lot situé à [index].
@@ -313,9 +488,19 @@ class VibeExecutionPlan {
           other.title == title &&
           other.status == status &&
           other.reproduceExact == reproduceExact &&
+          other.planningDurationMs == planningDurationMs &&
+          other.executionDurationMs == executionDurationMs &&
+          listEquals(other.planningTraces, planningTraces) &&
           listEquals(other.lots, lots);
 
   @override
-  int get hashCode =>
-      Object.hash(title, status, reproduceExact, Object.hashAll(lots));
+  int get hashCode => Object.hash(
+    title,
+    status,
+    reproduceExact,
+    planningDurationMs,
+    executionDurationMs,
+    Object.hashAll(planningTraces),
+    Object.hashAll(lots),
+  );
 }

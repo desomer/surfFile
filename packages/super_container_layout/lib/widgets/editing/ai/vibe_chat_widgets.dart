@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/call_gemini.dart';
+import '../../../ai/vibe_plan.dart';
 import '../../../ai/vibe_speech_to_text.dart';
 import '../../../ai/vibe_stream_parser.dart';
 import 'vibe_ask_user_card.dart';
@@ -108,14 +109,19 @@ class VibeMessageBubble extends StatelessWidget {
     required this.message,
     this.sending = false,
     this.isActivePlan = false,
+    this.canRetryFinishedPlan = false,
     this.onSubmitAskUser,
     this.onSkipAskUser,
     this.onAskMoreAskUser,
     this.onRequestMoreQuestions,
+    this.onRetryTurn,
     this.onStartPlan,
     this.onCancelPlan,
     this.onStopPlan,
     this.onRetryPlanLot,
+    this.onRetryPlanLotPartial,
+    this.onRetryPlanAll,
+    this.onResumePlan,
     this.onSkipPlanLot,
     this.onTogglePlanLot,
     this.speechTranscriber,
@@ -132,6 +138,9 @@ class VibeMessageBubble extends StatelessWidget {
   /// Indique si le plan porté par ce message est le plan interactif courant.
   final bool isActivePlan;
 
+  /// Autorise les actions de relance sur un plan arrêté ou terminé.
+  final bool canRetryFinishedPlan;
+
   /// Reçoit les réponses à un questionnaire.
   final ValueChanged<Map<String, Object?>>? onSubmitAskUser;
 
@@ -144,6 +153,9 @@ class VibeMessageBubble extends StatelessWidget {
   /// Déclenche une demande de 2 à 4 questions d'affinage sous cette réponse de l'assistant.
   final VoidCallback? onRequestMoreQuestions;
 
+  /// Relance ce tour lorsqu'il a échoué.
+  final VoidCallback? onRetryTurn;
+
   /// Déclenche l'exécution automatique du plan.
   final VoidCallback? onStartPlan;
 
@@ -153,8 +165,17 @@ class VibeMessageBubble extends StatelessWidget {
   /// Arrête l'exécution du plan en cours ou en pause.
   final VoidCallback? onStopPlan;
 
-  /// Relance le lot en échec.
+  /// Relance le lot en échec depuis zéro (retry complet du lot).
   final VoidCallback? onRetryPlanLot;
+
+  /// Relance le lot en échec à partir de son checkpoint partiel (retry partiel).
+  final VoidCallback? onRetryPlanLotPartial;
+
+  /// Relance l'intégralité du plan depuis le premier lot (retry complet du plan).
+  final VoidCallback? onRetryPlanAll;
+
+  /// Reprend un plan arrêté ou relance les lots ignorés.
+  final VoidCallback? onResumePlan;
 
   /// Ignore le lot en échec et poursuit avec le suivant.
   final VoidCallback? onSkipPlanLot;
@@ -306,9 +327,18 @@ class VibeMessageBubble extends StatelessWidget {
                 ],
                 if (message.toolTraces.isNotEmpty) ...[
                   VibeToolTracesSection(traces: message.toolTraces),
-                  if (message.text.isNotEmpty ||
+                  if (message.timedTraces.isNotEmpty ||
+                      message.text.isNotEmpty ||
                       askUser != null ||
                       plan != null)
+                    const SizedBox(height: 6),
+                ],
+                if (plan == null && message.timedTraces.isNotEmpty) ...[
+                  VibeTimedTracesSection(
+                    traces: message.timedTraces,
+                    totalDurationMs: message.generationDurationMs,
+                  ),
+                  if (message.text.isNotEmpty || askUser != null)
                     const SizedBox(height: 6),
                 ],
                 if (message.text.isNotEmpty) SelectableText(message.text),
@@ -339,12 +369,28 @@ class VibeMessageBubble extends StatelessWidget {
                     plan: plan,
                     busy: sending,
                     isActivePlan: isActivePlan,
+                    canRetryFinishedPlan: canRetryFinishedPlan,
                     onStart: onStartPlan,
                     onCancel: onCancelPlan,
                     onStop: onStopPlan,
                     onRetryLot: onRetryPlanLot,
+                    onRetryLotPartial: onRetryPlanLotPartial,
+                    onRetryPlanAll: onRetryPlanAll,
+                    onResumePlan: onResumePlan,
                     onSkipLot: onSkipPlanLot,
                     onToggleLot: onTogglePlanLot,
+                  ),
+                ],
+                if (message.retryTurn != null && onRetryTurn != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('vibe-message-retry'),
+                      onPressed: sending ? null : onRetryTurn,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Réessayer'),
+                    ),
                   ),
                 ],
                 if (onRequestMoreQuestions != null) ...[
@@ -543,6 +589,15 @@ class _VibeToolTraceRow extends StatelessWidget {
                         ),
                       ),
                     ),
+                  if (trace.durationMs != null)
+                    Text(
+                      formatVibeDuration(trace.durationMs!),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontFamily: 'monospace',
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (trace.summary.isNotEmpty)
                     Text(
                       trace.summary,
@@ -570,6 +625,118 @@ class _VibeToolTraceRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Section compacte et dépliable présentant les traces chronométrées d'un tour IA.
+class VibeTimedTracesSection extends StatefulWidget {
+  /// Crée une section dépliable listant [traces].
+  const VibeTimedTracesSection({
+    required this.traces,
+    this.totalDurationMs,
+    super.key,
+  });
+
+  /// Étapes chronométrées collectées pendant la génération.
+  final List<VibeTimedTrace> traces;
+
+  /// Durée totale optionnelle affichée dans l'en-tête.
+  final int? totalDurationMs;
+
+  @override
+  State<VibeTimedTracesSection> createState() => _VibeTimedTracesSectionState();
+}
+
+class _VibeTimedTracesSectionState extends State<VibeTimedTracesSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasError = widget.traces.any((t) => t.isError);
+    final total = widget.totalDurationMs;
+    final header = total != null
+        ? 'Traces timées (${widget.traces.length}) · ${formatVibeDuration(total)}'
+        : 'Traces timées (${widget.traces.length})';
+    return Container(
+      key: const ValueKey('vibe-message-timed-traces'),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasError
+              ? scheme.error.withValues(alpha: 0.45)
+              : scheme.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          InkWell(
+            key: const ValueKey('vibe-message-timed-traces-toggle'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 14,
+                    color: hasError ? scheme.error : scheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      header,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 15,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final trace in widget.traces)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Text(
+                        trace.formatLine(),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontFamily: 'monospace',
+                          color: trace.isError
+                              ? scheme.error
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1164,7 +1331,12 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
             builder: (context, current, _) {
               final streamedMessage = current?.message;
               final activeToolStatus = current?.activeToolStatus;
-              final completedTraces = current?.toolTraces ?? const <VibeToolTrace>[];
+              final activePhaseLabel = current?.activePhaseLabel;
+              final elapsedMs = current?.elapsedMs;
+              final completedTraces =
+                  current?.toolTraces ?? const <VibeToolTrace>[];
+              final timedTraces =
+                  current?.timedTraces ?? const <VibeTimedTrace>[];
               if (current == null || streamedMessage == null) {
                 return Container(
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -1181,6 +1353,52 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (activePhaseLabel != null || elapsedMs != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (activePhaseLabel != null)
+                                Flexible(
+                                  child: Text(
+                                    activePhaseLabel,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: scheme.primary,
+                                    ),
+                                  ),
+                                ),
+                              if (elapsedMs != null) ...[
+                                if (activePhaseLabel != null)
+                                  const SizedBox(width: 6),
+                                Text(
+                                  formatVibeDuration(elapsedMs),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontFamily: 'monospace',
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      for (final trace in timedTraces)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            trace.formatLine(),
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontFamily: 'monospace',
+                              color: trace.isError
+                                  ? scheme.error
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
                       for (final trace in completedTraces)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 4),
@@ -1234,6 +1452,52 @@ class VibeStreamingAssistantBubble extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (activePhaseLabel != null || elapsedMs != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (activePhaseLabel != null)
+                              Flexible(
+                                child: Text(
+                                  activePhaseLabel,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: scheme.primary,
+                                  ),
+                                ),
+                              ),
+                            if (elapsedMs != null) ...[
+                              if (activePhaseLabel != null)
+                                const SizedBox(width: 6),
+                              Text(
+                                formatVibeDuration(elapsedMs),
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontFamily: 'monospace',
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    for (final trace in timedTraces)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(
+                          trace.formatLine(),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontFamily: 'monospace',
+                            color: trace.isError
+                                ? scheme.error
+                                : scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     for (final trace in completedTraces)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 4),

@@ -25,6 +25,7 @@ class ReviewExportView extends StatelessWidget {
   const ReviewExportView({
     required this.controller,
     this.onContinueToUxWizard,
+    this.onContinueToQaWizard,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
     super.key,
@@ -35,6 +36,9 @@ class ReviewExportView extends StatelessWidget {
 
   /// Callback optionnel permettant d'enchaîner directement vers le Wizard UX & Parcours.
   final VoidCallback? onContinueToUxWizard;
+
+  /// Callback optionnel permettant d'enchaîner directement vers le Wizard BDD / Gherkin & TDD.
+  final VoidCallback? onContinueToQaWizard;
 
   /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
   final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
@@ -105,6 +109,13 @@ class ReviewExportView extends StatelessWidget {
                           size: 16,
                         ),
                         label: const Text('Poursuivre vers le Wizard UX'),
+                      ),
+                    if (onContinueToQaWizard != null)
+                      OutlinedButton.icon(
+                        key: const ValueKey('spec-review-continue-to-qa-btn'),
+                        onPressed: onContinueToQaWizard,
+                        icon: const Icon(Icons.science_rounded, size: 16),
+                        label: const Text('BDD / TDD'),
                       ),
                     FilledButton.icon(
                       onPressed: () => _exportAllDialog(

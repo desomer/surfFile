@@ -22,6 +22,15 @@ Accessible dans l'onglet **Spec** via la carte **Wizard UX & Parcours** ou le bo
 3. **Écrans, Zones & Interactions** (`Interaction & Screen Designer`) : fiches d'écrans (`SCR-xxx`), schéma visuel interactif des 5 zones (`north`, `west`, `center`, `east`, `south`), blocs composants liés aux objets/attributs métiers, actions `RG-xxx` et états UX (vide, chargement, erreur, lecture seule).
 4. **Audit UX & Export SuperDesigner** (`UX Auditor & Handoff Lead`) : audit croisé Métier↔UX (`UxCoherenceAnalyzer`), prompt clé-en-main pour le Vibe Chat (`prompt_super_designer.md`), schémas et repositories JSON (`json_schemas/*.schema.json`, `repositories/*.json`, `repositories_bundle.json`, `schema_light.yaml`), spécification UX Markdown (`specification_ux.md`), charte `DESIGN.md` et génération complète dans le dossier d'application sandboxée (`EditorPageCatalog`, thème `appearance.json` et squelettes d'écrans `SuperLayout` dans `pages/*.json` pré-liés aux `repositories/`).
 
+## Wizard BDD / Gherkin & TDD (4 étapes en aval)
+
+Accessible dans l'onglet **Spec** via la carte **Wizard BDD / Gherkin & TDD** ou les boutons passerelles en fin des Wizards 1 et 2, ce troisième wizard couvre aussi bien les projets Backend/API sans UI que les projets Full-Stack avec écrans UX :
+
+1. **Jeux de données & Cas aux limites** (`Test Strategist & Fixture Designer`) : fixtures déterministes (`FIX-xxx`) nominales, valeurs aux bornes JSON Schema, cas d'erreur et habilitations, avec génération 1-clic depuis les schémas.
+2. **Features Gherkin BDD (`.feature`)** (`BDD & Gherkin Architect`) : fonctionnalités (`FEAT-xxx`), `Contexte`, `Scénario` et `Plan du Scénario` + table `Exemples` en français par défaut (`# language: fr` + sélecteur `FR / EN`), tags normalisés (`@exf`, `@rg`, `@jrn`, `@scr`) et génération 1-clic depuis les cas d'usage et parcours UX.
+3. **Suites TDD Unitaires & Contrats** (`TDD & Contract Engineer`) : suites (`TDD-xxx`) et cas atomiques `Arrange / Act / Assert` (`TC-xxx`) ordonnés en progression *Red → Green → Refactor* avec génération 1-clic depuis les règles `RG-xxx`.
+4. **Couverture 360° & Export BDD/TDD** (`QA Coverage Auditor & Export Lead`) : audit croisé Métier + UX ↔ Tests (`QaCoherenceAnalyzer`) et export sur disque (sans HTML) de `features/*.feature`, `fixtures/*.json`, `fixtures_bundle.json`, `specification_bdd_tdd.md`, `specification_qa.json` et `prompt_tdd_agent.md`.
+
 ## Persistance par dossier & intégration Git
 
 Les données sont stockées dans un **dossier Workspace sélectionnable** (par défaut `~/.super_spec_forge`, ou tout dépôt Git choisi via le sélecteur de workspace dans la barre d'application) :
@@ -55,7 +64,13 @@ Les données sont stockées dans un **dossier Workspace sélectionnable** (par d
     │   ├── coherence_issues.json       # Diagnostics UX
     │   ├── journeys/<slug>.json        # 1 fichier par parcours (JRN-xxx)
     │   └── screens/<slug>.json         # 1 fichier par écran (SCR-xxx)
-    ├── chats/                          # Historiques IA par étape (Spec, UX & global)
+    ├── qa/
+    │   ├── meta.json                   # Étape QA active & langue Gherkin (fr/en)
+    │   ├── coherence_issues.json       # Diagnostics de couverture QA
+    │   ├── fixtures/<slug>.json        # 1 fichier par jeu d'essai (FIX-xxx)
+    │   ├── features/<slug>.json        # 1 fichier par feature Gherkin (FEAT-xxx)
+    │   └── tdd_suites/<slug>.json      # 1 fichier par suite TDD (TDD-xxx)
+    ├── chats/                          # Historiques IA par étape (Spec, UX, QA & global)
     └── attachments/                    # Pièces jointes dédupliquées
 ```
 

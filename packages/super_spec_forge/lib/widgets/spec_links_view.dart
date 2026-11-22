@@ -25,7 +25,9 @@ class SpecLinksView extends StatelessWidget {
   /// Libellés partagés par les cartes et le titre de la page ouverte.
   static const projectsLabel = 'Projets';
   static const glossaryLabel = 'Glossaire d’entreprise';
+  static const modelingDictionaryLabel = 'Dictionnaire technique & Modèle';
   static const uxWizardLabel = 'Wizard UX & Parcours';
+  static const qaWizardLabel = 'Wizard BDD / Gherkin & TDD';
 
   /// Nombre de projets récents enregistrés.
   final int recentProjectsCount;
@@ -52,6 +54,12 @@ class SpecLinksView extends StatelessWidget {
                 ? '$companyGlossaryTermsCount terme(s)'
                 : 'Référentiel partagé',
             tooltip: 'Gérer le glossaire terminologique d’entreprise partagé entre tous les projets',
+          ),
+          DesignLinkItem(
+            id: 'modeling_dictionary',
+            label: modelingDictionaryLabel,
+            icon: Icons.rule_folder_outlined,
+            tooltip: 'Règles techniques (Id, Ref, Code, Number, dates, booléens) et préférences globales de modélisation',
           ),
         ],
       ),
@@ -86,6 +94,17 @@ class SpecLinksView extends StatelessWidget {
                 : '${project.uxSpec.journeys.length} parcours · ${project.uxSpec.screens.length} écran(s)',
             tooltip: project != null
                 ? 'Concevoir les parcours, la navigation et les écrans UX du projet « ${project.name} »'
+                : 'Ouvrez ou créez d’abord un projet dans Projets',
+          ),
+          DesignLinkItem(
+            id: 'qa_wizard',
+            label: qaWizardLabel,
+            icon: Icons.science_rounded,
+            subtitle: project == null
+                ? 'Jeux d’essais, .feature & TDD'
+                : '${project.qaSpec.features.length} feature(s) · ${project.qaSpec.totalTddCaseCount} cas TDD',
+            tooltip: project != null
+                ? 'Forger les jeux d’essais, les scénarios Gherkin et les suites TDD du projet « ${project.name} »'
                 : 'Ouvrez ou créez d’abord un projet dans Projets',
           ),
         ],

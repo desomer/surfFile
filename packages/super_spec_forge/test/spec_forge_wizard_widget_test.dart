@@ -1116,7 +1116,34 @@ Facture:
       expect(find.text('Projets'), findsOneWidget);
       expect(find.text('Wizard de spécification'), findsOneWidget);
       expect(find.text('Glossaire d’entreprise'), findsOneWidget);
+      expect(find.text('Dictionnaire technique & Modèle'), findsOneWidget);
       expect(find.text('Aucun projet actif'), findsOneWidget);
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('spec-link-company_glossary')),
+            )
+            .dy,
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('spec-link-modeling_dictionary')),
+            )
+            .dy,
+      );
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('spec-link-company_glossary')),
+            )
+            .dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('spec-link-modeling_dictionary')),
+              )
+              .dx,
+        ),
+      );
 
       // Replier puis déplier « Entreprise » vérifie que Glossaire d'entreprise en fait bien partie.
       await tester.tap(
@@ -1139,6 +1166,24 @@ Facture:
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('company-glossary-view')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('spec-link-modeling_dictionary')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('model-dictionary-view')),
+        findsOneWidget,
+      );
+      expect(
+        _appBarText('Spec › Dictionnaire technique & Modèle'),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
@@ -1224,7 +1269,9 @@ Facture:
       );
 
       // Ouvrir Projets puis revenir ne ferme pas le projet actif.
-      await tester.tap(find.byKey(const ValueKey('spec-link-company_glossary')));
+      await tester.tap(
+        find.byKey(const ValueKey('spec-link-company_glossary')),
+      );
       await tester.pumpAndSettle();
       expect(_appBarText('Spec › Glossaire d’entreprise'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
@@ -1250,7 +1297,7 @@ Facture:
       );
       expect(find.text('Nouvelle forge à partir d’une idée'), findsNothing);
 
-      // Vérifie les deux sections (urbaniste & architecte en premier) et les 10 liens de Design.
+      // Vérifie les deux sections (urbaniste & architecte en premier) et les 9 liens de Design.
       expect(find.text('Pour l’urbaniste & architecte'), findsOneWidget);
       expect(find.text('Pour le concepteur backend'), findsOneWidget);
       expect(find.text('Glossaire d’entreprise'), findsNothing);
@@ -1287,7 +1334,7 @@ Facture:
               .dx,
         ),
       );
-      expect(find.text('Dictionnaire technique & Modèle'), findsOneWidget);
+      expect(find.text('Dictionnaire technique & Modèle'), findsNothing);
       expect(find.text('Modèles & Contrats'), findsOneWidget);
       expect(find.text('Mapping sortant'), findsOneWidget);
       expect(find.text('Cas d’usage & orchestration'), findsOneWidget);
@@ -1323,11 +1370,16 @@ Facture:
       expect(find.text('Facturation'), findsNWidgets(2));
       expect(_appBarText('Gestion des domaines › Facturation'), findsOneWidget);
       final catalog = controller.domainCatalog;
-      await controller.updateDomainCatalog(catalog.copyWith(
-        domains: [catalog.domains.single.copyWith(name: 'Comptabilité')],
-      ));
+      await controller.updateDomainCatalog(
+        catalog.copyWith(
+          domains: [catalog.domains.single.copyWith(name: 'Comptabilité')],
+        ),
+      );
       await tester.pumpAndSettle();
-      expect(_appBarText('Gestion des domaines › Comptabilité'), findsOneWidget);
+      expect(
+        _appBarText('Gestion des domaines › Comptabilité'),
+        findsOneWidget,
+      );
       expect(find.textContaining('billing-domain'), findsNWidgets(2));
       await tester.tap(
         find.byKey(const ValueKey('domain-add-environment-btn')),
@@ -1354,35 +1406,18 @@ Facture:
         findsOneWidget,
       );
 
-      // Clic sur « Dictionnaire technique & Modèle » : ouvre la sous-vue dédiée, puis retour.
-      await tester.tap(
-        find.byKey(const ValueKey('design-link-modeling_dictionary')),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('model-dictionary-view')),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const ValueKey('design-subview-back-btn')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('spec-forge-design-view')),
-        findsOneWidget,
-      );
-
       // Replier puis déplier la section concepteur backend.
       await tester.tap(
         find.byKey(const ValueKey('design-section-header-backend_designer')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Dictionnaire technique & Modèle'), findsNothing);
       expect(find.text('Systèmes & Services'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('design-section-header-backend_designer')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Dictionnaire technique & Modèle'), findsOneWidget);
+      expect(find.text('Dictionnaire technique & Modèle'), findsNothing);
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
@@ -1392,7 +1427,12 @@ Facture:
         findsOneWidget,
       );
 
-      await tester.tap(find.text('Spec'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Spec'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
@@ -2467,11 +2507,16 @@ Facture:
         findsNothing,
       );
 
-      // Navigation vers Design -> Dictionnaire technique & Modèle.
-      await tester.tap(find.text('Design'));
+      // Navigation vers Spec -> Dictionnaire technique & Modèle.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text('Spec'),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('design-link-modeling_dictionary')),
+        find.byKey(const ValueKey('spec-link-modeling_dictionary')),
       );
       await tester.pumpAndSettle();
       expect(
@@ -2597,7 +2642,9 @@ Facture:
       );
 
       // Retour dans Spec > Objets métiers et lancement de l'IA -> reçoit les règles globales.
-      await tester.tap(find.text('Spec'));
+      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-stage-start-ai')));
       await tester.pumpAndSettle();

@@ -16,6 +16,11 @@ import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/qa/gherkin_feature_spec.dart';
+import '../models/qa/qa_coherence_issue.dart';
+import '../models/qa/qa_forge_spec.dart';
+import '../models/qa/qa_forge_stage.dart';
+import '../models/qa/tdd_suite_spec.dart';
 import '../models/ux/ux_coherence_issue.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
@@ -52,6 +57,31 @@ abstract final class SpecForgeToolRegistry {
     'inspect_ux_screen',
     'run_ux_coherence_audit',
     'focus_ux_item',
+    'get_lexicon_and_synonyms',
+    'get_requirements_summary',
+    'inspect_business_object',
+    'get_business_rules',
+    'run_coherence_audit',
+    'get_debug_entries',
+  };
+
+  /// Ensemble des 4 outils dédiés au volet QA BDD/Gherkin & TDD.
+  static const Set<String> qaToolNames = <String>{
+    'get_qa_overview',
+    'inspect_qa_artifact',
+    'run_qa_coherence_audit',
+    'focus_qa_item',
+  };
+
+  /// Ensemble recommandé d'outils pour les 4 agents du wizard QA (outils QA + introspection UX & Spec en lecture/audit).
+  static const Set<String> qaStageToolNames = <String>{
+    'get_qa_overview',
+    'inspect_qa_artifact',
+    'run_qa_coherence_audit',
+    'focus_qa_item',
+    'get_ux_overview',
+    'inspect_ux_screen',
+    'run_ux_coherence_audit',
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'inspect_business_object',
@@ -118,6 +148,22 @@ abstract final class SpecForgeToolRegistry {
       'focus_ux_item',
       'positionne l\'atelier UX sur une étape, un parcours (`journeyId`), une route (`routeId`), un écran (`screenId`) et/ou une zone (`zone`).',
     ),
+    (
+      'get_qa_overview',
+      'synthétise les jeux d\'essais (`FIX-xxx`), les features et scénarios Gherkin (`FEAT-xxx` / `SCN-xxx`), les suites et cas TDD (`TDD-xxx` / `TC-xxx`) et la langue Gherkin active (`fr` / `en`).',
+    ),
+    (
+      'inspect_qa_artifact',
+      'lit le détail complet d\'une fixture (`QaFixtureSpec`), d\'une feature ou d\'un scénario Gherkin (`GherkinFeatureSpec` / `GherkinScenarioSpec`) ou d\'une suite TDD (`TddTestSuiteSpec`) par identifiant, code (`FIX-001`, `FEAT-001`, `SCN-001`, `TDD-001`) ou nom/titre.',
+    ),
+    (
+      'run_qa_coherence_audit',
+      'exécute l\'audit de couverture 360° et de cohérence Métier+UX↔QA (couverture `EXF-xxx` / `RG-xxx`, variables `<var>` d\'Exemples Gherkin, erreurs attendues TDD et références croisées).',
+    ),
+    (
+      'focus_qa_item',
+      'positionne l\'atelier QA sur une étape (`stage`), une fixture (`fixtureId`), une feature (`featureId`), un scénario (`scenarioId`) et/ou une suite TDD (`tddSuiteId`).',
+    ),
   ];
 
   /// Guide succinct injecté dans le guide statique des agents, restreint aux
@@ -134,7 +180,7 @@ abstract final class SpecForgeToolRegistry {
     ].join('\n');
   }
 
-  /// Déclarations statiques des 14 outils (10 Spec + 4 UX) exposés au modèle Gemini.
+  /// Déclarations statiques des 18 outils (10 Spec + 4 UX + 4 QA) exposés au modèle Gemini.
   static const List<VibeToolDeclaration> declarations = <VibeToolDeclaration>[
     VibeToolDeclaration(
       name: 'get_lexicon_and_synonyms',
@@ -385,9 +431,106 @@ abstract final class SpecForgeToolRegistry {
         },
       },
     ),
+    VibeToolDeclaration(
+      name: 'get_qa_overview',
+      description: 'Retourne un aperçu synthétique du volet QA BDD/TDD : langue Gherkin active (fr / en), jeux d’essais (FIX-xxx), features et scénarios Gherkin (FEAT-xxx / SCN-xxx), et suites/cas TDD (TDD-xxx / TC-xxx).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'objectId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant ou nom technique d’objet métier cible.',
+          },
+          'moduleId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Filtre optionnel par identifiant de module fonctionnel.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'inspect_qa_artifact',
+      description: 'Inspecte le détail complet d’une fixture QA (QaFixtureSpec), d’une feature ou d’un scénario Gherkin (GherkinFeatureSpec / GherkinScenarioSpec), ou d’une suite TDD (TddTestSuiteSpec) par identifiant, code (FIX-001, FEAT-001, SCN-001, TDD-001) ou nom/titre.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'idOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant, code (FIX-001, FEAT-001, SCN-001, TDD-001, TC-001) ou nom/titre de l’artefact QA à inspecter.',
+          },
+          'fixtureId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler une fixture QA.',
+          },
+          'featureId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler une feature Gherkin.',
+          },
+          'scenarioId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un scénario Gherkin.',
+          },
+          'tddSuiteId': <String, Object?>{
+            'type': 'string',
+            'description':
+                'Alias optionnel de idOrCode pour cibler une suite TDD.',
+          },
+          'kind': <String, Object?>{
+            'type': 'string',
+            'description': 'Indice optionnel de type d’artefact (fixture, feature, scenario, tddSuite).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'run_qa_coherence_audit',
+      description: 'Exécute le contrôle de couverture 360° et de cohérence Métier+UX↔QA (couverture EXF/RG, variables <var> des plans de scénarios Gherkin, erreurs attendues TDD et références croisées).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par étape QA (testFixtures, gherkinFeatures, tddSuites, qaReviewExport).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'focus_qa_item',
+      description: 'Bascule l’atelier QA sur une étape donnée et sélectionne éventuellement une fixture (fixtureId), une feature Gherkin (featureId), un scénario (scenarioId) et/ou une suite TDD (tddSuiteId).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Étape QA cible (testFixtures, gherkinFeatures, tddSuites, qaReviewExport).',
+          },
+          'fixtureId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code FIX-xxx de la fixture à sélectionner (optionnel).',
+          },
+          'featureId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code FEAT-xxx de la feature Gherkin à sélectionner (optionnel).',
+          },
+          'scenarioId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code SCN-xxx du scénario Gherkin à sélectionner (optionnel).',
+          },
+          'tddSuiteId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code TDD-xxx de la suite TDD à sélectionner (optionnel).',
+          },
+        },
+      },
+    ),
   ];
 
-  /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec et les 4 outils UX.
+  /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec, UX et QA.
   static VibeAppToolRegistry create({
     required SpecForgeProject? Function() readProject,
     Future<void> Function(SpecForgeProject updated)? onUpdateProject,
@@ -408,8 +551,19 @@ abstract final class SpecForgeToolRegistry {
       UxLayoutZoneName? zone,
     })?
     onFocusUxItem,
+    List<QaCoherenceIssue> Function(SpecForgeProject project)?
+    onRunQaCoherenceAudit,
+    void Function({
+      QaForgeStage? stage,
+      String? fixtureId,
+      String? featureId,
+      String? scenarioId,
+      String? tddSuiteId,
+    })?
+    onFocusQaItem,
     Set<String>? toolNames,
     bool includeUxTools = true,
+    bool includeQaTools = true,
     bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) => build(
     readProject: readProject,
@@ -422,16 +576,19 @@ abstract final class SpecForgeToolRegistry {
     readModelPreferences: readModelPreferences,
     onRunUxCoherenceAudit: onRunUxCoherenceAudit,
     onFocusUxItem: onFocusUxItem,
+    onRunQaCoherenceAudit: onRunQaCoherenceAudit,
+    onFocusQaItem: onFocusQaItem,
     toolNames: toolNames,
     includeUxTools: includeUxTools,
+    includeQaTools: includeQaTools,
     coherenceIssueFilter: coherenceIssueFilter,
   );
 
   /// Construit un [VibeAppToolRegistry] connecté au projet courant et aux callbacks de mutation/navigation.
   ///
   /// [toolNames] restreint les outils enregistrés ; lorsqu'il est omis, les 4
-  /// outils UX sont activés dès que [includeUxTools] vaut `true` ou qu'un
-  /// callback UX ([onRunUxCoherenceAudit] / [onFocusUxItem]) est fourni.
+  /// outils UX et/ou les 4 outils QA sont activés dès que [includeUxTools] /
+  /// [includeQaTools] vaut `true` ou qu'un callback UX / QA correspondant est fourni.
   static VibeAppToolRegistry build({
     required SpecForgeProject? Function() readProject,
     Future<void> Function(SpecForgeProject updated)? onUpdateProject,
@@ -452,8 +609,19 @@ abstract final class SpecForgeToolRegistry {
       UxLayoutZoneName? zone,
     })?
     onFocusUxItem,
+    List<QaCoherenceIssue> Function(SpecForgeProject project)?
+    onRunQaCoherenceAudit,
+    void Function({
+      QaForgeStage? stage,
+      String? fixtureId,
+      String? featureId,
+      String? scenarioId,
+      String? tddSuiteId,
+    })?
+    onFocusQaItem,
     Set<String>? toolNames,
     bool? includeUxTools,
+    bool? includeQaTools,
     bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) {
     final handlers = <String, VibeToolHandler>{
@@ -1303,16 +1471,477 @@ abstract final class SpecForgeToolRegistry {
           },
         );
       },
+      'get_qa_overview': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final qa = project.qaSpec;
+        final objFilter = (call.arguments['objectId'] as String?)?.trim() ?? '';
+        final resolvedObj = objFilter.isEmpty
+            ? null
+            : project.findBusinessObject(objFilter);
+        final moduleFilter =
+            (call.arguments['moduleId'] as String?)?.trim() ?? '';
+
+        bool matchesObject(String candidateObjectId) {
+          if (objFilter.isEmpty) return true;
+          final lower = candidateObjectId.toLowerCase();
+          if (lower == objFilter.toLowerCase()) return true;
+          if (resolvedObj != null) {
+            return lower == resolvedObj.id.toLowerCase() ||
+                lower == resolvedObj.technicalName.toLowerCase() ||
+                lower == resolvedObj.name.toLowerCase();
+          }
+          return false;
+        }
+
+        final fixtures = objFilter.isEmpty
+            ? qa.fixtures
+            : qa.fixtures
+                  .where((f) => matchesObject(f.businessObjectId))
+                  .toList();
+        final features = moduleFilter.isEmpty
+            ? qa.features
+            : qa.features
+                  .where(
+                    (f) =>
+                        f.moduleId.toLowerCase() == moduleFilter.toLowerCase(),
+                  )
+                  .toList();
+        final suites = qa.tddSuites.where((s) {
+          if (objFilter.isNotEmpty && !matchesObject(s.targetObjectId)) {
+            return false;
+          }
+          if (moduleFilter.isNotEmpty &&
+              s.moduleId.toLowerCase() != moduleFilter.toLowerCase()) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        final scenarioCount = features.fold<int>(
+          0,
+          (sum, f) => sum + f.scenarios.length,
+        );
+        final tddCaseCount = suites.fold<int>(
+          0,
+          (sum, s) => sum + s.cases.length,
+        );
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'currentQaStage': qa.currentStage.name,
+            'gherkinLanguage': qa.gherkinLanguage.name,
+            'gherkinHeader': qa.gherkinLanguage.gherkinHeader,
+            'hasContent': qa.hasContent,
+            'fixtureCount': fixtures.length,
+            'fixtures': [
+              for (final f in fixtures)
+                <String, Object?>{
+                  'id': f.id,
+                  'code': f.code,
+                  'name': f.name,
+                  'kind': f.kind.name,
+                  'businessObjectId': f.businessObjectId,
+                  'personaId': f.personaId,
+                  'businessRuleIds': f.businessRuleIds,
+                  'expectedValid': f.expectedValid,
+                },
+            ],
+            'featureCount': features.length,
+            'scenarioCount': scenarioCount,
+            'features': [
+              for (final f in features)
+                <String, Object?>{
+                  'id': f.id,
+                  'code': f.code,
+                  'title': f.title,
+                  'moduleId': f.moduleId,
+                  'personaId': f.personaId,
+                  'tags': f.tags,
+                  'backgroundStepCount': f.backgroundSteps.length,
+                  'scenarioCount': f.scenarios.length,
+                  'scenarios': [
+                    for (final sc in f.scenarios)
+                      <String, Object?>{
+                        'id': sc.id,
+                        'code': sc.code,
+                        'title': sc.title,
+                        'isOutline': sc.isOutline,
+                        'tags': sc.tags,
+                        'stepCount': sc.steps.length,
+                        'requirementIds': sc.requirementIds,
+                        'useCaseIds': sc.useCaseIds,
+                        'businessRuleIds': sc.businessRuleIds,
+                        'journeyIds': sc.journeyIds,
+                        'screenIds': sc.screenIds,
+                        'fixtureIds': sc.fixtureIds,
+                      },
+                  ],
+                },
+            ],
+            'tddSuiteCount': suites.length,
+            'tddCaseCount': tddCaseCount,
+            'tddSuites': [
+              for (final s in suites)
+                <String, Object?>{
+                  'id': s.id,
+                  'code': s.code,
+                  'name': s.name,
+                  'layer': s.layer.name,
+                  'targetObjectId': s.targetObjectId,
+                  'moduleId': s.moduleId,
+                  'caseCount': s.cases.length,
+                  'cases': [
+                    for (final c in s.cases)
+                      <String, Object?>{
+                        'id': c.id,
+                        'code': c.code,
+                        'order': c.order,
+                        'title': c.title,
+                        'fixtureId': c.fixtureId,
+                        'outcomeKind': c.outcomeKind.name,
+                        'businessRuleIds': c.businessRuleIds,
+                        'requirementIds': c.requirementIds,
+                        'screenIds': c.screenIds,
+                      },
+                  ],
+                },
+            ],
+            'coherenceIssueCount': qa.coherenceIssues.length,
+          },
+        );
+      },
+      'inspect_qa_artifact': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final qa = project.qaSpec;
+        String readArg(List<String> keys) {
+          for (final key in keys) {
+            final v = call.arguments[key];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          return '';
+        }
+
+        final needle = readArg(const <String>[
+          'idOrCode',
+          'fixtureId',
+          'featureId',
+          'scenarioId',
+          'tddSuiteId',
+          'target',
+          'id',
+          'code',
+          'name',
+          'title',
+        ]);
+
+        if (needle.isEmpty) {
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'gherkinLanguage': qa.gherkinLanguage.name,
+              'fixtureCount': qa.fixtures.length,
+              'featureCount': qa.features.length,
+              'scenarioCount': qa.totalScenarioCount,
+              'tddSuiteCount': qa.tddSuites.length,
+              'tddCaseCount': qa.totalTddCaseCount,
+              'fixtures': [
+                for (final f in qa.fixtures)
+                  <String, Object?>{
+                    'id': f.id,
+                    'code': f.code,
+                    'name': f.name,
+                    'kind': f.kind.name,
+                  },
+              ],
+              'features': [
+                for (final f in qa.features)
+                  <String, Object?>{
+                    'id': f.id,
+                    'code': f.code,
+                    'title': f.title,
+                    'scenarioCount': f.scenarios.length,
+                  },
+              ],
+              'tddSuites': [
+                for (final s in qa.tddSuites)
+                  <String, Object?>{
+                    'id': s.id,
+                    'code': s.code,
+                    'name': s.name,
+                    'layer': s.layer.name,
+                    'caseCount': s.cases.length,
+                  },
+              ],
+            },
+          );
+        }
+
+        final kindHint =
+            (call.arguments['kind'] as String?)?.trim().toLowerCase() ?? '';
+        final preferFixture =
+            kindHint == 'fixture' ||
+            (call.arguments['fixtureId'] is String &&
+                (call.arguments['fixtureId'] as String).trim().isNotEmpty);
+        final preferFeature =
+            kindHint == 'feature' ||
+            (call.arguments['featureId'] is String &&
+                (call.arguments['featureId'] as String).trim().isNotEmpty);
+        final preferScenario =
+            kindHint == 'scenario' ||
+            (call.arguments['scenarioId'] is String &&
+                (call.arguments['scenarioId'] as String).trim().isNotEmpty);
+        final preferSuite =
+            kindHint == 'tddsuite' ||
+            kindHint == 'tdd_suite' ||
+            kindHint == 'suite' ||
+            kindHint == 'tdd' ||
+            (call.arguments['tddSuiteId'] is String &&
+                (call.arguments['tddSuiteId'] as String).trim().isNotEmpty);
+
+        VibeToolResult? tryFixture() {
+          final fixture = qa.findFixture(needle);
+          if (fixture == null) return null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'fixture',
+              'fixture': fixture.toJson(),
+            },
+          );
+        }
+
+        VibeToolResult? tryFeature() {
+          final feature = qa.findFeature(needle);
+          if (feature == null) return null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'feature',
+              'gherkinLanguage': qa.gherkinLanguage.name,
+              'feature': feature.toJson(),
+            },
+          );
+        }
+
+        VibeToolResult? tryScenario() {
+          final matched = _findScenarioInQa(qa, needle);
+          if (matched == null) return null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'scenario',
+              'gherkinLanguage': qa.gherkinLanguage.name,
+              'feature': matched.feature.toJson(),
+              'scenario': matched.scenario.toJson(),
+            },
+          );
+        }
+
+        VibeToolResult? tryTddSuite() {
+          final suite = qa.findTddSuite(needle);
+          if (suite != null) {
+            return VibeToolResult(
+              callId: call.id,
+              name: call.name,
+              data: <String, Object?>{
+                'kind': 'tddSuite',
+                'tddSuite': suite.toJson(),
+              },
+            );
+          }
+          final matchedCase = _findTddCaseInQa(qa, needle);
+          if (matchedCase != null) {
+            return VibeToolResult(
+              callId: call.id,
+              name: call.name,
+              data: <String, Object?>{
+                'kind': 'tddSuite',
+                'tddSuite': matchedCase.suite.toJson(),
+                'matchedCase': matchedCase.testCase.toJson(),
+              },
+            );
+          }
+          return null;
+        }
+
+        final resolvers = <VibeToolResult? Function()>[
+          if (preferFixture) tryFixture,
+          if (preferFeature) tryFeature,
+          if (preferScenario) tryScenario,
+          if (preferSuite) tryTddSuite,
+          tryFixture,
+          tryFeature,
+          tryScenario,
+          tryTddSuite,
+        ];
+
+        for (final resolve in resolvers) {
+          final found = resolve();
+          if (found != null) return found;
+        }
+
+        return VibeToolResult.error(
+          callId: call.id,
+          name: call.name,
+          message: 'Artefact QA introuvable : $needle',
+        );
+      },
+      'run_qa_coherence_audit': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final allIssues = onRunQaCoherenceAudit != null
+            ? onRunQaCoherenceAudit(project)
+            : project.qaSpec.coherenceIssues;
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final stageFilter = stageRaw.isEmpty
+            ? null
+            : QaForgeStage.fromJson(stageRaw);
+        final issues = stageFilter == null
+            ? allIssues
+            : allIssues.where((i) => i.stage == stageFilter).toList();
+        final errorCount = issues
+            .where((i) => i.severity == CoherenceSeverity.error)
+            .length;
+        final warningCount = issues
+            .where((i) => i.severity == CoherenceSeverity.warning)
+            .length;
+        final infoCount = issues
+            .where((i) => i.severity == CoherenceSeverity.info)
+            .length;
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'issueCount': issues.length,
+            'errorCount': errorCount,
+            'warningCount': warningCount,
+            'infoCount': infoCount,
+            'issues': [for (final i in issues) i.toJson()],
+          },
+        );
+      },
+      'focus_qa_item': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final qa = project.qaSpec;
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final fixtureRaw =
+            (call.arguments['fixtureId'] as String?)?.trim() ?? '';
+        final featureRaw =
+            (call.arguments['featureId'] as String?)?.trim() ?? '';
+        final scenarioRaw =
+            (call.arguments['scenarioId'] as String?)?.trim() ?? '';
+        final tddSuiteRaw =
+            (call.arguments['tddSuiteId'] as String?)?.trim() ?? '';
+
+        QaForgeStage? resolvedStage = stageRaw.isEmpty
+            ? null
+            : QaForgeStage.fromJson(stageRaw);
+        final resolvedFixtureId = fixtureRaw.isEmpty
+            ? null
+            : (qa.findFixture(fixtureRaw)?.id ?? fixtureRaw);
+        var resolvedFeatureId = featureRaw.isEmpty
+            ? null
+            : (qa.findFeature(featureRaw)?.id ?? featureRaw);
+
+        String? resolvedScenarioId;
+        if (scenarioRaw.isNotEmpty) {
+          final matched = _findScenarioInQa(qa, scenarioRaw);
+          if (matched != null) {
+            resolvedScenarioId = matched.scenario.id;
+            resolvedFeatureId ??= matched.feature.id;
+          } else {
+            resolvedScenarioId = scenarioRaw;
+          }
+        }
+
+        final resolvedTddSuiteId = tddSuiteRaw.isEmpty
+            ? null
+            : (qa.findTddSuite(tddSuiteRaw)?.id ??
+                  _findTddCaseInQa(qa, tddSuiteRaw)?.suite.id ??
+                  tddSuiteRaw);
+
+        if (resolvedStage == null) {
+          if (resolvedTddSuiteId != null) {
+            resolvedStage = QaForgeStage.tddSuites;
+          } else if (resolvedFeatureId != null || resolvedScenarioId != null) {
+            resolvedStage = QaForgeStage.gherkinFeatures;
+          } else if (resolvedFixtureId != null) {
+            resolvedStage = QaForgeStage.testFixtures;
+          }
+        }
+
+        onFocusQaItem?.call(
+          stage: resolvedStage,
+          fixtureId: resolvedFixtureId,
+          featureId: resolvedFeatureId,
+          scenarioId: resolvedScenarioId,
+          tddSuiteId: resolvedTddSuiteId,
+        );
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            if (resolvedStage != null) 'stage': resolvedStage.name,
+            'focusedFixtureId': ?resolvedFixtureId,
+            'focusedFeatureId': ?resolvedFeatureId,
+            'focusedScenarioId': ?resolvedScenarioId,
+            'focusedTddSuiteId': ?resolvedTddSuiteId,
+          },
+        );
+      },
     };
 
     final enableUx =
         includeUxTools ??
         (onRunUxCoherenceAudit != null || onFocusUxItem != null);
-    final effectiveNames = toolNames ?? (enableUx ? null : specToolNames);
+    final enableQa =
+        includeQaTools ??
+        (onRunQaCoherenceAudit != null || onFocusQaItem != null);
+    final effectiveNames =
+        toolNames ??
+        <String>{
+          ...specToolNames,
+          if (enableUx) ...uxToolNames,
+          if (enableQa) ...qaToolNames,
+        };
 
     return VibeAppToolRegistry([
       for (final decl in declarations)
-        if (effectiveNames == null || effectiveNames.contains(decl.name))
+        if (effectiveNames.contains(decl.name))
           VibeRegisteredTool(declaration: decl, handler: handlers[decl.name]!),
     ]);
   }
@@ -1384,8 +2013,91 @@ abstract final class SpecForgeToolRegistry {
           return 'Focus parcours ${data['focusedJourneyId']}';
         }
         return 'Focus UX ${data['stage'] ?? 'atelier'}';
+      case 'get_qa_overview':
+        return '${data['fixtureCount'] ?? 0} fixture(s), ${data['featureCount'] ?? 0} feature(s) (${data['scenarioCount'] ?? 0} scén.), ${data['tddSuiteCount'] ?? 0} suite(s) TDD';
+      case 'inspect_qa_artifact':
+        if (data['fixture'] is Map) {
+          final fix = data['fixture'] as Map;
+          return 'Fixture ${fix['code'] ?? ''} — ${fix['name'] ?? ''}'.trim();
+        }
+        if (data['scenario'] is Map) {
+          final sc = data['scenario'] as Map;
+          return 'Scénario ${sc['code'] ?? ''} — ${sc['title'] ?? ''}'.trim();
+        }
+        if (data['feature'] is Map) {
+          final feat = data['feature'] as Map;
+          return 'Feature ${feat['code'] ?? ''} — ${feat['title'] ?? ''}'
+              .trim();
+        }
+        if (data['tddSuite'] is Map) {
+          final suite = data['tddSuite'] as Map;
+          return 'Suite ${suite['code'] ?? ''} — ${suite['name'] ?? ''}'.trim();
+        }
+        return '${data['fixtureCount'] ?? 0} fixture(s), ${data['featureCount'] ?? 0} feature(s), ${data['tddSuiteCount'] ?? 0} suite(s) TDD';
+      case 'run_qa_coherence_audit':
+        return '${data['issueCount'] ?? 0} point(s) QA (${data['errorCount'] ?? 0} erreur(s))';
+      case 'focus_qa_item':
+        if (data['focusedTddSuiteId'] is String) {
+          return 'Focus suite TDD ${data['focusedTddSuiteId']}';
+        }
+        if (data['focusedScenarioId'] is String) {
+          return 'Focus scénario ${data['focusedScenarioId']}';
+        }
+        if (data['focusedFeatureId'] is String) {
+          return 'Focus feature ${data['focusedFeatureId']}';
+        }
+        if (data['focusedFixtureId'] is String) {
+          return 'Focus fixture ${data['focusedFixtureId']}';
+        }
+        return 'Focus QA ${data['stage'] ?? 'atelier'}';
     }
     return 'OK';
+  }
+
+  static ({GherkinFeatureSpec feature, GherkinScenarioSpec scenario})?
+  _findScenarioInQa(QaForgeSpec qa, String idOrCodeOrTitle) {
+    final needle = idOrCodeOrTitle.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    for (final feature in qa.features) {
+      for (final sc in feature.scenarios) {
+        if (sc.id.toLowerCase() == needle ||
+            (sc.code.isNotEmpty && sc.code.toLowerCase() == needle)) {
+          return (feature: feature, scenario: sc);
+        }
+      }
+    }
+    for (final feature in qa.features) {
+      for (final sc in feature.scenarios) {
+        if (sc.title.toLowerCase() == needle) {
+          return (feature: feature, scenario: sc);
+        }
+      }
+    }
+    return null;
+  }
+
+  static ({TddTestSuiteSpec suite, TddTestCaseSpec testCase})? _findTddCaseInQa(
+    QaForgeSpec qa,
+    String idOrCodeOrTitle,
+  ) {
+    final needle = idOrCodeOrTitle.trim().toLowerCase();
+    if (needle.isEmpty) return null;
+    for (final suite in qa.tddSuites) {
+      for (final c in suite.cases) {
+        if (c.id.toLowerCase() == needle ||
+            (c.code.isNotEmpty && c.code.toLowerCase() == needle)) {
+          return (suite: suite, testCase: c);
+        }
+      }
+    }
+    for (final suite in qa.tddSuites) {
+      for (final c in suite.cases) {
+        if (c.title.toLowerCase() == needle) {
+          return (suite: suite, testCase: c);
+        }
+      }
+    }
+    return null;
   }
 
   static ({List<String> ids, List<String> names})? _resolveAttributePath(

@@ -13,10 +13,14 @@ class VibePlanCard extends StatelessWidget {
     required this.plan,
     required this.busy,
     this.isActivePlan = true,
+    this.canRetryFinishedPlan = false,
     this.onStart,
     this.onCancel,
     this.onStop,
     this.onRetryLot,
+    this.onRetryLotPartial,
+    this.onRetryPlanAll,
+    this.onResumePlan,
     this.onSkipLot,
     this.onToggleLot,
     super.key,
@@ -31,6 +35,9 @@ class VibePlanCard extends StatelessWidget {
   /// Indique si ce plan est le plan interactif courant (permet les actions).
   final bool isActivePlan;
 
+  /// Autorise les actions de relance / reprise sur un plan arrêté ou terminé.
+  final bool canRetryFinishedPlan;
+
   /// Déclenché au clic sur « Exécuter les lots ».
   final VoidCallback? onStart;
 
@@ -40,8 +47,17 @@ class VibePlanCard extends StatelessWidget {
   /// Déclenché au clic sur « Arrêter » pendant ou après erreur sur l'exécution.
   final VoidCallback? onStop;
 
-  /// Déclenché au clic sur « Réessayer ce lot » lorsqu'un lot est en échec.
+  /// Déclenché au clic sur « Réessayer ce lot » / « Retry complet » lorsqu'un lot est en échec.
   final VoidCallback? onRetryLot;
+
+  /// Déclenché au clic sur « Retry partiel » pour reprendre un lot depuis son checkpoint conservé.
+  final VoidCallback? onRetryLotPartial;
+
+  /// Déclenché au clic sur « Retry complet (plan) » pour relancer l'intégralité du plan depuis le lot 1.
+  final VoidCallback? onRetryPlanAll;
+
+  /// Déclenché pour reprendre un plan arrêté ou relancer ses lots ignorés.
+  final VoidCallback? onResumePlan;
 
   /// Déclenché au clic sur « Ignorer ce lot » lorsqu'un lot est en échec.
   final VoidCallback? onSkipLot;
@@ -57,6 +73,13 @@ class VibePlanCard extends StatelessWidget {
     final actionable = plan.actionableCount;
     final canToggleLots =
         isActivePlan && plan.status == VibePlanStatus.awaitingConfirmation;
+    final failedLot = plan.lots
+        .where((l) => l.status == VibeLotStatus.failed)
+        .firstOrNull;
+    final hasSkippedLots = plan.lots.any(
+      (l) => l.status == VibeLotStatus.skipped,
+    );
+    final totalDurationMs = plan.totalMeasuredDurationMs;
 
     final (IconData headerIcon, Color headerColor) = switch (plan.status) {
       VibePlanStatus.awaitingConfirmation => (
@@ -108,6 +131,48 @@ class VibePlanCard extends StatelessWidget {
                   ),
                 ),
               ),
+              if (totalDurationMs > 0 || plan.planningDurationMs != null) ...[
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: [
+                    if (plan.planningDurationMs != null)
+                      'Planification : ${formatVibeDuration(plan.planningDurationMs!)}',
+                    if (plan.executionDurationMs != null)
+                      'Exécution : ${formatVibeDuration(plan.executionDurationMs!)}',
+                  ].join(' · '),
+                  child: Container(
+                    key: const ValueKey('vibe-plan-duration-badge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.timer_outlined,
+                          size: 11.5,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          formatVibeDuration(totalDurationMs),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'monospace',
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -130,6 +195,16 @@ class VibePlanCard extends StatelessWidget {
               ),
             ],
           ),
+          if (plan.planningTraces.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _TimedTracesToggle(
+              key: const ValueKey('vibe-plan-planning-traces'),
+              title: plan.planningDurationMs != null
+                  ? 'Traces planification (${formatVibeDuration(plan.planningDurationMs!)})'
+                  : 'Traces planification (${plan.planningTraces.length})',
+              traces: plan.planningTraces,
+            ),
+          ],
           if (plan.status == VibePlanStatus.running && total > 0) ...[
             const SizedBox(height: 6),
             ClipRRect(
@@ -207,15 +282,73 @@ class VibePlanCard extends StatelessWidget {
                     icon: const Icon(Icons.skip_next, size: 17),
                     label: const Text('Ignorer ce lot'),
                   ),
-                  FilledButton.icon(
-                    key: const ValueKey('vibe-plan-retry-lot'),
-                    onPressed: busy ? null : onRetryLot,
-                    icon: const Icon(Icons.refresh, size: 17),
-                    label: const Text('Réessayer ce lot'),
-                  ),
+                  if (plan.lots.length > 1 && onRetryPlanAll != null)
+                    OutlinedButton.icon(
+                      key: const ValueKey('vibe-plan-retry-all'),
+                      onPressed: busy ? null : onRetryPlanAll,
+                      icon: const Icon(Icons.restart_alt, size: 17),
+                      label: const Text('Retry complet (plan)'),
+                    ),
+                  if (failedLot?.hasPartialCheckpoint == true &&
+                      onRetryLotPartial != null) ...[
+                    OutlinedButton.icon(
+                      key: const ValueKey('vibe-plan-retry-lot'),
+                      onPressed: busy ? null : onRetryLot,
+                      icon: const Icon(Icons.refresh, size: 17),
+                      label: const Text('Retry complet (lot)'),
+                    ),
+                    FilledButton.icon(
+                      key: const ValueKey('vibe-plan-retry-lot-partial'),
+                      onPressed: busy ? null : onRetryLotPartial,
+                      icon: const Icon(Icons.auto_fix_high, size: 17),
+                      label: const Text('Retry partiel'),
+                    ),
+                  ] else
+                    FilledButton.icon(
+                      key: const ValueKey('vibe-plan-retry-lot'),
+                      onPressed: busy ? null : onRetryLot,
+                      icon: const Icon(Icons.refresh, size: 17),
+                      label: const Text('Réessayer ce lot'),
+                    ),
                 ],
               ),
             ],
+          ] else if (canRetryFinishedPlan &&
+              (plan.status == VibePlanStatus.stopped ||
+                  plan.status == VibePlanStatus.completed)) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (plan.status == VibePlanStatus.stopped &&
+                    actionable > 0 &&
+                    onResumePlan != null)
+                  FilledButton.icon(
+                    key: const ValueKey('vibe-plan-resume-partial'),
+                    onPressed: busy ? null : onResumePlan,
+                    icon: const Icon(Icons.play_arrow, size: 17),
+                    label: const Text('Reprendre (partiel)'),
+                  ),
+                if (plan.status == VibePlanStatus.completed &&
+                    hasSkippedLots &&
+                    onResumePlan != null)
+                  OutlinedButton.icon(
+                    key: const ValueKey('vibe-plan-retry-skipped'),
+                    onPressed: busy ? null : onResumePlan,
+                    icon: const Icon(Icons.redo, size: 17),
+                    label: const Text('Retry lots ignorés'),
+                  ),
+                if (onRetryPlanAll != null)
+                  OutlinedButton.icon(
+                    key: const ValueKey('vibe-plan-retry-all'),
+                    onPressed: busy ? null : onRetryPlanAll,
+                    icon: const Icon(Icons.restart_alt, size: 17),
+                    label: const Text('Retry complet'),
+                  ),
+              ],
+            ),
           ],
         ],
       ),
@@ -309,23 +442,79 @@ class _LotRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '${index + 1}. ${lot.title}',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: isRunning || isFailed
-                        ? FontWeight.w600
-                        : FontWeight.w500,
-                    color: isDone
-                        ? scheme.onSurface
-                        : lot.status == VibeLotStatus.skipped || isDisabled
-                        ? scheme.onSurfaceVariant
-                        : scheme.onSurface,
-                    decoration:
-                        lot.status == VibeLotStatus.skipped || isDisabled
-                        ? TextDecoration.lineThrough
-                        : null,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${index + 1}. ${lot.title}',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: isRunning || isFailed
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: isDone
+                              ? scheme.onSurface
+                              : lot.status == VibeLotStatus.skipped ||
+                                    isDisabled
+                              ? scheme.onSurfaceVariant
+                              : scheme.onSurface,
+                          decoration:
+                              lot.status == VibeLotStatus.skipped || isDisabled
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                    ),
+                    if (lot.hasPartialCheckpoint) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: lot.partialCheckpointSummary ??
+                            'Progrès partiel valide conservé pour retry delta',
+                        child: Container(
+                          key: ValueKey('vibe-plan-lot-checkpoint-${lot.id}'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: scheme.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            'Partiel prêt',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onTertiaryContainer,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (lot.attempts > 1) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '${lot.attempts} essais',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (lot.durationMs != null) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        formatVibeDuration(lot.durationMs!),
+                        key: ValueKey('vibe-plan-lot-duration-${lot.id}'),
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 if (lot.description.isNotEmpty &&
                     lot.description != lot.title) ...[
@@ -355,6 +544,14 @@ class _LotRow extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (lot.traces.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  _TimedTracesToggle(
+                    key: ValueKey('vibe-plan-lot-traces-${lot.id}'),
+                    title: 'Traces timées (${lot.traces.length})',
+                    traces: lot.traces,
+                  ),
+                ],
               ],
             ),
           ),
@@ -370,6 +567,92 @@ class _LotRow extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _TimedTracesToggle extends StatefulWidget {
+  const _TimedTracesToggle({
+    required this.title,
+    required this.traces,
+    super.key,
+  });
+
+  final String title;
+  final List<VibeTimedTrace> traces;
+
+  @override
+  State<_TimedTracesToggle> createState() => _TimedTracesToggleState();
+}
+
+class _TimedTracesToggleState extends State<_TimedTracesToggle> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasError = widget.traces.any((t) => t.isError);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.timeline_rounded,
+                  size: 13,
+                  color: hasError ? scheme.error : scheme.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.title,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, top: 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final trace in widget.traces)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      trace.formatLine(),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontFamily: 'monospace',
+                        color: trace.isError
+                            ? scheme.error
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }

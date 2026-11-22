@@ -25,6 +25,7 @@ class UxReviewExportView extends StatelessWidget {
   /// Crée la vue connectée au [controller].
   const UxReviewExportView({
     required this.controller,
+    this.onContinueToQaWizard,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
     super.key,
@@ -32,6 +33,9 @@ class UxReviewExportView extends StatelessWidget {
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Callback optionnel permettant d'enchaîner directement vers le Wizard BDD / Gherkin & TDD.
+  final VoidCallback? onContinueToQaWizard;
 
   /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
   final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
@@ -100,15 +104,29 @@ class UxReviewExportView extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                FilledButton.icon(
-                  key: const ValueKey('ux-export-all-btn'),
-                  onPressed: () => _exportAllDialog(
-                    context,
-                    project: project,
-                    defaultExportDir: exportDirPath,
-                  ),
-                  icon: const Icon(Icons.save_alt_rounded, size: 16),
-                  label: const Text('Exporter UX & SuperDesigner'),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (onContinueToQaWizard != null)
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('ux-review-continue-to-qa-btn'),
+                        onPressed: onContinueToQaWizard,
+                        icon: const Icon(Icons.science_rounded, size: 16),
+                        label: const Text('Poursuivre vers BDD / TDD'),
+                      ),
+                    FilledButton.icon(
+                      key: const ValueKey('ux-export-all-btn'),
+                      onPressed: () => _exportAllDialog(
+                        context,
+                        project: project,
+                        defaultExportDir: exportDirPath,
+                      ),
+                      icon: const Icon(Icons.save_alt_rounded, size: 16),
+                      label: const Text('Exporter UX & SuperDesigner'),
+                    ),
+                  ],
                 ),
               ],
             ),

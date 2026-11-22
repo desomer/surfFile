@@ -9,7 +9,12 @@
 /// - `ux/coherence_issues.json` : diagnostics de cohérence Métier↔UX ;
 /// - `ux/journeys/<slug>.json` : 1 fichier par parcours utilisateur (+ `_order.json`) ;
 /// - `ux/screens/<slug>.json` : 1 fichier par écran UX (+ `_order.json`) ;
-/// - `chats/*.json` : historique des conversations par étape (`stage_*.json`, `ux_*.json`) et chat global ;
+/// - `qa/meta.json` : étape QA courante et langue des mots-clés Gherkin ;
+/// - `qa/coherence_issues.json` : diagnostics de couverture 360° et cohérence Métier+UX↔QA ;
+/// - `qa/fixtures/<slug>.json` : 1 fichier par jeu d'essai QA (+ `_order.json`) ;
+/// - `qa/features/<slug>.json` : 1 fichier par fonctionnalité Gherkin BDD (+ `_order.json`) ;
+/// - `qa/tdd_suites/<slug>.json` : 1 fichier par suite de tests TDD (+ `_order.json`) ;
+/// - `chats/*.json` : historique des conversations par étape (`stage_*.json`, `ux_*.json`, `qa_*.json`) et chat global ;
 /// - `attachments/*` : contenu texte ou binaire des pièces jointes externalisées.
 ///
 /// L'état local machine (dernier projet actif) est stocké dans
@@ -26,6 +31,12 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/qa/gherkin_feature_spec.dart';
+import '../models/qa/qa_coherence_issue.dart';
+import '../models/qa/qa_fixture_spec.dart';
+import '../models/qa/qa_forge_spec.dart';
+import '../models/qa/qa_forge_stage.dart';
+import '../models/qa/tdd_suite_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
@@ -57,6 +68,9 @@ class SpecProjectSummary {
     this.journeyCount = 0,
     this.screenCount = 0,
     this.currentUxStage = UxForgeStage.userJourneys,
+    this.featureCount = 0,
+    this.tddCaseCount = 0,
+    this.currentQaStage = QaForgeStage.testFixtures,
     this.folderName,
   });
 
@@ -89,6 +103,15 @@ class SpecProjectSummary {
 
   /// Étape UX active lors de la dernière sauvegarde.
   final UxForgeStage currentUxStage;
+
+  /// Nombre de fonctionnalités Gherkin BDD formalisées.
+  final int featureCount;
+
+  /// Nombre total de cas de tests TDD cumulés.
+  final int tddCaseCount;
+
+  /// Étape QA active lors de la dernière sauvegarde.
+  final QaForgeStage currentQaStage;
 
   /// Nom du dossier slug sous `projects/`, si disponible sur disque.
   final String? folderName;
@@ -128,6 +151,25 @@ class SpecProjectStore {
 
   /// Identifiant de format d'un fichier de conversation d'étape UX (`chats/ux_*.json`).
   static const String uxStageChatFormat = 'super_spec_forge.ux_stage_chat';
+
+  /// Identifiant de format des métadonnées QA (`qa/meta.json`).
+  static const String qaMetaFormat = 'super_spec_forge.qa_meta';
+
+  /// Identifiant de format des diagnostics de cohérence QA (`qa/coherence_issues.json`).
+  static const String qaCoherenceIssuesFormat =
+      'super_spec_forge.qa_coherence_issues';
+
+  /// Identifiant de format d'un fichier jeu d'essai QA unitaire (`qa/fixtures/*.json`).
+  static const String qaFixtureFormat = 'super_spec_forge.qa_fixture';
+
+  /// Identifiant de format d'un fichier fonctionnalité Gherkin unitaire (`qa/features/*.json`).
+  static const String qaFeatureFormat = 'super_spec_forge.qa_feature';
+
+  /// Identifiant de format d'un fichier suite TDD unitaire (`qa/tdd_suites/*.json`).
+  static const String qaTddSuiteFormat = 'super_spec_forge.qa_tdd_suite';
+
+  /// Identifiant de format d'un fichier de conversation d'étape QA (`chats/qa_*.json`).
+  static const String qaStageChatFormat = 'super_spec_forge.qa_stage_chat';
 
   /// Identifiant de format d'un fichier d'ordre `_order.json`.
   static const String orderFormat = 'super_spec_forge.order';
@@ -191,6 +233,26 @@ class SpecProjectStore {
   Directory _uxScreensDir(Directory projectDir) =>
       Directory('${_uxDir(projectDir).path}${Platform.pathSeparator}screens');
 
+  Directory _qaDir(Directory projectDir) =>
+      Directory('${projectDir.path}${Platform.pathSeparator}qa');
+
+  File _qaMetaFile(Directory projectDir) =>
+      File('${_qaDir(projectDir).path}${Platform.pathSeparator}meta.json');
+
+  File _qaCoherenceIssuesFile(Directory projectDir) => File(
+    '${_qaDir(projectDir).path}${Platform.pathSeparator}coherence_issues.json',
+  );
+
+  Directory _qaFixturesDir(Directory projectDir) =>
+      Directory('${_qaDir(projectDir).path}${Platform.pathSeparator}fixtures');
+
+  Directory _qaFeaturesDir(Directory projectDir) =>
+      Directory('${_qaDir(projectDir).path}${Platform.pathSeparator}features');
+
+  Directory _qaTddSuitesDir(Directory projectDir) => Directory(
+    '${_qaDir(projectDir).path}${Platform.pathSeparator}tdd_suites',
+  );
+
   Directory _chatsDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}chats');
 
@@ -221,6 +283,10 @@ class SpecProjectStore {
 
   File _uxStageChatFile(Directory projectDir, UxForgeStage stage) => File(
     '${_chatsDir(projectDir).path}${Platform.pathSeparator}ux_${stage.name}.json',
+  );
+
+  File _qaStageChatFile(Directory projectDir, QaForgeStage stage) => File(
+    '${_chatsDir(projectDir).path}${Platform.pathSeparator}qa_${stage.name}.json',
   );
 
   File _globalChatFile(Directory projectDir) => File(
@@ -307,6 +373,21 @@ class SpecProjectStore {
     };
   }
 
+  Future<Set<QaForgeStage>> _findExistingQaChatStages(
+    Directory projectDir,
+  ) async {
+    final chatsDir = _chatsDir(projectDir);
+    if (!await chatsDir.exists()) return const <QaForgeStage>{};
+    final checks = await Future.wait<bool>([
+      for (final stage in QaForgeStage.values)
+        _qaStageChatFile(projectDir, stage).exists(),
+    ]);
+    return <QaForgeStage>{
+      for (var i = 0; i < QaForgeStage.values.length; i++)
+        if (checks[i]) QaForgeStage.values[i],
+    };
+  }
+
   Future<Directory> _resolveOrAllocateProjectDir(
     SpecForgeProject project,
   ) async {
@@ -365,7 +446,10 @@ class SpecProjectStore {
           prev.currentStage != project.currentStage ||
           prev.uxSpec.currentStage != project.uxSpec.currentStage ||
           prev.uxSpec.journeys.length != project.uxSpec.journeys.length ||
-          prev.uxSpec.screens.length != project.uxSpec.screens.length;
+          prev.uxSpec.screens.length != project.uxSpec.screens.length ||
+          prev.qaSpec.currentStage != project.qaSpec.currentStage ||
+          prev.qaSpec.features.length != project.qaSpec.features.length ||
+          prev.qaSpec.totalTddCaseCount != project.qaSpec.totalTddCaseCount;
       if (manifestChanged) {
         writes.add(
           _writeJson(
@@ -499,6 +583,74 @@ class SpecProjectStore {
         }
       }
 
+      final qaHasState =
+          project.qaSpec.hasContent || project.qaSpec != QaForgeSpec.empty;
+      final prevHadQaState =
+          prev != null &&
+          (prev.qaSpec.hasContent || prev.qaSpec != QaForgeSpec.empty);
+      final qaDirExisted = prevHadQaState || await _qaDir(projectDir).exists();
+      final existingQaChatStages = (!qaHasState && !qaDirExisted)
+          ? await _findExistingQaChatStages(projectDir)
+          : const <QaForgeStage>{};
+      final shouldPersistQa =
+          qaHasState || qaDirExisted || existingQaChatStages.isNotEmpty;
+      final forceInitQa =
+          qaHasState && (prev == null || !prevHadQaState || !qaDirExisted);
+
+      if (shouldPersistQa) {
+        if (forceInitQa ||
+            (qaDirExisted && prev == null) ||
+            (prev != null &&
+                (prev.qaSpec.currentStage != project.qaSpec.currentStage ||
+                    prev.qaSpec.gherkinLanguage !=
+                        project.qaSpec.gherkinLanguage))) {
+          writes.add(
+            _writeJson(_qaMetaFile(projectDir), <String, Object?>{
+              'format': qaMetaFormat,
+              'version': storageVersion,
+              'currentStage': project.qaSpec.currentStage.name,
+              'gherkinLanguage': project.qaSpec.gherkinLanguage.name,
+            }),
+          );
+        }
+
+        if (forceInitQa ||
+            (qaDirExisted && prev == null) ||
+            (prev != null &&
+                !listEquals(
+                  prev.qaSpec.coherenceIssues,
+                  project.qaSpec.coherenceIssues,
+                ))) {
+          writes.add(
+            _writeJson(_qaCoherenceIssuesFile(projectDir), <String, Object?>{
+              'format': qaCoherenceIssuesFormat,
+              'version': storageVersion,
+              'items': [
+                for (final i in project.qaSpec.coherenceIssues) i.toJson(),
+              ],
+            }),
+          );
+        }
+
+        if ((forceInitQa && project.qaSpec.fixtures.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.qaSpec.fixtures, project.qaSpec.fixtures)) {
+          writes.add(_syncQaFixtures(projectDir, project.qaSpec.fixtures));
+        }
+
+        if ((forceInitQa && project.qaSpec.features.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.qaSpec.features, project.qaSpec.features)) {
+          writes.add(_syncQaFeatures(projectDir, project.qaSpec.features));
+        }
+
+        if ((forceInitQa && project.qaSpec.tddSuites.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.qaSpec.tddSuites, project.qaSpec.tddSuites)) {
+          writes.add(_syncQaTddSuites(projectDir, project.qaSpec.tddSuites));
+        }
+      }
+
       final changedStages = <SpecForgeStage>[
         for (final stage in SpecForgeStage.values)
           if (prev == null ||
@@ -522,12 +674,30 @@ class SpecProjectStore {
                                 project.uxSpec.stageStateFor(stage))
                               stage,
                         ]));
+      final changedQaStages = !shouldPersistQa
+          ? const <QaForgeStage>[]
+          : (forceInitQa
+                ? QaForgeStage.values
+                : (prev == null
+                      ? <QaForgeStage>[
+                          for (final stage in QaForgeStage.values)
+                            if (existingQaChatStages.contains(stage) ||
+                                qaDirExisted)
+                              stage,
+                        ]
+                      : <QaForgeStage>[
+                          for (final stage in QaForgeStage.values)
+                            if (prev.qaSpec.stageStateFor(stage) !=
+                                project.qaSpec.stageStateFor(stage))
+                              stage,
+                        ]));
       final globalChatChanged =
           prev == null ||
           !listEquals(prev.globalChatMessages, project.globalChatMessages);
 
       if (changedStages.isNotEmpty ||
           changedUxStages.isNotEmpty ||
+          changedQaStages.isNotEmpty ||
           globalChatChanged) {
         final attachmentsToWrite = <String, _PendingAttachmentWrite>{};
         for (final stage in changedStages) {
@@ -560,6 +730,27 @@ class SpecProjectStore {
           writes.add(
             _writeJson(_uxStageChatFile(projectDir, stage), <String, Object?>{
               'format': uxStageChatFormat,
+              'version': storageVersion,
+              'data': <String, Object?>{
+                'stage': state.stage.name,
+                'status': state.status.name,
+                'messages': serializedMessages,
+                'stageSummary': state.stageSummary,
+                'readyToAdvance': state.readyToAdvance,
+              },
+            }),
+          );
+        }
+
+        for (final stage in changedQaStages) {
+          final state = project.qaSpec.stageStateFor(stage);
+          final serializedMessages = <Map<String, Object?>>[
+            for (final msg in state.messages)
+              _serializeChatMessage(msg, attachmentsToWrite),
+          ];
+          writes.add(
+            _writeJson(_qaStageChatFile(projectDir, stage), <String, Object?>{
+              'format': qaStageChatFormat,
               'version': storageVersion,
               'data': <String, Object?>{
                 'stage': state.stage.name,
@@ -676,6 +867,49 @@ class SpecProjectStore {
     separator: '-',
   );
 
+  Future<void> _syncQaFixtures(
+    Directory projectDir,
+    List<QaFixtureSpec> fixtures,
+  ) => _syncSplitEntities<QaFixtureSpec>(
+    _qaFixturesDir(projectDir),
+    fixtures,
+    format: qaFixtureFormat,
+    labelFor: (f) => f.code.trim().isNotEmpty ? '${f.code} ${f.name}' : f.name,
+    idFor: (f) => f.id,
+    toJson: (f) => f.toJson(),
+    fallback: 'fixture',
+    separator: '-',
+  );
+
+  Future<void> _syncQaFeatures(
+    Directory projectDir,
+    List<GherkinFeatureSpec> features,
+  ) => _syncSplitEntities<GherkinFeatureSpec>(
+    _qaFeaturesDir(projectDir),
+    features,
+    format: qaFeatureFormat,
+    labelFor: (f) =>
+        f.code.trim().isNotEmpty ? '${f.code} ${f.title}' : f.title,
+    idFor: (f) => f.id,
+    toJson: (f) => f.toJson(),
+    fallback: 'feature',
+    separator: '-',
+  );
+
+  Future<void> _syncQaTddSuites(
+    Directory projectDir,
+    List<TddTestSuiteSpec> suites,
+  ) => _syncSplitEntities<TddTestSuiteSpec>(
+    _qaTddSuitesDir(projectDir),
+    suites,
+    format: qaTddSuiteFormat,
+    labelFor: (s) => s.code.trim().isNotEmpty ? '${s.code} ${s.name}' : s.name,
+    idFor: (s) => s.id,
+    toJson: (s) => s.toJson(),
+    fallback: 'tdd-suite',
+    separator: '-',
+  );
+
   Future<void> _syncSplitEntities<T>(
     Directory dir,
     List<T> items, {
@@ -747,8 +981,10 @@ class SpecProjectStore {
 
       final specDirExists = await _specDir(projectDir).exists();
       final uxDirExists = await _uxDir(projectDir).exists();
+      final qaDirExists = await _qaDir(projectDir).exists();
       if (!specDirExists &&
           !uxDirExists &&
+          !qaDirExists &&
           (manifestRaw['format'] == legacyProjectFormat ||
               manifestRaw.containsKey('lexicon') ||
               manifestRaw.containsKey('businessObjects'))) {
@@ -811,10 +1047,31 @@ class SpecProjectStore {
           stage: _readOptionalJsonMap(_uxStageChatFile(projectDir, stage)),
       };
 
-      final specStageCount = SpecForgeStage.values.length;
-      final uxStageCount = UxForgeStage.values.length;
+      final qaMetaFuture = _readOptionalJsonMap(_qaMetaFile(projectDir));
+      final qaIssuesFuture = _readOptionalJsonValue(
+        _qaCoherenceIssuesFile(projectDir),
+      );
+      final qaFixturesFuture = _loadSplitEntities<QaFixtureSpec>(
+        _qaFixturesDir(projectDir),
+        parseItem: QaFixtureSpec.fromJson,
+        idOf: (f) => f.id,
+      );
+      final qaFeaturesFuture = _loadSplitEntities<GherkinFeatureSpec>(
+        _qaFeaturesDir(projectDir),
+        parseItem: GherkinFeatureSpec.fromJson,
+        idOf: (f) => f.id,
+      );
+      final qaTddSuitesFuture = _loadSplitEntities<TddTestSuiteSpec>(
+        _qaTddSuitesDir(projectDir),
+        parseItem: TddTestSuiteSpec.fromJson,
+        idOf: (s) => s.id,
+      );
+      final qaStageFutures = <QaForgeStage, Future<Map<dynamic, dynamic>?>>{
+        for (final stage in QaForgeStage.values)
+          stage: _readOptionalJsonMap(_qaStageChatFile(projectDir, stage)),
+      };
 
-      final results = await Future.wait<Object?>([
+      await Future.wait<Object?>([
         lexiconFuture,
         visionFuture,
         cdcFuture,
@@ -827,29 +1084,40 @@ class SpecProjectStore {
         uxIssuesFuture,
         uxJourneysFuture,
         uxScreensFuture,
+        qaMetaFuture,
+        qaIssuesFuture,
+        qaFixturesFuture,
+        qaFeaturesFuture,
+        qaTddSuitesFuture,
         for (final stage in SpecForgeStage.values) stageFutures[stage]!,
         for (final stage in UxForgeStage.values) uxStageFutures[stage]!,
+        for (final stage in QaForgeStage.values) qaStageFutures[stage]!,
       ]);
 
-      final lexiconMap = results[0] as Map<dynamic, dynamic>?;
-      final visionMap = results[1] as Map<dynamic, dynamic>?;
-      final cdcMap = results[2] as Map<dynamic, dynamic>?;
-      final businessObjects = results[3] as List<BusinessObjectSpec>;
-      final businessRules = results[4] as List<BusinessRuleSpec>;
-      final prefsMap = results[5] as Map<dynamic, dynamic>?;
-      final issuesMap = results[6] as Map<dynamic, dynamic>?;
-      final globalChatMap = results[7] as Map<dynamic, dynamic>?;
-      final uxNavMap = results[8] as Map<dynamic, dynamic>?;
-      final uxIssuesRaw = results[9];
-      final uxJourneys = results[10] as List<UxJourneySpec>;
-      final uxScreens = results[11] as List<UxScreenSpec>;
+      final lexiconMap = await lexiconFuture;
+      final visionMap = await visionFuture;
+      final cdcMap = await cdcFuture;
+      final businessObjects = await objectsFuture;
+      final businessRules = await rulesFuture;
+      final prefsMap = await prefsFuture;
+      final issuesMap = await issuesFuture;
+      final globalChatMap = await globalChatFuture;
+      final uxNavMap = await uxNavFuture;
+      final uxIssuesRaw = await uxIssuesFuture;
+      final uxJourneys = await uxJourneysFuture;
+      final uxScreens = await uxScreensFuture;
+      final qaMetaMap = await qaMetaFuture;
+      final qaIssuesRaw = await qaIssuesFuture;
+      final qaFixtures = await qaFixturesFuture;
+      final qaFeatures = await qaFeaturesFuture;
+      final qaTddSuites = await qaTddSuitesFuture;
 
       final stageStates = <SpecForgeStage, SpecStageState>{};
       final uxStageStates = <UxForgeStage, UxStageState>{};
+      final qaStageStates = <QaForgeStage, QaStageState>{};
       final hydrationFutures = <Future<void>>[];
-      for (var i = 0; i < specStageCount; i++) {
-        final stage = SpecForgeStage.values[i];
-        final rawStageWrapper = results[12 + i] as Map<dynamic, dynamic>?;
+      for (final stage in SpecForgeStage.values) {
+        final rawStageWrapper = await stageFutures[stage]!;
         final rawStageData = rawStageWrapper?['data'];
         if (rawStageData != null) {
           hydrationFutures.add(
@@ -862,10 +1130,8 @@ class SpecProjectStore {
         }
       }
 
-      for (var i = 0; i < uxStageCount; i++) {
-        final stage = UxForgeStage.values[i];
-        final rawUxWrapper =
-            results[12 + specStageCount + i] as Map<dynamic, dynamic>?;
+      for (final stage in UxForgeStage.values) {
+        final rawUxWrapper = await uxStageFutures[stage]!;
         if (rawUxWrapper != null) {
           final rawUxData = rawUxWrapper['data'] is Map
               ? rawUxWrapper['data']
@@ -876,6 +1142,22 @@ class SpecProjectStore {
               fallbackStage: stage,
               attachmentsDir: attachmentsDir,
             ).then((state) => uxStageStates[stage] = state),
+          );
+        }
+      }
+
+      for (final stage in QaForgeStage.values) {
+        final rawQaWrapper = await qaStageFutures[stage]!;
+        if (rawQaWrapper != null) {
+          final rawQaData = rawQaWrapper['data'] is Map
+              ? rawQaWrapper['data']
+              : rawQaWrapper;
+          hydrationFutures.add(
+            _deserializeQaStageState(
+              rawQaData,
+              fallbackStage: stage,
+              attachmentsDir: attachmentsDir,
+            ).then((state) => qaStageStates[stage] = state),
           );
         }
       }
@@ -929,6 +1211,62 @@ class SpecProjectStore {
         uxSpec = UxForgeSpec.empty;
       }
 
+      final hasModularQa =
+          qaDirExists ||
+          qaMetaMap != null ||
+          qaIssuesRaw != null ||
+          qaFixtures.isNotEmpty ||
+          qaFeatures.isNotEmpty ||
+          qaTddSuites.isNotEmpty ||
+          qaStageStates.isNotEmpty;
+
+      final QaForgeSpec qaSpec;
+      var loadedFromLegacyInlineQa = false;
+      if (hasModularQa) {
+        final rawCurrentQaStage =
+            qaMetaMap?['currentStage'] ??
+            (qaMetaMap?['data'] is Map
+                ? (qaMetaMap!['data'] as Map)['currentStage']
+                : null) ??
+            manifestRaw['currentQaStage'];
+        final rawGherkinLanguage =
+            qaMetaMap?['gherkinLanguage'] ??
+            (qaMetaMap?['data'] is Map
+                ? (qaMetaMap!['data'] as Map)['gherkinLanguage']
+                : null);
+        qaSpec = QaForgeSpec(
+          currentStage: QaForgeStage.fromJson(rawCurrentQaStage),
+          gherkinLanguage: GherkinKeywordLanguage.fromJson(rawGherkinLanguage),
+          fixtures: _deduplicateById(
+            qaFixtures,
+            idOf: (f) => f.id,
+            withId: (f, id) => f.copyWith(id: id),
+          ),
+          features: _deduplicateById(
+            qaFeatures,
+            idOf: (f) => f.id,
+            withId: (f, id) => f.copyWith(id: id),
+          ),
+          tddSuites: _deduplicateById(
+            qaTddSuites,
+            idOf: (s) => s.id,
+            withId: (s, id) => s.copyWith(id: id),
+          ),
+          stageStates: qaStageStates,
+          coherenceIssues: _parseQaCoherenceIssues(qaIssuesRaw),
+        );
+      } else if (manifestRaw['qaSpec'] != null) {
+        qaSpec = QaForgeSpec.fromJson(manifestRaw['qaSpec']);
+        loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
+      } else if (manifestRaw['currentQaStage'] != null) {
+        qaSpec = QaForgeSpec(
+          currentStage: QaForgeStage.fromJson(manifestRaw['currentQaStage']),
+        );
+        loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
+      } else {
+        qaSpec = QaForgeSpec.empty;
+      }
+
       final rawIssues = issuesMap?['items'];
 
       final project = SpecForgeProject(
@@ -953,9 +1291,12 @@ class SpecProjectStore {
         ],
         globalChatMessages: globalChatMessages,
         uxSpec: uxSpec,
+        qaSpec: qaSpec,
       );
       project.validate();
-      if (specDirExists && !loadedFromLegacyInlineUx) {
+      if (specDirExists &&
+          !loadedFromLegacyInlineUx &&
+          !loadedFromLegacyInlineQa) {
         _persistedSnapshots[project.id] = project;
       }
       return project;
@@ -1048,7 +1389,7 @@ class SpecProjectStore {
   }
 
   /// Liste tous les projets valides présents sur disque en lisant `project.json`
-  /// et en comptant les fichiers sous `spec/` et `ux/` (avec repli sur le manifeste),
+  /// et en comptant les fichiers sous `spec/`, `ux/` et `qa/` (avec repli sur le manifeste),
   /// triés du plus récent au plus ancien.
   Future<List<SpecProjectSummary>> listProjects() async {
     if (!await _projectsDir.exists()) return const <SpecProjectSummary>[];
@@ -1084,6 +1425,9 @@ class SpecProjectStore {
         final rawUxSpec = decoded['uxSpec'] is Map
             ? decoded['uxSpec'] as Map
             : null;
+        final rawQaSpec = decoded['qaSpec'] is Map
+            ? decoded['qaSpec'] as Map
+            : null;
         final resolvedMeta = await Future.wait<Object>([
           _resolveSummaryCount(
             _businessObjectsDir(entity),
@@ -1106,6 +1450,17 @@ class SpecProjectStore {
             fallbackList: rawUxSpec?['screens'],
           ),
           _resolveSummaryUxStage(entity, decoded),
+          _resolveSummaryCount(
+            _qaFeaturesDir(entity),
+            decoded['featureCount'],
+            fallbackList: rawQaSpec?['features'],
+          ),
+          _resolveSummaryTddCaseCount(
+            entity,
+            decoded,
+            fallbackSuites: rawQaSpec?['tddSuites'],
+          ),
+          _resolveSummaryQaStage(entity, decoded),
         ]);
         summaries.add(
           SpecProjectSummary(
@@ -1119,6 +1474,9 @@ class SpecProjectStore {
             journeyCount: resolvedMeta[2] as int,
             screenCount: resolvedMeta[3] as int,
             currentUxStage: resolvedMeta[4] as UxForgeStage,
+            featureCount: resolvedMeta[5] as int,
+            tddCaseCount: resolvedMeta[6] as int,
+            currentQaStage: resolvedMeta[7] as QaForgeStage,
             folderName: SpecStorageIo.fileNameOf(entity.path),
           ),
         );
@@ -1147,6 +1505,9 @@ class SpecProjectStore {
         final rawUxSpec = decoded['uxSpec'] is Map
             ? decoded['uxSpec'] as Map
             : null;
+        final rawQaSpec = decoded['qaSpec'] is Map
+            ? decoded['qaSpec'] as Map
+            : null;
         summaries.add(
           SpecProjectSummary(
             id: id,
@@ -1172,6 +1533,17 @@ class SpecProjectStore {
             ),
             currentUxStage: UxForgeStage.fromJson(
               decoded['currentUxStage'] ?? rawUxSpec?['currentStage'],
+            ),
+            featureCount: _parseManifestCount(
+              decoded['featureCount'],
+              fallbackList: rawQaSpec?['features'],
+            ),
+            tddCaseCount: _parseManifestTddCaseCount(
+              decoded['tddCaseCount'],
+              fallbackSuites: rawQaSpec?['tddSuites'],
+            ),
+            currentQaStage: QaForgeStage.fromJson(
+              decoded['currentQaStage'] ?? rawQaSpec?['currentStage'],
             ),
           ),
         );
@@ -1219,6 +1591,98 @@ class SpecProjectStore {
     return UxForgeStage.fromJson(
       manifest['currentUxStage'] ?? rawUxSpec?['currentStage'],
     );
+  }
+
+  Future<QaForgeStage> _resolveSummaryQaStage(
+    Directory projectDir,
+    Map<dynamic, dynamic> manifest,
+  ) async {
+    final metaFile = _qaMetaFile(projectDir);
+    if (await metaFile.exists()) {
+      try {
+        final metaRaw = jsonDecode(await metaFile.readAsString());
+        if (metaRaw is Map) {
+          final rawStage =
+              metaRaw['currentStage'] ??
+              (metaRaw['data'] is Map
+                  ? (metaRaw['data'] as Map)['currentStage']
+                  : null);
+          if (rawStage != null) {
+            return QaForgeStage.fromJson(rawStage);
+          }
+        }
+      } catch (_) {}
+    }
+    final rawQaSpec = manifest['qaSpec'] is Map
+        ? manifest['qaSpec'] as Map
+        : null;
+    return QaForgeStage.fromJson(
+      manifest['currentQaStage'] ?? rawQaSpec?['currentStage'],
+    );
+  }
+
+  Future<int> _resolveSummaryTddCaseCount(
+    Directory projectDir,
+    Map<dynamic, dynamic> manifest, {
+    Object? fallbackSuites,
+  }) async {
+    final rawCount = manifest['tddCaseCount'];
+    final parsed = switch (rawCount) {
+      final int v => v,
+      final num v => v.toInt(),
+      final String s => int.tryParse(s.trim()),
+      _ => null,
+    };
+    if (parsed != null && parsed >= 0) return parsed;
+    final tddSuitesDir = _qaTddSuitesDir(projectDir);
+    if (await tddSuitesDir.exists()) {
+      var total = 0;
+      await for (final entity in tddSuitesDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = SpecStorageIo.fileNameOf(entity.path);
+        if (name == '_order.json' ||
+            name.contains('.tmp.') ||
+            !name.toLowerCase().endsWith('.json')) {
+          continue;
+        }
+        try {
+          final raw = jsonDecode(await entity.readAsString());
+          final payload = (raw is Map && raw['data'] is Map)
+              ? raw['data'] as Map
+              : raw;
+          if (payload is Map && payload['cases'] is List) {
+            total += (payload['cases'] as List).length;
+          }
+        } catch (_) {}
+      }
+      return total;
+    }
+    return _countInlineTddCases(fallbackSuites);
+  }
+
+  static int _parseManifestTddCaseCount(
+    Object? rawCount, {
+    Object? fallbackSuites,
+  }) {
+    final parsed = switch (rawCount) {
+      final int v => v,
+      final num v => v.toInt(),
+      final String s => int.tryParse(s.trim()),
+      _ => null,
+    };
+    if (parsed != null && parsed >= 0) return parsed;
+    return _countInlineTddCases(fallbackSuites);
+  }
+
+  static int _countInlineTddCases(Object? rawSuites) {
+    if (rawSuites is! List) return 0;
+    var total = 0;
+    for (final suite in rawSuites) {
+      if (suite is Map && suite['cases'] is List) {
+        total += (suite['cases'] as List).length;
+      }
+    }
+    return total;
   }
 
   static int _parseManifestCount(Object? raw, {Object? fallbackList}) {
@@ -1288,6 +1752,9 @@ class SpecProjectStore {
         'currentUxStage': project.uxSpec.currentStage.name,
         'journeyCount': project.uxSpec.journeys.length,
         'screenCount': project.uxSpec.screens.length,
+        'currentQaStage': project.qaSpec.currentStage.name,
+        'featureCount': project.qaSpec.features.length,
+        'tddCaseCount': project.qaSpec.totalTddCaseCount,
       };
 
   Future<Map<dynamic, dynamic>?> _readOptionalJsonMap(File file) async {
@@ -1340,6 +1807,64 @@ class SpecProjectStore {
       parsed.add(issue);
     }
     return parsed;
+  }
+
+  static List<QaCoherenceIssue> _parseQaCoherenceIssues(Object? raw) {
+    final Object? items = switch (raw) {
+      final List<dynamic> list => list,
+      final Map<dynamic, dynamic> map =>
+        map['items'] ?? map['coherenceIssues'] ?? map['data'],
+      _ => null,
+    };
+    if (items is! List || items.isEmpty) {
+      return const <QaCoherenceIssue>[];
+    }
+    final parsed = <QaCoherenceIssue>[];
+    final seenIds = <String>{};
+    for (final item in items) {
+      var issue = QaCoherenceIssue.fromJson(item);
+      if (!seenIds.add(issue.id)) {
+        var suffix = 2;
+        while (!seenIds.add('${issue.id}_$suffix')) {
+          suffix++;
+        }
+        issue = issue.copyWith(id: '${issue.id}_$suffix');
+      }
+      parsed.add(issue);
+    }
+    return parsed;
+  }
+
+  static List<T> _deduplicateById<T>(
+    List<T> items, {
+    required String Function(T item) idOf,
+    required T Function(T item, String newId) withId,
+  }) {
+    if (items.length <= 1) return items;
+    final seenIds = <String>{};
+    var hasDuplicates = false;
+    for (final item in items) {
+      if (!seenIds.add(idOf(item))) {
+        hasDuplicates = true;
+        break;
+      }
+    }
+    if (!hasDuplicates) return items;
+    seenIds.clear();
+    final deduplicated = <T>[];
+    for (final item in items) {
+      final baseId = idOf(item);
+      if (seenIds.add(baseId)) {
+        deduplicated.add(item);
+      } else {
+        var suffix = 2;
+        while (!seenIds.add('${baseId}_$suffix')) {
+          suffix++;
+        }
+        deduplicated.add(withId(item, '${baseId}_$suffix'));
+      }
+    }
+    return deduplicated;
   }
 
   Map<String, Object?> _serializeChatMessage(
@@ -1407,6 +1932,31 @@ class SpecProjectStore {
     final state = UxStageState(
       stage: raw['stage'] != null
           ? UxForgeStage.fromJson(raw['stage'])
+          : fallbackStage,
+      status: SpecStageStatus.fromJson(raw['status']),
+      messages: messages,
+      stageSummary: (raw['stageSummary'] as String?) ?? '',
+      readyToAdvance: raw['readyToAdvance'] == true,
+    );
+    state.validate();
+    return state;
+  }
+
+  Future<QaStageState> _deserializeQaStageState(
+    Object? raw, {
+    required QaForgeStage fallbackStage,
+    required Directory attachmentsDir,
+  }) async {
+    if (raw is! Map) {
+      return QaStageState(stage: fallbackStage);
+    }
+    final messages = await _deserializeChatMessages(
+      raw['messages'],
+      attachmentsDir: attachmentsDir,
+    );
+    final state = QaStageState(
+      stage: raw['stage'] != null
+          ? QaForgeStage.fromJson(raw['stage'])
           : fallbackStage,
       status: SpecStageStatus.fromJson(raw['status']),
       messages: messages,
@@ -1544,6 +2094,16 @@ class SpecProjectStore {
     }
     for (final uxStageState in project.uxSpec.stageStates.values) {
       for (final msg in uxStageState.messages) {
+        for (final att in msg.attachments) {
+          final desc = _describeAttachment(att);
+          if (desc.bytes.isNotEmpty || desc.isText) {
+            files.add(desc.fileName);
+          }
+        }
+      }
+    }
+    for (final qaStageState in project.qaSpec.stageStates.values) {
+      for (final msg in qaStageState.messages) {
         for (final att in msg.attachments) {
           final desc = _describeAttachment(att);
           if (desc.bytes.isNotEmpty || desc.isText) {

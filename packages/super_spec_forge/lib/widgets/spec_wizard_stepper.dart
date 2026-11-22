@@ -14,6 +14,7 @@ class SpecWizardStepper extends StatelessWidget {
     required this.onSelectStage,
     this.onBack,
     this.onSwitchToUxWizard,
+    this.onSwitchToQaWizard,
     this.disabled = false,
     super.key,
   });
@@ -29,6 +30,9 @@ class SpecWizardStepper extends StatelessWidget {
 
   /// Callback optionnel de bascule rapide vers le Wizard UX & Parcours.
   final VoidCallback? onSwitchToUxWizard;
+
+  /// Callback optionnel de bascule rapide vers le Wizard BDD / Gherkin & TDD.
+  final VoidCallback? onSwitchToQaWizard;
 
   /// Désactive le changement d'étape pendant une génération IA si souhaité.
   final bool disabled;
@@ -77,12 +81,21 @@ class SpecWizardStepper extends StatelessWidget {
             ),
           ],
           if (onSwitchToUxWizard != null) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             TextButton.icon(
               key: const ValueKey('spec-switch-to-ux-wizard-btn'),
               onPressed: disabled ? null : onSwitchToUxWizard,
               icon: const Icon(Icons.design_services_outlined, size: 16),
               label: const Text('Wizard UX'),
+            ),
+          ],
+          if (onSwitchToQaWizard != null) ...[
+            const SizedBox(width: 4),
+            TextButton.icon(
+              key: const ValueKey('spec-switch-to-qa-wizard-btn'),
+              onPressed: disabled ? null : onSwitchToQaWizard,
+              icon: const Icon(Icons.science_outlined, size: 16),
+              label: const Text('BDD / TDD'),
             ),
           ],
         ],

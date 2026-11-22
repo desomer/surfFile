@@ -127,6 +127,7 @@ class VibeToolResult {
     Map<String, Object?> data = const <String, Object?>{},
     this.isError = false,
     List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    this.durationMs,
   }) : data = Map<String, Object?>.unmodifiable(data),
        attachments = List<VibeChatAttachment>.unmodifiable(attachments);
 
@@ -135,11 +136,13 @@ class VibeToolResult {
     required String callId,
     required String name,
     required String message,
+    int? durationMs,
   }) => VibeToolResult(
     callId: callId,
     name: name,
     isError: true,
     data: <String, Object?>{'ok': false, 'error': message},
+    durationMs: durationMs,
   );
 
   /// Identifiant de corrélation de l'appel correspondant.
@@ -157,6 +160,19 @@ class VibeToolResult {
   /// Pièces jointes éventuelles produites par l'outil (ex. capture PNG).
   final List<VibeChatAttachment> attachments;
 
+  /// Durée d'exécution locale de l'outil en millisecondes.
+  final int? durationMs;
+
+  /// Retourne une copie enrichie avec [durationMs].
+  VibeToolResult withDurationMs(int durationMs) => VibeToolResult(
+    callId: callId,
+    name: name,
+    data: data,
+    isError: isError,
+    attachments: attachments,
+    durationMs: durationMs,
+  );
+
   /// Formate la réponse au format attendu par Gemini `functionResponse.response`.
   Map<String, Object?> toGeminiFunctionResponsePayload() => <String, Object?>{
     'ok': !isError,
@@ -168,6 +184,7 @@ class VibeToolResult {
     'id': callId,
     'name': name,
     'ok': !isError,
+    if (durationMs != null) 'durationMs': durationMs,
     'result': data,
     if (attachments.isNotEmpty)
       'attachments': [
@@ -187,6 +204,7 @@ class VibeToolTrace {
     this.isError = false,
     this.summary = '',
     this.isPostVerify = false,
+    this.durationMs,
   }) : arguments = Map<String, Object?>.unmodifiable(arguments);
 
   /// Construit une trace synthétique à partir d'un [call] et de son [result].
@@ -194,12 +212,14 @@ class VibeToolTrace {
     VibeToolCall call,
     VibeToolResult result, {
     bool isPostVerify = false,
+    int? durationMs,
   }) => VibeToolTrace(
     name: call.name,
     arguments: call.arguments,
     isError: result.isError,
     summary: _summarize(call, result),
     isPostVerify: isPostVerify,
+    durationMs: durationMs ?? result.durationMs,
   );
 
   /// Nom de l'outil exécuté.
@@ -216,6 +236,9 @@ class VibeToolTrace {
 
   /// Indique si cet appel a eu lieu durant la passe d'auto-vérification post-rendu.
   final bool isPostVerify;
+
+  /// Durée d'exécution de cet appel d'outil en millisecondes.
+  final int? durationMs;
 
   static String _summarize(VibeToolCall call, VibeToolResult result) {
     final data = result.data;
@@ -370,11 +393,18 @@ class VibeToolTrace {
           other.isError == isError &&
           other.summary == summary &&
           other.isPostVerify == isPostVerify &&
+          other.durationMs == durationMs &&
           mapEquals(other.arguments, arguments);
 
   @override
-  int get hashCode =>
-      Object.hash(name, isError, summary, isPostVerify, arguments.length);
+  int get hashCode => Object.hash(
+    name,
+    isError,
+    summary,
+    isPostVerify,
+    durationMs,
+    arguments.length,
+  );
 }
 
 /// Fonction d'exécution asynchrone d'un outil enregistré dans [VibeAppToolRegistry].
@@ -1107,21 +1137,30 @@ class VibeAppToolRegistry {
 
   /// Exécute un appel d'outil unique en capturant toute erreur sous forme de [VibeToolResult.error].
   Future<VibeToolResult> execute(VibeToolCall call) async {
+    final stopwatch = Stopwatch()..start();
     final tool = _tools[call.name];
     if (tool == null) {
+      stopwatch.stop();
       return VibeToolResult.error(
         callId: call.id,
         name: call.name,
         message: 'Outil inconnu : "${call.name}".',
+        durationMs: stopwatch.elapsedMilliseconds,
       );
     }
     try {
-      return await tool.handler(call);
+      final result = await tool.handler(call);
+      stopwatch.stop();
+      return result.durationMs != null
+          ? result
+          : result.withDurationMs(stopwatch.elapsedMilliseconds);
     } catch (error) {
+      stopwatch.stop();
       return VibeToolResult.error(
         callId: call.id,
         name: call.name,
         message: 'Erreur lors de l’exécution de ${call.name} : $error',
+        durationMs: stopwatch.elapsedMilliseconds,
       );
     }
   }

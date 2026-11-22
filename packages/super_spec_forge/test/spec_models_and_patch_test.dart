@@ -76,38 +76,44 @@ void main() {
       expect(decoded.businessRules.single.code, 'RG-001');
     });
 
-    test('SpecChatMessage sérialise et restaure les pièces jointes texte et image', () {
-      final msg = SpecChatMessage(
-        id: 'm1',
-        isUser: true,
-        text: 'Voici le cahier initial',
-        attachments: [
-          VibeChatAttachment.text(
-            name: 'notes.md',
-            content: '# Idée\nGestion de stock',
-          ),
-          VibeChatAttachment.image(
-            name: 'maquette.png',
-            bytes: Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4]),
-          ),
-        ],
-        toolTraces: [
-          VibeToolTrace(
-            name: 'run_coherence_audit',
-            arguments: const <String, Object?>{},
-            summary: '0 point(s)',
-          ),
-        ],
-      );
+    test(
+      'SpecChatMessage sérialise et restaure les pièces jointes texte et image',
+      () {
+        final msg = SpecChatMessage(
+          id: 'm1',
+          isUser: true,
+          text: 'Voici le cahier initial',
+          attachments: [
+            VibeChatAttachment.text(
+              name: 'notes.md',
+              content: '# Idée\nGestion de stock',
+            ),
+            VibeChatAttachment.image(
+              name: 'maquette.png',
+              bytes: Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4]),
+            ),
+          ],
+          toolTraces: [
+            VibeToolTrace(
+              name: 'run_coherence_audit',
+              arguments: const <String, Object?>{},
+              summary: '0 point(s)',
+            ),
+          ],
+        );
 
-      final decoded = SpecChatMessage.fromJson(msg.toJson());
-      expect(decoded, equals(msg));
-      expect(decoded.attachments.length, 2);
-      expect(decoded.toolTraces.single.name, 'run_coherence_audit');
-      expect(decoded.attachments[0].textContent, '# Idée\nGestion de stock');
-      expect(decoded.attachments[1].isImage, isTrue);
-      expect(decoded.toConversationEntry(), contains('notes.md, maquette.png'));
-    });
+        final decoded = SpecChatMessage.fromJson(msg.toJson());
+        expect(decoded, equals(msg));
+        expect(decoded.attachments.length, 2);
+        expect(decoded.toolTraces.single.name, 'run_coherence_audit');
+        expect(decoded.attachments[0].textContent, '# Idée\nGestion de stock');
+        expect(decoded.attachments[1].isImage, isTrue);
+        expect(
+          decoded.toConversationEntry(),
+          contains('notes.md, maquette.png'),
+        );
+      },
+    );
 
     test('rejette les noms d’attributs et objets incompatibles avec JsonAttributePath / YAML DSL', () {
       final invalid = BusinessAttribute(id: 'a1', name: '@calcul');
@@ -141,100 +147,115 @@ void main() {
   });
 
   group('SpecStreamParser & SpecPatchApplier', () {
-    test('extrait le champ message en streaming puis décode askUser/specPatch', () {
-      final parser = SpecStreamParser();
-      var snap = parser.addChunk('{"message":"Bonjour ');
-      expect(snap.message, 'Bonjour ');
-      expect(snap.isMessageComplete, isFalse);
+    test(
+      'extrait le champ message en streaming puis décode askUser/specPatch',
+      () {
+        final parser = SpecStreamParser();
+        var snap = parser.addChunk('{"message":"Bonjour ');
+        expect(snap.message, 'Bonjour ');
+        expect(snap.isMessageComplete, isFalse);
 
-      snap = parser.addChunk('utilisateur\\nSuite","askUser":{"questions":[');
-      expect(snap.message, 'Bonjour utilisateur\nSuite');
-      expect(snap.isMessageComplete, isTrue);
-      expect(snap.hasAskUser, isTrue);
+        snap = parser.addChunk('utilisateur\\nSuite","askUser":{"questions":[');
+        expect(snap.message, 'Bonjour utilisateur\nSuite');
+        expect(snap.isMessageComplete, isTrue);
+        expect(snap.hasAskUser, isTrue);
 
-      parser.addChunk(
-        '{"id":"q1","title":"Cible ?","type":"single","options":["B2B","B2C"],"default":"B2B"}]},"specPatch":null,"stageReadyToAdvance":false}',
-      );
-      final resp = SpecAgentResponse.parse(parser.rawText);
-      expect(resp.message, 'Bonjour utilisateur\nSuite');
-      expect(resp.askUser, isNotNull);
-      expect(resp.askUser!.questions.single.options, ['B2B', 'B2C']);
-      expect(resp.specPatch, isNull);
-    });
+        parser.addChunk(
+          '{"id":"q1","title":"Cible ?","type":"single","options":["B2B","B2C"],"default":"B2B"}]},"specPatch":null,"stageReadyToAdvance":false}',
+        );
+        final resp = SpecAgentResponse.parse(parser.rawText);
+        expect(resp.message, 'Bonjour utilisateur\nSuite');
+        expect(resp.askUser, isNotNull);
+        expect(resp.askUser!.questions.single.options, ['B2B', 'B2C']);
+        expect(resp.specPatch, isNull);
+      },
+    );
 
-    test('fusionne incrémentalement et supprime par ID via SpecPatchApplier', () {
-      final project = SpecForgeProject.fromIdea(
-        idea: 'Suivi de commandes clients',
-        name: 'OrderHub',
-      );
-      final res1 = SpecPatchApplier.apply(project, {
-        'lexicon': {
-          'terms': [
-            {
-              'id': 't1',
-              'term': 'Commande',
-              'definition': 'Engagement client ferme',
-              'synonyms': ['Bon de commande'],
-            },
-          ],
-          'conventions': ['Montants HT en EUR'],
-        },
-        'vision': {
-          'objectives': ['Automatiser la validation'],
-          'personas': [
-            {'id': 'p1', 'name': 'Commercial', 'role': 'Saisit les commandes'},
-          ],
-        },
-        'businessObjects': [
-          {
-            'id': 'obj_cmd',
-            'name': 'Commande',
-            'technicalName': 'Commande',
-            'attributes': [
-              {'id': 'a1', 'name': 'numero', 'type': 'string', 'required': true},
+    test(
+      'fusionne incrémentalement et supprime par ID via SpecPatchApplier',
+      () {
+        final project = SpecForgeProject.fromIdea(
+          idea: 'Suivi de commandes clients',
+          name: 'OrderHub',
+        );
+        final res1 = SpecPatchApplier.apply(project, {
+          'lexicon': {
+            'terms': [
+              {
+                'id': 't1',
+                'term': 'Commande',
+                'definition': 'Engagement client ferme',
+                'synonyms': ['Bon de commande'],
+              },
+            ],
+            'conventions': ['Montants HT en EUR'],
+          },
+          'vision': {
+            'objectives': ['Automatiser la validation'],
+            'personas': [
+              {
+                'id': 'p1',
+                'name': 'Commercial',
+                'role': 'Saisit les commandes',
+              },
             ],
           },
-        ],
-        'businessRules': [
-          {
-            'id': 'r1',
-            'code': 'RG-001',
-            'title': 'Numéro obligatoire',
-            'targetObjectIds': ['obj_cmd'],
-          },
-          {
-            'id': 'r2',
-            'code': 'RG-002',
-            'title': 'Temporaire',
-            'targetObjectIds': ['obj_cmd'],
-          },
-        ],
-      });
+          'businessObjects': [
+            {
+              'id': 'obj_cmd',
+              'name': 'Commande',
+              'technicalName': 'Commande',
+              'attributes': [
+                {
+                  'id': 'a1',
+                  'name': 'numero',
+                  'type': 'string',
+                  'required': true,
+                },
+              ],
+            },
+          ],
+          'businessRules': [
+            {
+              'id': 'r1',
+              'code': 'RG-001',
+              'title': 'Numéro obligatoire',
+              'targetObjectIds': ['obj_cmd'],
+            },
+            {
+              'id': 'r2',
+              'code': 'RG-002',
+              'title': 'Temporaire',
+              'targetObjectIds': ['obj_cmd'],
+            },
+          ],
+        });
 
-      expect(res1.project.lexicon.terms.length, 1);
-      expect(res1.project.lexicon.terms.single.term, 'Commande');
-      expect(res1.project.vision.personas.length, 1);
-      expect(res1.project.businessObjects.length, 1);
-      expect(res1.project.businessRules.length, 2);
+        expect(res1.project.lexicon.terms.length, 1);
+        expect(res1.project.lexicon.terms.single.term, 'Commande');
+        expect(res1.project.vision.personas.length, 1);
+        expect(res1.project.businessObjects.length, 1);
+        expect(res1.project.businessRules.length, 2);
 
-      final res2 = SpecPatchApplier.apply(res1.project, {
-        'removeBusinessRuleIds': ['r2'],
-        'businessRules': [
-          {
-            'id': 'r1',
-            'code': 'RG-001',
-            'title': 'Numéro unique et obligatoire',
-            'targetObjectIds': ['obj_cmd'],
-          },
-        ],
-      });
+        final res2 = SpecPatchApplier.apply(res1.project, {
+          'removeBusinessRuleIds': ['r2'],
+          'businessRules': [
+            {
+              'id': 'r1',
+              'code': 'RG-001',
+              'title': 'Numéro unique et obligatoire',
+              'targetObjectIds': ['obj_cmd'],
+            },
+          ],
+        });
 
-      expect(res2.project.businessRules.length, 1);
-      expect(
-        res2.project.businessRules.single.title,
-        'Numéro unique et obligatoire',
-      );
-    });
+        expect(res2.project.businessRules.length, 1);
+        expect(
+          res2.project.businessRules.single.title,
+          'Numéro unique et obligatoire',
+        );
+      },
+    );
 
     test('SpecPatchApplier.applyPartial et SpecDeltaRecovery isolent les erreurs et sauvent le checkpoint', () {
       final project = SpecForgeProject.fromIdea(
@@ -403,188 +424,201 @@ void main() {
             type: BusinessAttributeType.object,
             isArray: true,
             estimatedMaxRows: 5000,
-            children: [
-              BusinessAttribute(id: 'a_sku', name: 'sku'),
-            ],
+            children: [BusinessAttribute(id: 'a_sku', name: 'sku')],
           ),
         ],
       );
       expect(tooManyRows.validate, throwsFormatException);
     });
 
-    test('SpecForgeToolRegistry exécute les 9 outils métier et de validation', () async {
-      debugEntries.clear();
-      saveError('Erreur test outil', null);
+    test(
+      'SpecForgeToolRegistry exécute les 9 outils métier et de validation',
+      () async {
+        debugEntries.clear();
+        saveError('Erreur test outil', null);
 
-      var current = SpecForgeProject.fromIdea(
-        idea: 'Gestion des devis',
-        name: 'DevisApp',
-      ).copyWith(
-        lexicon: SpecLexicon(
-          terms: [
-            LexiconTerm(
-              id: 't1',
-              term: 'Devis',
-              definition: 'Offre chiffrée',
-              synonyms: const ['Chiffrage'],
-            ),
-          ],
-        ),
-        cahierDesCharges: SpecCahierDesCharges(
-          modules: const [SpecModule(id: 'm1', name: 'Ventes')],
-          functionalRequirements: [
-            FunctionalRequirement(
-              id: 'r1',
-              code: 'EXF-001',
-              title: 'Créer devis',
-              moduleId: 'm1',
-            ),
-          ],
-        ),
-        businessObjects: [
-          BusinessObjectSpec(
-            id: 'obj_devis',
-            name: 'Devis',
-            technicalName: 'Devis',
-            attributes: [
-              BusinessAttribute(id: 'a1', name: 'numero', required: true),
-              BusinessAttribute(
-                id: 'a2',
-                name: 'lignes',
-                type: BusinessAttributeType.object,
-                isArray: true,
-                estimatedMaxRows: 100,
-                children: [
-                  BusinessAttribute(id: 'a3', name: 'produit', required: true),
+        var current =
+            SpecForgeProject.fromIdea(
+              idea: 'Gestion des devis',
+              name: 'DevisApp',
+            ).copyWith(
+              lexicon: SpecLexicon(
+                terms: [
+                  LexiconTerm(
+                    id: 't1',
+                    term: 'Devis',
+                    definition: 'Offre chiffrée',
+                    synonyms: const ['Chiffrage'],
+                  ),
                 ],
               ),
-            ],
-          ),
-        ],
-        businessRules: [
-          BusinessRuleSpec(
-            id: 'rg1',
-            code: 'RG-001',
-            title: 'Numéro unique',
-            targetObjectIds: const ['obj_devis'],
-          ),
-        ],
-      );
+              cahierDesCharges: SpecCahierDesCharges(
+                modules: const [SpecModule(id: 'm1', name: 'Ventes')],
+                functionalRequirements: [
+                  FunctionalRequirement(
+                    id: 'r1',
+                    code: 'EXF-001',
+                    title: 'Créer devis',
+                    moduleId: 'm1',
+                  ),
+                ],
+              ),
+              businessObjects: [
+                BusinessObjectSpec(
+                  id: 'obj_devis',
+                  name: 'Devis',
+                  technicalName: 'Devis',
+                  attributes: [
+                    BusinessAttribute(id: 'a1', name: 'numero', required: true),
+                    BusinessAttribute(
+                      id: 'a2',
+                      name: 'lignes',
+                      type: BusinessAttributeType.object,
+                      isArray: true,
+                      estimatedMaxRows: 100,
+                      children: [
+                        BusinessAttribute(
+                          id: 'a3',
+                          name: 'produit',
+                          required: true,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+              businessRules: [
+                BusinessRuleSpec(
+                  id: 'rg1',
+                  code: 'RG-001',
+                  title: 'Numéro unique',
+                  targetObjectIds: const ['obj_devis'],
+                ),
+              ],
+            );
 
-      SpecForgeStage? navigatedStage;
-      String? focusedObj;
-      List<String> focusedAttrPath = const <String>[];
-      String appliedFilter = '';
-      final registry = SpecForgeToolRegistry.build(
-        readProject: () => current,
-        onUpdateProject: (updated) async => current = updated,
-        onNavigateStage: (s) async => navigatedStage = s,
-        onFocusObject: (id) => focusedObj = id,
-        onFocusSelection: ({objectId, attributePath = const <String>[]}) {
-          focusedObj = objectId;
-          focusedAttrPath = attributePath;
-        },
-        onFilterBusinessObjects: (q) => appliedFilter = q,
-      );
-
-      expect(registry.declarations.length, 10);
-
-      final lexRes = await registry.execute(
-        VibeToolCall(id: '1', name: 'get_lexicon_and_synonyms', arguments: const {'query': 'chiffrage'}),
-      );
-      expect(lexRes.isError, isFalse);
-      expect(lexRes.data['termCount'], 1);
-
-      final reqRes = await registry.execute(
-        VibeToolCall(id: '2', name: 'get_requirements_summary'),
-      );
-      expect(reqRes.data['functionalRequirementCount'], 1);
-
-      final objRes = await registry.execute(
-        VibeToolCall(
-          id: '3',
-          name: 'inspect_business_object',
-          arguments: const {'objectIdOrName': 'Devis', 'includeYaml': true},
-        ),
-      );
-      expect(objRes.data['totalAttributeCount'], 3);
-      expect(objRes.data['yamlLight'], contains('Devis:'));
-
-      final ruleRes = await registry.execute(
-        VibeToolCall(
-          id: '4',
-          name: 'get_business_rules',
-          arguments: const {'objectId': 'Devis'},
-        ),
-      );
-      expect(ruleRes.data['ruleCount'], 1);
-
-      final dbgRes = await registry.execute(
-        VibeToolCall(id: '5', name: 'get_debug_entries'),
-      );
-      expect(dbgRes.data['returnedCount'], 1);
-
-      final auditRes = await registry.execute(
-        VibeToolCall(id: '6', name: 'run_coherence_audit'),
-      );
-      expect(auditRes.isError, isFalse);
-
-      final yamlOk = await registry.execute(
-        VibeToolCall(
-          id: '7',
-          name: 'validate_yaml_light_schema',
-          arguments: const {'yaml': 'Client:\n  nom: string!'},
-        ),
-      );
-      expect(yamlOk.data['valid'], isTrue);
-
-      final yamlBad = await registry.execute(
-        VibeToolCall(
-          id: '8',
-          name: 'validate_yaml_light_schema',
-          arguments: const {'yaml': 'Client:\n  type: InconnuType'},
-        ),
-      );
-      expect(yamlBad.isError, isTrue);
-
-      final extractRes = await registry.execute(
-        VibeToolCall(
-          id: '9',
-          name: 'extract_array_to_business_object',
-          arguments: const {'objectId': 'obj_devis', 'attributeName': 'lignes'},
-        ),
-      );
-      expect(extractRes.isError, isFalse);
-      expect(current.businessObjects.length, 2);
-      expect(current.businessObjects.first.relations.single.name, 'lignes');
-
-      final focusRes = await registry.execute(
-        VibeToolCall(
-          id: '10',
-          name: 'focus_stage_or_object',
-          arguments: const {
-            'stage': 'businessObjects',
-            'objectId': 'obj_devis',
-            'attributePath': 'numero',
+        SpecForgeStage? navigatedStage;
+        String? focusedObj;
+        List<String> focusedAttrPath = const <String>[];
+        String appliedFilter = '';
+        final registry = SpecForgeToolRegistry.build(
+          readProject: () => current,
+          onUpdateProject: (updated) async => current = updated,
+          onNavigateStage: (s) async => navigatedStage = s,
+          onFocusObject: (id) => focusedObj = id,
+          onFocusSelection: ({objectId, attributePath = const <String>[]}) {
+            focusedObj = objectId;
+            focusedAttrPath = attributePath;
           },
-        ),
-      );
-      expect(focusRes.isError, isFalse);
-      expect(navigatedStage, SpecForgeStage.businessObjects);
-      expect(focusedObj, 'obj_devis');
-      expect(focusedAttrPath, ['a1']);
+          onFilterBusinessObjects: (q) => appliedFilter = q,
+        );
 
-      final filterRes = await registry.execute(
-        VibeToolCall(
-          id: '11',
-          name: 'filter_business_objects',
-          arguments: const {'query': 'numero'},
-        ),
-      );
-      expect(filterRes.isError, isFalse);
-      expect(appliedFilter, 'numero');
-      expect(filterRes.data['matchingObjectCount'], 1);
-    });
+        expect(registry.declarations.length, 10);
+
+        final lexRes = await registry.execute(
+          VibeToolCall(
+            id: '1',
+            name: 'get_lexicon_and_synonyms',
+            arguments: const {'query': 'chiffrage'},
+          ),
+        );
+        expect(lexRes.isError, isFalse);
+        expect(lexRes.data['termCount'], 1);
+
+        final reqRes = await registry.execute(
+          VibeToolCall(id: '2', name: 'get_requirements_summary'),
+        );
+        expect(reqRes.data['functionalRequirementCount'], 1);
+
+        final objRes = await registry.execute(
+          VibeToolCall(
+            id: '3',
+            name: 'inspect_business_object',
+            arguments: const {'objectIdOrName': 'Devis', 'includeYaml': true},
+          ),
+        );
+        expect(objRes.data['totalAttributeCount'], 3);
+        expect(objRes.data['yamlLight'], contains('Devis:'));
+
+        final ruleRes = await registry.execute(
+          VibeToolCall(
+            id: '4',
+            name: 'get_business_rules',
+            arguments: const {'objectId': 'Devis'},
+          ),
+        );
+        expect(ruleRes.data['ruleCount'], 1);
+
+        final dbgRes = await registry.execute(
+          VibeToolCall(id: '5', name: 'get_debug_entries'),
+        );
+        expect(dbgRes.data['returnedCount'], 1);
+
+        final auditRes = await registry.execute(
+          VibeToolCall(id: '6', name: 'run_coherence_audit'),
+        );
+        expect(auditRes.isError, isFalse);
+
+        final yamlOk = await registry.execute(
+          VibeToolCall(
+            id: '7',
+            name: 'validate_yaml_light_schema',
+            arguments: const {'yaml': 'Client:\n  nom: string!'},
+          ),
+        );
+        expect(yamlOk.data['valid'], isTrue);
+
+        final yamlBad = await registry.execute(
+          VibeToolCall(
+            id: '8',
+            name: 'validate_yaml_light_schema',
+            arguments: const {'yaml': 'Client:\n  type: InconnuType'},
+          ),
+        );
+        expect(yamlBad.isError, isTrue);
+
+        final extractRes = await registry.execute(
+          VibeToolCall(
+            id: '9',
+            name: 'extract_array_to_business_object',
+            arguments: const {
+              'objectId': 'obj_devis',
+              'attributeName': 'lignes',
+            },
+          ),
+        );
+        expect(extractRes.isError, isFalse);
+        expect(current.businessObjects.length, 2);
+        expect(current.businessObjects.first.relations.single.name, 'lignes');
+
+        final focusRes = await registry.execute(
+          VibeToolCall(
+            id: '10',
+            name: 'focus_stage_or_object',
+            arguments: const {
+              'stage': 'businessObjects',
+              'objectId': 'obj_devis',
+              'attributePath': 'numero',
+            },
+          ),
+        );
+        expect(focusRes.isError, isFalse);
+        expect(navigatedStage, SpecForgeStage.businessObjects);
+        expect(focusedObj, 'obj_devis');
+        expect(focusedAttrPath, ['a1']);
+
+        final filterRes = await registry.execute(
+          VibeToolCall(
+            id: '11',
+            name: 'filter_business_objects',
+            arguments: const {'query': 'numero'},
+          ),
+        );
+        expect(filterRes.isError, isFalse);
+        expect(appliedFilter, 'numero');
+        expect(filterRes.data['matchingObjectCount'], 1);
+      },
+    );
 
     test('JsonSchemaConstraints : validation complète, sérialisation, bornes et mots-clés avancés', () {
       final sc = JsonSchemaConstraints(
@@ -684,12 +718,16 @@ void main() {
         ),
       );
       final decoded = SpecForgeProject.fromJson(updated.toJson());
-      expect(decoded.businessObjectModelPreferences, equals(updated.businessObjectModelPreferences));
+      expect(
+        decoded.businessObjectModelPreferences,
+        equals(updated.businessObjectModelPreferences),
+      );
 
       // Rétrocompatibilité clé JSON `businessObjectLanguageSettings`.
       final legacyJson = updated.toJson();
-      legacyJson['businessObjectLanguageSettings'] =
-          legacyJson.remove('businessObjectModelPreferences');
+      legacyJson['businessObjectLanguageSettings'] = legacyJson.remove(
+        'businessObjectModelPreferences',
+      );
       final decodedLegacy = SpecForgeProject.fromJson(legacyJson);
       expect(
         decodedLegacy.businessObjectLanguageSettings.attributeCase,
@@ -713,7 +751,9 @@ void main() {
         'adresse-livraison',
       );
       expect(
-        AttributeNamingCase.screamingSnakeCase.formatIdentifier('adresseLivraison'),
+        AttributeNamingCase.screamingSnakeCase.formatIdentifier(
+          'adresseLivraison',
+        ),
         'ADRESSE_LIVRAISON',
       );
       expect(
@@ -740,10 +780,7 @@ void main() {
         questioningLevel: VibeQuestioningLevel.balanced,
         afterAskUserReply: false,
       );
-      expect(
-        turnPrompt,
-        contains('PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS'),
-      );
+      expect(turnPrompt, contains('PRÉFÉRENCES DU MODÈLE D’OBJETS MÉTIERS'));
       expect(turnPrompt, contains('English (en)'));
       expect(turnPrompt, contains('snake_case'));
       expect(turnPrompt, contains('Français (fr)'));
@@ -761,6 +798,280 @@ void main() {
         contains('EXEMPLES JSON SCHEMA OBLIGATOIRES'),
       );
       expect(objectsAgent.patchSchemaGuide, contains('"examples": [2, 5]'));
+    });
+  });
+
+  group('Modèles QA BDD/Gherkin & TDD (QaForgeSpec)', () {
+    test('round-trip JSON complet de QaForgeSpec dans SpecForgeProject et égalité profonde payload', () {
+      final fixtureNominal = QaFixtureSpec(
+        id: 'fix_cmd_ok',
+        code: 'FIX-001',
+        name: 'Commande nominale sous plafond',
+        kind: QaFixtureKind.nominal,
+        businessObjectId: 'obj_commande',
+        personaId: 'persona_adv',
+        businessRuleIds: const ['RG-001'],
+        description: 'Client solvable avec commande valide',
+        payload: {
+          'numero': 'CMD-2026-001',
+          'montantHt': 4500.5,
+          'lignes': [
+            {'sku': 'ART-01', 'quantite': 3},
+          ],
+        },
+        expectedValid: true,
+      );
+
+      final fixtureReordered = QaFixtureSpec(
+        id: 'fix_cmd_ok',
+        code: 'FIX-001',
+        name: 'Commande nominale sous plafond',
+        kind: QaFixtureKind.nominal,
+        businessObjectId: 'obj_commande',
+        personaId: 'persona_adv',
+        businessRuleIds: const ['RG-001'],
+        description: 'Client solvable avec commande valide',
+        payload: {
+          'lignes': [
+            {'quantite': 3, 'sku': 'ART-01'},
+          ],
+          'montantHt': 4500.5,
+          'numero': 'CMD-2026-001',
+        },
+        expectedValid: true,
+      );
+
+      expect(fixtureNominal, equals(fixtureReordered));
+      expect(fixtureNominal.hashCode, equals(fixtureReordered.hashCode));
+      expect(() => fixtureNominal.payload['autre'] = 1, throwsUnsupportedError);
+      expect(
+        () => (fixtureNominal.payload['lignes'] as List).add('x'),
+        throwsUnsupportedError,
+      );
+
+      final scenarioOutline = GherkinScenarioSpec(
+        id: 'scn_plafond',
+        code: 'SCN-001',
+        title: 'Contrôle du plafond d’encours',
+        isOutline: true,
+        tags: const ['smoke', '@RG-001', '@@smoke'],
+        steps: [
+          GherkinStep(
+            id: 'st_1',
+            keyword: GherkinStepKeyword.given,
+            text: 'un client avec un encours de <encours> EUR et plafond <plafond>',
+          ),
+          GherkinStep(
+            id: 'st_2',
+            keyword: GherkinStepKeyword.when,
+            text: 'le gestionnaire soumet un montant <montant_cmd>',
+            dataTable: const [
+              ['canal', '<canal_saisie>'],
+            ],
+          ),
+          GherkinStep(
+            id: 'st_3',
+            keyword: GherkinStepKeyword.then,
+            text: 'la décision attendue est <decision>',
+            docString: '{"code":"<code_retour>"}',
+          ),
+        ],
+        examples: GherkinExamplesTable(
+          headers: const [
+            'encours',
+            'plafond',
+            'montant_cmd',
+            'canal_saisie',
+            'decision',
+            'code_retour',
+          ],
+          rows: const [
+            ['2000', '10000', '3000', 'EDI', 'VALIDEE', 'OK'],
+            ['9500', '10000', '1500', 'WEB', 'REJETEE', 'RG-001'],
+          ],
+        ),
+        requirementIds: const ['EXF-001'],
+        useCaseIds: const ['uc_valider_cmd'],
+        businessRuleIds: const ['RG-001'],
+        journeyIds: const ['JRN-001'],
+        screenIds: const ['SCR-001'],
+        fixtureIds: const ['FIX-001'],
+      );
+
+      expect(scenarioOutline.tags, ['@smoke', '@RG-001']);
+      expect(
+        scenarioOutline.referencedOutlineVariables,
+        equals({
+          'encours',
+          'plafond',
+          'montant_cmd',
+          'canal_saisie',
+          'decision',
+          'code_retour',
+        }),
+      );
+
+      final feature = GherkinFeatureSpec(
+        id: 'feat_commandes',
+        code: 'FEAT-001',
+        title: 'Validation des commandes B2B',
+        moduleId: 'mod_ventes',
+        personaId: 'persona_adv',
+        narrative: 'En tant que gestionnaire ADV, je veux contrôler l’encours.',
+        tags: const ['ventes'],
+        backgroundSteps: [
+          GherkinStep(
+            id: 'bg_1',
+            keyword: GherkinStepKeyword.given,
+            text: 'le référentiel clients est synchronisé',
+          ),
+        ],
+        scenarios: [scenarioOutline],
+      );
+
+      final suite = TddTestSuiteSpec(
+        id: 'tdd_encours',
+        code: 'TDD-001',
+        name: 'Calculateur et garde d’encours',
+        layer: TddTargetLayer.domainValidation,
+        targetObjectId: 'obj_commande',
+        moduleId: 'mod_ventes',
+        description: 'Progression Red → Green → Refactor sur RG-001',
+        cases: [
+          TddTestCaseSpec(
+            id: 'tc_1',
+            code: 'TC-001',
+            order: 1,
+            title: 'Autorise une commande sous le plafond disponible',
+            fixtureId: 'FIX-001',
+            arrange: 'Charger FIX-001 avec plafond 10 000 €',
+            act: 'Appeler verifierPlafond(commande)',
+            outcomeKind: TddExpectedOutcomeKind.allowsAction,
+            assertExpected: 'Validation acceptée sans motif dérogatoire',
+            businessRuleIds: const ['RG-001'],
+            requirementIds: const ['EXF-001'],
+            screenIds: const ['SCR-001'],
+          ),
+          TddTestCaseSpec(
+            id: 'tc_2',
+            code: 'TC-002',
+            order: 2,
+            title: 'Rejette lorsque le cumul dépasse le plafond',
+            arrange: 'Encours 9 500 € + commande 1 500 €',
+            act: 'Appeler verifierPlafond(commande)',
+            outcomeKind: TddExpectedOutcomeKind.rejectsWithError,
+            assertExpected: 'Exception métier levée',
+            expectedErrorMessage: 'Plafond encours dépassé (RG-001)',
+            businessRuleIds: const ['RG-001'],
+          ),
+        ],
+      );
+
+      const qaIssue = QaCoherenceIssue(
+        id: 'qa_coh_1',
+        severity: CoherenceSeverity.warning,
+        stage: QaForgeStage.tddSuites,
+        code: 'QA-RG-PARTIAL',
+        title: 'Cas limite égalité exacte manquant',
+        description: 'Ajouter un cas où cumul == plafond.',
+        targetRef: 'RG-001',
+        suggestion: 'Créer FIX-002 en boundary.',
+      );
+
+      final qaSpec = QaForgeSpec(
+        currentStage: QaForgeStage.testFixtures,
+        gherkinLanguage: GherkinKeywordLanguage.en,
+        fixtures: [fixtureNominal],
+        features: [feature],
+        tddSuites: [suite],
+        coherenceIssues: const [qaIssue],
+      ).moveToStage(QaForgeStage.gherkinFeatures, validateCurrentStage: true);
+
+      expect(qaSpec.hasContent, isTrue);
+      expect(qaSpec.totalScenarioCount, 1);
+      expect(qaSpec.totalTddCaseCount, 2);
+      expect(
+        qaSpec.stageStateFor(QaForgeStage.testFixtures).status,
+        SpecStageStatus.validated,
+      );
+      expect(
+        qaSpec.stageStateFor(QaForgeStage.gherkinFeatures).status,
+        SpecStageStatus.inProgress,
+      );
+
+      final baseProject = SpecForgeProject.fromIdea(
+        idea: 'Gestion des commandes B2B',
+        name: 'OrderFlow',
+      );
+      expect(baseProject.toJson().containsKey('qaSpec'), isFalse);
+
+      final withQa = baseProject.copyWith(qaSpec: qaSpec);
+      withQa.validate();
+      expect(withQa.toJson().containsKey('qaSpec'), isTrue);
+      expect(
+        withQa.toCompactContextJson(SpecForgeStage.reviewExport)['qaSummary'],
+        isA<Map<String, Object?>>(),
+      );
+
+      final decoded = SpecForgeProject.fromJson(withQa.toJson());
+      expect(decoded, equals(withQa));
+      expect(decoded.qaSpec.findFixture('FIX-001'), equals(fixtureNominal));
+      expect(decoded.qaSpec.findFeature('FEAT-001'), equals(feature));
+      expect(decoded.qaSpec.findTddSuite('TDD-001'), equals(suite));
+    });
+
+    test('normalisation Gherkin FR/EN, tolérance Examples IA et rejets validate()', () {
+      expect(GherkinKeywordLanguage.fromJson(null), GherkinKeywordLanguage.fr);
+      expect(
+        GherkinKeywordLanguage.fromJson('English'),
+        GherkinKeywordLanguage.en,
+      );
+      expect(
+        GherkinStepKeyword.fromJson('Étant donné que'),
+        GherkinStepKeyword.given,
+      );
+      expect(GherkinStepKeyword.fromJson('Lorsque'), GherkinStepKeyword.when);
+      expect(GherkinStepKeyword.fromJson('Alors'), GherkinStepKeyword.then);
+      expect(GherkinStepKeyword.fromJson('Et'), GherkinStepKeyword.and);
+      expect(GherkinStepKeyword.fromJson('Mais'), GherkinStepKeyword.but);
+      expect(
+        GherkinStepKeyword.given.keywordFor(GherkinKeywordLanguage.fr),
+        'Étant donné',
+      );
+      expect(
+        GherkinStepKeyword.given.keywordFor(GherkinKeywordLanguage.en),
+        'Given',
+      );
+
+      // Normalisation tolérante des longueurs de lignes Examples dans fromJson
+      final normalizedExamples = GherkinExamplesTable.fromJson({
+        'headers': ['montant', 'statut', 'motif'],
+        'rows': [
+          ['100', 'OK'],
+          ['9999', 'KO', 'Plafond', 'colonne_superflue'],
+        ],
+      });
+      expect(normalizedExamples.isNotEmpty, isTrue);
+      expect(normalizedExamples.rows[0], ['100', 'OK', '']);
+      expect(normalizedExamples.rows[1], ['9999', 'KO', 'Plafond']);
+
+      // Rejet strict dans validate() si construit directement avec colonnes désalignées
+      final misaligned = GherkinExamplesTable(
+        headers: const ['a', 'b'],
+        rows: const [
+          ['1'],
+        ],
+      );
+      expect(misaligned.validate, throwsFormatException);
+
+      // Rejet d'IDs dupliqués dans QaForgeSpec
+      final dupSpec = QaForgeSpec(
+        fixtures: [
+          QaFixtureSpec(id: 'f1', name: 'A'),
+          QaFixtureSpec(id: 'f1', name: 'B'),
+        ],
+      );
+      expect(dupSpec.validate, throwsFormatException);
     });
   });
 }
