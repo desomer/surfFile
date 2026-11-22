@@ -31,6 +31,7 @@ import 'services/appearance/custom_design_system_store.dart';
 import 'services/appearance/paged_file_appearance_store.dart';
 import 'services/diagnostics/debug_entry.dart';
 import 'services/events/super_event_bus.dart';
+import 'services/fonts/dynamic_font_manager.dart';
 import 'services/inspection/vibe_debug_capture.dart';
 import 'services/inspection/vibe_mounted_slot_index.dart';
 import 'services/pages/editor_page_router.dart';
@@ -50,6 +51,7 @@ import 'widgets/editing/overlay/editor_viewport_preview.dart';
 import 'widgets/editing/overlay/style_edit_banner.dart';
 import 'widgets/editing/slots/editor_slot.dart';
 import 'widgets/appearance/appearance_scope.dart';
+import 'widgets/appearance/dynamic_font_scope.dart';
 import 'widgets/surfaces/surface_image_providers.dart';
 
 /// Application shell managing appearance persistence, layout reset, window
@@ -69,6 +71,7 @@ class SuperApp extends StatefulWidget {
     this.customDesignGuide,
     this.replaceDefaultDesignGuide = false,
     this.customDesignSystemStore,
+    this.fontManager,
   });
 
   final GoRouter router;
@@ -88,6 +91,9 @@ class SuperApp extends StatefulWidget {
 
   /// Magasin global ou personnalisé de systèmes de design `DESIGN.md` transmis à [StyleEditBanner].
   final CustomDesignSystemStore? customDesignSystemStore;
+
+  /// Gestionnaire de téléchargement dynamique de polices (par défaut [DynamicFontManager.shared]).
+  final DynamicFontManager? fontManager;
 
   /// Application-owned event bus; this widget never closes it.
   final SuperEventBus? eventBus;
@@ -138,6 +144,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   late PersistentAppearanceController _appearance;
   late EditorHistoryController _editorHistory;
   late JsonRepositoryStore _repositories;
+  DynamicFontManager get _fontManager =>
+      widget.fontManager ?? DynamicFontManager.shared;
   final _styleEditMode = ValueNotifier(false);
   final _viewportPreview = ValueNotifier<ResponsiveBreakpoint?>(null);
   final _appearanceToolbarPosition = ValueNotifier<Offset?>(null);
@@ -163,6 +171,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
     _repositories.errors.addListener(_repositoryFailed);
     unawaited(_repositories.providers.ensureLoaded());
+    unawaited(_fontManager.loadCachedFonts());
     _appearance = _createAppearanceController();
     _editorHistory = _createEditorHistory();
     widget.registry?.bindAppearance(_appearance);
@@ -259,9 +268,25 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                 color: fg,
               ),
               const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  category.label,
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '[${category.label}] $error',
+                  error,
                   maxLines: 6,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: fg),
@@ -441,6 +466,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     try {
       await _appearance.restore();
       if (!mounted) return;
+      if (_fontManager.autoDownloadEnabled) {
+        unawaited(_fontManager.ensureAppearanceFonts(_appearance.value));
+      }
       await _preloadInitialPageIfNeeded();
       if (!mounted) return;
       widget.pageRouting?.synchronize(_appearance.value.pageCatalog);
@@ -499,31 +527,34 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) => SuperAppScope(
     app: widget,
     appearanceToolbarPosition: _appearanceToolbarPosition,
-    child: JsonRepositoryScope(
-      store: _repositories,
-      child: AppearanceServicesScope(
-        codec: _appearance.store.codec,
-        child: AppearanceScope(
-          controller: _appearance,
-          child: LayoutResetShortcut(
-            onReset: _resetLayouts,
-            child: FloatingRepositoryShortcut(
-              navigatorKey: widget.router.routerDelegate.navigatorKey,
-              store: _repositories,
-              appearance: _appearance,
-              registry: widget.registry,
-              child: EditorHistoryShortcut(
-                editMode: _styleEditMode,
-                history: _editorHistory,
-                child: EditorHistoryScope(
-                  controller: _editorHistory,
-                  child: EditorViewportPreviewScope(
-                    controller: _viewportPreview,
-                    child: StyleEditScope(
-                      controller: _styleEditMode,
-                      child: ValueListenableBuilder<Appearance>(
-                        valueListenable: _appearance,
-                        builder: (context, value, _) => _buildApp(value),
+    child: DynamicFontScope(
+      manager: _fontManager,
+      child: JsonRepositoryScope(
+        store: _repositories,
+        child: AppearanceServicesScope(
+          codec: _appearance.store.codec,
+          child: AppearanceScope(
+            controller: _appearance,
+            child: LayoutResetShortcut(
+              onReset: _resetLayouts,
+              child: FloatingRepositoryShortcut(
+                navigatorKey: widget.router.routerDelegate.navigatorKey,
+                store: _repositories,
+                appearance: _appearance,
+                registry: widget.registry,
+                child: EditorHistoryShortcut(
+                  editMode: _styleEditMode,
+                  history: _editorHistory,
+                  child: EditorHistoryScope(
+                    controller: _editorHistory,
+                    child: EditorViewportPreviewScope(
+                      controller: _viewportPreview,
+                      child: StyleEditScope(
+                        controller: _styleEditMode,
+                        child: ValueListenableBuilder<Appearance>(
+                          valueListenable: _appearance,
+                          builder: (context, value, _) => _buildApp(value),
+                        ),
                       ),
                     ),
                   ),

@@ -42,6 +42,7 @@ import '../../widgets/editing/slots/editor_context_menu.dart' show VibeChatScope
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
 import '../diagnostics/debug_entry.dart';
+import '../fonts/dynamic_font_manager.dart';
 import '../pages/editor_page_router.dart';
 import '../providers/http_data_provider.dart';
 import '../repositories/json_repository_store.dart';
@@ -123,6 +124,7 @@ class VibeDiagnosticsInspector {
     this.onSelectScope,
     this.turnStartMarker,
     this.previewTracker,
+    this.fontManager,
   });
 
   /// Fournisseur de l'[Appearance] courante.
@@ -157,6 +159,9 @@ class VibeDiagnosticsInspector {
 
   /// Suivi optionnel des états d'aperçu à restaurer en cas de rollback.
   final VibePreviewStateTracker? previewTracker;
+
+  /// Gestionnaire optionnel de polices dynamiques Google Fonts.
+  final DynamicFontManager? fontManager;
 
   static final RegExp _sensitiveHeaderName = RegExp(
     r'auth|token|secret|password|cookie|api[-_]?key|credential|bearer',
@@ -1489,8 +1494,12 @@ class VibeDiagnosticsInspector {
           'customComponents': reg.components.keys.toList(),
       },
       if (includeFonts) ...<String, Object?>{
-        'availableFontFamilies': Registry.defaultAvailableFontFamilies,
+        'availableFontFamilies': (fontManager ?? DynamicFontManager.shared)
+            .effectiveAvailableFontFamilies(),
         'bundledFontFamilies': Registry.bundledPackageFontFamilies.toList(),
+        'dynamicFontFamilies':
+            (fontManager ?? DynamicFontManager.shared).loadedFontFamilies,
+        'dynamicGoogleFontsSupported': true,
       },
     };
   }

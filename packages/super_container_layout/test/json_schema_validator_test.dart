@@ -222,5 +222,80 @@ void main() {
       final inferred = JsonSchemaValidator.inferSchema(doc, title: 'Facture');
       expect(JsonSchemaValidator.validate(doc, inferred).isValid, isTrue);
     });
+
+    test(
+      'inclut la valeur problématique dans les messages d’erreur utilisateur (format, type, bornes)',
+      () {
+        const schema = <String, Object?>{
+          'type': 'object',
+          'required': ['requiredField'],
+          'properties': {
+            'requiredField': {'type': 'string'},
+            'startDate': {'type': 'string', 'format': 'date'},
+            'endDate': {'type': 'string', 'format': 'date'},
+            'amount': {'type': 'number', 'minimum': 10},
+            'status': {
+              'type': 'string',
+              'enum': ['open', 'closed'],
+            },
+          },
+        };
+
+        final result = JsonSchemaValidator.validate(<String, Object?>{
+          'startDate': '',
+          'endDate': '22/11/2026',
+          'amount': 3,
+          'status': 'draft',
+        }, schema);
+
+        expect(result.isValid, isFalse);
+
+        final startIssue = result.issues.firstWhere(
+          (i) => i.instancePath == 'startDate',
+        );
+        expect(startIssue.invalidValue, '""');
+        expect(
+          startIssue.formatLine(),
+          'startDate : Date ISO 8601 invalide (attendu : YYYY-MM-DD). — valeur : "" (format)',
+        );
+        expect(startIssue.toJson()['value'], '""');
+        expect(JsonSchemaValidationIssue.fromJson(startIssue.toJson()), startIssue);
+
+        final endIssue = result.issues.firstWhere(
+          (i) => i.instancePath == 'endDate',
+        );
+        expect(endIssue.invalidValue, '"22/11/2026"');
+        expect(
+          endIssue.formatLine(),
+          contains('— valeur : "22/11/2026" (format)'),
+        );
+
+        final amountIssue = result.issues.firstWhere(
+          (i) => i.instancePath == 'amount',
+        );
+        expect(amountIssue.invalidValue, '3');
+        expect(amountIssue.formatLine(), contains('— valeur : 3 (minimum)'));
+
+        // enum inclut déjà la valeur dans son message : ne doit pas la dupliquer.
+        final statusIssue = result.issues.firstWhere(
+          (i) => i.instancePath == 'status',
+        );
+        expect(statusIssue.formatLine(), isNot(contains('— valeur :')));
+
+        // required n'a pas de valeur fautive.
+        final reqIssue = result.issues.firstWhere(
+          (i) => i.instancePath == 'requiredField',
+        );
+        expect(reqIssue.invalidValue, isNull);
+        expect(reqIssue.formatLine(), isNot(contains('— valeur :')));
+
+        // Troncature propre des longues chaînes.
+        final longPreview = JsonSchemaValidationIssue.formatInvalidValue(
+          'a' * 120,
+        );
+        expect(longPreview.length, lessThanOrEqualTo(60));
+        expect(longPreview.endsWith('…"'), isTrue);
+      },
+    );
   });
 }

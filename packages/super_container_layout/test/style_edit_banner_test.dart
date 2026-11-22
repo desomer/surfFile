@@ -1087,10 +1087,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(appearance.value.bindingSaveOnBlurOnly, isTrue);
-      expect(
-        tester.widget<Slider>(slider).onChanged,
-        isNull,
-      );
+      expect(tester.widget<Slider>(slider).onChanged, isNull);
 
       await tester.tap(find.byKey(const ValueKey('global-save-timing-reset')));
       await tester.pumpAndSettle();
@@ -1103,6 +1100,87 @@ void main() {
         find.byKey(const ValueKey('binding-save-timing-dialog')),
         findsNothing,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'F1 toggles global AI chat outside edit mode without enabling edit mode and ignores modified F1',
+    (tester) async {
+      final mode = ValueNotifier(false);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+
+      await pumpWithAppearance(tester, mode, appearance);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsNothing);
+
+      // Ctrl+F1, Alt+F1 et Shift+F1 sont ignorés.
+      for (final modifier in [
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.altLeft,
+        LogicalKeyboardKey.shiftLeft,
+      ]) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsNothing);
+      }
+
+      // F1 hors mode édition ouvre le chat IA sans activer le mode édition ni afficher la bannière.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(mode.value, isFalse);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('vibe-chat-scope-banner')),
+        findsNothing,
+      );
+
+      // Un second appui sur F1 referme le chat IA.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(mode.value, isFalse);
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'F1 toggles global AI chat in edit mode even when a component is selected',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+      addTearDown(() => LayoutSelection.select(const []));
+
+      await pumpWithAppearance(tester, mode, appearance);
+      await tester.pumpAndSettle();
+
+      LayoutSelection.select(const ['Page', 'Corps', 'Carte']);
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsOneWidget);
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('vibe-chat-scope-banner')),
+        findsNothing,
+      );
+
+      // Un second appui sur F1 referme le chat tout en gardant le mode édition actif.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(mode.value, isTrue);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsOneWidget);
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

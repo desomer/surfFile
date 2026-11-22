@@ -7,6 +7,7 @@
 /// via [showEditorDialog].
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:flutter/services.dart'
@@ -17,7 +18,11 @@ import '../../../ai/design_md_parser.dart';
 import '../../../ai/design_system_catalog.dart';
 import '../../../ai/vibe_chat_attachment.dart';
 import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/fonts/design_md_font_extractor.dart';
+import '../../../services/fonts/dynamic_font_manager.dart';
+import '../../../services/fonts/dynamic_font_models.dart';
 import '../../../services/inspection/vibe_debug_capture.dart';
+import '../../appearance/dynamic_font_scope.dart';
 import '../dialogs/editor_dialog.dart';
 import 'design_system_preview_card.dart';
 
@@ -243,6 +248,10 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
         _searchController.clear();
       }
     });
+    final fontManager = DynamicFontScope.readOf(context);
+    if (fontManager != null && fontManager.autoDownloadEnabled) {
+      unawaited(fontManager.ensureDesignSystemFonts(imported));
+    }
   }
 
   void _deleteCustomPreset(DesignSystemPreset preset) {
@@ -336,7 +345,7 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
       _copiedTokenFeedback = null;
       _inspectedMarkdownFuture = future.then((content) {
         if (mounted && _inspectedPreset?.id == preset.id) {
-          _loadedInspectedMarkdown = content;
+          setState(() => _loadedInspectedMarkdown = content);
         }
         return content;
       });
@@ -371,11 +380,18 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
   }
 
   void _confirmSelection({required bool triggerImmediateRestyle}) {
-    final canSyncTheme = !widget.isScoped && _selectedPreset != null;
+    final selected = _selectedPreset;
+    if (selected != null) {
+      final fontManager = DynamicFontScope.readOf(context);
+      if (fontManager != null && fontManager.autoDownloadEnabled) {
+        unawaited(fontManager.ensureDesignSystemFonts(selected));
+      }
+    }
+    final canSyncTheme = !widget.isScoped && selected != null;
     final effectiveSync = canSyncTheme && _syncThemeTokens;
     Navigator.of(context).pop(
       DesignSystemSelectionResult(
-        preset: _selectedPreset,
+        preset: selected,
         applyThemeTokensNow: effectiveSync,
         triggerImmediateRestyle: triggerImmediateRestyle,
         updatedCustomPresets: _customPresets,
@@ -913,7 +929,7 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
           // Barre des jetons hexadécimaux copiables en un clic.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -928,6 +944,12 @@ class _DesignSystemCatalogDialogState extends State<DesignSystemCatalogDialog> {
                 ],
               ],
             ),
+          ),
+          // Barre de statut et téléchargement des polices référencées par le DESIGN.md.
+          _InspectorFontsBar(
+            preset: preset,
+            markdown: _loadedInspectedMarkdown ?? preset.inlineMarkdown,
+            scheme: scheme,
           ),
           const Divider(height: 1),
           // Lecteur Markdown sélectionnable.
@@ -1382,6 +1404,195 @@ class _PasteDesignMdDialogState extends State<_PasteDesignMdDialog> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InspectorFontsBar extends StatelessWidget {
+  const _InspectorFontsBar({
+    required this.preset,
+    required this.markdown,
+    required this.scheme,
+  });
+
+  final DesignSystemPreset preset;
+  final String? markdown;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final families = DesignMdFontExtractor.extractFontFamilies(
+      fontHint: preset.palette.fontHint,
+      markdown: markdown,
+    );
+    if (families.isEmpty) return const SizedBox.shrink();
+
+    final fontManager = DynamicFontScope.maybeOf(context);
+    final statusResolver = fontManager ?? DynamicFontManager.shared;
+
+    final missingFamilies = <String>[];
+    var anyLoading = false;
+    var anyAttemptedMissing = false;
+
+    for (final family in families) {
+      final status = statusResolver.statusOf(family);
+      if (status == DynamicFontStatus.loading) {
+        anyLoading = true;
+      } else if (!status.isAvailable) {
+        missingFamilies.add(family);
+        if (statusResolver.hasAttempted(family)) {
+          anyAttemptedMissing = true;
+        }
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Polices :',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          for (final family in families)
+            _FontStatusChip(
+              family: family,
+              status: statusResolver.statusOf(family),
+              attempted: statusResolver.hasAttempted(family),
+              scheme: scheme,
+            ),
+          if (missingFamilies.isNotEmpty || anyLoading)
+            OutlinedButton.icon(
+              key: const ValueKey('design-catalog-download-fonts'),
+              onPressed: anyLoading
+                  ? null
+                  : () {
+                      unawaited(
+                        statusResolver.ensureFontsLoaded(
+                          missingFamilies,
+                          forceRetry: true,
+                        ),
+                      );
+                    },
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              ),
+              icon: anyLoading
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      anyAttemptedMissing
+                          ? Icons.refresh
+                          : Icons.download_outlined,
+                      size: 14,
+                    ),
+              label: Text(
+                anyLoading
+                    ? 'Téléchargement…'
+                    : (anyAttemptedMissing
+                          ? 'Réessayer'
+                          : 'Télécharger les polices'),
+                style: const TextStyle(fontSize: 11.5),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FontStatusChip extends StatelessWidget {
+  const _FontStatusChip({
+    required this.family,
+    required this.status,
+    required this.attempted,
+    required this.scheme,
+  });
+
+  final String family;
+  final DynamicFontStatus status;
+  final bool attempted;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final (IconData icon, String suffix, Color fg, Color bg, Color border) =
+        switch (status) {
+          DynamicFontStatus.bundled => (
+            Icons.check_circle_outline,
+            'embarquée',
+            scheme.onSurfaceVariant,
+            scheme.surfaceContainerHigh,
+            scheme.outlineVariant,
+          ),
+          DynamicFontStatus.system => (
+            Icons.computer_outlined,
+            'système',
+            scheme.onSurfaceVariant,
+            scheme.surfaceContainerHigh,
+            scheme.outlineVariant,
+          ),
+          DynamicFontStatus.loaded => (
+            Icons.cloud_done_outlined,
+            'téléchargée',
+            scheme.primary,
+            scheme.primaryContainer.withValues(alpha: 0.45),
+            scheme.primary.withValues(alpha: 0.45),
+          ),
+          DynamicFontStatus.loading => (
+            Icons.downloading_outlined,
+            'téléchargement…',
+            scheme.primary,
+            scheme.primaryContainer.withValues(alpha: 0.35),
+            scheme.primary.withValues(alpha: 0.4),
+          ),
+          DynamicFontStatus.notFound || DynamicFontStatus.failed => (
+            attempted ? Icons.warning_amber_rounded : Icons.cloud_download_outlined,
+            attempted
+                ? (status == DynamicFontStatus.notFound
+                      ? 'introuvable'
+                      : 'échec')
+                : 'manquante',
+            scheme.error,
+            scheme.errorContainer.withValues(alpha: 0.45),
+            scheme.error.withValues(alpha: 0.45),
+          ),
+        };
+
+    return Container(
+      key: ValueKey('design-catalog-font-chip-$family'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: fg),
+          const SizedBox(width: 5),
+          Text(
+            '$family · $suffix',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
+        ],
       ),
     );
   }

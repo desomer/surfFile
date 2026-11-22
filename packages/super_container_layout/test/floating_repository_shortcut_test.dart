@@ -68,10 +68,10 @@ void main() {
     }
   });
 
-  Future<void> pressF1(WidgetTester tester) async {
+  Future<void> pressF2(WidgetTester tester) async {
     await tester.runAsync(() async {
       await tester.pump();
-      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f2);
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 120));
       await tester.pump();
@@ -81,7 +81,7 @@ void main() {
   }
 
   testWidgets(
-    'F1 opens floating JSON editor for direct binding, falls back to first bound child (mounted or unmounted), and opens manager when unbound',
+    'F2 opens floating JSON editor for direct binding, falls back to first bound child (mounted or unmounted), and opens manager when unbound',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1280, 850));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -248,24 +248,33 @@ void main() {
           );
       await tester.pumpAndSettle();
 
-      // 1. Outside edit mode with nothing selected/focused -> F1 opens JsonRepositoryManager (no duplicate stacking).
-      await pressF1(tester);
+      // 0. F1 toggles the AI chat instead of opening JsonRepositoryManager.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsOneWidget);
+      expect(find.byType(JsonRepositoryManager), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsNothing);
+
+      // 1. Outside edit mode with nothing selected/focused -> F2 opens JsonRepositoryManager (no duplicate stacking).
+      await pressF2(tester);
       expect(find.byType(JsonRepositoryManager), findsOneWidget);
-      await pressF1(tester);
+      await pressF2(tester);
       expect(find.byType(JsonRepositoryManager), findsOneWidget);
       await tester.tap(find.text('Fermer'));
       await tester.pumpAndSettle();
       expect(find.byType(JsonRepositoryManager), findsNothing);
 
-      // 2. Outside edit mode (runtime): focusing an input SuperValue and pressing F1 opens its bound floating JSON editor.
+      // 2. Outside edit mode (runtime): focusing an input SuperValue and pressing F2 opens its bound floating JSON editor.
       await tester.tap(
         find.byKey(const ValueKey('super-value-input-orders-value')),
       );
       await tester.pumpAndSettle();
 
-      // Ctrl + F1 is ignored.
+      // Ctrl + F2 is ignored.
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f2);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(
@@ -273,7 +282,7 @@ void main() {
         findsNothing,
       );
 
-      await pressF1(tester);
+      await pressF2(tester);
       final ordersFloating = find.byKey(
         ValueKey('floating-repository-$ordersRepoId'),
       );
@@ -310,15 +319,15 @@ void main() {
       ]);
       await tester.pumpAndSettle();
 
-      await pressF1(tester);
+      await pressF2(tester);
       final clientsFloating = find.byKey(
         ValueKey('floating-repository-$clientsRepoId'),
       );
       expect(clientsFloating, findsOneWidget);
       expect(ordersFloating, findsNothing);
 
-      // Pressing F1 again keeps the existing floating editor without duplicating it.
-      await pressF1(tester);
+      // Pressing F2 again keeps the existing floating editor without duplicating it.
+      await pressF2(tester);
       expect(clientsFloating, findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('floating-repository-close')));
@@ -335,7 +344,7 @@ void main() {
       ]);
       await tester.pumpAndSettle();
 
-      await pressF1(tester);
+      await pressF2(tester);
       expect(clientsFloating, findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('floating-repository-close')));
       await tester.pumpAndSettle();
@@ -350,7 +359,7 @@ void main() {
       ]);
       await tester.pumpAndSettle();
 
-      await pressF1(tester);
+      await pressF2(tester);
       expect(find.byType(JsonRepositoryManager), findsOneWidget);
       await tester.tap(find.text('Fermer'));
       await tester.pumpAndSettle();
@@ -359,7 +368,7 @@ void main() {
   );
 
   testWidgets(
-    'F1 resolves inherited repository binding on a child inside SuperListView',
+    'F2 resolves inherited repository binding on a child inside SuperListView',
     (tester) async {
       final registry = Registry()..bootstrap();
       final router = GoRouter(
@@ -439,7 +448,7 @@ void main() {
       LayoutSelection.updateActiveFocus(rowSlot.context, id: 'row-name');
       await tester.pumpAndSettle();
 
-      await pressF1(tester);
+      await pressF2(tester);
       expect(
         find.byKey(ValueKey('floating-repository-$clientsRepoId')),
         findsOneWidget,

@@ -1008,7 +1008,11 @@ le wizard.
 
 ## Données et liaisons JSON
 
-L'appui sur **`F1`** (en mode édition comme hors mode édition) ouvre l'éditeur
+L'appui sur **`F1`** (en mode édition comme hors mode édition) ouvre ou referme
+le panneau de chat IA Vibe en portée globale, sans activer le mode édition
+lorsqu'il est inactif.
+
+L'appui sur **`F2`** (en mode édition comme hors mode édition) ouvre l'éditeur
 JSON flottant sur le repository lié au composant actuellement sélectionné (ou
 détenant le focus clavier), ou — s'il ne possède pas de `binding` propre — sur
 le premier repository lié trouvé parmi ses composants enfants (montés ou

@@ -11,8 +11,12 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/design_system_catalog.dart';
+import '../../../models/registry.dart';
+import '../../../services/fonts/design_md_font_extractor.dart';
+import '../../../services/fonts/dynamic_font_manager.dart';
 import '../../../theme/container_fill.dart';
 import '../../../theme/design_system.dart';
+import '../../appearance/dynamic_font_scope.dart';
 import '../../surfaces/surface_image_providers.dart';
 
 /// Résultat immuable renvoyé par la galerie `DesignSystemCatalogDialog` lors de la validation.
@@ -520,6 +524,23 @@ class DesignSystemPreviewCard extends StatelessWidget {
   /// Hauteur de la zone [DesignSystemMiniPreview] en tête de carte.
   final double previewHeight;
 
+  static String? _resolvePreviewFontFamily(
+    DesignSystemPreset? preset,
+    DynamicFontManager fontManager,
+  ) {
+    if (preset == null) return null;
+    final candidates = DesignMdFontExtractor.extractFontFamilies(
+      fontHint: preset.palette.fontHint,
+      markdown: preset.inlineMarkdown,
+    );
+    for (final candidate in candidates) {
+      if (fontManager.statusOf(candidate).isAvailable) {
+        return Registry.resolveEffectiveFontFamily(candidate);
+      }
+    }
+    return null;
+  }
+
   /// Construit la carte interactive de sélection et d'aperçu du système de design.
   @override
   Widget build(BuildContext context) {
@@ -532,6 +553,11 @@ class DesignSystemPreviewCard extends StatelessWidget {
     final title = currentPreset?.name ?? defaultTitle;
     final tagline = currentPreset?.tagline ?? defaultTagline;
     final categoryLabel = currentPreset?.category.label ?? 'Adaptatif';
+    final fontManager = DynamicFontScope.maybeOf(context);
+    final primaryFont = _resolvePreviewFontFamily(
+      currentPreset,
+      fontManager ?? DynamicFontManager.shared,
+    );
     final cardKey = key != null
         ? null
         : (currentPreset != null
@@ -671,6 +697,7 @@ class DesignSystemPreviewCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
+                              fontFamily: primaryFont,
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
                               color: scheme.onSurface,

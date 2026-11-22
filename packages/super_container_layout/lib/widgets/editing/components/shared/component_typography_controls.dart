@@ -3,10 +3,30 @@
 /// `SuperSeparator`).
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../services/fonts/dynamic_font_models.dart';
+import '../../../appearance/dynamic_font_scope.dart';
 import 'editor_color_fields.dart';
 import 'editor_segmented_field.dart';
+
+/// Retourne la liste effective des polices disponibles dans un éditeur,
+/// en fusionnant [base] avec les polices chargées dynamiquement via [DynamicFontScope].
+List<String> resolveEditorAvailableFontFamilies(
+  BuildContext context,
+  List<String> base, {
+  bool listen = true,
+}) {
+  final manager = listen
+      ? DynamicFontScope.maybeOf(context)
+      : DynamicFontScope.readOf(context);
+  final merged = manager == null
+      ? base
+      : manager.effectiveAvailableFontFamilies(base);
+  return merged.toSet().toList();
+}
 
 /// Sélecteur de famille de police avec message d'avertissement lorsque la
 /// police configurée n'est pas disponible dans [availableFontFamilies].
@@ -29,7 +49,10 @@ class ComponentFontFamilyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fonts = availableFontFamilies.toSet().toList();
+    final fonts = resolveEditorAvailableFontFamilies(
+      context,
+      availableFontFamilies,
+    );
     final unavailable = fontFamily != null && !fonts.contains(fontFamily);
     return DropdownButtonFormField<String>(
       isExpanded: true,
@@ -191,14 +214,65 @@ List<Widget> buildComponentTypographyFields<TProperty extends Enum>({
   List<Widget> beforeLetterSpacing = const [],
   Widget? letterSpacingField,
 }) {
-  final fonts = availableFontFamilies.toSet().toList();
+  final fontManager = DynamicFontScope.maybeOf(context);
+  final effectiveAvailable = fontManager == null
+      ? availableFontFamilies
+      : fontManager.effectiveAvailableFontFamilies(availableFontFamilies);
+  final fonts = effectiveAvailable.toSet().toList();
   final unavailable = fontFamily != null && !fonts.contains(fontFamily);
   final scheme = Theme.of(context).colorScheme;
+  final fontStatus = fontFamily != null && fontManager != null
+      ? fontManager.statusOf(fontFamily)
+      : null;
+  final isDownloading = fontStatus == DynamicFontStatus.loading;
+  final isRetry =
+      fontFamily != null &&
+      fontManager != null &&
+      fontManager.hasAttempted(fontFamily) &&
+      (fontStatus == DynamicFontStatus.failed ||
+          fontStatus == DynamicFontStatus.notFound);
   return [
     if (unavailable)
-      Text(
-        'Police indisponible : $fontFamily. Choisissez une police disponible.',
-        style: TextStyle(color: scheme.error),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              isDownloading
+                  ? 'Téléchargement de la police « $fontFamily »...'
+                  : 'Police indisponible : $fontFamily. Choisissez une police disponible.',
+              style: TextStyle(
+                color: isDownloading ? scheme.primary : scheme.error,
+              ),
+            ),
+          ),
+          if (fontManager != null) ...[
+            const SizedBox(width: 8),
+            if (isDownloading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              OutlinedButton.icon(
+                key: ValueKey('$settingPrefix-download-font'),
+                onPressed: () {
+                  unawaited(
+                    fontManager.ensureFontLoaded(fontFamily, forceRetry: true),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: Icon(
+                  isRetry ? Icons.refresh : Icons.download_outlined,
+                  size: 16,
+                ),
+                label: Text(isRetry ? 'Réessayer' : 'Télécharger'),
+              ),
+          ],
+        ],
       ),
     bindingScope.wrap(
       fontFamilyProperty,

@@ -7,6 +7,8 @@
 /// - les transactions d'édition ([EditorHistoryScope]) et l'extraction JSON ([JsonExtractableState]).
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:material_ui/material_ui.dart';
 
@@ -27,6 +29,7 @@ import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
 import '../appearance/appearance_scope.dart';
+import '../appearance/dynamic_font_scope.dart';
 
 /// Resolves the fallback [ContainerStyle] for an item/row in collection components.
 ContainerStyle resolveRowStyleFallback(
@@ -240,6 +243,38 @@ bool isComponentFontMissing(
   String? fontFamily,
   List<String> availableFontFamilies,
 ) => fontFamily != null && !availableFontFamilies.contains(fontFamily);
+
+/// Retourne la liste effective des polices disponibles en fusionnant [base]
+/// avec les polices chargées dynamiquement dans le [DynamicFontScope] englobant.
+List<String> resolveAvailableComponentFontFamilies(
+  BuildContext context,
+  List<String> base, {
+  bool listen = true,
+}) {
+  final manager = listen
+      ? DynamicFontScope.maybeOf(context)
+      : DynamicFontScope.readOf(context);
+  if (manager == null) return base;
+  return manager.effectiveAvailableFontFamilies(base);
+}
+
+/// Planifie le téléchargement automatique de [fontFamily] après la frame courante
+/// lorsqu'elle est absente de [effectiveFonts] et qu'un [DynamicFontScope] actif
+/// autorise le téléchargement automatique.
+void scheduleMissingComponentFontLoad(
+  BuildContext context,
+  String? fontFamily,
+  List<String> effectiveFonts,
+) {
+  if (!isComponentFontMissing(fontFamily, effectiveFonts)) return;
+  final manager = DynamicFontScope.readOf(context);
+  if (manager == null || !manager.autoDownloadEnabled) return;
+  final target = fontFamily!;
+  if (manager.hasAttempted(target)) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(manager.ensureFontLoaded(target));
+  });
+}
 
 /// Construit le [TextStyle] effectif d'un composant à partir du [DefaultTextStyle].
 TextStyle buildComponentTextStyle(

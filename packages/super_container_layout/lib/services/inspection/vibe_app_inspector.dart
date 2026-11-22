@@ -44,6 +44,8 @@ import '../../widgets/editing/slots/editor_context_menu.dart'
     show VibeChatScope;
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
+import '../fonts/design_md_font_extractor.dart';
+import '../fonts/dynamic_font_manager.dart';
 import '../pages/editor_page_router.dart';
 import '../repositories/json_repository_store.dart';
 import '../repositories/json_schema_validator.dart';
@@ -70,6 +72,7 @@ class VibeAppInspector {
     this.repoTransaction,
     this.customDesignSystemStore,
     this.onRegisterDesignSystem,
+    this.fontManager,
   }) : slotIndex = slotIndex ?? VibeMountedSlotIndex.instance;
 
   /// Fournisseur de l'[Appearance] active (incluant les éventuels défauts runtime).
@@ -118,6 +121,9 @@ class VibeAppInspector {
   })?
   onRegisterDesignSystem;
 
+  /// Gestionnaire optionnel de polices dynamiques utilisé pour le préchargement et les diagnostics.
+  final DynamicFontManager? fontManager;
+
   late final VibeDiagnosticsInspector _diagnostics = VibeDiagnosticsInspector(
     readAppearance: readAppearance,
     slotIndex: slotIndex,
@@ -130,6 +136,7 @@ class VibeAppInspector {
     onSelectScope: onSelectScope,
     turnStartMarker: turnStartMarker,
     previewTracker: previewTracker,
+    fontManager: fontManager,
   );
 
   /// Construit le [VibeAppToolRegistry] complet exposant l'ensemble des outils d'introspection.
@@ -2095,6 +2102,31 @@ class VibeAppInspector {
         totalCustomPresets = (await store.loadAll()).length;
       }
 
+      final extractedFonts = DesignMdFontExtractor.extractFontFamilies(
+        fontHint: normalizedPreset.palette.fontHint,
+        markdown: normalizedPreset.inlineMarkdown,
+      );
+      Map<String, Object?>? fontsReport;
+      final activeFontManager = fontManager;
+      if (activeFontManager != null &&
+          activeFontManager.autoDownloadEnabled &&
+          extractedFonts.isNotEmpty) {
+        final loadResults = await activeFontManager.ensureFontsLoaded(
+          extractedFonts,
+        );
+        fontsReport = <String, Object?>{
+          'extracted': extractedFonts,
+          'available': [
+            for (final entry in loadResults.entries)
+              if (entry.value.isAvailable) entry.key,
+          ],
+          'missing': [
+            for (final entry in loadResults.entries)
+              if (!entry.value.isAvailable) entry.key,
+          ],
+        };
+      }
+
       final palette = normalizedPreset.palette;
       return VibeToolResult(
         callId: callId,
@@ -2112,6 +2144,8 @@ class VibeAppInspector {
           'logo': ?normalizedPreset.logo,
           'totalCustomPresets': totalCustomPresets,
           'persistedPath': ?persistedPath,
+          if (extractedFonts.isNotEmpty) 'extractedFontFamilies': extractedFonts,
+          'fonts': ?fontsReport,
           'palette': <String, Object?>{
             'mode': palette.isDark ? 'dark' : 'light',
             'accent': DesignSystemPalettePreview.colorToHex(palette.accent),

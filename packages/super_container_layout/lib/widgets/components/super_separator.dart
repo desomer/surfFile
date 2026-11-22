@@ -87,8 +87,13 @@ class _SuperSeparatorState extends State<SuperSeparator>
   SuperSeparatorConfig? _editorConfig;
 
   @override
-  List<String> get availableComponentFontFamilies =>
-      widget.availableFontFamilies;
+  List<String> get availableComponentFontFamilies => mounted
+      ? resolveAvailableComponentFontFamilies(
+          context,
+          widget.availableFontFamilies,
+          listen: false,
+        )
+      : widget.availableFontFamilies;
 
   @override
   Object parseBoundProperty(SuperSeparatorProperty property, Object? value) =>
@@ -213,10 +218,21 @@ class _SuperSeparatorState extends State<SuperSeparator>
             repositories,
           );
           final config = _editorConfig ?? _withBoundProperties(effective);
-          final missingFont = isComponentFontMissing(
-            config.fontFamily,
+          final availableFonts = resolveAvailableComponentFontFamilies(
+            context,
             widget.availableFontFamilies,
           );
+          final missingFont = isComponentFontMissing(
+            config.fontFamily,
+            availableFonts,
+          );
+          if (missingFont) {
+            scheduleMissingComponentFontLoad(
+              context,
+              config.fontFamily,
+              availableFonts,
+            );
+          }
           final textStyle = buildComponentTextStyle(
             context,
             fontFamily: config.fontFamily,

@@ -1,4 +1,4 @@
-/// Raccourci clavier global (`F1`) et résolution de liaison pour ouvrir l'éditeur JSON flottant.
+/// Raccourci clavier global (`F2`) et résolution de liaison pour ouvrir l'éditeur JSON flottant.
 ///
 /// Inspecte le composant actuellement sélectionné dans [LayoutSelection] (ou le
 /// composant détenant le focus clavier hors mode édition) afin d'extraire son
@@ -237,10 +237,10 @@ Future<void> openSelectedComponentRepositoryEditor(
   );
 }
 
-/// Intercepte la touche `F1` (en mode édition comme hors mode édition) pour
+/// Intercepte la touche `F2` (en mode édition comme hors mode édition) pour
 /// ouvrir l'éditeur JSON flottant associé au composant sélectionné.
 class FloatingRepositoryShortcut extends StatefulWidget {
-  /// Crée le raccourci clavier `F1` vers l'éditeur JSON flottant.
+  /// Crée le raccourci clavier `F2` vers l'éditeur JSON flottant.
   const FloatingRepositoryShortcut({
     required this.child,
     this.navigatorKey,
@@ -288,7 +288,7 @@ class _FloatingRepositoryShortcutState
 
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.f1 ||
+        event.logicalKey != LogicalKeyboardKey.f2 ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isAltPressed ||
         HardwareKeyboard.instance.isShiftPressed ||

@@ -267,8 +267,13 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
 
   @override
   SuperIndicatorConfig buildConfiguration() {
+    final effectiveFonts = resolveEditorAvailableFontFamilies(
+      context,
+      widget.availableFontFamilies,
+      listen: false,
+    );
     if (_draft.fontFamily != null &&
-        !widget.availableFontFamilies.contains(_draft.fontFamily)) {
+        !effectiveFonts.contains(_draft.fontFamily)) {
       throw const FormatException('Choisissez une police disponible.');
     }
 
@@ -392,7 +397,10 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
   @override
   Widget build(BuildContext context) {
     schedulePreview();
-    final fonts = widget.availableFontFamilies.toSet().toList();
+    final fonts = resolveEditorAvailableFontFamilies(
+      context,
+      widget.availableFontFamilies,
+    );
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
     final scheme = Theme.of(context).colorScheme;

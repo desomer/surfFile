@@ -340,8 +340,13 @@ class _SuperValueState extends State<SuperValue>
         ];
 
   @override
-  List<String> get availableComponentFontFamilies =>
-      widget.availableFontFamilies;
+  List<String> get availableComponentFontFamilies => mounted
+      ? resolveAvailableComponentFontFamilies(
+          context,
+          widget.availableFontFamilies,
+          listen: false,
+        )
+      : widget.availableFontFamilies;
 
   @override
   Object parseBoundProperty(SuperValueProperty property, Object? value) =>
@@ -1066,10 +1071,21 @@ class _SuperValueState extends State<SuperValue>
           );
           final config = _editorConfig ?? _withBoundProperties(effective);
           final controller = _editorText ?? _text;
-          final missingFont = isComponentFontMissing(
-            config.fontFamily,
+          final availableFonts = resolveAvailableComponentFontFamilies(
+            context,
             widget.availableFontFamilies,
           );
+          final missingFont = isComponentFontMissing(
+            config.fontFamily,
+            availableFonts,
+          );
+          if (missingFont) {
+            scheduleMissingComponentFontLoad(
+              context,
+              config.fontFamily,
+              availableFonts,
+            );
+          }
           final style = buildComponentTextStyle(
             context,
             fontFamily: config.fontFamily,

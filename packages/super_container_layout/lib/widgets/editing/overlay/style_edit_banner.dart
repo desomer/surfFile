@@ -1,10 +1,12 @@
-/// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
+/// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA (raccourci `F1`).
 library;
 
 import 'dart:async' show Timer, unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/services.dart'
+    show HardwareKeyboard, KeyDownEvent, KeyEvent, LogicalKeyboardKey;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
@@ -122,7 +124,11 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     VibeAiSpeedMode? speedMode,
     VibeQuestioningLevel? questioningLevel,
   }) {
-    if (!mounted || AppearanceScope.controllerOf(context) == null) return false;
+    if (!mounted ||
+        context.getInheritedWidgetOfExactType<AppearanceScope>()?.notifier ==
+            null) {
+      return false;
+    }
     _dismissBannerCompletion();
     setState(() {
       _chatScope = scope;
@@ -143,6 +149,41 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         );
       }
     });
+    return true;
+  }
+
+  void _toggleGlobalChat() {
+    final available = LayoutSelection.editorViewport.value;
+    _dismissBannerCompletion();
+    setState(() {
+      _chatOpen = !_chatOpen;
+      _chatScope = null;
+      _chatSpeedMode = VibeAiSpeedMode.fast;
+      _chatQuestioningLevel = VibeQuestioningLevel.balanced;
+      _chatPlanMode = false;
+      if (_chatOpen) {
+        _chatExpanded = true;
+        _expandedChatPosition = null;
+        _chatLayout = _newChatLayout(null, available);
+      }
+    });
+  }
+
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.f1 ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return false;
+    }
+    if (!mounted ||
+        context.getInheritedWidgetOfExactType<AppearanceScope>()?.notifier ==
+            null) {
+      return false;
+    }
+    _toggleGlobalChat();
     return true;
   }
 
@@ -167,6 +208,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     LayoutSelection.bannerBounds = _bannerRect;
     VibeChatScope.onOpenRequested = _openScopedChat;
     VibeChatDialog.onOpenScopedRequested = _openScopedChat;
+    HardwareKeyboard.instance.addHandler(_onKey);
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
     _lastSeenCompletionId =
@@ -309,6 +351,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     if (identical(VibeChatDialog.onOpenScopedRequested, _openScopedChat)) {
       VibeChatDialog.onOpenScopedRequested = null;
     }
+    HardwareKeyboard.instance.removeHandler(_onKey);
     LayoutSelection.editorViewport.removeListener(_reposition);
     LayoutSelection.path.removeListener(_onPathChanged);
     super.dispose();
@@ -325,12 +368,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
 
   Widget _buildBanner(BuildContext context) {
     final editMode = StyleEditScope.controllerOf(context);
-    if (editMode == null || !editMode.value) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
+    final editing = editMode != null && editMode.value;
     final appearance = AppearanceScope.controllerOf(context);
+    final showChat = _chatOpen && appearance != null;
+    if (!editing && !showChat) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
     final codec = AppearanceServicesScope.codecOf(context);
     final available = LayoutSelection.editorViewport.value;
-    final banner = CustomSingleChildLayout(
+    final banner = editMode == null || !editMode.value
+        ? null
+        : CustomSingleChildLayout(
       delegate: _layout,
       child: GestureDetector(
         key: _bannerKey,
@@ -467,7 +514,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     if (appearance != null)
                       IconButton(
                         key: const ValueKey('style-edit-banner-ai'),
-                        tooltip: 'Générer un écran avec l’IA',
+                        tooltip: 'Générer un écran avec l’IA (F1)',
                         visualDensity: VisualDensity.compact,
                         iconSize: 18,
                         color: scheme.onPrimary,
@@ -502,22 +549,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                 ],
                               )
                             : const Icon(Icons.auto_awesome_outlined),
-                        onPressed: () {
-                          _dismissBannerCompletion();
-                          setState(() {
-                            _chatOpen = !_chatOpen;
-                            _chatScope = null;
-                            _chatSpeedMode = VibeAiSpeedMode.fast;
-                            _chatQuestioningLevel =
-                                VibeQuestioningLevel.balanced;
-                            _chatPlanMode = false;
-                            if (_chatOpen) {
-                              _chatExpanded = true;
-                              _expandedChatPosition = null;
-                              _chatLayout = _newChatLayout(null, available);
-                            }
-                          });
-                        },
+                        onPressed: _toggleGlobalChat,
                       ),
                     if (appearance != null)
                       _BannerSettingsButton(
@@ -655,8 +687,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         ),
       ),
     );
-    final showChat = _chatOpen && appearance != null;
-    final popup = _treePopup;
+    final popup = editing ? _treePopup : null;
     final popupChild = popup == null
         ? null
         : _PathTreeDialog(
@@ -699,7 +730,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               }
               final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
               final minimumContentHeight = 320.0 * math.max(1.0, textScale);
-              final contentHeight = _chatLayout.banner == null
+              final contentHeight = !editing || _chatLayout.banner == null
                   ? constraints.maxHeight
                   : math.min(
                       fullHeight,
@@ -790,7 +821,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               },
             ),
           ),
-        if (_saveTimingOpen && appearance != null)
+        if (editing && _saveTimingOpen && appearance != null)
           Positioned.fill(
             child: ColoredBox(
               color: Colors.black54,
@@ -815,13 +846,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         CustomMultiChildLayout(
           delegate: _BannerOverlayLayout(
             banner: _layout,
+            hasBanner: banner != null,
             chat: _chatLayout,
             popup: popup == null
                 ? null
                 : _TreePopupLayout(anchor: popup.anchor, available: available),
           ),
           children: [
-            LayoutId(id: _BannerOverlayChild.banner, child: banner),
+            if (banner != null)
+              LayoutId(id: _BannerOverlayChild.banner, child: banner),
             if (widget.initialAlignment == null && popupChild != null)
               LayoutId(id: _BannerOverlayChild.popup, child: popupChild),
             if (chatChild != null)
@@ -834,7 +867,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               LayoutId(id: _BannerOverlayChild.popup, child: popupChild),
           ],
         ),
-        if (!_chatOpen && _bannerCompletionEvent != null)
+        if (editing && !_chatOpen && _bannerCompletionEvent != null)
           Positioned(
             top: (_layout.resolvedBounds?.bottom ?? 52) + 8,
             left: 16,
@@ -879,20 +912,26 @@ enum _BannerOverlayChild { banner, chat, popup }
 class _BannerOverlayLayout extends MultiChildLayoutDelegate {
   _BannerOverlayLayout({
     required this.banner,
+    required this.hasBanner,
     required this.chat,
     required this.popup,
   });
 
   final _BannerLayout banner;
+  final bool hasBanner;
   final _VibeChatLayout chat;
   final _TreePopupLayout? popup;
 
   @override
   void performLayout(Size size) {
     final constraints = BoxConstraints.tight(size);
-    // Des contraintes souples propagent les changements de taille au chat.
-    layoutChild(_BannerOverlayChild.banner, constraints.loosen());
-    positionChild(_BannerOverlayChild.banner, Offset.zero);
+    if (hasChild(_BannerOverlayChild.banner)) {
+      // Des contraintes souples propagent les changements de taille au chat.
+      layoutChild(_BannerOverlayChild.banner, constraints.loosen());
+      positionChild(_BannerOverlayChild.banner, Offset.zero);
+    } else {
+      banner.resolvedSize = null;
+    }
     if (hasChild(_BannerOverlayChild.chat)) {
       final chatSize = layoutChild(
         _BannerOverlayChild.chat,
@@ -918,6 +957,7 @@ class _BannerOverlayLayout extends MultiChildLayoutDelegate {
   @override
   bool shouldRelayout(_BannerOverlayLayout oldDelegate) =>
       banner != oldDelegate.banner ||
+      hasBanner != oldDelegate.hasBanner ||
       chat != oldDelegate.chat ||
       popup != oldDelegate.popup;
 }

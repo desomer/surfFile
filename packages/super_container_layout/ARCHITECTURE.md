@@ -208,9 +208,13 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |
 | `models/a4_page_config.dart` | `A4PageConfig`, `A4SheetConfig`, `A4Orientation` : configuration persistée d'une page document A4 multi-feuilles (orientation, marges, en-tête/pied répétés, guides et nom de fichier PDF). |
 | `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageType`, `EditorPageCatalog` : configuration d'une page routée (`standard` ou `a4Document`) et catalogue complet des pages. |
+| `services/fonts/design_md_font_extractor.dart` | `DesignMdFontExtractor` : extraction multi-polices depuis un `DESIGN.md` (frontmatter, `fontHint`, URLs Google Fonts, JSON/CSS, tableaux) en filtrant les noms génériques. |
+| `services/fonts/dynamic_font_manager.dart` | `DynamicFontManager` : gestionnaire réactif (`ChangeNotifier`) de téléchargement, cache disque atomique (`~/.super_container_layout/fonts/<slug>/`) et chargement à chaud via `FontLoader`. |
+| `services/fonts/dynamic_font_models.dart` | `DynamicFontStatus`, `DynamicFontVariantFile`, `DynamicFontEntry`, `DynamicFontLoadResult` : modèles immuables de statut et de variantes `.ttf`/`.otf`. |
+| `services/fonts/google_fonts_downloader.dart` | `GoogleFontsDownloader` : client Google Fonts CSS2 (`dart:io`, sans dépendance externe) avec repli en 3 niveaux et validation des signatures TTF/OTF. |
 | `services/pdf/a4_pdf_generator.dart` | `A4PdfGenerator`, `A4PdfResult` : orchestration de la génération PDF multi-feuilles au format A4. |
 | `services/pdf/pdf_component_translator.dart` | `PdfComponentTranslator` : traduction vectorielle des composants GenUI (`SuperLayout`, `Card`, `SuperValue`, `SuperTable`, `SuperListView`, etc.) vers `package:pdf`. |
-| `services/pdf/pdf_font_resolver.dart` | `PdfFontResolver` : chargement et cache des polices TrueType embarquées pour le rendu vectoriel PDF. |
+| `services/pdf/pdf_font_resolver.dart` | `PdfFontResolver` : chargement et cache des polices TrueType embarquées et des variantes `.ttf` téléchargées dynamiquement (`DynamicFontManager`) pour le rendu vectoriel PDF. |
 | `services/pdf/pdf_raster_fallback.dart` | `PdfRasterFallback` : capture PNG haute résolution des extensions (`SuperChart`, `SuperCode`) et effets visuels complexes. |
 | `widgets/components/a4_document_page.dart` | `A4DocumentPage` : éditeur et moteur d'affichage WYSIWYG multi-feuilles A4 sous `EditorZoom`. |
 | `models/grid_layout_config.dart` | `GridLayoutConfig`, `GridTrackSize`, `GridPlacement` : configuration du mode Grille CSS-like (pistes `fr`/`px`/`auto`, placement ligne/colonne/span). |
@@ -314,6 +318,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `widgets/appearance/appearance_scope.dart` | `AppearanceScope` : `InheritedNotifier` exposant le `ValueNotifier<Appearance>` courant aux widgets du package. |
+| `widgets/appearance/dynamic_font_scope.dart` | `DynamicFontScope` : `InheritedNotifier<DynamicFontManager>` monté par `SuperApp` pour notifier composants, éditeurs et catalogue dès qu'une police Google Fonts est chargée. |
 | `widgets/appearance/typed_appearance_scope.dart` | `TypedAppearanceScope<T extends Appearance>` : pont typé raccordant un `ValueNotifier<T>` applicatif au `AppearanceScope` générique avec validation par codec. |
 | `widgets/appearance/appearance_settings.dart` | `AppearanceSettings`, `showAppearanceSettingsDialog` : boîte de dialogue complète de configuration du thème, des polices, de la transparence et des slots de style. |
 | `widgets/appearance/appearance_style_section.dart` | `AppearanceStyleSection` : section réutilisable d'édition des slots de style avec aperçu en direct. |
@@ -480,11 +485,11 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/overlay/editor_zoom_options.dart` | Options immuables du zoom, seuil de grande cible et constantes par défaut partagées. |
 | `widgets/editing/overlay/editor_zoom_controls.dart` | Barre flottante, délégué de placement et dialogue de réglage des options du zoom. |
 | `widgets/editing/diagnostics/diagnostic_log_panel.dart` | `DiagnosticLogPanel`, `DiagnosticLogBannerButton`, `showDiagnosticLogDialog` : bouton badge coloré par gravité maximale et panneau interactif de consultation/filtrage temps réel des erreurs typées (`debugEntries`). |
-| `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides, le bouton badge du journal d'erreurs et le panneau latéral Vibe IA. |
+| `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides, le bouton badge du journal d'erreurs et le panneau latéral Vibe IA (raccourci global `F1`, en mode édition comme hors mode édition). |
 | `widgets/editing/pages/editor_page_manager.dart` | Gestionnaire des pages de l'application (`EditorPageCatalog` : création, renommage, duplication, suppression, page d'accueil). |
 | `widgets/editing/repositories/calculated_attributes_dialog.dart` | `CalculatedAttributesDialog` : éditeur visuel et testeur en direct des champs calculés JavaScript (`CodeEditor` JS, sélection de portée `scope`, badges d'exemples en `Wrap`, aperçu des résultats) par repository. |
 | `widgets/editing/repositories/floating_repository_editor.dart` | `openFloatingRepositoryEditor`, `openBoundRepositoryOrManager` : fenêtres flottantes non modales d'édition JSON synchronisées avec les repositories. |
-| `widgets/editing/repositories/floating_repository_shortcut.dart` | `FloatingRepositoryShortcut`, `resolveSelectedBoundRepositoryId`, `openSelectedComponentRepositoryEditor` : raccourci global `F1` ouvrant l'éditeur JSON flottant sur le `binding` du composant sélectionné ou, à défaut, sur celui de son premier enfant lié (avec repli sur `JsonRepositoryManager`). |
+| `widgets/editing/repositories/floating_repository_shortcut.dart` | `FloatingRepositoryShortcut`, `resolveSelectedBoundRepositoryId`, `openSelectedComponentRepositoryEditor` : raccourci global `F2` ouvrant l'éditeur JSON flottant sur le `binding` du composant sélectionné ou, à défaut, sur celui de son premier enfant lié (avec repli sur `JsonRepositoryManager`). |
 | `widgets/editing/repositories/js_calculated_examples.dart` | `JsCalculatedExample`, `buildJsCalculatedExamples` : générateur de badges d'exemples JS (modèles génériques QuickJS + modèles adaptés au document JSON et à la portée courante). |
 | `widgets/editing/repositories/json_repository_manager.dart` | Éditeur et gestionnaire des documents `JsonRepositoryDocument` (import/export JSON, édition de schéma/données). |
 | `widgets/editing/repositories/repository_binding_fields.dart` | Champs d'interface réutilisables pour sélectionner un repository et un chemin `JsonTextBinding` avec autocomplétion. |

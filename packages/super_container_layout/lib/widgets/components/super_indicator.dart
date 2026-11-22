@@ -97,8 +97,13 @@ class _SuperIndicatorState extends State<SuperIndicator>
   SuperIndicatorConfig? _editorConfig;
 
   @override
-  List<String> get availableComponentFontFamilies =>
-      widget.availableFontFamilies;
+  List<String> get availableComponentFontFamilies => mounted
+      ? resolveAvailableComponentFontFamilies(
+          context,
+          widget.availableFontFamilies,
+          listen: false,
+        )
+      : widget.availableFontFamilies;
 
   @override
   Object parseBoundProperty(SuperIndicatorProperty property, Object? value) =>
@@ -272,10 +277,21 @@ class _SuperIndicatorState extends State<SuperIndicator>
             boundConfig = boundConfig.copyWith(enabled: false);
           }
           final config = _editorConfig ?? boundConfig;
-          final missingFont = isComponentFontMissing(
-            config.fontFamily,
+          final availableFonts = resolveAvailableComponentFontFamilies(
+            context,
             widget.availableFontFamilies,
           );
+          final missingFont = isComponentFontMissing(
+            config.fontFamily,
+            availableFonts,
+          );
+          if (missingFont) {
+            scheduleMissingComponentFontLoad(
+              context,
+              config.fontFamily,
+              availableFonts,
+            );
+          }
           final textStyle = buildComponentTextStyle(
             context,
             fontFamily: config.fontFamily,

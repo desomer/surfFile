@@ -341,8 +341,13 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     if (color.isNotEmpty && !isEditorColorValue(color)) {
       throw const FormatException('Couleur AARRGGBB à 8 chiffres requise.');
     }
+    final effectiveFonts = resolveEditorAvailableFontFamilies(
+      context,
+      widget.availableFontFamilies,
+      listen: false,
+    );
     if (_draft.fontFamily != null &&
-        !widget.availableFontFamilies.contains(_draft.fontFamily)) {
+        !effectiveFonts.contains(_draft.fontFamily)) {
       throw const FormatException('Choisissez une police disponible.');
     }
     final result = _draft.copyWith(
@@ -1132,7 +1137,10 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
   @override
   Widget build(BuildContext context) {
     _schedulePreview();
-    final fonts = widget.availableFontFamilies.toSet().toList();
+    final fonts = resolveEditorAvailableFontFamilies(
+      context,
+      widget.availableFontFamilies,
+    );
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
     final delegate = widget.dimensionDelegate;

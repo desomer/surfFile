@@ -68,6 +68,7 @@ import 'vibe_scope_helpers.dart';
 import 'vibe_task_completion_alert.dart';
 import 'vibe_work_highlight.dart';
 import '../../appearance/appearance_scope.dart';
+import '../../appearance/dynamic_font_scope.dart';
 
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
 export '../../../ai/design_md_parser.dart';
@@ -411,7 +412,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
           'L’utilisateur a sélectionné le référentiel DESIGN.md ci-dessous. Applique impérativement son identité visuelle complète :\n'
           '- Mode lumineux ("mode": "light" | "dark"), couleur graine ("accent") et couleurs hexadécimales #RRGGBB exactes des surfaces ("background", cartes, panneaux, lignes de collection, états "hover" et "selected"), textes et boutons : ces couleurs et tokens prévalent sur les couleurs "theme:*" génériques du guide par défaut.\n'
           '- Géométrie des surfaces : rayons d’arrondi ("radius"), bordures ("borderWidth", "borderColor"), élévations ("elevation", "shadowOpacity") et système de rendu ("designSystem": "material" | "liquidGlass" | "neumorphism").\n'
-          '- Hiérarchie typographique ("fontSize", "fontWeight", "fontFamily") et style des actions ("SuperAction" avec contraste AA garanti).\n'
+          '- Hiérarchie typographique ("fontSize", "fontWeight", "fontFamily") et style des actions ("SuperAction" avec contraste AA garanti). Les familles Google Fonts déclarées dans le DESIGN.md actif sont téléchargées et mises en cache dynamiquement par le moteur : utilise fidèlement leurs noms exacts.\n'
           '- Conserve en revanche strictement toutes les règles structurelles du moteur super_container_layout (atomicité obligatoire 1 SuperValue étiquette "explanation" + 1 SuperValue valeur "dynamicData"/binding, interdiction des textarea fourre-tout, règles d’or autoSides et rattachement placements).\n\n',
         )
         ..write(trimmedSelectedDesign);
@@ -1063,6 +1064,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     );
     if (select) {
       widget.onDesignSystemChanged?.call(preset);
+      if (mounted) {
+        final fontManager = DynamicFontScope.readOf(context);
+        if (fontManager != null && fontManager.autoDownloadEnabled) {
+          unawaited(fontManager.ensureDesignSystemFonts(preset));
+        }
+      }
       if (mounted && _usesStreamingGenerator) {
         unawaited(
           VibeChatDialog.warmUp(
@@ -1713,6 +1720,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
 
     final selectedPreset = result.preset;
+    if (selectedPreset != null && mounted) {
+      final fontManager = DynamicFontScope.readOf(context);
+      if (fontManager != null && fontManager.autoDownloadEnabled) {
+        unawaited(fontManager.ensureDesignSystemFonts(selectedPreset));
+      }
+    }
     if (result.applyThemeTokensNow &&
         selectedPreset != null &&
         _scope == null) {
@@ -2512,6 +2525,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         _setExpanded(false);
         if (generated.appearance case final appearance?) {
           widget.controller.value = appearance;
+          if (mounted) {
+            final fontManager = DynamicFontScope.readOf(context);
+            if (fontManager != null && fontManager.autoDownloadEnabled) {
+              unawaited(fontManager.ensureAppearanceFonts(appearance));
+            }
+          }
           _pulseAppearanceDiff(session, appearance);
           if (_scope == null) {
             _maybeNavigateToNewLivePage(session, appearance);
@@ -3196,6 +3215,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       }
       if (generated.appearance case final appearance?) {
         widget.controller.value = appearance;
+        if (mounted) {
+          final fontManager = DynamicFontScope.readOf(context);
+          if (fontManager != null && fontManager.autoDownloadEnabled) {
+            unawaited(fontManager.ensureAppearanceFonts(appearance));
+          }
+        }
         _pulseAppearanceDiff(session, appearance);
         if (_scope == null) {
           _maybeNavigateToNewLivePage(session, appearance);
@@ -3332,6 +3357,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       previewTracker: session.previewTracker,
       repoTransaction: session.repoTransaction,
       customDesignSystemStore: _resolveCustomDesignSystemStore(),
+      fontManager: mounted ? DynamicFontScope.readOf(context) : null,
       onRegisterDesignSystem: (preset, {required select}) =>
           _registerDesignSystemFromTool(
             preset,
