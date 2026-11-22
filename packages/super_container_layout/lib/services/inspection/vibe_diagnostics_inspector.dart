@@ -694,6 +694,23 @@ class VibeDiagnosticsInspector {
           }
         }
         final action = behavior.action;
+        for (final targetId in action.referencedComponentIds) {
+          final targetExists =
+              appearance.components.containsKey(targetId) ||
+              appearance.styles.containsKey(targetId) ||
+              slotIndex.entriesFor(targetId).isNotEmpty;
+          if (!targetExists &&
+              (requestedIds.isEmpty || requestedIds.contains(id))) {
+            issues.add(<String, Object?>{
+              'componentId': id,
+              'location': 'behaviors[$id].${action.type}',
+              'kind': 'unknown_action_target',
+              'targetComponentId': targetId,
+              'message':
+                  'Composant cible "$targetId" référencé par l’action ${action.type} du comportement "${behavior.id}" introuvable.',
+            });
+          }
+        }
         if (action is TooltipAction) {
           checkBinding(
             ownerId: id,

@@ -20,6 +20,7 @@ import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/super_action_config.dart';
 import '../../../models/super_conditional_config.dart';
+import '../../../models/super_indicator_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
@@ -44,9 +45,13 @@ import 'behavior_event_picker.dart';
 import 'behavior_validator_editor.dart';
 import 'datasource_action_settings.dart';
 import 'search_provider_settings.dart';
+import 'state_behavior_settings.dart';
+import 'style_behavior_settings.dart';
 
 export 'behavior_event_picker.dart';
 export 'behavior_validator_editor.dart';
+export 'state_behavior_settings.dart';
+export 'style_behavior_settings.dart';
 
 /// Élément cible pouvant recevoir un comportement.
 @immutable
@@ -216,6 +221,17 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   );
   bool _creationDefaultUseNull = false;
   bool? _creationDefaultBool;
+  BehaviorStyleOperation _styleOperation = BehaviorStyleOperation.apply;
+  BehaviorStylePatch _stylePatch = const BehaviorStylePatch();
+  String? _styleTargetId;
+  int _styleDurationMs = 0;
+  BehaviorVisibilityMode _visibilityMode = BehaviorVisibilityMode.hide;
+  String? _visibilityTargetId;
+  bool _visibilityMaintainSize = false;
+  BehaviorInteractiveState _setStateKind = BehaviorInteractiveState.disabled;
+  BehaviorStateOperation _setStateOperation = BehaviorStateOperation.set;
+  bool _setStateValue = true;
+  String? _setStateTargetId;
 
   @override
   void initState() {
@@ -270,6 +286,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     AddArrayItemAction() => BehaviorCatalog.addArrayItem,
     CreationDefaultAction() => BehaviorCatalog.creationDefault,
     RunJavaScriptAction() => BehaviorCatalog.runJavaScript,
+    SetStyleAction() => BehaviorCatalog.setStyle,
+    SetVisibilityAction() => BehaviorCatalog.setVisibility,
+    SetStateAction() => BehaviorCatalog.setState,
     _ => null,
   };
 
@@ -332,6 +351,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         case RunJavaScriptAction a:
           _scriptRepositoryController.text = a.repositoryId ?? '';
           _scriptCodeController.text = a.code;
+        case SetStyleAction a:
+          _styleOperation = a.operation;
+          _stylePatch = a.style;
+          _styleTargetId = a.targetComponentId;
+          _styleDurationMs = a.durationMs;
+        case SetVisibilityAction a:
+          _visibilityMode = a.mode;
+          _visibilityTargetId = a.targetComponentId;
+          _visibilityMaintainSize = a.maintainSize;
+        case SetStateAction a:
+          _setStateKind = a.state;
+          _setStateOperation = a.operation;
+          _setStateValue = a.value;
+          _setStateTargetId = a.targetComponentId;
       }
     });
   }
@@ -368,6 +401,51 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       _selectedCatalogItem.actionType == 'creationDefault';
   bool get _isJavaScriptAction =>
       _selectedCatalogItem.actionType == 'runJavaScript';
+  bool get _isSetStyle => _selectedCatalogItem.actionType == 'setStyle';
+  bool get _isSetVisibility =>
+      _selectedCatalogItem.actionType == 'setVisibility';
+  bool get _isSetState => _selectedCatalogItem.actionType == 'setState';
+
+  bool get _isSetStyleValid {
+    try {
+      SetStyleAction(
+        operation: _styleOperation,
+        style: _stylePatch,
+        targetComponentId: _styleTargetId,
+        durationMs: _styleDurationMs,
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isSetVisibilityValid {
+    try {
+      SetVisibilityAction(
+        mode: _visibilityMode,
+        targetComponentId: _visibilityTargetId,
+        maintainSize: _visibilityMaintainSize,
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isSetStateValid {
+    try {
+      SetStateAction(
+        state: _setStateKind,
+        operation: _setStateOperation,
+        value: _setStateValue,
+        targetComponentId: _setStateTargetId,
+      ).validate();
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
 
   DatasourceConfig? get _selectedDatasource {
     final id = _datasourceDraft.datasourceId;
@@ -568,6 +646,12 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       ? _effectiveCreationDefaultBinding != null
       : _isJavaScriptAction
       ? _isJavaScriptActionValid
+      : _isSetStyle
+      ? _isSetStyleValid
+      : _isSetVisibility
+      ? _isSetVisibilityValid
+      : _isSetState
+      ? _isSetStateValid
       : _isBindState
       ? _stateBinding != null
       : _isZoneSize
@@ -675,6 +759,28 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             repositoryId: _scriptRepositoryController.text.trim().isEmpty
                 ? null
                 : _scriptRepositoryController.text.trim(),
+          )
+        : _isSetStyle
+        ? SetStyleAction(
+            operation: _styleOperation,
+            style: _styleOperation == BehaviorStyleOperation.reset
+                ? const BehaviorStylePatch()
+                : _stylePatch,
+            targetComponentId: _styleTargetId,
+            durationMs: _styleDurationMs,
+          )
+        : _isSetVisibility
+        ? SetVisibilityAction(
+            mode: _visibilityMode,
+            targetComponentId: _visibilityTargetId,
+            maintainSize: _visibilityMaintainSize,
+          )
+        : _isSetState
+        ? SetStateAction(
+            state: _setStateKind,
+            operation: _setStateOperation,
+            value: _setStateValue,
+            targetComponentId: _setStateTargetId,
           )
         : GoToPageAction(
             pagePath: path,
@@ -1428,6 +1534,22 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
+  List<String> _namedStatesFor(Appearance? appearance, String targetId) {
+    if (appearance == null) return const [];
+    final names = <String>{};
+    final styleStates = appearance.styles[targetId]?.states?.named.keys;
+    if (styleStates != null) names.addAll(styleStates);
+    final config = appearance.components[targetId];
+    if (config is SuperValueConfig && config.states != null) {
+      names.addAll(config.states!.named.keys);
+    } else if (config is SuperActionConfig && config.states != null) {
+      names.addAll(config.states!.named.keys);
+    } else if (config is SuperIndicatorConfig && config.states != null) {
+      names.addAll(config.states!.named.keys);
+    }
+    return names.toList()..sort();
+  }
+
   Widget _buildActionSettings(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
     if (_isSearchProvider) return _buildSearchProviderSettings();
@@ -1435,6 +1557,89 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     if (_isGeneratePdf) return _buildGeneratePdfSettings(context);
     if (_isAddArrayItem) return _buildAddArrayItemSettings(context);
     if (_isJavaScriptAction) return _buildJavaScriptSettings(context);
+    if (_isSetStyle) {
+      final appearance =
+          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final resolvedTargetId = _styleTargetId ?? _selectedTarget.id;
+      return SetStyleBehaviorSettings(
+        operation: _styleOperation,
+        style: _stylePatch,
+        targetComponentId: _styleTargetId,
+        durationMs: _styleDurationMs,
+        availableTargets: _collectValidatorTargets(appearance),
+        availableNamedStates: _namedStatesFor(appearance, resolvedTargetId),
+        keyPrefix: widget.keyPrefix,
+        onChanged: ({
+          operation,
+          style,
+          targetComponentId,
+          clearTargetComponentId = false,
+          durationMs,
+        }) => setState(() {
+          if (operation != null) _styleOperation = operation;
+          if (style != null) _stylePatch = style;
+          if (clearTargetComponentId) {
+            _styleTargetId = null;
+          } else if (targetComponentId != null) {
+            _styleTargetId = targetComponentId;
+          }
+          if (durationMs != null) _styleDurationMs = durationMs;
+        }),
+      );
+    }
+    if (_isSetVisibility) {
+      final appearance =
+          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      return SetVisibilityBehaviorSettings(
+        mode: _visibilityMode,
+        targetComponentId: _visibilityTargetId,
+        maintainSize: _visibilityMaintainSize,
+        availableTargets: _collectValidatorTargets(appearance),
+        keyPrefix: widget.keyPrefix,
+        onChanged: ({
+          mode,
+          targetComponentId,
+          clearTargetComponentId = false,
+          maintainSize,
+        }) => setState(() {
+          if (mode != null) _visibilityMode = mode;
+          if (clearTargetComponentId) {
+            _visibilityTargetId = null;
+          } else if (targetComponentId != null) {
+            _visibilityTargetId = targetComponentId;
+          }
+          if (maintainSize != null) _visibilityMaintainSize = maintainSize;
+        }),
+      );
+    }
+    if (_isSetState) {
+      final appearance =
+          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      return SetStateBehaviorSettings(
+        state: _setStateKind,
+        operation: _setStateOperation,
+        value: _setStateValue,
+        targetComponentId: _setStateTargetId,
+        availableTargets: _collectValidatorTargets(appearance),
+        keyPrefix: widget.keyPrefix,
+        onChanged: ({
+          state,
+          operation,
+          value,
+          targetComponentId,
+          clearTargetComponentId = false,
+        }) => setState(() {
+          if (state != null) _setStateKind = state;
+          if (operation != null) _setStateOperation = operation;
+          if (value != null) _setStateValue = value;
+          if (clearTargetComponentId) {
+            _setStateTargetId = null;
+          } else if (targetComponentId != null) {
+            _setStateTargetId = targetComponentId;
+          }
+        }),
+      );
+    }
     if (_isCreationDefault) return _buildCreationDefaultSettings(context);
     if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);

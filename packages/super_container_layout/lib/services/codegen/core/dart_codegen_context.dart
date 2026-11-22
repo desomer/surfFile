@@ -696,6 +696,61 @@ class DartCodegenContext {
               includeConst: true,
             ),
         }, indent: indent, forceMultiline: true);
+      case final SetStyleAction setStyle:
+        return formatCall(
+          'const SetStyleAction',
+          const [],
+          {
+            if (setStyle.operation != BehaviorStyleOperation.apply)
+              'operation': 'BehaviorStyleOperation.${setStyle.operation.name}',
+            if (setStyle.targetComponentId != null)
+              'targetComponentId': formatString(setStyle.targetComponentId!),
+            if (setStyle.operation != BehaviorStyleOperation.reset &&
+                !setStyle.style.isEmpty)
+              'style': formatBehaviorStylePatch(
+                setStyle.style,
+                indent: indent + 2,
+              ),
+            if (setStyle.durationMs > 0) 'durationMs': '${setStyle.durationMs}',
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final SetVisibilityAction setVisibility:
+        return formatCall(
+          'const SetVisibilityAction',
+          const [],
+          {
+            'mode': 'BehaviorVisibilityMode.${setVisibility.mode.name}',
+            if (setVisibility.targetComponentId != null)
+              'targetComponentId': formatString(
+                setVisibility.targetComponentId!,
+              ),
+            if (setVisibility.maintainSize &&
+                (setVisibility.mode == BehaviorVisibilityMode.hide ||
+                    setVisibility.mode == BehaviorVisibilityMode.toggle))
+              'maintainSize': 'true',
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final SetStateAction setState:
+        return formatCall(
+          'const SetStateAction',
+          const [],
+          {
+            'state': 'BehaviorInteractiveState.${setState.state.name}',
+            if (setState.operation != BehaviorStateOperation.set)
+              'operation': 'BehaviorStateOperation.${setState.operation.name}',
+            if (setState.operation == BehaviorStateOperation.set &&
+                !setState.value)
+              'value': 'false',
+            if (setState.targetComponentId != null)
+              'targetComponentId': formatString(setState.targetComponentId!),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
       default:
         return formatCall(
           'BehaviorActionCatalog.decode',
@@ -704,6 +759,46 @@ class DartCodegenContext {
           indent: indent,
         );
     }
+  }
+
+  /// Formate un [BehaviorStylePatch] en expression Dart.
+  String formatBehaviorStylePatch(
+    BehaviorStylePatch patch, {
+    int indent = 0,
+    bool includeConst = false,
+  }) {
+    final args = <String, String>{
+      if (patch.backgroundColor != null)
+        'backgroundColor': formatColor(patch.backgroundColor!),
+      if (patch.foregroundColor != null)
+        'foregroundColor': formatColor(patch.foregroundColor!),
+      if (patch.borderColor != null)
+        'borderColor': formatColor(patch.borderColor!),
+      if (patch.borderWidth != null)
+        'borderWidth': formatNum(patch.borderWidth!),
+      if (patch.radius != null) 'radius': formatNum(patch.radius!),
+      if (patch.opacity != null) 'opacity': formatNum(patch.opacity!),
+      if (patch.elevation != null) 'elevation': formatNum(patch.elevation!),
+      if (patch.fontSize != null) 'fontSize': formatNum(patch.fontSize!),
+      if (patch.fontWeight != null)
+        'fontWeight': formatFontWeight(patch.fontWeight!),
+      if (patch.namedState != null)
+        'namedState': formatString(patch.namedState!),
+      if (patch.fill != null)
+        'fill': formatContainerFill(patch.fill!, indent: indent + 2),
+      if (patch.shadow != null)
+        'shadow': formatShadowSpec(patch.shadow!, indent: indent + 2),
+      if (patch.neon != null)
+        'neon': formatNeonStyle(patch.neon!, indent: indent + 2),
+    };
+    final prefix = includeConst ? 'const ' : '';
+    return formatCall(
+      '${prefix}BehaviorStylePatch',
+      const [],
+      args,
+      indent: indent,
+      forceMultiline: args.length > 2,
+    );
   }
 
   /// Formate une valeur JSON arbitraire (`Map`, `List`, `String`, `num`, `bool`, `null`) en littéral Dart.

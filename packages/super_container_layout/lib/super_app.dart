@@ -29,6 +29,7 @@ import 'models/responsive_layout_config.dart';
 import 'services/appearance/appearance_store.dart';
 import 'services/appearance/custom_design_system_store.dart';
 import 'services/appearance/paged_file_appearance_store.dart';
+import 'services/behaviors/behavior_runtime_state_controller.dart';
 import 'services/diagnostics/debug_entry.dart';
 import 'services/events/super_event_bus.dart';
 import 'services/fonts/dynamic_font_manager.dart';
@@ -147,6 +148,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   DynamicFontManager get _fontManager =>
       widget.fontManager ?? DynamicFontManager.shared;
   final _styleEditMode = ValueNotifier(false);
+  final _behaviorRuntimeState = BehaviorRuntimeStateController();
   final _viewportPreview = ValueNotifier<ResponsiveBreakpoint?>(null);
   final _appearanceToolbarPosition = ValueNotifier<Offset?>(null);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
@@ -516,6 +518,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       ..removeListener(_pagesChanged)
       ..dispose();
     _styleEditMode.dispose();
+    _behaviorRuntimeState.dispose();
     _viewportPreview.dispose();
     _appearanceToolbarPosition.dispose();
     _repositories.errors.removeListener(_repositoryFailed);
@@ -527,27 +530,29 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) => SuperAppScope(
     app: widget,
     appearanceToolbarPosition: _appearanceToolbarPosition,
-    child: DynamicFontScope(
-      manager: _fontManager,
-      child: JsonRepositoryScope(
-        store: _repositories,
-        child: AppearanceServicesScope(
-          codec: _appearance.store.codec,
-          child: AppearanceScope(
-            controller: _appearance,
-            child: LayoutResetShortcut(
-              onReset: _resetLayouts,
-              child: FloatingRepositoryShortcut(
-                navigatorKey: widget.router.routerDelegate.navigatorKey,
-                store: _repositories,
-                appearance: _appearance,
-                registry: widget.registry,
-                child: EditorHistoryShortcut(
-                  editMode: _styleEditMode,
-                  history: _editorHistory,
-                  child: EditorHistoryScope(
-                    controller: _editorHistory,
-                    child: EditorViewportPreviewScope(
+    child: BehaviorRuntimeStateScope(
+      controller: _behaviorRuntimeState,
+      child: DynamicFontScope(
+        manager: _fontManager,
+        child: JsonRepositoryScope(
+          store: _repositories,
+          child: AppearanceServicesScope(
+            codec: _appearance.store.codec,
+            child: AppearanceScope(
+              controller: _appearance,
+              child: LayoutResetShortcut(
+                onReset: _resetLayouts,
+                child: FloatingRepositoryShortcut(
+                  navigatorKey: widget.router.routerDelegate.navigatorKey,
+                  store: _repositories,
+                  appearance: _appearance,
+                  registry: widget.registry,
+                  child: EditorHistoryShortcut(
+                    editMode: _styleEditMode,
+                    history: _editorHistory,
+                    child: EditorHistoryScope(
+                      controller: _editorHistory,
+                      child: EditorViewportPreviewScope(
                       controller: _viewportPreview,
                       child: StyleEditScope(
                         controller: _styleEditMode,
@@ -561,6 +566,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),

@@ -179,6 +179,7 @@ class EditorSlot extends StatefulWidget {
     this.readValue,
     this.readIsValid,
     this.handlesTapExternally = false,
+    this.styleHandling = BehaviorStyleHandling.none,
     this.behaviors,
     this.eventComponentType = 'component',
     this.exportConfig,
@@ -207,6 +208,9 @@ class EditorSlot extends StatefulWidget {
   /// Indique si le widget enfant gère déjà `onTap` lui-même (ex. `SuperAction`),
   /// afin d'éviter un double déclenchement tout en conservant les autres événements.
   final bool handlesTapExternally;
+
+  /// Niveau de prise en charge native du style runtime (`SetStyleAction`).
+  final BehaviorStyleHandling styleHandling;
 
   /// Type du composant utilise dans l'enveloppe des evenements.
   final String eventComponentType;
@@ -1068,6 +1072,7 @@ class EditorSlotState extends State<EditorSlot> {
         componentId: effectiveComponentId,
         behaviors: widget.behaviors,
         sliver: isSliver,
+        styleHandling: widget.styleHandling,
         child: Builder(
           builder: (context) => _buildSlotContent(context, isSliver: isSliver),
         ),

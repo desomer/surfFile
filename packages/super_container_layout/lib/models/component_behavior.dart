@@ -16,6 +16,10 @@
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
 /// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
 /// - [RunJavaScriptAction] (`behaviours/run_javascript_action.dart`)
+/// - [BehaviorStylePatch] (`behaviours/behavior_style_patch.dart`)
+/// - [SetStyleAction] (`behaviours/set_style_action.dart`)
+/// - [SetVisibilityAction] (`behaviours/set_visibility_action.dart`)
+/// - [SetStateAction] (`behaviours/set_state_action.dart`)
 /// - [StateBindingAction] (`behaviours/state_binding_action.dart`)
 /// - [TooltipAction] (`behaviours/tooltip_action.dart`)
 /// - [ZoneSizeBindingAction] (`behaviours/zone_size_binding_action.dart`)
@@ -26,6 +30,7 @@ import 'package:material_ui/material_ui.dart';
 import '../services/events/super_event_bus.dart';
 import 'behaviours/add_array_item_action.dart';
 import 'behaviours/behavior_event.dart';
+import 'behaviours/behavior_style_patch.dart';
 import 'behaviours/behavior_validator.dart';
 import 'behaviours/creation_default_action.dart';
 import 'behaviours/datasource_action.dart';
@@ -34,12 +39,16 @@ import 'behaviours/generate_pdf_action.dart';
 import 'behaviours/go_to_page_action.dart';
 import 'behaviours/search_provider_action.dart';
 import 'behaviours/run_javascript_action.dart';
+import 'behaviours/set_state_action.dart';
+import 'behaviours/set_style_action.dart';
+import 'behaviours/set_visibility_action.dart';
 import 'behaviours/state_binding_action.dart';
 import 'behaviours/tooltip_action.dart';
 import 'behaviours/zone_size_binding_action.dart';
 
 export 'behaviours/add_array_item_action.dart';
 export 'behaviours/behavior_event.dart';
+export 'behaviours/behavior_style_patch.dart';
 export 'behaviours/behavior_validator.dart';
 export 'behaviours/creation_default_action.dart';
 export 'behaviours/datasource_action.dart';
@@ -48,6 +57,9 @@ export 'behaviours/generate_pdf_action.dart';
 export 'behaviours/go_to_page_action.dart';
 export 'behaviours/search_provider_action.dart';
 export 'behaviours/run_javascript_action.dart';
+export 'behaviours/set_state_action.dart';
+export 'behaviours/set_style_action.dart';
+export 'behaviours/set_visibility_action.dart';
 export 'behaviours/state_binding_action.dart';
 export 'behaviours/tooltip_action.dart';
 export 'behaviours/zone_size_binding_action.dart';
@@ -70,6 +82,12 @@ abstract class BehaviorAction {
     BuildContext context,
     BehaviorExecutionData data,
   ) => execute(context);
+
+  /// Identifiants d'autres composants référencés par cette action (ex. `targetComponentId`).
+  Set<String> get referencedComponentIds => const {};
+
+  /// Remplace les identifiants de composants référencés lors d'une duplication.
+  BehaviorAction remapComponentIds(Map<String, String> idMap) => this;
 }
 
 /// Metadonnees runtime de l'instance ayant declenche un comportement.
@@ -119,6 +137,9 @@ abstract final class BehaviorActionCatalog {
     'addArrayItem': AddArrayItemAction.fromJson,
     'creationDefault': CreationDefaultAction.fromJson,
     'runJavaScript': RunJavaScriptAction.fromJson,
+    'setStyle': SetStyleAction.fromJson,
+    'setVisibility': SetVisibilityAction.fromJson,
+    'setState': SetStateAction.fromJson,
   };
 
   static void register(
@@ -191,12 +212,15 @@ class ComponentBehavior {
     }
   }
 
-  /// Remplace les identifiants de composants référencés dans [validator].
+  /// Remplace les identifiants de composants référencés dans [validator] et [action].
   ComponentBehavior remapComponentIds(Map<String, String> idMap) {
-    final current = validator;
-    if (current == null || idMap.isEmpty) return this;
-    final remapped = current.remapComponentIds(idMap);
-    return remapped == current ? this : copyWith(validator: remapped);
+    if (idMap.isEmpty) return this;
+    final remappedValidator = validator?.remapComponentIds(idMap);
+    final remappedAction = action.remapComponentIds(idMap);
+    if (remappedValidator == validator && remappedAction == action) {
+      return this;
+    }
+    return copyWith(validator: remappedValidator, action: remappedAction);
   }
 
   /// Valide la cohérence entre [event], [action] et [validator].
@@ -265,6 +289,12 @@ class ComponentBehavior {
       addArray.validate();
     } else if (action case final RunJavaScriptAction script) {
       script.validate();
+    } else if (action case final SetStyleAction setStyle) {
+      setStyle.validate();
+    } else if (action case final SetVisibilityAction setVisibility) {
+      setVisibility.validate();
+    } else if (action case final SetStateAction setState) {
+      setState.validate();
     }
   }
 
@@ -293,6 +323,10 @@ class ComponentBehavior {
         final AddArrayItemAction addArray => addArray.toCompactJson(),
         final CreationDefaultAction creationDefault =>
           creationDefault.toCompactJson(),
+        final SetStyleAction setStyle => setStyle.toCompactJson(),
+        final SetVisibilityAction setVisibility =>
+          setVisibility.toCompactJson(),
+        final SetStateAction setState => setState.toCompactJson(),
         _ => action.toJson(),
       },
     };
@@ -514,10 +548,49 @@ abstract final class BehaviorCatalog {
     actionType: 'runJavaScript',
   );
 
+  /// Modifie dynamiquement le style (couleurs, bordure, rayon, opacité, état nommé…) en mémoire.
+  static const setStyle = BehaviorCatalogItem(
+    id: 'set_style',
+    title: 'Changer le style',
+    description:
+        'Modifier dynamiquement les couleurs, bordures, opacité, typographie '
+        'ou l’état nommé de ce composant ou d’un autre composant',
+    icon: Icons.palette_outlined,
+    trigger: BehaviorEvent.onTap,
+    actionType: 'setStyle',
+  );
+
+  /// Affiche, masque, bascule ou réinitialise la visibilité d'un composant en mémoire.
+  static const setVisibility = BehaviorCatalogItem(
+    id: 'set_visibility',
+    title: 'Changer la visibilité',
+    description:
+        'Afficher, masquer ou basculer la visibilité de ce composant ou '
+        'd’un autre composant',
+    icon: Icons.visibility_outlined,
+    trigger: BehaviorEvent.onTap,
+    actionType: 'setVisibility',
+  );
+
+  /// Active, désactive (`disabled`) ou passe en lecture seule (`readOnly`) un composant en mémoire.
+  static const setState = BehaviorCatalogItem(
+    id: 'set_state',
+    title: 'Changer l’état (inactif / lecture seule)',
+    description:
+        'Désactiver, réactiver ou passer en lecture seule ce composant ou '
+        'un autre composant',
+    icon: Icons.block_outlined,
+    trigger: BehaviorEvent.onTap,
+    actionType: 'setState',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
     generatePdf,
     emitEvent,
+    setStyle,
+    setVisibility,
+    setState,
     zoneSize,
     bindState,
     onTooltip,

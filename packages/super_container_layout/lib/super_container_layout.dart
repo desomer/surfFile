@@ -32,6 +32,7 @@ export 'models/component_config.dart';
 export 'models/component_extension.dart';
 export 'models/component_behavior.dart';
 export 'services/behaviors/behavior_dispatcher.dart';
+export 'services/behaviors/behavior_runtime_state_controller.dart';
 export 'services/behaviors/behavior_validator_evaluator.dart';
 export 'services/behaviors/component_runtime_value_registry.dart';
 export 'models/component_usage.dart';

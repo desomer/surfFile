@@ -13,6 +13,7 @@ import 'a4_document_page.dart';
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../services/appearance/appearance_transfer.dart';
+import '../../services/behaviors/behavior_runtime_state_controller.dart';
 import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/events/super_event_bus.dart';
@@ -177,6 +178,7 @@ class _RendererDocumentState extends State<_RendererDocument> {
   bool _notifyScheduled = false;
   bool _replacing = false;
   final _rootSelection = ValueNotifier<String?>(null);
+  final _behaviorRuntimeState = BehaviorRuntimeStateController();
   final _wrappers = <String, (String, ScaffoldPageConfig)>{};
 
   @override
@@ -409,19 +411,22 @@ class _RendererDocumentState extends State<_RendererDocument> {
     _editMode.dispose();
     _appearance.dispose();
     _rootSelection.dispose();
+    _behaviorRuntimeState.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget content = SuperAppScope(
-      app: SuperApp(
-        router: _router,
-        registry: _registry,
-        repositoryStore: widget.repositoryStore,
-        eventBus: widget.eventBus,
-      ),
-      child: AppearanceServicesScope(
+    Widget content = BehaviorRuntimeStateScope(
+      controller: _behaviorRuntimeState,
+      child: SuperAppScope(
+        app: SuperApp(
+          router: _router,
+          registry: _registry,
+          repositoryStore: widget.repositoryStore,
+          eventBus: widget.eventBus,
+        ),
+        child: AppearanceServicesScope(
         codec: _codec,
         child: AppearanceScope(
           controller: _appearance,
@@ -537,6 +542,7 @@ class _RendererDocumentState extends State<_RendererDocument> {
           ),
         ),
       ),
+    ),
     );
     if (widget.repositoryStore case final store?) {
       content = JsonRepositoryScope(store: store, child: content);

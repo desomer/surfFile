@@ -120,11 +120,13 @@ class _SuperActionState extends State<SuperAction>
     bool? isSelected,
     bool behaviorDisabled = false,
     bool behaviorReadOnly = false,
+    String? behaviorNamedState,
   }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
+    final effectiveStateName = behaviorNamedState ?? stateReader?.stateName;
     try {
       final source =
-          saved.states?.resolve(saved, name: stateReader?.stateName) ??
+          saved.states?.resolve(saved, name: effectiveStateName) ??
           saved.copyWith(clearStates: true);
       automaticActiveStates = {
         if (contentHovered) AutomaticState.contentHover,
@@ -135,7 +137,7 @@ class _SuperActionState extends State<SuperAction>
       var config =
           saved.states?.resolve(
             saved,
-            name: stateReader?.stateName,
+            name: effectiveStateName,
             isHovered: isComponentHovered,
             isSelected: isSelected ?? (scope?.selected ?? false),
             activeStates: automaticActiveStates,
@@ -247,6 +249,7 @@ class _SuperActionState extends State<SuperAction>
   Widget build(BuildContext context) => ComponentStateBehavior(
     componentId: widget.id,
     behaviors: widget.behaviours,
+    styleHandling: BehaviorStyleHandling.full,
     child: Builder(builder: _buildActionContent),
   );
 
@@ -259,6 +262,9 @@ class _SuperActionState extends State<SuperAction>
         !editing && ComponentBehaviorStateScope.isDisabled(context);
     final behaviorReadOnly =
         !editing && ComponentBehaviorStateScope.isReadOnly(context);
+    final behaviorStyle = editing
+        ? null
+        : ComponentBehaviorStateScope.styleOverrideFor(context, widget.id);
     final configuration =
         registry?.actionController(widget.id, fallback: widget.config) ??
         _local;
@@ -278,6 +284,7 @@ class _SuperActionState extends State<SuperAction>
             isSelected: isSelected,
             behaviorDisabled: behaviorDisabled,
             behaviorReadOnly: behaviorReadOnly,
+            behaviorNamedState: behaviorStyle?.namedState,
           );
           observePropertyBindings(
             effective.propertyBindings,
@@ -285,6 +292,20 @@ class _SuperActionState extends State<SuperAction>
             repositories,
           );
           var boundConfig = _withBoundProperties(effective);
+          if (behaviorStyle != null && !behaviorStyle.isEmpty) {
+            boundConfig = boundConfig.copyWith(
+              backgroundColor:
+                  behaviorStyle.backgroundColor ?? boundConfig.backgroundColor,
+              color: behaviorStyle.foregroundColor ?? boundConfig.color,
+              iconColor: behaviorStyle.foregroundColor ?? boundConfig.iconColor,
+              borderColor: behaviorStyle.borderColor ?? boundConfig.borderColor,
+              borderWidth: behaviorStyle.borderWidth ?? boundConfig.borderWidth,
+              radius: behaviorStyle.radius ?? boundConfig.radius,
+              elevation: behaviorStyle.elevation ?? boundConfig.elevation,
+              fontSize: behaviorStyle.fontSize ?? boundConfig.fontSize,
+              fontWeight: behaviorStyle.fontWeight ?? boundConfig.fontWeight,
+            );
+          }
           if (behaviorDisabled && boundConfig.enabled) {
             boundConfig = boundConfig.copyWith(enabled: false);
           }

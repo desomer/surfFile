@@ -359,12 +359,14 @@ class _SuperValueState extends State<SuperValue>
     bool contentHovered, {
     bool behaviorDisabled = false,
     bool behaviorReadOnly = false,
+    String? behaviorNamedState,
     bool unselected = false,
   }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
+    final effectiveStateName = behaviorNamedState ?? stateReader?.stateName;
     try {
       final rawSource =
-          saved.states?.resolve(saved, name: stateReader?.stateName) ??
+          saved.states?.resolve(saved, name: effectiveStateName) ??
           saved.copyWith(clearStates: true);
       final source = _applySchemaConstraints(rawSource, scope, store);
       final input = source.mode == SuperValueMode.input;
@@ -398,7 +400,7 @@ class _SuperValueState extends State<SuperValue>
       var config =
           saved.states?.resolve(
             saved,
-            name: stateReader?.stateName,
+            name: effectiveStateName,
             isHovered: isComponentHovered,
             isSelected: scope?.selected ?? false,
             activeStates: automaticActiveStates,
@@ -950,6 +952,7 @@ class _SuperValueState extends State<SuperValue>
   Widget build(BuildContext context) => ComponentStateBehavior(
     componentId: widget.id,
     behaviors: widget.behaviours,
+    styleHandling: BehaviorStyleHandling.textOnly,
     child: Builder(builder: _buildValueContent),
   );
 
@@ -989,6 +992,9 @@ class _SuperValueState extends State<SuperValue>
         !editing && ComponentBehaviorStateScope.isDisabled(context);
     final behaviorReadOnly =
         !editing && ComponentBehaviorStateScope.isReadOnly(context);
+    final behaviorStyle = editing
+        ? null
+        : ComponentBehaviorStateScope.styleOverrideFor(context, widget.id);
 
     return wrapWithComponentHoverRegion(
       ValueListenableBuilder<SuperValueConfig>(
@@ -1010,8 +1016,11 @@ class _SuperValueState extends State<SuperValue>
             ContentHoverScope.maybeOf(context)?.hovered == true,
             behaviorDisabled: behaviorDisabled,
             behaviorReadOnly: behaviorReadOnly,
+            behaviorNamedState: behaviorStyle?.namedState,
             unselected: isUnselected,
           );
+          final effectiveStateName =
+              behaviorStyle?.namedState ?? stateReader?.stateName;
           final states = savedConfig.states;
           final active = states == null
               ? <String>[]
@@ -1023,7 +1032,7 @@ class _SuperValueState extends State<SuperValue>
                         ? listScope?.selected == true && states.selected != null
                         : AutomaticState.fromKey(key) != null
                         ? automaticActiveStates.any((value) => value.key == key)
-                        : key == stateReader?.stateName)
+                        : key == effectiveStateName)
                       key,
                 ];
           final transition =
@@ -1069,7 +1078,15 @@ class _SuperValueState extends State<SuperValue>
             listScope,
             repositories,
           );
-          final config = _editorConfig ?? _withBoundProperties(effective);
+          var boundConfig = _withBoundProperties(effective);
+          if (behaviorStyle != null && behaviorStyle.hasForegroundProperties) {
+            boundConfig = boundConfig.copyWith(
+              color: behaviorStyle.foregroundColor ?? boundConfig.color,
+              fontSize: behaviorStyle.fontSize ?? boundConfig.fontSize,
+              fontWeight: behaviorStyle.fontWeight ?? boundConfig.fontWeight,
+            );
+          }
+          final config = _editorConfig ?? boundConfig;
           final controller = _editorText ?? _text;
           final availableFonts = resolveAvailableComponentFontFamilies(
             context,

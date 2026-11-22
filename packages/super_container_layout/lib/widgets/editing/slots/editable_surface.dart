@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../../models/automatic_state.dart';
 import '../../../models/component_behavior.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../services/behaviors/behavior_runtime_state_controller.dart';
+import '../../../services/behaviors/component_runtime_value_registry.dart';
 import '../../../services/states/content_hover_scope.dart';
 
 import '../../../theme/appearance.dart';
@@ -330,19 +332,36 @@ class EditableSurfaceState extends State<EditableSurface>
         _syncBinding(base, scope);
         final listenHover =
             widget.resolveSelectionAndHover && base.states != null;
+        final surfaceId = widget.id ?? widget.slot?.name;
+        final runtimeController = BehaviorRuntimeStateScope.maybeOf(context);
+        final runtimeListenable = surfaceId == null
+            ? null
+            : runtimeController?.listenableFor(surfaceId);
         return ListenableBuilder(
           listenable: Listenable.merge([
             _preview,
             if (listenHover) _hovered,
             ?_stateBinding,
+            ?runtimeListenable,
           ]),
           builder: (context, _) {
             final currentBase = style;
-            final surfaceStyle =
+            final editing = StyleEditScope.controllerOf(context)?.value ?? false;
+            final runtimeOverride =
+                editing || surfaceId == null || runtimeController == null
+                ? null
+                : runtimeController.overrideFor(
+                    surfaceId,
+                    scopeKey: ComponentRuntimeValueRegistry.scopeKeyOf(scope),
+                  );
+            final runtimeStyle = runtimeOverride?.style;
+            final effectiveStateName =
+                runtimeStyle?.namedState ?? _stateBinding?.stateName;
+            final resolvedBase =
                 _preview.value ??
                 currentBase.states?.resolve(
                   currentBase,
-                  name: _stateBinding?.stateName,
+                  name: effectiveStateName,
                   isSelected:
                       widget.resolveSelectionAndHover &&
                       (scope?.selected ?? false),
@@ -353,6 +372,12 @@ class EditableSurfaceState extends State<EditableSurface>
                   },
                 ) ??
                 currentBase;
+            final surfaceStyle =
+                _preview.value != null ||
+                    runtimeStyle == null ||
+                    runtimeStyle.isEmpty
+                ? resolvedBase
+                : runtimeStyle.applyToContainerStyle(resolvedBase);
             final renderStyle = surfaceStyle.copyWith(
               margin: 0,
               marginInsets: null,
@@ -364,8 +389,11 @@ class EditableSurfaceState extends State<EditableSurface>
                 widget.slot?.role == AppearanceSurfaceRole.applicationBackground
                 ? 0.0
                 : surfaceStyle.maxRadius;
+            final collapsedHidden =
+                runtimeOverride?.visible == false &&
+                !runtimeOverride!.maintainSize;
             return Padding(
-              padding: widget.applyMargin
+              padding: widget.applyMargin && !collapsedHidden
                   ? surfaceStyle.outerMargin
                   : EdgeInsets.zero,
               child: MouseRegion(
@@ -374,8 +402,9 @@ class EditableSurfaceState extends State<EditableSurface>
                 onExit: (_) => _setHovered(false),
                 child: EditorSlot(
                   key: _editorKey,
-                  id: widget.id ?? widget.slot?.name,
+                  id: surfaceId,
                   behaviors: widget.behaviours,
+                  styleHandling: BehaviorStyleHandling.surfaceOnly,
                   label: _label,
                   menuTitle: widget.menuTitle,
                   onLabelChanged: widget.onLabelChanged == null
