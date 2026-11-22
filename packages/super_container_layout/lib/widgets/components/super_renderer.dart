@@ -13,6 +13,8 @@ import 'a4_document_page.dart';
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../services/appearance/appearance_transfer.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/events/super_event_bus.dart';
 import '../../services/pages/editor_page_graph.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -394,8 +396,12 @@ class _RendererDocumentState extends State<_RendererDocument> {
     }
   }
 
+  String get _diagnosticId =>
+      'super-renderer:${widget.config.rootId ?? 'root'}';
+
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(_diagnosticId);
     _appearance.removeListener(_changed);
     _registry.dispose();
     _router.dispose();
@@ -455,13 +461,42 @@ class _RendererDocumentState extends State<_RendererDocument> {
                           ),
                         ],
                       ),
-                    if (_error != null)
-                      Text(
-                        _error!,
-                        key: const ValueKey('renderer-error'),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                    if (_error != null) ...[
+                      Builder(
+                        builder: (context) {
+                          VibeDebugCapture.syncComponentDiagnostic(
+                            componentId: _diagnosticId,
+                            sourceKey: 'super-renderer.error',
+                            active: true,
+                            category: DebugErrorCategory.rendering,
+                            severity: DebugSeverity.error,
+                            message: _error,
+                            source: 'SuperRenderer',
+                            visibleInUi: true,
+                          );
+                          return Text(
+                            _error!,
+                            key: const ValueKey('renderer-error'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          );
+                        },
+                      ),
+                    ] else
+                      Builder(
+                        builder: (_) {
+                          VibeDebugCapture.syncComponentDiagnostic(
+                            componentId: _diagnosticId,
+                            sourceKey: 'super-renderer.error',
+                            active: false,
+                            category: DebugErrorCategory.rendering,
+                            severity: DebugSeverity.error,
+                            message: null,
+                            source: 'SuperRenderer',
+                          );
+                          return const SizedBox.shrink();
+                        },
                       ),
                     Expanded(
                       child: _hasDocument

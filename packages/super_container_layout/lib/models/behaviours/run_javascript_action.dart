@@ -4,6 +4,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../services/diagnostics/debug_entry.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../component_behavior.dart';
@@ -89,6 +90,10 @@ class RunJavaScriptAction extends BehaviorAction {
     if (id == null || id.isEmpty) {
       store.reportBindingError(
         'Choisissez un repository pour le comportement JavaScript.',
+        category: DebugErrorCategory.javascript,
+        severity: DebugSeverity.error,
+        componentId: componentId,
+        source: 'RunJavaScriptAction',
       );
       return;
     }
@@ -100,8 +105,24 @@ class RunJavaScriptAction extends BehaviorAction {
         eventData: eventData,
         componentId: componentId,
       );
-    } on FormatException catch (error) {
-      store.reportBindingError(error.message);
+    } on FormatException catch (error, stack) {
+      store.reportBindingError(
+        error.message,
+        category: DebugErrorCategory.javascript,
+        severity: DebugSeverity.critical,
+        componentId: componentId,
+        source: 'RunJavaScriptAction',
+        stackTrace: stack,
+      );
+    } catch (error, stack) {
+      store.reportBindingError(
+        'Erreur JavaScript : $error',
+        category: DebugErrorCategory.javascript,
+        severity: DebugSeverity.critical,
+        componentId: componentId,
+        source: 'RunJavaScriptAction',
+        stackTrace: stack,
+      );
     }
   }
 

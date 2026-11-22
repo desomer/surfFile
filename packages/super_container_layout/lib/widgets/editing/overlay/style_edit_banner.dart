@@ -15,6 +15,7 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_task_completion_alert.dart';
+import 'package:super_container_layout/widgets/editing/diagnostics/diagnostic_log_panel.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/repositories/binding_save_timing_controls.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
@@ -453,6 +454,14 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                         final target =
                             widget.navigatorKey?.currentContext ?? context;
                         JsonRepositoryManager.show(target);
+                      },
+                    ),
+                    DiagnosticLogBannerButton(
+                      foregroundColor: scheme.onPrimary,
+                      onPressed: () {
+                        final target =
+                            widget.navigatorKey?.currentContext ?? context;
+                        showDiagnosticLogDialog(target);
                       },
                     ),
                     if (appearance != null)

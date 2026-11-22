@@ -14,6 +14,8 @@ import '../../models/automatic_state.dart';
 import '../../models/json_syntax.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/registry.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/states/surface_state_binding.dart';
@@ -269,15 +271,101 @@ TextStyle buildComponentTextStyle(
   );
 }
 
-/// Construit les widgets [Text] d'erreur d'état et de liaisons de propriétés (`propertyBindings`).
+/// Synchronise dans [VibeDebugCapture] les erreurs d'état, de liaisons de
+/// propriétés et de police indisponible d'un composant UI.
+void syncComponentPropertyDiagnostics<P extends Enum>({
+  required String componentPrefix,
+  required String componentId,
+  required String? stateError,
+  required Map<P, String> propertyBindingErrors,
+  String? missingFontFamily,
+  bool showMissingFontError = false,
+}) {
+  VibeDebugCapture.syncComponentDiagnostic(
+    componentId: componentId,
+    sourceKey: '$componentPrefix.stateError',
+    active: stateError != null,
+    category: DebugErrorCategory.binding,
+    severity: DebugSeverity.error,
+    message: stateError,
+    source: '$componentPrefix.state',
+    visibleInUi: true,
+  );
+  String? fontPropertyError;
+  final otherPropertyErrors = <String>[];
+  for (final entry in propertyBindingErrors.entries) {
+    final formatted = 'Liaison ${entry.key.name} : ${entry.value}';
+    if (entry.key.name == 'fontFamily') {
+      fontPropertyError = formatted;
+    } else {
+      otherPropertyErrors.add(formatted);
+    }
+  }
+  VibeDebugCapture.syncComponentDiagnostic(
+    componentId: componentId,
+    sourceKey: '$componentPrefix.propertyBinding.fontFamily',
+    active: fontPropertyError != null,
+    category: DebugErrorCategory.font,
+    severity: DebugSeverity.warning,
+    message: fontPropertyError,
+    source: '$componentPrefix.propertyBinding.fontFamily',
+    visibleInUi: true,
+  );
+  VibeDebugCapture.syncComponentDiagnostic(
+    componentId: componentId,
+    sourceKey: '$componentPrefix.propertyBinding',
+    active: otherPropertyErrors.isNotEmpty,
+    category: DebugErrorCategory.binding,
+    severity: DebugSeverity.error,
+    message: otherPropertyErrors.isEmpty
+        ? null
+        : otherPropertyErrors.join(' ; '),
+    source: '$componentPrefix.propertyBinding',
+    visibleInUi: true,
+  );
+  final hasMissingFont =
+      missingFontFamily != null && missingFontFamily.trim().isNotEmpty;
+  VibeDebugCapture.syncComponentDiagnostic(
+    componentId: componentId,
+    sourceKey: '$componentPrefix.missingFont',
+    active: hasMissingFont,
+    category: DebugErrorCategory.font,
+    severity: DebugSeverity.warning,
+    message: hasMissingFont
+        ? 'Police indisponible : $missingFontFamily. Choisissez une police disponible.'
+        : null,
+    source: '$componentPrefix.font',
+    visibleInUi: showMissingFontError,
+  );
+}
+
+/// Construit les widgets [Text] d'erreur d'état, de liaisons de propriétés
+/// (`propertyBindings`) et de police indisponible, tout en les journalisant
+/// pour l'IA et le panneau de diagnostic.
 List<Widget> buildComponentDiagnosticErrors<P extends Enum>(
   BuildContext context, {
   required String componentPrefix,
   required String componentId,
   required String? stateError,
   required Map<P, String> propertyBindingErrors,
+  String? missingFontFamily,
+  bool showMissingFontError = false,
 }) {
-  if (stateError == null && propertyBindingErrors.isEmpty) return const [];
+  syncComponentPropertyDiagnostics(
+    componentPrefix: componentPrefix,
+    componentId: componentId,
+    stateError: stateError,
+    propertyBindingErrors: propertyBindingErrors,
+    missingFontFamily: missingFontFamily,
+    showMissingFontError: showMissingFontError,
+  );
+  final showFont =
+      showMissingFontError &&
+      missingFontFamily != null &&
+      missingFontFamily.trim().isNotEmpty;
+  if (stateError == null && propertyBindingErrors.isEmpty && !showFont) {
+    return const [];
+  }
   final errorColor = Theme.of(context).colorScheme.error;
   return [
     if (stateError != null)
@@ -292,6 +380,12 @@ List<Widget> buildComponentDiagnosticErrors<P extends Enum>(
         key: ValueKey(
           '$componentPrefix-property-binding-error-${entry.key.name}-$componentId',
         ),
+        style: TextStyle(color: errorColor),
+      ),
+    if (showFont)
+      Text(
+        'Police indisponible : $missingFontFamily. Choisissez une police disponible.',
+        key: ValueKey('$componentPrefix-font-error-$componentId'),
         style: TextStyle(color: errorColor),
       ),
   ];

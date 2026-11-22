@@ -10,6 +10,9 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/json_text_binding.dart';
+import '../diagnostics/debug_entry.dart';
+import '../inspection/vibe_debug_capture.dart';
+import 'js_calculated_attribute_runtime.dart';
 import 'json_repository_store.dart';
 
 /// Runtime data stays here, never in appearance preferences or editor history.
@@ -203,10 +206,35 @@ class JsonTextControllerBinding extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  void _failure(String message) {
+  void _failure(
+    String message, {
+    DebugErrorCategory category = DebugErrorCategory.binding,
+    DebugSeverity? severity,
+    Object? stackTrace,
+  }) {
     error = message;
-    store.reportBindingError(message);
+    store.reportBindingError(
+      message,
+      category: category,
+      severity: severity ?? category.defaultSeverity,
+      componentId: componentId,
+      source: 'JsonTextControllerBinding(${binding.path})',
+      stackTrace: stackTrace,
+    );
     _notify();
+  }
+
+  void _syncInputValidationDiagnostic(String? validationError) {
+    final targetId = componentId ?? binding.path;
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: targetId,
+      sourceKey: 'binding_input_validation:${binding.path}',
+      active: validationError != null,
+      category: DebugErrorCategory.userInput,
+      severity: DebugSeverity.warning,
+      message: validationError,
+      source: 'JsonTextControllerBinding.validation',
+    );
   }
 
   void _seedFromCache() {
@@ -309,11 +337,19 @@ class JsonTextControllerBinding extends ChangeNotifier {
       }
       _observed = controller.text;
       _applying = false;
-    } on FormatException catch (exception) {
+    } on FormatException catch (exception, stack) {
       if (!_disposed && generation == _generation) {
         failed = true;
         loading = false;
-        _failure(exception.message);
+        final isJs = exception is JsCalculationException;
+        _failure(
+          exception.message,
+          category: isJs
+              ? DebugErrorCategory.javascript
+              : DebugErrorCategory.binding,
+          severity: isJs ? DebugSeverity.critical : DebugSeverity.error,
+          stackTrace: stack,
+        );
       }
     } on FileSystemException {
       if (!_disposed && generation == _generation) {
@@ -400,7 +436,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
     error = null;
     _failedText = null;
     if (composing) return;
-    if (_validationErrorOf(controller.text) != null) {
+    final validationError = _validationErrorOf(controller.text);
+    _syncInputValidationDiagnostic(validationError);
+    if (validationError != null) {
       _notify();
       return;
     }
@@ -422,7 +460,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
     if (!_ready) {
       return _writes;
     }
-    if (_validationErrorOf(controller.text) != null) {
+    final validationError = _validationErrorOf(controller.text);
+    _syncInputValidationDiagnostic(validationError);
+    if (validationError != null) {
       return _writes;
     }
     final text = _storageOf(controller.text);
@@ -493,6 +533,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _timer?.cancel();
+    _syncInputValidationDiagnostic(null);
     controller.removeListener(_edited);
     store.removeListener(_repositoryChanged);
     super.dispose();

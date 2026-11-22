@@ -21,6 +21,8 @@ import '../../models/registry.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -186,6 +188,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     VibeWorkHighlightController.instance.removeListener(
       _onVibeWorkHighlightChanged,
     );
@@ -1405,6 +1408,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
               );
 
         final activeError = _staticBindingError ?? _staticBinding?.error;
+        VibeDebugCapture.syncComponentDiagnostic(
+          componentId: widget.id,
+          sourceKey: 'super-tab.staticError',
+          active: activeError != null,
+          category: DebugErrorCategory.binding,
+          severity: DebugSeverity.error,
+          message: activeError,
+          source: 'SuperTab.binding',
+          visibleInUi: true,
+        );
         return Column(
           mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: crossAxisAlignment,
@@ -1511,6 +1524,20 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         SuperTabConfig.dynamicContentZone,
         shrinkWidth: shrinkWidth,
         shrinkHeight: shrinkHeight,
+      );
+      final isTabRedError =
+          message != null && (_dynamicError != null || config.binding == null);
+      VibeDebugCapture.syncComponentDiagnostic(
+        componentId: widget.id,
+        sourceKey: 'super-tab.dynamicError',
+        active: isTabRedError,
+        category: DebugErrorCategory.binding,
+        severity: _dynamicError != null
+            ? DebugSeverity.error
+            : DebugSeverity.warning,
+        message: isTabRedError ? message : null,
+        source: 'SuperTab.binding',
+        visibleInUi: true,
       );
       final contentArea = shrinkHeight
           ? contentRegion
@@ -1699,6 +1726,21 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             key: ValueKey('super-tab-view-${widget.id}'),
             child: dynamicContent,
           );
+
+    final isTabRedError =
+        message != null && (_dynamicError != null || config.binding == null);
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: widget.id,
+      sourceKey: 'super-tab.dynamicError',
+      active: isTabRedError,
+      category: DebugErrorCategory.binding,
+      severity: _dynamicError != null
+          ? DebugSeverity.error
+          : DebugSeverity.warning,
+      message: isTabRedError ? message : null,
+      source: 'SuperTab.binding',
+      visibleInUi: true,
+    );
 
     return Column(
       mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,

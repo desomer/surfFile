@@ -11,6 +11,7 @@ import '../../theme/theme_color.dart';
 import '../../models/automatic_state.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_action_config.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
@@ -228,6 +229,7 @@ class _SuperActionState extends State<SuperAction>
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _focusNode.removeListener(onComponentStateChanged);
     _focusNode.dispose();
     disposeComponentStateReader();
@@ -461,6 +463,8 @@ class _SuperActionState extends State<SuperAction>
                   componentId: widget.id,
                   stateError: stateError,
                   propertyBindingErrors: propertyBindingErrors,
+                  missingFontFamily: missingFont ? config.fontFamily : null,
+                  showMissingFontError: missingFont && editing,
                 ),
               ],
             ),

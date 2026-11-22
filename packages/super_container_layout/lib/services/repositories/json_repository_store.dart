@@ -18,6 +18,8 @@ import '../../models/repository_json_schema.dart';
 import '../../theme/appearance.dart';
 import '../datasources/datasource_registry.dart';
 import '../datasources/super_backend_datasource_bridge.dart';
+import '../diagnostics/debug_entry.dart';
+import '../inspection/vibe_debug_capture.dart';
 import '../providers/data_provider_registry.dart';
 import '../providers/json_definition_folder.dart';
 import 'calculated_attribute.dart';
@@ -35,6 +37,46 @@ typedef JsonAttributeValue = ({Object? value, String text});
 /// Conflit détecté lors d'une modification conditionnelle d'un repository.
 class JsonRepositoryConflictException extends FormatException {
   const JsonRepositoryConflictException(super.message);
+}
+
+/// Rapport d'erreur typé émis par [JsonRepositoryStore.reportBindingError].
+@immutable
+class RepositoryErrorReport {
+  /// Crée un rapport d'erreur structuré pour l'IHM et les journaux IA.
+  const RepositoryErrorReport({
+    required this.message,
+    required this.category,
+    required this.severity,
+    required this.timestamp,
+    this.componentId,
+    this.source,
+    this.stackTrace,
+    this.visibleInUi = true,
+  });
+
+  /// Message d'erreur lisible.
+  final String message;
+
+  /// Catégorie fonctionnelle de l'erreur.
+  final DebugErrorCategory category;
+
+  /// Niveau d'importance de l'erreur.
+  final DebugSeverity severity;
+
+  /// Horodatage d'émission.
+  final DateTime timestamp;
+
+  /// Identifiant optionnel du composant concerné.
+  final String? componentId;
+
+  /// Origine technique optionnelle.
+  final String? source;
+
+  /// Pile d'appels optionnelle.
+  final Object? stackTrace;
+
+  /// Indique si l'erreur est affichée dans l'IHM.
+  final bool visibleInUi;
 }
 
 /// Describes a change made to a registered in-memory repository.
@@ -274,6 +316,9 @@ class JsonRepositoryStore extends ChangeNotifier {
   final int isolateThresholdBytes;
   final JsCalculatedEvaluator? jsEvaluator;
   final errors = ValueNotifier<String?>(null);
+
+  /// Dernier rapport d'erreur typé émis sur ce store (catégorie, sévérité, composant).
+  final errorReports = ValueNotifier<RepositoryErrorReport?>(null);
 
   DataProviderRegistry? _providers;
   DatasourceRegistry? _datasources;
@@ -880,8 +925,38 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
-  void reportBindingError(String message) {
-    if (!_disposed) errors.value = message;
+  /// Signale une erreur typée sur ce store (affichée dans l'IHM et journalisée pour l'IA).
+  void reportBindingError(
+    String message, {
+    DebugErrorCategory category = DebugErrorCategory.binding,
+    DebugSeverity? severity,
+    String? componentId,
+    String? source,
+    Object? stackTrace,
+    bool visibleInUi = true,
+  }) {
+    if (_disposed) return;
+    final resolvedSeverity = severity ?? category.defaultSeverity;
+    errorReports.value = RepositoryErrorReport(
+      message: message,
+      category: category,
+      severity: resolvedSeverity,
+      timestamp: DateTime.now(),
+      componentId: componentId,
+      source: source,
+      stackTrace: stackTrace,
+      visibleInUi: visibleInUi,
+    );
+    errors.value = message;
+    VibeDebugCapture.recordTypedError(
+      message: message,
+      category: category,
+      severity: resolvedSeverity,
+      stackTrace: stackTrace,
+      componentId: componentId,
+      source: source ?? 'JsonRepositoryStore',
+      visibleInUi: visibleInUi,
+    );
   }
 
   @override
@@ -894,6 +969,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     _calculatedEngine.dispose();
     _ownedScriptEvaluator?.dispose();
     _ownedScriptEvaluator = null;
+    errorReports.dispose();
     errors.dispose();
     for (final binding in _bindings.values) {
       binding.dispose();

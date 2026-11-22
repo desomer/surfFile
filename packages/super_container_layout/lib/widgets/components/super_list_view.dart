@@ -80,6 +80,8 @@ import '../../services/behaviors/behavior_dispatcher.dart';
 import '../../services/repositories/repository_array_creation.dart';
 import '../appearance/appearance_scope.dart';
 import '../../models/super_list_view_config.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -214,6 +216,7 @@ class _SuperListViewState extends State<SuperListView>
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _generation++;
     _store?.removeListener(_reload);
     _listen(const []);
@@ -1026,16 +1029,28 @@ class _SuperListViewState extends State<SuperListView>
           );
   }
 
-  Widget _message(String text, {bool error = false}) => Padding(
-    padding: const EdgeInsets.all(8),
-    child: Text(
-      text,
-      key: ValueKey('super-list-message-${widget.id}'),
-      style: error
-          ? TextStyle(color: Theme.of(context).colorScheme.error)
-          : null,
-    ),
-  );
+  Widget _message(String text, {bool error = false}) {
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: widget.id,
+      sourceKey: 'super-list.error',
+      active: error,
+      category: DebugErrorCategory.binding,
+      severity: _error != null ? DebugSeverity.error : DebugSeverity.warning,
+      message: error ? text : null,
+      source: 'SuperListView.binding',
+      visibleInUi: true,
+    );
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: Text(
+        text,
+        key: ValueKey('super-list-message-${widget.id}'),
+        style: error
+            ? TextStyle(color: Theme.of(context).colorScheme.error)
+            : null,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

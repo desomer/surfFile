@@ -16,6 +16,8 @@ import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_conditional_config.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -144,6 +146,7 @@ class _SuperConditionalState extends State<SuperConditional> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _disposeBinding();
     _localConfig.dispose();
     super.dispose();
@@ -668,6 +671,16 @@ class _SuperConditionalState extends State<SuperConditional> {
         ),
       );
 
+      VibeDebugCapture.syncComponentDiagnostic(
+        componentId: widget.id,
+        sourceKey: 'super-conditional.bindingError',
+        active: _bindingError != null,
+        category: DebugErrorCategory.binding,
+        severity: DebugSeverity.error,
+        message: _bindingError,
+        source: 'SuperConditional.binding',
+        visibleInUi: true,
+      );
       return Column(
         mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: crossAxisAlignment,
@@ -686,6 +699,17 @@ class _SuperConditionalState extends State<SuperConditional> {
         ],
       );
     }
+
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: widget.id,
+      sourceKey: 'super-conditional.bindingError',
+      active: _bindingError != null,
+      category: DebugErrorCategory.binding,
+      severity: DebugSeverity.error,
+      message: _bindingError,
+      source: 'SuperConditional.binding',
+      visibleInUi: true,
+    );
 
     // Mode exécution normal (sans barre d'outils)
     if (runtimeZone == null || !zones.contains(runtimeZone)) {

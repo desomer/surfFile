@@ -12,6 +12,7 @@ import '../../theme/theme_color.dart';
 
 import '../../models/automatic_state.dart';
 import '../../models/super_indicator_config.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
@@ -222,6 +223,7 @@ class _SuperIndicatorState extends State<SuperIndicator>
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     disposeComponentStateReader();
     disposePropertyBindings();
     _local.dispose();
@@ -359,6 +361,8 @@ class _SuperIndicatorState extends State<SuperIndicator>
                   componentId: widget.id,
                   stateError: stateError,
                   propertyBindingErrors: propertyBindingErrors,
+                  missingFontFamily: missingFont ? config.fontFamily : null,
+                  showMissingFontError: missingFont && editing,
                 ),
               ],
             ),

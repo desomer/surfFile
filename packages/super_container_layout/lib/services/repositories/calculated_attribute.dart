@@ -6,6 +6,8 @@ import 'dart:async';
 
 import '../../models/calculated_attribute_definition.dart';
 import '../../models/json_text_binding.dart';
+import '../diagnostics/debug_entry.dart';
+import '../inspection/vibe_debug_capture.dart';
 import 'js_calculated_attribute_runtime.dart';
 
 /// Origine d'un attribut calculé déclaré sur un repository.
@@ -311,12 +313,13 @@ class SynchronousCalculatedAttributeContext {
 typedef _Key = ({String repositoryId, String path});
 
 class _Calculation {
-  _Calculation(this.key, this.scope) {
+  _Calculation(this.key, this.scope, {this.isJs = false}) {
     completion.future.ignore();
   }
 
   final _Key key;
   final String scope;
+  final bool isJs;
   final completion = Completer<Object?>();
   final dependencies = <_Key>{};
   final documents = <String, FutureOr<Object?>>{};
@@ -588,7 +591,7 @@ class CalculatedAttributeEngine {
     if (definition == null) {
       throw FormatException('Attribut calculé « ${key.path} » introuvable.');
     }
-    final run = _Calculation(key, scope);
+    final run = _Calculation(key, scope, isJs: definition.dartFn == null);
     _runs[key] = run;
     try {
       final document = _getDocument(run, key.repositoryId);
@@ -701,14 +704,27 @@ class CalculatedAttributeEngine {
 
   void _fail(_Calculation run, Object error, StackTrace stack) {
     if (run.stale || _disposed) return;
-    run.error = error is FormatException
+    final formatted = error is FormatException
         ? error
         : FormatException(
             'Échec du calcul de « ${run.key.path} » '
             '(${error.runtimeType}).',
           );
+    run.error = formatted;
     run.stack = stack;
     run.settled = true;
+    final isJsFailure = run.isJs || error is JsCalculationException;
+    VibeDebugCapture.recordTypedError(
+      message: isJsFailure
+          ? '[JS ERROR] Calcul « ${run.key.path} » : ${formatted.message}'
+          : 'Calcul « ${run.key.path} » : ${formatted.message}',
+      category: isJsFailure
+          ? DebugErrorCategory.javascript
+          : DebugErrorCategory.binding,
+      severity: isJsFailure ? DebugSeverity.critical : DebugSeverity.error,
+      stackTrace: stack,
+      source: 'CalculatedAttribute(${run.key.repositoryId}:${run.key.path})',
+    );
     _notify(run);
     run.completion.completeError(run.error!, stack);
   }

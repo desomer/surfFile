@@ -12,6 +12,7 @@ import '../../theme/theme_color.dart';
 
 import '../../models/automatic_state.dart';
 import '../../models/super_separator_config.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
@@ -179,6 +180,7 @@ class _SuperSeparatorState extends State<SuperSeparator>
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     disposeComponentStateReader();
     disposePropertyBindings();
     _local.dispose();
@@ -190,6 +192,7 @@ class _SuperSeparatorState extends State<SuperSeparator>
     final registry = SuperApp.maybeOf(context)?.registry;
     final repositories = JsonRepositoryScope.maybeOf(context);
     final listScope = JsonListScope.maybeOf(context);
+    final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     final configuration =
         registry?.separatorController(widget.id, fallback: widget.config) ??
         _local;
@@ -295,6 +298,8 @@ class _SuperSeparatorState extends State<SuperSeparator>
                   componentId: widget.id,
                   stateError: stateError,
                   propertyBindingErrors: propertyBindingErrors,
+                  missingFontFamily: missingFont ? config.fontFamily : null,
+                  showMissingFontError: missingFont && editing,
                 ),
               ],
             ),

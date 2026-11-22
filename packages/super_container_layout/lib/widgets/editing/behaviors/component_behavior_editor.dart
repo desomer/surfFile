@@ -25,6 +25,8 @@ import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
 import '../../../models/super_value_config.dart';
+import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_schema_field_resolver.dart';
@@ -237,6 +239,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(
+      'behavior-editor:${_selectedTarget.id}',
+    );
     _eventIdController.dispose();
     _customJsonController.dispose();
     _customPathController.dispose();
@@ -691,7 +696,18 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         enabled: _editing?.enabled ?? true,
       );
       behavior.validate();
-    } on FormatException catch (error) {
+    } on FormatException catch (error, stack) {
+      VibeDebugCapture.recordTypedError(
+        message: error.message,
+        category: _selectedCatalogItem.actionType == 'runJavaScript'
+            ? DebugErrorCategory.javascript
+            : DebugErrorCategory.userInput,
+        severity: DebugSeverity.warning,
+        stackTrace: stack,
+        componentId: _selectedTarget.id,
+        source: 'ComponentBehaviorEditor.save',
+        visibleInUi: true,
+      );
       setState(() => _saveError = error.message);
       return;
     }
@@ -2032,13 +2048,41 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             onChanged: (binding) => setState(() => _tooltipBinding = binding),
           ),
           if (_tooltipError case final error?) ...[
-            const SizedBox(height: 8),
+            Builder(
+              builder: (_) {
+                VibeDebugCapture.syncComponentDiagnostic(
+                  componentId: 'behavior-editor:${_selectedTarget.id}',
+                  sourceKey: 'behavior-editor.tooltipError',
+                  active: true,
+                  category: DebugErrorCategory.userInput,
+                  severity: DebugSeverity.warning,
+                  message: error,
+                  source: 'ComponentBehaviorEditor.tooltip',
+                  visibleInUi: true,
+                );
+                return const SizedBox(height: 8);
+              },
+            ),
             Text(
               error,
               key: const ValueKey('behavior-tooltip-error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
-          ],
+          ] else
+            Builder(
+              builder: (_) {
+                VibeDebugCapture.syncComponentDiagnostic(
+                  componentId: 'behavior-editor:${_selectedTarget.id}',
+                  sourceKey: 'behavior-editor.tooltipError',
+                  active: false,
+                  category: DebugErrorCategory.userInput,
+                  severity: DebugSeverity.warning,
+                  message: null,
+                  source: 'ComponentBehaviorEditor.tooltip',
+                );
+                return const SizedBox.shrink();
+              },
+            ),
         ],
       ),
     );
@@ -2347,7 +2391,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         maxLines: 8,
         decoration: InputDecoration(
           labelText: 'Données personnalisées (objet JSON)',
-          errorText: _customJsonError,
+          errorText: () {
+            final jsonError = _customJsonError;
+            VibeDebugCapture.syncComponentDiagnostic(
+              componentId: 'behavior-editor:${_selectedTarget.id}',
+              sourceKey: 'behavior-editor.customJsonError',
+              active: jsonError != null,
+              category: DebugErrorCategory.userInput,
+              severity: DebugSeverity.warning,
+              message: jsonError,
+              source: 'ComponentBehaviorEditor.customJson',
+              visibleInUi: true,
+            );
+            return jsonError;
+          }(),
         ),
         onChanged: (_) => setState(() {}),
       ),

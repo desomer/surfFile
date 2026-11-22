@@ -9,6 +9,10 @@ import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:material_ui/material_ui.dart' show FontStyle, FontWeight;
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../models/registry.dart';
+import '../diagnostics/debug_entry.dart';
+import '../inspection/vibe_debug_capture.dart';
+
 /// Paire de polices PDF (normale, gras, italique, gras-italique) pour un thème.
 class PdfResolvedFontFamily {
   /// Crée une famille de polices PDF résolue.
@@ -118,9 +122,22 @@ class PdfFontResolver {
     if (cached != null) return cached;
 
     final isMono = _monoAliases.contains(normalized);
+    final isKnownFamily =
+        _bundledFiles.containsKey(normalized) ||
+        isMono ||
+        Registry.defaultAvailableFontFamilies.contains(normalized);
     final bundledKey = _bundledFiles.containsKey(normalized)
         ? normalized
         : (isMono ? 'JetBrains Mono' : 'Inter');
+    if (familyName != null && familyName.trim().isNotEmpty && !isKnownFamily) {
+      VibeDebugCapture.recordTypedError(
+        message:
+            '[FONT ERROR] Police PDF indisponible « $normalized » : repli sur « $bundledKey ».',
+        category: DebugErrorCategory.font,
+        severity: DebugSeverity.warning,
+        source: 'PdfFontResolver',
+      );
+    }
     final files = _bundledFiles[bundledKey];
 
     pw.Font? regular;
@@ -128,6 +145,15 @@ class PdfFontResolver {
     if (files != null) {
       regular = await _loadAssetFont(files.regular);
       italic = await _loadAssetFont(files.italic);
+      if (regular == null) {
+        VibeDebugCapture.recordTypedError(
+          message:
+              '[FONT ERROR] Impossible de charger la police TrueType PDF « $bundledKey » (${files.regular}) : repli sur police standard.',
+          category: DebugErrorCategory.font,
+          severity: DebugSeverity.warning,
+          source: 'PdfFontResolver',
+        );
+      }
     }
 
     final standardBase = isMono ? pw.Font.courier() : pw.Font.helvetica();

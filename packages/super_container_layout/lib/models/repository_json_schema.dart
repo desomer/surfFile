@@ -3,6 +3,8 @@
 /// [JsonSchemaValidationResult], [JsonSchemaValidationException]).
 library;
 
+import 'dart:convert' show jsonEncode;
+
 import 'package:flutter/foundation.dart';
 
 /// Problème unitaire relevé lors de la validation d'un document JSON contre
@@ -15,6 +17,7 @@ class JsonSchemaValidationIssue {
     required this.schemaPath,
     required this.keyword,
     required this.message,
+    this.invalidValue,
   });
 
   /// Chemin JSON dans le document validé (ex. `''` pour la racine,
@@ -30,10 +33,49 @@ class JsonSchemaValidationIssue {
   /// Description lisible en français de la violation.
   final String message;
 
+  /// Aperçu compact de la valeur JSON ayant déclenché la violation
+  /// (ex. `""`, `"22/11/2026"`, `42`, `null`), lorsqu'une valeur précise existe.
+  final String? invalidValue;
+
+  /// Formate [value] en aperçu compact et sûr pour les messages utilisateur et IA.
+  static String formatInvalidValue(Object? value, {int maxLength = 60}) {
+    if (value == null) return 'null';
+    if (value is bool || value is num) return value.toString();
+    if (value is String) {
+      final encoded = jsonEncode(value);
+      if (encoded.length <= maxLength) return encoded;
+      final innerLimit = (maxLength - 3).clamp(4, maxLength);
+      return '${encoded.substring(0, innerLimit)}…"';
+    }
+    if (value is List) {
+      try {
+        final encoded = jsonEncode(value);
+        if (encoded.length <= maxLength) return encoded;
+      } catch (_) {
+        // Repli sur résumé de taille.
+      }
+      return '[…] (${value.length} élément${value.length > 1 ? 's' : ''})';
+    }
+    if (value is Map) {
+      try {
+        final encoded = jsonEncode(value);
+        if (encoded.length <= maxLength) return encoded;
+      } catch (_) {
+        // Repli sur résumé de taille.
+      }
+      return '{…} (${value.length} clé${value.length > 1 ? 's' : ''})';
+    }
+    final raw = value.toString();
+    return raw.length <= maxLength ? raw : '${raw.substring(0, maxLength - 1)}…';
+  }
+
   /// Libellé compact utilisable dans un message d'erreur multi-lignes.
   String formatLine() {
     final location = instancePath.isEmpty ? '<racine>' : instancePath;
-    return '$location : $message ($keyword)';
+    final valuePart = invalidValue != null && !message.contains(invalidValue!)
+        ? ' — valeur : $invalidValue'
+        : '';
+    return '$location : $message$valuePart ($keyword)';
   }
 
   /// Sérialise cette erreur au format JSON.
@@ -42,6 +84,7 @@ class JsonSchemaValidationIssue {
     'schemaPath': schemaPath,
     'keyword': keyword,
     'message': message,
+    if (invalidValue != null) 'value': invalidValue,
   };
 
   /// Désérialise une erreur depuis son JSON.
@@ -55,10 +98,12 @@ class JsonSchemaValidationIssue {
     final schemaPath = json['schemaPath'];
     final keyword = json['keyword'];
     final message = json['message'];
+    final rawValue = json['value'] ?? json['invalidValue'];
     if (instancePath is! String ||
         schemaPath is! String ||
         keyword is! String ||
-        message is! String) {
+        message is! String ||
+        (rawValue != null && rawValue is! String)) {
       throw const FormatException(
         'Champs invalides dans JsonSchemaValidationIssue.',
       );
@@ -68,6 +113,7 @@ class JsonSchemaValidationIssue {
       schemaPath: schemaPath,
       keyword: keyword,
       message: message,
+      invalidValue: rawValue as String?,
     );
   }
 
@@ -77,11 +123,12 @@ class JsonSchemaValidationIssue {
       instancePath == other.instancePath &&
       schemaPath == other.schemaPath &&
       keyword == other.keyword &&
-      message == other.message;
+      message == other.message &&
+      invalidValue == other.invalidValue;
 
   @override
   int get hashCode =>
-      Object.hash(instancePath, schemaPath, keyword, message);
+      Object.hash(instancePath, schemaPath, keyword, message, invalidValue);
 
   @override
   String toString() => formatLine();

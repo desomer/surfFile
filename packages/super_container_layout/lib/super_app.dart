@@ -29,6 +29,7 @@ import 'models/responsive_layout_config.dart';
 import 'services/appearance/appearance_store.dart';
 import 'services/appearance/custom_design_system_store.dart';
 import 'services/appearance/paged_file_appearance_store.dart';
+import 'services/diagnostics/debug_entry.dart';
 import 'services/events/super_event_bus.dart';
 import 'services/inspection/vibe_debug_capture.dart';
 import 'services/inspection/vibe_mounted_slot_index.dart';
@@ -210,7 +211,24 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void _repositoryFailed() {
     final error = _repositories.errors.value;
     if (error == null || !mounted) return;
-    VibeDebugCapture.recordErrorDeduplicated('[REPOSITORY ERROR] $error');
+    final report = _repositories.errorReports.value;
+    final matchesReport = report != null && report.message == error;
+    final category = matchesReport
+        ? report.category
+        : DebugErrorCategory.binding;
+    final severity = matchesReport
+        ? report.severity
+        : category.defaultSeverity;
+    VibeDebugCapture.recordTypedError(
+      message: matchesReport ? error : '[REPOSITORY ERROR] $error',
+      category: category,
+      severity: severity,
+      stackTrace: matchesReport ? report.stackTrace : null,
+      componentId: matchesReport ? report.componentId : null,
+      source: matchesReport ? report.source : 'JsonRepositoryStore',
+      visibleInUi: true,
+      dedupCoreText: error,
+    );
     final now = DateTime.now();
     final lastAt = _lastRepositorySnackAt;
     if (_lastRepositorySnackError == error &&
@@ -221,15 +239,39 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     _lastRepositorySnackError = error;
     _lastRepositorySnackAt = now;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messengerCtx = _messenger.currentContext;
+      final scheme = messengerCtx != null && messengerCtx.mounted
+          ? Theme.of(messengerCtx).colorScheme
+          : null;
+      final bg = scheme?.errorContainer ?? const Color(0xFFB71C1C);
+      final fg = scheme?.onErrorContainer ?? Colors.white;
       _showSnackBarIfPossible(
         SnackBar(
-          content: Text(
-            error,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+          backgroundColor: bg,
+          content: Row(
+            children: [
+              Icon(
+                severity == DebugSeverity.critical
+                    ? Icons.dangerous_outlined
+                    : Icons.error_outline,
+                size: 18,
+                color: fg,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '[${category.label}] $error',
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: fg),
+                ),
+              ),
+            ],
           ),
           action: SnackBarAction(
             label: 'Fermer',
+            textColor: fg,
             onPressed: () => _messenger.currentState?.hideCurrentSnackBar(),
           ),
         ),

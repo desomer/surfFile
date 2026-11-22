@@ -646,6 +646,7 @@ abstract final class JsonSchemaValidator {
             schemaPath: schemaPath,
             keyword: 'false',
             message: 'Valeur interdite par le schéma.',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -691,6 +692,7 @@ abstract final class JsonSchemaValidator {
             keyword: 'type',
             message:
                 'Type attendu : ${allowedTypes.join(' | ')}, reçu : ${_describeType(value)}.',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -706,6 +708,7 @@ abstract final class JsonSchemaValidator {
             schemaPath: '$schemaPath/const',
             keyword: 'const',
             message: 'Valeur attendue : ${jsonEncode(expected)}.',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -722,6 +725,7 @@ abstract final class JsonSchemaValidator {
             keyword: 'enum',
             message:
                 'Valeur non autorisée (${jsonEncode(value)}) ; valeurs acceptées : ${allowed.map(jsonEncode).join(', ')}.',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -740,6 +744,7 @@ abstract final class JsonSchemaValidator {
               keyword: 'minLength',
               message:
                   'Longueur minimale requise : $minLength caractère(s) (actuel : $runeCount).',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -754,6 +759,7 @@ abstract final class JsonSchemaValidator {
               keyword: 'maxLength',
               message:
                   'Longueur maximale autorisée : $maxLength caractère(s) (actuel : $runeCount).',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -767,6 +773,7 @@ abstract final class JsonSchemaValidator {
               schemaPath: '$schemaPath/pattern',
               keyword: 'pattern',
               message: 'Ne correspond pas au motif « $pattern ».',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -781,6 +788,7 @@ abstract final class JsonSchemaValidator {
               schemaPath: '$schemaPath/format',
               keyword: 'format',
               message: formatError,
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -801,6 +809,7 @@ abstract final class JsonSchemaValidator {
               message: exclusive
                   ? 'Doit être strictement supérieur à $min.'
                   : 'Doit être supérieur ou égal à $min.',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -814,6 +823,7 @@ abstract final class JsonSchemaValidator {
               schemaPath: '$schemaPath/exclusiveMinimum',
               keyword: 'exclusiveMinimum',
               message: 'Doit être strictement supérieur à $exMin.',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -830,6 +840,7 @@ abstract final class JsonSchemaValidator {
               message: exclusive
                   ? 'Doit être strictement inférieur à $max.'
                   : 'Doit être inférieur ou égal à $max.',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -843,6 +854,7 @@ abstract final class JsonSchemaValidator {
               schemaPath: '$schemaPath/exclusiveMaximum',
               keyword: 'exclusiveMaximum',
               message: 'Doit être strictement inférieur à $exMax.',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -856,6 +868,7 @@ abstract final class JsonSchemaValidator {
               schemaPath: '$schemaPath/multipleOf',
               keyword: 'multipleOf',
               message: 'Doit être un multiple de $divisor.',
+              invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
             ),
           );
         }
@@ -905,6 +918,9 @@ abstract final class JsonSchemaValidator {
                   keyword: 'uniqueItems',
                   message:
                       'Les éléments du tableau doivent être uniques (doublon avec l’indice $i).',
+                  invalidValue: JsonSchemaValidationIssue.formatInvalidValue(
+                    value[j],
+                  ),
                 ),
               );
               break;
@@ -1186,6 +1202,9 @@ abstract final class JsonSchemaValidator {
                 schemaPath: '$schemaPath/additionalProperties',
                 keyword: 'additionalProperties',
                 message: 'Propriété supplémentaire « $key » non autorisée.',
+                invalidValue: JsonSchemaValidationIssue.formatInvalidValue(
+                  entry.value,
+                ),
               ),
             );
           } else if (additionalSchema != true) {
@@ -1246,6 +1265,7 @@ abstract final class JsonSchemaValidator {
             keyword: 'anyOf',
             message:
                 'La valeur ne correspond à aucune des branches de "anyOf".',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -1276,6 +1296,7 @@ abstract final class JsonSchemaValidator {
             message: matches == 0
                 ? 'La valeur ne correspond à aucune branche de "oneOf".'
                 : 'La valeur correspond à $matches branches de "oneOf" (exactement 1 attendue).',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }
@@ -1299,6 +1320,7 @@ abstract final class JsonSchemaValidator {
             schemaPath: '$schemaPath/not',
             keyword: 'not',
             message: 'La valeur ne doit pas satisfaire le schéma "not".',
+            invalidValue: JsonSchemaValidationIssue.formatInvalidValue(value),
           ),
         );
       }

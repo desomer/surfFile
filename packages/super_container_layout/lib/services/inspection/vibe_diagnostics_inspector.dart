@@ -182,6 +182,21 @@ class VibeDiagnosticsInspector {
       'log' || 'logs' => DebugEntryType.log,
       _ => null,
     };
+    final rawMinSeverity = args['minSeverity'] ?? args['severity'];
+    final DebugSeverity? minSeverity = rawMinSeverity is String
+        ? DebugSeverity.tryParse(rawMinSeverity)
+        : null;
+    final rawCategory = args['category'] is String
+        ? (args['category'] as String).trim().toLowerCase()
+        : '';
+    final DebugErrorCategory? categoryFilter =
+        (rawCategory.isEmpty || rawCategory == 'all')
+        ? null
+        : DebugErrorCategory.tryParse(rawCategory);
+    final componentFilter = args['componentId'] is String
+        ? (args['componentId'] as String).trim()
+        : '';
+    final visibleInUiOnly = args['visibleInUiOnly'] == true;
     final query = args['query'] is String
         ? (args['query'] as String).trim().toLowerCase()
         : '';
@@ -198,29 +213,58 @@ class VibeDiagnosticsInspector {
         ? VibeDebugCapture.entriesSince(
             marker,
             type: typeFilter,
+            minSeverity: minSeverity,
+            categories: categoryFilter == null
+                ? null
+                : <DebugErrorCategory>{categoryFilter},
             excludeVibeInternal: !includeVibeInternal,
           )
         : [
             for (final entry in debugEntries)
               if ((typeFilter == null || entry.type == typeFilter) &&
+                  (minSeverity == null ||
+                      entry.severity.rank >= minSeverity.rank) &&
+                  (categoryFilter == null ||
+                      entry.category == categoryFilter) &&
                   (includeVibeInternal ||
                       !VibeDebugCapture.isVibeInternalMessage(entry.message)))
                 entry,
           ];
 
-    final filtered = query.isEmpty
-        ? baseEntries
-        : [
-            for (final entry in baseEntries)
-              if (entry.message.toLowerCase().contains(query) ||
-                  (entry.stackTrace?.toLowerCase().contains(query) ?? false))
-                entry,
-          ];
+    final filtered = [
+      for (final entry in baseEntries)
+        if ((componentFilter.isEmpty || entry.componentId == componentFilter) &&
+            (!visibleInUiOnly || entry.visibleInUi) &&
+            (query.isEmpty ||
+                entry.message.toLowerCase().contains(query) ||
+                (entry.componentId?.toLowerCase().contains(query) ?? false) ||
+                (entry.source?.toLowerCase().contains(query) ?? false) ||
+                (entry.stackTrace?.toLowerCase().contains(query) ?? false)))
+          entry,
+    ];
 
     final recentFirst = filtered.reversed.take(limit).toList();
-    final totalErrors = debugEntries
-        .where((e) => e.type == DebugEntryType.error)
-        .length;
+    final countsBySeverity = <String, int>{
+      for (final sev in DebugSeverity.values) sev.name: 0,
+    };
+    final countsByCategory = <String, int>{
+      for (final cat in DebugErrorCategory.values) cat.name: 0,
+    };
+    var totalErrors = 0;
+    var uiVisibleErrorCount = 0;
+    for (final entry in debugEntries) {
+      if (entry.type != DebugEntryType.error) continue;
+      if (!includeVibeInternal &&
+          VibeDebugCapture.isVibeInternalMessage(entry.message)) {
+        continue;
+      }
+      totalErrors++;
+      countsBySeverity[entry.severity.name] =
+          (countsBySeverity[entry.severity.name] ?? 0) + 1;
+      countsByCategory[entry.category.name] =
+          (countsByCategory[entry.category.name] ?? 0) + 1;
+      if (entry.visibleInUi) uiVisibleErrorCount++;
+    }
     final turnErrors = marker == null
         ? 0
         : VibeDebugCapture.entriesSince(
@@ -231,7 +275,10 @@ class VibeDiagnosticsInspector {
     return <String, Object?>{
       'totalEntries': debugEntries.length,
       'totalErrors': totalErrors,
+      'uiVisibleErrorCount': uiVisibleErrorCount,
       'turnErrorCount': turnErrors,
+      'countsBySeverity': countsBySeverity,
+      'countsByCategory': countsByCategory,
       'matchedCount': filtered.length,
       'returnedCount': recentFirst.length,
       'entries': [
@@ -239,6 +286,13 @@ class VibeDiagnosticsInspector {
           <String, Object?>{
             'timestamp': entry.timestamp.toIso8601String(),
             'type': entry.type.name,
+            'severity': entry.severity.name,
+            'severityLabel': entry.severity.label,
+            'category': entry.category.name,
+            'categoryLabel': entry.category.label,
+            if (entry.componentId != null) 'componentId': entry.componentId,
+            if (entry.source != null) 'source': entry.source,
+            'visibleInUi': entry.visibleInUi,
             'message': entry.message.length > 600
                 ? '${entry.message.substring(0, 600)}…'
                 : entry.message,

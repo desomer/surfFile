@@ -1,8 +1,9 @@
 /// Capture dédupliquée des erreurs d'exécution dans [debugEntries] et suivi par tour IA ([VibeDebugCapture]).
 ///
-/// Permet à [SuperApp] d'alimenter [debugEntries] pour les erreurs Flutter
-/// (`RenderFlex overflowed`, violations de contraintes, images) et les erreurs
-/// de [JsonRepositoryStore] sans créer de doublon lorsque l'application hôte
+/// Permet à [SuperApp], aux composants UI et aux moteurs internes (liaisons JSON,
+/// JavaScript, polices, saisies utilisateur) d'alimenter [debugEntries] avec une
+/// catégorie ([DebugErrorCategory]) et une sévérité ([DebugSeverity]) sans créer
+/// de doublon lors des reconstructions Flutter ni lorsque l'application hôte
 /// (comme `super_designer`) branche déjà `FlutterError.onError` sur [saveError].
 library;
 
@@ -20,11 +21,15 @@ class VibeDebugMarker {
   final DateTime _capturedAt;
 }
 
-/// Service de capture sans doublon et de filtrage de [debugEntries] pour Vibe IA.
+/// Service de capture typée, dédupliquée et filtrée de [debugEntries] pour Vibe IA et l'IHM.
 abstract final class VibeDebugCapture {
   static final Expando<bool> _seenDetails = Expando<bool>(
     'VibeDebugCapture.seenFlutterErrorDetails',
   );
+
+  static final Map<(String, String), String> _activeComponentDiagnostics =
+      <(String, String), String>{};
+  static bool _clearListenerRegistered = false;
 
   static int _activeRegistrations = 0;
   static FlutterExceptionHandler? _previousOnError;
@@ -34,10 +39,17 @@ abstract final class VibeDebugCapture {
       .toString()
       .contains('TestWidgetsFlutterBinding');
 
+  static void _ensureClearListenerRegistered() {
+    if (_clearListenerRegistered) return;
+    _clearListenerRegistered = true;
+    registerDebugEntriesClearListener(resetActiveDiagnostics);
+  }
+
   /// Installe l'écouteur chaîné sur [FlutterError.onError] hors environnement `flutter_test`.
   ///
   /// Compté par référence afin de supporter plusieurs montages successifs de `SuperApp`.
   static void attachAppListener() {
+    _ensureClearListenerRegistered();
     if (_isWidgetTestBinding) return;
     _activeRegistrations++;
     if (_activeRegistrations > 1 || _installedHandler != null) return;
@@ -79,7 +91,23 @@ abstract final class VibeDebugCapture {
     final message = (contextDesc != null && contextDesc.isNotEmpty)
         ? '[FLUTTER ERROR] $raw (context: $contextDesc)'
         : '[FLUTTER ERROR] $raw';
-    recordErrorDeduplicated(message, details.stack, raw);
+    final lower = raw.toLowerCase();
+    final isFontError =
+        lower.contains('unable to load font') ||
+        lower.contains('fontloader') ||
+        lower.contains('.ttf') ||
+        lower.contains('.otf');
+    recordTypedError(
+      message: message,
+      category: isFontError
+          ? DebugErrorCategory.font
+          : DebugErrorCategory.rendering,
+      severity: isFontError ? DebugSeverity.warning : DebugSeverity.critical,
+      stackTrace: details.stack,
+      source: 'FlutterError',
+      visibleInUi: false,
+      dedupCoreText: raw,
+    );
   }
 
   /// Enregistre un message d'erreur dans [debugEntries] en ignorant les doublons immédiats.
@@ -87,15 +115,52 @@ abstract final class VibeDebugCapture {
     String message, [
     Object? stackTrace,
     String? dedupCoreText,
+    DebugErrorCategory? category,
+    DebugSeverity? severity,
+    String? componentId,
+    String? source,
+    bool visibleInUi = false,
   ]) {
     final trimmed = message.trim();
     if (trimmed.isEmpty) return;
+    final inferred = (category == null || severity == null)
+        ? inferDebugErrorClassification(trimmed)
+        : null;
+    recordTypedError(
+      message: trimmed,
+      category: category ?? inferred!.category,
+      severity:
+          severity ??
+          (category != null ? category.defaultSeverity : inferred!.severity),
+      stackTrace: stackTrace,
+      componentId: componentId,
+      source: source,
+      visibleInUi: visibleInUi,
+      dedupCoreText: dedupCoreText,
+    );
+  }
+
+  /// Enregistre un diagnostic typé dans [debugEntries] en dédupliquant les doublons immédiats.
+  static void recordTypedError({
+    required String message,
+    required DebugErrorCategory category,
+    DebugSeverity? severity,
+    Object? stackTrace,
+    String? componentId,
+    String? source,
+    bool visibleInUi = false,
+    String? dedupCoreText,
+  }) {
+    _ensureClearListenerRegistered();
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) return;
+    final resolvedSeverity = severity ?? category.defaultSeverity;
     final core = (dedupCoreText ?? trimmed).trim();
     final now = DateTime.now();
 
     for (
       var i = debugEntries.length - 1;
-      i >= 0 && i >= debugEntries.length - 6;
+      i >= 0 && i >= debugEntries.length - 8;
       i--
     ) {
       final recent = debugEntries[i];
@@ -103,14 +168,93 @@ abstract final class VibeDebugCapture {
       if (now.difference(recent.timestamp).inMilliseconds.abs() > 250) {
         break;
       }
-      if (recent.message == trimmed ||
-          (core.isNotEmpty && recent.message.contains(core)) ||
-          trimmed.contains(recent.message)) {
+      final sameTarget =
+          recent.componentId == componentId ||
+          recent.componentId == null ||
+          componentId == null;
+      if (sameTarget &&
+          (recent.message == trimmed ||
+              (core.isNotEmpty && recent.message.contains(core)) ||
+              trimmed.contains(recent.message))) {
         return;
       }
     }
 
-    saveError(trimmed, stackTrace);
+    saveError(
+      trimmed,
+      stackTrace,
+      severity: resolvedSeverity,
+      category: category,
+      componentId: componentId,
+      source: source,
+      visibleInUi: visibleInUi,
+    );
+  }
+
+  /// Synchronise un diagnostic actif lié à un composant UI sans créer de doublon
+  /// lors des reconstructions Flutter successives.
+  ///
+  /// Lorsque [active] passe à `false` (ou que [message] est vide), la clé
+  /// `(componentId, sourceKey)` est libérée afin qu'une réapparition ultérieure
+  /// soit de nouveau journalisée.
+  static void syncComponentDiagnostic({
+    required String componentId,
+    required String sourceKey,
+    required bool active,
+    required DebugErrorCategory category,
+    required String? message,
+    DebugSeverity? severity,
+    String? source,
+    bool visibleInUi = true,
+  }) {
+    _ensureClearListenerRegistered();
+    final key = (componentId, sourceKey);
+    final trimmed = message?.trim() ?? '';
+    if (!active || trimmed.isEmpty) {
+      _activeComponentDiagnostics.remove(key);
+      return;
+    }
+    final previous = _activeComponentDiagnostics[key];
+    if (previous == trimmed) return;
+    _activeComponentDiagnostics[key] = trimmed;
+    recordTypedError(
+      message: trimmed,
+      category: category,
+      severity: severity ?? category.defaultSeverity,
+      componentId: componentId,
+      source: source ?? sourceKey,
+      visibleInUi: visibleInUi,
+    );
+  }
+
+  /// Libère tous les diagnostics actifs suivis pour [componentId] (ex. dans `dispose()`).
+  static void clearComponentDiagnostics(String componentId) {
+    _activeComponentDiagnostics.removeWhere((key, _) => key.$1 == componentId);
+  }
+
+  /// Réinitialise le registre interne des diagnostics actifs par composant.
+  static void resetActiveDiagnostics() {
+    _activeComponentDiagnostics.clear();
+  }
+
+  /// Indique si [entry] doit déclencher automatiquement la passe d'auto-vérification Vibe IA.
+  ///
+  /// Retourne `true` pour les erreurs de sévérité `critical`, `error` ou `warning`
+  /// (dont les problèmes de rendu de police), tout en excluant `userInput`.
+  static bool shouldTriggerAutoVerify(DebugEntry entry) =>
+      entry.type == DebugEntryType.error &&
+      entry.severity.rank >= DebugSeverity.warning.rank &&
+      entry.category.triggersAiAutoFix;
+
+  /// Formate une entrée de diagnostic de façon compacte et structurée pour les prompts IA.
+  static String formatEntryForAi(DebugEntry entry) {
+    final severityTag = entry.severity.name.toUpperCase();
+    final categoryTag = entry.category.name;
+    final compTag = entry.componentId != null && entry.componentId!.isNotEmpty
+        ? '[comp:${entry.componentId}]'
+        : '';
+    final uiTag = entry.visibleInUi ? '[IHM]' : '';
+    return '[$severityTag][$categoryTag]$compTag$uiTag ${entry.message}';
   }
 
   /// Capture un repère instantané sur la fin actuelle de [debugEntries].
@@ -125,6 +269,9 @@ abstract final class VibeDebugCapture {
   static List<DebugEntry> entriesSince(
     VibeDebugMarker marker, {
     DebugEntryType? type,
+    DebugSeverity? minSeverity,
+    Set<DebugErrorCategory>? categories,
+    bool forAutoVerify = false,
     bool excludeVibeInternal = true,
   }) {
     if (debugEntries.isEmpty) return const <DebugEntry>[];
@@ -154,6 +301,17 @@ abstract final class VibeDebugCapture {
     for (var i = startIndex; i < debugEntries.length; i++) {
       final entry = debugEntries[i];
       if (type != null && entry.type != type) continue;
+      if (minSeverity != null && entry.severity.rank < minSeverity.rank) {
+        continue;
+      }
+      if (categories != null &&
+          categories.isNotEmpty &&
+          !categories.contains(entry.category)) {
+        continue;
+      }
+      if (forAutoVerify && !shouldTriggerAutoVerify(entry)) {
+        continue;
+      }
       if (excludeVibeInternal && isVibeInternalMessage(entry.message)) {
         continue;
       }

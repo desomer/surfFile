@@ -19,6 +19,8 @@ import '../../models/super_choice_config.dart';
 import '../../models/super_text_field_config.dart';
 import '../../models/super_value_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -919,6 +921,7 @@ class _SuperValueState extends State<SuperValue>
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _observedController?.removeListener(_handleControllerTextChanged);
     _observedController = null;
     _schemaStore?.removeListener(_handleSchemaStoreChanged);
@@ -1377,6 +1380,16 @@ class _SuperValueState extends State<SuperValue>
                           obscureText: config.obscureText,
                         )
                       : null;
+                  VibeDebugCapture.syncComponentDiagnostic(
+                    componentId: widget.id,
+                    sourceKey: 'super-value.validationError',
+                    active: validationError != null,
+                    category: DebugErrorCategory.userInput,
+                    severity: DebugSeverity.warning,
+                    message: validationError,
+                    source: 'SuperTextField.validation',
+                    visibleInUi: true,
+                  );
                   content = config.mode == SuperValueMode.input
                       ? Listener(
                           onPointerDown: (event) {
@@ -1498,11 +1511,43 @@ class _SuperValueState extends State<SuperValue>
                     !config.kind.isBoolean &&
                     (config.mode == SuperValueMode.input ||
                         config.label.isNotEmpty);
+                final activeBindingError = _bindingError ?? _binding?.error;
+                syncComponentPropertyDiagnostics(
+                  componentPrefix: 'super-value',
+                  componentId: widget.id,
+                  stateError: stateError,
+                  propertyBindingErrors: propertyBindingErrors,
+                  missingFontFamily: missingFont ? config.fontFamily : null,
+                  showMissingFontError: missingFont && editing,
+                );
+                VibeDebugCapture.syncComponentDiagnostic(
+                  componentId: widget.id,
+                  sourceKey: 'super-value.bindingError',
+                  active: activeBindingError != null,
+                  category: DebugErrorCategory.binding,
+                  severity: DebugSeverity.error,
+                  message: activeBindingError,
+                  source: 'SuperValue.binding',
+                  visibleInUi: true,
+                );
+                if (config.kind.isBoolean ||
+                    config.kind.isChoice ||
+                    config.mode != SuperValueMode.input) {
+                  VibeDebugCapture.syncComponentDiagnostic(
+                    componentId: widget.id,
+                    sourceKey: 'super-value.validationError',
+                    active: false,
+                    category: DebugErrorCategory.userInput,
+                    severity: DebugSeverity.warning,
+                    message: null,
+                    source: 'SuperTextField.validation',
+                  );
+                }
                 final showBindingError =
                     !config.kind.isChoice &&
                     (config.mode == SuperValueMode.display ||
                         config.kind.isBoolean) &&
-                    (_bindingError != null || _binding?.error != null);
+                    activeBindingError != null;
                 return LayoutBuilder(
                   builder: (context, constraints) => SizedBox(
                     width: !constraints.hasBoundedWidth

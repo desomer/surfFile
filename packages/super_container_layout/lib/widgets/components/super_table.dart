@@ -39,6 +39,8 @@ import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_table_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -181,6 +183,7 @@ class _SuperTableState extends State<SuperTable> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _generation++;
     _store?.removeListener(_reload);
     _listen(const []);
@@ -1215,6 +1218,22 @@ class _SuperTableState extends State<SuperTable> {
                     ),
                   );
 
+                  final isTableRedError =
+                      message != null &&
+                      (_error != null || config.binding == null);
+                  VibeDebugCapture.syncComponentDiagnostic(
+                    componentId: widget.id,
+                    sourceKey: 'super-table.error',
+                    active: isTableRedError,
+                    category: DebugErrorCategory.binding,
+                    severity: _error != null
+                        ? DebugSeverity.error
+                        : DebugSeverity.warning,
+                    message: isTableRedError ? message : null,
+                    source: 'SuperTable.binding',
+                    visibleInUi: true,
+                  );
+
                   return Column(
                     mainAxisSize: hasBoundedHeight
                         ? MainAxisSize.max
@@ -1227,7 +1246,7 @@ class _SuperTableState extends State<SuperTable> {
                           child: Text(
                             message,
                             key: ValueKey('super-table-message-${widget.id}'),
-                            style: _error != null || config.binding == null
+                            style: isTableRedError
                                 ? TextStyle(
                                     color: Theme.of(context).colorScheme.error,
                                   )

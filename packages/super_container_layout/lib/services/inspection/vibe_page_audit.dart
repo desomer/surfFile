@@ -494,11 +494,12 @@ abstract final class VibePageAuditService {
       );
     }
 
-    // 3. Erreurs d'exécution Flutter récentes (RenderFlex overflowed, etc.).
+    // 3. Erreurs d'exécution typées récentes (RenderFlex, binding, JS, polices, erreurs rouges IHM).
     final debugDiag = await inspector.getDebugEntries(<String, Object?>{
-      'onlyErrors': true,
+      'type': 'error',
+      'minSeverity': 'warning',
       'sinceTurnStart': false,
-      'limit': 15,
+      'limit': 20,
     });
     final entries = debugDiag['entries'];
     if (entries is List) {
@@ -506,20 +507,47 @@ abstract final class VibePageAuditService {
         if (raw is! Map) continue;
         final msg = raw['message'] as String? ?? '';
         if (msg.trim().isEmpty) continue;
+        final rawCat = (raw['category'] as String? ?? '').trim();
+        // Les erreurs de saisie utilisateur ne sont pas des défauts structurels de la page.
+        if (rawCat == 'userInput') continue;
+        final rawSev = (raw['severity'] as String? ?? 'error').trim();
+        final cid = raw['componentId'] as String?;
         final firstLine = msg.trim().split('\n').first.trim();
         final isLayoutOverflow =
             firstLine.contains('overflowed') ||
             firstLine.contains('RenderFlex') ||
             firstLine.contains('RenderBox');
-        addFinding(
-          VibeAuditFinding(
-            category: isLayoutOverflow
+        final VibeAuditCategory auditCategory = switch (rawCat) {
+          'binding' => VibeAuditCategory.bindingAndSchema,
+          'font' => VibeAuditCategory.contrastAndStyle,
+          'rendering' when isLayoutOverflow =>
+            VibeAuditCategory.layoutAndClipping,
+          _ =>
+            isLayoutOverflow
                 ? VibeAuditCategory.layoutAndClipping
                 : VibeAuditCategory.runtimeError,
-            severity: VibeAuditSeverity.error,
-            kind: isLayoutOverflow
+        };
+        final VibeAuditSeverity auditSeverity = switch (rawSev) {
+          'warning' => VibeAuditSeverity.warning,
+          'info' => VibeAuditSeverity.info,
+          _ => VibeAuditSeverity.error,
+        };
+        final String auditKind = switch (rawCat) {
+          'javascript' => 'javascript_runtime_error',
+          'font' => 'missing_or_invalid_font',
+          'binding' => 'ui_binding_runtime_error',
+          _ =>
+            isLayoutOverflow
                 ? 'render_overflow_debug_error'
                 : 'runtime_debug_error',
+        };
+        addFinding(
+          VibeAuditFinding(
+            category: auditCategory,
+            severity: auditSeverity,
+            kind: auditKind,
+            componentId: cid,
+            location: cid != null ? 'components[$cid]' : null,
             message: firstLine.length > 180
                 ? '${firstLine.substring(0, 177)}…'
                 : firstLine,

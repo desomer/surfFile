@@ -16,6 +16,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../../ai/design_md_parser.dart';
 import '../../../ai/design_system_catalog.dart';
 import '../../../ai/vibe_chat_attachment.dart';
+import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
 import '../dialogs/editor_dialog.dart';
 import 'design_system_preview_card.dart';
 
@@ -1248,9 +1250,24 @@ class _PasteDesignMdDialogState extends State<_PasteDesignMdDialog> {
       }
       Navigator.of(context).pop(parsed);
     } on FormatException catch (error) {
+      VibeDebugCapture.recordTypedError(
+        message: error.message,
+        category: DebugErrorCategory.userInput,
+        severity: DebugSeverity.warning,
+        source: 'DesignSystemPasteDialog',
+        visibleInUi: true,
+      );
       setState(() => _validationError = error.message);
     } catch (error) {
-      setState(() => _validationError = 'Contenu DESIGN.md invalide : $error');
+      final msg = 'Contenu DESIGN.md invalide : $error';
+      VibeDebugCapture.recordTypedError(
+        message: msg,
+        category: DebugErrorCategory.userInput,
+        severity: DebugSeverity.warning,
+        source: 'DesignSystemPasteDialog',
+        visibleInUi: true,
+      );
+      setState(() => _validationError = msg);
     }
   }
 

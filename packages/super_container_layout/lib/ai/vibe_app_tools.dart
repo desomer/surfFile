@@ -617,8 +617,9 @@ class VibeAppToolRegistry {
         VibeToolDeclaration(
           name: 'get_debug_entries',
           description:
-              'Lit les journaux et erreurs Flutter/Dart capturés à l’exécution dans debugEntries '
-              '(RenderFlex overflowed, erreurs de contraintes Box/Sliver, erreurs de repositories).',
+              'Lit les journaux et erreurs typés capturés à l’exécution dans debugEntries '
+              '(catégories : binding, javascript, font, userInput, rendering, system ; '
+              'sévérités : critical, error, warning, info), y compris les erreurs affichées en rouge dans l’IHM.',
           parametersSchema: <String, Object?>{
             'type': 'object',
             'properties': <String, Object?>{
@@ -626,12 +627,42 @@ class VibeAppToolRegistry {
                 'type': 'string',
                 'enum': <String>['error', 'log', 'all'],
                 'description':
-                    'Filtre par catégorie ("error" par défaut, "log" ou "all").',
+                    'Filtre par nature ("error" par défaut, "log" ou "all").',
+              },
+              'minSeverity': <String, Object?>{
+                'type': 'string',
+                'enum': <String>['info', 'warning', 'error', 'critical'],
+                'description':
+                    'Niveau minimal d’importance à retourner (critical > error > warning > info).',
+              },
+              'category': <String, Object?>{
+                'type': 'string',
+                'enum': <String>[
+                  'all',
+                  'binding',
+                  'javascript',
+                  'font',
+                  'userInput',
+                  'rendering',
+                  'system',
+                ],
+                'description':
+                    'Filtre par catégorie fonctionnelle : binding, javascript, font, userInput, rendering, system ou all.',
+              },
+              'componentId': <String, Object?>{
+                'type': 'string',
+                'description':
+                    'Filtre exact sur l’identifiant du composant UI concerné.',
+              },
+              'visibleInUiOnly': <String, Object?>{
+                'type': 'boolean',
+                'description':
+                    'Ne retourne que les erreurs affichées en rouge dans l’IHM (false par défaut).',
               },
               'query': <String, Object?>{
                 'type': 'string',
                 'description':
-                    'Sous-chaîne optionnelle à rechercher (ex: overflowed, RenderFlex, ID de composant).',
+                    'Sous-chaîne optionnelle à rechercher (ex: overflowed, RenderFlex, ID de composant, police).',
               },
               'sinceTurnStart': <String, Object?>{
                 'type': 'boolean',
@@ -1018,7 +1049,7 @@ class VibeAppToolRegistry {
       '- APPELLE OBLIGATOIREMENT un ou plusieurs outils (via Function Calling natif ou '
       '{"message":"inspection en cours","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"vibe":null}) '
       'lorsque : (1) l’utilisateur demande les dimensions/positions/contraintes réelles à l’écran (`get_component_geometry`), '
-      '(2) l’utilisateur signale un débordement, une erreur Flutter/RenderFlex, un texte coupé ou un composant vide/invisible '
+      '(2) l’utilisateur signale un débordement, une erreur Flutter/RenderFlex, une erreur rouge dans l’IHM (binding, JavaScript, police indisponible, saisie), un texte coupé ou un composant vide/invisible '
       '(`get_debug_entries`, `inspect_bindings_and_diagnostics`, `get_component_geometry`), '
       '(3) tu dois câbler ou diagnostiquer une API / recherche / CRUD (`get_datasources_and_providers`), '
       '(4) tu dois vérifier des couleurs/contrastes (`get_theme_and_contrast`), connaître les extensions/polices ou la sélection (`get_registry_and_selection`), '

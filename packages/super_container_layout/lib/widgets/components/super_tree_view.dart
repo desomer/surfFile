@@ -34,6 +34,8 @@ import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_tree_view_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/diagnostics/debug_entry.dart';
+import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
@@ -244,6 +246,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _generation++;
     _store?.removeListener(_reload);
     _listen(const []);
@@ -896,6 +899,20 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                             ? config.emptyText
                             : null);
 
+              final isTreeRedError =
+                  message != null && (_error != null || config.binding == null);
+              VibeDebugCapture.syncComponentDiagnostic(
+                componentId: widget.id,
+                sourceKey: 'super-tree.error',
+                active: isTreeRedError,
+                category: DebugErrorCategory.binding,
+                severity: _error != null
+                    ? DebugSeverity.error
+                    : DebugSeverity.warning,
+                message: isTreeRedError ? message : null,
+                source: 'SuperTreeView.binding',
+                visibleInUi: true,
+              );
               final treeNodes = _ensureTreeNodes(
                 config,
                 templateMode: templateMode,

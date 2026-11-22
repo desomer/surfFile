@@ -11,6 +11,8 @@ import 'package:flutter/services.dart';
 import 'package:highlight/languages/json.dart' as highlight;
 import 'package:material_ui/material_ui.dart';
 
+import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../components/internal_widget/code_editor.dart';
@@ -317,6 +319,9 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(
+      'repo-editor:${widget.repositoryId}',
+    );
     _finishConfirmation(false);
     widget.store.removeListener(_repositoryChanged);
     _editorError.dispose();
@@ -569,6 +574,18 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
 
   @override
   Widget build(BuildContext context) {
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: 'repo-editor:${widget.repositoryId}',
+      sourceKey: 'floating_repo_editor.error',
+      active: _error != null,
+      category: _conflict
+          ? DebugErrorCategory.binding
+          : DebugErrorCategory.userInput,
+      severity: _conflict ? DebugSeverity.error : DebugSeverity.warning,
+      message: _error,
+      source: 'FloatingRepositoryEditor',
+      visibleInUi: true,
+    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = _size.width

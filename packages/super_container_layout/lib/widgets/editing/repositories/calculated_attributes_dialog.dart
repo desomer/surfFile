@@ -10,6 +10,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/calculated_attribute_definition.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/repositories/calculated_attribute.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -389,11 +391,28 @@ class _CalculatedAttributesDialogState
         _selectedDartIndex = null;
         _notice = 'Attribut calculé « ${draft.path} » enregistré.';
       });
-    } on FormatException catch (error) {
+    } on FormatException catch (error, stack) {
+      VibeDebugCapture.recordTypedError(
+        message: '[JS ERROR] ${error.message}',
+        category: DebugErrorCategory.javascript,
+        severity: DebugSeverity.error,
+        stackTrace: stack,
+        source: 'CalculatedAttributesDialog(${widget.repositoryId})',
+        visibleInUi: true,
+      );
       if (mounted) setState(() => _error = error.message);
-    } on FileSystemException catch (error) {
+    } on FileSystemException catch (error, stack) {
+      final msg = 'Erreur de fichier : ${error.message}';
+      VibeDebugCapture.recordTypedError(
+        message: msg,
+        category: DebugErrorCategory.binding,
+        severity: DebugSeverity.error,
+        stackTrace: stack,
+        source: 'CalculatedAttributesDialog(${widget.repositoryId})',
+        visibleInUi: true,
+      );
       if (mounted) {
-        setState(() => _error = 'Erreur de fichier : ${error.message}');
+        setState(() => _error = msg);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -457,11 +476,28 @@ class _CalculatedAttributesDialogState
           ? jsonEncode(value)
           : const JsonEncoder.withIndent('  ').convert(value);
       setState(() => _testResult = formatted);
-    } on FormatException catch (error) {
+    } on FormatException catch (error, stack) {
+      VibeDebugCapture.recordTypedError(
+        message: '[JS ERROR] Test attribut calculé : ${error.message}',
+        category: DebugErrorCategory.javascript,
+        severity: DebugSeverity.critical,
+        stackTrace: stack,
+        source: 'CalculatedAttributesDialog.test(${widget.repositoryId})',
+        visibleInUi: true,
+      );
       if (mounted) setState(() => _testError = error.message);
-    } on FileSystemException catch (error) {
+    } on FileSystemException catch (error, stack) {
+      final msg = 'Erreur de fichier : ${error.message}';
+      VibeDebugCapture.recordTypedError(
+        message: msg,
+        category: DebugErrorCategory.binding,
+        severity: DebugSeverity.error,
+        stackTrace: stack,
+        source: 'CalculatedAttributesDialog.test(${widget.repositoryId})',
+        visibleInUi: true,
+      );
       if (mounted) {
-        setState(() => _testError = 'Erreur de fichier : ${error.message}');
+        setState(() => _testError = msg);
       }
     } finally {
       if (mounted) setState(() => _testing = false);

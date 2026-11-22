@@ -3436,8 +3436,8 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       final errorsSection = detectedErrors.isEmpty
           ? null
           : 'ERREURS D’EXÉCUTION DÉTECTÉES DANS debugEntries APRÈS L’APERÇU :\n'
-                '${detectedErrors.take(5).map((e) => '- ${e.message}').join('\n')}\n'
-                'Corrige impérativement la cause de ces erreurs dans ton patch delta "vibe".';
+                '${detectedErrors.take(8).map((e) => '- ${VibeDebugCapture.formatEntryForAi(e)}').join('\n')}\n'
+                'Corrige impérativement la cause de ces erreurs (priorité : critical > error > warning) dans ton patch delta "vibe".';
       final verifyPrompt = [
         'VÉRIFICATION POST-RENDU (APERÇU APPLIQUÉ) :',
         'Le patch "vibe" vient d’être appliqué en aperçu à l’écran.',
@@ -4398,6 +4398,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           detectedPostErrors = VibeDebugCapture.entriesSince(
             attemptDebugMarker,
             type: DebugEntryType.error,
+            forAutoVerify: true,
           );
         }
         final wantsPostVerify =

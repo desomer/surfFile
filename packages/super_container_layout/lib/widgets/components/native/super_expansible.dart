@@ -16,6 +16,8 @@ import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../services/behaviors/behavior_dispatcher.dart';
+import '../../../services/diagnostics/debug_entry.dart';
+import '../../../services/inspection/vibe_debug_capture.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -554,6 +556,16 @@ class _SuperExpansibleState extends State<SuperExpansible> {
         final effectiveToggleIconPosition =
             config.toggleIconPosition ?? widget.toggleIconPosition;
         final activeError = _bindingError ?? _binding?.error;
+        VibeDebugCapture.syncComponentDiagnostic(
+          componentId: widget.id,
+          sourceKey: 'super-expansible.bindingError',
+          active: activeError != null,
+          category: DebugErrorCategory.binding,
+          severity: DebugSeverity.error,
+          message: activeError,
+          source: 'SuperExpansible.binding',
+          visibleInUi: true,
+        );
         final bindingReadOnly =
             JsonTextBinding.isCalculatedPath(config.binding?.path ?? '') ||
             (_binding?.isReadOnly ?? false);
@@ -739,6 +751,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
 
   @override
   void dispose() {
+    VibeDebugCapture.clearComponentDiagnostics(widget.id);
     for (final selection in _selections) {
       selection.removeListener(_selectionChanged);
     }

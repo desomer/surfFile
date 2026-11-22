@@ -15,6 +15,8 @@ import '../../models/component_behavior.dart';
 import '../../widgets/appearance/appearance_scope.dart';
 import '../../widgets/components/component_state_behavior.dart';
 import '../../widgets/editing/slots/editor_slot.dart' show StyleEditScope;
+import '../diagnostics/debug_entry.dart';
+import '../inspection/vibe_debug_capture.dart';
 import '../repositories/json_list_scope.dart';
 import '../repositories/json_repository_scope.dart';
 import 'behavior_validator_evaluator.dart';
@@ -90,9 +92,16 @@ abstract final class BehaviorDispatcher {
     final guardKey = '$componentId::${event.name}';
     final depth = _activeDepth[guardKey] ?? 0;
     if (depth >= maxReentrancyDepth) {
-      debugPrint(
-        'BehaviorDispatcher: profondeur maximale ($maxReentrancyDepth) atteinte '
-        'pour "$guardKey" ; déclenchement ignoré.',
+      final msg =
+          'BehaviorDispatcher: profondeur maximale ($maxReentrancyDepth) atteinte '
+          'pour "$guardKey" ; déclenchement ignoré.';
+      debugPrint(msg);
+      VibeDebugCapture.recordTypedError(
+        message: msg,
+        category: DebugErrorCategory.system,
+        severity: DebugSeverity.warning,
+        componentId: componentId,
+        source: 'BehaviorDispatcher.reentrancy',
       );
       return false;
     }
@@ -136,8 +145,38 @@ abstract final class BehaviorDispatcher {
           event: event,
           data: data,
         );
-        await behavior.action.executeWithData(context, execData);
-        executed = true;
+        try {
+          await behavior.action.executeWithData(context, execData);
+          executed = true;
+        } catch (error, stack) {
+          final isJs = behavior.action is RunJavaScriptAction;
+          final category = isJs
+              ? DebugErrorCategory.javascript
+              : DebugErrorCategory.system;
+          final message = error is FormatException
+              ? error.message
+              : 'Échec de l’action ${behavior.action.type} sur $componentId : $error';
+          if (store != null) {
+            store.reportBindingError(
+              message,
+              category: category,
+              severity: DebugSeverity.critical,
+              componentId: componentId,
+              source: 'BehaviorDispatcher.${behavior.action.type}',
+              stackTrace: stack,
+            );
+          } else {
+            VibeDebugCapture.recordTypedError(
+              message: message,
+              category: category,
+              severity: DebugSeverity.critical,
+              stackTrace: stack,
+              componentId: componentId,
+              source: 'BehaviorDispatcher.${behavior.action.type}',
+            );
+          }
+          rethrow;
+        }
       }
     } finally {
       final remaining = (_activeDepth[guardKey] ?? 1) - 1;
