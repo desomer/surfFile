@@ -22,6 +22,7 @@ import '../../../models/super_action_config.dart';
 import '../../../models/super_conditional_config.dart';
 import '../../../models/super_indicator_config.dart';
 import '../../../models/super_layout_config.dart';
+import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
@@ -43,6 +44,7 @@ import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
 import 'behavior_event_picker.dart';
 import 'behavior_validator_editor.dart';
+import 'collection_behavior_settings.dart';
 import 'datasource_action_settings.dart';
 import 'search_provider_settings.dart';
 import 'state_behavior_settings.dart';
@@ -50,6 +52,7 @@ import 'style_behavior_settings.dart';
 
 export 'behavior_event_picker.dart';
 export 'behavior_validator_editor.dart';
+export 'collection_behavior_settings.dart';
 export 'state_behavior_settings.dart';
 export 'style_behavior_settings.dart';
 
@@ -232,6 +235,16 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   BehaviorStateOperation _setStateOperation = BehaviorStateOperation.set;
   bool _setStateValue = true;
   String? _setStateTargetId;
+  CollectionSortMode _sortMode = CollectionSortMode.set;
+  List<CollectionSortCriterion> _sortCriteria = const [
+    CollectionSortCriterion(path: ''),
+  ];
+  String? _sortTargetId;
+  CollectionFilterMode _filterMode = CollectionFilterMode.apply;
+  BehaviorValidator? _filterPredicate;
+  bool _filterPredicateValid = true;
+  String? _filterTargetId;
+  String? _filterKey;
 
   @override
   void initState() {
@@ -289,6 +302,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     SetStyleAction() => BehaviorCatalog.setStyle,
     SetVisibilityAction() => BehaviorCatalog.setVisibility,
     SetStateAction() => BehaviorCatalog.setState,
+    SortCollectionAction() => BehaviorCatalog.sortCollection,
+    FilterCollectionAction() => BehaviorCatalog.filterCollection,
     _ => null,
   };
 
@@ -365,6 +380,18 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           _setStateOperation = a.operation;
           _setStateValue = a.value;
           _setStateTargetId = a.targetComponentId;
+        case SortCollectionAction a:
+          _sortMode = a.mode;
+          _sortCriteria = a.criteria.isEmpty
+              ? const [CollectionSortCriterion(path: '')]
+              : List<CollectionSortCriterion>.of(a.criteria);
+          _sortTargetId = a.targetComponentId;
+        case FilterCollectionAction a:
+          _filterMode = a.mode;
+          _filterPredicate = a.predicate;
+          _filterPredicateValid = true;
+          _filterTargetId = a.targetComponentId;
+          _filterKey = a.filterKey;
       }
     });
   }
@@ -405,6 +432,62 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool get _isSetVisibility =>
       _selectedCatalogItem.actionType == 'setVisibility';
   bool get _isSetState => _selectedCatalogItem.actionType == 'setState';
+  bool get _isSortCollection =>
+      _selectedCatalogItem.actionType == 'sortCollection';
+  bool get _isFilterCollection =>
+      _selectedCatalogItem.actionType == 'filterCollection';
+
+  bool get _isSortCollectionValid {
+    final isDeclarative = _selectedEvent == BehaviorEvent.onBinding;
+    try {
+      SortCollectionAction(
+        mode: isDeclarative && _sortMode == CollectionSortMode.clear
+            ? CollectionSortMode.set
+            : _sortMode,
+        criteria: _sortMode == CollectionSortMode.clear && !isDeclarative
+            ? const []
+            : _sortCriteria,
+        targetComponentId: isDeclarative ? null : _sortTargetId,
+      ).validate(declarative: isDeclarative);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isFilterCollectionActionStepValid {
+    if (!_filterPredicateValid) return false;
+    final isDeclarative = _selectedEvent == BehaviorEvent.onBinding;
+    try {
+      FilterCollectionAction(
+        mode: isDeclarative ? CollectionFilterMode.apply : _filterMode,
+        predicate:
+            !isDeclarative &&
+                (_filterMode == CollectionFilterMode.clear ||
+                    _filterMode == CollectionFilterMode.clearAll)
+            ? null
+            : _filterPredicate,
+        targetComponentId: isDeclarative ? null : _filterTargetId,
+        filterKey:
+            !isDeclarative && _filterMode == CollectionFilterMode.clearAll
+            ? null
+            : _filterKey,
+      ).validate(
+        declarative: isDeclarative,
+        // En mode déclaratif, le validateur de l'étape suivante peut porter le prédicat.
+        hasBehaviorValidator: true,
+      );
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  bool get _isFilterCollectionComplete =>
+      !_isFilterCollection ||
+      _selectedEvent != BehaviorEvent.onBinding ||
+      _filterPredicate != null ||
+      _validator != null;
 
   bool get _isSetStyleValid {
     try {
@@ -487,6 +570,19 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     return appearance?.components[target.id] is SuperValueConfig;
   }
 
+  bool _isCollectionTarget(BehaviorTargetElement target) {
+    final slot = target.slot;
+    if (slot != null && slot.mounted) {
+      final type = slot.widget.eventComponentType;
+      if (type == 'listView' || type == 'list' || type == 'table') {
+        return true;
+      }
+    }
+    final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
+    final cfg = appearance?.components[target.id];
+    return cfg is SuperListViewConfig || cfg is SuperTableConfig;
+  }
+
   String? _componentTypeFor(BehaviorTargetElement target) {
     final slot = target.slot;
     if (slot != null &&
@@ -511,7 +607,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                   _editing?.event == event) ||
               ((item.actionType != 'bindZoneSize' || _isLayoutTarget(target)) &&
                   (item.actionType != 'creationDefault' ||
-                      _isValueTarget(target)))))
+                      _isValueTarget(target)) &&
+                  (event != BehaviorEvent.onBinding ||
+                      (item.actionType != 'sortCollection' &&
+                          item.actionType != 'filterCollection') ||
+                      _isCollectionTarget(target)))))
         item,
   ];
 
@@ -652,6 +752,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       ? _isSetVisibilityValid
       : _isSetState
       ? _isSetStateValid
+      : _isSortCollection
+      ? _isSortCollectionValid
+      : _isFilterCollection
+      ? _isFilterCollectionActionStepValid
       : _isBindState
       ? _stateBinding != null
       : _isZoneSize
@@ -665,8 +769,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     BehaviorWizardStage.event => _compatibleCatalogItems.isNotEmpty,
     BehaviorWizardStage.action =>
       _compatibleCatalogItems.isNotEmpty && _isActionSettingsValid,
-    BehaviorWizardStage.validator => _validatorValid,
-    BehaviorWizardStage.summary => _isActionSettingsValid && _validatorValid,
+    BehaviorWizardStage.validator =>
+      _validatorValid && _isFilterCollectionComplete,
+    BehaviorWizardStage.summary =>
+      _isActionSettingsValid && _validatorValid && _isFilterCollectionComplete,
   };
 
   bool get _isCustomPathValid {
@@ -781,6 +887,42 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             operation: _setStateOperation,
             value: _setStateValue,
             targetComponentId: _setStateTargetId,
+          )
+        : _isSortCollection
+        ? SortCollectionAction(
+            mode:
+                _selectedEvent == BehaviorEvent.onBinding &&
+                    _sortMode == CollectionSortMode.clear
+                ? CollectionSortMode.set
+                : _sortMode,
+            criteria:
+                _sortMode == CollectionSortMode.clear &&
+                    _selectedEvent != BehaviorEvent.onBinding
+                ? const []
+                : _sortCriteria,
+            targetComponentId: _selectedEvent == BehaviorEvent.onBinding
+                ? null
+                : _sortTargetId,
+          )
+        : _isFilterCollection
+        ? FilterCollectionAction(
+            mode: _selectedEvent == BehaviorEvent.onBinding
+                ? CollectionFilterMode.apply
+                : _filterMode,
+            predicate:
+                _selectedEvent != BehaviorEvent.onBinding &&
+                    (_filterMode == CollectionFilterMode.clear ||
+                        _filterMode == CollectionFilterMode.clearAll)
+                ? null
+                : _filterPredicate,
+            targetComponentId: _selectedEvent == BehaviorEvent.onBinding
+                ? null
+                : _filterTargetId,
+            filterKey:
+                _selectedEvent != BehaviorEvent.onBinding &&
+                    _filterMode == CollectionFilterMode.clearAll
+                ? null
+                : _filterKey,
           )
         : GoToPageAction(
             pagePath: path,
@@ -1513,20 +1655,50 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
+  List<ValidatorTargetComponentOption> _collectCollectionTargets(
+    Appearance? appearance,
+  ) {
+    final all = _collectValidatorTargets(appearance);
+    return [
+      for (final option in all)
+        if (appearance?.components[option.id] is SuperListViewConfig ||
+            appearance?.components[option.id] is SuperTableConfig)
+          option,
+    ];
+  }
+
   Widget _buildValidatorStep(BuildContext context) {
     final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
     final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final isDeclarative = !_selectedEvent.isImperative;
+    final String? banner;
+    if (isDeclarative && _isSortCollection) {
+      banner =
+          'Condition d’activation du tri : si renseignée, ce tri ne s’applique '
+          'que lorsque le validateur est satisfait (ex. choix de tri sélectionné).';
+    } else if (isDeclarative && _isFilterCollection) {
+      banner = _filterPredicate == null
+          ? 'Prédicat de filtrage par ligne (requis ici car aucun prédicat n’a '
+                'été défini à l’étape précédente) : évalué pour chaque ligne.'
+          : 'Condition d’activation globale du filtre : si renseignée, le '
+                'prédicat par ligne ne s’applique que lorsque cette condition '
+                'est satisfaite (ex. champ de recherche rempli).';
+    } else if (isDeclarative) {
+      banner =
+          'Note : « ${_selectedEvent.label} » est un événement déclaratif. '
+          'Le validateur est optionnel et surtout utilisé avec les '
+          'événements impératifs (clic, modification, sélection, etc.).';
+    } else {
+      banner = null;
+    }
+
     return BehaviorValidatorEditor(
       validator: _validator,
       availableTargets: _collectValidatorTargets(appearance),
       store: JsonRepositoryScope.maybeOf(targetContext),
       listScope: JsonListScope.maybeOf(targetContext),
       keyPrefix: widget.keyPrefix,
-      infoBanner: _selectedEvent.isImperative
-          ? null
-          : 'Note : « ${_selectedEvent.label} » est un événement déclaratif. '
-                'Le validateur est optionnel et surtout utilisé avec les '
-                'événements impératifs (clic, modification, sélection, etc.).',
+      infoBanner: banner,
       onChanged: (validator, isValid) => setState(() {
         _validator = validator;
         _validatorValid = isValid;
@@ -1636,6 +1808,77 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             _setStateTargetId = null;
           } else if (targetComponentId != null) {
             _setStateTargetId = targetComponentId;
+          }
+        }),
+      );
+    }
+    if (_isSortCollection) {
+      final appearance =
+          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      return SortCollectionBehaviorSettings(
+        isDeclarative: _selectedEvent == BehaviorEvent.onBinding,
+        mode: _sortMode,
+        criteria: _sortCriteria,
+        targetComponentId: _sortTargetId,
+        availableCollections: _collectCollectionTargets(appearance),
+        keyPrefix: widget.keyPrefix,
+        onChanged: ({
+          mode,
+          criteria,
+          targetComponentId,
+          clearTargetComponentId = false,
+        }) => setState(() {
+          if (mode != null) _sortMode = mode;
+          if (criteria != null) _sortCriteria = criteria;
+          if (clearTargetComponentId) {
+            _sortTargetId = null;
+          } else if (targetComponentId != null) {
+            _sortTargetId = targetComponentId;
+          }
+        }),
+      );
+    }
+    if (_isFilterCollection) {
+      final appearance =
+          AppearanceScope.controllerOf(widget.ownerContext)?.value;
+      final targetContext = _targetSlot?.context ?? widget.ownerContext;
+      return FilterCollectionBehaviorSettings(
+        isDeclarative: _selectedEvent == BehaviorEvent.onBinding,
+        mode: _filterMode,
+        predicate: _filterPredicate,
+        targetComponentId: _filterTargetId,
+        filterKey: _filterKey,
+        availableCollections: _collectCollectionTargets(appearance),
+        availableTargets: _collectValidatorTargets(appearance),
+        store: JsonRepositoryScope.maybeOf(targetContext),
+        listScope: JsonListScope.maybeOf(targetContext),
+        keyPrefix: widget.keyPrefix,
+        onChanged: ({
+          mode,
+          predicate,
+          clearPredicate = false,
+          predicateValid,
+          targetComponentId,
+          clearTargetComponentId = false,
+          filterKey,
+          clearFilterKey = false,
+        }) => setState(() {
+          if (mode != null) _filterMode = mode;
+          if (clearPredicate) {
+            _filterPredicate = null;
+          } else if (predicate != null) {
+            _filterPredicate = predicate;
+          }
+          if (predicateValid != null) _filterPredicateValid = predicateValid;
+          if (clearTargetComponentId) {
+            _filterTargetId = null;
+          } else if (targetComponentId != null) {
+            _filterTargetId = targetComponentId;
+          }
+          if (clearFilterKey) {
+            _filterKey = null;
+          } else if (filterKey != null) {
+            _filterKey = filterKey;
           }
         }),
       );

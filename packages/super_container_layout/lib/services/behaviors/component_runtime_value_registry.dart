@@ -7,7 +7,10 @@
 /// globales montées.
 library;
 
-import 'package:flutter/foundation.dart' show immutable;
+import 'dart:async' show scheduleMicrotask;
+
+import 'package:flutter/foundation.dart' show VoidCallback, immutable;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 
 import '../repositories/json_list_scope.dart';
 
@@ -58,6 +61,9 @@ class ComponentRuntimeValueRegistry {
       <Object, ComponentRuntimeValueEntry>{};
   final Map<String, List<ComponentRuntimeValueEntry>> _byComponentId =
       <String, List<ComponentRuntimeValueEntry>>{};
+  final Map<String, Set<VoidCallback>> _listeners =
+      <String, Set<VoidCallback>>{};
+  final Set<String> _pendingNotifications = <String>{};
 
   /// Calcule une clé déterministe identifiant la ligne courante d'un [JsonListScope],
   /// ou `null` lorsque le composant n'est pas dans une portée de liste/arbre.
@@ -72,6 +78,64 @@ class ComponentRuntimeValueRegistry {
     return '$repo|$indices|$nodePath';
   }
 
+  /// Abonne [listener] aux changements de valeur ou d'enregistrement de [componentId].
+  void addComponentListener(String componentId, VoidCallback listener) {
+    final id = componentId.trim();
+    if (id.isEmpty) return;
+    _listeners.putIfAbsent(id, () => <VoidCallback>{}).add(listener);
+  }
+
+  /// Désabonne [listener] pour [componentId].
+  void removeComponentListener(String componentId, VoidCallback listener) {
+    final id = componentId.trim();
+    final set = _listeners[id];
+    if (set == null) return;
+    set.remove(listener);
+    if (set.isEmpty) {
+      _listeners.remove(id);
+    }
+  }
+
+  /// Notifie les écouteurs abonnés à [componentId] que sa valeur runtime a changé.
+  ///
+  /// Si l'appel survient pendant une phase de construction Flutter, la notification
+  /// est différée dans une microtask afin d'éviter un `setState` pendant `build`.
+  void notifyValueChanged(String componentId) {
+    final id = componentId.trim();
+    if (id.isEmpty) return;
+    final listeners = _listeners[id];
+    if (listeners == null || listeners.isEmpty) return;
+    if (_isInBuildPhase) {
+      _scheduleDeferredNotification(id);
+      return;
+    }
+    for (final listener in List<VoidCallback>.of(listeners)) {
+      listener();
+    }
+  }
+
+  bool get _isInBuildPhase {
+    try {
+      return SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _scheduleDeferredNotification(String componentId) {
+    if (!_listeners.containsKey(componentId)) return;
+    if (!_pendingNotifications.add(componentId)) return;
+    scheduleMicrotask(() {
+      _pendingNotifications.remove(componentId);
+      final listeners = _listeners[componentId];
+      if (listeners == null || listeners.isEmpty) return;
+      for (final listener in List<VoidCallback>.of(listeners)) {
+        listener();
+      }
+    });
+  }
+
   /// Enregistre ou met à jour l'entrée associée à [entry.token].
   void register(ComponentRuntimeValueEntry entry) {
     final previous = _byToken[entry.token];
@@ -82,6 +146,10 @@ class ComponentRuntimeValueRegistry {
     _byComponentId
         .putIfAbsent(entry.componentId, () => <ComponentRuntimeValueEntry>[])
         .add(entry);
+    if (previous != null && previous.componentId != entry.componentId) {
+      _scheduleDeferredNotification(previous.componentId);
+    }
+    _scheduleDeferredNotification(entry.componentId);
   }
 
   /// Supprime l'entrée associée à [token] lors du démontage du composant.
@@ -89,6 +157,7 @@ class ComponentRuntimeValueRegistry {
     final existing = _byToken.remove(token);
     if (existing != null) {
       _removeFromLookup(existing);
+      _scheduleDeferredNotification(existing.componentId);
     }
   }
 
@@ -140,5 +209,7 @@ class ComponentRuntimeValueRegistry {
   void clear() {
     _byToken.clear();
     _byComponentId.clear();
+    _listeners.clear();
+    _pendingNotifications.clear();
   }
 }

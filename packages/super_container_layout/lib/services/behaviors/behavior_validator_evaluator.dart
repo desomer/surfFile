@@ -34,6 +34,7 @@ class BehaviorValidationContext {
     this.appearance,
     this.repositoryStore,
     this.listScope,
+    this.rowItem,
     ComponentRuntimeValueRegistry? valueRegistry,
   }) : valueRegistry = valueRegistry ?? ComponentRuntimeValueRegistry.instance;
 
@@ -61,16 +62,61 @@ class BehaviorValidationContext {
   /// Portée de ligne de liste ou d'arbre courante, ou `null` hors collection.
   final JsonListScope? listScope;
 
+  /// Élément JSON en mémoire de la ligne courante lors d'une évaluation par ligne
+  /// (permet une lecture synchrone rapide des champs locaux de la ligne).
+  final Object? rowItem;
+
   /// Registre des valeurs runtime des composants actuellement montés.
   final ComponentRuntimeValueRegistry valueRegistry;
 }
 
 typedef _ResolvedValue = ({Object? value, bool isValid, bool found});
 
-/// Évaluateur asynchrone des [BehaviorValidator].
+/// Évaluateur asynchrone (avec chemin rapide synchrone) des [BehaviorValidator].
 abstract final class BehaviorValidatorEvaluator {
   static const Set<String> _truthyStrings = {'true', '1', 'yes', 'oui'};
   static const Set<String> _falsyStrings = {'false', '0', 'no', 'non'};
+
+  /// Tente d'évaluer [validator] de manière purement synchrone à partir du cache
+  /// et des valeurs runtime en mémoire ; retourne `null` si une lecture
+  /// asynchrone (repository non chargé ou attribut calculé) est nécessaire.
+  static bool? tryEvaluateSync(
+    BehaviorValidator validator,
+    BehaviorValidationContext ctx,
+  ) {
+    switch (validator) {
+      case AllBehaviorValidator():
+        for (final child in validator.validators) {
+          final res = tryEvaluateSync(child, ctx);
+          if (res == null) return null;
+          if (!res) return false;
+        }
+        return true;
+      case AnyBehaviorValidator():
+        for (final child in validator.validators) {
+          final res = tryEvaluateSync(child, ctx);
+          if (res == null) return null;
+          if (res) return true;
+        }
+        return false;
+      case NotBehaviorValidator():
+        final res = tryEvaluateSync(validator.validator, ctx);
+        return res == null ? null : !res;
+      case ValueBehaviorValidator():
+        final resolved = _tryResolveValueSync(validator, ctx);
+        if (resolved == null) return null;
+        final expected = _tryResolveExpectedSync(validator, ctx);
+        if (expected == null) return null;
+        return _evaluateOperator(
+          validator.operator,
+          resolved,
+          expected.value,
+          caseSensitive: validator.caseSensitive,
+        );
+      default:
+        return false;
+    }
+  }
 
   /// Évalue récursivement [validator] dans le contexte [ctx].
   static Future<bool> evaluate(
@@ -92,10 +138,12 @@ abstract final class BehaviorValidatorEvaluator {
         return !await evaluate(validator.validator, ctx);
       case ValueBehaviorValidator():
         final resolved = await _resolveValue(validator, ctx);
+        final expected = await _resolveExpectedValue(validator, ctx);
         return _evaluateOperator(
           validator.operator,
           resolved,
-          validator.expectedValue,
+          expected,
+          caseSensitive: validator.caseSensitive,
         );
       default:
         debugPrint(
@@ -181,6 +229,290 @@ abstract final class BehaviorValidatorEvaluator {
     }
   }
 
+  static _ResolvedValue? _tryResolveValueSync(
+    ValueBehaviorValidator validator,
+    BehaviorValidationContext ctx,
+  ) {
+    final scopeKey = ComponentRuntimeValueRegistry.scopeKeyOf(ctx.listScope);
+
+    switch (validator.source) {
+      case BehaviorValueSource.self:
+        final entry = ctx.valueRegistry.resolve(
+          ctx.componentId,
+          preferredScopeKey: scopeKey,
+        );
+        if (ctx.executionData.containsKey('value')) {
+          final isValid = ctx.executionData['isValid'] is bool
+              ? ctx.executionData['isValid'] as bool
+              : (entry?.readIsValid?.call() ?? true);
+          return (
+            value: ctx.executionData['value'],
+            isValid: isValid,
+            found: true,
+          );
+        }
+        if (entry != null) {
+          return (
+            value: entry.readValue(),
+            isValid: entry.readIsValid?.call() ?? true,
+            found: true,
+          );
+        }
+        return _tryResolveFromAppearanceSync(ctx.componentId, ctx);
+
+      case BehaviorValueSource.component:
+        final targetId = validator.targetComponentId?.trim() ?? '';
+        if (targetId.isEmpty) {
+          return (value: null, isValid: false, found: false);
+        }
+        final entry = ctx.valueRegistry.resolve(
+          targetId,
+          preferredScopeKey: scopeKey,
+        );
+        if (entry != null) {
+          return (
+            value: entry.readValue(),
+            isValid: entry.readIsValid?.call() ?? true,
+            found: true,
+          );
+        }
+        return _tryResolveFromAppearanceSync(targetId, ctx);
+
+      case BehaviorValueSource.binding:
+        final binding = validator.binding;
+        if (binding == null) {
+          return (value: null, isValid: false, found: false);
+        }
+        return _tryReadBindingValueSync(
+          binding,
+          ctx,
+          allowCollectionFallback: true,
+        );
+    }
+  }
+
+  static Future<Object?> _resolveExpectedValue(
+    ValueBehaviorValidator validator,
+    BehaviorValidationContext ctx,
+  ) async {
+    if (!validator.operator.requiresValue) return null;
+    if (validator.hasExpectedComponent) {
+      final expectedId = validator.expectedComponentId!.trim();
+      final scopeKey = ComponentRuntimeValueRegistry.scopeKeyOf(ctx.listScope);
+      final entry = ctx.valueRegistry.resolve(
+        expectedId,
+        preferredScopeKey: scopeKey,
+      );
+      if (entry != null) return entry.readValue();
+      final fallback = await _resolveFromAppearance(expectedId, ctx);
+      return fallback.value;
+    }
+    if (validator.hasExpectedBinding) {
+      final resolved = await _readBindingValue(
+        validator.expectedBinding!,
+        ctx,
+        allowCollectionFallback: true,
+      );
+      return resolved.value;
+    }
+    return validator.expectedValue;
+  }
+
+  static ({Object? value})? _tryResolveExpectedSync(
+    ValueBehaviorValidator validator,
+    BehaviorValidationContext ctx,
+  ) {
+    if (!validator.operator.requiresValue) return (value: null);
+    if (validator.hasExpectedComponent) {
+      final expectedId = validator.expectedComponentId!.trim();
+      final scopeKey = ComponentRuntimeValueRegistry.scopeKeyOf(ctx.listScope);
+      final entry = ctx.valueRegistry.resolve(
+        expectedId,
+        preferredScopeKey: scopeKey,
+      );
+      if (entry != null) return (value: entry.readValue());
+      final fallback = _tryResolveFromAppearanceSync(expectedId, ctx);
+      if (fallback == null) return null;
+      return (value: fallback.value);
+    }
+    if (validator.hasExpectedBinding) {
+      final resolved = _tryReadBindingValueSync(
+        validator.expectedBinding!,
+        ctx,
+        allowCollectionFallback: true,
+      );
+      if (resolved == null) return null;
+      return (value: resolved.value);
+    }
+    return (value: validator.expectedValue);
+  }
+
+  static _ResolvedValue? _tryResolveFromAppearanceSync(
+    String componentId,
+    BehaviorValidationContext ctx,
+  ) {
+    final config = ctx.appearance?.components[componentId];
+    if (config == null) {
+      return (value: null, isValid: false, found: false);
+    }
+    switch (config) {
+      case SuperValueConfig(:final binding?):
+        return _tryReadBindingValueSync(
+          binding,
+          ctx,
+          allowStringList:
+              config.kind.isChoice && config.choice.variant.isMultiple,
+        );
+      case SuperListViewConfig(:final binding?):
+      case SuperTableConfig(:final binding?):
+        final store = ctx.repositoryStore;
+        if (store == null) return (value: null, isValid: false, found: false);
+        try {
+          final selected = JsonListScope.resolveSelected(
+            binding,
+            ctx.listScope,
+            store,
+          );
+          final resolved = selected.binding;
+          if (resolved == null) {
+            return (value: const <Object?>[], isValid: true, found: true);
+          }
+          final cached = store.peekArray(resolved.repositoryId!, resolved.path);
+          if (cached != null) {
+            return (value: cached, isValid: true, found: true);
+          }
+          return null;
+        } on FormatException {
+          return (value: null, isValid: false, found: false);
+        }
+      case SuperTreeViewConfig(:final binding?):
+        final store = ctx.repositoryStore;
+        if (store == null) return (value: null, isValid: false, found: false);
+        try {
+          final selected = JsonListScope.resolveSelected(
+            binding,
+            ctx.listScope,
+            store,
+          );
+          final resolved = selected.binding;
+          if (resolved == null) {
+            return (value: const <Object?>[], isValid: true, found: true);
+          }
+          final cached = store.peekTreeNodes(
+            resolved.repositoryId!,
+            resolved.path,
+          );
+          if (cached != null) {
+            return (value: cached.nodes, isValid: true, found: true);
+          }
+          return null;
+        } on FormatException {
+          return (value: null, isValid: false, found: false);
+        }
+      default:
+        return (value: null, isValid: false, found: false);
+    }
+  }
+
+  /// Tente de lire un champ relatif directement depuis [ctx.rowItem] en mémoire.
+  static _ResolvedValue? _tryReadFromRowItem(
+    JsonTextBinding binding,
+    BehaviorValidationContext ctx,
+  ) {
+    final rowItem = ctx.rowItem;
+    if (rowItem == null) return null;
+    final scope = ctx.listScope;
+    if (binding.repositoryId != null &&
+        scope?.repositoryId != null &&
+        binding.repositoryId != scope!.repositoryId) {
+      return null;
+    }
+    final rawPath = binding.path.trim();
+    if (rawPath.isEmpty || JsonTextBinding.isCalculatedPath(rawPath)) {
+      return null;
+    }
+    String? relativePath;
+    if (rawPath == '.') {
+      return (value: rowItem, isValid: true, found: true);
+    }
+    final template = scope?.arrayTemplate ?? scope?.treeTemplatePath;
+    if (template != null && template.isNotEmpty) {
+      final wildcardPrefix = '$template[?]';
+      if (rawPath == wildcardPrefix) {
+        return (value: rowItem, isValid: true, found: true);
+      }
+      if (rawPath.startsWith('$wildcardPrefix.')) {
+        relativePath = rawPath.substring(wildcardPrefix.length + 1);
+      }
+    }
+    if (relativePath == null &&
+        binding.repositoryId == null &&
+        !rawPath.contains('[?]') &&
+        !rawPath.startsWith('@') &&
+        (template == null ||
+            (rawPath != template &&
+                !rawPath.startsWith('$template.') &&
+                !rawPath.startsWith('$template[')))) {
+      relativePath = rawPath;
+    }
+    if (relativePath == null || relativePath.isEmpty) return null;
+    try {
+      final value = JsonAttributePath(relativePath).readNode(rowItem);
+      return (value: value, isValid: true, found: true);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static _ResolvedValue? _tryReadBindingValueSync(
+    JsonTextBinding binding,
+    BehaviorValidationContext ctx, {
+    bool allowStringList = true,
+    bool allowCollectionFallback = false,
+  }) {
+    final fromRow = _tryReadFromRowItem(binding, ctx);
+    if (fromRow != null) return fromRow;
+
+    final store = ctx.repositoryStore;
+    if (store == null) {
+      return (value: null, isValid: false, found: false);
+    }
+    try {
+      final selected = JsonListScope.resolveSelected(
+        binding,
+        ctx.listScope,
+        store,
+      );
+      final resolved = selected.binding;
+      if (resolved == null) {
+        return (value: null, isValid: true, found: true);
+      }
+      final cached = store.peekAttribute(
+        resolved,
+        allowStringList: allowStringList,
+      );
+      if (cached != null) {
+        return (value: cached.value, isValid: true, found: true);
+      }
+      final repoId = resolved.repositoryId;
+      if (allowCollectionFallback &&
+          repoId != null &&
+          repoId.isNotEmpty &&
+          !JsonTextBinding.isCalculatedPath(resolved.path)) {
+        final docEntry = store.peekDocument(repoId);
+        if (docEntry != null) {
+          final node = JsonAttributePath(resolved.path).readNode(
+            docEntry.document,
+          );
+          return (value: node, isValid: true, found: true);
+        }
+      }
+      return null;
+    } on FormatException {
+      return (value: null, isValid: false, found: false);
+    }
+  }
+
   static Future<_ResolvedValue> _resolveFromAppearance(
     String componentId,
     BehaviorValidationContext ctx,
@@ -215,6 +547,9 @@ abstract final class BehaviorValidatorEvaluator {
     bool allowStringList = true,
     bool allowCollectionFallback = false,
   }) async {
+    final fromRow = _tryReadFromRowItem(binding, ctx);
+    if (fromRow != null) return fromRow;
+
     final store = ctx.repositoryStore;
     if (store == null) {
       return (value: null, isValid: false, found: false);
@@ -360,8 +695,9 @@ abstract final class BehaviorValidatorEvaluator {
   static bool _evaluateOperator(
     BehaviorValidatorOperator op,
     _ResolvedValue resolved,
-    Object? expected,
-  ) {
+    Object? expected, {
+    bool caseSensitive = true,
+  }) {
     final value = resolved.value;
     switch (op) {
       case BehaviorValidatorOperator.isEmpty:
@@ -381,18 +717,32 @@ abstract final class BehaviorValidatorEvaluator {
       case BehaviorValidatorOperator.isInvalid:
         return !resolved.found || !resolved.isValid;
       case BehaviorValidatorOperator.equals:
-        return _valuesEqual(value, expected);
+        return _valuesEqual(value, expected, caseSensitive: caseSensitive);
       case BehaviorValidatorOperator.notEquals:
-        return !_valuesEqual(value, expected);
+        return !_valuesEqual(value, expected, caseSensitive: caseSensitive);
       case BehaviorValidatorOperator.contains:
         if (value is Iterable) {
-          return value.any((item) => _valuesEqual(item, expected));
+          return value.any(
+            (item) => _valuesEqual(
+              item,
+              expected,
+              caseSensitive: caseSensitive,
+            ),
+          );
         }
         if (value == null || expected == null) return false;
-        return value.toString().contains(expected.toString());
+        final haystack = value.toString();
+        final needle = expected.toString();
+        return caseSensitive
+            ? haystack.contains(needle)
+            : haystack.toLowerCase().contains(needle.toLowerCase());
       case BehaviorValidatorOperator.startsWith:
         if (value == null || expected == null) return false;
-        return value.toString().startsWith(expected.toString());
+        final haystack = value.toString();
+        final prefix = expected.toString();
+        return caseSensitive
+            ? haystack.startsWith(prefix)
+            : haystack.toLowerCase().startsWith(prefix.toLowerCase());
       case BehaviorValidatorOperator.greaterThan:
         final left = _tryParseNum(value);
         final right = _tryParseNum(expected);
@@ -404,11 +754,14 @@ abstract final class BehaviorValidatorEvaluator {
         if (left == null || right == null) return false;
         return left < right;
       case BehaviorValidatorOperator.matchesRegex:
-        if (value == null || expected is! String || expected.isEmpty) {
-          return false;
-        }
+        if (value == null || expected == null) return false;
+        final pattern = expected.toString();
+        if (pattern.isEmpty) return false;
         try {
-          return RegExp(expected).hasMatch(value.toString());
+          return RegExp(
+            pattern,
+            caseSensitive: caseSensitive,
+          ).hasMatch(value.toString());
         } on FormatException {
           return false;
         }
@@ -424,12 +777,18 @@ abstract final class BehaviorValidatorEvaluator {
     return null;
   }
 
-  static bool _valuesEqual(Object? a, Object? b) {
+  static bool _valuesEqual(
+    Object? a,
+    Object? b, {
+    bool caseSensitive = true,
+  }) {
     if (identical(a, b)) return true;
     if (a == null || b == null) return a == b;
     if (a is num && b is num) return a == b;
     if (a is bool && b is bool) return a == b;
-    if (a is String && b is String) return a == b;
+    if (a is String && b is String) {
+      return caseSensitive ? a == b : a.toLowerCase() == b.toLowerCase();
+    }
 
     if (a is num && b is String) {
       final parsed = _tryParseNum(b);
@@ -456,7 +815,9 @@ abstract final class BehaviorValidatorEvaluator {
     if (a is List && b is List) {
       if (a.length != b.length) return false;
       for (var i = 0; i < a.length; i++) {
-        if (!_valuesEqual(a[i], b[i])) return false;
+        if (!_valuesEqual(a[i], b[i], caseSensitive: caseSensitive)) {
+          return false;
+        }
       }
       return true;
     }
@@ -464,7 +825,11 @@ abstract final class BehaviorValidatorEvaluator {
       if (a.length != b.length) return false;
       for (final entry in a.entries) {
         if (!b.containsKey(entry.key) ||
-            !_valuesEqual(entry.value, b[entry.key])) {
+            !_valuesEqual(
+              entry.value,
+              b[entry.key],
+              caseSensitive: caseSensitive,
+            )) {
           return false;
         }
       }

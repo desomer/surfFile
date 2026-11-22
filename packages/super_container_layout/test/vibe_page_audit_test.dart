@@ -341,9 +341,16 @@ void main() {
                         onDrag: (_) {},
                         generate: (prompt) async {
                           capturedPrompts.add(prompt);
+                          if (prompt.contains('VÉRIFICATION POST-RENDU')) {
+                            return jsonEncode(<String, Object?>{
+                              'message': 'Marges corrigées et vérifiées.',
+                              'vibe': null,
+                            });
+                          }
                           if (prompt.contains('PHASE 2 — EXÉCUTION DU LOT')) {
                             return jsonEncode(<String, Object?>{
                               'message': 'Marges corrigées.',
+                              'verifyRender': true,
                               'vibe': <String, Object?>{
                                 'styles': <String, Object?>{
                                   'kpi-total': <String, Object?>{
@@ -456,14 +463,8 @@ void main() {
         capturedPrompts[1],
         contains('parentWidth - paddingLeft - paddingRight'),
       );
-      expect(
-        capturedPrompts[1],
-        contains('Inspection visuelle par élément'),
-      );
-      expect(
-        capturedPrompts[1],
-        contains('capture_element_screenshot'),
-      );
+      expect(capturedPrompts[1], contains('Inspection visuelle par élément'));
+      expect(capturedPrompts[1], contains('capture_element_screenshot'));
       expect(
         capturedPrompts[1],
         contains('excessive_margin_or_padding_for_fixed_size'),
@@ -481,8 +482,20 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(capturedPrompts, hasLength(3));
+      expect(capturedPrompts, hasLength(4));
       expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
+      expect(capturedPrompts[2], contains('verifyRender'));
+      expect(capturedPrompts[3], contains('VÉRIFICATION POST-RENDU'));
+      expect(
+        capturedPrompts[3],
+        contains("Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)"),
+      );
+      expect(
+        capturedPrompts[3],
+        contains('parentWidth - paddingLeft - paddingRight'),
+      );
+      expect(capturedPrompts[3], contains('Inspection visuelle par élément'));
+      expect(capturedPrompts[3], contains('capture_element_screenshot'));
       expect(appAppearance.value.styles['kpi-total']?.padding, 8);
       expect(appAppearance.value.styles['kpi-total']?.margin, 0);
       final updatedLayout =

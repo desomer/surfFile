@@ -77,6 +77,7 @@ import '../../models/behaviours/behavior_event.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_layout_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/behaviors/collection_view_transform.dart';
 import '../../services/repositories/repository_array_creation.dart';
 import '../appearance/appearance_scope.dart';
 import '../../models/super_list_view_config.dart';
@@ -178,6 +179,8 @@ class _SuperListViewState extends State<SuperListView>
   final GlobalKey<_RowMeasureSubtreeState> _viewportStackKey =
       GlobalKey<_RowMeasureSubtreeState>();
   final GlobalKey _scrollableHostKey = GlobalKey();
+  late final CollectionViewTransformController _transformController =
+      CollectionViewTransformController(onChanged: _handleTransformChanged);
   JsonRepositoryStore? _store;
   ResolvedJsonArraySource? _source;
 
@@ -185,10 +188,15 @@ class _SuperListViewState extends State<SuperListView>
   JsonArrayBinding? _selection;
   List<JsonArrayBinding> _listened = const [];
   List<Object?>? _items;
+  List<int> _visibleSourceIndices = const [];
   String? _error;
   bool _loading = false;
   bool _busy = false;
   int _generation = 0;
+
+  void _handleTransformChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
@@ -218,6 +226,7 @@ class _SuperListViewState extends State<SuperListView>
   void dispose() {
     VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _generation++;
+    _transformController.dispose();
     _store?.removeListener(_reload);
     _listen(const []);
     _hoveredRowNotifier.dispose();
@@ -315,6 +324,13 @@ class _SuperListViewState extends State<SuperListView>
     final len = _items?.length ?? 0;
     if (idx == null || idx < 0 || idx >= len) return null;
     return idx;
+  }
+
+  int? get _selectedVisualRowIndex {
+    final sourceIndex = _selectedRowIndex;
+    if (sourceIndex == null) return null;
+    final visualIndex = _visibleSourceIndices.indexOf(sourceIndex);
+    return visualIndex >= 0 ? visualIndex : null;
   }
 
   void _setHoveredRow(int? index) {
@@ -749,13 +765,14 @@ class _SuperListViewState extends State<SuperListView>
     ValueNotifier<SuperListViewConfig> configuration,
     SuperListViewConfig config,
     JsonListScope? scope,
-    int? index,
+    int visualIndex,
+    int? sourceIndex,
     Size viewport, {
     required bool editing,
     required bool animateIndicators,
   }) {
-    final isSelectedRow = index != null && _isSelected(index);
-    final rowEditable = index == null || index == 0 || isSelectedRow;
+    final isSelectedRow = sourceIndex != null && _isSelected(sourceIndex);
+    final rowEditable = sourceIndex == null || visualIndex == 0 || isSelectedRow;
     final natural =
         config.itemSize != null ||
         (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
@@ -784,10 +801,14 @@ class _SuperListViewState extends State<SuperListView>
                   true),
           shrinkWrap: natural,
           sizeConstraints: dimensions,
-          underlay: animateIndicators && index != null
+          underlay: animateIndicators && sourceIndex != null
               ? SlidingIndicatorUnderlay(
-                  hover: _buildHoverIndicator(context, rowStyle, index),
-                  selection: _buildSelectionIndicator(context, rowStyle, index),
+                  hover: _buildHoverIndicator(context, rowStyle, sourceIndex),
+                  selection: _buildSelectionIndicator(
+                    context,
+                    rowStyle,
+                    sourceIndex,
+                  ),
                 )
               : null,
           onEditSize: rowEditable
@@ -851,26 +872,26 @@ class _SuperListViewState extends State<SuperListView>
           : double.infinity,
     );
     final item = Padding(
-      key: ValueKey('super-list-row-${widget.id}-${index ?? 'template'}'),
+      key: ValueKey('super-list-row-${widget.id}-${sourceIndex ?? 'template'}'),
       padding: config.wrap || config.itemSize != null
           ? EdgeInsets.zero
           : vertical
           ? EdgeInsets.only(bottom: config.spacing)
           : EdgeInsets.only(right: config.spacing),
       child: JsonListScope(
-        selected: index != null && _isSelected(index),
+        selected: sourceIndex != null && _isSelected(sourceIndex),
         repositoryId: _source?.binding?.repositoryId ?? scope?.repositoryId,
-        indices: [...?(_source?.rowBase ?? scope?.indices), index ?? 0],
+        indices: [...?(_source?.rowBase ?? scope?.indices), sourceIndex ?? 0],
         arrayTemplate: _template,
-        placeholder: index == null || (scope?.placeholder ?? false),
+        placeholder: sourceIndex == null || (scope?.placeholder ?? false),
         child: Stack(
           fit: StackFit.passthrough,
           children: [
-            if (index != null &&
-                _isSelected(index) &&
+            if (sourceIndex != null &&
+                _isSelected(sourceIndex) &&
                 style.value.states?.hasSelected != true)
               Positioned.fill(
-                key: ValueKey('super-list-selected-${widget.id}-$index'),
+                key: ValueKey('super-list-selected-${widget.id}-$sourceIndex'),
                 child: IgnorePointer(
                   child: animateIndicators
                       ? const SizedBox.shrink()
@@ -888,20 +909,20 @@ class _SuperListViewState extends State<SuperListView>
                 ),
               ),
             // A Listener leaves the row's fields and buttons interactive.
-            if (index == null || (scope?.placeholder ?? false))
+            if (sourceIndex == null || (scope?.placeholder ?? false))
               row
             else
               MouseRegion(
                 opaque: false,
-                onEnter: (_) => _setHoveredRow(index),
+                onEnter: (_) => _setHoveredRow(visualIndex),
                 onExit: (_) {
-                  if (_hoveredRowNotifier.value == index) {
+                  if (_hoveredRowNotifier.value == visualIndex) {
                     _setHoveredRow(null);
                   }
                 },
                 child: _RowMeasureSubtree(
                   key: _rowBoxKeys.putIfAbsent(
-                    index,
+                    visualIndex,
                     GlobalKey<_RowMeasureSubtreeState>.new,
                   ),
                   child: Builder(
@@ -910,10 +931,11 @@ class _SuperListViewState extends State<SuperListView>
                       onPointerDown: (event) {
                         final wasEditable = rowEditable;
                         final previousIndex = _selectedRowIndex;
-                        _select(index);
+                        _select(sourceIndex);
                         if (!editing && event.buttons == kPrimaryButton) {
                           final data = <String, Object?>{
-                            'index': index,
+                            'index': sourceIndex,
+                            'visualIndex': visualIndex,
                             'previousIndex': ?previousIndex,
                           };
                           unawaited(
@@ -942,7 +964,8 @@ class _SuperListViewState extends State<SuperListView>
                           final pos = event.position;
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (!mounted) return;
-                            final rowCtx = _rowBoxKeys[index]?.currentContext;
+                            final rowCtx =
+                                _rowBoxKeys[visualIndex]?.currentContext;
                             if (rowCtx != null && rowCtx.mounted) {
                               EditorSlotState.openMenuFromContext(rowCtx, pos);
                             }
@@ -954,16 +977,18 @@ class _SuperListViewState extends State<SuperListView>
                   ),
                 ),
               ),
-            if (index != null && config.allowRemove && !_collectionReadOnly)
+            if (sourceIndex != null &&
+                config.allowRemove &&
+                !_collectionReadOnly)
               Positioned(
                 top: 0,
                 right: 0,
                 child: IconButton(
-                  key: ValueKey('super-list-remove-${widget.id}-$index'),
+                  key: ValueKey('super-list-remove-${widget.id}-$sourceIndex'),
                   tooltip: 'Supprimer l’élément',
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
-                  onPressed: _busy ? null : () => _remove(index),
+                  onPressed: _busy ? null : () => _remove(sourceIndex),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ),
@@ -1073,6 +1098,8 @@ class _SuperListViewState extends State<SuperListView>
     );
     final scope = JsonListScope.maybeOf(context);
     final store = JsonRepositoryScope.maybeOf(context);
+    final appearance = AppearanceScope.of(context);
+    final behaviors = widget.behaviours ?? appearance.behaviorsFor(widget.id);
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
 
     return ValueListenableBuilder<SuperListViewConfig>(
@@ -1084,6 +1111,19 @@ class _SuperListViewState extends State<SuperListView>
           _observe(resolveJsonArraySource(config.binding, scope, store), store);
         }
         final items = placeholder ? null : _items;
+        _visibleSourceIndices = _transformController.resolveVisibleIndices(
+          context: context,
+          componentId: widget.id,
+          componentType: 'listView',
+          items: items,
+          source: _source,
+          arrayTemplate: _template,
+          behaviors: behaviors,
+          appearance: appearance,
+          store: store,
+          parentScope: scope,
+          editing: editing,
+        );
         final message = placeholder
             ? null
             : config.binding == null
@@ -1091,13 +1131,15 @@ class _SuperListViewState extends State<SuperListView>
             : _error ??
                   (_source?.unselected == true
                       ? 'Aucune ligne sélectionnée.'
-                      : items != null && items.isEmpty && !_loading
+                      : items != null &&
+                            (items.isEmpty || _visibleSourceIndices.isEmpty) &&
+                            !_loading
                       ? config.emptyText
                       : null);
         // Sans donnée, la ligne de gabarit reste modifiable dans le designer.
         final template =
             (items == null || items.isEmpty) && (editing || placeholder);
-        final count = template ? 1 : items?.length ?? 0;
+        final count = template ? 1 : _visibleSourceIndices.length;
         final add =
             !placeholder &&
             config.allowAdd &&
@@ -1107,10 +1149,10 @@ class _SuperListViewState extends State<SuperListView>
         final vertical = config.wrap || config.axis == Axis.vertical;
         final isSliver = SliverSlotScope.isSliver(context);
 
-        Widget buildItem(BuildContext context, int index, Size viewport) =>
+        Widget buildItem(BuildContext context, int visualIndex, Size viewport) =>
             SliverSlotScope(
               enabled: false,
-              child: index == count
+              child: visualIndex == count
                   ? Align(
                       widthFactor: config.wrap ? 1 : null,
                       heightFactor: config.wrap ? 1 : null,
@@ -1131,7 +1173,8 @@ class _SuperListViewState extends State<SuperListView>
                       configuration,
                       config,
                       scope,
-                      template ? null : index,
+                      visualIndex,
+                      template ? null : _visibleSourceIndices[visualIndex],
                       viewport,
                       editing: editing,
                       animateIndicators:
@@ -1369,9 +1412,10 @@ class _SuperListViewState extends State<SuperListView>
                                           selectionMotion: _selectionMotion,
                                           hoveredRowNotifier:
                                               _hoveredRowNotifier,
-                                          selectedRow: _selectedRowIndex,
-                                          currentSelectedRow: () =>
-                                              mounted ? _selectedRowIndex : null,
+                                          selectedRow: _selectedVisualRowIndex,
+                                          currentSelectedRow: () => mounted
+                                              ? _selectedVisualRowIndex
+                                              : null,
                                           measuredRect: _measuredItemRect,
                                           estimatedRect: (rowIdx) =>
                                               _computeItemRect(

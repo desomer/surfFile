@@ -443,10 +443,14 @@ class DartCodegenContext {
     ValueBehaviorValidator validator, {
     int indent = 0,
   }) {
-    final isConstExpected = _isConstScalar(validator.expectedValue);
+    final isConstExpected =
+        !validator.hasDynamicExpected && _isConstScalar(validator.expectedValue);
     final expectedPrefix = isConstExpected ? 'const ' : '';
+    final canUseShorthand =
+        !validator.hasDynamicExpected && validator.caseSensitive;
 
-    switch (validator.source) {
+    if (canUseShorthand) {
+      switch (validator.source) {
       case BehaviorValueSource.self:
         switch (validator.operator) {
           case BehaviorValidatorOperator.isEmpty:
@@ -564,9 +568,14 @@ class DartCodegenContext {
               break;
           }
         }
+      }
     }
 
-    final isConstFull = !validator.operator.requiresValue || isConstExpected;
+    final isConstFull =
+        !validator.operator.requiresValue ||
+        validator.hasExpectedComponent ||
+        validator.hasExpectedBinding ||
+        isConstExpected;
     final fullPrefix = isConstFull ? 'const ' : '';
     final target = validator.targetComponentId?.trim();
     return formatCall(
@@ -587,11 +596,24 @@ class DartCodegenContext {
             indent: indent + 2,
             includeConst: !isConstFull,
           ),
-        if (validator.operator.requiresValue)
+        if (validator.operator.requiresValue && validator.hasExpectedComponent)
+          'expectedComponentId': formatString(
+            validator.expectedComponentId!.trim(),
+          ),
+        if (validator.operator.requiresValue && validator.hasExpectedBinding)
+          'expectedBinding': formatBinding(
+            validator.expectedBinding!,
+            indent: indent + 2,
+            includeConst: !isConstFull,
+          ),
+        if (validator.operator.requiresValue && !validator.hasDynamicExpected)
           'expectedValue': formatLiteralValue(
             validator.expectedValue,
             indent: indent + 2,
           ),
+        if (!validator.caseSensitive &&
+            validator.operator.supportsCaseSensitivity)
+          'caseSensitive': 'false',
       },
       indent: indent,
       forceMultiline: true,
@@ -747,6 +769,78 @@ class DartCodegenContext {
               'value': 'false',
             if (setState.targetComponentId != null)
               'targetComponentId': formatString(setState.targetComponentId!),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final SortCollectionAction sort:
+        if (sort.mode == CollectionSortMode.clear) {
+          return formatCall(
+            'const SortCollectionAction.clear',
+            const [],
+            {
+              if (sort.targetComponentId != null)
+                'targetComponentId': formatString(sort.targetComponentId!),
+            },
+            indent: indent,
+          );
+        }
+        return formatCall(
+          'SortCollectionAction',
+          const [],
+          {
+            if (sort.mode != CollectionSortMode.set)
+              'mode': 'CollectionSortMode.${sort.mode.name}',
+            if (sort.targetComponentId != null)
+              'targetComponentId': formatString(sort.targetComponentId!),
+            'criteria': formatList(
+              [
+                for (final c in sort.criteria)
+                  formatCall(
+                    'const CollectionSortCriterion',
+                    const [],
+                    {
+                      'path': formatString(c.path),
+                      if (c.direction != CollectionSortDirection.asc)
+                        'direction':
+                            'CollectionSortDirection.${c.direction.name}',
+                      if (c.caseSensitive) 'caseSensitive': 'true',
+                      if (!c.nullsLast) 'nullsLast': 'false',
+                    },
+                    indent: indent + 4,
+                  ),
+              ],
+              indent: indent + 2,
+              forceMultiline: true,
+            ),
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
+      case final FilterCollectionAction filter:
+        final canBeConst =
+            filter.predicate == null ||
+            (filter.predicate is ValueBehaviorValidator &&
+                !(filter.predicate! as ValueBehaviorValidator)
+                    .hasDynamicExpected &&
+                _isConstScalar(
+                  (filter.predicate! as ValueBehaviorValidator).expectedValue,
+                ));
+        return formatCall(
+          '${canBeConst ? 'const ' : ''}FilterCollectionAction',
+          const [],
+          {
+            if (filter.mode != CollectionFilterMode.apply)
+              'mode': 'CollectionFilterMode.${filter.mode.name}',
+            if (filter.targetComponentId != null)
+              'targetComponentId': formatString(filter.targetComponentId!),
+            if (filter.filterKey != null)
+              'filterKey': formatString(filter.filterKey!),
+            if (filter.predicate != null)
+              'predicate': formatBehaviorValidator(
+                filter.predicate!,
+                indent: indent + 2,
+              ),
           },
           indent: indent,
           forceMultiline: true,

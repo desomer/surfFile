@@ -19,6 +19,7 @@ import '../../models/super_choice_config.dart';
 import '../../models/super_text_field_config.dart';
 import '../../models/super_value_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/behaviors/component_runtime_value_registry.dart';
 import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -167,6 +168,7 @@ class _SuperValueState extends State<SuperValue>
     if (currentText == _lastControllerText) return;
     _previousControllerText = _lastControllerText;
     _lastControllerText = currentText;
+    ComponentRuntimeValueRegistry.instance.notifyValueChanged(widget.id);
   }
 
   Object _decodeRuntimeValue(String rawText, SuperValueConfig config) {

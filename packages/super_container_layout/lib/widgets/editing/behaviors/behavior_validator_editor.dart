@@ -64,6 +64,8 @@ enum _ValidatorEditorMode { none, simple, composite }
 
 enum _CompositeCombinator { all, any }
 
+enum _ExpectedValueMode { literal, component, binding }
+
 class _SimpleRuleDraft {
   _SimpleRuleDraft({
     this.source = BehaviorValueSource.self,
@@ -71,11 +73,22 @@ class _SimpleRuleDraft {
     String targetComponentId = '',
     this.binding,
     Object? expectedValue,
+    String expectedComponentId = '',
+    this.expectedBinding,
+    this.caseSensitive = true,
     this.negated = false,
     this.rawFallback,
   }) : _originalExpectedValue = expectedValue,
        _originalExpectedText = _formatExpectedValue(expectedValue),
+       expectedMode = expectedComponentId.trim().isNotEmpty
+           ? _ExpectedValueMode.component
+           : expectedBinding != null
+           ? _ExpectedValueMode.binding
+           : _ExpectedValueMode.literal,
        targetController = TextEditingController(text: targetComponentId),
+       expectedTargetController = TextEditingController(
+         text: expectedComponentId,
+       ),
        valueController = TextEditingController(
          text: _formatExpectedValue(expectedValue),
        );
@@ -94,6 +107,9 @@ class _SimpleRuleDraft {
         targetComponentId: current.targetComponentId ?? '',
         binding: current.binding,
         expectedValue: current.expectedValue,
+        expectedComponentId: current.expectedComponentId ?? '',
+        expectedBinding: current.expectedBinding,
+        caseSensitive: current.caseSensitive,
         negated: negated,
       );
     }
@@ -103,6 +119,9 @@ class _SimpleRuleDraft {
   BehaviorValueSource source;
   BehaviorValidatorOperator operator;
   JsonTextBinding? binding;
+  _ExpectedValueMode expectedMode;
+  JsonTextBinding? expectedBinding;
+  bool caseSensitive;
   bool negated;
 
   /// Validateur exotique (ex. composite imbriqué) préservé tel quel s'il ne
@@ -112,10 +131,12 @@ class _SimpleRuleDraft {
   final Object? _originalExpectedValue;
   final String _originalExpectedText;
   final TextEditingController targetController;
+  final TextEditingController expectedTargetController;
   final TextEditingController valueController;
 
   void dispose() {
     targetController.dispose();
+    expectedTargetController.dispose();
     valueController.dispose();
   }
 
@@ -169,6 +190,7 @@ class _SimpleRuleDraft {
     }
 
     final targetId = targetController.text.trim();
+    final expectedCompId = expectedTargetController.text.trim();
     final base = ValueBehaviorValidator(
       source: source,
       operator: operator,
@@ -176,7 +198,19 @@ class _SimpleRuleDraft {
           ? targetId
           : null,
       binding: source == BehaviorValueSource.binding ? binding : null,
-      expectedValue: operator.requiresValue ? _parseExpectedValue() : null,
+      expectedValue:
+          operator.requiresValue && expectedMode == _ExpectedValueMode.literal
+          ? _parseExpectedValue()
+          : null,
+      expectedComponentId:
+          operator.requiresValue && expectedMode == _ExpectedValueMode.component
+          ? expectedCompId
+          : null,
+      expectedBinding:
+          operator.requiresValue && expectedMode == _ExpectedValueMode.binding
+          ? expectedBinding
+          : null,
+      caseSensitive: operator.supportsCaseSensitivity ? caseSensitive : true,
     );
     final BehaviorValidator result = negated
         ? NotBehaviorValidator(validator: base)
@@ -722,23 +756,104 @@ class _BehaviorValidatorEditorState extends State<BehaviorValidatorEditor> {
             ),
             if (effectiveOperator.requiresValue) ...[
               const SizedBox(height: 12),
-              TextField(
-                key: ValueKey('$ruleKeyPrefix-value'),
-                controller: draft.valueController,
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                  labelText: 'Valeur attendue',
-                  hintText: switch (effectiveOperator) {
-                    BehaviorValidatorOperator.greaterThan ||
-                    BehaviorValidatorOperator.lessThan => 'Ex. 10 ou 3.5',
-                    BehaviorValidatorOperator.matchesRegex =>
-                      r'Ex. ^[A-Z0-9._%+-]+@',
-                    _ => 'Ex. actif, 42, true…',
+              Text(
+                'Valeur de comparaison',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              SegmentedButton<_ExpectedValueMode>(
+                segments: [
+                  ButtonSegment(
+                    value: _ExpectedValueMode.literal,
+                    icon: const Icon(Icons.text_fields, size: 16),
+                    label: Text(
+                      'Valeur fixe',
+                      key: ValueKey('$ruleKeyPrefix-expected-mode-literal'),
+                    ),
+                  ),
+                  ButtonSegment(
+                    value: _ExpectedValueMode.component,
+                    icon: const Icon(Icons.compare_arrows_outlined, size: 16),
+                    label: Text(
+                      'Composant',
+                      key: ValueKey('$ruleKeyPrefix-expected-mode-component'),
+                    ),
+                  ),
+                  ButtonSegment(
+                    value: _ExpectedValueMode.binding,
+                    icon: const Icon(Icons.dataset_linked_outlined, size: 16),
+                    label: Text(
+                      'Liaison',
+                      key: ValueKey('$ruleKeyPrefix-expected-mode-binding'),
+                    ),
+                  ),
+                ],
+                selected: {draft.expectedMode},
+                onSelectionChanged: (selection) {
+                  setState(() => draft.expectedMode = selection.first);
+                  _emitCurrent();
+                },
+              ),
+              const SizedBox(height: 10),
+              if (draft.expectedMode == _ExpectedValueMode.literal)
+                TextField(
+                  key: ValueKey('$ruleKeyPrefix-value'),
+                  controller: draft.valueController,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    labelText: 'Valeur attendue',
+                    hintText: switch (effectiveOperator) {
+                      BehaviorValidatorOperator.greaterThan ||
+                      BehaviorValidatorOperator.lessThan => 'Ex. 10 ou 3.5',
+                      BehaviorValidatorOperator.matchesRegex =>
+                        r'Ex. ^[A-Z0-9._%+-]+@',
+                      _ => 'Ex. actif, 42, true…',
+                    },
+                  ),
+                  onChanged: (_) {
+                    setState(() {});
+                    _emitCurrent();
+                  },
+                )
+              else if (draft.expectedMode == _ExpectedValueMode.component)
+                _buildComponentPickerField(
+                  context,
+                  controller: draft.expectedTargetController,
+                  fieldKeyPrefix: '$ruleKeyPrefix-expected-target',
+                  labelText: 'Composant fournissant la valeur attendue',
+                  hintText: 'Ex. search-input',
+                )
+              else
+                RepositoryBindingFields(
+                  keyPrefix: '$ruleKeyPrefix-expected-binding',
+                  binding: draft.expectedBinding,
+                  store: widget.store,
+                  listScope: widget.listScope,
+                  pathHint: 'filtres.recherche',
+                  helper:
+                      'Attribut du repository utilisé comme valeur de comparaison.',
+                  onChanged: (binding) {
+                    setState(() => draft.expectedBinding = binding);
+                    _emitCurrent();
                   },
                 ),
-                onChanged: (_) {
-                  setState(() {});
+            ],
+            if (effectiveOperator.supportsCaseSensitivity) ...[
+              const SizedBox(height: 4),
+              SwitchListTile(
+                key: ValueKey('$ruleKeyPrefix-case-sensitive'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Sensible à la casse'),
+                subtitle: const Text(
+                  'Désactiver pour comparer sans tenir compte des majuscules/minuscules',
+                ),
+                value: draft.caseSensitive,
+                onChanged: (value) {
+                  setState(() => draft.caseSensitive = value);
                   _emitCurrent();
                 },
               ),
@@ -765,12 +880,26 @@ class _BehaviorValidatorEditorState extends State<BehaviorValidatorEditor> {
     BuildContext context, {
     required _SimpleRuleDraft draft,
     required String ruleKeyPrefix,
+  }) => _buildComponentPickerField(
+    context,
+    controller: draft.targetController,
+    fieldKeyPrefix: '$ruleKeyPrefix-target',
+    labelText: 'Composant cible (filtrer ou saisir un ID)',
+    hintText: 'Ex. email-input',
+  );
+
+  Widget _buildComponentPickerField(
+    BuildContext context, {
+    required TextEditingController controller,
+    required String fieldKeyPrefix,
+    required String labelText,
+    required String hintText,
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final query = draft.targetController.text.trim().toLowerCase();
+    final query = controller.text.trim().toLowerCase();
     final exactMatch = widget.availableTargets
-        .where((o) => o.id == draft.targetController.text.trim())
+        .where((o) => o.id == controller.text.trim())
         .firstOrNull;
     final filtered = [
       for (final option in widget.availableTargets)
@@ -786,23 +915,23 @@ class _BehaviorValidatorEditorState extends State<BehaviorValidatorEditor> {
       mainAxisSize: MainAxisSize.min,
       children: [
         TextField(
-          key: ValueKey('$ruleKeyPrefix-target'),
-          controller: draft.targetController,
+          key: ValueKey(fieldKeyPrefix),
+          controller: controller,
           decoration: InputDecoration(
             isDense: true,
             border: const OutlineInputBorder(),
-            labelText: 'Composant cible (filtrer ou saisir un ID)',
-            hintText: 'Ex. email-input',
+            labelText: labelText,
+            hintText: hintText,
             prefixIcon: Icon(
               exactMatch?.icon ?? Icons.search,
               size: 18,
             ),
-            suffixIcon: draft.targetController.text.isNotEmpty
+            suffixIcon: controller.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear, size: 16),
                     tooltip: 'Effacer',
                     onPressed: () {
-                      setState(() => draft.targetController.clear());
+                      setState(() => controller.clear());
                       _emitCurrent();
                     },
                   )
@@ -860,19 +989,15 @@ class _BehaviorValidatorEditorState extends State<BehaviorValidatorEditor> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final option = filtered[index];
-                      final isSelected =
-                          option.id == draft.targetController.text.trim();
+                      final isSelected = option.id == controller.text.trim();
                       return InkWell(
-                        key: ValueKey(
-                          '$ruleKeyPrefix-target-option-${option.id}',
-                        ),
+                        key: ValueKey('$fieldKeyPrefix-option-${option.id}'),
                         onTap: () {
                           setState(() {
-                            draft.targetController.text = option.id;
-                            draft.targetController.selection =
-                                TextSelection.collapsed(
-                                  offset: option.id.length,
-                                );
+                            controller.text = option.id;
+                            controller.selection = TextSelection.collapsed(
+                              offset: option.id.length,
+                            );
                           });
                           _emitCurrent();
                         },

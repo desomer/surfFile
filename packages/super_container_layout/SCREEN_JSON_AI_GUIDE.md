@@ -1594,7 +1594,7 @@ La clé canonique est **`"event"`** (l'ancienne clé `"trigger"` reste acceptée
 
 - **Événements déclaratifs / réactifs** (réservés exclusivement à leurs actions dédiées) :
   - `"onHover"` *(alias : `"hover"`)* : réservé à `"onTooltip"` (sans action au clic ni curseur pointeur ; utiliser `"onHoverEnter"` pour une action impérative au survol).
-  - `"onBinding"` *(alias : `"binding"`)* : réservé aux actions réactives `"bindZoneSize"` et `"bindState"` ; s'applique à chaque changement de la valeur liée.
+  - `"onBinding"` *(alias : `"binding"`)* : réservé aux actions réactives `"bindZoneSize"`, `"bindState"`, `"sortCollection"` et `"filterCollection"` ; s'applique à chaque changement de la valeur liée, du repository ou des composants référencés.
   - `"onCreate"` *(alias : `"create"`)* : réservé à `"creationDefault"` sur une `SuperValue` ; appliqué automatiquement lors de la création d'une ligne dans le tableau associé.
 
 #### 2. Validateur conditionnel (`validator`, optionnel)
@@ -1615,14 +1615,17 @@ Lorsqu'il est renseigné sur un comportement impératif, `validator` est évalu�
   - `"all"` *(ET logique)* : `{"type": "all", "validators": [ ... ]}` (au moins 1 sous-validateur).
   - `"any"` *(OU logique)* : `{"type": "any", "validators": [ ... ]}` (au moins 1 sous-validateur).
   - `"not"` *(NON logique)* : `{"type": "not", "validator": { ... }}`.
+- **Valeurs de comparaison dynamiques & casse (sur tout validateur binaire)** :
+  - À la place d'une constante `"value"`, un validateur binaire accepte **`"expectedComponentId"`** (valeur runtime d'un autre composant, ex. champ de recherche `SuperValue`) **ou** **`"expectedBinding"`** (attribut d'un repository JSON, ex. `{"repositoryId": "filtres", "path": "recherche"}`) — mutuellement exclusifs avec `"value"`.
+  - **`"caseSensitive"`** *(optionnel, booléen, défaut `true`)* : mettre `false` pour des comparaisons insensibles à la casse sur `"equals"`, `"notEquals"`, `"contains"`, `"startsWith"` et `"matchesRegex"`.
 - **Règle d'évaluation `isEmpty` / `isFill`** :
   - **Vide** (`isEmpty` = vrai, `isFill` = faux) : `null`, chaîne vide `""` ou composée uniquement d'espaces, liste vide `[]`, map/objet vide `{}`.
   - **Rempli** (`isFill` = vrai) : chaîne non blanche, collection non vide, et **tout nombre y compris `0`**.
   - **Booléen** : ne pas utiliser `isEmpty`/`isFill` pour tester vrai/faux — utiliser `"isTrue"` / `"isFalse"` (ou `"otherIsTrue"` / `"otherIsFalse"`, `"bindingIsTrue"` / `"bindingIsFalse"`).
 
-#### 3. Actions polymorphes (`action` — 14 types)
+#### 3. Actions polymorphes (`action` — 16 types)
 
-Toutes les **10 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`, `setStyle`, `setVisibility`, `setState`) acceptent **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié.
+Toutes les **12 actions impératives** (`goToPage`, `emitEvent`, `searchProvider`, `datasource`, `generatePdf`, `addArrayItem`, `runJavaScript`, `setStyle`, `setVisibility`, `setState`, `sortCollection`, `filterCollection`) acceptent **tout événement impératif** (`onTap`, `onDoubleTap`, `onLongPress`, `onHoverEnter`, `onHoverExit`, `onSelected`, `onChanged`, `onSubmitted`, `onFocus`, `onBlur`, `onExpanded`, `onCollapsed`, `onMount`) — et pas seulement `click`/`doubleClick` — ainsi qu'un `validator` optionnel. Les **4 actions exclusivement déclaratives / réactives** (`onTooltip`, `bindZoneSize`, `bindState`, `creationDefault`) exigent leur événement dédié ; **`sortCollection`** et **`filterCollection`** acceptent **aussi** `"onBinding"` directement sur un `SuperListView` ou un `SuperTable` pour un tri/filtrage déclaratif réactif.
 
 - **`"goToPage"`** (`GoToPageAction`, impérative) : navigation vers une page ou une URL.
   - `pagePath` : chemin absolu cible (ex. `"/details"`, `"/clients"`).
@@ -1663,6 +1666,20 @@ Toutes les **10 actions impératives** (`goToPage`, `emitEvent`, `searchProvider
   - `mode` : `"show"` (afficher) | `"hide"` (masquer) | `"toggle"` (basculer) | `"reset"` (restaurer la visibilité par défaut / `bindState`).
   - `targetComponentId` *(optionnel)* : ID technique d'un autre composant cible (`null`/omis = soi-même).
   - `maintainSize` *(optionnel, défaut `false`, utilisé avec `"hide"` / `"toggle"`)* : conserve l'espace dans la mise en page lorsque masqué.
+- **`"sortCollection"`** (`SortCollectionAction`, déclaratif `onBinding` sur `SuperListView`/`SuperTable` **ou** impératif depuis tout composant) : trie les lignes côté client en préservant les indices sources (sélection Maître/Détail, édition et suppression ; suspendu en mode édition).
+  - `mode` *(optionnel, défaut `"set"`)* : `"set"` (remplace le tri), `"add"` (ajoute/met à jour un critère secondaire) ou `"clear"` (réinitialise le tri impératif, mode impératif uniquement).
+  - `targetComponentId` *(impératif uniquement, optionnel si attaché à la collection)* : ID du `SuperListView` ou `SuperTable` cible. Interdit avec `"onBinding"`.
+  - `criteria` *(liste de critères)* **ou** raccourci mono-critère directement sur l'action (`path`, `direction`, `caseSensitive`, `nullsLast`) :
+    - `path` : chemin relatif dans la ligne (`"nom"`, `"adresse.ville"`), modèle (`"clients[?].prix"`), calculé (`"@total"`) ou `"."` pour une liste de primitives ;
+    - `direction` *(optionnel, défaut `"asc"`)* : `"asc"`, `"desc"`, ou `"toggle"` *(impératif uniquement — alterne asc/desc)* ;
+    - `caseSensitive` *(optionnel, défaut `false`)*, `nullsLast` *(optionnel, défaut `true`)*.
+  - En mode `"onBinding"`, `validator` sert de **condition d'activation** du tri (ex. `{"type": "otherEquals", "targetComponentId": "sort-select", "value": "prix_desc"}`).
+- **`"filterCollection"`** (`FilterCollectionAction`, déclaratif `onBinding` sur `SuperListView`/`SuperTable` **ou** impératif depuis tout composant) : filtre les lignes côté client via `BehaviorValidator` (suspendu en mode édition ; plusieurs filtres actifs se cumulent en ET logique).
+  - `mode` *(optionnel, défaut `"apply"`)* : `"apply"`, `"toggle"`, `"clear"` ou `"clearAll"` (seul `"apply"` est autorisé avec `"onBinding"`).
+  - `targetComponentId` *(impératif uniquement)* : ID du `SuperListView` ou `SuperTable` cible. Interdit avec `"onBinding"`.
+  - `filterKey` *(optionnel, impératif uniquement)* : clé logique permettant de gérer plusieurs filtres indépendants (`"search"`, `"status"`…).
+  - `predicate` (`BehaviorValidator`) : prédicat évalué **pour chaque ligne** dans son `JsonListScope` (ex. `{"type": "bindingContains", "binding": "clients[?].nom", "expectedComponentId": "search-input", "caseSensitive": false}`).
+  - En mode `"onBinding"` : si `predicate` est omis, le `validator` du comportement est évalué directement **par ligne** ; si `predicate` **et** `validator` sont tous deux renseignés, `validator` sert de **condition d'activation globale** (ex. `otherIsFill("search-input")`) et `predicate` filtre chaque ligne.
 - **`"setState"`** (`SetStateAction`, impérative) : contrôle l'état interactif (`disabled` ou `readOnly`) d'un composant en mémoire (suspendu en mode édition).
   - `state` : `"disabled"` (bloque pointeur, focus, comportements et passe les composants interactifs en état inactif) | `"readOnly"` (lecture seule).
   - `operation` *(optionnel, défaut `"set"`)* : `"set"` (force à `value`) | `"toggle"` (bascule) | `"reset"` (restaure l'état par défaut / `bindState`).

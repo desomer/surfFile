@@ -39,6 +39,7 @@ import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/super_table_config.dart';
 import '../../services/behaviors/behavior_dispatcher.dart';
+import '../../services/behaviors/collection_view_transform.dart';
 import '../../services/diagnostics/debug_entry.dart';
 import '../../services/inspection/vibe_debug_capture.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -160,6 +161,7 @@ class _SuperTableState extends State<SuperTable> {
   JsonArrayBinding? _selection;
   List<JsonArrayBinding> _listened = const [];
   List<Object?>? _items;
+  List<int> _visibleSourceIndices = const [];
   String? _error;
   bool _loading = false;
   bool _busy = false;
@@ -168,6 +170,12 @@ class _SuperTableState extends State<SuperTable> {
   final Map<int, GlobalKey> _frozenRowKeys = {};
   int? _pointerDownSelectedRow;
   int? _suppressTapRow;
+  late final CollectionViewTransformController _transformController =
+      CollectionViewTransformController(onChanged: _handleTransformChanged);
+
+  void _handleTransformChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void didUpdateWidget(SuperTable oldWidget) {
@@ -185,6 +193,7 @@ class _SuperTableState extends State<SuperTable> {
   void dispose() {
     VibeDebugCapture.clearComponentDiagnostics(widget.id);
     _generation++;
+    _transformController.dispose();
     _store?.removeListener(_reload);
     _listen(const []);
     _localConfig.dispose();
@@ -702,13 +711,19 @@ class _SuperTableState extends State<SuperTable> {
     BuildContext context,
     NativeComponentEditorState editor,
     SuperTableConfig config,
-    int dataIndex,
+    int visualIndex,
     int colIndex, {
     required bool templateMode,
   }) {
     if (colIndex < 0 || colIndex >= config.columns.length) {
       return const SizedBox.shrink();
     }
+    final sourceIndex =
+        templateMode ||
+            visualIndex < 0 ||
+            visualIndex >= _visibleSourceIndices.length
+        ? visualIndex
+        : _visibleSourceIndices[visualIndex];
     final col = config.columns[colIndex];
     final zoneId = SuperTableConfig.cellZoneFor(col.id);
     final isLastCol = colIndex == config.columns.length - 1;
@@ -722,7 +737,7 @@ class _SuperTableState extends State<SuperTable> {
       editor,
       config,
       zoneId,
-      isInteractiveRegion: dataIndex == 0,
+      isInteractiveRegion: visualIndex == 0,
     );
     if (!showRemove) {
       return content;
@@ -731,11 +746,11 @@ class _SuperTableState extends State<SuperTable> {
       children: [
         Expanded(child: content),
         IconButton(
-          key: ValueKey('super-table-remove-${widget.id}-$dataIndex'),
+          key: ValueKey('super-table-remove-${widget.id}-$sourceIndex'),
           tooltip: 'Supprimer l’élément',
           visualDensity: VisualDensity.compact,
           iconSize: 18,
-          onPressed: _busy ? null : () => _remove(dataIndex),
+          onPressed: _busy ? null : () => _remove(sourceIndex),
           icon: const Icon(Icons.delete_outline),
         ),
       ],
@@ -780,7 +795,13 @@ class _SuperTableState extends State<SuperTable> {
       );
     }
 
-    final dataIndex = row - rowCountTop;
+    final visualIndex = row - rowCountTop;
+    final dataIndex =
+        templateMode ||
+            visualIndex < 0 ||
+            visualIndex >= _visibleSourceIndices.length
+        ? visualIndex
+        : _visibleSourceIndices[visualIndex];
     final selected = !templateMode && _isSelected(dataIndex);
     final placeholder = templateMode || (parentScope?.placeholder ?? false);
     final itemData = !templateMode && items != null && dataIndex < items.length
@@ -960,6 +981,8 @@ class _SuperTableState extends State<SuperTable> {
         _localConfig;
     final listScope = JsonListScope.maybeOf(context);
     final repositoryStore = JsonRepositoryScope.maybeOf(context);
+    final appearance = AppearanceScope.of(context);
+    final behaviors = widget.behaviours ?? appearance.behaviorsFor(widget.id);
 
     return ValueListenableBuilder<SuperTableConfig>(
       valueListenable: controller,
@@ -1010,9 +1033,24 @@ class _SuperTableState extends State<SuperTable> {
               final placeholder = listScope?.placeholder ?? false;
               final items = placeholder ? null : _items;
               final editing = editor.editing;
+              _visibleSourceIndices = _transformController.resolveVisibleIndices(
+                context: context,
+                componentId: widget.id,
+                componentType: 'table',
+                items: items,
+                source: _source,
+                arrayTemplate: _templatePath,
+                behaviors: behaviors,
+                appearance: appearance,
+                store: repositoryStore,
+                parentScope: listScope,
+                editing: editing,
+              );
               final templateMode =
                   (items == null || items.isEmpty) && (editing || placeholder);
-              final dataRowCount = templateMode ? 1 : (items?.length ?? 0);
+              final dataRowCount = templateMode
+                  ? 1
+                  : _visibleSourceIndices.length;
 
               final message = placeholder
                   ? null
@@ -1021,7 +1059,10 @@ class _SuperTableState extends State<SuperTable> {
                   : _error ??
                         (_source?.unselected == true
                             ? 'Aucune ligne parente sélectionnée.'
-                            : items != null && items.isEmpty && !_loading
+                            : items != null &&
+                                  (items.isEmpty ||
+                                      _visibleSourceIndices.isEmpty) &&
+                                  !_loading
                             ? config.emptyText
                             : null);
 
@@ -1039,11 +1080,12 @@ class _SuperTableState extends State<SuperTable> {
               final effectiveDataRowHeight = config.rowHeight + rowExtraExtent;
 
               final selectedData = templateMode ? null : _selectedDataIndex;
+              final selectedVisual = selectedData == null
+                  ? -1
+                  : _visibleSourceIndices.indexOf(selectedData);
               final initialSelectedTableRow =
-                  selectedData != null &&
-                      selectedData >= 0 &&
-                      selectedData < dataRowCount
-                  ? selectedData + rowCountTop
+                  selectedVisual >= 0 && selectedVisual < dataRowCount
+                  ? selectedVisual + rowCountTop
                   : null;
 
               final canAdd =
@@ -1110,10 +1152,11 @@ class _SuperTableState extends State<SuperTable> {
                           tableRow >= rowCountTop &&
                           tableRow < totalRowCount - rowCountBottom,
                       onRowTap: (tableRow) {
-                        final dataIndex = tableRow - rowCountTop;
+                        final visualIndex = tableRow - rowCountTop;
                         if (!templateMode &&
-                            dataIndex >= 0 &&
-                            dataIndex < dataRowCount) {
+                            visualIndex >= 0 &&
+                            visualIndex < _visibleSourceIndices.length) {
+                          final dataIndex = _visibleSourceIndices[visualIndex];
                           final previousIndex = _selectedDataIndex;
                           _selectRow(dataIndex);
                           if (!editing) {

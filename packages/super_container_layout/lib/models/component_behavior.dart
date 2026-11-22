@@ -13,8 +13,10 @@
 /// - [CreationDefaultAction] (`behaviours/creation_default_action.dart`)
 /// - [DatasourceAction] (`behaviours/datasource_action.dart`)
 /// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
+/// - [FilterCollectionAction] (`behaviours/filter_collection_action.dart`)
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
 /// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
+/// - [SortCollectionAction] (`behaviours/sort_collection_action.dart`)
 /// - [RunJavaScriptAction] (`behaviours/run_javascript_action.dart`)
 /// - [BehaviorStylePatch] (`behaviours/behavior_style_patch.dart`)
 /// - [SetStyleAction] (`behaviours/set_style_action.dart`)
@@ -35,9 +37,11 @@ import 'behaviours/behavior_validator.dart';
 import 'behaviours/creation_default_action.dart';
 import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
+import 'behaviours/filter_collection_action.dart';
 import 'behaviours/generate_pdf_action.dart';
 import 'behaviours/go_to_page_action.dart';
 import 'behaviours/search_provider_action.dart';
+import 'behaviours/sort_collection_action.dart';
 import 'behaviours/run_javascript_action.dart';
 import 'behaviours/set_state_action.dart';
 import 'behaviours/set_style_action.dart';
@@ -53,9 +57,11 @@ export 'behaviours/behavior_validator.dart';
 export 'behaviours/creation_default_action.dart';
 export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
+export 'behaviours/filter_collection_action.dart';
 export 'behaviours/generate_pdf_action.dart';
 export 'behaviours/go_to_page_action.dart';
 export 'behaviours/search_provider_action.dart';
+export 'behaviours/sort_collection_action.dart';
 export 'behaviours/run_javascript_action.dart';
 export 'behaviours/set_state_action.dart';
 export 'behaviours/set_style_action.dart';
@@ -137,6 +143,8 @@ abstract final class BehaviorActionCatalog {
     'addArrayItem': AddArrayItemAction.fromJson,
     'creationDefault': CreationDefaultAction.fromJson,
     'runJavaScript': RunJavaScriptAction.fromJson,
+    'sortCollection': SortCollectionAction.fromJson,
+    'filterCollection': FilterCollectionAction.fromJson,
     'setStyle': SetStyleAction.fromJson,
     'setVisibility': SetVisibilityAction.fromJson,
     'setState': SetStateAction.fromJson,
@@ -253,9 +261,45 @@ class ComponentBehavior {
         throw const FormatException('bindZoneSize exige l’événement onBinding.');
       }
       return;
-    } else if (event == BehaviorEvent.onBinding) {
+    }
+
+    if (action case final SortCollectionAction sortCollection) {
+      if (event == BehaviorEvent.onBinding) {
+        sortCollection.validate(declarative: true);
+        return;
+      }
+      if (!event.isImperative) {
+        throw FormatException(
+          'L’action "sortCollection" exige onBinding ou un événement impératif (reçu : ${event.name}).',
+        );
+      }
+      sortCollection.validate(declarative: false);
+      return;
+    }
+
+    if (action case final FilterCollectionAction filterCollection) {
+      if (event == BehaviorEvent.onBinding) {
+        filterCollection.validate(
+          declarative: true,
+          hasBehaviorValidator: validator != null,
+        );
+        return;
+      }
+      if (!event.isImperative) {
+        throw FormatException(
+          'L’action "filterCollection" exige onBinding ou un événement impératif (reçu : ${event.name}).',
+        );
+      }
+      filterCollection.validate(
+        declarative: false,
+        hasBehaviorValidator: validator != null,
+      );
+      return;
+    }
+
+    if (event == BehaviorEvent.onBinding) {
       throw const FormatException(
-        'onBinding est réservé aux actions réactives bindState et bindZoneSize.',
+        'onBinding est réservé aux actions réactives bindState, bindZoneSize, sortCollection et filterCollection.',
       );
     }
 
@@ -327,6 +371,10 @@ class ComponentBehavior {
         final SetVisibilityAction setVisibility =>
           setVisibility.toCompactJson(),
         final SetStateAction setState => setState.toCompactJson(),
+        final SortCollectionAction sortCollection =>
+          sortCollection.toCompactJson(),
+        final FilterCollectionAction filterCollection =>
+          filterCollection.toCompactJson(),
         _ => action.toJson(),
       },
     };
@@ -405,6 +453,7 @@ class BehaviorCatalogItem {
     required this.icon,
     required this.trigger,
     required this.actionType,
+    this.supportsBinding = false,
   });
 
   final String id;
@@ -420,12 +469,16 @@ class BehaviorCatalogItem {
 
   final String actionType;
 
+  /// Indique si cette action impérative peut aussi être attachée en mode déclaratif (`onBinding`).
+  final bool supportsBinding;
+
   /// Indique si cette action est impérative (compatible avec tout événement impératif).
   bool get isImperative => trigger.isImperative;
 
   /// Indique si cette action peut être associée à [event].
-  bool supportsEvent(BehaviorEvent event) =>
-      isImperative ? event.isImperative : event == trigger;
+  bool supportsEvent(BehaviorEvent event) => isImperative
+      ? (event.isImperative || (supportsBinding && event == BehaviorEvent.onBinding))
+      : event == trigger;
 }
 
 /// Catalogue global des comportements disponibles.
@@ -584,6 +637,30 @@ abstract final class BehaviorCatalog {
     actionType: 'setState',
   );
 
+  /// Trie une collection (`SuperListView` ou `SuperTable`) en mode déclaratif ou impératif.
+  static const sortCollection = BehaviorCatalogItem(
+    id: 'sort_collection',
+    title: 'Trier une liste ou un tableau',
+    description:
+        'Trier les lignes d’un SuperListView ou SuperTable selon un ou plusieurs champs',
+    icon: Icons.sort,
+    trigger: BehaviorEvent.onTap,
+    actionType: 'sortCollection',
+    supportsBinding: true,
+  );
+
+  /// Filtre une collection (`SuperListView` ou `SuperTable`) via un validateur.
+  static const filterCollection = BehaviorCatalogItem(
+    id: 'filter_collection',
+    title: 'Filtrer une liste ou un tableau',
+    description:
+        'Filtrer les lignes d’un SuperListView ou SuperTable selon un validateur',
+    icon: Icons.filter_list,
+    trigger: BehaviorEvent.onTap,
+    actionType: 'filterCollection',
+    supportsBinding: true,
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
     generatePdf,
@@ -599,5 +676,7 @@ abstract final class BehaviorCatalog {
     addArrayItem,
     creationDefault,
     runJavaScript,
+    sortCollection,
+    filterCollection,
   ];
 }

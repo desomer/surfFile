@@ -106,6 +106,16 @@ enum BehaviorValidatorOperator {
   /// Indique si l'opérateur ne s'applique qu'à un composant (`self` ou `component`, pas `binding`).
   final bool requiresComponent;
 
+  /// Indique si l'opérateur prend en charge l'option [ValueBehaviorValidator.caseSensitive].
+  bool get supportsCaseSensitivity => switch (this) {
+    BehaviorValidatorOperator.equals ||
+    BehaviorValidatorOperator.notEquals ||
+    BehaviorValidatorOperator.contains ||
+    BehaviorValidatorOperator.startsWith ||
+    BehaviorValidatorOperator.matchesRegex => true,
+    _ => false,
+  };
+
   /// Nom de type JSON canonique pour une [source] donnée (ex. `isFill`, `otherIsEmpty`, `bindingEquals`).
   String typeNameFor(BehaviorValueSource source) {
     final pascal = shortName[0].toUpperCase() + shortName.substring(1);
@@ -161,6 +171,9 @@ class ValueBehaviorValidator extends BehaviorValidator {
     this.targetComponentId,
     this.binding,
     this.expectedValue,
+    this.expectedComponentId,
+    this.expectedBinding,
+    this.caseSensitive = true,
   });
 
   /// Vérifie que la valeur du composant courant est vide.
@@ -333,6 +346,25 @@ class ValueBehaviorValidator extends BehaviorValidator {
   /// Valeur attendue pour les opérateurs binaires (`equals`, `contains`, `greaterThan`, etc.).
   final Object? expectedValue;
 
+  /// Identifiant technique d'un autre composant fournissant dynamiquement la valeur attendue.
+  final String? expectedComponentId;
+
+  /// Liaison repository fournissant dynamiquement la valeur attendue.
+  final JsonTextBinding? expectedBinding;
+
+  /// Indique si les comparaisons textuelles respectent la casse (`true` par défaut).
+  final bool caseSensitive;
+
+  /// Indique si la valeur attendue provient d'un autre composant.
+  bool get hasExpectedComponent =>
+      expectedComponentId != null && expectedComponentId!.trim().isNotEmpty;
+
+  /// Indique si la valeur attendue provient d'une liaison repository.
+  bool get hasExpectedBinding => expectedBinding != null;
+
+  /// Indique si la valeur attendue est résolue dynamiquement au runtime.
+  bool get hasDynamicExpected => hasExpectedComponent || hasExpectedBinding;
+
   @override
   String get type => operator.typeNameFor(source);
 
@@ -356,28 +388,60 @@ class ValueBehaviorValidator extends BehaviorValidator {
     if (!operator.requiresValue) {
       return '$subject $opText';
     }
-    return '$subject $opText ${_formatExpectedPreview(expectedValue)}';
+    final expectedText = hasExpectedComponent
+        ? 'la valeur de « ${expectedComponentId!.trim()} »'
+        : hasExpectedBinding
+        ? 'la liaison « ${expectedBinding!.path} »'
+        : _formatExpectedPreview(expectedValue);
+    final caseSuffix = !caseSensitive && operator.supportsCaseSensitivity
+        ? ' (sans casse)'
+        : '';
+    return '$subject $opText $expectedText$caseSuffix';
   }
 
   @override
   Set<String> get referencedComponentIds {
-    if (source != BehaviorValueSource.component) return const {};
-    final id = targetComponentId?.trim();
-    return id == null || id.isEmpty ? const {} : {id};
+    final ids = <String>{};
+    if (source == BehaviorValueSource.component) {
+      final id = targetComponentId?.trim();
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+    final expectedId = expectedComponentId?.trim();
+    if (expectedId != null && expectedId.isNotEmpty) {
+      ids.add(expectedId);
+    }
+    return ids.isEmpty ? const {} : ids;
   }
 
   @override
-  List<JsonTextBinding> get referencedBindings =>
-      source == BehaviorValueSource.binding && binding != null
-      ? [binding!]
-      : const [];
+  List<JsonTextBinding> get referencedBindings => [
+    if (source == BehaviorValueSource.binding && binding != null) binding!,
+    ?expectedBinding,
+  ];
 
   @override
   ValueBehaviorValidator remapComponentIds(Map<String, String> idMap) {
-    if (source != BehaviorValueSource.component) return this;
-    final current = targetComponentId?.trim();
-    if (current == null || !idMap.containsKey(current)) return this;
-    return copyWith(targetComponentId: idMap[current]);
+    if (idMap.isEmpty) return this;
+    var nextTarget = targetComponentId;
+    var changed = false;
+    if (source == BehaviorValueSource.component) {
+      final current = targetComponentId?.trim();
+      if (current != null && idMap.containsKey(current)) {
+        nextTarget = idMap[current];
+        changed = true;
+      }
+    }
+    var nextExpected = expectedComponentId;
+    final currentExpected = expectedComponentId?.trim();
+    if (currentExpected != null && idMap.containsKey(currentExpected)) {
+      nextExpected = idMap[currentExpected];
+      changed = true;
+    }
+    if (!changed) return this;
+    return copyWith(
+      targetComponentId: nextTarget,
+      expectedComponentId: nextExpected,
+    );
   }
 
   /// Retourne une copie modifiée de ce validateur.
@@ -389,6 +453,11 @@ class ValueBehaviorValidator extends BehaviorValidator {
     JsonTextBinding? binding,
     bool clearBinding = false,
     Object? expectedValue = _keepExpectedValue,
+    String? expectedComponentId,
+    bool clearExpectedComponentId = false,
+    JsonTextBinding? expectedBinding,
+    bool clearExpectedBinding = false,
+    bool? caseSensitive,
   }) => ValueBehaviorValidator(
     source: source ?? this.source,
     operator: operator ?? this.operator,
@@ -399,6 +468,13 @@ class ValueBehaviorValidator extends BehaviorValidator {
     expectedValue: identical(expectedValue, _keepExpectedValue)
         ? this.expectedValue
         : expectedValue,
+    expectedComponentId: clearExpectedComponentId
+        ? null
+        : (expectedComponentId ?? this.expectedComponentId),
+    expectedBinding: clearExpectedBinding
+        ? null
+        : (expectedBinding ?? this.expectedBinding),
+    caseSensitive: caseSensitive ?? this.caseSensitive,
   );
 
   @override
@@ -445,45 +521,82 @@ class ValueBehaviorValidator extends BehaviorValidator {
         }
     }
 
-    if (operator.requiresValue) {
-      if (expectedValue == null &&
-          operator != BehaviorValidatorOperator.equals &&
-          operator != BehaviorValidatorOperator.notEquals) {
+    if (!operator.requiresValue) {
+      if (expectedComponentId != null &&
+          expectedComponentId!.trim().isNotEmpty) {
         throw FormatException(
-          'Une valeur attendue ("value") est requise pour "${operator.shortName}".',
+          'expectedComponentId n’est pas autorisé pour "${operator.shortName}".',
         );
       }
-      if (operator == BehaviorValidatorOperator.matchesRegex) {
-        if (expectedValue is! String || (expectedValue as String).isEmpty) {
-          throw const FormatException(
-            'L’opérateur "matchesRegex" attend une expression régulière non vide.',
-          );
-        }
-        try {
-          RegExp(expectedValue as String);
-        } on FormatException catch (error) {
-          throw FormatException(
-            'Expression régulière invalide dans le validateur : ${error.message}',
-          );
-        }
-      }
-      if (operator == BehaviorValidatorOperator.greaterThan ||
-          operator == BehaviorValidatorOperator.lessThan) {
-        final numeric = _tryParseNum(expectedValue);
-        if (numeric == null || !numeric.isFinite) {
-          throw FormatException(
-            'L’opérateur "${operator.shortName}" attend une valeur numérique finie.',
-          );
-        }
-      }
-      if (operator == BehaviorValidatorOperator.startsWith &&
-          expectedValue is! String) {
-        throw const FormatException(
-          'L’opérateur "startsWith" attend une chaîne de caractères.',
+      if (expectedBinding != null) {
+        throw FormatException(
+          'expectedBinding n’est pas autorisé pour "${operator.shortName}".',
         );
       }
-      _ensureJsonValue(expectedValue);
+      return;
     }
+
+    if (expectedComponentId != null && expectedComponentId!.trim().isEmpty) {
+      throw const FormatException(
+        'expectedComponentId ne peut pas être vide.',
+      );
+    }
+    if (hasExpectedComponent && hasExpectedBinding) {
+      throw const FormatException(
+        'expectedComponentId et expectedBinding sont mutuellement exclusifs.',
+      );
+    }
+    if (hasDynamicExpected && expectedValue != null) {
+      throw const FormatException(
+        'value ne peut pas être combiné avec expectedComponentId ou expectedBinding.',
+      );
+    }
+
+    if (hasExpectedBinding) {
+      expectedBinding!.validate();
+      return;
+    }
+    if (hasExpectedComponent) {
+      return;
+    }
+
+    if (expectedValue == null &&
+        operator != BehaviorValidatorOperator.equals &&
+        operator != BehaviorValidatorOperator.notEquals) {
+      throw FormatException(
+        'Une valeur attendue ("value") est requise pour "${operator.shortName}".',
+      );
+    }
+    if (operator == BehaviorValidatorOperator.matchesRegex) {
+      if (expectedValue is! String || (expectedValue as String).isEmpty) {
+        throw const FormatException(
+          'L’opérateur "matchesRegex" attend une expression régulière non vide.',
+        );
+      }
+      try {
+        RegExp(expectedValue as String, caseSensitive: caseSensitive);
+      } on FormatException catch (error) {
+        throw FormatException(
+          'Expression régulière invalide dans le validateur : ${error.message}',
+        );
+      }
+    }
+    if (operator == BehaviorValidatorOperator.greaterThan ||
+        operator == BehaviorValidatorOperator.lessThan) {
+      final numeric = _tryParseNum(expectedValue);
+      if (numeric == null || !numeric.isFinite) {
+        throw FormatException(
+          'L’opérateur "${operator.shortName}" attend une valeur numérique finie.',
+        );
+      }
+    }
+    if (operator == BehaviorValidatorOperator.startsWith &&
+        expectedValue is! String) {
+      throw const FormatException(
+        'L’opérateur "startsWith" attend une chaîne de caractères.',
+      );
+    }
+    _ensureJsonValue(expectedValue);
   }
 
   @override
@@ -494,7 +607,14 @@ class ValueBehaviorValidator extends BehaviorValidator {
       if (source == BehaviorValueSource.component)
         'targetComponentId': targetComponentId!.trim(),
       if (source == BehaviorValueSource.binding) 'binding': binding!.toJson(),
-      if (operator.requiresValue) 'value': _cloneJson(expectedValue),
+      if (operator.requiresValue && hasExpectedComponent)
+        'expectedComponentId': expectedComponentId!.trim(),
+      if (operator.requiresValue && hasExpectedBinding)
+        'expectedBinding': expectedBinding!.toJson(),
+      if (operator.requiresValue && !hasDynamicExpected)
+        'value': _cloneJson(expectedValue),
+      if (!caseSensitive && operator.supportsCaseSensitivity)
+        'caseSensitive': false,
     };
   }
 
@@ -507,7 +627,14 @@ class ValueBehaviorValidator extends BehaviorValidator {
         'targetComponentId': targetComponentId!.trim(),
       if (source == BehaviorValueSource.binding)
         'binding': binding!.toCompactJson(),
-      if (operator.requiresValue) 'value': _cloneJson(expectedValue),
+      if (operator.requiresValue && hasExpectedComponent)
+        'expectedComponentId': expectedComponentId!.trim(),
+      if (operator.requiresValue && hasExpectedBinding)
+        'expectedBinding': expectedBinding!.toCompactJson(),
+      if (operator.requiresValue && !hasDynamicExpected)
+        'value': _cloneJson(expectedValue),
+      if (!caseSensitive && operator.supportsCaseSensitivity)
+        'caseSensitive': false,
     };
   }
 
@@ -519,7 +646,10 @@ class ValueBehaviorValidator extends BehaviorValidator {
           other.operator == operator &&
           other.targetComponentId?.trim() == targetComponentId?.trim() &&
           other.binding == binding &&
-          _jsonEquals(other.expectedValue, expectedValue);
+          _jsonEquals(other.expectedValue, expectedValue) &&
+          other.expectedComponentId?.trim() == expectedComponentId?.trim() &&
+          other.expectedBinding == expectedBinding &&
+          other.caseSensitive == caseSensitive;
 
   @override
   int get hashCode => Object.hash(
@@ -528,6 +658,9 @@ class ValueBehaviorValidator extends BehaviorValidator {
     targetComponentId?.trim(),
     binding,
     _deepHash(expectedValue),
+    expectedComponentId?.trim(),
+    expectedBinding,
+    caseSensitive,
   );
 }
 
@@ -932,6 +1065,20 @@ abstract final class BehaviorValidatorCatalog {
     final binding = rawBinding == null
         ? null
         : JsonTextBinding.fromJson(rawBinding);
+    final rawExpectedComponent = json['expectedComponentId'];
+    if (rawExpectedComponent != null && rawExpectedComponent is! String) {
+      throw const FormatException(
+        'expectedComponentId doit être une chaîne de caractères.',
+      );
+    }
+    final rawExpectedBinding = json['expectedBinding'];
+    final expectedBinding = rawExpectedBinding == null
+        ? null
+        : JsonTextBinding.fromJson(rawExpectedBinding);
+    final rawCaseSensitive = json['caseSensitive'];
+    if (rawCaseSensitive != null && rawCaseSensitive is! bool) {
+      throw const FormatException('caseSensitive doit être un booléen.');
+    }
     final expected = json.containsKey('value')
         ? _cloneJson(json['value'])
         : json.containsKey('expectedValue')
@@ -943,6 +1090,9 @@ abstract final class BehaviorValidatorCatalog {
       targetComponentId: rawTarget as String?,
       binding: binding,
       expectedValue: expected,
+      expectedComponentId: rawExpectedComponent as String?,
+      expectedBinding: expectedBinding,
+      caseSensitive: rawCaseSensitive as bool? ?? true,
     );
     validator.validate();
     return validator;
