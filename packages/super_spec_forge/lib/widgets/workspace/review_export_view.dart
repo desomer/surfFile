@@ -18,6 +18,7 @@ import '../../services/spec_coherence_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
 import 'json_schema_viewer_dialog.dart';
 import 'markdown_viewer_dialog.dart';
+import 'promote_business_objects_dialog.dart';
 
 /// Vue de revue globale, audit de cohérence et export multi-formats.
 class ReviewExportView extends StatelessWidget {
@@ -26,6 +27,7 @@ class ReviewExportView extends StatelessWidget {
     required this.controller,
     this.onContinueToUxWizard,
     this.onContinueToQaWizard,
+    this.onOpenDesignModelsContracts,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
     super.key,
@@ -39,6 +41,9 @@ class ReviewExportView extends StatelessWidget {
 
   /// Callback optionnel permettant d'enchaîner directement vers le Wizard BDD / Gherkin & TDD.
   final VoidCallback? onContinueToQaWizard;
+
+  /// Callback optionnel permettant d'ouvrir directement Design › Modèles & Contrats sur un domaine.
+  final ValueChanged<String?>? onOpenDesignModelsContracts;
 
   /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
   final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
@@ -117,6 +122,26 @@ class ReviewExportView extends StatelessWidget {
                         icon: const Icon(Icons.science_rounded, size: 16),
                         label: const Text('BDD / TDD'),
                       ),
+                    Tooltip(
+                      message: project.businessObjects.isEmpty
+                          ? 'Définissez au moins un objet métier pour le promouvoir vers Design'
+                          : 'Promouvoir des objets métier vers un domaine de l’espace Design',
+                      child: FilledButton.tonalIcon(
+                        key: const ValueKey(
+                          'spec-review-promote-to-design-btn',
+                        ),
+                        onPressed:
+                            (project.businessObjects.isEmpty ||
+                                controller.isSending)
+                            ? null
+                            : () => _openPromoteDialog(context),
+                        icon: const Icon(
+                          Icons.rocket_launch_rounded,
+                          size: 16,
+                        ),
+                        label: const Text('Promouvoir vers Design'),
+                      ),
+                    ),
                     FilledButton.icon(
                       onPressed: () => _exportAllDialog(
                         context,
@@ -354,6 +379,37 @@ class ReviewExportView extends StatelessWidget {
       }
     }
     pathCtrl.dispose();
+  }
+
+  Future<void> _openPromoteDialog(BuildContext context) async {
+    final result = await PromoteBusinessObjectsDialog.show(
+      context,
+      controller: controller,
+    );
+    if (result == null || !context.mounted) return;
+    final details = <String>[
+      if (result.createdCount > 0) '${result.createdCount} créé(s)',
+      if (result.updatedCount > 0) '${result.updatedCount} mis à jour',
+      if (result.skippedCount > 0) '${result.skippedCount} ignoré(s)',
+    ];
+    final summaryText = details.isEmpty
+        ? 'Aucune modification appliquée.'
+        : 'Promotion vers Design terminée (${details.join(', ')}).';
+    final openCallback = onOpenDesignModelsContracts;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(summaryText),
+          behavior: SnackBarBehavior.floating,
+          action: openCallback != null && result.firstPromotedDomainId != null
+              ? SnackBarAction(
+                  label: 'Ouvrir dans Design',
+                  onPressed: () => openCallback(result.firstPromotedDomainId),
+                )
+              : null,
+        ),
+      );
   }
 
   static String _safeName(String input) {

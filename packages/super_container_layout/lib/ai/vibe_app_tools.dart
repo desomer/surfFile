@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable, mapEquals;
 
+import '../models/material_icon_catalog.dart';
 import 'vibe_chat_attachment.dart';
 
 /// Déclaration d'un outil exposé à l'assistant Vibe IA.
@@ -1030,10 +1031,10 @@ class VibeAppToolRegistry {
     VibeToolDeclaration(
       name: 'validate_or_list_icons',
       description:
-          'Valide qu’un ou plusieurs identifiants d’icônes sont disponibles dans MaterialIconCatalog '
-          '(et retourne le canonicalId ou des suggestions proches si invalide) et/ou liste ou recherche '
-          'les icônes disponibles par mot-clé FR/EN ou catégorie. À appeler OBLIGATOIREMENT avant de '
-          'remonter un patch JSON d’écran ("vibe") contenant des icônes ("icon").',
+          'Valide qu’un ou plusieurs identifiants d’icônes hors liste sont disponibles dans MaterialIconCatalog '
+          '(et retourne le canonicalId ou des suggestions proches si invalide) et/ou recherche '
+          'les icônes par mot-clé FR/EN ou catégorie. Inutile si tu choisis directement un identifiant '
+          'présent dans la liste MaterialIconCatalog déjà fournie dans le guide.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
@@ -1137,17 +1138,26 @@ class VibeAppToolRegistry {
       '(7) l’utilisateur demande de consulter, inférer, valider, associer, modifier ou supprimer le JSON Schema d’un repository existant (`manage_repository_json_schema`), '
       '(8) l’utilisateur demande de générer, extraire ou ajouter un DESIGN.md / Design System dans la liste des choix possibles à partir de pièces jointes ou d’instructions (`register_design_system` — essaie toujours de récupérer aussi le logo via `logo` et de l’inclure dans le DESIGN.md), '
       '(9) une vérification visuelle est utile : préfère `capture_element_screenshot` pour un composant/zone/ligne isolé (plus net et léger) et `capture_screenshot` uniquement pour la page entière, '
-      '(10) tu t’apprêtes à remonter un patch JSON d’écran ("vibe") utilisant des icônes ("icon" sur SuperAction, SuperIndicator, SuperChoice, onglet SuperTab, etc.) : appelle OBLIGATOIREMENT `validate_or_list_icons` AVANT de renvoyer le patch JSON final pour valider chaque identifiant d’icône et/ou lister les icônes disponibles dans MaterialIconCatalog.\n'
-      '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives simples sans icône à vérifier dont le JSON courant contient déjà toute l’information.\n'
-      '- Regroupe autant que possible tes appels d’outils en un seul lot (par exemple tous les ids utiles dans un seul `get_component_geometry`) afin de limiter le nombre de tours.\n'
-      '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" si tu souhaites inspecter la géométrie ou une capture d’écran une fois le patch appliqué en aperçu.\n\n'
+      '(10) tu as besoin de rechercher une icône par mot-clé ou de vérifier un identifiant absent du catalogue `MaterialIconCatalog` ci-dessous (`validate_or_list_icons`) — si tu choisis directement parmi les identifiants listés dans le catalogue `MaterialIconCatalog` du guide, N’APPELLE PAS `validate_or_list_icons` afin d’éviter un tour réseau inutile.\n'
+      '- N’APPELLE PAS d’outil pour les créations ou retouches déclaratives dont le JSON courant et le catalogue d’icônes du guide contiennent déjà toute l’information.\n'
+      '- Regroupe impérativement tous tes appels d’outils d’un même diagnostic en UN SEUL tour parallèle (ex: `get_component_geometry` + `get_debug_entries` + `inspect_bindings_and_diagnostics` dans le même appel) au lieu d’enchaîner 5 à 8 tours unitaires.\n'
+      '- Auto-vérification post-rendu : ajoute "verifyRender": true à ta réponse contenant "vibe" uniquement sur le dernier lot ou lorsqu’une mesure géométrique après rendu est indispensable.\n\n'
       'Catalogue des outils disponibles :\n',
     );
+    var hasIconTool = false;
     for (final declaration in declarations) {
+      if (declaration.name == 'validate_or_list_icons') {
+        hasIconTool = true;
+      }
       buffer.writeln(
         '- ${declaration.name} : ${declaration.description} '
         'Paramètres: ${jsonEncode(declaration.parametersSchema)}',
       );
+    }
+    if (hasIconTool) {
+      buffer
+        ..writeln()
+        ..writeln(MaterialIconCatalog.compactAiCatalogSummary());
     }
     return buffer.toString().trimRight();
   }

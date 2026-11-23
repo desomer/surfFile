@@ -148,22 +148,31 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
           Container(
             color: colors.tertiaryContainer.withValues(alpha: 0.45),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Icon(
-                  Icons.check_circle_outline_rounded,
-                  size: 18,
-                  color: colors.onTertiaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${stage.agentTitle} indique que cette étape est prête pour la suivante.',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 18,
                       color: colors.onTertiaryContainer,
-                      fontWeight: FontWeight.w500,
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${stage.agentTitle} indique que cette étape est prête pour la suivante.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onTertiaryContainer,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 FilledButton.tonalIcon(
                   onPressed: widget.controller.isSending

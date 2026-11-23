@@ -1858,6 +1858,30 @@ Studio sombre bleu cobalt haute densité.
         allResult.data['totalCatalogCount'],
       );
       expect(allResult.data['iconIds'], containsAll(['add', 'save', 'delete']));
+
+      // Alias fréquents observés dans les générations IA (zéro rejet inutile) :
+      final aliasResult = await registry.execute(
+        VibeToolCall(
+          id: 'ico-4',
+          name: 'validate_or_list_icons',
+          arguments: const {
+            'icons': ['sync_alt', 'picture_as_pdf', 'upload_file'],
+          },
+        ),
+      );
+      expect(aliasResult.data['allValid'], isTrue);
+      final aliasValidations = aliasResult.data['validations'] as List;
+      expect((aliasValidations[0] as Map)['canonicalId'], 'sync');
+      expect((aliasValidations[1] as Map)['canonicalId'], 'description');
+      expect((aliasValidations[2] as Map)['canonicalId'], 'file_upload');
+
+      final staticGuide = VibeChatDialog.composeStaticGuide(
+        screenGuide: 'Guide écran.',
+      );
+      expect(
+        staticGuide,
+        contains('CATALOGUE COMPLET DES ICÔNES DISPONIBLES'),
+      );
     });
   });
 }

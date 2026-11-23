@@ -27,6 +27,7 @@ class ModelsContractsView extends StatefulWidget {
     required this.controller,
     required this.onBack,
     required this.onManageDomains,
+    this.initialDomainId,
     this.onOpenEntryChanged,
     this.pickAttachments,
     this.pasteAttachments,
@@ -44,6 +45,9 @@ class ModelsContractsView extends StatefulWidget {
 
   /// Ouvre le catalogue des domaines quand le workspace n'en a aucun.
   final VoidCallback onManageDomains;
+
+  /// Identifiant optionnel du domaine sélectionné à l'ouverture de la vue.
+  final String? initialDomainId;
 
   /// Signale au shell la fiche visible, ou le retour à la liste.
   final void Function(String? domainId, String? entryId)? onOpenEntryChanged;
@@ -70,6 +74,26 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
   double _codeFraction = DomainContractsEditor.defaultCodeFraction;
   final _menu = MenuController();
   final _pages = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedId = widget.initialDomainId;
+  }
+
+  @override
+  void didUpdateWidget(ModelsContractsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialDomainId != null &&
+        widget.initialDomainId != oldWidget.initialDomainId) {
+      _selectedId = widget.initialDomainId;
+      _level = 0;
+      _openId = null;
+      if (_pages.hasClients) {
+        _pages.jumpToPage(0);
+      }
+    }
+  }
 
   @override
   void dispose() {

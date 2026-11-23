@@ -612,12 +612,14 @@ class AppearanceTransfer {
     bool normalizeRoundTrip = true,
     bool logErrors = true,
   }) {
-    final payload = raw['data'] is Map<String, dynamic>
-        ? <String, dynamic>{
-            ...(raw['data'] as Map<String, dynamic>),
-            'merge': true,
-          }
-        : <String, dynamic>{...raw, 'merge': true};
+    final payload =
+        (raw['data'] is Map<String, dynamic>
+              ? <String, dynamic>{
+                  ...(raw['data'] as Map<String, dynamic>),
+                  'merge': true,
+                }
+              : <String, dynamic>{...raw, 'merge': true})
+          ..remove('verifyRender');
     if (!normalizeRoundTrip) {
       final version = raw['version'] is int
           ? raw['version'] as int
@@ -674,7 +676,7 @@ class AppearanceTransfer {
 
     for (final entry in payload.entries) {
       final key = entry.key;
-      if (key == 'version') continue;
+      if (key == 'version' || key == 'verifyRender') continue;
       if (!knownTransferKeys.contains(key)) {
         preRejected.add(
           PatchRejectedEntry(

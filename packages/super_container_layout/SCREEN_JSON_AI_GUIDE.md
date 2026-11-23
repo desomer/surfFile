@@ -209,13 +209,17 @@ ultérieur des liaisons de données. Valeurs de `"kind"` :
 
 Règles :
 
-- **Obligatoire à la création** : pour chaque nouveau composant sans liaison,
-  inclus une entrée non nulle dans `usages` dans le même patch. Choisis le
-  `kind` selon son rôle fonctionnel, sans attendre une demande de l'utilisateur :
-  par exemple `layout` pour un conteneur, `action` pour un bouton,
-  `decoration` pour un séparateur purement visuel et `explanation` avec une
-  `translationKey` pour un texte à traduire. Ne laisse pas l'usage à déduire
-  du nom, du texte ou du type technique.
+- **Renseigné à la création (ou déduit par défaut)** : chaque nouveau composant
+  sans liaison reçoit un usage dans `Appearance.usages`. Le moteur déduit
+  automatiquement l'usage standard lorsqu'il est omis dans le patch : `layout`
+  pour un conteneur (`layout`, `Card`, `Scaffold`, `ListView`, `Table`, `Tab`,
+  etc.), `action` pour un bouton (`SuperAction`), `userInput` pour un champ de
+  saisie/choix (`mode: "input"` ou `kind: "choice"`), `decoration` pour un
+  séparateur/indicateur, et `explanation` (avec `translationKey` dérivée du
+  libellé/texte) pour un `SuperValue` d'affichage simple. Pour accélérer le
+  streaming des grands écrans, n'émets dans `"usages"` que les rôles métier
+  spécifiques non déductibles (`"dynamicData"`, `"staticData"`, `"feedback"`,
+  ou une `"translationKey"` personnalisée).
 - **Composants sans liaison uniquement** : propose un usage seulement pour un
   composant dont la configuration (`components[<id>]`, y compris ses `states`)
   ne contient ni `binding`, ni `optionsBinding`, ni `propertyBindings`, ni
@@ -543,7 +547,7 @@ Si la zone contient déjà des composants à conserver, inclus aussi leurs place
 5. **Préservation des placements existants** : pour chaque conteneur dont le patch contient `placements` (ou `regions`), vérifie que toutes les zones, régions et slots existants à conserver sont réémis (voir la règle d'or de la section 3). Pour `root`, `root.placements.body` doit toujours contenir `{"id": "scaffold:body", "type": "scaffold:body"}`.
 6. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
 7. **Noms obligatoires** : pour chaque nouveau slot, vérifie la présence d'un nom non vide dans les `slotLabels` du parent approprié, y compris dans les gabarits de listes. Ni l'ID, ni `label`, ni `text` ne remplacent ce nom d'édition.
-8. **Usages obligatoires** : chaque nouveau composant sans liaison de données possède une entrée non nulle dans `usages` dans ce patch. Chaque `"explanation"` porte une `translationKey` lowerCamelCase. N'émets aucun usage pour les composants liés, même si la liaison est ajoutée dans le même patch (voir « Usages des composants »).
+8. **Usages ciblés** : le moteur déduit automatiquement `usages[<id>]` pour les conteneurs (`layout`), boutons (`action`), champs de saisie (`userInput`), indicateurs/séparateurs (`decoration`) et étiquettes `SuperValue` simples (`explanation` avec `translationKey` auto-générée). N'émets dans `usages` que les rôles non déductibles (`dynamicData`, `staticData`, `feedback`, ou `translationKey` métier sur mesure), et jamais pour un composant lié.
 9. **Atomicité clé/valeur, propriété `label` native & zéro bloc texte libre fourre-tout** : vérifie qu'aucun `SuperValue` ne concatène une étiquette et une donnée dans `text` (`"Clé : Valeur"`), et qu'aucun récapitulatif ou liste métier (affaires, contrats, interlocuteurs, même demandé sous les termes « résumé » ou « notes ») n'est rendu par un bloc texte libre multiligne / `textarea`. En visualisation (`mode: "display"`), **privilégie 1 seul `SuperValue` utilisant `label` + `text`/`binding`** ; ne crée 2 `SuperValue` séparés (`"explanation"` + `"dynamicData"`/`binding`) que si le label requiert un style ou une mise en page fortement personnalisés. Structure les listes/synthèses en cartes, champs unitaires, `SuperListView` ou `SuperTable`.
 10. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
 11. **Aucune entrée `styles[id]` sur un `registry:Layout`** : vérifie qu'aucune clé de `styles` ne cible un composant placé avec `"type": "registry:Layout"` (ni `mainLayout`). Si un conteneur de mise en page doit recevoir un fond, une bordure ou un `paddingInsets`, place-le avec `"type": "registry:IterableContent"` dans son parent (tout en gardant `components[id]` en `"type": "layout"`) ou enveloppe-le dans un `"registry:Card"`.
@@ -824,7 +828,7 @@ Affiche un bouton interactif :
 - `label` (ou `text`) : libellé du bouton (`string`, défaut `"Action"`).
 - `tooltip` : infobulle (`string`).
 - `icon` : identifiant d'icône du catalogue `MaterialIconCatalog` (ex. `"touch_app"`, `"smart_button"`, `"add"`, `"add_circle"`, `"remove"`, `"edit"`, `"delete"`, `"check"`, `"check_circle"`, `"close"`, `"search"`, `"settings"`, `"tune"`, `"refresh"`, `"autorenew"`, `"save"`, `"share"`, `"download"`, `"upload"`, `"send"`, `"copy"`, `"paste"`, `"cut"`, `"undo"`, `"redo"`, `"filter_list"`, `"sort"`, `"print"`, `"qr_code"`, `"auto_awesome"`, `"build"`, `"home"`, `"arrow_back"`, `"arrow_forward"`, `"arrow_upward"`, `"arrow_downward"`, `"chevron_left"`, `"chevron_right"`, `"expand_more"`, `"expand_less"`, `"menu"`, `"more_vert"`, `"more_horiz"`, `"open_in_new"`, `"fullscreen"`, `"dashboard"`, `"apps"`, `"location_on"`, `"map"`, `"language"`, `"email"`, `"phone"`, `"chat"`, `"forum"`, `"notifications"`, `"alternate_email"`, `"folder"`, `"folder_open"`, `"create_new_folder"`, `"description"`, `"insert_drive_file"`, `"attach_file"`, `"link"`, `"calendar"`, `"schedule"`, `"bookmark"`, `"label"`, `"list"`, `"grid_view"`, `"table_chart"`, `"code"`, `"terminal"`, `"storage"`, `"cloud"`, `"cloud_upload"`, `"cloud_download"`, `"archive"`, `"play_arrow"`, `"pause"`, `"stop"`, `"skip_next"`, `"skip_previous"`, `"volume_up"`, `"volume_off"`, `"mic"`, `"image"`, `"photo_camera"`, `"videocam"`, `"music_note"`, `"palette"`, `"info"`, `"help"`, `"warning"`, `"error"`, `"favorite"`, `"star"`, `"thumb_up"`, `"bolt"`, `"lightbulb"`, `"flag"`, `"verified"`, `"person"`, `"person_add"`, `"group"`, `"account_circle"`, `"badge"`, `"visibility"`, `"visibility_off"`, `"lock"`, `"lock_open"`, `"key"`, `"shield"`, `"login"`, `"logout"`, `"shopping_cart"`, `"shopping_bag"`, `"credit_card"`, `"payments"`, `"receipt"`, `"savings"`, `"analytics"`, `"trending_up"`, `"pie_chart"`, `"work"`, `"inventory"`, `"local_shipping"`).
-  - **Validation obligatoire avant d'émettre `"vibe"`** : avant de remonter un patch JSON d'écran contenant des propriétés `"icon"`, appelle l'outil `validate_or_list_icons` pour vérifier que chaque identifiant est disponible dans `MaterialIconCatalog` et/ou lister/rechercher les icônes adaptées.
+  - **Sélection directe sans tour d'outil superflu** : la liste complète des identifiants canoniques de `MaterialIconCatalog` est fournie dans la section Outils du guide. Choisis directement un identifiant de cette liste sans appeler `validate_or_list_icons` avant d'émettre `"vibe"` ; n'utilise `validate_or_list_icons` qu'en cas de recherche par mot-clé ou de doute sur un identifiant hors liste.
 - `iconPosition` : `"leading"` (défaut) ou `"trailing"`.
 - `iconSize` (`number > 0`), `iconSpacing` (`number >= 0`, défaut `8`).
 - `enabled` (`bool`, défaut `true`).

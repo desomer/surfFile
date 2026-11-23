@@ -29,11 +29,12 @@ import '../services/spec_schema_dsl_bridge.dart';
 
 /// Construit et documente les outils exposés aux agents IA de `super_spec_forge`.
 abstract final class SpecForgeToolRegistry {
-  /// Ensemble des 10 outils historiques du wizard de spécification métier.
+  /// Ensemble des outils du wizard de spécification métier.
   static const Set<String> specToolNames = <String>{
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'inspect_business_object',
+    'get_example_mapping',
     'get_business_rules',
     'get_debug_entries',
     'run_coherence_audit',
@@ -85,6 +86,7 @@ abstract final class SpecForgeToolRegistry {
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'inspect_business_object',
+    'get_example_mapping',
     'get_business_rules',
     'run_coherence_audit',
     'get_debug_entries',
@@ -103,6 +105,10 @@ abstract final class SpecForgeToolRegistry {
     (
       'inspect_business_object',
       'lit le détail complet d\'un objet métier (sous-objets, attributs, compteur N/200, tableaux, relations, cycle de vie, YAML Light).',
+    ),
+    (
+      'get_example_mapping',
+      'lit les tableaux d\'Example Mapping (Story jaune, règles bleues, exemples verts et questions rouges), filtrables par objet métier ou code EM-xxx.',
     ),
     (
       'get_business_rules',
@@ -230,6 +236,27 @@ abstract final class SpecForgeToolRegistry {
       },
     ),
     VibeToolDeclaration(
+      name: 'get_example_mapping',
+      description: 'Consulte les tableaux d’Example Mapping à 4 couleurs (stories jaunes, règles bleues, exemples verts et questions rouges), filtrables par objet métier, code EM-xxx ou questions ouvertes.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'objectId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant ou nom technique d’objet métier cible.',
+          },
+          'storyIdOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant ou code EM-xxx de story.',
+          },
+          'onlyOpenQuestions': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Ne retourne que les stories contenant au moins une question rouge ouverte (false par défaut).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
       name: 'get_business_rules',
       description: 'Liste les règles de gestion RG-xxx existantes, filtrables par objet cible ou catégorie.',
       parametersSchema: <String, Object?>{
@@ -321,7 +348,7 @@ abstract final class SpecForgeToolRegistry {
         'properties': <String, Object?>{
           'stage': <String, Object?>{
             'type': 'string',
-            'description': 'Nom de l’étape (lexicon, vision, specifications, businessObjects, businessRules, reviewExport).',
+            'description': 'Nom de l’étape (lexicon, vision, specifications, businessObjects, exampleMapping, businessRules, reviewExport).',
           },
           'objectId': <String, Object?>{
             'type': 'string',
@@ -330,6 +357,10 @@ abstract final class SpecForgeToolRegistry {
           'attributePath': <String, Object?>{
             'type': 'string',
             'description': 'Nom ou chemin pointé de l’attribut à sélectionner dans l’objet (ex. "statut" ou "adresseLivraison.codePostal").',
+          },
+          'exampleStoryId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code EM-xxx du tableau Example Mapping à sélectionner (optionnel).',
           },
         },
         'required': <String>['stage'],
@@ -538,6 +569,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String? objectId)? onFocusObject,
     void Function({String? objectId, List<String> attributePath})?
     onFocusSelection,
+    void Function(String? storyId)? onFocusExampleStory,
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
@@ -571,6 +603,7 @@ abstract final class SpecForgeToolRegistry {
     onNavigateStage: onNavigateStage,
     onFocusObject: onFocusObject,
     onFocusSelection: onFocusSelection,
+    onFocusExampleStory: onFocusExampleStory,
     onFilterBusinessObjects: onFilterBusinessObjects,
     readCompanyGlossary: readCompanyGlossary,
     readModelPreferences: readModelPreferences,
@@ -596,6 +629,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String? objectId)? onFocusObject,
     void Function({String? objectId, List<String> attributePath})?
     onFocusSelection,
+    void Function(String? storyId)? onFocusExampleStory,
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
@@ -772,6 +806,66 @@ abstract final class SpecForgeToolRegistry {
               'yamlLight': SpecSchemaDslBridge.toYamlLight(
                 project.copyWith(businessObjects: [found]),
               ),
+          },
+        );
+      },
+      'get_example_mapping': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final objKey = (call.arguments['objectId'] as String?)?.trim() ?? '';
+        final resolvedObj = objKey.isEmpty
+            ? null
+            : project.findBusinessObject(objKey);
+        final storyKey =
+            (call.arguments['storyIdOrCode'] as String?)?.trim().toLowerCase() ??
+            '';
+        final onlyOpenQuestions = call.arguments['onlyOpenQuestions'] == true;
+
+        final stories = project.exampleMappings.where((s) {
+          if (objKey.isNotEmpty) {
+            final directMatch =
+                s.targetObjectId == objKey ||
+                (resolvedObj != null && s.targetObjectId == resolvedObj.id) ||
+                s.rules.any(
+                  (r) =>
+                      r.targetObjectIds.contains(objKey) ||
+                      (resolvedObj != null &&
+                          r.targetObjectIds.contains(resolvedObj.id)),
+                );
+            if (!directMatch) return false;
+          }
+          if (storyKey.isNotEmpty &&
+              s.id.toLowerCase() != storyKey &&
+              s.code.toLowerCase() != storyKey &&
+              !s.title.toLowerCase().contains(storyKey)) {
+            return false;
+          }
+          if (onlyOpenQuestions && s.openQuestionCount == 0) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'storyCount': stories.length,
+            'openQuestionCount': stories.fold<int>(
+              0,
+              (sum, s) => sum + s.openQuestionCount,
+            ),
+            'exampleCount': stories.fold<int>(
+              0,
+              (sum, s) => sum + s.totalExampleCount,
+            ),
+            'stories': [for (final s in stories) s.toJson()],
           },
         );
       },
@@ -1112,6 +1206,28 @@ abstract final class SpecForgeToolRegistry {
             }
           }
         }
+        final storyQuery =
+            (call.arguments['exampleStoryId'] as String?)?.trim() ?? '';
+        String? resolvedStoryId;
+        if (storyQuery.isNotEmpty) {
+          final needle = storyQuery.toLowerCase();
+          final foundStory = project.exampleMappings
+              .where(
+                (s) =>
+                    s.id.toLowerCase() == needle ||
+                    s.code.toLowerCase() == needle,
+              )
+              .firstOrNull;
+          if (foundStory == null) {
+            return VibeToolResult.error(
+              callId: call.id,
+              name: call.name,
+              message: 'Tableau Example Mapping introuvable : $storyQuery',
+            );
+          }
+          resolvedStoryId = foundStory.id;
+          onFocusExampleStory?.call(resolvedStoryId);
+        }
         if (resolvedId != null) {
           if (onFocusSelection != null) {
             onFocusSelection(
@@ -1128,6 +1244,7 @@ abstract final class SpecForgeToolRegistry {
           data: <String, Object?>{
             'stage': stage.name,
             'focusedObjectId': ?resolvedId,
+            'focusedExampleStoryId': ?resolvedStoryId,
             if (resolvedAttrPath.isNotEmpty)
               'focusedAttributePath': resolvedAttrPath,
             'focusedAttribute': ?resolvedAttrDotPath,

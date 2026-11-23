@@ -7,6 +7,7 @@ import 'package:shortid/shortid.dart';
 import 'business_object_model_preferences.dart';
 import 'business_object_spec.dart';
 import 'business_rule_spec.dart';
+import 'example_mapping_spec.dart';
 import 'qa/qa_forge_spec.dart';
 import 'spec_cahier_des_charges.dart';
 import 'spec_coherence_issue.dart';
@@ -16,7 +17,7 @@ import 'spec_stage_chat.dart';
 import 'spec_vision.dart';
 import 'ux/ux_forge_spec.dart';
 
-/// Projet complet de spécification construit au fil des 6 étapes du wizard IA.
+/// Projet complet de spécification construit au fil des 7 étapes du wizard IA.
 @immutable
 class SpecForgeProject {
   /// Construit un projet immuable de spécification.
@@ -31,6 +32,7 @@ class SpecForgeProject {
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
+    List<ExampleMapStory> exampleMappings = const <ExampleMapStory>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
     BusinessObjectModelPreferences? businessObjectModelPreferences,
     BusinessObjectModelPreferences? businessObjectLanguageSettings,
@@ -43,6 +45,7 @@ class SpecForgeProject {
        vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
+       _exampleMappings = List<ExampleMapStory>.unmodifiable(exampleMappings),
        businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
        businessObjectModelPreferences =
            businessObjectModelPreferences ??
@@ -123,10 +126,16 @@ class SpecForgeProject {
   /// Livrable de l'étape 2 (Cahier des charges fonctionnel et non fonctionnel).
   final SpecCahierDesCharges cahierDesCharges;
 
-  /// Livrable de l'étape 3 (Objets métiers, attributs, relations, cycles de vie).
+  /// Livrable de l'étape 4 (Objets métiers, attributs, relations, cycles de vie).
   final List<BusinessObjectSpec> businessObjects;
 
-  /// Livrable de l'étape 4 (Règles de gestion structurées).
+  final List<ExampleMapStory>? _exampleMappings;
+
+  /// Livrable de l'étape 5 (Tableaux d'Example Mapping à 4 couleurs).
+  List<ExampleMapStory> get exampleMappings =>
+      _exampleMappings ?? const <ExampleMapStory>[];
+
+  /// Livrable de l'étape 6 (Règles de gestion structurées).
   final List<BusinessRuleSpec> businessRules;
 
   /// Préférences unifiées de modélisation (langues, casse, clés/audit, rigueur JSON Schema, profil régional).
@@ -228,6 +237,14 @@ class SpecForgeProject {
       }
     }
 
+    final emIds = <String>{};
+    for (final story in exampleMappings) {
+      story.validate();
+      if (!emIds.add(story.id)) {
+        throw FormatException('Tableau Example Mapping dupliqué : ${story.id}');
+      }
+    }
+
     final ruleIds = <String>{};
     for (final rule in businessRules) {
       rule.validate();
@@ -259,6 +276,9 @@ class SpecForgeProject {
             !businessObjectModelPreferences.isDefault)
           'businessObjectModelPreferences':
               businessObjectModelPreferences.toJson(),
+        if (stage.index >= SpecForgeStage.exampleMapping.index ||
+            exampleMappings.isNotEmpty)
+          'exampleMappings': [for (final s in exampleMappings) s.toJson()],
         if (stage.index >= SpecForgeStage.businessRules.index ||
             businessRules.isNotEmpty)
           'businessRules': [for (final r in businessRules) r.toJson()],
@@ -356,6 +376,7 @@ class SpecForgeProject {
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     List<BusinessObjectSpec>? businessObjects,
+    List<ExampleMapStory>? exampleMappings,
     List<BusinessRuleSpec>? businessRules,
     BusinessObjectModelPreferences? businessObjectModelPreferences,
     BusinessObjectModelPreferences? businessObjectLanguageSettings,
@@ -375,6 +396,7 @@ class SpecForgeProject {
     vision: vision ?? this.vision,
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
     businessObjects: businessObjects ?? this.businessObjects,
+    exampleMappings: exampleMappings ?? this.exampleMappings,
     businessRules: businessRules ?? this.businessRules,
     businessObjectModelPreferences:
         businessObjectModelPreferences ??
@@ -401,6 +423,8 @@ class SpecForgeProject {
     'vision': vision.toJson(),
     'cahierDesCharges': cahierDesCharges.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
+    if (exampleMappings.isNotEmpty)
+      'exampleMappings': [for (final s in exampleMappings) s.toJson()],
     'businessRules': [for (final r in businessRules) r.toJson()],
     if (!businessObjectModelPreferences.isDefault)
       'businessObjectModelPreferences': businessObjectModelPreferences.toJson(),
@@ -455,6 +479,11 @@ class SpecForgeProject {
         if (raw['businessObjects'] is List)
           for (final item in raw['businessObjects'] as List)
             BusinessObjectSpec.fromJson(item),
+      ],
+      exampleMappings: [
+        if (raw['exampleMappings'] is List)
+          for (final item in raw['exampleMappings'] as List)
+            ExampleMapStory.fromJson(item),
       ],
       businessRules: [
         if (raw['businessRules'] is List)
@@ -516,6 +545,7 @@ class SpecForgeProject {
           other.vision == vision &&
           other.cahierDesCharges == cahierDesCharges &&
           listEquals(other.businessObjects, businessObjects) &&
+          listEquals(other.exampleMappings, exampleMappings) &&
           listEquals(other.businessRules, businessRules) &&
           other.businessObjectModelPreferences ==
               businessObjectModelPreferences &&
@@ -537,6 +567,7 @@ class SpecForgeProject {
     vision,
     cahierDesCharges,
     Object.hashAll(businessObjects),
+    Object.hashAll(exampleMappings),
     Object.hashAll(businessRules),
     businessObjectModelPreferences,
     Object.hashAll(stageStates.values),

@@ -10,8 +10,9 @@ La barre d’application indique la page visible (`Spec › Projets`), l’étap
 2. **Cadrage & Acteurs** (`Product Strategist`) : clarification de l'idée, objectifs, personas, contraintes et hors-périmètre.
 3. **Cahier des charges** (`Business Analyst`) : modules fonctionnels, exigences (MoSCoW), cas d'usage et exigences non fonctionnelles.
 4. **Objets métiers** (`Domain Modeler`) : entités structurées JSON Schema avec sous-objets, attributs typés (≤ 200/objet, ≤ 200 lignes/tableau), relations (`1:1`, `1:N`, `N:M`) et cycles de vie.
-5. **Règles de gestion** (`Rule Architect`) : règles `RG-xxx` de validation, calcul, transition d'état, permission et déclencheur (`Quand / Si / Alors`).
-6. **Revue & Export** (`Consistency Auditor`) : analyse de cohérence inter-étapes, export des livrables et passerelle directe vers le **Wizard UX & Parcours**.
+5. **Example Mapping** (`Example Mapper`) : atelier BDD à 4 couleurs (Story **Jaune**, Règles **Bleues**, Exemples concrets **Verts**, Questions ouvertes **Rouges**) pour affiner les objets métiers, injecter des exemples JSON Schema, promouvoir des règles en `RG-xxx` et alimenter les fixtures/Gherkin QA.
+6. **Règles de gestion** (`Rule Architect`) : règles `RG-xxx` de validation, calcul, transition d'état, permission et déclencheur (`Quand / Si / Alors`).
+7. **Revue & Export** (`Consistency Auditor`) : analyse de cohérence inter-étapes, export des livrables, **promotion sélective des objets métiers vers l'espace Design** (choix du domaine cible, du type DSL et de la résolution de conflit par objet) et passerelle directe vers le **Wizard UX & Parcours** ou **BDD / TDD**.
 
 ## Wizard UX & Parcours (4 étapes en aval)
 
@@ -58,6 +59,7 @@ Les données sont stockées dans un **dossier Workspace sélectionnable** (par d
     │   ├── model_preferences.json
     │   ├── coherence_issues.json
     │   ├── business_objects/<slug>.json
+    │   ├── example_maps/<slug>.json
     │   └── business_rules/<slug>.json
     ├── ux/
     │   ├── navigation.json             # Shell, routes & thème visuel UX

@@ -36,6 +36,7 @@ import 'ux_workspace/ux_review_export_view.dart';
 import 'ux_workspace/ux_screens_editor_view.dart';
 import 'workspace/business_objects_editor_view.dart';
 import 'workspace/business_rules_editor_view.dart';
+import 'workspace/example_mapping_editor_view.dart';
 import 'workspace/lexicon_editor_view.dart';
 import 'workspace/review_export_view.dart';
 import 'workspace/specifications_editor_view.dart';
@@ -86,6 +87,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   int _selectedRailIndex = 0;
   String? _activeSpecLinkId;
   String? _activeDesignLinkId;
+  String? _initialModelsDomainId;
   ({SpecProjectStore workspace, String domainId, String? entryId})?
   _designDetail;
 
@@ -95,8 +97,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     _selectedRailIndex = index;
   });
 
-  void _selectDesignPage(String? id) => setState(() {
+  void _selectDesignPage(String? id, {String? initialDomainId}) => setState(() {
     _activeDesignLinkId = id;
+    _initialModelsDomainId = initialDomainId;
     _designDetail = null;
   });
 
@@ -355,6 +358,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       return ModelsContractsView(
         key: ObjectKey(widget.controller.store),
         controller: widget.controller,
+        initialDomainId: _initialModelsDomainId,
         onBack: () => _selectDesignPage(null),
         onManageDomains: () => _selectDesignPage('domain_management'),
         onOpenEntryChanged: _selectDesignDetail,
@@ -621,6 +625,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     SpecForgeStage.businessObjects => BusinessObjectsEditorView(
       controller: widget.controller,
     ),
+    SpecForgeStage.exampleMapping => ExampleMappingEditorView(
+      controller: widget.controller,
+    ),
     SpecForgeStage.businessRules => BusinessRulesEditorView(
       controller: widget.controller,
     ),
@@ -664,6 +671,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
               }
               setState(() => _activeSpecLinkId = 'qa_wizard');
             },
+      onOpenDesignModelsContracts: (domainId) => setState(() {
+        _selectedRailIndex = 1;
+        _activeDesignLinkId = 'models_contracts';
+        _initialModelsDomainId = domainId;
+        _designDetail = null;
+      }),
     ),
   };
 

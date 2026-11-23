@@ -26,6 +26,7 @@ abstract final class SpecMarkdownExporter {
     _writeVision(buf, project);
     _writeCahierDesCharges(buf, project);
     _writeBusinessObjects(buf, project);
+    _writeExampleMapping(buf, project);
     _writeBusinessRules(buf, project);
     _writeCoherenceReport(buf, project);
 
@@ -351,6 +352,73 @@ abstract final class SpecMarkdownExporter {
     }
   }
 
+  static void _writeExampleMapping(
+    StringBuffer buf,
+    SpecForgeProject project,
+  ) {
+    buf
+      ..writeln('---')
+      ..writeln()
+      ..writeln('## 5. Example Mapping (Stories, Règles, Exemples & Questions)')
+      ..writeln();
+
+    if (project.exampleMappings.isEmpty) {
+      buf
+        ..writeln('_Aucun tableau d’Example Mapping formalisé._')
+        ..writeln();
+      return;
+    }
+
+    for (final story in project.exampleMappings) {
+      final obj = story.targetObjectId.isEmpty
+          ? null
+          : project.findBusinessObject(story.targetObjectId);
+      final targetBadge = obj == null
+          ? ''
+          : ' — Objet : `${obj.technicalName}`';
+      buf.writeln('### ${story.code} — ${story.title}$targetBadge');
+      if (story.description.isNotEmpty) {
+        buf.writeln(story.description);
+      }
+      if (story.requirementIds.isNotEmpty) {
+        buf.writeln('- **Exigences liées** : `${story.requirementIds.join('`, `')}`');
+      }
+      if (story.rules.isNotEmpty) {
+        buf.writeln('- **Règles (Bleu) & Exemples (Vert)** :');
+        for (final rule in story.rules) {
+          final linked = rule.linkedRuleId.isEmpty
+              ? ''
+              : ' _(${rule.linkedRuleId})_';
+          buf.writeln('  - **[${rule.category.label}] ${rule.title}**$linked');
+          for (final ex in rule.examples) {
+            final gwt = [
+              if (ex.given.isNotEmpty) 'Étant donné ${ex.given}',
+              if (ex.when.isNotEmpty) 'Quand ${ex.when}',
+              if (ex.then.isNotEmpty) 'Alors ${ex.then}',
+            ].join(' ; ');
+            buf.writeln(
+              '    - _[${ex.kind.label}]_ **${ex.title}**${gwt.isEmpty ? '' : ' : $gwt'}',
+            );
+          }
+        }
+      }
+      if (story.questions.isNotEmpty) {
+        buf.writeln('- **Questions (Rouge)** :');
+        for (final q in story.questions) {
+          final status = q.resolved ? 'Résolue' : 'Ouverte';
+          final ans = q.answer.isEmpty ? '' : ' → _${q.answer}_';
+          buf.writeln('  - **[$status]** ${q.question}$ans');
+        }
+      }
+      if (story.refinementNotes.isNotEmpty) {
+        buf.writeln(
+          '- **Affinages appliqués** : ${story.refinementNotes.join(' ; ')}',
+        );
+      }
+      buf.writeln();
+    }
+  }
+
   static void _writeBusinessRules(
     StringBuffer buf,
     SpecForgeProject project,
@@ -358,7 +426,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 5. Règles de gestion')
+      ..writeln('## 6. Règles de gestion')
       ..writeln();
 
     if (project.businessRules.isEmpty) {
@@ -374,7 +442,7 @@ abstract final class SpecMarkdownExporter {
           .toList();
       if (rules.isEmpty) continue;
       buf
-        ..writeln('### 5.${category.index + 1} ${category.label}')
+        ..writeln('### 6.${category.index + 1} ${category.label}')
         ..writeln();
       for (final rule in rules) {
         buf.writeln(

@@ -50,19 +50,18 @@ Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la 
 
 5. TEXTES, BOUTONS & RÈGLES GENUI STRICTES :
 - Reproduis tous les textes exacts du DOM (Section 3) avec "type": "value" (mode "display" par défaut, "input" pour les champs de saisie), et "type": "action" pour les boutons/liens (variant, backgroundColor, color, radius, horizontalPadding, verticalPadding et states.hover d’après la Section 4 CSS).
-- Respecte toutes les contraintes du moteur : JSON strict valide, ordre Top-Down ("styles" puis "components" parent -> enfants puis "usages"), "slotLabels" non vide sur le parent pour chaque nouveau composant, et "usages" renseigné pour chaque composant sans binding.''';
+- Respecte toutes les contraintes du moteur : JSON strict valide minifié (sans indentation superflue), ordre Top-Down ("styles" puis "components" parent -> enfants), "slotLabels" non vide sur le parent pour chaque nouveau composant, et "usages" uniquement pour les rôles non déductibles ("dynamicData", "staticData", "feedback" ou "translationKey" sur mesure — le moteur déduit automatiquement layout/action/userInput/decoration/explanation).''';
 
   /// Consigne de planification automatique en lots (Phase 1 du mode « Plan »).
   static const String planModePlanningDirective = '''
 PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
-- Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents et autonomes afin de structurer la construction et ne jamais dépasser la limite de sortie JSON :
-  - Lot 1 : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, et architecture globale de navigation/shell/en-tête (rappel : la route "/" existe déjà côté hôte via "root" / "mainLayout" — ne prévois jamais une page "pageCatalog" avec "path": "/").
-  - Lots intermédiaires : 1 à x sections visuelles, vues ou blocs fonctionnels par lot.
-  - Dernier lot : Pages secondaires, pied de page et finitions.
-  - (Si la demande est courte/simple, un plan à 1 seul lot suffit.)
+- Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents, calibrés et autonomes afin de structurer la construction et d’accélérer l’exécution parallèle :
+  - Lot 1 (`"id": "lot-1"`) : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, architecture globale de navigation/shell/en-tête (`root`, `app-bar`, `nav-rail`...) ET déclaration initiale dans `"pageCatalog"` de TOUTES les routes secondaires prévues (avec un `Scaffold` racine minimal par route) afin que les lots suivants puissent construire chaque route indépendamment (rappel : la route "/" existe déjà côté hôte via "root" / "mainLayout" — ne prévois jamais une page "pageCatalog" avec "path": "/").
+  - Lots d’écrans (`"lot-2"`, `"lot-3"`, ...) : calibre chaque lot à 1 écran riche ou 2 écrans simples maximum (≤ 45–50 composants par lot) pour éviter les flux JSON géants. Pour chaque lot construisant une ou plusieurs routes dédiées déjà déclarées au Lot 1 (sans modifier le shell global), renseigne `"dependsOn": ["lot-1"]` afin que le moteur exécute ces lots en parallèle ! Si un lot dépend d’un autre lot (ex. lot final de finitions/cohérence), renseigne `"dependsOn"` avec les identifiants exacts des lots prérequis.
+  - (Si la demande est courte/simple, un plan à 1 seul lot sans `dependsOn` suffit.)
 - Si le NIVEAU DE QUESTIONNEMENT autorise "askUser" sur ce tour et que des choix structurants restent ambigus, pose d’abord tes questions via {"message":"...","askUser":{...},"vibe":null} (sans "plan").
 - Sinon (ou dès que les réponses sont fournies), renvoie UNIQUEMENT un objet JSON de la forme :
-  {"message":"courte présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"détail précis des sections, données/repositories, textes, styles et actions à inclure"}]},"vibe":null}
+  {"message":"courte présentation du plan en français","plan":{"title":"...","lots":[{"id":"lot-1","title":"...","description":"détail précis des sections, données/repositories, textes, styles et actions à inclure"},{"id":"lot-2","title":"...","description":"...","dependsOn":["lot-1"]}]},"vibe":null}
 - Ne génère PAS encore de patch "vibe" ni "repositories" sur ce tour.''';
 
   /// Alias historique conservé pour compatibilité ; préférer [planModePlanningDirective].
@@ -283,7 +282,8 @@ ${plan.formatLotContextPrompt(lotIndex)}
 RÈGLES D’EXÉCUTION DU LOT :
 - Implémente UNIQUEMENT le lot cible (${lotIndex + 1}/${plan.lots.length}) et renvoie {"message":"résumé court du lot réalisé",${effectiveExact ? '' : '"repositories":{...} (si des repositories doivent être créés/peuplés dans ce lot et que REPOSITORIES DISPONIBLES est présent), '}"vibe":{...}} (avec "plan": null et "askUser": null ; ajoute "verifyRender": true si le lot le demande, s’il s’agit d’un lot d’audit touchant un en-tête de carte maître, ou s’il modifie une zone en ligne `zoneAxes: 'row'`, un volet étroit ≤ 480 dp, un en-tête ou une barre d’outils).
 ${effectiveExact ? '' : '- Respecte le Design System actif (tokens theme:* ou DESIGN.md sélectionné) et les règles d’atomicité GenUI.\n'}- PRÉSERVATION OBLIGATOIRE DES LOTS PRÉCÉDENTS : lorsque tu modifies "placements" ou "regions" d’un conteneur existant ("root", "mainLayout", etc.), réémets INTÉGRALEMENT tous les placements existants à conserver dans l’ordre (y compris ceux déjà construits par les lots précédents et "scaffold:body"), en ajoutant uniquement les nouvelles sections de ce lot.
-- Renseigne systématiquement "slotLabels" sur le parent et "usages" pour chaque nouveau composant sans liaison.''';
+- Renseigne systématiquement "slotLabels" sur le parent pour chaque nouveau composant ; le moteur déduit automatiquement "usages" pour les conteneurs (layout), boutons (action), saisies (userInput), indicateurs/séparateurs (decoration) et étiquettes simples (explanation) — n’émets dans "usages" que les rôles métier spécifiques ("dynamicData", "staticData", "feedback") afin d’accélérer la génération.
+- Émets un JSON compact sur une seule ligne (sans indentation multi-espaces) et choisis directement tes icônes dans le catalogue `MaterialIconCatalog` du guide sans appeler `validate_or_list_icons`.''';
 
     final attachmentsSummary = sourceAttachments.isEmpty
         ? ''
@@ -320,9 +320,12 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
       ].join('\n\n');
     }
 
-    final current = AppearanceTransfer.exportCompactAi(
+    final current = exportLotStateAi(
       appearance,
+      plan: plan,
+      lotIndex: lotIndex,
       codec: codec,
+      instantiatedComponentIds: instantiatedComponentIds,
     );
     final codedRoutesHint = codedRoutePaths.isEmpty
         ? null
@@ -345,10 +348,120 @@ Périmètre modifiable autorisé : ${scope.isMultiTarget ? targetIdsList : '"${s
     ].join('\n\n');
   }
 
+  /// Exporte l'état `Appearance` pertinent pour le lot [lotIndex] d'un [plan].
+  ///
+  /// Pour les applications volumineuses (> 80 composants), conserve intégralement
+  /// le shell racine (`root`, `mainLayout`), `pageCatalog`, les styles globaux et
+  /// les sous-arbres des pages mentionnées dans le lot cible, tout en résumant
+  /// les identifiants internes des autres pages secondaires déjà terminées afin
+  /// d'éviter la croissance quadratique du prompt au fil des lots.
+  static String exportLotStateAi(
+    Appearance appearance, {
+    required VibeExecutionPlan plan,
+    required int lotIndex,
+    AppearanceCodec codec = const AppearanceCodec(),
+    Iterable<String>? instantiatedComponentIds,
+  }) {
+    if (appearance.components.length <= 80 ||
+        appearance.pageCatalog.pages.isEmpty) {
+      return AppearanceTransfer.exportCompactAi(appearance, codec: codec);
+    }
+
+    final targetLot = plan.lots[lotIndex];
+    final lotTextLower =
+        '${targetLot.id} ${targetLot.title} ${targetLot.description}'
+            .toLowerCase();
+
+    Set<String> collectSubtree(Iterable<String> roots) {
+      final visited = <String>{};
+      final stack = <String>[...roots];
+      while (stack.isNotEmpty) {
+        final id = stack.removeLast();
+        if (!visited.add(id)) continue;
+        final cfg = appearance.components[id];
+        if (cfg != null) {
+          stack.addAll(VibeScopeHelpers.childrenOfComponent(cfg));
+        }
+      }
+      return visited;
+    }
+
+    final pageIds = <String>{for (final p in appearance.pageCatalog.pages) p.id};
+    final shellRoots = <String>{
+      'root',
+      'mainLayout',
+      if (instantiatedComponentIds != null)
+        ...instantiatedComponentIds.where((id) => !pageIds.contains(id)),
+    };
+    final keptComponentIds = <String>{...collectSubtree(shellRoots)};
+
+    for (final page in appearance.pageCatalog.pages) {
+      final pageIdLower = page.id.toLowerCase();
+      final pagePathLower = page.path.toLowerCase();
+      final pageNameLower = page.name.toLowerCase();
+      final pathSegments = pagePathLower
+          .split('/')
+          .where((s) => s.length >= 4 && !s.startsWith(':'));
+      final isRelevantToLot =
+          lotTextLower.contains(pageIdLower) ||
+          (pagePathLower.length > 1 && lotTextLower.contains(pagePathLower)) ||
+          (pageNameLower.length >= 4 && lotTextLower.contains(pageNameLower)) ||
+          pathSegments.any(lotTextLower.contains);
+      if (isRelevantToLot) {
+        keptComponentIds.addAll(collectSubtree(<String>[page.id]));
+      } else {
+        // Conserve la coque racine de la page afin que ses régions restent connues.
+        keptComponentIds.add(page.id);
+      }
+    }
+
+    final omittedComponentIds = <String>[
+      for (final id in appearance.components.keys)
+        if (!keptComponentIds.contains(id)) id,
+    ];
+    if (omittedComponentIds.length < 25) {
+      return AppearanceTransfer.exportCompactAi(appearance, codec: codec);
+    }
+
+    final rawCompact = codec.toCompactJson(appearance)..remove('version');
+    // Omet `usages` dans le contexte inter-lots des grandes apps pour économiser des dizaines de Ko.
+    rawCompact.remove('usages');
+    if (rawCompact['components'] case final Map<String, Object?> comps) {
+      rawCompact['components'] = <String, Object?>{
+        for (final entry in comps.entries)
+          if (keptComponentIds.contains(entry.key)) entry.key: entry.value,
+      };
+    }
+    if (rawCompact['styles'] case final Map<String, Object?> stylesMap) {
+      rawCompact['styles'] = <String, Object?>{
+        for (final entry in stylesMap.entries)
+          if (entry.key == 'background' ||
+              keptComponentIds.contains(entry.key) ||
+              (entry.key.endsWith(':item') &&
+                  keptComponentIds.contains(
+                    entry.key.substring(0, entry.key.length - 5),
+                  )))
+            entry.key: entry.value,
+      };
+    }
+    if (rawCompact['behaviors'] case final Map<String, Object?> behaviorsMap) {
+      rawCompact['behaviors'] = <String, Object?>{
+        for (final entry in behaviorsMap.entries)
+          if (keptComponentIds.contains(entry.key)) entry.key: entry.value,
+      };
+    }
+    final compactJson = jsonEncode(rawCompact);
+    return '$compactJson\n'
+        'Note : ${omittedComponentIds.length} composants internes d’autres routes secondaires déjà construites sont omis de cet aperçu mais intégralement préservés par fusion ("merge") ; ne réutilise pas leurs identifiants : ${jsonEncode(omittedComponentIds.take(120).toList())}.';
+  }
+
   /// Directive de phase 1 pour l'audit complet et la planification de corrections.
   static const String auditPlanDirective = '''
 MODE « AUDIT & CORRECTION » — PHASE 1 (ANALYSE + PLAN DE CORRECTION PAR LOTS) :
-Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré-audit déterministe ci-dessous, de l’instantané JSON et, si utile, des outils d’inspection (`preview_navigation_or_selection`, `get_component_geometry`, `capture_element_screenshot`, `capture_screenshot`, `query_repository_data`, `inspect_bindings_and_diagnostics`).
+Tu dois auditer la page active (ou le scope ciblé) à partir du rapport de pré-audit déterministe ci-dessous, de l’instantané JSON et, uniquement si une information manque réellement, des outils d’inspection (`preview_navigation_or_selection`, `get_component_geometry`, `capture_element_screenshot`, `capture_screenshot`, `query_repository_data`, `inspect_bindings_and_diagnostics`).
+EXPLOITATION DIRECTE DU PRÉ-AUDIT (ZÉRO TOUR D’OUTIL REDONDANT) :
+- Le `RAPPORT DE PRÉ-AUDIT DÉTERMINISTE` ci-dessous a DÉJÀ exécuté localement `get_viewport_and_route`, `get_component_geometry` (avec les dimensions rendues en dp et le calcul budgétaire des lignes `row`), `inspect_bindings_and_diagnostics`, `get_debug_entries` et `get_theme_and_contrast` : réutilise directement ces mesures et constats sans rappeler ces outils un par un sur les composants déjà mesurés !
+- Si un appel d’outil complémentaire est indispensable (ex. `capture_element_screenshot` ou `query_repository_data`), regroupe TOUS tes appels d’outils en UN SEUL tour parallèle.
 
 RÈGLES OBLIGATOIRES :
 1. NE génère PAS encore de patch `"vibe"` ni `"repositories"` sur ce tour (`"vibe": null`, `"askUser": null`).
@@ -369,6 +482,7 @@ RÈGLES OBLIGATOIRES :
   /// Consignes impératives injectées en Phase 2 lors de l'exécution d'un lot issu de « Audit & correction ».
   static const String auditLotExecutionDirective = '''
 RÈGLES IMPÉRATIVES D’AUDIT & CORRECTION SUR CE LOT :
+- Exploitation directe des mesures : réutilise directement les dimensions, constats de liaisons et erreurs du `RAPPORT DE PRÉ-AUDIT DÉTERMINISTE` inclus dans la demande de référence sans refaire une série d’appels `get_viewport_and_route` / `get_component_geometry` / `get_debug_entries` avant de générer le patch ; regroupe tout éventuel appel d’outil restant en un seul tour parallèle.
 1. **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)** : Additionne les largeurs mesurées des composants enfants sur tout conteneur en ligne et corrige toute configuration où `somme(width) > parentWidth - paddings` (`[somme(width) + espacements] < parentWidth - paddingLeft - paddingRight`).
 2. **Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)** : Interdis sur une même ligne la cohabitation d'un titre long (> 30 caractères) et d'un bouton d'action complet texte + icône ; applique obligatoirement soit un bouton d'action à icône seule (`kind: 'icon'`, avec `tooltip`), soit un titre compacté.
 3. **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** : Active `"verifyRender": true` et effectue une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore ce lot d'audit.''';

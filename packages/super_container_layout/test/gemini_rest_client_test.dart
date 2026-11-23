@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:super_container_layout/ai/gemini_rest_client.dart';
+import 'package:super_container_layout/ai/vibe_chat_attachment.dart';
 
 class _RecordedPostCall {
   const _RecordedPostCall({
@@ -865,6 +866,121 @@ void main() {
             .toList();
         expect(cacheAttempts, 2);
         expect(nextEvents.last.usedContextCache, isTrue);
+      },
+    );
+
+    test(
+      'met en cache cachedAttachments dans cachedContents sans les renvoyer sur chaque tour et bascule proprement en cas de refus du cache',
+      () async {
+        final specAttachment = VibeChatAttachment.text(
+          name: 'specification_ux.json',
+          content: '{"screens":["SCR-001","SCR-002"]}',
+        );
+        final transportHit = _FakeGeminiHttpTransport(
+          onPostJson: (call) async {
+            expect(call.body['ttl'], '1800s');
+            final contents = call.body['contents'] as List;
+            final userParts = (contents.first as Map)['parts'] as List;
+            final joined = jsonEncode(userParts);
+            expect(joined, contains('specification_ux.json'));
+            expect(joined, contains('SCR-001'));
+            return GeminiHttpResponse(
+              statusCode: 200,
+              body: jsonEncode({
+                'name': 'cachedContents/plan-with-attachments',
+                'expireTime': '2099-01-01T00:00:00Z',
+              }),
+            );
+          },
+          onPostSseStream: (call) async {
+            expect(
+              call.body['cachedContent'],
+              'cachedContents/plan-with-attachments',
+            );
+            // Les pièces jointes mises en cache ne sont PAS ré-émises dans contents !
+            expect(
+              jsonEncode(call.body['contents']),
+              isNot(contains('specification_ux.json')),
+            );
+            return _sseJsonChunks([
+              {
+                'candidates': [
+                  {
+                    'content': {
+                      'parts': [
+                        {'text': '{"message":"OK","vibe":null}'},
+                      ],
+                    },
+                  },
+                ],
+              },
+            ]);
+          },
+        );
+
+        final clientHit = GeminiRestClient(
+          transport: transportHit,
+          apiKeyResolver: () async => 'test-key',
+        );
+        await clientHit
+            .streamGenerate(
+              'Lot 1',
+              systemInstruction: 'Règles',
+              staticGuide: largeGuide,
+              cachedAttachments: [specAttachment],
+            )
+            .toList();
+        await clientHit
+            .streamGenerate(
+              'Lot 2',
+              systemInstruction: 'Règles',
+              staticGuide: largeGuide,
+              cachedAttachments: [specAttachment],
+            )
+            .toList();
+        expect(transportHit.postJsonCalls, hasLength(1));
+        expect(transportHit.postSseCalls, hasLength(2));
+
+        // En cas de refus du cache explicite, réinjecte automatiquement cachedAttachments dans contents.
+        final transportFallback = _FakeGeminiHttpTransport(
+          onPostJson: (_) async => const GeminiHttpResponse(
+            statusCode: 400,
+            body: '{"error":{"message":"Cache unsupported"}}',
+          ),
+          onPostSseStream: (call) async {
+            expect(call.body.containsKey('cachedContent'), isFalse);
+            expect(
+              jsonEncode(call.body['contents']),
+              contains('specification_ux.json'),
+            );
+            return _sseJsonChunks([
+              {
+                'candidates': [
+                  {
+                    'content': {
+                      'parts': [
+                        {'text': '{"message":"Fallback OK","vibe":null}'},
+                      ],
+                    },
+                  },
+                ],
+              },
+            ]);
+          },
+        );
+        final clientFallback = GeminiRestClient(
+          transport: transportFallback,
+          apiKeyResolver: () async => 'test-key',
+        );
+        final fallbackEvents = await clientFallback
+            .streamGenerate(
+              'Lot fallback',
+              systemInstruction: 'Règles',
+              staticGuide: largeGuide,
+              cachedAttachments: [specAttachment],
+            )
+            .toList();
+        expect(fallbackEvents.last.usedContextCache, isFalse);
       },
     );
   });

@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/ai/vibe_stream_parser.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
+import 'package:super_container_layout/models/component_usage.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_action_config.dart';
@@ -29,6 +30,7 @@ import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_delta_recovery.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_prompt_builder.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_work_highlight.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
@@ -7101,7 +7103,10 @@ void main() {
         expect(find.byKey(const ValueKey('vibe-chat-send')), findsOneWidget);
         expect(find.byKey(const ValueKey('vibe-chat-cancel')), findsNothing);
         expect(find.text('Appel IA annulé.'), findsOneWidget);
-        expect(find.byKey(const ValueKey('vibe-message-retry')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('vibe-message-retry')),
+          findsOneWidget,
+        );
         expect(soundPlayer.outcomes, isEmpty);
 
         // Relance le tour annulé via « Réessayer ».
@@ -7374,17 +7379,16 @@ void main() {
         );
 
         // Reprendre (partiel) termine uniquement le Lot 2.
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-resume-partial')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-resume-partial')),
+        );
         await tester.pumpAndSettle();
 
         expect(
           appearance.value.valueComponent('lot2-val').initialText,
           'Lot 2 OK',
         );
-        expect(
-          find.text('Plan terminé : 2/2 lots appliqués.'),
-          findsOneWidget,
-        );
+        expect(find.text('Plan terminé : 2/2 lots appliqués.'), findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );
@@ -7426,14 +7430,13 @@ void main() {
                             onDrag: (_) {},
                             generate: (_) async =>
                                 fail('Should use streamGenerate'),
-                            streamGenerate:
-                                (
-                                  prompt, {
-                                  systemInstruction,
-                                  staticGuide,
-                                  attachments = const [],
-                                  speedMode = VibeAiSpeedMode.fast,
-                                }) => controller.stream,
+                            streamGenerate: (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) => controller.stream,
                           ),
                   ),
                 ),
@@ -7455,6 +7458,874 @@ void main() {
 
         expect(closed, isTrue);
         expect(streamCancelled, isTrue);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'exécute en parallèle les lots indépendants déclarant dependsOn, fusionne leurs ajouts et infère automatiquement les usages',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var activeParallelCalls = 0;
+        var maxConcurrentCalls = 0;
+        final waveStarted = Completer<void>();
+        var startedWaveStreams = 0;
+        late StreamController<GeminiStreamEvent> lot2Stream;
+        late StreamController<GeminiStreamEvent> lot3Stream;
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialPlanMode: true,
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => fail('Should use streamGenerate'),
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) {
+                          if (prompt.contains('PHASE 1 — PLANIFICATION')) {
+                            final planJson = jsonEncode({
+                              'message': 'Plan parallèle prêt.',
+                              'plan': {
+                                'title': 'Plan parallèle',
+                                'lots': [
+                                  {
+                                    'id': 'lot-1',
+                                    'title': 'Socle & routes',
+                                    'description': 'Crée le socle et les routes /alpha et /beta',
+                                  },
+                                  {
+                                    'id': 'lot-2',
+                                    'title': 'Page Alpha',
+                                    'description':
+                                        'Remplit route_alpha (/alpha)',
+                                    'dependsOn': ['lot-1'],
+                                  },
+                                  {
+                                    'id': 'lot-3',
+                                    'title': 'Page Beta',
+                                    'description': 'Remplit route_beta (/beta)',
+                                    'dependsOn': ['lot-1'],
+                                  },
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                            return Stream<GeminiStreamEvent>.value(
+                              GeminiStreamEvent(
+                                deltaText: planJson,
+                                accumulatedText: planJson,
+                                isDone: true,
+                                usedContextCache: true,
+                              ),
+                            );
+                          }
+                          if (prompt.contains('LOT CIBLE OBLIGATOIRE (1/3)')) {
+                            final lot1Json = jsonEncode({
+                              'message': 'Socle prêt.',
+                              'vibe': {
+                                'pageCatalog': {
+                                  'pages': [
+                                    {
+                                      'id': 'route_alpha',
+                                      'name': 'Alpha',
+                                      'path': '/alpha',
+                                    },
+                                    {
+                                      'id': 'route_beta',
+                                      'name': 'Beta',
+                                      'path': '/beta',
+                                    },
+                                  ],
+                                },
+                                'components': {
+                                  'route_alpha': {
+                                    'type': 'scaffold',
+                                    'placements': {'body': []},
+                                  },
+                                  'route_beta': {
+                                    'type': 'scaffold',
+                                    'placements': {'body': []},
+                                  },
+                                },
+                              },
+                            });
+                            return Stream<GeminiStreamEvent>.value(
+                              GeminiStreamEvent(
+                                deltaText: lot1Json,
+                                accumulatedText: lot1Json,
+                                isDone: true,
+                                usedContextCache: true,
+                              ),
+                            );
+                          }
+                          activeParallelCalls++;
+                          if (activeParallelCalls > maxConcurrentCalls) {
+                            maxConcurrentCalls = activeParallelCalls;
+                          }
+                          startedWaveStreams++;
+                          if (startedWaveStreams == 2 &&
+                              !waveStarted.isCompleted) {
+                            waveStarted.complete();
+                          }
+                          if (prompt.contains('LOT CIBLE OBLIGATOIRE (2/3)')) {
+                            lot2Stream = StreamController<GeminiStreamEvent>(
+                              onCancel: () => activeParallelCalls--,
+                            );
+                            return lot2Stream.stream;
+                          }
+                          lot3Stream = StreamController<GeminiStreamEvent>(
+                            onCancel: () => activeParallelCalls--,
+                          );
+                          return lot3Stream.stream;
+                        },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis Alpha et Beta',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+
+        expect(waveStarted.isCompleted, isTrue);
+        // Les Lots 2 et 3 ont bien été lancés simultanément après la fin du Lot 1 !
+        expect(maxConcurrentCalls, 2);
+
+        final lot2Payload = jsonEncode({
+          'message': 'Alpha terminé.',
+          'vibe': {
+            'verifyRender': false,
+            'components': {
+              'mainLayout': {
+                'type': 'layout',
+                'placements': {
+                  'center': [
+                    {'id': 'kpi-alpha', 'type': 'registry:Value'},
+                  ],
+                },
+                'slotLabels': {'kpi-alpha': 'KPI Alpha'},
+              },
+              'kpi-alpha': {
+                'type': 'value',
+                'label': 'Alpha KPI',
+                'text': '10',
+              },
+              'route_alpha': {
+                'type': 'scaffold',
+                'placements': {
+                  'body': [
+                    {'id': 'btn-alpha', 'type': 'registry:Action'},
+                  ],
+                },
+                'slotLabels': {'btn-alpha': 'Action Alpha'},
+              },
+              'btn-alpha': {'type': 'action', 'label': 'Ouvrir Alpha'},
+            },
+          },
+        });
+        final lot3Payload = jsonEncode({
+          'message': 'Beta terminé.',
+          'vibe': {
+            'components': {
+              'mainLayout': {
+                'type': 'layout',
+                'placements': {
+                  'center': [
+                    {'id': 'kpi-beta', 'type': 'registry:Value'},
+                  ],
+                },
+                'slotLabels': {'kpi-beta': 'KPI Beta'},
+              },
+              'kpi-beta': {'type': 'value', 'label': 'Beta KPI', 'text': '20'},
+              'route_beta': {
+                'type': 'scaffold',
+                'placements': {
+                  'body': [
+                    {'id': 'title-beta', 'type': 'registry:Value'},
+                  ],
+                },
+                'slotLabels': {'title-beta': 'Titre Beta'},
+              },
+              'title-beta': {'type': 'value', 'text': 'Bienvenue Beta'},
+            },
+          },
+        });
+
+        lot2Stream.add(
+          GeminiStreamEvent(
+            deltaText: lot2Payload,
+            accumulatedText: lot2Payload,
+            isDone: true,
+            usedContextCache: true,
+          ),
+        );
+        await lot2Stream.close();
+        lot3Stream.add(
+          GeminiStreamEvent(
+            deltaText: lot3Payload,
+            accumulatedText: lot3Payload,
+            isDone: true,
+            usedContextCache: true,
+          ),
+        );
+        await lot3Stream.close();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Plan terminé : 3/3 lots appliqués.'), findsOneWidget);
+        expect(appearance.value.components.containsKey('btn-alpha'), isTrue);
+        expect(appearance.value.components.containsKey('title-beta'), isTrue);
+        // Les ajouts concurrents dans mainLayout.placements.center ont été réconciliés sans perte :
+        final mainPlaced =
+            (appearance.value.components['mainLayout']! as SuperLayoutConfig)
+                .placedSlotIds;
+        expect(mainPlaced, containsAll(['kpi-alpha', 'kpi-beta']));
+        // Les usages standards omis dans le JSON ont été inférés automatiquement côté Dart :
+        expect(
+          appearance.value.usages['btn-alpha']?.kind,
+          ComponentUsageKind.action,
+        );
+        expect(
+          appearance.value.usages['title-beta']?.kind,
+          ComponentUsageKind.explanation,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    test('exportLotStateAi résume les composants internes des pages secondaires hors périmètre au-delà de 80 composants', () {
+      final rawPatch = <String, Object?>{
+        'pageCatalog': {
+          'pages': [
+            {'id': 'page_done', 'name': 'Déjà construite', 'path': '/done'},
+            {'id': 'page_target', 'name': 'Cible du lot', 'path': '/target'},
+          ],
+        },
+        'components': <String, Object?>{
+          'page_done': {
+            'type': 'scaffold',
+            'placements': {
+              'body': [
+                for (var i = 0; i < 85; i++)
+                  {'id': 'done_leaf_$i', 'type': 'registry:Value'},
+              ],
+            },
+          },
+          for (var i = 0; i < 85; i++)
+            'done_leaf_$i': {'type': 'value', 'text': 'Item $i'},
+          'page_target': {
+            'type': 'scaffold',
+            'placements': {
+              'body': [
+                {'id': 'target_leaf', 'type': 'registry:Value'},
+              ],
+            },
+          },
+          'target_leaf': {'type': 'value', 'text': 'À modifier'},
+        },
+      };
+      final largeAppearance = AppearanceTransfer.applyVibeMap(
+        Appearance(),
+        rawPatch,
+      );
+      final plan = VibeExecutionPlan(
+        title: 'Grand plan',
+        lots: const [
+          VibePlanLot(
+            id: 'lot-1',
+            title: 'Page done',
+            status: VibeLotStatus.done,
+          ),
+          VibePlanLot(
+            id: 'lot-2',
+            title: 'Compléter page_target (/target)',
+            description: 'Édite page_target',
+          ),
+        ],
+      );
+      final exported = VibePromptBuilder.exportLotStateAi(
+        largeAppearance,
+        plan: plan,
+        lotIndex: 1,
+      );
+      expect(
+        exported,
+        contains('"target_leaf":{"type":"value","initialText":"À modifier"}'),
+      );
+      expect(exported, isNot(contains('"initialText":"Item 42"')));
+      expect(exported, contains('done_leaf_0'));
+    });
+
+    testWidgets(
+      'affiche au fil de l’eau les composants des lots parallèles avant la fin du flux et passe automatiquement le relais de route (/alpha -> /beta)',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final store = _MemoryAppearanceStore(Appearance());
+        final pageRouting = EditorPageRouter(
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, _) => const Text('Accueil Initial'),
+              ),
+            ],
+          ),
+        );
+        addTearDown(pageRouting.dispose);
+
+        final controller = PersistentAppearanceController(
+          store,
+          (_) {},
+          validateAppearance: (value) =>
+              pageRouting.validate(value.pageCatalog),
+        );
+        registry.bindAppearance(controller);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(controller.dispose);
+
+        late StreamController<GeminiStreamEvent> lot2Stream;
+        late StreamController<GeminiStreamEvent> lot3Stream;
+        final waveReady = Completer<void>();
+        var waveStreamsOpened = 0;
+
+        await tester.pumpWidget(
+          DefaultAssetBundle(
+            bundle: _GuideBundle(),
+            child: SuperAppScope(
+              app: SuperApp(
+                router: pageRouting.router,
+                pageRouting: pageRouting,
+                registry: registry,
+              ),
+              child: AppearanceScope(
+                controller: controller,
+                child: MaterialApp.router(
+                  routerConfig: pageRouting.router,
+                  builder: (context, child) => Scaffold(
+                    body: Row(
+                      children: [
+                        Expanded(child: child!),
+                        SizedBox(
+                          width: 420,
+                          height: 620,
+                          child: Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => VibeChatDialog(
+                                  controller: controller,
+                                  registry: registry,
+                                  pageRouting: pageRouting,
+                                  validateAppearance: (value) =>
+                                      pageRouting.validate(value.pageCatalog),
+                                  codec: const AppearanceCodec(),
+                                  initialPlanMode: true,
+                                  initialQuestioningLevel:
+                                      VibeQuestioningLevel.none,
+                                  onClose: () {},
+                                  onDrag: (_) {},
+                                  generate: (_) =>
+                                      Future.error('Should use streamGenerate'),
+                                  streamGenerate:
+                                      (
+                                        prompt, {
+                                        systemInstruction,
+                                        staticGuide,
+                                        attachments = const [],
+                                        speedMode = VibeAiSpeedMode.fast,
+                                      }) {
+                                        if (prompt.contains(
+                                          'PHASE 1 — PLANIFICATION',
+                                        )) {
+                                          final planJson = jsonEncode({
+                                            'message': 'Plan live prêt.',
+                                            'plan': {
+                                              'title': 'Plan live parallèle',
+                                              'lots': [
+                                                {
+                                                  'id': 'lot-1',
+                                                  'title': 'Socle',
+                                                  'description': 'Routes /alpha et /beta',
+                                                },
+                                                {
+                                                  'id': 'lot-2',
+                                                  'title': 'Alpha',
+                                                  'description': 'Construit route_alpha (/alpha)',
+                                                  'dependsOn': ['lot-1'],
+                                                },
+                                                {
+                                                  'id': 'lot-3',
+                                                  'title': 'Beta',
+                                                  'description': 'Construit route_beta (/beta)',
+                                                  'dependsOn': ['lot-1'],
+                                                },
+                                              ],
+                                            },
+                                            'vibe': null,
+                                          });
+                                          return Stream<GeminiStreamEvent>.value(
+                                            GeminiStreamEvent(
+                                              deltaText: planJson,
+                                              accumulatedText: planJson,
+                                              isDone: true,
+                                              usedContextCache: true,
+                                            ),
+                                          );
+                                        }
+                                        if (prompt.contains(
+                                          'LOT CIBLE OBLIGATOIRE (1/3)',
+                                        )) {
+                                          final lot1Json = jsonEncode({
+                                            'message': 'Socle prêt.',
+                                            'vibe': {
+                                              'pageCatalog': {
+                                                'pages': [
+                                                  {
+                                                    'id': 'route_alpha',
+                                                    'name': 'Alpha',
+                                                    'path': '/alpha',
+                                                  },
+                                                  {
+                                                    'id': 'route_beta',
+                                                    'name': 'Beta',
+                                                    'path': '/beta',
+                                                  },
+                                                ],
+                                              },
+                                              'components': {
+                                                'route_alpha': {
+                                                  'type': 'scaffold',
+                                                  'placements': {'body': []},
+                                                },
+                                                'route_beta': {
+                                                  'type': 'scaffold',
+                                                  'placements': {'body': []},
+                                                },
+                                              },
+                                            },
+                                          });
+                                          return Stream<GeminiStreamEvent>.value(
+                                            GeminiStreamEvent(
+                                              deltaText: lot1Json,
+                                              accumulatedText: lot1Json,
+                                              isDone: true,
+                                              usedContextCache: true,
+                                            ),
+                                          );
+                                        }
+                                        waveStreamsOpened++;
+                                        if (waveStreamsOpened == 2 &&
+                                            !waveReady.isCompleted) {
+                                          waveReady.complete();
+                                        }
+                                        if (prompt.contains(
+                                          'LOT CIBLE OBLIGATOIRE (2/3)',
+                                        )) {
+                                          lot2Stream =
+                                              StreamController<
+                                                GeminiStreamEvent
+                                              >();
+                                          return lot2Stream.stream;
+                                        }
+                                        lot3Stream =
+                                            StreamController<
+                                              GeminiStreamEvent
+                                            >();
+                                        return lot3Stream.stream;
+                                      },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis Alpha et Beta en live',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+        expect(waveReady.isCompleted, isTrue);
+
+        // 1. Lot 2 émet un premier fragment partiel NON FERMÉ : visible immédiatement + route sur /alpha.
+        const lot2Chunk1 =
+            '{"message":"Construction Alpha…","vibe":{"components":{"route_alpha":{"type":"scaffold","placements":{"body":[{"id":"btn-alpha-live","type":"registry:Action"}]},"slotLabels":{"btn-alpha-live":"Bouton Alpha"}},"btn-alpha-live":{"type":"action","label":"Alpha Live"}},';
+        lot2Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot2Chunk1,
+            accumulatedText: lot2Chunk1,
+            isDone: false,
+            usedContextCache: true,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          controller.value.components.containsKey('btn-alpha-live'),
+          isTrue,
+        );
+        expect(pageRouting.currentUri.path, '/alpha');
+
+        // 2. Lot 3 émet simultanément un fragment partiel sur /beta :
+        //    ses composants sont déjà fusionnés en aperçu, mais la caméra reste stable sur /alpha !
+        const lot3Chunk1 =
+            '{"message":"Construction Beta…","vibe":{"components":{"route_beta":{"type":"scaffold","placements":{"body":[{"id":"title-beta-live","type":"registry:Value"}]},"slotLabels":{"title-beta-live":"Titre Beta"}},"title-beta-live":{"type":"value","text":"Beta en cours"}},';
+        lot3Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot3Chunk1,
+            accumulatedText: lot3Chunk1,
+            isDone: false,
+            usedContextCache: true,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+
+        expect(
+          controller.value.components.containsKey('btn-alpha-live'),
+          isTrue,
+        );
+        expect(
+          controller.value.components.containsKey('title-beta-live'),
+          isTrue,
+        );
+        // Pas de saut erratique vers /beta tant que le Lot 2 est actif :
+        expect(pageRouting.currentUri.path, '/alpha');
+
+        // 3. Le Lot 2 termine alors que le Lot 3 continue : bascule automatique du focus sur /beta !
+        const lot2Chunk2 = '"styles":{"route_alpha":{"padding":8}}}}';
+        lot2Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot2Chunk2,
+            accumulatedText: '$lot2Chunk1$lot2Chunk2',
+            isDone: true,
+            usedContextCache: true,
+          ),
+        );
+        await lot2Stream.close();
+        await tester.pump();
+        await tester.pump();
+
+        expect(pageRouting.currentUri.path, '/beta');
+
+        // 4. Le Lot 3 termine à son tour : fusion finale des deux lots.
+        const lot3Chunk2 = '"styles":{"route_beta":{"padding":12}}}}';
+        lot3Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot3Chunk2,
+            accumulatedText: '$lot3Chunk1$lot3Chunk2',
+            isDone: true,
+            usedContextCache: true,
+          ),
+        );
+        await lot3Stream.close();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Plan terminé : 3/3 lots appliqués.'), findsOneWidget);
+        expect(
+          controller.value.components.containsKey('btn-alpha-live'),
+          isTrue,
+        );
+        expect(
+          controller.value.components.containsKey('title-beta-live'),
+          isTrue,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'respecte le clic manuel de route pendant une vague parallèle et annule proprement l’aperçu en cas de stop',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final store = _MemoryAppearanceStore(Appearance());
+        final pageRouting = EditorPageRouter(
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, _) => const Text('Accueil Initial'),
+              ),
+            ],
+          ),
+        );
+        addTearDown(pageRouting.dispose);
+
+        final controller = PersistentAppearanceController(
+          store,
+          (_) {},
+          validateAppearance: (value) =>
+              pageRouting.validate(value.pageCatalog),
+        );
+        registry.bindAppearance(controller);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(controller.dispose);
+
+        late StreamController<GeminiStreamEvent> lot2Stream;
+        late StreamController<GeminiStreamEvent> lot3Stream;
+
+        await tester.pumpWidget(
+          DefaultAssetBundle(
+            bundle: _GuideBundle(),
+            child: SuperAppScope(
+              app: SuperApp(
+                router: pageRouting.router,
+                pageRouting: pageRouting,
+                registry: registry,
+              ),
+              child: AppearanceScope(
+                controller: controller,
+                child: MaterialApp.router(
+                  routerConfig: pageRouting.router,
+                  builder: (context, child) => Scaffold(
+                    body: Row(
+                      children: [
+                        Expanded(child: child!),
+                        SizedBox(
+                          width: 420,
+                          height: 620,
+                          child: Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => VibeChatDialog(
+                                  controller: controller,
+                                  registry: registry,
+                                  pageRouting: pageRouting,
+                                  validateAppearance: (value) =>
+                                      pageRouting.validate(value.pageCatalog),
+                                  codec: const AppearanceCodec(),
+                                  initialPlanMode: true,
+                                  initialQuestioningLevel:
+                                      VibeQuestioningLevel.none,
+                                  onClose: () {},
+                                  onDrag: (_) {},
+                                  generate: (_) =>
+                                      Future.error('Should use streamGenerate'),
+                                  streamGenerate:
+                                      (
+                                        prompt, {
+                                        systemInstruction,
+                                        staticGuide,
+                                        attachments = const [],
+                                        speedMode = VibeAiSpeedMode.fast,
+                                      }) {
+                                        if (prompt.contains(
+                                          'PHASE 1 — PLANIFICATION',
+                                        )) {
+                                          final planJson = jsonEncode({
+                                            'message': 'Plan prêt.',
+                                            'plan': {
+                                              'title': 'Plan override & cancel',
+                                              'lots': [
+                                                {
+                                                  'id': 'lot-1',
+                                                  'title': 'Socle',
+                                                  'description': 'Routes',
+                                                },
+                                                {
+                                                  'id': 'lot-2',
+                                                  'title': 'Alpha',
+                                                  'description': '/alpha',
+                                                  'dependsOn': ['lot-1'],
+                                                },
+                                                {
+                                                  'id': 'lot-3',
+                                                  'title': 'Beta',
+                                                  'description': '/beta',
+                                                  'dependsOn': ['lot-1'],
+                                                },
+                                              ],
+                                            },
+                                            'vibe': null,
+                                          });
+                                          return Stream<GeminiStreamEvent>.value(
+                                            GeminiStreamEvent(
+                                              deltaText: planJson,
+                                              accumulatedText: planJson,
+                                              isDone: true,
+                                              usedContextCache: true,
+                                            ),
+                                          );
+                                        }
+                                        if (prompt.contains(
+                                          'LOT CIBLE OBLIGATOIRE (1/3)',
+                                        )) {
+                                          final lot1Json = jsonEncode({
+                                            'message': 'Socle prêt.',
+                                            'vibe': {
+                                              'pageCatalog': {
+                                                'pages': [
+                                                  {
+                                                    'id': 'route_alpha',
+                                                    'name': 'Alpha',
+                                                    'path': '/alpha',
+                                                  },
+                                                  {
+                                                    'id': 'route_beta',
+                                                    'name': 'Beta',
+                                                    'path': '/beta',
+                                                  },
+                                                ],
+                                              },
+                                              'components': {
+                                                'route_alpha': {
+                                                  'type': 'scaffold',
+                                                  'placements': {'body': []},
+                                                },
+                                                'route_beta': {
+                                                  'type': 'scaffold',
+                                                  'placements': {'body': []},
+                                                },
+                                              },
+                                            },
+                                          });
+                                          return Stream<GeminiStreamEvent>.value(
+                                            GeminiStreamEvent(
+                                              deltaText: lot1Json,
+                                              accumulatedText: lot1Json,
+                                              isDone: true,
+                                              usedContextCache: true,
+                                            ),
+                                          );
+                                        }
+                                        if (prompt.contains(
+                                          'LOT CIBLE OBLIGATOIRE (2/3)',
+                                        )) {
+                                          lot2Stream =
+                                              StreamController<
+                                                GeminiStreamEvent
+                                              >();
+                                          return lot2Stream.stream;
+                                        }
+                                        lot3Stream =
+                                            StreamController<
+                                              GeminiStreamEvent
+                                            >();
+                                        return lot3Stream.stream;
+                                      },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis Alpha et Beta',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+
+        // Lot 2 navigue initialement sur /alpha.
+        const lot2Partial =
+            '{"message":"Alpha…","vibe":{"components":{"route_alpha":{"type":"scaffold","placements":{"body":[{"id":"temp-alpha","type":"registry:Value"}]},"slotLabels":{"temp-alpha":"Temp Alpha"}},"temp-alpha":{"type":"value","text":"En cours"}},';
+        lot2Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot2Partial,
+            accumulatedText: lot2Partial,
+            isDone: false,
+            usedContextCache: true,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(pageRouting.currentUri.path, '/alpha');
+        expect(controller.value.components.containsKey('temp-alpha'), isTrue);
+
+        // L'utilisateur navigue manuellement vers '/' : les chunks suivants ne doivent plus forcer la route.
+        pageRouting.openLocation('/');
+        await tester.pump();
+        expect(pageRouting.currentUri.path, '/');
+
+        const lot3Partial =
+            '{"message":"Beta…","vibe":{"components":{"route_beta":{"type":"scaffold","placements":{"body":[{"id":"temp-beta","type":"registry:Value"}]},"slotLabels":{"temp-beta":"Temp Beta"}},"temp-beta":{"type":"value","text":"En cours Beta"}},';
+        lot3Stream.add(
+          const GeminiStreamEvent(
+            deltaText: lot3Partial,
+            accumulatedText: lot3Partial,
+            isDone: false,
+            usedContextCache: true,
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        // L'aperçu live continue bien, mais la route manuelle '/' est respectée :
+        expect(controller.value.components.containsKey('temp-beta'), isTrue);
+        expect(pageRouting.currentUri.path, '/');
+
+        // L'utilisateur clique sur Stop/Annuler au milieu de la vague : rollback de l'aperçu partiel de la vague !
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-cancel')));
+        await tester.pumpAndSettle();
+
+        expect(controller.value.components.containsKey('temp-alpha'), isFalse);
+        expect(controller.value.components.containsKey('temp-beta'), isFalse);
+        // Le Lot 1 déjà commité reste bien conservé :
+        expect(controller.value.components.containsKey('route_alpha'), isTrue);
+        expect(
+          find.text('Exécution du plan arrêtée (1/3 lots appliqués).'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
       },
     );

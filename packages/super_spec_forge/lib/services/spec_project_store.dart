@@ -31,6 +31,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/example_mapping_spec.dart';
 import '../models/qa/gherkin_feature_spec.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_fixture_spec.dart';
@@ -65,6 +66,7 @@ class SpecProjectSummary {
     required this.updatedAt,
     required this.objectCount,
     required this.ruleCount,
+    this.exampleMapCount = 0,
     this.journeyCount = 0,
     this.screenCount = 0,
     this.currentUxStage = UxForgeStage.userJourneys,
@@ -94,6 +96,9 @@ class SpecProjectSummary {
 
   /// Nombre de règles de gestion formalisées.
   final int ruleCount;
+
+  /// Nombre de tableaux d'Example Mapping formalisés.
+  final int exampleMapCount;
 
   /// Nombre de parcours utilisateurs UX formalisés.
   final int journeyCount;
@@ -132,6 +137,9 @@ class SpecProjectStore {
 
   /// Identifiant de format d'un fichier objet métier unitaire.
   static const String businessObjectFormat = 'super_spec_forge.business_object';
+
+  /// Identifiant de format d'un fichier tableau d'Example Mapping unitaire.
+  static const String exampleMapFormat = 'super_spec_forge.example_map';
 
   /// Identifiant de format d'un fichier règle de gestion unitaire.
   static const String businessRuleFormat = 'super_spec_forge.business_rule';
@@ -210,6 +218,10 @@ class SpecProjectStore {
 
   Directory _businessObjectsDir(Directory projectDir) => Directory(
     '${_specDir(projectDir).path}${Platform.pathSeparator}business_objects',
+  );
+
+  Directory _exampleMapsDir(Directory projectDir) => Directory(
+    '${_specDir(projectDir).path}${Platform.pathSeparator}example_maps',
   );
 
   Directory _businessRulesDir(Directory projectDir) => Directory(
@@ -444,6 +456,7 @@ class SpecProjectStore {
           prev.createdAt != project.createdAt ||
           prev.updatedAt != project.updatedAt ||
           prev.currentStage != project.currentStage ||
+          prev.exampleMappings.length != project.exampleMappings.length ||
           prev.uxSpec.currentStage != project.uxSpec.currentStage ||
           prev.uxSpec.journeys.length != project.uxSpec.journeys.length ||
           prev.uxSpec.screens.length != project.uxSpec.screens.length ||
@@ -492,6 +505,11 @@ class SpecProjectStore {
       if (prev == null ||
           !listEquals(prev.businessObjects, project.businessObjects)) {
         writes.add(_syncBusinessObjects(projectDir, project.businessObjects));
+      }
+
+      if (prev == null ||
+          !listEquals(prev.exampleMappings, project.exampleMappings)) {
+        writes.add(_syncExampleMaps(projectDir, project.exampleMappings));
       }
 
       if (prev == null ||
@@ -824,6 +842,21 @@ class SpecProjectStore {
     separator: '_',
   );
 
+  Future<void> _syncExampleMaps(
+    Directory projectDir,
+    List<ExampleMapStory> stories,
+  ) => _syncSplitEntities<ExampleMapStory>(
+    _exampleMapsDir(projectDir),
+    stories,
+    format: exampleMapFormat,
+    labelFor: (s) =>
+        s.code.trim().isNotEmpty ? '${s.code} ${s.title}' : s.title,
+    idFor: (s) => s.id,
+    toJson: (s) => s.toJson(),
+    fallback: 'example-map',
+    separator: '-',
+  );
+
   Future<void> _syncBusinessRules(
     Directory projectDir,
     List<BusinessRuleSpec> rules,
@@ -1009,6 +1042,11 @@ class SpecProjectStore {
         parseItem: BusinessObjectSpec.fromJson,
         idOf: (o) => o.id,
       );
+      final exampleMapsFuture = _loadSplitEntities<ExampleMapStory>(
+        _exampleMapsDir(projectDir),
+        parseItem: ExampleMapStory.fromJson,
+        idOf: (s) => s.id,
+      );
       final rulesFuture = _loadSplitEntities<BusinessRuleSpec>(
         _businessRulesDir(projectDir),
         parseItem: BusinessRuleSpec.fromJson,
@@ -1076,6 +1114,7 @@ class SpecProjectStore {
         visionFuture,
         cdcFuture,
         objectsFuture,
+        exampleMapsFuture,
         rulesFuture,
         prefsFuture,
         issuesFuture,
@@ -1098,6 +1137,7 @@ class SpecProjectStore {
       final visionMap = await visionFuture;
       final cdcMap = await cdcFuture;
       final businessObjects = await objectsFuture;
+      final exampleMappings = await exampleMapsFuture;
       final businessRules = await rulesFuture;
       final prefsMap = await prefsFuture;
       final issuesMap = await issuesFuture;
@@ -1280,6 +1320,7 @@ class SpecProjectStore {
         vision: SpecVision.fromJson(visionMap?['data']),
         cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
         businessObjects: businessObjects,
+        exampleMappings: exampleMappings,
         businessRules: businessRules,
         businessObjectModelPreferences: BusinessObjectModelPreferences.fromJson(
           prefsMap?['data'],
@@ -1461,6 +1502,11 @@ class SpecProjectStore {
             fallbackSuites: rawQaSpec?['tddSuites'],
           ),
           _resolveSummaryQaStage(entity, decoded),
+          _resolveSummaryCount(
+            _exampleMapsDir(entity),
+            decoded['exampleMapCount'],
+            fallbackList: decoded['exampleMappings'],
+          ),
         ]);
         summaries.add(
           SpecProjectSummary(
@@ -1471,6 +1517,7 @@ class SpecProjectStore {
             updatedAt: updatedAt,
             objectCount: resolvedMeta[0] as int,
             ruleCount: resolvedMeta[1] as int,
+            exampleMapCount: resolvedMeta[8] as int,
             journeyCount: resolvedMeta[2] as int,
             screenCount: resolvedMeta[3] as int,
             currentUxStage: resolvedMeta[4] as UxForgeStage,
@@ -1749,6 +1796,7 @@ class SpecProjectStore {
         'createdAt': project.createdAt.toUtc().toIso8601String(),
         'updatedAt': project.updatedAt.toUtc().toIso8601String(),
         'currentStage': project.currentStage.name,
+        'exampleMapCount': project.exampleMappings.length,
         'currentUxStage': project.uxSpec.currentStage.name,
         'journeyCount': project.uxSpec.journeys.length,
         'screenCount': project.uxSpec.screens.length,

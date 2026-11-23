@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/example_mapping_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
@@ -148,6 +149,25 @@ abstract final class SpecPatchApplier {
       );
       next = next.copyWith(businessObjects: merged);
       summaries.add('${merged.length} objet(s) métier(s)');
+    }
+
+    if (patch['exampleMappings'] is List ||
+        patch['removeExampleMapIds'] is List) {
+      final removeIds = _stringSet(patch['removeExampleMapIds']);
+      final incoming = patch['exampleMappings'] is List
+          ? [
+              for (final item in patch['exampleMappings'] as List)
+                ExampleMapStory.fromJson(item),
+            ]
+          : const <ExampleMapStory>[];
+      final merged = _mergeById<ExampleMapStory>(
+        existing: next.exampleMappings,
+        incoming: incoming,
+        removeIds: removeIds,
+        idOf: (s) => s.id,
+      );
+      next = next.copyWith(exampleMappings: merged);
+      summaries.add('${merged.length} tableau(x) Example Mapping');
     }
 
     if (patch['businessRules'] is List ||
@@ -391,6 +411,47 @@ abstract final class SpecPatchApplier {
         }
       }
       if (count > 0) appliedSummaries.add('$count objet(s) métier(s)');
+    }
+
+    if (patch['exampleMappings'] is List) {
+      final list = patch['exampleMappings'] as List;
+      var count = 0;
+      for (var i = 0; i < list.length; i++) {
+        final item = list[i];
+        try {
+          final res = apply(current, {
+            'exampleMappings': [item],
+          });
+          current = res.project;
+          count++;
+        } catch (e) {
+          rejected.add(
+            SpecPatchRejectedEntry(
+              section: 'exampleMappings',
+              key: _labelForItem(item, fallback: '#$i'),
+              reason: _reasonOf(e),
+            ),
+          );
+        }
+      }
+      if (count > 0) appliedSummaries.add('$count tableau(x) Example Mapping');
+    }
+
+    if (patch['removeExampleMapIds'] is List) {
+      try {
+        final res = apply(current, {
+          'removeExampleMapIds': patch['removeExampleMapIds'],
+        });
+        current = res.project;
+      } catch (e) {
+        rejected.add(
+          SpecPatchRejectedEntry(
+            section: 'removeExampleMapIds',
+            key: 'remove',
+            reason: _reasonOf(e),
+          ),
+        );
+      }
     }
 
     if (patch['businessRules'] is List) {

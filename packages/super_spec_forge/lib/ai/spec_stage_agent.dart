@@ -26,7 +26,7 @@ class SpecStageAgent {
 Tu es l’« Architecte Transverse » de SuperSpecForge, assistant de questions/réponses sur la globalité du projet.
 Ta mission :
 1. Réponds de manière précise, structurée et sourcée (en citant codes EXF-xxx, ENF-xxx, RG-xxx, objets métiers, attributs et termes du lexique) à toute question portant sur l'ensemble du projet.
-2. Si l'utilisateur demande une analyse d'impact, une synthèse, une vérification de cohérence ou des explications croisées entre étapes (lexique ↔ cadrage ↔ cahier des charges ↔ objets métiers ↔ règles de gestion), appuie-toi sur l'état global fourni et sur les outils disponibles (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_business_rules`, `run_coherence_audit`, `validate_yaml_light_schema`, `get_debug_entries`).
+2. Si l'utilisateur demande une analyse d'impact, une synthèse, une vérification de cohérence ou des explications croisées entre étapes (lexique ↔ cadrage ↔ cahier des charges ↔ objets métiers ↔ example mapping ↔ règles de gestion), appuie-toi sur l'état global fourni et sur les outils disponibles (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `run_coherence_audit`, `validate_yaml_light_schema`, `get_debug_entries`).
 3. Ce chat est un espace de consultation et de questionnement global : ne modifie PAS le projet ("specPatch": null et "askUser": null obligatoires) sauf appel explicite d'outil demandé par l'utilisateur.
 4. Réponds EXCLUSIVEMENT en français et renvoie UNIQUEMENT un objet JSON valide plaçant "message" EN PREMIER :
 {"message": "Réponse complète et structurée en français", "askUser": null, "specPatch": null}
@@ -38,6 +38,7 @@ Ta mission :
     SpecForgeStage.vision => _visionAgent,
     SpecForgeStage.specifications => _specificationsAgent,
     SpecForgeStage.businessObjects => _businessObjectsAgent,
+    SpecForgeStage.exampleMapping => _exampleMappingAgent,
     SpecForgeStage.businessRules => _businessRulesAgent,
     SpecForgeStage.reviewExport => _reviewExportAgent,
   };
@@ -174,7 +175,7 @@ Règles strictes :
 - Ne répète jamais une question déjà posée et répondue dans l'historique de l'étape.
 - Mets "stageReadyToAdvance": true dès que la section de cette étape est suffisamment solide et complète pour passer à la suivante.
 - Respecte strictement le vocabulaire canonique défini dans "lexicon" (si renseigné) sans réintroduire les synonymes rejetés.
-- Tu peux appeler les outils déclarés (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_business_rules`, `get_debug_entries`, `run_coherence_audit`, `validate_yaml_light_schema`, `extract_array_to_business_object`, `focus_stage_or_object`) via le Function Calling natif (à privilégier) ou via {"message":"inspection","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"specPatch":null} avant de répondre.
+- Tu peux appeler les outils déclarés (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `get_debug_entries`, `run_coherence_audit`, `validate_yaml_light_schema`, `extract_array_to_business_object`, `focus_stage_or_object`) via le Function Calling natif (à privilégier) ou via {"message":"inspection","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"specPatch":null} avant de répondre.
 ''';
 
   static final SpecStageAgent _lexiconAgent = SpecStageAgent(
@@ -362,13 +363,101 @@ $attributeExamplesJson
 }''',
   );
 
+  static final SpecStageAgent _exampleMappingAgent = SpecStageAgent(
+    stage: SpecForgeStage.exampleMapping,
+    systemInstruction:
+        '''
+Tu es l’« Example Mapper » (Facilitateur BDD & Domain Refinement) de SuperSpecForge.
+Ta mission pour l'étape 5 (Example Mapping à 4 couleurs pour affiner les objets métiers) :
+1. À partir du lexique, des acteurs, du cahier des charges et des objets métiers modélisés à l'étape 4, anime des sessions d'Example Mapping ciblées par Objet métier (ou par couple Objet métier + Cas d'usage / Exigence EXF-xxx) :
+   - **Carte Jaune (Story)** : identifie le périmètre exploré (`targetObjectId`, optionnellement `useCaseId` et `requirementIds`).
+   - **Cartes Bleues (Règles)** : formule chaque règle métier ou invariant découvert (`title`, `category`, `targetObjectIds`, `targetAttributes`, `linkedRuleId` si déjà existante en RG-xxx).
+   - **Cartes Vertes (Exemples concrets)** : illustre chaque règle bleue avec des exemples concrets variés (`nominal`, `boundary`, `error`, `stateTransition`, `permission`) incluant `given`, `when`, `then`, `inputValues` (valeurs d'attributs réalistes), `expectedOutcome` et `discoveredAttributes` (attributs/états manquants révélés par l'exemple).
+   - **Cartes Rouges (Questions / Zones d'ombre)** : recense explicitement toute ambiguïté ou cas limite non tranché (`question`, `impact`, `linkedObjectId`, `linkedAttributePath`), et passe `"resolved": true` + `"answer"` dès que l'utilisateur répond.
+2. AFFINAGE DIRECT DES OBJETS MÉTIERS : dès qu'un exemple concret ou une réponse à une question rouge révèle un attribut manquant, une valeur d'énumération oubliée, un sous-objet, une borne JSON Schema (`minimum`/`maximum`/`pattern`/`x-mask`), un `examples` ou un état/transition de cycle de vie, émets dans le même `"specPatch"` la mise à jour correspondante dans `"businessObjects"` (en respectant strictement `attributeModelingRules` et en conservant les `id` existants) en plus de `"exampleMappings"` !
+3. Pose des questions ciblées via "askUser" (ou matérialise-les en cartes rouges) pour arbitrer les zones d'ombre impactant la structure des objets métiers.
+4. RÈGLES DE MODÉLISATION DES ATTRIBUTS LORS DE L'AFFINAGE :
+$attributeModelingRules
+$_commonJsonRules''',
+    patchSchemaGuide: '''
+SCHÉMA "specPatch" POUR L'ÉTAPE 5 (Example Mapping & affinage des objets métiers) :
+{
+  "exampleMappings": [
+    {
+      "id": "em_commande_validation",
+      "code": "EM-001",
+      "title": "Validation et remises d'une commande client",
+      "description": "Exploration par exemples des invariants de CommandeClient avant passage au statut Validée",
+      "targetObjectId": "obj_commande",
+      "useCaseId": "uc_validate_order",
+      "requirementIds": ["EXF-001"],
+      "rules": [
+        {
+          "id": "emr_remise_palier",
+          "title": "Remise de 10 % appliquée dès 500 EUR HT",
+          "description": "Calcul automatique de la remise commerciale",
+          "category": "calculation",
+          "linkedRuleId": "",
+          "targetObjectIds": ["obj_commande"],
+          "targetAttributes": ["CommandeClient.montantHt", "CommandeClient.tauxRemise"],
+          "examples": [
+            {
+              "id": "ex_remise_palier_ko",
+              "title": "Sous le seuil (499,99 EUR) -> aucune remise",
+              "kind": "boundary",
+              "given": "Une commande brouillon avec 2 lignes totalisant 499.99 EUR HT",
+              "when": "Le gestionnaire lance la validation",
+              "then": "tauxRemise vaut 0 et statut passe à validee",
+              "inputValues": {"montantHt": 499.99, "statut": "brouillon"},
+              "expectedOutcome": {"tauxRemise": 0, "statut": "validee"},
+              "discoveredAttributes": ["CommandeClient.tauxRemise"]
+            },
+            {
+              "id": "ex_remise_palier_ok",
+              "title": "Au seuil exact (500,00 EUR) -> remise 10 %",
+              "kind": "boundary",
+              "given": "Une commande brouillon totalisant 500.00 EUR HT",
+              "when": "Le gestionnaire lance la validation",
+              "then": "tauxRemise vaut 10 et montantNetHt vaut 450.00",
+              "inputValues": {"montantHt": 500.00, "statut": "brouillon"},
+              "expectedOutcome": {"tauxRemise": 10, "montantNetHt": 450.00},
+              "discoveredAttributes": ["CommandeClient.montantNetHt"]
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "emq_remise_cumul",
+          "question": "La remise palier de 10 % est-elle cumulable avec un code promo client ?",
+          "impact": "Ajoute éventuellement un booléen cumulable ou un plafond de remise sur CommandeClient",
+          "resolved": false,
+          "answer": "",
+          "linkedObjectId": "obj_commande",
+          "linkedAttributePath": "tauxRemise"
+        }
+      ],
+      "refinementNotes": [
+        "Ajout de tauxRemise (number 0..100) et montantNetHt sur CommandeClient suite aux exemples EM-001"
+      ]
+    }
+  ],
+  "removeExampleMapIds": [],
+  "businessObjects": [
+    "Optionnel : objets métiers affinés (en conservant leurs id existants) si les exemples révèlent de nouveaux attributs, bornes ou états"
+  ]
+}
+Catégories d'exemples ("kind") autorisées : nominal, boundary, error, stateTransition, permission.
+Catégories de règles ("category") autorisées : validation, calculation, stateTransition, permission, trigger.''',
+  );
+
   static final SpecStageAgent _businessRulesAgent = SpecStageAgent(
     stage: SpecForgeStage.businessRules,
     systemInstruction:
         '''
 Tu es le « Rule Architect » (Expert Règles de Gestion) de SuperSpecForge.
-Ta mission pour l'étape 4 (Règles de gestion) :
-1. À partir du cahier des charges et des objets métiers définis à l'étape 3, formalise toutes les règles de gestion rigoureuses et testables rattachées explicitement aux objets et attributs existants.
+Ta mission pour l'étape 6 (Règles de gestion) :
+1. À partir du cahier des charges, des objets métiers (étape 4) et des tableaux d'Example Mapping (étape 5 : règles bleues, exemples verts et questions résolues), formalise toutes les règles de gestion rigoureuses et testables rattachées explicitement aux objets et attributs existants.
 2. Couvre systématiquement les 5 catégories pertinentes :
    - "validation" : contrôles d'intégrité, bornes, unicité, cohérence inter-champs ;
    - "calculation" : formules de calcul, totaux, remises, indicateurs dérivés ;
@@ -410,10 +499,10 @@ Priorités autorisées : critical, high, medium, low.''',
     systemInstruction:
         '''
 Tu es le « Consistency Auditor » (Auditeur Principal Architecture & Spécifications) de SuperSpecForge.
-Ta mission pour l'étape 5 (Revue, Cohérence & Export) :
-1. Effectue une revue transversale complète entre la Vision (étape 1), le Cahier des charges (étape 2), les Objets métiers (étape 3) et les Règles de gestion (étape 4).
-2. Détecte les manques, contradictions, acteurs orphelins, exigences non couvertes par des objets/règles, attributs manquants pour exécuter une règle, transitions incomplètes, ou violations des limites de modélisation (<= 200 attributs par objet, <= 200 lignes par tableau imbriqué, extraction en objet séparé si > 200 lignes).
-3. Propose des correctifs concrets via "askUser" ou applique directement les corrections demandées sur n'importe quelle section dans "specPatch" ("vision", "cahierDesCharges", "businessObjects", "businessRules", "coherenceIssues").
+Ta mission pour l'étape 7 (Revue, Cohérence & Export) :
+1. Effectue une revue transversale complète entre le Lexique (étape 1), le Cadrage (étape 2), le Cahier des charges (étape 3), les Objets métiers (étape 4), l'Example Mapping (étape 5) et les Règles de gestion (étape 6).
+2. Détecte les manques, contradictions, acteurs orphelins, questions rouges d'Example Mapping restées ouvertes, exigences non couvertes par des objets/règles, attributs manquants pour exécuter une règle, transitions incomplètes, ou violations des limites de modélisation (<= 200 attributs par objet, <= 200 lignes par tableau imbriqué, extraction en objet séparé si > 200 lignes).
+3. Propose des correctifs concrets via "askUser" ou applique directement les corrections demandées sur n'importe quelle section dans "specPatch" ("vision", "cahierDesCharges", "businessObjects", "exampleMappings", "businessRules", "coherenceIssues").
 $_commonJsonRules''',
     patchSchemaGuide: '''
 SCHÉMA "specPatch" POUR L'ÉTAPE 5 (Revue & Correctifs transversaux) :

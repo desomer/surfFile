@@ -3355,7 +3355,54 @@ abstract final class MaterialIconCatalog {
     'history_edu': 'description',
     'local_offer': 'sell',
     'price_check': 'paid',
+    'sync_alt': 'sync',
+    'picture_as_pdf': 'description',
+    'pdf': 'description',
+    'upload_file': 'file_upload',
+    'download_for_offline': 'file_download',
+    'file_present': 'insert_drive_file',
+    'task_alt': 'check_circle',
+    'assignment_turned_in': 'fact_check',
+    'pending_actions': 'schedule',
+    'arrow_forward_ios': 'chevron_right',
+    'arrow_back_ios': 'chevron_left',
+    'filter_list_alt': 'filter_list',
+    'report_gmailerrorred': 'error',
+    'warning_amber': 'warning',
+    'inventory_2': 'inventory',
+    'summarize': 'assessment',
+    'plagiarism': 'find_in_page',
+    'dashboard_customize': 'space_dashboard',
+    'table_rows': 'view_list',
+    'credit_score': 'paid',
+    'request_page': 'request_quote',
+    'published': 'published_with_changes',
+    'rule_folder': 'rule',
+    'approval': 'verified',
+    'balance': 'account_balance',
   };
+
+  static String? _cachedCompactAiCatalogSummary;
+
+  /// Résumé compact de tous les identifiants canoniques groupés par catégorie pour le guide IA.
+  static String compactAiCatalogSummary() {
+    final cached = _cachedCompactAiCatalogSummary;
+    if (cached != null) return cached;
+    final buffer = StringBuffer(
+      'CATALOGUE COMPLET DES ICÔNES DISPONIBLES (`MaterialIconCatalog` — utilise directement ces identifiants exacts dans `"icon"` sans appeler d’outil) :\n',
+    );
+    for (final category in MaterialIconCategory.values) {
+      final ids = <String>[
+        for (final entry in entries)
+          if (entry.category == category) entry.id,
+      ];
+      if (ids.isEmpty) continue;
+      buffer.writeln('- ${category.name} (${category.label}) : ${ids.join(', ')}');
+    }
+    final built = buffer.toString().trimRight();
+    _cachedCompactAiCatalogSummary = built;
+    return built;
+  }
 
   static final RegExp _camelCaseBoundary = RegExp(r'(?<=[a-z0-9])([A-Z])');
 

@@ -6,6 +6,7 @@ import 'dart:io';
 import '../../models/business_object_model_preferences.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/business_rule_spec.dart';
+import '../../models/example_mapping_spec.dart';
 import '../../models/json_schema_constraints.dart';
 import '../../models/qa/gherkin_feature_spec.dart';
 import '../../models/qa/qa_fixture_spec.dart';
@@ -686,6 +687,66 @@ abstract final class QaAutoSeeder {
       );
     }
 
+    // Ajoute également des fixtures concrètes issues des cartes vertes d'Example Mapping
+    for (final story in project.exampleMappings) {
+      final obj = story.targetObjectId.trim().isEmpty
+          ? null
+          : project.findBusinessObject(story.targetObjectId);
+      if (obj == null) continue;
+      final basePayload = _buildNominalPayload(
+        project,
+        obj,
+        visited: <String>{obj.id},
+        locale: locale,
+      );
+      for (final emRule in story.rules) {
+        for (final ex in emRule.examples) {
+          if (ex.inputValues.isEmpty) continue;
+          final slug = SpecStorageSlug.slugify(
+            '${story.code}_${ex.title}',
+            fallback: 'exemple',
+            separator: '_',
+          );
+          final fixId = _allocateUniqueId('fix_em_$slug', usedIds);
+          final alreadyExists = existing.any(
+            (f) => f.id == fixId || f.id == ex.linkedFixtureId,
+          );
+          if (alreadyExists) continue;
+          final fixKind = switch (ex.kind) {
+            ExampleMapExampleKind.nominal ||
+            ExampleMapExampleKind.stateTransition => QaFixtureKind.nominal,
+            ExampleMapExampleKind.boundary => QaFixtureKind.boundary,
+            ExampleMapExampleKind.error => QaFixtureKind.invalid,
+            ExampleMapExampleKind.permission => QaFixtureKind.permission,
+          };
+          final mergedPayload = <String, Object?>{
+            ...basePayload,
+            ...ex.inputValues,
+          };
+          seeded.add(
+            QaFixtureSpec(
+              id: fixId,
+              code: 'FIX-${(nextCodeIndex++).toString().padLeft(3, '0')}',
+              name: '${obj.name} (${story.code}) — ${ex.title}',
+              kind: fixKind,
+              businessObjectId: obj.id,
+              personaId: defaultPersonaId,
+              businessRuleIds: <String>[
+                if (emRule.linkedRuleId.isNotEmpty) emRule.linkedRuleId,
+              ],
+              description:
+                  'Exemple concret issu de l’Example Mapping (${story.code} : ${emRule.title}).',
+              payload: mergedPayload,
+              expectedValid: ex.kind != ExampleMapExampleKind.error,
+              expectedErrorHint: ex.kind == ExampleMapExampleKind.error
+                  ? ex.then
+                  : '',
+            ),
+          );
+        }
+      }
+    }
+
     return List<QaFixtureSpec>.unmodifiable(seeded);
   }
 
@@ -1134,6 +1195,189 @@ abstract final class QaAutoSeeder {
           scenarios: scenarios,
         ),
       );
+    }
+
+    // 5. Tableaux d'Example Mapping -> Features Gherkin avec Scénarios / Exemples
+    for (final story in project.exampleMappings) {
+      if (story.rules.every((r) => r.examples.isEmpty)) continue;
+      final storySlug = SpecStorageSlug.slugify(
+        story.code.trim().isNotEmpty ? story.code : story.id,
+        fallback: 'em',
+        separator: '_',
+      );
+      final featId = 'feat_em_$storySlug';
+      if (usedFeatureIds.contains(featId.toLowerCase()) ||
+          qa.features.any(
+            (f) =>
+                f.id == featId ||
+                f.tags.any((t) => t.toLowerCase() == '@$storySlug'),
+          )) {
+        continue;
+      }
+
+      final scenarios = <GherkinScenarioSpec>[];
+      for (final emRule in story.rules) {
+        if (emRule.examples.isEmpty) continue;
+        final ruleSlug = SpecStorageSlug.slugify(
+          emRule.id,
+          fallback: 'rule',
+          separator: '_',
+        );
+        final sharedInputKeys = emRule.examples.length >= 2
+            ? emRule.examples
+                  .map((e) => e.inputValues.keys.toSet())
+                  .reduce((a, b) => a.intersection(b))
+                  .toList()
+            : const <String>[];
+        final sharedOutKeys = emRule.examples.length >= 2
+            ? emRule.examples
+                  .map((e) => e.expectedOutcome.keys.toSet())
+                  .reduce((a, b) => a.intersection(b))
+                  .toList()
+            : const <String>[];
+
+        if (sharedInputKeys.isNotEmpty || sharedOutKeys.isNotEmpty) {
+          final columns = <String>[
+            'cas',
+            ...sharedInputKeys,
+            ...sharedOutKeys.where((k) => !sharedInputKeys.contains(k)),
+          ];
+          final rows = <List<String>>[
+            for (final ex in emRule.examples)
+              <String>[
+                ex.title,
+                for (final k in sharedInputKeys) '${ex.inputValues[k] ?? ''}',
+                for (final k in sharedOutKeys.where(
+                  (k) => !sharedInputKeys.contains(k),
+                ))
+                  '${ex.expectedOutcome[k] ?? ''}',
+              ],
+          ];
+          final inputPlaceholders = sharedInputKeys
+              .map((k) => '$k vaut <$k>')
+              .join(', ');
+          final outPlaceholders = sharedOutKeys
+              .map((k) => '$k vaut <$k>')
+              .join(', ');
+          scenarios.add(
+            GherkinScenarioSpec(
+              id: 'scn_em_${storySlug}_$ruleSlug',
+              code: 'SCN-${(nextScnNum++).toString().padLeft(3, '0')}',
+              title: '${emRule.title} (<cas>)',
+              isOutline: true,
+              tags: <String>[
+                '@$storySlug',
+                if (emRule.linkedRuleId.isNotEmpty)
+                  '@${SpecStorageSlug.slugify(emRule.linkedRuleId, fallback: 'rg')}',
+              ],
+              steps: <GherkinStep>[
+                GherkinStep(
+                  id: 'step_em_given',
+                  keyword: GherkinStepKeyword.given,
+                  text: inputPlaceholders.isNotEmpty
+                      ? 'que les données initiales vérifient $inputPlaceholders'
+                      : (emRule.examples.first.given.isNotEmpty
+                            ? emRule.examples.first.given
+                            : 'que le contexte métier « ${story.title} » est initialisé'),
+                ),
+                GherkinStep(
+                  id: 'step_em_when',
+                  keyword: GherkinStepKeyword.when,
+                  text: emRule.examples.first.when.isNotEmpty
+                      ? emRule.examples.first.when
+                      : 'la règle « ${emRule.title} » est évaluée',
+                ),
+                GherkinStep(
+                  id: 'step_em_then',
+                  keyword: GherkinStepKeyword.then,
+                  text: outPlaceholders.isNotEmpty
+                      ? 'le résultat attendu vérifie $outPlaceholders'
+                      : (emRule.examples.first.then.isNotEmpty
+                            ? emRule.examples.first.then
+                            : 'le comportement est conforme à la règle'),
+                ),
+              ],
+              examples: GherkinExamplesTable(headers: columns, rows: rows),
+              businessRuleIds: <String>[
+                if (emRule.linkedRuleId.isNotEmpty) emRule.linkedRuleId,
+              ],
+              requirementIds: story.requirementIds,
+              useCaseIds: <String>[
+                if (story.useCaseId.isNotEmpty) story.useCaseId,
+              ],
+            ),
+          );
+        } else {
+          for (var i = 0; i < emRule.examples.length; i++) {
+            final ex = emRule.examples[i];
+            final exSlug = SpecStorageSlug.slugify(
+              ex.id,
+              fallback: '${i + 1}',
+              separator: '_',
+            );
+            scenarios.add(
+              GherkinScenarioSpec(
+                id: 'scn_em_${storySlug}_$exSlug',
+                code: 'SCN-${(nextScnNum++).toString().padLeft(3, '0')}',
+                title: '${emRule.title} — ${ex.title}',
+                tags: <String>[
+                  '@$storySlug',
+                  '@${ex.kind.name}',
+                  if (emRule.linkedRuleId.isNotEmpty)
+                    '@${SpecStorageSlug.slugify(emRule.linkedRuleId, fallback: 'rg')}',
+                ],
+                steps: <GherkinStep>[
+                  GherkinStep(
+                    id: 'step_em_given',
+                    keyword: GherkinStepKeyword.given,
+                    text: ex.given.isNotEmpty
+                        ? ex.given
+                        : 'que le contexte métier de « ${story.title} » est prêt',
+                  ),
+                  GherkinStep(
+                    id: 'step_em_when',
+                    keyword: GherkinStepKeyword.when,
+                    text: ex.when.isNotEmpty
+                        ? ex.when
+                        : 'l’action associée à « ${emRule.title} » est exécutée',
+                  ),
+                  GherkinStep(
+                    id: 'step_em_then',
+                    keyword: GherkinStepKeyword.then,
+                    text: ex.then.isNotEmpty
+                        ? ex.then
+                        : 'le résultat « ${ex.title} » est vérifié',
+                  ),
+                ],
+                businessRuleIds: <String>[
+                  if (emRule.linkedRuleId.isNotEmpty) emRule.linkedRuleId,
+                ],
+                requirementIds: story.requirementIds,
+                useCaseIds: <String>[
+                  if (story.useCaseId.isNotEmpty) story.useCaseId,
+                ],
+              ),
+            );
+          }
+        }
+      }
+
+      if (scenarios.isNotEmpty) {
+        usedFeatureIds.add(featId.toLowerCase());
+        seeded.add(
+          GherkinFeatureSpec(
+            id: featId,
+            code: 'FEAT-${(nextFeatNum++).toString().padLeft(3, '0')}',
+            title: '${story.code} — ${story.title}',
+            narrative:
+                'En tant qu’utilisateur métier\n'
+                'Je veux valider par des exemples concrets le périmètre « ${story.title} »\n'
+                'Afin de garantir les règles métier découvertes en Example Mapping',
+            tags: <String>['@example-mapping', '@$storySlug'],
+            scenarios: scenarios,
+          ),
+        );
+      }
     }
 
     return List<GherkinFeatureSpec>.unmodifiable(seeded);

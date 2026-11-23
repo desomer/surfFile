@@ -47,10 +47,12 @@ import '../models/ux/ux_screen_spec.dart';
 import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
 import 'domain_catalog_store.dart';
+import 'example_mapping_operations.dart';
 import 'exporters/qa_tdd_prompt_exporter.dart';
 import 'model_dictionary_store.dart';
 import 'qa_coherence_analyzer.dart';
 import 'spec_coherence_analyzer.dart';
+import 'spec_design_promoter.dart';
 import 'spec_project_store.dart';
 import 'spec_workspace_store.dart';
 import 'ux_coherence_analyzer.dart';
@@ -144,6 +146,7 @@ class SpecForgeController extends ChangeNotifier {
   String? _focusedObjectId;
   List<String> _focusedAttributePath = const <String>[];
   String _businessObjectFilter = '';
+  String? _focusedExampleStoryId;
   String? _focusedJourneyId;
   String? _focusedRouteId;
   String? _focusedScreenId;
@@ -335,6 +338,9 @@ class SpecForgeController extends ChangeNotifier {
   /// Filtre texte courant sur les objets métiers et attributs dans « Arbre & Inspecteur ».
   String get businessObjectFilter => _businessObjectFilter;
 
+  /// Identifiant du tableau Example Mapping focalisé dans l'atelier.
+  String? get focusedExampleStoryId => _focusedExampleStoryId;
+
   /// Identifiant du parcours utilisateur focalisé dans l'atelier UX.
   String? get focusedJourneyId => _focusedJourneyId;
 
@@ -422,6 +428,13 @@ class SpecForgeController extends ChangeNotifier {
   void setBusinessObjectFilter(String query) {
     if (_businessObjectFilter == query) return;
     _businessObjectFilter = query;
+    notifyListeners();
+  }
+
+  /// Met à jour le tableau Example Mapping sélectionné dans l'atelier.
+  void focusExampleStory(String? storyId) {
+    if (_focusedExampleStoryId == storyId) return;
+    _focusedExampleStoryId = storyId;
     notifyListeners();
   }
 
@@ -521,6 +534,7 @@ class SpecForgeController extends ChangeNotifier {
     _focusedObjectId = null;
     _focusedAttributePath = const <String>[];
     _businessObjectFilter = '';
+    _focusedExampleStoryId = null;
     _focusedJourneyId = null;
     _focusedRouteId = null;
     _focusedScreenId = null;
@@ -619,6 +633,65 @@ class SpecForgeController extends ChangeNotifier {
         updatedAt: DateTime.now().toUtc(),
       ),
     );
+  }
+
+  /// Crée et persiste un nouveau [FunctionalDomain] dans le catalogue actif.
+  Future<FunctionalDomain> createFunctionalDomain({
+    required String domainCode,
+    required String name,
+    String description = '',
+    bool isActive = true,
+  }) async {
+    final trimmedCode = domainCode.trim();
+    if (_domainCatalog.domains.any((d) => d.domainCode == trimmedCode)) {
+      throw const FormatException('Ce code de domaine existe déjà.');
+    }
+    final domain = FunctionalDomain(
+      id: 'domain_${shortid.generate()}',
+      domainCode: trimmedCode,
+      name: name.trim(),
+      description: description.trim(),
+      isActive: isActive,
+    );
+    domain.validate();
+    final now = DateTime.now().toUtc();
+    final event = AuditLogEntry(
+      id: 'audit_${shortid.generate()}',
+      recordedAt: now,
+      actorUsername: 'local-user',
+      domainId: domain.id,
+      actionType: DomainAuditAction.create,
+      details: 'Domaine créé.',
+    );
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [..._domainCatalog.domains, domain],
+        auditLog: [..._domainCatalog.auditLog, event],
+        updatedAt: now,
+      ),
+    );
+    return domain;
+  }
+
+  /// Promeut une sélection d'objets métiers du projet courant vers les domaines
+  /// fonctionnels choisis de l'espace Design et persiste le catalogue mis à jour.
+  Future<PromotionExecutionResult> promoteBusinessObjectsToDesign(
+    List<ObjectPromotionChoice> choices,
+  ) async {
+    final currentProject = _project;
+    if (currentProject == null) {
+      throw StateError('Aucun projet actif pour la promotion.');
+    }
+    final result = SpecDesignPromoter.promote(
+      project: currentProject,
+      catalog: _domainCatalog,
+      choices: choices,
+      modelPreferences: _modelPreferences,
+    );
+    if (result.updatedCatalog != _domainCatalog) {
+      await updateDomainCatalog(result.updatedCatalog);
+    }
+    return result;
   }
 
   DomainContracts? _domainContractsOf(String domainId) => _domainCatalog.domains
@@ -838,6 +911,61 @@ class SpecForgeController extends ChangeNotifier {
     return added.length;
   }
 
+  /// Initialise des tableaux Jaunes d'Example Mapping pour les objets métiers
+  /// non encore couverts et retourne le nombre de tableaux créés.
+  Future<int> seedExampleMappingStories() async {
+    final current = _project;
+    if (current == null) return 0;
+    final added = ExampleMappingOperations.seedStoriesFromObjectsAndUseCases(
+      current,
+    );
+    if (added.isEmpty) return 0;
+    final next = current.copyWith(
+      exampleMappings: [...current.exampleMappings, ...added],
+    );
+    await updateProject(next);
+    if (_focusedExampleStoryId == null) {
+      focusExampleStory(added.first.id);
+    }
+    return added.length;
+  }
+
+  /// Promeut une carte bleue d'Example Mapping en règle de gestion `RG-xxx`
+  /// (ou synchronise ses exemples avec la règle déjà liée).
+  Future<({BusinessRuleSpec rule, bool createdNew})?>
+  promoteExampleRuleToBusinessRule({
+    required String storyId,
+    required String ruleId,
+  }) async {
+    final current = _project;
+    if (current == null) return null;
+    final result = ExampleMappingOperations.promoteRuleToBusinessRule(
+      current,
+      storyId: storyId,
+      ruleId: ruleId,
+    );
+    await updateProject(result.project);
+    return (rule: result.rule, createdNew: result.createdNew);
+  }
+
+  /// Injecte les valeurs concrètes des cartes vertes d'un tableau d'Example Mapping
+  /// dans les `examples` JSON Schema des attributs correspondants de l'objet métier cible.
+  Future<int> enrichBusinessObjectFromExampleMapping({
+    required String storyId,
+    String? exampleId,
+  }) async {
+    final current = _project;
+    if (current == null) return 0;
+    final result = ExampleMappingOperations.enrichObjectExamplesFromStory(
+      current,
+      storyId: storyId,
+      exampleId: exampleId,
+    );
+    if (result.injectedValuesCount == 0) return 0;
+    await updateProject(result.project);
+    return result.injectedValuesCount;
+  }
+
   /// Crée ou met à jour un objet métier depuis l'atelier UX (annulable en 1 clic via Undo/Redo).
   Future<void> upsertBusinessObjectFromUx(BusinessObjectSpec object) async {
     object.validate();
@@ -972,6 +1100,8 @@ class SpecForgeController extends ChangeNotifier {
           'Démarrer le cahier des charges à partir du cadrage.',
         SpecForgeStage.businessObjects =>
           'Modéliser les objets métiers à partir du cahier des charges.',
+        SpecForgeStage.exampleMapping =>
+          'Lancer l’Example Mapping pour affiner les objets métiers par des exemples concrets.',
         SpecForgeStage.businessRules =>
           'Formaliser les règles de gestion sur les objets métiers.',
         SpecForgeStage.reviewExport =>
@@ -2567,6 +2697,7 @@ class SpecForgeController extends ChangeNotifier {
       focusedObjectId: _focusedObjectId,
       focusedAttributePath: _focusedAttributePath,
       businessObjectFilter: _businessObjectFilter,
+      focusedExampleStoryId: _focusedExampleStoryId,
     );
 
     final priorCauses = <String>[];
@@ -2732,6 +2863,7 @@ class SpecForgeController extends ChangeNotifier {
               focusedObjectId: _focusedObjectId,
               focusedAttributePath: _focusedAttributePath,
               businessObjectFilter: _businessObjectFilter,
+              focusedExampleStoryId: _focusedExampleStoryId,
             );
             currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
               refreshedTurnPrompt: refreshedTurnPrompt,
@@ -2819,6 +2951,7 @@ class SpecForgeController extends ChangeNotifier {
       },
       onFocusObject: focusBusinessObject,
       onFocusSelection: focusBusinessSelection,
+      onFocusExampleStory: focusExampleStory,
       onFilterBusinessObjects: setBusinessObjectFilter,
       onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(
         p,

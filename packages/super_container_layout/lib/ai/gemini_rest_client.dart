@@ -656,6 +656,18 @@ class GeminiRestClient {
   /// Taille minimale (en caractères) du guide statique pour tenter `cachedContents` (~2 000+ jetons).
   static const int defaultMinGuideCharsForExplicitCache = 8192;
 
+  /// Seuil minimal d'octets cumulés de pièces jointes au-delà duquel leur mise en cache explicite est rentable.
+  static const int defaultMinAttachmentBytesForExplicitCache = 16384;
+
+  /// Calcule le poids total (en octets) d'une collection de pièces jointes [attachments].
+  static int totalAttachmentBytes(Iterable<VibeChatAttachment> attachments) {
+    var sum = 0;
+    for (final a in attachments) {
+      sum += a.bytes.length;
+    }
+    return sum;
+  }
+
   static const String _baseUrl =
       'https://generativelanguage.googleapis.com/v1beta';
   static final Uri _baseUri = Uri.parse(_baseUrl);
@@ -810,7 +822,8 @@ class GeminiRestClient {
     }
   }
 
-  /// Crée ou réutilise un `cachedContent` explicite pour [model], [systemInstruction] et [staticGuide].
+  /// Crée ou réutilise un `cachedContent` explicite pour [model], [systemInstruction],
+  /// [staticGuide] et d'éventuelles pièces jointes volumineuses [cachedAttachments].
   ///
   /// Retourne le nom de ressource (`cachedContents/...`) en cas de succès, ou `null`
   /// lorsque [staticGuide] est trop court ou que l'API refuse la mise en cache.
@@ -820,6 +833,7 @@ class GeminiRestClient {
     String? systemInstruction,
     String? staticGuide,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<VibeChatAttachment> cachedAttachments = const <VibeChatAttachment>[],
     VibeCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -834,6 +848,7 @@ class GeminiRestClient {
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
       tools: tools,
+      cachedAttachments: cachedAttachments,
     );
     if (_unsupportedCacheKeys.contains(cacheKey)) {
       return null;
@@ -860,6 +875,7 @@ class GeminiRestClient {
       systemInstruction: systemInstruction,
       staticGuide: staticGuide,
       tools: tools,
+      cachedAttachments: cachedAttachments,
       cancellationToken: cancellationToken,
     );
     _inFlightCacheCreations[cacheKey] = future;
@@ -879,6 +895,7 @@ class GeminiRestClient {
     required String? systemInstruction,
     required String staticGuide,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<VibeChatAttachment> cachedAttachments = const <VibeChatAttachment>[],
     VibeCancellationToken? cancellationToken,
   }) async {
     cancellationToken?.throwIfCancelled();
@@ -892,6 +909,14 @@ class GeminiRestClient {
               ],
             },
           ];
+    final cachedUserParts = <Map<String, Object?>>[
+      {'text': 'GUIDE DE MODÉLISATION DE RÉFÉRENCE :\n$staticGuide'},
+      if (cachedAttachments.isNotEmpty) ...<Map<String, Object?>>[
+        {'text': 'PIÈCES JOINTES DE RÉFÉRENCE MISES EN CACHE :'},
+        ..._buildAttachmentParts(cachedAttachments),
+      ],
+    ];
+    final ttlSeconds = cachedAttachments.isNotEmpty ? 1800 : 3600;
     final requestBody = <String, Object?>{
       'model': 'models/$model',
       if (systemInstruction != null && systemInstruction.trim().isNotEmpty)
@@ -908,9 +933,7 @@ class GeminiRestClient {
       'contents': [
         {
           'role': 'user',
-          'parts': [
-            {'text': 'GUIDE DE MODÉLISATION DE RÉFÉRENCE :\n$staticGuide'},
-          ],
+          'parts': cachedUserParts,
         },
         {
           'role': 'model',
@@ -919,7 +942,7 @@ class GeminiRestClient {
           ],
         },
       ],
-      'ttl': '3600s',
+      'ttl': '${ttlSeconds}s',
     };
 
     try {
@@ -1002,6 +1025,7 @@ class GeminiRestClient {
     String? systemInstruction,
     String? staticGuide,
     List<VibeChatAttachment> attachments = const [],
+    List<VibeChatAttachment> cachedAttachments = const [],
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
     List<Map<String, Object?>>? conversationContents,
@@ -1057,6 +1081,7 @@ class GeminiRestClient {
                 systemInstruction: systemInstruction,
                 staticGuide: staticGuide,
                 tools: tools,
+                cachedAttachments: cachedAttachments,
               )
             : null;
 
@@ -1066,9 +1091,35 @@ class GeminiRestClient {
           systemInstruction: systemInstruction,
           staticGuide: staticGuide,
           tools: tools,
+          cachedAttachments: cachedAttachments,
           cancellationToken: cancellationToken,
         );
         cancellationToken?.throwIfCancelled();
+
+        // Si la création d'un cache incluant cachedAttachments a été refusée, tente le cache standard du guide seul.
+        var activeCachedAttachments = cachedContentName != null &&
+            cachedAttachments.isNotEmpty;
+        if (cachedContentName == null &&
+            cachedAttachments.isNotEmpty &&
+            !_unavailableModels.contains(model)) {
+          cacheKey = hasCacheableGuide
+              ? _buildCacheKey(
+                  model: model,
+                  systemInstruction: systemInstruction,
+                  staticGuide: staticGuide,
+                  tools: tools,
+                )
+              : null;
+          cachedContentName = await ensureCachedContent(
+            apiKey: resolvedKey,
+            model: model,
+            systemInstruction: systemInstruction,
+            staticGuide: staticGuide,
+            tools: tools,
+            cancellationToken: cancellationToken,
+          );
+          cancellationToken?.throwIfCancelled();
+        }
 
         if (cachedContentName == null && _unavailableModels.contains(model)) {
           final fallback = resolveModelCandidates(speedMode)
@@ -1087,6 +1138,7 @@ class GeminiRestClient {
                     systemInstruction: systemInstruction,
                     staticGuide: staticGuide,
                     tools: tools,
+                    cachedAttachments: cachedAttachments,
                   )
                 : null;
             cachedContentName = await ensureCachedContent(
@@ -1095,13 +1147,16 @@ class GeminiRestClient {
               systemInstruction: systemInstruction,
               staticGuide: staticGuide,
               tools: tools,
+              cachedAttachments: cachedAttachments,
               cancellationToken: cancellationToken,
             );
+            activeCachedAttachments = cachedContentName != null &&
+                cachedAttachments.isNotEmpty;
             cancellationToken?.throwIfCancelled();
           }
         }
 
-        final contentsPayload = conversationContents ??
+        final baseContents = conversationContents ??
             <Map<String, Object?>>[
               <String, Object?>{
                 'role': 'user',
@@ -1121,6 +1176,12 @@ class GeminiRestClient {
           cancellationToken?.throwIfCancelled();
           if (consumerCancelled || controller.isClosed) return;
 
+          final effectiveContents = _injectUncachedAttachmentsIfNeeded(
+            baseContents,
+            cachedAttachments,
+            alreadyInCache: cachedContentName != null && activeCachedAttachments,
+          );
+
           final thinkingKey = '$model|${speedMode.name}';
           final includeThinking =
               !_unsupportedThinkingModels.contains(model) &&
@@ -1130,7 +1191,7 @@ class GeminiRestClient {
               !(tools.isNotEmpty &&
                   _unsupportedJsonWithToolsModels.contains(model));
           final requestBody = _buildGenerateRequestBody(
-            contents: contentsPayload,
+            contents: effectiveContents,
             cachedContentName: cachedContentName,
             systemInstruction: systemInstruction,
             staticGuide: staticGuide,
@@ -1597,13 +1658,11 @@ class GeminiRestClient {
     List<VibeChatAttachment> attachments,
   ) => _buildUserParts(prompt, attachments);
 
-  static List<Map<String, Object?>> _buildUserParts(
-    String prompt,
-    List<VibeChatAttachment> attachments,
-  ) {
-    final parts = <Map<String, Object?>>[
-      {'text': prompt},
-    ];
+  static List<Map<String, Object?>> _buildAttachmentParts(
+    List<VibeChatAttachment> attachments, {
+    String excludeIfInPrompt = '',
+  }) {
+    final parts = <Map<String, Object?>>[];
     for (final a in attachments) {
       if (a.isImage) {
         parts.add({
@@ -1612,7 +1671,9 @@ class GeminiRestClient {
         parts.add({
           'inlineData': {'mimeType': a.mimeType, 'data': base64Encode(a.bytes)},
         });
-      } else if (a.isText && !prompt.contains(a.textContent!)) {
+      } else if (a.isText &&
+          (excludeIfInPrompt.isEmpty ||
+              !excludeIfInPrompt.contains(a.textContent!))) {
         parts.add({
           'text':
               'Fichier texte joint "${a.name}" (${a.mimeType}) :\n'
@@ -1621,6 +1682,50 @@ class GeminiRestClient {
       }
     }
     return parts;
+  }
+
+  static List<Map<String, Object?>> _buildUserParts(
+    String prompt,
+    List<VibeChatAttachment> attachments,
+  ) => <Map<String, Object?>>[
+    {'text': prompt},
+    ..._buildAttachmentParts(attachments, excludeIfInPrompt: prompt),
+  ];
+
+  static List<Map<String, Object?>> _injectUncachedAttachmentsIfNeeded(
+    List<Map<String, Object?>> baseContents,
+    List<VibeChatAttachment> cachedAttachments, {
+    required bool alreadyInCache,
+  }) {
+    if (alreadyInCache || cachedAttachments.isEmpty || baseContents.isEmpty) {
+      return baseContents;
+    }
+    final first = baseContents.first;
+    final firstParts = first['parts'];
+    if (first['role'] != 'user' || firstParts is! List) {
+      return <Map<String, Object?>>[
+        <String, Object?>{
+          'role': 'user',
+          'parts': _buildAttachmentParts(cachedAttachments),
+        },
+        ...baseContents,
+      ];
+    }
+    final firstText = firstParts.isNotEmpty && firstParts.first is Map
+        ? ((firstParts.first as Map)['text'] as String? ?? '')
+        : '';
+    final extraParts = _buildAttachmentParts(
+      cachedAttachments,
+      excludeIfInPrompt: firstText,
+    );
+    if (extraParts.isEmpty) return baseContents;
+    return <Map<String, Object?>>[
+      <String, Object?>{
+        ...first,
+        'parts': <Object?>[...firstParts, ...extraParts],
+      },
+      ...baseContents.skip(1),
+    ];
   }
 
   static Map<String, Object?> _buildGenerateRequestBody({
@@ -1847,6 +1952,7 @@ class GeminiRestClient {
     required String? systemInstruction,
     required String? staticGuide,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<VibeChatAttachment> cachedAttachments = const <VibeChatAttachment>[],
   }) {
     final toolsDigest = tools.isEmpty
         ? ''
@@ -1855,8 +1961,42 @@ class GeminiRestClient {
               for (final t in tools) t.toGeminiFunctionDeclaration(),
             ]),
           );
+    if (cachedAttachments.isEmpty) {
+      return '$model|${_stableHash(systemInstruction ?? '')}|'
+          '${_stableHash(staticGuide ?? '')}|$toolsDigest';
+    }
+    final attBuffer = StringBuffer();
+    for (final a in cachedAttachments) {
+      attBuffer
+        ..write(a.name)
+        ..write(':')
+        ..write(a.mimeType)
+        ..write(':')
+        ..write(a.bytes.length)
+        ..write(':')
+        ..write(
+          a.textContent != null
+              ? _stableHash(a.textContent!)
+              : _stableBytesHash(a.bytes),
+        )
+        ..write(';');
+    }
     return '$model|${_stableHash(systemInstruction ?? '')}|'
-        '${_stableHash(staticGuide ?? '')}|$toolsDigest';
+        '${_stableHash(staticGuide ?? '')}|$toolsDigest|'
+        'att_${_stableHash(attBuffer.toString())}';
+  }
+
+  static String _stableBytesHash(List<int> bytes) {
+    var h1 = 0x811c9dc5;
+    var h2 = 0x01000193;
+    for (var i = 0; i < bytes.length; i++) {
+      final b = bytes[i];
+      h1 = ((h1 ^ b) * 0x01000193) & 0xffffffff;
+      h2 = ((h2 ^ (b + i)) * 0x85ebca6b) & 0xffffffff;
+    }
+    return '${bytes.length}_'
+        '${h1.toRadixString(16).padLeft(8, '0')}'
+        '${h2.toRadixString(16).padLeft(8, '0')}';
   }
 
   static String _stableHash(String input) {

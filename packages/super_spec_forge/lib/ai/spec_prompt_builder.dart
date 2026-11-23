@@ -86,11 +86,16 @@ abstract final class SpecPromptBuilder {
       'Nous passons à l’étape 4 (Objets métiers). En t’appuyant sur le lexique, le cadrage et le cahier des charges, '
           'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
           '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
+    SpecForgeStage.exampleMapping =>
+      'Nous passons à l’étape 5 (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique et les cas d’usage du cahier des charges, '
+          'explore avec l’utilisateur les règles (cartes bleues), exemples concrets et cas aux limites (cartes vertes) et zones d’ombre (cartes rouges) '
+          'pour affiner les attributs, bornes JSON Schema, énumérations et cycles de vie des objets métiers.\n\n'
+          '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
     SpecForgeStage.businessRules =>
-      'Nous passons à l’étape 5 (Règles de gestion). En t’appuyant sur les objets métiers, le lexique et le cahier des charges, '
+      'Nous passons à l’étape 6 (Règles de gestion). En t’appuyant sur les objets métiers, les tableaux d’Example Mapping (règles bleues, exemples verts et questions résolues), le lexique et le cahier des charges, '
           'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
     SpecForgeStage.reviewExport =>
-      'Nous passons à l’étape 6 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, objets métiers et règles de gestion), '
+      'Nous passons à l’étape 7 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, objets métiers, Example Mapping et règles de gestion), '
           'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
   };
 
@@ -108,6 +113,7 @@ abstract final class SpecPromptBuilder {
     String? focusedObjectId,
     List<String> focusedAttributePath = const <String>[],
     String businessObjectFilter = '',
+    String? focusedExampleStoryId,
   }) {
     final agent = SpecStageAgent.forStage(stage);
     final stageState = project.stageStateFor(stage);
@@ -146,6 +152,7 @@ abstract final class SpecPromptBuilder {
       );
 
     if (stage == SpecForgeStage.businessObjects ||
+        stage == SpecForgeStage.exampleMapping ||
         (stage.index > SpecForgeStage.businessObjects.index &&
             !effectivePrefs.isDefault)) {
       buffer
@@ -182,6 +189,7 @@ abstract final class SpecPromptBuilder {
       focusedObjectId: focusedObjectId,
       focusedAttributePath: focusedAttributePath,
       businessObjectFilter: businessObjectFilter,
+      focusedExampleStoryId: focusedExampleStoryId,
     );
     if (focusBlock.isNotEmpty) {
       buffer
@@ -221,6 +229,7 @@ abstract final class SpecPromptBuilder {
     required String? focusedObjectId,
     required List<String> focusedAttributePath,
     required String businessObjectFilter,
+    String? focusedExampleStoryId,
     String treeLabel = 'Arbre & Inspecteur',
   }) {
     final buf = StringBuffer();
@@ -228,12 +237,30 @@ abstract final class SpecPromptBuilder {
     final focusedObj = (focusedObjectId != null && focusedObjectId.isNotEmpty)
         ? project.findBusinessObject(focusedObjectId)
         : null;
+    final focusedStory =
+        (focusedExampleStoryId != null && focusedExampleStoryId.isNotEmpty)
+            ? project.exampleMappings
+                  .where((s) => s.id == focusedExampleStoryId)
+                  .firstOrNull
+            : null;
 
-    if (focusedObj == null && trimmedFilter.isEmpty) {
+    if (focusedObj == null &&
+        focusedStory == null &&
+        trimmedFilter.isEmpty) {
       return '';
     }
 
     buf.writeln('FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION) :');
+    if (focusedStory != null) {
+      final storyObj = focusedStory.targetObjectId.isEmpty
+          ? null
+          : project.findBusinessObject(focusedStory.targetObjectId);
+      buf.writeln(
+        '- Tableau Example Mapping sélectionné : ${focusedStory.code} « ${focusedStory.title} » '
+        '(id: ${focusedStory.id}${storyObj == null ? '' : ', objet cible : ${storyObj.technicalName} (${storyObj.id})'}, '
+        '${focusedStory.rules.length} règle(s), ${focusedStory.totalExampleCount} exemple(s), ${focusedStory.openQuestionCount} question(s) ouverte(s))',
+      );
+    }
     if (focusedObj != null) {
       buf.writeln(
         '- Objet métier sélectionné : ${focusedObj.name} (${focusedObj.technicalName}, id: ${focusedObj.id})',

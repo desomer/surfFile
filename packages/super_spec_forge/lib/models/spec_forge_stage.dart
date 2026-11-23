@@ -46,9 +46,20 @@ enum SpecForgeStage {
     icon: Icons.hub_outlined,
   ),
 
-  /// Étape 5 : Règles de gestion structurées (validations, calculs, transitions, droits).
-  businessRules(
+  /// Étape 5 : Example Mapping (Story jaune, Règles bleues, Exemples verts, Questions rouges).
+  exampleMapping(
     stepNumber: 5,
+    shortLabel: 'Example Map',
+    title: 'Example Mapping',
+    agentTitle: 'Example Mapper',
+    agentSubtitle:
+        'Exemples concrets, cas limites et zones d’ombre pour affiner les objets métiers',
+    icon: Icons.view_kanban_outlined,
+  ),
+
+  /// Étape 6 : Règles de gestion structurées (validations, calculs, transitions, droits).
+  businessRules(
+    stepNumber: 6,
     shortLabel: 'Règles de gestion',
     title: 'Règles de gestion',
     agentTitle: 'Rule Architect',
@@ -57,9 +68,9 @@ enum SpecForgeStage {
     icon: Icons.gavel_rounded,
   ),
 
-  /// Étape 6 : Audit de cohérence inter-étapes, revue finale et exports.
+  /// Étape 7 : Audit de cohérence inter-étapes, revue finale et exports.
   reviewExport(
-    stepNumber: 6,
+    stepNumber: 7,
     shortLabel: 'Revue & Export',
     title: 'Revue, Cohérence & Export',
     agentTitle: 'Consistency Auditor',
@@ -77,7 +88,7 @@ enum SpecForgeStage {
     required this.icon,
   });
 
-  /// Numéro d'ordre affiché (`1..5`).
+  /// Numéro d'ordre affiché (`1..7`).
   final int stepNumber;
 
   /// Libellé compact affiché dans le stepper horizontal.
@@ -107,8 +118,19 @@ enum SpecForgeStage {
   /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [lexicon].
   static SpecForgeStage fromJson(Object? raw) {
     if (raw is String) {
+      final trimmed = raw.trim();
       for (final stage in SpecForgeStage.values) {
-        if (stage.name == raw) return stage;
+        if (stage.name == trimmed) return stage;
+      }
+      final norm = trimmed.toLowerCase();
+      switch (norm) {
+        case 'example_mapping':
+        case 'example-mapping':
+        case 'examplemapping':
+        case 'example_map':
+        case 'example-map':
+        case 'examplemap':
+          return SpecForgeStage.exampleMapping;
       }
     }
     return SpecForgeStage.lexicon;

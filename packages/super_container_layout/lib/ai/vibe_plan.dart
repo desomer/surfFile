@@ -161,6 +161,7 @@ class VibePlanLot {
     this.hasPartialCheckpoint = false,
     this.partialCheckpointSummary,
     this.traces = const <VibeTimedTrace>[],
+    this.dependsOn = const <String>[],
   });
 
   /// Identifiant technique unique du lot (ex. `"lot-1"`).
@@ -193,6 +194,9 @@ class VibePlanLot {
   /// Journal chronométré des étapes exécutées sur ce lot.
   final List<VibeTimedTrace> traces;
 
+  /// Identifiants des lots prérequis devant être terminés avant l'exécution parallèle de ce lot.
+  final List<String> dependsOn;
+
   /// Analyse un objet JSON brut en [VibePlanLot], ou retourne `null` si invalide.
   static VibePlanLot? tryFromJson(Object? raw, {int fallbackIndex = 1}) {
     if (raw is String) {
@@ -214,10 +218,25 @@ class VibePlanLot {
     final id = rawId is String && rawId.trim().isNotEmpty
         ? rawId.trim()
         : 'lot-$fallbackIndex';
+    final rawDeps = raw['dependsOn'] ?? raw['dependencies'];
+    final parsedDeps = <String>[];
+    if (rawDeps is List) {
+      for (final item in rawDeps) {
+        if (item is String && item.trim().isNotEmpty) {
+          final dep = item.trim();
+          if (dep != id && !parsedDeps.contains(dep)) {
+            parsedDeps.add(dep);
+          }
+        }
+      }
+    }
     return VibePlanLot(
       id: id,
       title: title.isNotEmpty ? title : 'Lot $fallbackIndex',
       description: description.isNotEmpty ? description : title,
+      dependsOn: parsedDeps.isEmpty
+          ? const <String>[]
+          : List<String>.unmodifiable(parsedDeps),
     );
   }
 
@@ -226,6 +245,7 @@ class VibePlanLot {
     'id': id,
     'title': title,
     if (description.isNotEmpty) 'description': description,
+    if (dependsOn.isNotEmpty) 'dependsOn': dependsOn,
     'status': status.name,
     if (durationMs != null) 'durationMs': durationMs,
     if (attempts > 0) 'attempts': attempts,
@@ -252,6 +272,7 @@ class VibePlanLot {
     String? partialCheckpointSummary,
     bool clearPartialCheckpoint = false,
     List<VibeTimedTrace>? traces,
+    List<String>? dependsOn,
   }) => VibePlanLot(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -269,6 +290,7 @@ class VibePlanLot {
         ? null
         : (partialCheckpointSummary ?? this.partialCheckpointSummary),
     traces: List<VibeTimedTrace>.unmodifiable(traces ?? this.traces),
+    dependsOn: List<String>.unmodifiable(dependsOn ?? this.dependsOn),
   );
 
   @override
@@ -284,7 +306,8 @@ class VibePlanLot {
           other.attempts == attempts &&
           other.hasPartialCheckpoint == hasPartialCheckpoint &&
           other.partialCheckpointSummary == partialCheckpointSummary &&
-          listEquals(other.traces, traces);
+          listEquals(other.traces, traces) &&
+          listEquals(other.dependsOn, dependsOn);
 
   @override
   int get hashCode => Object.hash(
@@ -298,6 +321,7 @@ class VibePlanLot {
     hasPartialCheckpoint,
     partialCheckpointSummary,
     Object.hashAll(traces),
+    Object.hashAll(dependsOn),
   );
 }
 
@@ -375,6 +399,62 @@ class VibeExecutionPlan {
         lot.status == VibeLotStatus.pending ||
         lot.status == VibeLotStatus.failed,
   );
+
+  /// Indique si au moins un lot du plan déclare explicitement des dépendances [VibePlanLot.dependsOn].
+  bool get hasExplicitDependencies =>
+      lots.any((lot) => lot.dependsOn.isNotEmpty);
+
+  /// Retourne jusqu'à [maxCount] indices de lots `pending` ou `failed` dont les prérequis
+  /// [VibePlanLot.dependsOn] sont satisfaits, à partir de [minIndex].
+  ///
+  /// Lorsqu'aucun lot ne déclare [VibePlanLot.dependsOn], conserve l'exécution strictement
+  /// séquentielle historique en ne retournant qu'un seul indice au maximum.
+  List<int> nextReadyActionableIndices({int minIndex = 0, int maxCount = 3}) {
+    if (maxCount <= 0) return const <int>[];
+    if (!hasExplicitDependencies) {
+      for (var i = minIndex; i < lots.length; i++) {
+        final status = lots[i].status;
+        if (status == VibeLotStatus.pending || status == VibeLotStatus.failed) {
+          return <int>[i];
+        }
+      }
+      return const <int>[];
+    }
+
+    final statusById = <String, VibeLotStatus>{
+      for (final lot in lots) lot.id: lot.status,
+    };
+    bool isSatisfied(String depId) {
+      final depStatus = statusById[depId];
+      if (depStatus == null) return true;
+      return depStatus == VibeLotStatus.done ||
+          depStatus == VibeLotStatus.skipped ||
+          depStatus == VibeLotStatus.disabled;
+    }
+
+    final ready = <int>[];
+    for (var i = minIndex; i < lots.length; i++) {
+      final lot = lots[i];
+      if (lot.status != VibeLotStatus.pending &&
+          lot.status != VibeLotStatus.failed) {
+        continue;
+      }
+      if (lot.dependsOn.every(isSatisfied)) {
+        ready.add(i);
+        if (ready.length >= maxCount) break;
+      }
+    }
+    if (ready.isNotEmpty) return ready;
+
+    // Garde-fou anti-cycle : s'il reste un lot actionable mais bloqué par un cycle, débloque le premier.
+    for (var i = minIndex; i < lots.length; i++) {
+      final status = lots[i].status;
+      if (status == VibeLotStatus.pending || status == VibeLotStatus.failed) {
+        return <int>[i];
+      }
+    }
+    return const <int>[];
+  }
 
   /// Analyse l'objet JSON `"plan"` retourné par l'IA, ou retourne `null` s'il est invalide/vide.
   static VibeExecutionPlan? tryFromJson(

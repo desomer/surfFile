@@ -299,6 +299,20 @@ abstract final class QaPromptBuilder {
       ..writeln('CATALOGUE COMPACT DES SPÉCIFICATIONS MÉTIERS (JSON) :')
       ..writeln(specCatalogJson);
 
+    if (project.exampleMappings.isNotEmpty &&
+        (stage == QaForgeStage.testFixtures ||
+            stage == QaForgeStage.gherkinFeatures)) {
+      final emJson = const JsonEncoder.withIndent('  ').convert([
+        for (final s in project.exampleMappings) s.toJson(),
+      ]);
+      buffer
+        ..writeln()
+        ..writeln(
+          'TABLEAUX D’EXAMPLE MAPPING (EXEMPLES VERTS CONCRETS & RÈGLES BLEUES À RÉUTILISER) :',
+        )
+        ..writeln(emJson);
+    }
+
     if (project.uxSpec.hasContent) {
       final uxSummaryJson = const JsonEncoder.withIndent('  ')
           .convert(buildCompactUxSummaryJson(project));

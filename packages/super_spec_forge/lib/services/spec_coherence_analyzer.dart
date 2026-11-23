@@ -490,7 +490,119 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
-    // 4. Contrôles des règles de gestion (Étape 4)
+    // 3 bis. Contrôles d'Example Mapping (Étape 5)
+    if (project.exampleMappings.isNotEmpty) {
+      final mappedObjectIds = <String>{};
+      final rulesByIdOrCode = <String, BusinessRuleSpec>{
+        for (final r in project.businessRules) ...{
+          r.id.toLowerCase(): r,
+          r.code.toLowerCase(): r,
+        },
+      };
+
+      for (final story in project.exampleMappings) {
+        if (story.targetObjectId.trim().isNotEmpty) {
+          final targetObj = objectsByAnyKey[story.targetObjectId.toLowerCase()];
+          if (targetObj == null) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_em_missing_obj_${story.id}',
+                severity: CoherenceSeverity.error,
+                stage: SpecForgeStage.exampleMapping,
+                code: 'COH-EM-004',
+                title: 'Objet cible inconnu sur ${story.code}',
+                description:
+                    'Le tableau « ${story.title} » cible l’objet « ${story.targetObjectId} » qui n’existe pas.',
+                targetRef: story.id,
+                suggestion:
+                    'Rattachez ce tableau à un objet métier existant ou recréez l’objet.',
+              ),
+            );
+          } else {
+            mappedObjectIds.add(targetObj.id);
+          }
+        }
+
+        for (final emRule in story.rules) {
+          if (emRule.examples.isEmpty) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_em_no_ex_${story.id}_${emRule.id}',
+                severity: CoherenceSeverity.info,
+                stage: SpecForgeStage.exampleMapping,
+                code: 'COH-EM-003',
+                title: 'Règle bleue sans exemple vert : ${emRule.title}',
+                description:
+                    'Dans « ${story.code} — ${story.title} », la règle « ${emRule.title} » ne comporte aucun exemple concret.',
+                targetRef: story.id,
+                suggestion:
+                    'Ajoutez au moins un exemple concret nominal ou aux limites pour vérifier les attributs.',
+              ),
+            );
+          }
+          if (emRule.linkedRuleId.trim().isNotEmpty &&
+              !rulesByIdOrCode.containsKey(
+                emRule.linkedRuleId.trim().toLowerCase(),
+              )) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_em_missing_rule_${story.id}_${emRule.id}',
+                severity: CoherenceSeverity.warning,
+                stage: SpecForgeStage.exampleMapping,
+                code: 'COH-EM-004',
+                title:
+                    'Lien RG cassé dans ${story.code} (${emRule.linkedRuleId})',
+                description:
+                    'La règle bleue « ${emRule.title} » référence « ${emRule.linkedRuleId} », introuvable dans les règles de gestion.',
+                targetRef: story.id,
+                suggestion:
+                    'Promouvez à nouveau cette carte bleue ou corrigez son lien.',
+              ),
+            );
+          }
+        }
+
+        final openCount = story.openQuestionCount;
+        if (openCount > 0) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_em_open_q_${story.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.exampleMapping,
+              code: 'COH-EM-001',
+              title:
+                  '$openCount question(s) rouge(s) ouverte(s) dans ${story.code}',
+              description:
+                  'Le tableau « ${story.title} » comporte encore $openCount question(s) non résolue(s) pouvant impacter le modèle métier.',
+              targetRef: story.id,
+              suggestion:
+                  'Tranchez ces questions avec l’Example Mapper ou marquez-les résolues.',
+            ),
+          );
+        }
+      }
+
+      for (final obj in project.businessObjects) {
+        if (!mappedObjectIds.contains(obj.id)) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_em_unmapped_obj_${obj.id}',
+              severity: CoherenceSeverity.info,
+              stage: SpecForgeStage.exampleMapping,
+              code: 'COH-EM-002',
+              title: 'Objet sans Example Mapping : ${obj.name}',
+              description:
+                  'L’objet métier « ${obj.name} » (${obj.technicalName}) n’a pas encore été exploré en Example Mapping.',
+              targetRef: obj.id,
+              suggestion:
+                  'Initialisez un tableau jaune pour vérifier ses cas limites et exemples.',
+            ),
+          );
+        }
+      }
+    }
+
+    // 4. Contrôles des règles de gestion (Étape 6)
     if (project.businessRules.isEmpty) {
       issues.add(
         const SpecCoherenceIssue(

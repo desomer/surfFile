@@ -513,7 +513,7 @@ void main() {
           onFilterBusinessObjects: (q) => appliedFilter = q,
         );
 
-        expect(registry.declarations.length, 10);
+        expect(registry.declarations.length, SpecForgeToolRegistry.specToolNames.length);
 
         final lexRes = await registry.execute(
           VibeToolCall(

@@ -202,14 +202,21 @@ class VibePageAuditReport {
     List<String> auditedComponentIds = const <String>[],
     List<VibeAuditFinding> findings = const <VibeAuditFinding>[],
     List<VibeSweptTabSummary> sweptTabs = const <VibeSweptTabSummary>[],
+    List<String> measuredGeometrySummaries = const <String>[],
     this.viewportWidth,
     this.viewportHeight,
   }) : auditedComponentIds = List<String>.unmodifiable(auditedComponentIds),
        findings = List<VibeAuditFinding>.unmodifiable(findings),
-       sweptTabs = List<VibeSweptTabSummary>.unmodifiable(sweptTabs);
+       sweptTabs = List<VibeSweptTabSummary>.unmodifiable(sweptTabs),
+       measuredGeometrySummaries = List<String>.unmodifiable(
+         measuredGeometrySummaries,
+       );
 
   /// Onglets inspectés séquentiellement lors du balayage automatique (hors scope).
   final List<VibeSweptTabSummary> sweptTabs;
+
+  /// Résumés compacts des dimensions rendues (`id: W×H dp`) relevées durant le pré-audit.
+  final List<String> measuredGeometrySummaries;
 
   /// Indique si l'audit était restreint à la zone visible (onglet actif et scroll courant).
   final bool visibleOnly;
@@ -299,6 +306,12 @@ class VibePageAuditReport {
           .join(' ; ');
       buffer.writeln('ONGLETS BALAYÉS (${sweptTabs.length}) : $groups');
     }
+    if (measuredGeometrySummaries.isNotEmpty) {
+      buffer.writeln(
+        'MESURES GÉOMÉTRIQUES DÉJÀ RELEVÉES (${measuredGeometrySummaries.length} composants montés — réutilise ces dimensions directement sans rappeler get_component_geometry ni get_viewport_and_route) : '
+        '${measuredGeometrySummaries.take(45).join(', ')}',
+      );
+    }
 
     if (findings.isEmpty) {
       buffer.writeln(
@@ -350,7 +363,11 @@ class VibePageAuditReport {
           other.viewportHeight == viewportHeight &&
           listEquals(other.auditedComponentIds, auditedComponentIds) &&
           listEquals(other.findings, findings) &&
-          listEquals(other.sweptTabs, sweptTabs);
+          listEquals(other.sweptTabs, sweptTabs) &&
+          listEquals(
+            other.measuredGeometrySummaries,
+            measuredGeometrySummaries,
+          );
 
   @override
   int get hashCode => Object.hash(
@@ -365,6 +382,7 @@ class VibePageAuditReport {
     Object.hashAll(auditedComponentIds),
     Object.hashAll(findings),
     Object.hashAll(sweptTabs),
+    Object.hashAll(measuredGeometrySummaries),
   );
 }
 
@@ -478,6 +496,7 @@ abstract final class VibePageAuditService {
     required Appearance appearance,
     required Iterable<String> candidateIds,
     required void Function(VibeAuditFinding finding) addFinding,
+    Map<String, String>? recordedSizesById,
     Set<String> skipContentZonesForTabIds = const <String>{},
     String? onlyZoneFilter,
     String? tabContext,
@@ -508,6 +527,18 @@ abstract final class VibePageAuditService {
       for (final occ in occurrences) {
         if (occ is! Map) continue;
         final zoneId = occ['zoneId'] as String?;
+        if (recordedSizesById != null &&
+            zoneId == null &&
+            !recordedSizesById.containsKey(id)) {
+          final sz = occ['size'];
+          if (sz is Map && sz['width'] is num && sz['height'] is num) {
+            final w = (sz['width'] as num).toDouble();
+            final h = (sz['height'] as num).toDouble();
+            if (w > 0 || h > 0) {
+              recordedSizesById[id] = '${w.round()}×${h.round()} dp';
+            }
+          }
+        }
         if (zoneId != null &&
             skipContentZonesForTabIds.contains(id) &&
             (zoneId == SuperTabConfig.dynamicContentZone ||
@@ -770,6 +801,7 @@ abstract final class VibePageAuditService {
     final findings = <VibeAuditFinding>[];
     final seenSignatures = <String>{};
     final sweptTabs = <VibeSweptTabSummary>[];
+    final recordedSizesById = <String, String>{};
 
     void addFinding(VibeAuditFinding finding) {
       final sig =
@@ -799,6 +831,7 @@ abstract final class VibePageAuditService {
           (id) => !allRootTabContentIds.contains(id),
         ),
         skipContentZonesForTabIds: rootTabIds,
+        recordedSizesById: recordedSizesById,
         addFinding: addFinding,
       );
 
@@ -938,6 +971,7 @@ abstract final class VibePageAuditService {
           (id) => !inactiveTabContentIds.contains(id),
         ),
         visibleOnly: visibleOnly,
+        recordedSizesById: recordedSizesById,
         addFinding: addFinding,
       );
     }
@@ -1089,6 +1123,10 @@ abstract final class VibePageAuditService {
       auditedComponentIds: scopedIds,
       findings: findings,
       sweptTabs: sweptTabs,
+      measuredGeometrySummaries: [
+        for (final entry in recordedSizesById.entries)
+          '${entry.key}: ${entry.value}',
+      ],
       viewportWidth: viewportWidth,
       viewportHeight: viewportHeight,
     );

@@ -25,7 +25,10 @@ abstract final class UxSuperDesignerPromptExporter {
       ..writeln()
       ..writeln('## Consignes d’exécution pour Vibe IA')
       ..writeln(
-        '- Si le **Mode « Plan »** est actif, découpe la réalisation en lots ordonnés (Lot 1 : Thème, Shell & Catalogue des routes ; Lots suivants : écrans par module avec leurs liaisons repositories, actions et états ; Dernier lot : modales/tiroirs, valeurs réactives `@...` et finitions).',
+        '- Si le **Mode « Plan »** est actif, découpe la réalisation en lots calibrés et parallélisables (Lot 1 `"lot-1"` : Thème, Shell, Repositories initiaux & déclaration dans `"pageCatalog"` de toutes les routes secondaires ; Lots suivants : 1 à 2 écrans max par lot avec `"dependsOn": ["lot-1"]` pour exécution parallèle ; Dernier lot éventuel : valeurs réactives `@...` transverses et finitions).',
+      )
+      ..writeln(
+        '- Sélectionne directement les icônes dans le catalogue `MaterialIconCatalog` fourni dans le guide sans appeler `validate_or_list_icons`, et émets un JSON compact sur une seule ligne.',
       )
       ..writeln(
         '- Réutilise **exactement** les identifiants de repositories (`<repoAlias>`), les clés de collections (`<collectionKey>`) et les noms d’attributs listés dans la section **Repositories & Liaisons** — n’invente aucun nom de champ absent du schéma.',
@@ -55,7 +58,9 @@ abstract final class UxSuperDesignerPromptExporter {
   ) {
     buf.writeln('## 1. Contexte Produit, Personas & Terminologie Métier');
     if (project.vision.ideaSummary.trim().isNotEmpty) {
-      buf.writeln('- **Idée / Périmètre** : ${project.vision.ideaSummary.trim()}');
+      buf.writeln(
+        '- **Idée / Périmètre** : ${project.vision.ideaSummary.trim()}',
+      );
     } else {
       buf.writeln('- **Idée / Périmètre** : ${project.initialIdea.trim()}');
     }
@@ -67,7 +72,9 @@ abstract final class UxSuperDesignerPromptExporter {
     if (project.vision.personas.isNotEmpty) {
       buf.writeln('- **Personas cibles** :');
       for (final p in project.vision.personas) {
-        final roleSuffix = p.role.trim().isNotEmpty ? ' — ${p.role.trim()}' : '';
+        final roleSuffix = p.role.trim().isNotEmpty
+            ? ' — ${p.role.trim()}'
+            : '';
         buf.writeln('  - `${p.id}` **${p.name}**$roleSuffix');
       }
     }
@@ -161,13 +168,15 @@ abstract final class UxSuperDesignerPromptExporter {
         }
       }
       if (obj.relations.isNotEmpty) {
-        final rels = obj.relations.map((r) {
-          final target = project.findBusinessObject(r.targetObjectId);
-          final targetAlias = target != null
-              ? SpecSuperDesignerExporter.repoAliasFor(target)
-              : r.targetObjectId;
-          return '`${r.name}` (${r.cardinality.symbol} → `$targetAlias`)';
-        }).join(', ');
+        final rels = obj.relations
+            .map((r) {
+              final target = project.findBusinessObject(r.targetObjectId);
+              final targetAlias = target != null
+                  ? SpecSuperDesignerExporter.repoAliasFor(target)
+                  : r.targetObjectId;
+              return '`${r.name}` (${r.cardinality.symbol} → `$targetAlias`)';
+            })
+            .join(', ');
         buf.writeln('- **Relations** : $rels');
       }
       buf.writeln();
@@ -204,15 +213,14 @@ abstract final class UxSuperDesignerPromptExporter {
     }
   }
 
-  static void _writeRoutesSection(
-    StringBuffer buf,
-    SpecForgeProject project,
-  ) {
+  static void _writeRoutesSection(StringBuffer buf, SpecForgeProject project) {
     final nav = project.uxSpec.navigation;
     buf.writeln('## 4. Catalogue des Pages & Routes (`pageCatalog`)');
     if (nav.routes.isEmpty) {
       buf
-        ..writeln('_Aucune route explicite définie ; utilise `/` comme accueil._')
+        ..writeln(
+          '_Aucune route explicite définie ; utilise `/` comme accueil._',
+        )
         ..writeln();
       return;
     }
@@ -231,10 +239,7 @@ abstract final class UxSuperDesignerPromptExporter {
     buf.writeln();
   }
 
-  static void _writeScreensSection(
-    StringBuffer buf,
-    SpecForgeProject project,
-  ) {
+  static void _writeScreensSection(StringBuffer buf, SpecForgeProject project) {
     buf.writeln('## 5. Spécification Détaillée des Écrans (`SCR-xxx`)');
     if (project.uxSpec.screens.isEmpty) {
       buf
@@ -284,7 +289,9 @@ abstract final class UxSuperDesignerPromptExporter {
             '  - **Zone `${z.zone.name}`** (`axis: "${z.axis}"`$sizeInfo$scrollInfo) :',
           );
           if (z.slots.isEmpty) {
-            buf.writeln('    - Conteneur adapté au pattern `${screen.pattern.name}`.');
+            buf.writeln(
+              '    - Conteneur adapté au pattern `${screen.pattern.name}`.',
+            );
           } else {
             for (final slot in z.slots) {
               _writeSlotBullet(buf, project, screen, slot);
@@ -345,7 +352,9 @@ abstract final class UxSuperDesignerPromptExporter {
     final rawObjId = slot.businessObjectId.isNotEmpty
         ? slot.businessObjectId
         : screen.primaryObjectId;
-    final obj = rawObjId.isNotEmpty ? project.findBusinessObject(rawObjId) : null;
+    final obj = rawObjId.isNotEmpty
+        ? project.findBusinessObject(rawObjId)
+        : null;
     final bindingInfo = obj != null
         ? () {
             final alias = SpecSuperDesignerExporter.repoAliasFor(obj);
@@ -366,10 +375,7 @@ abstract final class UxSuperDesignerPromptExporter {
     buf.writeln('    - **${slot.title}** ($meta)$attrsInfo$summaryInfo');
   }
 
-  static void _writeRulesSection(
-    StringBuffer buf,
-    SpecForgeProject project,
-  ) {
+  static void _writeRulesSection(StringBuffer buf, SpecForgeProject project) {
     final activeRules = project.businessRules.where((r) => r.active).toList();
     if (activeRules.isEmpty) return;
 
@@ -382,7 +388,8 @@ abstract final class UxSuperDesignerPromptExporter {
       );
     for (final r in activeRules) {
       final targets = [
-        for (final oid in r.targetObjectIds) _resolveRepoAliasOrId(project, oid),
+        for (final oid in r.targetObjectIds)
+          _resolveRepoAliasOrId(project, oid),
       ];
       final targetInfo = targets.isNotEmpty
           ? ' (cible: ${targets.map((t) => '`$t`').join(', ')})'
@@ -415,7 +422,9 @@ abstract final class UxSuperDesignerPromptExporter {
   ) {
     if (project.uxSpec.journeys.isEmpty) return;
     buf
-      ..writeln('## 7. Parcours Utilisateurs (`JRN-xxx`) à Vérifier de Bout en Bout')
+      ..writeln(
+        '## 7. Parcours Utilisateurs (`JRN-xxx`) à Vérifier de Bout en Bout',
+      )
       ..writeln(
         'Assure-toi que les enchaînements de navigation (`GoToPageAction` / ouverture de modale ou tiroir / retour) couvrent sans impasse ces parcours :',
       );

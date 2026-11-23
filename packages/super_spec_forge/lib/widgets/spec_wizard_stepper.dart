@@ -1,4 +1,4 @@
-/// Barre de navigation horizontale des 5 étapes du wizard IA ([SpecWizardStepper]).
+/// Barre de navigation horizontale des 7 étapes du wizard IA ([SpecWizardStepper]).
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 
-/// Affiche la progression dans les 5 étapes spécialisées et permet de naviguer entre elles.
+/// Affiche la progression dans les 7 étapes spécialisées et permet de naviguer entre elles.
 class SpecWizardStepper extends StatelessWidget {
   /// Crée la barre de progression pour [project].
   const SpecWizardStepper({
@@ -47,7 +47,7 @@ class SpecWizardStepper extends StatelessWidget {
         color: colors.surfaceContainerLow,
         border: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           if (onBack != null) ...[
@@ -57,15 +57,15 @@ class SpecWizardStepper extends StatelessWidget {
               icon: const Icon(Icons.arrow_back_rounded, size: 16),
               label: const Text('Spec'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
           for (var i = 0; i < SpecForgeStage.values.length; i++) ...[
             if (i > 0)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
                 child: Icon(
                   Icons.chevron_right_rounded,
-                  size: 18,
+                  size: 16,
                   color: colors.onSurfaceVariant,
                 ),
               ),
@@ -80,24 +80,24 @@ class SpecWizardStepper extends StatelessWidget {
               ),
             ),
           ],
-          if (onSwitchToUxWizard != null) ...[
-            const SizedBox(width: 8),
-            TextButton.icon(
-              key: const ValueKey('spec-switch-to-ux-wizard-btn'),
-              onPressed: disabled ? null : onSwitchToUxWizard,
-              icon: const Icon(Icons.design_services_outlined, size: 16),
-              label: const Text('Wizard UX'),
-            ),
-          ],
-          if (onSwitchToQaWizard != null) ...[
-            const SizedBox(width: 4),
-            TextButton.icon(
-              key: const ValueKey('spec-switch-to-qa-wizard-btn'),
-              onPressed: disabled ? null : onSwitchToQaWizard,
-              icon: const Icon(Icons.science_outlined, size: 16),
-              label: const Text('BDD / TDD'),
-            ),
-          ],
+          // if (onSwitchToUxWizard != null) ...[
+          //   const SizedBox(width: 8),
+          //   TextButton.icon(
+          //     key: const ValueKey('spec-switch-to-ux-wizard-btn'),
+          //     onPressed: disabled ? null : onSwitchToUxWizard,
+          //     icon: const Icon(Icons.design_services_outlined, size: 16),
+          //     label: const Text('Wizard UX'),
+          //   ),
+          // ],
+          // if (onSwitchToQaWizard != null) ...[
+          //   const SizedBox(width: 4),
+          //   TextButton.icon(
+          //     key: const ValueKey('spec-switch-to-qa-wizard-btn'),
+          //     onPressed: disabled ? null : onSwitchToQaWizard,
+          //     icon: const Icon(Icons.science_outlined, size: 16),
+          //     label: const Text('BDD / TDD'),
+          //   ),
+          // ],
         ],
       ),
     );

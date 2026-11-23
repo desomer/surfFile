@@ -310,6 +310,12 @@ class VibeIncrementalStreamParser {
     'format',
     'groups',
     'data',
+    'verifyRender',
+    'message',
+    'askUser',
+    'plan',
+    'toolCalls',
+    'repositories',
   };
 
   static const Set<String> _directRootPatchKeys = <String>{
