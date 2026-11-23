@@ -25,6 +25,11 @@ List<String> _splitLinesOrCommas(String raw) => [
     if (part.trim().isNotEmpty) part.trim(),
 ];
 
+List<String> _splitLines(String raw) => [
+  for (final line in raw.split(RegExp(r'\r?\n')))
+    if (line.trim().isNotEmpty) line.trim(),
+];
+
 String _joinLines(List<String> items) => items.join('\n');
 
 /// Atelier de la couche Domain (Architecture Hexagonale) d'une entrée [entry]
@@ -82,8 +87,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   HexagonalDomainLayerSpec get _layer =>
       widget.document.domainLayerFor(widget.entry);
 
-  DomainLayerTab get _activeTab =>
-      DomainLayerTab.values[_tabController.index];
+  DomainLayerTab get _activeTab => DomainLayerTab.values[_tabController.index];
 
   @override
   void initState() {
@@ -487,7 +491,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 1. Invariants
+  // 1. Invariants (invariant_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildInvariantsTab(
@@ -502,15 +506,16 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       addButtonLabel: 'Ajouter un invariant',
       onAdd: () => _editInvariant(layer),
       isEmpty: layer.invariants.isEmpty,
-      emptyHint:
-          'Aucun invariant défini.\nUtilisez le chat IA à gauche ou cliquez sur « Ajouter un invariant ».',
+      emptyHint: 'Aucun invariant défini (validateXXX()).\nUtilisez le chat IA à gauche ou cliquez sur « Ajouter un invariant ».',
       children: [
         for (final item in layer.invariants)
           _SectionCard(
             itemId: item.id,
-            title: '${item.code} · ${item.title}',
-            subtitle: item.description,
-            codeBadge: item.expression.isEmpty ? null : item.expression,
+            prefixBadge: item.code.isEmpty ? null : item.code,
+            titleFr: item.title,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
             tags: [
               for (final attr in item.relatedAttributes) 'attribut: $attr',
               if (item.violationError.isNotEmpty)
@@ -536,57 +541,73 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }) async {
     final values = await _FieldFormDialog.show(
       context,
-      title: existing == null ? 'Nouvel invariant' : 'Modifier ${existing.code}',
+      title: existing == null
+          ? 'Nouvel invariant (validateXXX)'
+          : 'Modifier ${existing.title}',
       fields: [
         _FieldSpec(
-          key: 'code',
-          label: 'Code',
-          hint: 'INV-01',
-          initial: existing?.code ?? 'INV-0${layer.invariants.length + 1}',
-          required: true,
-        ),
-        _FieldSpec(
           key: 'title',
-          label: 'Titre',
-          hint: 'Montant HT positif',
+          label: 'Titre (FR)',
+          hint: 'Validation de l’intégrité de l’identité et du référentiel catalogue',
           initial: existing?.title ?? '',
           required: true,
         ),
         _FieldSpec(
-          key: 'expression',
-          label: 'Expression / Condition',
-          hint: 'montantHt >= 0',
-          initial: existing?.expression ?? '',
+          key: 'description',
+          label: 'Descriptif (FR)',
+          hint: 'Vérifie la cohérence structurelle des identifiants et références.',
+          initial: existing?.description ?? '',
+          maxLines: 2,
+        ),
+        _FieldSpec(
+          key: 'rules',
+          label: 'Rules (1 règle par ligne)',
+          hint: 'L’identifiant id doit être un UUID valide.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — 1 méthode validateXXX par ligne)',
+          hint: 'validateIdentity(id)\nvalidateCatalogReferences(productId, variantId)',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'code',
+          label: 'Code (optionnel)',
+          hint: 'INV-01',
+          initial: existing?.code ?? 'INV-0${layer.invariants.length + 1}',
         ),
         _FieldSpec(
           key: 'relatedAttributes',
-          label: 'Attributs concernés (séparés par virgule ou retour ligne)',
-          hint: 'montantHt, devise',
+          label: 'Attributs du modèle concernés (virgule)',
+          hint: 'id, montantHt',
           initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
         _FieldSpec(
           key: 'violationError',
-          label: 'Erreur métier levée',
-          hint: 'MontantNegatifInterdit',
+          label: 'Erreur métier levée (optionnel)',
+          hint: 'NegativeAmountError',
           initial: existing?.violationError ?? '',
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description métier',
-          initial: existing?.description ?? '',
-          maxLines: 3,
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
     final updated = DomainInvariantSpec(
       id: existing?.id ?? 'inv_${shortid.generate()}',
       code: values['code']!,
       title: values['title']!,
-      expression: values['expression']!,
+      description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: methods.isNotEmpty ? methods.first : '',
       relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
       violationError: values['violationError']!,
-      description: values['description']!,
     );
     final list = existing == null
         ? [...layer.invariants, updated]
@@ -598,7 +619,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 2. State changing
+  // 2. State changing (state_changing_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildStateChangingTab(
@@ -610,28 +631,20 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       theme: theme,
       colors: colors,
       tab: DomainLayerTab.stateChanging,
-      addButtonLabel: 'Ajouter une commande',
+      addButtonLabel: 'Ajouter un comportement',
       onAdd: () => _editStateChange(layer),
       isEmpty: layer.stateChanges.isEmpty,
-      emptyHint:
-          'Aucune méthode State changing définie.\nDécrivez les commandes métier dans le chat IA ou ajoutez-en une manuellement.',
+      emptyHint: 'Aucun comportement State changing défini.\nDécrivez les règles de changement d’état dans le chat IA ou ajoutez-en un manuellement.',
       children: [
         for (final item in layer.stateChanges)
           _SectionCard(
             itemId: item.id,
-            title:
-                '${item.name}(${item.parameters.join(', ')})'
-                '${item.toState.isEmpty ? '' : ' → ${item.toState}'}',
-            subtitle: item.description,
-            detailLines: [
-              if (item.preconditions.isNotEmpty)
-                'Préconditions : ${item.preconditions.join(' · ')}',
-              if (item.mutations.isNotEmpty)
-                'Mutations : ${item.mutations.join(' · ')}',
-            ],
+            titleFr: item.effectiveTitle,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
             tags: [
-              if (item.fromStates.isNotEmpty)
-                'depuis: ${item.fromStates.join('|')}',
+              for (final attr in item.relatedAttributes) 'attribut: $attr',
               for (final ev in item.emittedEvents) 'event: $ev',
               for (final err in item.domainErrors) 'erreur: $err',
             ],
@@ -656,34 +669,38 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
     final values = await _FieldFormDialog.show(
       context,
       title: existing == null
-          ? 'Nouvelle commande State changing'
-          : 'Modifier ${existing.name}',
+          ? 'Nouveau comportement State changing'
+          : 'Modifier ${existing.effectiveTitle}',
       fields: [
         _FieldSpec(
-          key: 'name',
-          label: 'Nom de la commande / méthode',
-          hint: 'confirmer',
-          initial: existing?.name ?? '',
+          key: 'title',
+          label: 'Titre (FR)',
+          hint: 'Confirmation d’une commande brouillon',
+          initial: existing?.effectiveTitle ?? '',
           required: true,
         ),
         _FieldSpec(
-          key: 'parameters',
-          label: 'Paramètres (1 par ligne ou virgule)',
-          hint: 'dateConfirmation: datetime',
-          initial: existing?.parameters.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'preconditions',
-          label: 'Préconditions / gardes (1 par ligne)',
-          hint: 'statut == BROUILLON',
-          initial: existing == null ? '' : _joinLines(existing.preconditions),
+          key: 'description',
+          label: 'Descriptif (FR)',
+          hint: 'Valide la commande et verrouille ses lignes.',
+          initial: existing?.description ?? '',
           maxLines: 2,
         ),
         _FieldSpec(
-          key: 'mutations',
-          label: 'Mutations d’état (1 par ligne)',
-          hint: 'statut = CONFIRMEE',
-          initial: existing == null ? '' : _joinLines(existing.mutations),
+          key: 'rules',
+          label: 'Rules — règles de changement d’état & gardes (1 par ligne)',
+          hint: 'Passage de BROUILLON vers CONFIRMEE uniquement si montantHt > 0.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — 1 méthode par ligne)',
+          hint: 'confirmOrder(confirmedAt: DateTime): void',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
           maxLines: 2,
         ),
         _FieldSpec(
@@ -701,35 +718,36 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
         _FieldSpec(
           key: 'emittedEvents',
           label: 'Domain events émis (virgule)',
-          hint: 'CommandeConfirmee',
+          hint: 'OrderConfirmed',
           initial: existing?.emittedEvents.join(', ') ?? '',
         ),
         _FieldSpec(
-          key: 'domainErrors',
-          label: 'Erreurs métier possibles (virgule)',
-          hint: 'CommandeDejaConfirmee',
-          initial: existing?.domainErrors.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description métier',
-          initial: existing?.description ?? '',
-          maxLines: 2,
+          key: 'relatedAttributes',
+          label: 'Attributs du modèle concernés (virgule)',
+          hint: 'montantHt',
+          initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
+    final firstSig = methods.isNotEmpty ? methods.first : '';
+    final extractedName = firstSig.split('(').first.trim();
     final updated = DomainStateChangeSpec(
       id: existing?.id ?? 'cmd_${shortid.generate()}',
-      name: values['name']!,
-      parameters: _splitLinesOrCommas(values['parameters']!),
-      preconditions: _splitLinesOrCommas(values['preconditions']!),
-      mutations: _splitLinesOrCommas(values['mutations']!),
+      name: extractedName.isEmpty
+          ? (existing?.name ?? 'applyStateChange')
+          : extractedName,
+      title: values['title']!,
+      description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: firstSig,
       fromStates: _splitLinesOrCommas(values['fromStates']!),
       toState: values['toState']!,
       emittedEvents: _splitLinesOrCommas(values['emittedEvents']!),
-      domainErrors: _splitLinesOrCommas(values['domainErrors']!),
-      description: values['description']!,
+      domainErrors: existing?.domainErrors ?? const <String>[],
+      relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
     );
     final list = existing == null
         ? [...layer.stateChanges, updated]
@@ -741,7 +759,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 3. Query
+  // 3. Query (query_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildQueryTab(
@@ -756,16 +774,18 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       addButtonLabel: 'Ajouter une query',
       onAdd: () => _editQuery(layer),
       isEmpty: layer.queries.isEmpty,
-      emptyHint:
-          'Aucune méthode Query définie.\nAjoutez des calculs dérivés ou prédicats purs sans effet de bord.',
+      emptyHint: 'Aucune méthode Query définie (isXXX, canXXX, getXXX, computeXXX).\nAjoutez des états, calculs ou données dérivées sans effet de bord.',
       children: [
         for (final item in layer.queries)
           _SectionCard(
             itemId: item.id,
-            title:
-                '${item.name}(${item.parameters.join(', ')}) : ${item.returnType}',
-            subtitle: item.description,
-            codeBadge: item.formula.isEmpty ? null : item.formula,
+            titleFr: item.effectiveTitle,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
+            tags: [
+              for (final attr in item.relatedAttributes) 'attribut: $attr',
+            ],
             onEdit: () => _editQuery(layer, existing: item),
             onDelete: () => _saveLayer(
               layer.copyWith(
@@ -786,50 +806,65 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }) async {
     final values = await _FieldFormDialog.show(
       context,
-      title: existing == null ? 'Nouvelle Query' : 'Modifier ${existing.name}',
+      title: existing == null
+          ? 'Nouvelle Query (is/can/get/computeXXX)'
+          : 'Modifier ${existing.effectiveTitle}',
       fields: [
         _FieldSpec(
-          key: 'name',
-          label: 'Nom de la méthode / prédicat',
-          hint: 'estAnnulable',
-          initial: existing?.name ?? '',
+          key: 'title',
+          label: 'Titre (FR)',
+          hint: 'Éligibilité à l’annulation et calculs dérivés',
+          initial: existing?.effectiveTitle ?? '',
           required: true,
-        ),
-        _FieldSpec(
-          key: 'parameters',
-          label: 'Paramètres (virgule)',
-          hint: 'dateReference: date',
-          initial: existing?.parameters.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'returnType',
-          label: 'Type de retour',
-          hint: 'bool',
-          initial: existing?.returnType ?? 'bool',
-          required: true,
-        ),
-        _FieldSpec(
-          key: 'formula',
-          label: 'Formule / règle de calcul pure',
-          hint: 'statut == BROUILLON',
-          initial: existing?.formula ?? '',
         ),
         _FieldSpec(
           key: 'description',
-          label: 'Description',
+          label: 'Descriptif (FR)',
+          hint: 'Retourne l’état d’annulabilité et les totaux calculés.',
           initial: existing?.description ?? '',
           maxLines: 2,
+        ),
+        _FieldSpec(
+          key: 'rules',
+          label: 'Rules (1 règle ou formule par ligne)',
+          hint: 'La commande est annulable tant que statut == BROUILLON.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — isXXX, canXXX, getXXX, computeXXX)',
+          hint: 'canBeCancelled(): bool\ncomputeTotalTtc(): number',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'relatedAttributes',
+          label: 'Attributs du modèle concernés (virgule)',
+          hint: 'montantHt',
+          initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
+    final firstSig = methods.isNotEmpty ? methods.first : '';
+    final extractedName = firstSig.split('(').first.trim();
     final updated = DomainQuerySpec(
       id: existing?.id ?? 'qry_${shortid.generate()}',
-      name: values['name']!,
-      parameters: _splitLinesOrCommas(values['parameters']!),
-      returnType: values['returnType']!,
-      formula: values['formula']!,
+      name: extractedName.isEmpty
+          ? (existing?.name ?? 'isEligible')
+          : extractedName,
+      title: values['title']!,
       description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: firstSig,
+      returnType: existing?.returnType ?? 'bool',
+      relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
     );
     final list = existing == null
         ? [...layer.queries, updated]
@@ -841,7 +876,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Policy Services
+  // 4. Policy Services (policy_service_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildPolicyServicesTab(
@@ -856,21 +891,18 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       addButtonLabel: 'Ajouter une policy',
       onAdd: () => _editPolicyService(layer),
       isEmpty: layer.policyServices.isEmpty,
-      emptyHint:
-          'Aucun Policy Service défini.\nDéclarez ici les politiques et services métier sans état.',
+      emptyHint: 'Aucun Policy Service défini.\nDéclarez ici les méthodes appliquant des règles complexes aux agrégats ou inter-agrégats.',
       children: [
         for (final item in layer.policyServices)
           _SectionCard(
             itemId: item.id,
-            title: item.name,
-            subtitle: item.description,
-            codeBadge: item.operation.isEmpty ? null : item.operation,
-            detailLines: [
-              if (item.rules.isNotEmpty)
-                'Règles : ${item.rules.join(' · ')}',
-            ],
+            titleFr: item.effectiveTitle,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
             tags: [
               for (final col in item.collaborators) 'collab: $col',
+              for (final attr in item.relatedAttributes) 'attribut: $attr',
             ],
             onEdit: () => _editPolicyService(layer, existing: item),
             onDelete: () => _saveLayer(
@@ -894,50 +926,70 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       context,
       title: existing == null
           ? 'Nouveau Policy Service'
-          : 'Modifier ${existing.name}',
+          : 'Modifier ${existing.effectiveTitle}',
       fields: [
         _FieldSpec(
-          key: 'name',
-          label: 'Nom du Policy Service',
-          hint: 'PolitiqueRemiseCommerciale',
-          initial: existing?.name ?? '',
+          key: 'title',
+          label: 'Titre (FR)',
+          hint: 'Politique de remise commerciale inter-agrégats',
+          initial: existing?.effectiveTitle ?? '',
           required: true,
         ),
         _FieldSpec(
-          key: 'operation',
-          label: 'Opération / signature',
-          hint: 'calculerRemise(commande, profilClient) -> number',
-          initial: existing?.operation ?? '',
+          key: 'description',
+          label: 'Descriptif (FR)',
+          hint: 'Applique les règles complexes de tarification multi-entités.',
+          initial: existing?.description ?? '',
+          maxLines: 2,
+        ),
+        _FieldSpec(
+          key: 'rules',
+          label: 'Rules (1 règle par ligne)',
+          hint: 'Remise plafonnée à 15% pour le segment standard.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — 1 méthode par ligne)',
+          hint: 'applyVolumeDiscountPolicy(order: CommandeClient, client: Client): number',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
+          maxLines: 2,
         ),
         _FieldSpec(
           key: 'collaborators',
-          label: 'Collaborateurs / modèles impliqués (virgule)',
+          label: 'Collaborateurs / agrégats impliqués (virgule)',
           hint: 'Client, GrilleTarifaire',
           initial: existing?.collaborators.join(', ') ?? '',
         ),
         _FieldSpec(
-          key: 'rules',
-          label: 'Règles de décision (1 par ligne)',
-          hint: 'Remise plafonnée à 15% pour le segment standard',
-          initial: existing == null ? '' : _joinLines(existing.rules),
-          maxLines: 3,
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description métier',
-          initial: existing?.description ?? '',
-          maxLines: 2,
+          key: 'relatedAttributes',
+          label: 'Attributs du modèle concernés (virgule)',
+          hint: 'montantHt',
+          initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
+    final firstSig = methods.isNotEmpty ? methods.first : '';
+    final extractedName = firstSig.split('(').first.trim();
     final updated = DomainPolicyServiceSpec(
       id: existing?.id ?? 'pol_${shortid.generate()}',
-      name: values['name']!,
-      operation: values['operation']!,
-      collaborators: _splitLinesOrCommas(values['collaborators']!),
-      rules: _splitLinesOrCommas(values['rules']!),
+      name: extractedName.isEmpty
+          ? (existing?.name ?? 'DomainPolicy')
+          : extractedName,
+      title: values['title']!,
       description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: firstSig,
+      operation: firstSig,
+      collaborators: _splitLinesOrCommas(values['collaborators']!),
+      relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
     );
     final list = existing == null
         ? [...layer.policyServices, updated]
@@ -949,7 +1001,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Factory
+  // 5. Factory (factory_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildFactoryTab(
@@ -964,17 +1016,17 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       addButtonLabel: 'Ajouter une factory',
       onAdd: () => _editFactory(layer),
       isEmpty: layer.factories.isEmpty,
-      emptyHint:
-          'Aucune Factory définie.\nDécrivez comment instancier ou reconstituer l’objet dans un état valide.',
+      emptyHint: 'Aucune Factory définie (createXXX(), fromSnapshot(rawData)).\nDécrivez comment créer ou reconstituer une entité valide.',
       children: [
         for (final item in layer.factories)
           _SectionCard(
             itemId: item.id,
-            title:
-                '${item.name}(${item.parameters.join(', ')})'
-                '${item.initialState.isEmpty ? '' : ' → ${item.initialState}'}',
-            subtitle: item.description,
+            titleFr: item.effectiveTitle,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
             tags: [
+              for (final attr in item.relatedAttributes) 'attribut: $attr',
               for (final inv in item.enforcedInvariants) 'invariant: $inv',
               for (final ev in item.emittedEvents) 'event: $ev',
             ],
@@ -999,57 +1051,72 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
     final values = await _FieldFormDialog.show(
       context,
       title: existing == null
-          ? 'Nouvelle Factory'
-          : 'Modifier ${existing.name}',
+          ? 'Nouvelle Factory (createXXX / fromSnapshot)'
+          : 'Modifier ${existing.effectiveTitle}',
       fields: [
         _FieldSpec(
-          key: 'name',
-          label: 'Nom de la Factory',
-          hint: 'creerBrouillon',
-          initial: existing?.name ?? '',
+          key: 'title',
+          label: 'Titre (FR)',
+          hint: 'Création et reconstitution d’une commande valide',
+          initial: existing?.effectiveTitle ?? '',
           required: true,
         ),
         _FieldSpec(
-          key: 'parameters',
-          label: 'Paramètres requis (virgule)',
-          hint: 'clientId: uuid, devise: string',
-          initial: existing?.parameters.join(', ') ?? '',
+          key: 'description',
+          label: 'Descriptif (FR)',
+          hint: 'Instancie l’agrégat valide ou le reconstitue depuis un snapshot.',
+          initial: existing?.description ?? '',
+          maxLines: 2,
+        ),
+        _FieldSpec(
+          key: 'rules',
+          label: 'Rules (1 règle par ligne)',
+          hint: 'Initialise l’état à BROUILLON et vérifie les invariants.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — createXXX(), fromSnapshot(rawData))',
+          hint: 'createDraftOrder(montantHt: number): CommandeClient\nfromSnapshot(rawData)',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
+          maxLines: 3,
         ),
         _FieldSpec(
           key: 'initialState',
-          label: 'État initial',
+          label: 'État initial (optionnel)',
           hint: 'BROUILLON',
           initial: existing?.initialState ?? '',
         ),
         _FieldSpec(
-          key: 'enforcedInvariants',
-          label: 'Invariants vérifiés (virgule)',
-          hint: 'INV-01',
-          initial: existing?.enforcedInvariants.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'emittedEvents',
-          label: 'Domain events émis (virgule)',
-          hint: 'CommandeCreee',
-          initial: existing?.emittedEvents.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description métier',
-          initial: existing?.description ?? '',
-          maxLines: 2,
+          key: 'relatedAttributes',
+          label: 'Attributs du modèle initialisés (virgule)',
+          hint: 'montantHt',
+          initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
+    final firstSig = methods.isNotEmpty ? methods.first : '';
+    final extractedName = firstSig.split('(').first.trim();
     final updated = DomainFactorySpec(
       id: existing?.id ?? 'fac_${shortid.generate()}',
-      name: values['name']!,
-      parameters: _splitLinesOrCommas(values['parameters']!),
-      initialState: values['initialState']!,
-      enforcedInvariants: _splitLinesOrCommas(values['enforcedInvariants']!),
-      emittedEvents: _splitLinesOrCommas(values['emittedEvents']!),
+      name: extractedName.isEmpty
+          ? (existing?.name ?? 'createEntity')
+          : extractedName,
+      title: values['title']!,
       description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: firstSig,
+      initialState: values['initialState']!,
+      enforcedInvariants: existing?.enforcedInvariants ?? const <String>[],
+      emittedEvents: existing?.emittedEvents ?? const <String>[],
+      relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
     );
     final list = existing == null
         ? [...layer.factories, updated]
@@ -1061,7 +1128,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Domain events
+  // 6. Domain events (domain_event_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildDomainEventsTab(
@@ -1073,25 +1140,23 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       theme: theme,
       colors: colors,
       tab: DomainLayerTab.domainEvents,
-      addButtonLabel: 'Ajouter un event',
+      addButtonLabel: 'Ajouter un event behavior',
       onAdd: () => _editDomainEvent(layer),
       isEmpty: layer.domainEvents.isEmpty,
-      emptyHint:
-          'Aucun Domain event défini.\nListez les événements immuables publiés lors des changements d’état.',
+      emptyHint: 'Aucun Domain event behavior défini (publishXXX(), onXXX()).\nListez les méthodes publiant ou traitant les événements métier.',
       children: [
         for (final item in layer.domainEvents)
           _SectionCard(
             itemId: item.id,
-            title: item.name,
-            subtitle: item.description,
-            detailLines: [
-              if (item.payloadFields.isNotEmpty)
-                'Payload : ${item.payloadFields.join(', ')}',
-            ],
+            titleFr: item.effectiveTitle,
+            descriptionFr: item.description,
+            rules: item.effectiveRules,
+            associatedMethods: item.effectiveAssociatedMethods,
             tags: [
               if (item.trigger.isNotEmpty) 'trigger: ${item.trigger}',
               if (item.contractEntryRef.isNotEmpty)
                 'contrat: ${item.contractEntryRef}',
+              for (final attr in item.relatedAttributes) 'attribut: $attr',
             ],
             onEdit: () => _editDomainEvent(layer, existing: item),
             onDelete: () => _saveLayer(
@@ -1114,50 +1179,72 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
     final values = await _FieldFormDialog.show(
       context,
       title: existing == null
-          ? 'Nouveau Domain event'
-          : 'Modifier ${existing.name}',
+          ? 'Nouveau Domain event behavior (publishXXX / onXXX)'
+          : 'Modifier ${existing.effectiveTitle}',
       fields: [
         _FieldSpec(
-          key: 'name',
-          label: 'Nom de l’événement (au passé)',
-          hint: 'CommandeConfirmee',
-          initial: existing?.name ?? '',
+          key: 'title',
+          label: 'Titre (FR)',
+          hint: 'Publication de l’événement de confirmation de commande',
+          initial: existing?.effectiveTitle ?? '',
           required: true,
         ),
         _FieldSpec(
+          key: 'description',
+          label: 'Descriptif (FR)',
+          hint: 'Notifie les autres contextes qu’une commande a été confirmée.',
+          initial: existing?.description ?? '',
+          maxLines: 2,
+        ),
+        _FieldSpec(
+          key: 'rules',
+          label: 'Rules (1 règle par ligne)',
+          hint: 'Publié uniquement après validation complète de l’agrégat.',
+          initial: existing == null ? '' : _joinLines(existing.effectiveRules),
+          maxLines: 3,
+        ),
+        _FieldSpec(
+          key: 'associatedMethods',
+          label: 'Associated internal methods (EN — publishXXX(), onXXX())',
+          hint: 'publishOrderConfirmed(id, montantHt)',
+          initial: existing == null
+              ? ''
+              : _joinLines(existing.effectiveAssociatedMethods),
+          required: true,
+          maxLines: 2,
+        ),
+        _FieldSpec(
           key: 'trigger',
-          label: 'Commande / Factory déclencheuse',
-          hint: 'confirmer',
+          label: 'Méthode déclencheuse (optionnel)',
+          hint: 'confirmOrder',
           initial: existing?.trigger ?? '',
         ),
         _FieldSpec(
-          key: 'payloadFields',
-          label: 'Champs du payload (virgule)',
-          hint: 'commandeId: uuid, confirmeeLe: datetime',
-          initial: existing?.payloadFields.join(', ') ?? '',
-        ),
-        _FieldSpec(
-          key: 'contractEntryRef',
-          label: 'Contrat DTO lié dans le domaine (optionnel)',
-          hint: 'CommandeConfirmeePayload',
-          initial: existing?.contractEntryRef ?? '',
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description métier',
-          initial: existing?.description ?? '',
-          maxLines: 2,
+          key: 'relatedAttributes',
+          label: 'Attributs du modèle concernés (virgule)',
+          hint: 'id, montantHt',
+          initial: existing?.relatedAttributes.join(', ') ?? '',
         ),
       ],
     );
     if (values == null || !mounted) return;
+    final methods = _splitLines(values['associatedMethods']!);
+    final firstSig = methods.isNotEmpty ? methods.first : '';
+    final extractedName = firstSig.split('(').first.trim();
     final updated = DomainEventSpec(
       id: existing?.id ?? 'evt_${shortid.generate()}',
-      name: values['name']!,
-      trigger: values['trigger']!,
-      payloadFields: _splitLinesOrCommas(values['payloadFields']!),
-      contractEntryRef: values['contractEntryRef']!,
+      name: extractedName.isEmpty
+          ? (existing?.name ?? 'publishDomainEvent')
+          : extractedName,
+      title: values['title']!,
       description: values['description']!,
+      rules: _splitLines(values['rules']!),
+      associatedMethods: methods,
+      methodSignature: firstSig,
+      trigger: values['trigger']!,
+      payloadFields: existing?.payloadFields ?? const <String>[],
+      contractEntryRef: existing?.contractEntryRef ?? '',
+      relatedAttributes: _splitLinesOrCommas(values['relatedAttributes']!),
     );
     final list = existing == null
         ? [...layer.domainEvents, updated]
@@ -1169,7 +1256,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Persistence policy
+  // 7. Persistence policy (persistence_policy_behaviors)
   // ---------------------------------------------------------------------------
 
   Widget _buildPersistencePolicyTab(
@@ -1237,6 +1324,29 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
                 'Frontière transactionnelle : ${policy.aggregateBoundary}',
                 style: theme.textTheme.bodySmall,
               ),
+            if (policy.rules.isNotEmpty) ...[
+              Text(
+                'Rules:',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              for (final rule in policy.rules)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.verified_outlined,
+                      size: 14,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(rule, style: theme.textTheme.bodySmall),
+                    ),
+                  ],
+                ),
+            ],
             if (policy.consistencyNotes.isNotEmpty)
               Text(
                 'Notes & rétention : ${policy.consistencyNotes}',
@@ -1253,7 +1363,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
       theme: theme,
       colors: colors,
       tab: DomainLayerTab.persistencePolicy,
-      addButtonLabel: 'Ajouter une méthode du port',
+      addButtonLabel: 'Ajouter méthode ou règle',
       extraHeaderActions: [
         OutlinedButton.icon(
           key: const ValueKey('domain-layer-configure-persistence-btn'),
@@ -1271,7 +1381,7 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              'Aucune méthode déclarée sur le port Repository (ex. findById, save).',
+              'Aucune méthode ni règle unitaire déclarée (CRUD métier, Vérification, Recherche, Pagination, Index de recherche, Contrainte d’unicité…).',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
@@ -1282,9 +1392,15 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
           for (final method in policy.portMethods)
             _SectionCard(
               itemId: method.id,
-              title: method.name,
-              subtitle: method.description,
-              codeBadge: method.signature.isEmpty ? null : method.signature,
+              prefixBadge: method.category.label,
+              titleFr: method.effectiveTitle,
+              descriptionFr: method.description,
+              rules: method.effectiveRules,
+              associatedMethods: method.effectiveAssociatedMethods,
+              allowEmptyMethods: true,
+              tags: [
+                for (final attr in method.relatedAttributes) 'attribut: $attr',
+              ],
               onEdit: () => _editPortMethod(layer, existing: method),
               onDelete: () => _saveLayer(
                 layer.copyWith(
@@ -1321,40 +1437,14 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
   }) async {
     final policy = layer.persistencePolicy;
     final object = widget.document.objectFor(widget.entry);
-    final values = await _FieldFormDialog.show(
-      context,
-      title: existing == null
-          ? 'Nouvelle méthode du port Repository'
-          : 'Modifier ${existing.name}',
-      fields: [
-        _FieldSpec(
-          key: 'name',
-          label: 'Nom de la méthode',
-          hint: 'findById',
-          initial: existing?.name ?? '',
-          required: true,
-        ),
-        _FieldSpec(
-          key: 'signature',
-          label: 'Signature',
-          hint: '(id: uuid) -> ${object.technicalName}?',
-          initial: existing?.signature ?? '',
-        ),
-        _FieldSpec(
-          key: 'description',
-          label: 'Description / contrat attendu',
-          initial: existing?.description ?? '',
-          maxLines: 2,
-        ),
-      ],
+    final updated = await showDialog<DomainRepositoryMethodSpec>(
+      context: context,
+      builder: (_) => _PersistenceBehaviorDialog(
+        existing: existing,
+        modelTechnicalName: object.technicalName,
+      ),
     );
-    if (values == null || !mounted) return;
-    final updated = DomainRepositoryMethodSpec(
-      id: existing?.id ?? 'repm_${shortid.generate()}',
-      name: values['name']!,
-      signature: values['signature']!,
-      description: values['description']!,
-    );
+    if (updated == null || !mounted) return;
     final list = existing == null
         ? [...policy.portMethods, updated]
         : [
@@ -1395,23 +1485,32 @@ class _CountBadge extends StatelessWidget {
   }
 }
 
+/// Carte structurée commune aux 7 onglets affichant systématiquement :
+/// - le titre,
+/// - le descriptif,
+/// - `Rules:`,
+/// - `Associated internal methods:`.
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.itemId,
-    required this.title,
-    required this.subtitle,
+    required this.titleFr,
     required this.onEdit,
     required this.onDelete,
-    this.codeBadge,
-    this.detailLines = const <String>[],
+    this.prefixBadge,
+    this.descriptionFr = '',
+    this.rules = const <String>[],
+    this.associatedMethods = const <String>[],
+    this.allowEmptyMethods = false,
     this.tags = const <String>[],
   });
 
   final String itemId;
-  final String title;
-  final String subtitle;
-  final String? codeBadge;
-  final List<String> detailLines;
+  final String titleFr;
+  final String? prefixBadge;
+  final String descriptionFr;
+  final List<String> rules;
+  final List<String> associatedMethods;
+  final bool allowEmptyMethods;
   final List<String> tags;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -1420,6 +1519,7 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final cleanDesc = descriptionFr.trim();
     return Card(
       key: ValueKey('domain-layer-card-$itemId'),
       elevation: 0,
@@ -1428,11 +1528,12 @@ class _SectionCard extends StatelessWidget {
         side: BorderSide(color: colors.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+        padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          spacing: 6,
+          spacing: 10,
           children: [
+            // 1. Titre + Descriptif + actions
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1441,15 +1542,40 @@ class _SectionCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     spacing: 4,
                     children: [
-                      Text(
-                        title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (prefixBadge != null && prefixBadge!.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                prefixBadge!,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                          Text(
+                            titleFr,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
-                      if (subtitle.trim().isNotEmpty)
+                      if (cleanDesc.isNotEmpty && cleanDesc != titleFr.trim())
                         Text(
-                          subtitle,
+                          cleanDesc,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colors.onSurfaceVariant,
                           ),
@@ -1475,26 +1601,120 @@ class _SectionCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (codeBadge != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHighest.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  codeBadge!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
+
+            // 2. Rules:
+            if (rules.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 4,
+                children: [
+                  Text(
+                    'Rules:',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.primary,
+                    ),
+                  ),
+                  for (final rule in rules)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '• ',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(rule, style: theme.textTheme.bodySmall),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+
+            // 3. Associated internal methods:
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 6,
+              children: [
+                Text(
+                  'Associated internal methods:',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: colors.primary,
                   ),
                 ),
-              ),
-            for (final line in detailLines)
-              Text(line, style: theme.textTheme.bodySmall),
+                if (associatedMethods.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      for (final method in associatedMethods)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.surfaceContainerHighest.withValues(
+                              alpha: 0.65,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: colors.outlineVariant.withValues(
+                                alpha: 0.7,
+                              ),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 6,
+                            children: [
+                              Icon(
+                                Icons.code_rounded,
+                                size: 14,
+                                color: colors.primary,
+                              ),
+                              Flexible(
+                                child: Text(
+                                  method,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w600,
+                                    color: colors.onSurface,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  )
+                else if (allowEmptyMethods)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.tertiaryContainer.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Règle sans méthode associée',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
             if (tags.isNotEmpty)
               Wrap(
                 spacing: 6,
@@ -1566,7 +1786,8 @@ class _FieldFormDialog extends StatefulWidget {
 class _FieldFormDialogState extends State<_FieldFormDialog> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final Map<String, TextEditingController> _controllers = {
-    for (final f in widget.fields) f.key: TextEditingController(text: f.initial),
+    for (final f in widget.fields)
+      f.key: TextEditingController(text: f.initial),
   };
 
   @override
@@ -1583,7 +1804,7 @@ class _FieldFormDialogState extends State<_FieldFormDialog> {
       key: const ValueKey('domain-layer-item-form-dialog'),
       title: Text(widget.title),
       content: SizedBox(
-        width: 500,
+        width: 520,
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -1634,6 +1855,198 @@ class _FieldFormDialogState extends State<_FieldFormDialog> {
   }
 }
 
+class _PersistenceBehaviorDialog extends StatefulWidget {
+  const _PersistenceBehaviorDialog({
+    required this.existing,
+    required this.modelTechnicalName,
+  });
+
+  final DomainRepositoryMethodSpec? existing;
+  final String modelTechnicalName;
+
+  @override
+  State<_PersistenceBehaviorDialog> createState() =>
+      _PersistenceBehaviorDialogState();
+}
+
+class _PersistenceBehaviorDialogState
+    extends State<_PersistenceBehaviorDialog> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  late PersistenceBehaviorCategory _category =
+      widget.existing?.category ?? PersistenceBehaviorCategory.crud;
+  late final TextEditingController _titleCtrl = TextEditingController(
+    text: widget.existing?.effectiveTitle ?? '',
+  );
+  late final TextEditingController _descCtrl = TextEditingController(
+    text: widget.existing?.description ?? '',
+  );
+  late final TextEditingController _rulesCtrl = TextEditingController(
+    text: widget.existing == null
+        ? ''
+        : _joinLines(widget.existing!.effectiveRules),
+  );
+  late final TextEditingController _methodCtrl = TextEditingController(
+    text: widget.existing == null
+        ? ''
+        : _joinLines(widget.existing!.effectiveAssociatedMethods),
+  );
+  late final TextEditingController _attrsCtrl = TextEditingController(
+    text: widget.existing?.relatedAttributes.join(', ') ?? '',
+  );
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _rulesCtrl.dispose();
+    _methodCtrl.dispose();
+    _attrsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const ValueKey('domain-layer-persistence-behavior-dialog'),
+      title: Text(
+        widget.existing == null
+            ? 'Nouvelle méthode ou règle de persistance'
+            : 'Modifier ${widget.existing!.effectiveTitle}',
+      ),
+      content: SizedBox(
+        width: 540,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 10,
+              children: [
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Catégorie',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<PersistenceBehaviorCategory>(
+                      key: const ValueKey(
+                        'domain-layer-persistence-category-dropdown',
+                      ),
+                      value: _category,
+                      isDense: true,
+                      isExpanded: true,
+                      items: [
+                        for (final cat in PersistenceBehaviorCategory.values)
+                          DropdownMenuItem(value: cat, child: Text(cat.label)),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setState(() => _category = value);
+                      },
+                    ),
+                  ),
+                ),
+                TextFormField(
+                  key: const ValueKey('domain-layer-persistence-title-field'),
+                  controller: _titleCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Titre (FR)',
+                    hintText: 'Rechercher par statut ou contrainte d’unicité sur code',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Champ requis.' : null,
+                ),
+                TextFormField(
+                  key: const ValueKey('domain-layer-persistence-desc-field'),
+                  controller: _descCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Descriptif (FR)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                TextFormField(
+                  key: const ValueKey('domain-layer-persistence-rules-field'),
+                  controller: _rulesCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Rules — unicité, index de recherche, transactions (1 par ligne)',
+                    hintText: 'Index B-Tree sur statut et dateCreation.',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                TextFormField(
+                  key: const ValueKey('domain-layer-persistence-method-field'),
+                  controller: _methodCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Associated internal methods (EN — 1 par ligne, vide autorisé si règle pure)',
+                    hintText:
+                        'findByStatus${widget.modelTechnicalName}(status)',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                TextFormField(
+                  key: const ValueKey('domain-layer-persistence-attrs-field'),
+                  controller: _attrsCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Attributs du modèle concernés (virgule)',
+                    hintText: 'id, montantHt',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: const ValueKey('domain-layer-persistence-behavior-save-btn'),
+          onPressed: () {
+            if (!_formKey.currentState!.validate()) return;
+            final methods = _splitLines(_methodCtrl.text);
+            final firstSig = methods.isNotEmpty ? methods.first : '';
+            final extractedName = firstSig.isEmpty
+                ? ''
+                : firstSig.split('(').first.trim();
+            Navigator.pop(
+              context,
+              DomainRepositoryMethodSpec(
+                id: widget.existing?.id ?? 'repm_${shortid.generate()}',
+                name: extractedName,
+                title: _titleCtrl.text.trim(),
+                description: _descCtrl.text.trim(),
+                rules: _splitLines(_rulesCtrl.text),
+                associatedMethods: methods,
+                methodSignature: firstSig,
+                category: _category,
+                relatedAttributes: _splitLinesOrCommas(_attrsCtrl.text),
+              ),
+            );
+          },
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    );
+  }
+}
+
 class _PersistencePolicyDialog extends StatefulWidget {
   const _PersistencePolicyDialog({
     required this.initial,
@@ -1657,6 +2070,9 @@ class _PersistencePolicyDialogState extends State<_PersistencePolicyDialog> {
   late final TextEditingController _boundaryCtrl = TextEditingController(
     text: widget.initial.aggregateBoundary,
   );
+  late final TextEditingController _rulesCtrl = TextEditingController(
+    text: _joinLines(widget.initial.rules),
+  );
   late final TextEditingController _notesCtrl = TextEditingController(
     text: widget.initial.consistencyNotes,
   );
@@ -1668,6 +2084,7 @@ class _PersistencePolicyDialogState extends State<_PersistencePolicyDialog> {
   void dispose() {
     _portNameCtrl.dispose();
     _boundaryCtrl.dispose();
+    _rulesCtrl.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
@@ -1678,7 +2095,7 @@ class _PersistencePolicyDialogState extends State<_PersistencePolicyDialog> {
       key: const ValueKey('domain-layer-persistence-policy-dialog'),
       title: const Text('Configurer la Persistence policy'),
       content: SizedBox(
-        width: 500,
+        width: 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1756,11 +2173,21 @@ class _PersistencePolicyDialogState extends State<_PersistencePolicyDialog> {
                 ),
               ),
               TextField(
-                key: const ValueKey('domain-layer-policy-notes'),
-                controller: _notesCtrl,
+                key: const ValueKey('domain-layer-policy-rules'),
+                controller: _rulesCtrl,
                 maxLines: 3,
                 decoration: const InputDecoration(
-                  labelText: 'Contraintes d’unicité, index & archivage',
+                  labelText: 'Règles globales : contraintes d’unicité, index de recherche & transactions (1 par ligne)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              TextField(
+                key: const ValueKey('domain-layer-policy-notes'),
+                controller: _notesCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Notes & archivage',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -1783,6 +2210,7 @@ class _PersistencePolicyDialogState extends State<_PersistencePolicyDialog> {
               aggregateBoundary: _boundaryCtrl.text.trim(),
               concurrencyStrategy: _concurrency,
               deletionStrategy: _deletion,
+              rules: _splitLines(_rulesCtrl.text),
               consistencyNotes: _notesCtrl.text.trim(),
             ),
           ),

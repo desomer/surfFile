@@ -1,4 +1,4 @@
-/// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA (raccourci `F1`).
+/// Bannière du mode édition ([StyleEditBanner], raccourci `F12`, gestion des pages `F3`) et panneau latéral Vibe IA (raccourci `F1`).
 library;
 
 import 'dart:async' show Timer, unawaited;
@@ -75,6 +75,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   bool _chatOpen = false;
   bool _chatExpanded = true;
   bool _saveTimingOpen = false;
+  bool _openingPages = false;
   Offset? _expandedChatPosition;
   Offset? _compactChatPosition;
   VibeChatScope? _chatScope;
@@ -171,22 +172,46 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     });
   }
 
+  void _openPagesManager() {
+    final managePages = widget.onManagePages;
+    if (managePages == null || _openingPages) return;
+    _openingPages = true;
+    unawaited(
+      managePages().whenComplete(() {
+        _openingPages = false;
+      }),
+    );
+  }
+
   bool _onKey(KeyEvent event) {
     if (event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.f1 ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isAltPressed ||
         HardwareKeyboard.instance.isShiftPressed ||
         HardwareKeyboard.instance.isMetaPressed) {
       return false;
     }
-    if (!mounted ||
-        context.getInheritedWidgetOfExactType<AppearanceScope>()?.notifier ==
-            null) {
-      return false;
+    if (!mounted) return false;
+    if (event.logicalKey == LogicalKeyboardKey.f1) {
+      if (context.getInheritedWidgetOfExactType<AppearanceScope>()?.notifier ==
+          null) {
+        return false;
+      }
+      _toggleGlobalChat();
+      return true;
     }
-    _toggleGlobalChat();
-    return true;
+    if (event.logicalKey == LogicalKeyboardKey.f3) {
+      if (widget.onManagePages == null) return false;
+      _openPagesManager();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.f12) {
+      final editMode = StyleEditScope.maybeReadOf(context);
+      if (editMode == null) return false;
+      editMode.value = !editMode.value;
+      return true;
+    }
+    return false;
   }
 
   _VibeChatLayout _newChatLayout(Offset? position, Rect? available) =>
@@ -476,12 +501,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     if (widget.onManagePages != null)
                       IconButton(
                         key: const ValueKey('style-edit-banner-pages'),
-                        tooltip: 'Gérer les pages',
+                        tooltip: 'Gérer les pages (F3)',
                         visualDensity: VisualDensity.compact,
                         iconSize: 18,
                         color: scheme.onPrimary,
                         icon: const Icon(Icons.web_stories_outlined),
-                        onPressed: widget.onManagePages,
+                        onPressed: _openPagesManager,
                       ),
                     if (EditorViewportPreviewScope.controllerOf(context)
                         case final viewportPreview?)

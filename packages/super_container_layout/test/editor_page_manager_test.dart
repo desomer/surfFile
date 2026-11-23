@@ -397,4 +397,38 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('F3 opens the page manager dialog from SuperApp', (tester) async {
+    final routing = EditorPageRouter(
+      baseConfig: RoutingConfig(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const SuperPage(child: Text('Coded')),
+          ),
+        ],
+      ),
+    );
+    addTearDown(routing.dispose);
+    await tester.pumpWidget(
+      SuperApp(
+        router: routing.router,
+        pageRouting: routing,
+        registry: Registry()..bootstrap(),
+      ),
+    );
+    await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('editor-pages-manager')), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-pages-manager')), findsOneWidget);
+    expect(find.text('Gérer les pages'), findsOneWidget);
+
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-pages-manager')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

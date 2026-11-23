@@ -519,4 +519,34 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'SuperDesignerApp toggles edit mode and StyleEditBanner with F12',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+      await tester.pumpAndSettle();
+
+      final editMode = StyleEditScope.controllerOf(
+        tester.element(find.byType(SuperPage)),
+      )!;
+      expect(editMode.value, isFalse);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f12);
+      await tester.pumpAndSettle();
+      expect(editMode.value, isTrue);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f12);
+      await tester.pumpAndSettle();
+      expect(editMode.value, isFalse);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -61,8 +61,8 @@ class StyleEditModeButton extends StatelessWidget {
       return SuperToolbarIconButton(
         key: buttonKey,
         tooltip: editMode.value
-            ? 'Quitter l’édition du style'
-            : 'Éditer le style (clic droit sur une zone)',
+            ? 'Quitter l’édition du style (F12)'
+            : 'Éditer le style (F12 — clic droit sur une zone)',
         icon: Icons.brush_outlined,
         selected: editMode.value,
         onPressed: () => editMode.value = !editMode.value,

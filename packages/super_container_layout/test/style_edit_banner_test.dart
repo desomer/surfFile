@@ -1198,6 +1198,112 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'F12 toggles edit mode and ignores modified F12 combinations',
+    (tester) async {
+      final mode = ValueNotifier(false);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(mode.dispose);
+      addTearDown(appearance.dispose);
+
+      await pumpWithAppearance(tester, mode, appearance);
+      await tester.pumpAndSettle();
+
+      expect(mode.value, isFalse);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+
+      // Ctrl+F12, Alt+F12, Shift+F12 et Meta+F12 sont ignorés.
+      for (final modifier in [
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.altLeft,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.metaLeft,
+      ]) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f12);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+        expect(mode.value, isFalse);
+        expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+      }
+
+      // F12 ouvre le mode édition et affiche la bannière.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f12);
+      await tester.pumpAndSettle();
+      expect(mode.value, isTrue);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsOneWidget);
+
+      // Un second appui sur F12 referme le mode édition.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f12);
+      await tester.pumpAndSettle();
+      expect(mode.value, isFalse);
+      expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'F3 opens page manager even outside edit mode, guards against re-entry and ignores modified F3',
+    (tester) async {
+      final mode = ValueNotifier(false);
+      addTearDown(mode.dispose);
+      var openCalls = 0;
+      Completer<void>? pendingOpen;
+
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: mode,
+          child: MaterialApp(
+            home: Scaffold(
+              body: StyleEditBanner(
+                onManagePages: () {
+                  openCalls++;
+                  pendingOpen = Completer<void>();
+                  return pendingOpen!.future;
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Modificateurs ignorés.
+      for (final modifier in [
+        LogicalKeyboardKey.controlLeft,
+        LogicalKeyboardKey.altLeft,
+        LogicalKeyboardKey.shiftLeft,
+        LogicalKeyboardKey.metaLeft,
+      ]) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+        expect(openCalls, 0);
+      }
+
+      // F3 déclenche onManagePages hors mode édition et ignore les appuis répétés tant qu'il est ouvert.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+      await tester.pump();
+      expect(openCalls, 1);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+      await tester.pump();
+      expect(openCalls, 1);
+
+      pendingOpen!.complete();
+      await tester.pumpAndSettle();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.f3);
+      await tester.pump();
+      expect(openCalls, 2);
+
+      pendingOpen!.complete();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _FallbackGuideBundle extends CachingAssetBundle {

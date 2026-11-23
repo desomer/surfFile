@@ -97,57 +97,100 @@ class _FakeDomainLayerAiService implements SpecAiService {
     lastPrompt = prompt;
     lastSystemInstruction = systemInstructionOverride;
     final payload = jsonEncode({
-      'message': 'J’ai structuré les invariants, la commande confirmer, l’événement CommandeConfirmee et le port Repository.',
+      'message':
+          'J’ai structuré les comportements et règles de la couche Domain avec titres en français et méthodes en anglais.',
       'askUser': null,
       'specPatch': {
-        'invariants': [
+        'invariant_behaviors': [
           {
             'code': 'INV-01',
-            'title': 'Montant HT positif',
-            'expression': 'montantHt >= 0',
+            'title': 'Vérifier que le montant HT est positif ou nul',
+            'description':
+                'Contrôle l’intégrité financière des montants de la commande.',
+            'rules': [
+              'Le montant montantHt doit être supérieur ou égal à 0.',
+            ],
+            'associatedMethods': [
+              'validatePositiveAmountHt(montantHt)',
+              'validateAmountPrecision(montantHt)',
+            ],
             'relatedAttributes': ['montantHt'],
-            'violationError': 'MontantNegatif',
+            'violationError': 'NegativeAmountError',
           },
         ],
-        'stateChanges': [
+        'state_changing_behaviors': [
           {
-            'name': 'confirmer',
-            'parameters': ['dateConfirmation: datetime'],
+            'title': 'Confirmer la commande brouillon',
+            'name': 'confirmOrder',
+            'methodSignature': 'confirmOrder(): void',
+            'stateChangeRule': 'BROUILLON -> CONFIRMEE si montantHt > 0',
             'preconditions': ['statut == BROUILLON'],
             'mutations': ['statut = CONFIRMEE'],
             'toState': 'CONFIRMEE',
-            'emittedEvents': ['CommandeConfirmee'],
+            'emittedEvents': ['OrderConfirmed'],
+            'relatedAttributes': ['montantHt'],
           },
         ],
-        'queries': [
+        'query_behaviors': [
           {
-            'name': 'estAnnulable',
+            'title': 'Indiquer si la commande est annulable',
+            'name': 'canBeCancelled',
+            'methodSignature': 'canBeCancelled(): bool',
             'returnType': 'bool',
             'formula': 'statut == BROUILLON',
           },
         ],
-        'policyServices': [
-          {'name': 'PolitiqueRemise', 'operation': 'calculer(cmd) -> number'},
-        ],
-        'factories': [
+        'policy_service_behaviors': [
           {
-            'name': 'creerBrouillon',
-            'parameters': ['clientId: uuid'],
+            'title': 'Appliquer la politique de remise volume',
+            'name': 'applyVolumeDiscountPolicy',
+            'methodSignature':
+                'applyVolumeDiscountPolicy(order: CommandeClient): number',
+            'relatedAttributes': ['montantHt'],
+          },
+        ],
+        'factory_behaviors': [
+          {
+            'title': 'Créer une commande brouillon valide',
+            'name': 'createDraftOrder',
+            'methodSignature':
+                'createDraftOrder(montantHt: number): CommandeClient',
             'initialState': 'BROUILLON',
+            'relatedAttributes': ['montantHt'],
           },
         ],
-        'domainEvents': [
+        'domain_event_behaviors': [
           {
-            'name': 'CommandeConfirmee',
-            'trigger': 'confirmer',
-            'payloadFields': ['commandeId: uuid'],
+            'title': 'Publier l’événement de confirmation de commande',
+            'name': 'publishOrderConfirmed',
+            'methodSignature':
+                'publishOrderConfirmed(event: OrderConfirmedEvent): void',
+            'trigger': 'confirmOrder',
+            'payloadFields': ['montantHt: number'],
+            'relatedAttributes': ['montantHt'],
           },
         ],
-        'persistencePolicy': {
+        'persistence_policy_behaviors': {
           'repositoryPortName': 'CommandeClientRepository',
           'concurrencyStrategy': 'optimisticVersion',
+          'rules': ['Index de recherche sur montantHt'],
           'portMethods': [
-            {'name': 'findById', 'signature': '(id: uuid) -> CommandeClient?'},
+            {
+              'category': 'crud',
+              'title': 'Rechercher une commande par montant',
+              'name': 'findByMontantHt',
+              'methodSignature':
+                  'findByMontantHt(montantHt: number): List<CommandeClient>',
+              'relatedAttributes': ['montantHt'],
+            },
+            {
+              'category': 'searchIndexRule',
+              'title': 'Index de recherche sur le montant HT',
+              'name': '',
+              'methodSignature': '',
+              'rules': ['Index B-Tree sur montantHt'],
+              'relatedAttributes': ['montantHt'],
+            },
           ],
         },
       },
@@ -291,16 +334,37 @@ void main() {
       expect(fakeAi.lastPrompt, contains('State changing'));
       expect(fakeAi.lastPrompt, contains('montantHt'));
 
-      // La commande générée par l'IA est affichée dans State changing
-      expect(find.textContaining('confirmer('), findsOneWidget);
+      // La commande générée par l'IA affiche le titre, Rules: et Associated internal methods:
+      expect(find.text('Confirmer la commande brouillon'), findsOneWidget);
+      expect(find.text('Rules:'), findsWidgets);
+      expect(find.text('Associated internal methods:'), findsWidgets);
+      expect(find.text('confirmOrder(): void'), findsOneWidget);
+      expect(
+        find.textContaining('BROUILLON -> CONFIRMEE'),
+        findsOneWidget,
+      );
 
-      // 4. Navigue sur Invariants et ajoute manuellement un second invariant
+      // 4. Navigue sur Invariants et vérifie les 4 blocs + ajout manuel multi-méthodes
       await tester.tap(
         find.byKey(const ValueKey('domain-layer-tab-invariants')),
       );
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('INV-01 · Montant HT positif'),
+        find.text('Vérifier que le montant HT est positif ou nul'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Contrôle l’intégrité financière des montants de la commande.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('validatePositiveAmountHt(montantHt)'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('validateAmountPrecision(montantHt)'),
         findsOneWidget,
       );
 
@@ -310,16 +374,33 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('domain-layer-field-title')),
-        'Client renseigné',
+        'Plafonner le montant HT unitaire',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('domain-layer-field-description')),
+        'Empêche toute saisie au-delà du plafond autorisé.',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('domain-layer-field-rules')),
+        'Le montant montantHt ne doit pas dépasser 100000.',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('domain-layer-field-associatedMethods')),
+        'validateMaxAmountHt(montantHt)',
       );
       await tester.tap(
         find.byKey(const ValueKey('domain-layer-form-save-btn')),
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('Client renseigné'), findsOneWidget);
+      expect(find.text('Plafonner le montant HT unitaire'), findsOneWidget);
+      expect(
+        find.text('Empêche toute saisie au-delà du plafond autorisé.'),
+        findsOneWidget,
+      );
+      expect(find.text('validateMaxAmountHt(montantHt)'), findsOneWidget);
 
-      // 5. Vérifie l'onglet Persistence policy généré par l'IA
+      // 5. Vérifie l'onglet Persistence policy (méthode EN + règle pure d'index sans méthode associée)
       final persistenceTab = find.byKey(
         const ValueKey('domain-layer-tab-persistencePolicy'),
       );
@@ -331,7 +412,13 @@ void main() {
         find.textContaining('Port sortant : CommandeClientRepository'),
         findsOneWidget,
       );
-      expect(find.text('findById'), findsOneWidget);
+      expect(find.text('Rechercher une commande par montant'), findsOneWidget);
+      expect(
+        find.text('findByMontantHt(montantHt: number): List<CommandeClient>'),
+        findsOneWidget,
+      );
+      expect(find.text('Index de recherche'), findsOneWidget);
+      expect(find.text('Règle sans méthode associée'), findsOneWidget);
 
       // 6. Retour vers la fiche modèle : le badge du bouton indique les éléments créés
       await tester.tap(
@@ -339,7 +426,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('contract-entry-page')), findsOneWidget);
-      expect(find.text('Couche Domain (8)'), findsOneWidget);
+      expect(find.text('Couche Domain (9)'), findsOneWidget);
     },
   );
 }

@@ -9,6 +9,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
 import '../models/business_object_model_preferences.dart';
+import '../models/business_object_spec.dart';
 import '../models/company_glossary.dart';
 import '../models/domain_contracts.dart';
 import '../models/domain_layer_spec.dart';
@@ -34,31 +35,52 @@ abstract final class DomainLayerAiAgent {
   static const String systemInstruction = '''
 Tu es l’« Architecte Couche Domain (DDD & Architecture Hexagonale) » de SuperSpecForge.
 Tu conçois la couche Domain pure d’un objet métier (agrégat, entité ou Value Object) appartenant à un domaine fonctionnel, en respectant strictement l’Architecture Hexagonale (Ports & Adapters) et le Domain-Driven Design :
-- Zéro dépendance technique ou framework dans le Domain (pas d’annotations ORM, HTTP ou SQL dans la logique métier).
-- Protection systématique des invariants dès l’instanciation (Factory) et lors de chaque mutation d’état (State changing).
-- Séparation claire entre commandes à effets de bord (State changing, qui vérifient les préconditions, mutent l’état et émettent des Domain events) et lectures/calculs purs (Query, sans aucun effet de bord).
-- Extraction des règles transverses ou multi-entités dans des Policy Services sans état.
-- Contrat explicite du port sortant de persistance (Persistence policy / Repository interface) côté Domain.
+- Zéro dépendance technique ou framework dans le Domain.
+- STRUCTURE OBLIGATOIRE EN 4 BLOCS POUR CHAQUE ITEM DES 7 ONGLETS :
+  1. "title" : le titre clair EN FRANÇAIS de l’item (ex. "Validation de l’intégrité de l’identité et du référentiel catalogue").
+  2. "description" : le descriptif synthétique EN FRANÇAIS expliquant la responsabilité métier de cet item.
+  3. "rules" : la liste des règles métier EN FRANÇAIS ("Rules:"), une phrase précise par élément du tableau.
+  4. "associatedMethods" : la liste des méthodes internes EN ANGLAIS à coder ("Associated internal methods:", ex. ["validateIdentity(id)", "validateCatalogReferences(productId, variantId, supplierId)"]). Seules les règles pures d’unicité ou d’index sans méthode associée dans "persistence_policy_behaviors" peuvent laisser "associatedMethods": [].
 
-Tu pilotes les 7 sections suivantes de la couche Domain de l’objet :
-1. "invariants" (onglet Invariants) : règles d’intégrité garanties à tout instant (code, titre, expression logique, attributs concernés, erreur métier levée).
-2. "stateChanges" (onglet State changing) : commandes et méthodes métier modifiant l’état interne (nom, paramètres, préconditions, mutations, états source/cible, événements émis, erreurs métier).
-3. "queries" (onglet Query) : méthodes pures, calculs dérivés et prédicats sans effet de bord (nom, paramètres, type de retour, formule/logique).
-4. "policyServices" (onglet Policy Services) : politiques et services du domaine sans état collaborant avec cet objet (nom, opération, collaborateurs, règles de décision).
-5. "factories" (onglet Factory) : fabriques d’instanciation ou de reconstitution garantissant un état initial valide (nom, paramètres, état initial, invariants vérifiés, événements émis).
-6. "domainEvents" (onglet Domain events) : faits métier immuables nommés au passé émis par l’objet (nom, déclencheur, champs du payload, référence éventuelle vers une entrée eventxpayloaddto du domaine).
-7. "persistencePolicy" (onglet Persistence policy) : contrat du port sortant Repository, frontière transactionnelle de l’agrégat, stratégie de concurrence, stratégie de suppression/archivage et méthodes du port.
+CONTRAINTES PAR CATÉGORIE DE COMPORTEMENTS :
+1. Pour "invariant_behaviors" (onglet Invariants) :
+   - Produire la liste des contrôles invariants en fonction des attributs existants du modèle.
+   - Conventions de méthodes dans "associatedMethods" : `validateXXX()` (ex. `validateIdentity(id)`, `validatePositiveAmountHt(montantHt)`).
+2. Pour "state_changing_behaviors" (onglet State changing) :
+   - Produire la liste des méthodes en anglais qui modifient l’état du modèle.
+   - Toujours préciser dans "rules" (et "stateChangeRule") la règle explicite de changement d’état ("fromStates" -> "toState", préconditions, mutations).
+3. Pour "query_behaviors" (onglet Query) :
+   - Produire la liste des méthodes en anglais qui retournent les états, les calculs et les données dérivées sur le modèle (sans effet de bord).
+   - Conventions de méthodes dans "associatedMethods" : `isXXX()`, `canXXX()`, `getXXX()`, `computeXXX()`.
+4. Pour "policy_service_behaviors" (onglet Policy Services) :
+   - Produire la liste des méthodes en anglais qui appliquent des règles complexes aux agrégats ou inter-agrégats ("rules", "collaborators").
+5. Pour "factory_behaviors" (onglet Factory) :
+   - Produire la liste des méthodes en anglais qui créent ou reconstituent des entités valides.
+   - Conventions de méthodes dans "associatedMethods" : `createXXX()`, `fromSnapshot(rawData)`.
+6. Pour "domain_event_behaviors" (onglet Domain events) :
+   - Produire la liste des méthodes en anglais qui publient des événements ou y réagissent.
+   - Conventions de méthodes dans "associatedMethods" : `publishXXX()`, `onXXX()`.
+7. Pour "persistence_policy_behaviors" (onglet Persistence policy) :
+   - Produire la liste des méthodes en anglais qui appliquent des règles de persistance en fonction des catégories suivantes (SI PERTINENT UNIQUEMENT) :
+     * CRUD métier ("crud") : `saveXXX()`, `findByXXX()`
+     * Vérification ("verification") : `existsXXX()`, `isUniqueXXX()`, `existsByXXX()`, `isUniqueByXXX()`, `canBeDeletedXXX()`, `canBeDeletedByXXX()`, `isAvailableXXX()`, `hasActiveXXX()`
+     * Recherche métier ("search") : `findByStatusXXX()`, `findByXXX()`, `findByXXXAndYYY()`, `findByXXXOrYYY()`
+     * Pagination métier ("pagination") : `findPaginatedXXX()`, `findRecentXXX()`, `findByPeriodXXX()`, `findTopXXX()`
+     * Agrégats ("aggregate") : `loadAggregateXXX()`, `findAggregateByXXX()`, `saveAggregateXXX()`, `findChildrenByXXX()`
+     * Transaction métier ("transaction") : `reserveXXX()`, `lockXXX()`, `unlockXXX()`, `commitReserveXXX()`
+     * Statistiques ("statistics") : `countXXX()`, `countByXXX()`, `countForPeriod()`
+     * Batch ("batch") : `saveAllXXX()`
+   - Ainsi que des règles explicites sur les index de recherche ("searchIndexRule"), les contraintes d’unicité ("uniquenessRule"), les transactions ("persistenceRule"), etc.
+   - ASSURE-TOI IMPÉRATIVEMENT que les contraintes d’unicité et les index de recherche sont bien précisés dans les "rules" de "persistence_policy_behaviors". Tu peux (et dois si nécessaire) ajouter des items de règles SANS méthode associée ("associatedMethods": [], "methodSignature": "", "name": "", avec "category": "uniquenessRule" ou "searchIndexRule" et "rules": [...]) pour préciser les contraintes d’unicité et les index de recherche. Si ces règles sont déjà présentes dans d’autres catégories (ex. "invariant_behaviors"), duplique-les dans "persistence_policy_behaviors" pour plus de clarté.
 
-Cohérence inter-onglets attendue :
-- Lorsqu’une commande "stateChanges" ou une "factory" émet un événement métier, déclare ou mets à jour l’événement correspondant dans "domainEvents".
-- Appuie les expressions, paramètres et payloads sur les attributs réels du modèle fournis dans le contexte.
-- Tiens compte de l’onglet actif consulté par l’utilisateur, tout en pouvant compléter plusieurs onglets d’un seul coup lorsque la demande est transverse.
-- En cas d’ambiguïté métier structurante (règle de gestion, concurrence, suppression logique vs archivage légal), utilise "askUser" avec des valeurs "default" pertinentes.
+RÈGLE CRITIQUE ABSOLUE (ZÉRO ATTRIBUT FICTIF) :
+- IMPORTANT : Ne crée JAMAIS de règles ni de méthodes demandant, filtrant, validant ou indexant des attributs INEXISTANTS dans le modèle !
+- Appuie-toi EXCLUSIVEMENT sur la liste fermée « ATTRIBUTS AUTORISÉS DU MODÈLE » fournie dans le prompt. Tout attribut référencé dans "relatedAttributes", dans "rules" ou dans "associatedMethods" DOIT exister réellement dans le modèle.
 
-Réponds EXCLUSIVEMENT en français et renvoie UNIQUEMENT un objet JSON valide (aucun Markdown, aucun texte hors JSON).
-Place impérativement la clé "message" EN PREMIER pour permettre le streaming en direct :
+Réponds EXCLUSIVEMENT en français pour "message", "askUser", "title", "description" et "rules", mais écris TOUTES les méthodes ("associatedMethods") EN ANGLAIS.
+Renvoie UNIQUEMENT un objet JSON valide (aucun Markdown, aucun texte hors JSON) en plaçant la clé "message" EN PREMIER :
 {
-  "message": "Synthèse claire en français des éléments de la couche Domain proposés ou mis à jour",
+  "message": "Synthèse claire en français des comportements et règles de la couche Domain proposés",
   "askUser": {
     "questions": [
       {
@@ -82,103 +104,184 @@ Règles strictes :
   /// Guide statique décrivant le schéma JSON attendu dans `"specPatch"`.
   static const String patchSchemaGuide = '''
 SCHÉMA "specPatch" POUR LA COUCHE DOMAIN (ARCHITECTURE HEXAGONALE) :
-Toutes les clés sont optionnelles ; seuls les éléments listés sont ajoutés, mis à jour (par "id", sinon par "code"/"name") ou supprimés :
+Chaque item des 7 sections comporte : "title" (FR), "description" (FR), "rules" (liste FR) et "associatedMethods" (liste de méthodes EN) :
 {
-  "invariants": [
+  "invariant_behaviors": [
     {
       "id": "inv_existant (optionnel)",
       "code": "INV-01",
-      "title": "Montant HT positif",
-      "expression": "montantHt >= 0",
-      "relatedAttributes": ["montantHt"],
-      "violationError": "MontantNegatifInterdit",
-      "description": "Un montant hors taxe ne peut jamais être négatif."
+      "title": "Validation de l’intégrité de l’identité et du montant",
+      "description": "Garantit la validité de l’identifiant et des montants financiers dès la création et à chaque mutation.",
+      "rules": [
+        "L’identifiant 'id' doit être un UUID valide.",
+        "Le montant 'montantHt' doit être supérieur ou égal à 0."
+      ],
+      "associatedMethods": [
+        "validateIdentity(id)",
+        "validatePositiveAmountHt(montantHt)"
+      ],
+      "relatedAttributes": ["id", "montantHt"],
+      "violationError": "InvalidOrderInvariantError"
     }
   ],
-  "removeInvariants": ["id ou code à supprimer"],
-  "stateChanges": [
+  "removeInvariants": ["id, code ou titre à supprimer"],
+  "state_changing_behaviors": [
     {
       "id": "cmd_existant (optionnel)",
-      "name": "confirmer",
-      "parameters": ["dateConfirmation: datetime"],
-      "preconditions": ["statut == BROUILLON", "lignes non vides"],
-      "mutations": ["statut = CONFIRMEE", "confirmeeLe = dateConfirmation"],
+      "title": "Confirmation de la commande brouillon",
+      "description": "Fige la commande et déclenche le processus d’exécution.",
+      "rules": [
+        "Règle de changement d’état : passage de BROUILLON vers CONFIRMEE uniquement si montantHt > 0.",
+        "Émet l’événement OrderConfirmed après validation."
+      ],
+      "associatedMethods": [
+        "confirmOrder()"
+      ],
       "fromStates": ["BROUILLON"],
       "toState": "CONFIRMEE",
-      "emittedEvents": ["CommandeConfirmee"],
-      "domainErrors": ["CommandeDejaConfirmee", "CommandeVide"],
-      "description": "Valide définitivement la commande et fige ses lignes."
+      "emittedEvents": ["OrderConfirmed"],
+      "relatedAttributes": ["montantHt"]
     }
   ],
-  "removeStateChanges": ["id ou nom à supprimer"],
-  "queries": [
+  "removeStateChanges": ["id, nom ou titre à supprimer"],
+  "query_behaviors": [
     {
       "id": "qry_existant (optionnel)",
-      "name": "estAnnulable",
-      "parameters": [],
+      "title": "Éligibilité à l’annulation et calculs dérivés",
+      "description": "Expose l’état courant et les valeurs calculées sans effet de bord.",
+      "rules": [
+        "Une commande est annulable uniquement tant qu’elle est à l’état BROUILLON."
+      ],
+      "associatedMethods": [
+        "canBeCancelled(): bool",
+        "isDraft(): bool"
+      ],
       "returnType": "bool",
-      "formula": "statut == BROUILLON || statut == CONFIRMEE",
-      "description": "Indique si la commande peut encore être annulée sans avoir."
+      "relatedAttributes": []
     }
   ],
-  "removeQueries": ["id ou nom à supprimer"],
-  "policyServices": [
+  "removeQueries": ["id, nom ou titre à supprimer"],
+  "policy_service_behaviors": [
     {
       "id": "pol_existant (optionnel)",
-      "name": "PolitiqueRemiseCommerciale",
-      "operation": "calculerRemise(commande: CommandeClient, palierClient: string) -> number",
+      "title": "Politique de remise commerciale inter-agrégats",
+      "description": "Applique les règles complexes de tarification entre la commande et le client.",
+      "rules": [
+        "Remise plafonnée selon l’encours du client collaborateur."
+      ],
+      "associatedMethods": [
+        "applyCommercialDiscountPolicy(order: CommandeClient, client: Client): number"
+      ],
       "collaborators": ["Client"],
-      "rules": ["Plafond de remise 15% sans validation direction"],
-      "description": "Calcule le taux de remise applicable selon le profil client."
+      "relatedAttributes": ["montantHt"]
     }
   ],
-  "removePolicyServices": ["id ou nom à supprimer"],
-  "factories": [
+  "removePolicyServices": ["id, nom ou titre à supprimer"],
+  "factory_behaviors": [
     {
       "id": "fac_existant (optionnel)",
-      "name": "creerBrouillon",
-      "parameters": ["clientId: uuid", "devise: string"],
+      "title": "Création et reconstitution d’une commande valide",
+      "description": "Instancie une nouvelle entité valide ou la réhydrate depuis un snapshot.",
+      "rules": [
+        "Initialise l’état à BROUILLON et exécute tous les contrôles invariants.",
+        "La reconstitution depuis snapshot restaure l’état sans émettre d’événement."
+      ],
+      "associatedMethods": [
+        "createDraftOrder(montantHt: number): CommandeClient",
+        "fromSnapshot(rawData)"
+      ],
       "initialState": "BROUILLON",
-      "enforcedInvariants": ["INV-01"],
-      "emittedEvents": ["CommandeBrouillonCreee"],
-      "description": "Instancie une nouvelle commande vierge à l’état brouillon."
+      "relatedAttributes": ["montantHt"]
     }
   ],
-  "removeFactories": ["id ou nom à supprimer"],
-  "domainEvents": [
+  "removeFactories": ["id, nom ou titre à supprimer"],
+  "domain_event_behaviors": [
     {
       "id": "evt_existant (optionnel)",
-      "name": "CommandeConfirmee",
-      "trigger": "confirmer",
-      "payloadFields": ["commandeId: uuid", "montantHt: number", "confirmeeLe: datetime"],
-      "contractEntryRef": "nom technique éventuel d’une entrée eventxpayloaddto du domaine",
-      "description": "Publié lorsqu’une commande passe à l’état confirmé."
+      "title": "Publication et écoute des événements de commande",
+      "description": "Publie les faits métier immuables lors des transitions de la commande.",
+      "rules": [
+        "Publié immédiatement après la confirmation de la commande avec l’identifiant et le montant."
+      ],
+      "associatedMethods": [
+        "publishOrderConfirmed(id, montantHt)"
+      ],
+      "trigger": "confirmOrder",
+      "payloadFields": ["id: uuid", "montantHt: number"],
+      "relatedAttributes": ["id", "montantHt"]
     }
   ],
-  "removeDomainEvents": ["id ou nom à supprimer"],
-  "persistencePolicy": {
+  "removeDomainEvents": ["id, nom ou titre à supprimer"],
+  "persistence_policy_behaviors": {
     "repositoryPortName": "CommandeClientRepository",
-    "aggregateBoundary": "CommandeClient et ses sous-objets internes sauvegardés atomiquement",
+    "aggregateBoundary": "CommandeClient sauvegardée atomiquement",
     "concurrencyStrategy": "optimisticVersion|pessimisticLock|appendOnly|none",
     "deletionStrategy": "softDelete|hardDelete|immutableArchive",
-    "consistencyNotes": "Unicité sur numeroCommande ; conservation légale 10 ans.",
+    "consistencyNotes": "Transactions atomiques par agrégat.",
+    "rules": [
+      "Contrainte d’unicité stricte sur l’attribut 'id'.",
+      "Index de recherche sur 'montantHt'."
+    ],
     "portMethods": [
       {
         "id": "repm_existant (optionnel)",
-        "name": "findById",
-        "signature": "(id: uuid) -> CommandeClient?",
-        "description": "Charge l’agrégat complet par son identifiant."
+        "category": "crud|verification|search|pagination|aggregate|transaction|statistics|batch|uniquenessRule|searchIndexRule|persistenceRule",
+        "title": "Sauvegarde et chargement unitaire de la commande",
+        "description": "Opérations CRUD métier de base sur l’agrégat.",
+        "rules": [
+          "Vérifie la version optimiste avant toute écriture."
+        ],
+        "associatedMethods": [
+          "saveCommandeClient(order)",
+          "findById(id)"
+        ],
+        "relatedAttributes": ["id"]
       },
       {
-        "name": "save",
-        "signature": "(commande: CommandeClient) -> void",
-        "description": "Persiste atomiquement l’agrégat avec contrôle de version optimiste."
+        "category": "uniquenessRule",
+        "title": "Contrainte d’unicité sur l’identifiant",
+        "description": "Garantit en base l’absence de doublon sur la clé métier ou technique.",
+        "rules": [
+          "Contrainte UNIQUE stricte sur 'id' (dupliquée depuis les invariants pour clarté)."
+        ],
+        "associatedMethods": [],
+        "relatedAttributes": ["id"]
+      },
+      {
+        "category": "searchIndexRule",
+        "title": "Index de recherche sur le montant HT",
+        "description": "Optimise les recherches et tris fréquents sur le montant.",
+        "rules": [
+          "Index B-Tree sur 'montantHt'."
+        ],
+        "associatedMethods": [],
+        "relatedAttributes": ["montantHt"]
       }
     ],
-    "removePortMethods": ["id ou nom à supprimer"]
+    "removePortMethods": ["id, nom ou titre à supprimer"]
   }
 }
 ''';
+
+  /// Retourne l'ensemble ordonné des noms et chemins d'attributs existants dans [object].
+  static List<String> allowedAttributePathsOf(BusinessObjectSpec object) {
+    final paths = <String>[];
+    void walk(List<BusinessAttribute> attrs, String prefix) {
+      for (final attr in attrs) {
+        final full = prefix.isEmpty ? attr.name : '$prefix.${attr.name}';
+        paths.add(full);
+        if (prefix.isNotEmpty && !paths.contains(attr.name)) {
+          paths.add(attr.name);
+        }
+        if (attr.children.isNotEmpty) {
+          walk(attr.children, full);
+        }
+      }
+    }
+
+    walk(object.attributes, '');
+    return paths;
+  }
 
   /// Construit le prompt complet d'un tour de chat pour la couche Domain de [entry].
   static String buildTurnPrompt({
@@ -198,6 +301,25 @@ Toutes les clés sont optionnelles ; seuls les éléments listés sont ajoutés,
     final details = contracts.details[entry.id] ?? ContractDetails.defaults;
     final object = contracts.objectFor(entry);
     final layer = contracts.domainLayerFor(entry);
+    final allowedAttrs = allowedAttributePathsOf(object);
+    final uniqueAttrs = <String>[];
+    final indexedAttrs = <String>[];
+    void collectPersistenceHints(List<BusinessAttribute> attrs, String prefix) {
+      for (final attr in attrs) {
+        final full = prefix.isEmpty ? attr.name : '$prefix.${attr.name}';
+        if (attr.unique) uniqueAttrs.add(full);
+        if (attr.schemaConstraints.xSearchable == true ||
+            attr.schemaConstraints.xDatabaseIndex == true) {
+          indexedAttrs.add(full);
+        }
+        if (attr.children.isNotEmpty) {
+          collectPersistenceHints(attr.children, full);
+        }
+      }
+    }
+
+    collectPersistenceHints(object.attributes, '');
+
     final objectSnapshot = const JsonEncoder.withIndent('  ').convert({
       'name': object.name,
       'technicalName': object.technicalName,
@@ -260,6 +382,34 @@ Toutes les clés sont optionnelles ; seuls les éléments listés sont ajoutés,
         '${activeTab.label} (${activeTab.subtitle})',
       )
       ..writeln()
+      ..writeln(
+        'ATTRIBUTS AUTORISÉS DU MODÈLE '
+        '(LISTE FERMÉE — INTERDICTION D’UTILISER UN ATTRIBUT NON LISTÉ ICI) :',
+      );
+    if (allowedAttrs.isEmpty) {
+      buf.writeln(
+        'AUCUN ATTRIBUT DÉCLARÉ SUR CE MODÈLE. '
+        'Ne crée aucune règle ni méthode supposant des attributs inexistants '
+        '(seul fromSnapshot(rawData) ou une question askUser est possible).',
+      );
+    } else {
+      buf.writeln('- Attributs existants : ${allowedAttrs.join(', ')}');
+      if (uniqueAttrs.isNotEmpty) {
+        buf.writeln(
+          '- Attributs marqués unique=true (à expliciter dans les rules de persistence_policy_behaviors) : '
+          '${uniqueAttrs.join(', ')}',
+        );
+      }
+      if (indexedAttrs.isNotEmpty) {
+        buf.writeln(
+          '- Attributs marqués x-searchable / x-database-index (à expliciter dans les rules d’index de persistence_policy_behaviors) : '
+          '${indexedAttrs.join(', ')}',
+        );
+      }
+    }
+
+    buf
+      ..writeln()
       ..writeln('STRUCTURE ET ATTRIBUTS DU MODÈLE (JSON) :')
       ..writeln(objectSnapshot)
       ..writeln()
@@ -301,96 +451,206 @@ Toutes les clés sont optionnelles ; seuls les éléments listés sont ajoutés,
 
   /// Fusionne un `"specPatch"` IA avec [current] de manière immuable et retourne
   /// la nouvelle spécification ainsi qu'un résumé lisible des changements.
+  ///
+  /// Lorsque [modelObject] est fourni, vérifie qu'aucun `relatedAttributes` ne
+  /// référence un attribut inexistant dans [modelObject].
   static ({HexagonalDomainLayerSpec layer, String summary}) applyPatch(
     HexagonalDomainLayerSpec current,
-    Map<String, Object?> patch,
-  ) {
+    Map<String, Object?> patch, {
+    BusinessObjectSpec? modelObject,
+  }) {
+    final allowedDisplay = modelObject == null
+        ? null
+        : allowedAttributePathsOf(modelObject);
+    final allowedLower = allowedDisplay == null
+        ? null
+        : <String>{for (final p in allowedDisplay) p.toLowerCase()};
+
+    void checkRelatedAttributes(List<String> attrs, String contextLabel) {
+      if (allowedLower == null || attrs.isEmpty) return;
+      for (final rawAttr in attrs) {
+        final clean = rawAttr.split(':').first.trim();
+        if (clean.isEmpty) continue;
+        if (!allowedLower.contains(clean.toLowerCase())) {
+          final allowedHint = allowedDisplay!.isEmpty
+              ? 'aucun attribut défini sur ce modèle'
+              : allowedDisplay.join(', ');
+          throw FormatException(
+            'Attribut inexistant « $clean » référencé dans « $contextLabel » : '
+            'seuls les attributs existants du modèle ($allowedHint) sont autorisés.',
+          );
+        }
+      }
+    }
+
     final summaryParts = <String>[];
 
     final invOutcome = _mergeSection<DomainInvariantSpec>(
       existing: current.invariants,
-      rawItems: patch['invariants'],
-      rawRemovals: patch['removeInvariants'],
-      parseItem: DomainInvariantSpec.fromJson,
+      rawItems: patch['invariant_behaviors'] ?? patch['invariants'],
+      rawRemovals:
+          patch['remove_invariant_behaviors'] ?? patch['removeInvariants'],
+      parseItem: (raw) {
+        final item = DomainInvariantSpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.title);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.code, e.title],
+      naturalKeysOf: (e) => <String>[e.code, e.methodSignature, e.title],
       idPrefix: 'inv',
     );
     _appendDiffSummary(summaryParts, 'invariant(s)', invOutcome);
 
     final cmdOutcome = _mergeSection<DomainStateChangeSpec>(
       existing: current.stateChanges,
-      rawItems: patch['stateChanges'],
-      rawRemovals: patch['removeStateChanges'],
-      parseItem: DomainStateChangeSpec.fromJson,
+      rawItems: patch['state_changing_behaviors'] ?? patch['stateChanges'],
+      rawRemovals:
+          patch['remove_state_changing_behaviors'] ??
+          patch['removeStateChanges'],
+      parseItem: (raw) {
+        final item = DomainStateChangeSpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.name],
+      naturalKeysOf: (e) => <String>[e.name, e.methodSignature, e.title],
       idPrefix: 'cmd',
     );
     _appendDiffSummary(summaryParts, 'commande(s)', cmdOutcome);
 
     final qryOutcome = _mergeSection<DomainQuerySpec>(
       existing: current.queries,
-      rawItems: patch['queries'],
-      rawRemovals: patch['removeQueries'],
-      parseItem: DomainQuerySpec.fromJson,
+      rawItems: patch['query_behaviors'] ?? patch['queries'],
+      rawRemovals: patch['remove_query_behaviors'] ?? patch['removeQueries'],
+      parseItem: (raw) {
+        final item = DomainQuerySpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.name],
+      naturalKeysOf: (e) => <String>[e.name, e.methodSignature, e.title],
       idPrefix: 'qry',
     );
     _appendDiffSummary(summaryParts, 'query(ies)', qryOutcome);
 
     final polOutcome = _mergeSection<DomainPolicyServiceSpec>(
       existing: current.policyServices,
-      rawItems: patch['policyServices'],
-      rawRemovals: patch['removePolicyServices'],
-      parseItem: DomainPolicyServiceSpec.fromJson,
+      rawItems: patch['policy_service_behaviors'] ?? patch['policyServices'],
+      rawRemovals:
+          patch['remove_policy_service_behaviors'] ??
+          patch['removePolicyServices'],
+      parseItem: (raw) {
+        final item = DomainPolicyServiceSpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.name],
+      naturalKeysOf: (e) => <String>[e.name, e.methodSignature, e.title],
       idPrefix: 'pol',
     );
     _appendDiffSummary(summaryParts, 'policy(ies)', polOutcome);
 
     final facOutcome = _mergeSection<DomainFactorySpec>(
       existing: current.factories,
-      rawItems: patch['factories'],
-      rawRemovals: patch['removeFactories'],
-      parseItem: DomainFactorySpec.fromJson,
+      rawItems: patch['factory_behaviors'] ?? patch['factories'],
+      rawRemovals:
+          patch['remove_factory_behaviors'] ?? patch['removeFactories'],
+      parseItem: (raw) {
+        final item = DomainFactorySpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.name],
+      naturalKeysOf: (e) => <String>[e.name, e.methodSignature, e.title],
       idPrefix: 'fac',
     );
     _appendDiffSummary(summaryParts, 'factory(ies)', facOutcome);
 
     final evtOutcome = _mergeSection<DomainEventSpec>(
       existing: current.domainEvents,
-      rawItems: patch['domainEvents'],
-      rawRemovals: patch['removeDomainEvents'],
-      parseItem: DomainEventSpec.fromJson,
+      rawItems: patch['domain_event_behaviors'] ?? patch['domainEvents'],
+      rawRemovals:
+          patch['remove_domain_event_behaviors'] ?? patch['removeDomainEvents'],
+      parseItem: (raw) {
+        final item = DomainEventSpec.fromJson(raw);
+        checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+        return item;
+      },
       idOf: (e) => e.id,
       withId: (e, id) => e.copyWith(id: id),
-      naturalKeysOf: (e) => <String>[e.name],
+      naturalKeysOf: (e) => <String>[e.name, e.methodSignature, e.title],
       idPrefix: 'evt',
     );
     _appendDiffSummary(summaryParts, 'event(s)', evtOutcome);
 
     var nextPersistence = current.persistencePolicy;
-    if (patch['persistencePolicy'] case final Map rawPolicy) {
+    final rawPersistencePatch =
+        patch['persistence_policy_behaviors'] ?? patch['persistencePolicy'];
+    if (rawPersistencePatch is List) {
       final methodsOutcome = _mergeSection<DomainRepositoryMethodSpec>(
         existing: current.persistencePolicy.portMethods,
-        rawItems: rawPolicy['portMethods'],
-        rawRemovals: rawPolicy['removePortMethods'],
-        parseItem: DomainRepositoryMethodSpec.fromJson,
+        rawItems: rawPersistencePatch,
+        rawRemovals:
+            patch['remove_persistence_policy_behaviors'] ??
+            patch['removePortMethods'],
+        parseItem: (raw) {
+          final item = DomainRepositoryMethodSpec.fromJson(raw);
+          checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+          return item;
+        },
         idOf: (e) => e.id,
         withId: (e, id) => e.copyWith(id: id),
-        naturalKeysOf: (e) => <String>[e.name],
+        naturalKeysOf: (e) => e.naturalMergeKeys,
         idPrefix: 'repm',
       );
+      final candidate = current.persistencePolicy.copyWith(
+        portMethods: methodsOutcome.items,
+      );
+      if (candidate != current.persistencePolicy) {
+        nextPersistence = candidate;
+        summaryParts.add('persistence policy');
+      }
+    } else if (rawPersistencePatch case final Map rawPolicy) {
+      final methodsOutcome = _mergeSection<DomainRepositoryMethodSpec>(
+        existing: current.persistencePolicy.portMethods,
+        rawItems:
+            rawPolicy['portMethods'] ??
+            rawPolicy['behaviors'] ??
+            rawPolicy['items'],
+        rawRemovals:
+            rawPolicy['removePortMethods'] ??
+            patch['remove_persistence_policy_behaviors'],
+        parseItem: (raw) {
+          final item = DomainRepositoryMethodSpec.fromJson(raw);
+          checkRelatedAttributes(item.relatedAttributes, item.effectiveTitle);
+          return item;
+        },
+        idOf: (e) => e.id,
+        withId: (e, id) => e.copyWith(id: id),
+        naturalKeysOf: (e) => e.naturalMergeKeys,
+        idPrefix: 'repm',
+      );
+      final mergedRules = <String>[...current.persistencePolicy.rules];
+      if (rawPolicy['rules'] case final List incomingRules) {
+        for (final r in incomingRules) {
+          final text = '$r'.trim();
+          if (text.isNotEmpty &&
+              !mergedRules.any((x) => x.toLowerCase() == text.toLowerCase())) {
+            mergedRules.add(text);
+          }
+        }
+      }
+      if (rawPolicy['removeRules'] case final List removedRules) {
+        final removeSet = {
+          for (final r in removedRules) '$r'.trim().toLowerCase(),
+        };
+        mergedRules.removeWhere((x) => removeSet.contains(x.toLowerCase()));
+      }
       final candidate = DomainPersistencePolicySpec(
         repositoryPortName: rawPolicy['repositoryPortName'] is String
             ? (rawPolicy['repositoryPortName'] as String).trim()
@@ -409,6 +669,7 @@ Toutes les clés sont optionnelles ; seuls les éléments listés sont ajoutés,
         consistencyNotes: rawPolicy['consistencyNotes'] is String
             ? (rawPolicy['consistencyNotes'] as String).trim()
             : current.persistencePolicy.consistencyNotes,
+        rules: mergedRules,
         portMethods: methodsOutcome.items,
       );
       if (candidate != current.persistencePolicy) {

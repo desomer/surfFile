@@ -4423,6 +4423,7 @@ class SpecForgeController extends ChangeNotifier {
             final applied = DomainLayerAiAgent.applyPatch(
               current.domainLayerFor(currentEntry),
               patch,
+              modelObject: current.objectFor(currentEntry),
             );
             if (applied.summary.isNotEmpty) {
               next = next.withDomainLayer(entryId, layer: applied.layer);
