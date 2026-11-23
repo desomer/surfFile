@@ -10,6 +10,7 @@
 library;
 
 export 'ai/company_glossary_ai.dart';
+export 'ai/domain_layer_ai.dart';
 export 'ai/domain_model_ai.dart';
 export 'ai/qa_patch_applier.dart';
 export 'ai/qa_prompt_builder.dart';
@@ -30,6 +31,7 @@ export 'models/business_rule_spec.dart';
 export 'models/company_glossary.dart';
 export 'models/domain_catalog.dart';
 export 'models/domain_contracts.dart';
+export 'models/domain_layer_spec.dart';
 export 'models/example_mapping_spec.dart';
 export 'models/json_schema_constraints.dart';
 export 'models/qa/gherkin_feature_spec.dart';
@@ -82,6 +84,8 @@ export 'services/spec_storage_slug.dart';
 export 'services/spec_workspace_store.dart';
 export 'services/ux_coherence_analyzer.dart';
 export 'widgets/design/company_glossary_view.dart';
+export 'widgets/design/contract_domain_layer_chat_pane.dart';
+export 'widgets/design/contract_domain_layer_view.dart';
 export 'widgets/design/contract_entry_view.dart';
 export 'widgets/design/domain_management_view.dart';
 export 'widgets/design/model_dictionary_view.dart';

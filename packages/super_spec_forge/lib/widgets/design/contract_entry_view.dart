@@ -14,6 +14,7 @@ import 'package:super_schema_dsl/super_schema_dsl.dart';
 import '../../ai/domain_model_ai.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/domain_contracts.dart';
+import '../../models/domain_layer_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/business_object_operations.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
@@ -77,6 +78,7 @@ class ContractEntryView extends StatefulWidget {
     required this.domainId,
     required this.document,
     required this.entry,
+    this.onOpenDomainLayer,
     this.pickAttachments,
     this.pasteAttachments,
     this.hasClipboardMedia,
@@ -97,6 +99,9 @@ class ContractEntryView extends StatefulWidget {
 
   /// Entrée DSL affichée.
   final JsonNode entry;
+
+  /// Ouvre la page dédiée à la couche Domain (Architecture Hexagonale) de cet objet.
+  final VoidCallback? onOpenDomainLayer;
 
   /// Remplacent les accès fichiers et presse-papiers du chat (tests).
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
@@ -584,6 +589,12 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     ContractDetails details,
   ) {
     final entry = widget.entry;
+    final domainLayerCount = widget.document
+        .domainLayerFor(entry)
+        .totalItemsCount;
+    final showDomainLayerBtn =
+        widget.onOpenDomainLayer != null &&
+        HexagonalDomainLayerSpec.isEligibleType(entry.type);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(
@@ -608,6 +619,17 @@ class _ContractEntryViewState extends State<ContractEntryView> {
                   ],
                 ),
               ),
+              if (showDomainLayerBtn)
+                FilledButton.tonalIcon(
+                  key: const ValueKey('contract-open-domain-layer-btn'),
+                  onPressed: widget.onOpenDomainLayer,
+                  icon: const Icon(Icons.hexagon_outlined, size: 17),
+                  label: Text(
+                    domainLayerCount > 0
+                        ? 'Couche Domain ($domainLayerCount)'
+                        : 'Couche Domain',
+                  ),
+                ),
               Chip(
                 label: Text(
                   entry.type,

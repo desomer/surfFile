@@ -8,6 +8,7 @@ import 'package:super_schema_dsl/super_schema_dsl.dart';
 import 'package:yaml/yaml.dart';
 
 import 'business_object_spec.dart';
+import 'domain_layer_spec.dart';
 import 'spec_stage_chat.dart';
 
 /// Avancement d'une étape du contrat.
@@ -78,6 +79,8 @@ class DomainContracts {
     this.details, {
     this.objects = const {},
     this.chats = const {},
+    this.domainLayers = const {},
+    this.domainLayerChats = const {},
   });
 
   static const types = {
@@ -112,6 +115,13 @@ class DomainContracts {
 
   /// Historique du chat IA de chaque modèle, indexé par [JsonNode.id].
   final Map<String, List<SpecChatMessage>> chats;
+
+  /// Spécification de la couche Domain (Architecture Hexagonale) de chaque entrée,
+  /// indexée par [JsonNode.id].
+  final Map<String, HexagonalDomainLayerSpec> domainLayers;
+
+  /// Historique du chat IA de la couche Domain de chaque entrée, indexé par [JsonNode.id].
+  final Map<String, List<SpecChatMessage>> domainLayerChats;
 
   static Yaml2JsonSchemasParser get _parser =>
       Yaml2JsonSchemasParser(externalTypes: types);
@@ -169,6 +179,10 @@ class DomainContracts {
         );
   }
 
+  /// Couche Domain (Architecture Hexagonale) de [entry], ou [HexagonalDomainLayerSpec.empty].
+  HexagonalDomainLayerSpec domainLayerFor(JsonNode entry) =>
+      domainLayers[entry.id] ?? HexagonalDomainLayerSpec.empty;
+
   /// Remplace le détail et/ou l'historique du chat de l'entrée [id].
   DomainContracts withModel(
     String id, {
@@ -196,6 +210,43 @@ class DomainContracts {
             ? chats[id]
             : List<SpecChatMessage>.unmodifiable(chat)),
       }),
+      domainLayers: domainLayers,
+      domainLayerChats: domainLayerChats,
+    );
+  }
+
+  /// Remplace la couche Domain et/ou son historique de chat IA pour l'entrée [id].
+  DomainContracts withDomainLayer(
+    String id, {
+    HexagonalDomainLayerSpec? layer,
+    List<SpecChatMessage>? chat,
+  }) {
+    if (entryById(id) == null) {
+      throw FormatException('Entrée introuvable : $id.');
+    }
+    layer?.validate();
+    final nextLayers = <String, HexagonalDomainLayerSpec>{...domainLayers};
+    if (layer != null) {
+      if (layer.isEmpty) {
+        nextLayers.remove(id);
+      } else {
+        nextLayers[id] = layer;
+      }
+    }
+    return DomainContracts._(
+      source,
+      groups,
+      removed,
+      details,
+      objects: objects,
+      chats: chats,
+      domainLayers: Map.unmodifiable(nextLayers),
+      domainLayerChats: Map.unmodifiable({
+        ...domainLayerChats,
+        id: ?(chat == null
+            ? domainLayerChats[id]
+            : List<SpecChatMessage>.unmodifiable(chat)),
+      }),
     );
   }
 
@@ -218,6 +269,8 @@ class DomainContracts {
       details ?? this.details,
       objects,
       chats,
+      domainLayers,
+      domainLayerChats,
     );
   }
 
@@ -228,6 +281,8 @@ class DomainContracts {
     Map<String, ContractDetails> details, [
     Map<String, BusinessObjectSpec> objects = const {},
     Map<String, List<SpecChatMessage>> chats = const {},
+    Map<String, HexagonalDomainLayerSpec> domainLayers = const {},
+    Map<String, List<SpecChatMessage>> domainLayerChats = const {},
   ]) {
     for (final group in groups) {
       if ((group.type != 'object' && group.type != 'null') ||
@@ -258,6 +313,8 @@ class DomainContracts {
       alive(details),
       objects: alive(objects),
       chats: alive(chats),
+      domainLayers: alive(domainLayers),
+      domainLayerChats: alive(domainLayerChats),
     );
   }
 
@@ -305,6 +362,17 @@ class DomainContracts {
       'chats': {
         for (final e in chats.entries)
           e.key: [for (final message in e.value) _messageToJson(message)],
+      },
+    if (domainLayers.isNotEmpty)
+      'domainLayers': {
+        for (final e in domainLayers.entries)
+          if (e.value.isNotEmpty) e.key: e.value.toJson(),
+      },
+    if (domainLayerChats.isNotEmpty)
+      'domainLayerChats': {
+        for (final e in domainLayerChats.entries)
+          if (e.value.isNotEmpty)
+            e.key: [for (final message in e.value) _messageToJson(message)],
       },
   };
 
@@ -411,7 +479,13 @@ class DomainContracts {
       }
       final rawObjects = raw['objects'] ?? const <String, Object?>{};
       final rawChats = raw['chats'] ?? const <String, Object?>{};
-      if (rawObjects is! Map || rawChats is! Map) {
+      final rawDomainLayers = raw['domainLayers'] ?? const <String, Object?>{};
+      final rawDomainLayerChats =
+          raw['domainLayerChats'] ?? const <String, Object?>{};
+      if (rawObjects is! Map ||
+          rawChats is! Map ||
+          rawDomainLayers is! Map ||
+          rawDomainLayerChats is! Map) {
         throw const FormatException('Détails des modèles invalides.');
       }
       return DomainContracts._(
@@ -432,6 +506,22 @@ class DomainContracts {
               ]),
               _ => throw const FormatException(
                 'Historique de modèle invalide.',
+              ),
+            },
+        },
+        domainLayers: {
+          for (final MapEntry(:key, :value) in rawDomainLayers.entries)
+            '$key': HexagonalDomainLayerSpec.fromJson(value),
+        },
+        domainLayerChats: {
+          for (final MapEntry(:key, :value) in rawDomainLayerChats.entries)
+            '$key': switch (value) {
+              List messages => List<SpecChatMessage>.unmodifiable([
+                for (final message in messages)
+                  SpecChatMessage.fromJson(message),
+              ]),
+              _ => throw const FormatException(
+                'Historique de couche Domain invalide.',
               ),
             },
         },

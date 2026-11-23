@@ -11,6 +11,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart' show JsonNode;
 
 import '../ai/company_glossary_ai.dart';
+import '../ai/domain_layer_ai.dart';
 import '../ai/domain_model_ai.dart';
 import '../ai/qa_patch_applier.dart';
 import '../ai/qa_prompt_builder.dart';
@@ -31,6 +32,7 @@ import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
 import '../models/domain_catalog.dart';
 import '../models/domain_contracts.dart';
+import '../models/domain_layer_spec.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_forge_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
@@ -159,6 +161,12 @@ class SpecForgeController extends ChangeNotifier {
   /// Sélection et filtre de l'arbre de chaque fiche, indexés par `domaine/entrée`.
   final Map<String, ({List<String> attributePath, String filter})>
   _domainModelFocus = {};
+
+  /// `domaine/entrée` dont le tour IA de la couche Domain est en cours.
+  String? _sendingDomainLayerKey;
+
+  /// Onglet actif de la page Couche Domain, indexé par `domaine/entrée`.
+  final Map<String, DomainLayerTab> _domainLayerActiveTab = {};
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -216,6 +224,30 @@ class SpecForgeController extends ChangeNotifier {
   /// Vrai lorsqu'un tour IA du modèle [entryId] du domaine [domainId] est en cours.
   bool isSendingDomainModel(String domainId, String entryId) =>
       _isSending && _sendingDomainModelKey == '$domainId/$entryId';
+
+  /// Historique du chat IA de la couche Domain de l'entrée [entryId] du domaine [domainId].
+  List<SpecChatMessage> domainLayerChat(String domainId, String entryId) =>
+      _domainContractsOf(domainId)?.domainLayerChats[entryId] ?? const [];
+
+  /// Vrai lorsqu'un tour IA de la couche Domain de [entryId] dans [domainId] est en cours.
+  bool isSendingDomainLayer(String domainId, String entryId) =>
+      _isSending && _sendingDomainLayerKey == '$domainId/$entryId';
+
+  /// Onglet actif consulté sur la page Couche Domain de [entryId] dans [domainId].
+  DomainLayerTab domainLayerActiveTab(String domainId, String entryId) =>
+      _domainLayerActiveTab['$domainId/$entryId'] ?? DomainLayerTab.invariants;
+
+  /// Mémorise l'onglet actif consulté sur la page Couche Domain de [entryId].
+  void setDomainLayerActiveTab(
+    String domainId,
+    String entryId,
+    DomainLayerTab tab,
+  ) {
+    final key = '$domainId/$entryId';
+    if (_domainLayerActiveTab[key] == tab) return;
+    _domainLayerActiveTab[key] = tab;
+    notifyListeners();
+  }
 
   /// Chemin d'IDs de l'attribut sélectionné dans la fiche du modèle [entryId]
   /// (vide = objet entier), piloté par l'arbre ou l'outil `focus_stage_or_object`.
@@ -560,6 +592,8 @@ class SpecForgeController extends ChangeNotifier {
     _modelPrefsRedoStack.clear();
     _clearProjectFocusState();
     _domainModelFocus.clear();
+    _domainLayerActiveTab.clear();
+    _sendingDomainLayerKey = null;
     _lastError = null;
   }
 
@@ -713,6 +747,40 @@ class SpecForgeController extends ChangeNotifier {
       domainId,
       contracts.withModel(object.id, object: object),
     );
+  }
+
+  /// Enregistre la spécification de la couche Domain (Architecture Hexagonale)
+  /// de l'entrée [entryId] du domaine [domainId].
+  Future<void> updateDomainModelLayer(
+    String domainId,
+    String entryId,
+    HexagonalDomainLayerSpec layer,
+  ) {
+    final contracts = _domainContractsOf(domainId);
+    if (contracts == null || contracts.entryById(entryId) == null) {
+      throw StateError('Le modèle sélectionné n’existe plus.');
+    }
+    return updateDomainContracts(
+      domainId,
+      contracts.withDomainLayer(entryId, layer: layer),
+    );
+  }
+
+  Future<bool> _updateDomainLayerChat(
+    String domainId,
+    String entryId,
+    List<SpecChatMessage> Function(List<SpecChatMessage> chat) update,
+  ) async {
+    final contracts = _domainContractsOf(domainId);
+    if (contracts?.entryById(entryId) == null) return false;
+    await updateDomainContracts(
+      domainId,
+      contracts!.withDomainLayer(
+        entryId,
+        chat: update(contracts.domainLayerChats[entryId] ?? const []),
+      ),
+    );
+    return true;
   }
 
   /// Remplace l'historique du chat d'un modèle ; `false` si l'entrée a disparu.
@@ -4078,6 +4146,366 @@ class SpecForgeController extends ChangeNotifier {
       _stopRequested = false;
       _isSending = false;
       _sendingDomainModelKey = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  /// Envoie un message à l'agent IA de la couche Domain de l'entrée [entryId] du domaine [domainId].
+  Future<void> sendDomainLayerMessage(
+    String domainId,
+    String entryId,
+    String text, {
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    bool requestsMoreQuestions = false,
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty && !requestsMoreQuestions) {
+      return;
+    }
+    final activeTab = domainLayerActiveTab(domainId, entryId);
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour affiner la couche Domain (${activeTab.label}).'
+              : 'Analyse les pièces jointes et propose les éléments de la couche Domain.');
+    await _runDomainLayerTurn(
+      domainId,
+      entryId,
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire du chat de la couche Domain.
+  Future<void> submitDomainLayerAskUserAnswers(
+    String domainId,
+    String entryId,
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    if (_isSending) return;
+    final target = domainLayerChat(
+      domainId,
+      entryId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final summary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runDomainLayerTurn(
+      domainId,
+      entryId,
+      userDisplayText: askMore
+          ? '$summary\n(+ questions complémentaires demandées)'
+          : summary,
+      promptInput: summary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+      answered: target.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+        askUserRequestedMore: askMore,
+      ),
+    );
+  }
+
+  /// Ignore un questionnaire du chat de la couche Domain en appliquant les valeurs par défaut.
+  Future<void> skipDomainLayerAskUser(
+    String domainId,
+    String entryId,
+    String messageId,
+  ) async {
+    if (_isSending) return;
+    final target = domainLayerChat(
+      domainId,
+      entryId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final defaults = askUser.defaultAnswers();
+    await _runDomainLayerTurn(
+      domainId,
+      entryId,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput:
+          'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}',
+      afterAskUserReply: true,
+      answered: target.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      ),
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat de la couche Domain.
+  Future<void> retryLastDomainLayerTurn(String domainId, String entryId) async {
+    if (_isSending) return;
+    final lastUser = domainLayerChat(domainId, entryId).lastWhere(
+      (m) => m.isUser,
+      orElse: () => SpecChatMessage(
+        id: '',
+        isUser: true,
+        text:
+            'La tentative précédente a échoué. Corrige le format JSON et mets à jour la couche Domain.',
+      ),
+    );
+    await _runDomainLayerTurn(
+      domainId,
+      entryId,
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '${(lastUser.promptText ?? lastUser.text).trim()}\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastUser.attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA de la couche Domain d'un modèle.
+  Future<void> clearDomainLayerChat(String domainId, String entryId) async {
+    if (_isSending) return;
+    await _updateDomainLayerChat(domainId, entryId, (_) => const []);
+  }
+
+  Future<void> _runDomainLayerTurn(
+    String domainId,
+    String entryId, {
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecChatMessage? answered,
+  }) async {
+    final contracts = _domainContractsOf(domainId);
+    final entry = contracts?.entryById(entryId);
+    if (contracts == null || entry == null) return;
+    final domainName = _domainCatalog.domains
+        .firstWhere((d) => d.id == domainId)
+        .name;
+
+    SpecForgeProject? readModelProject() {
+      final current = _domainContractsOf(domainId);
+      final currentEntry = current?.entryById(entryId);
+      if (current == null || currentEntry == null) return null;
+      return DomainModelAiAgent.modelProject(
+        current,
+        currentEntry,
+        domainId: domainId,
+        modelPreferences: _modelPreferences,
+      );
+    }
+
+    String buildPrompt(
+      DomainContracts document,
+      JsonNode target, {
+      required bool afterReply,
+    }) => DomainLayerAiAgent.buildTurnPrompt(
+      domainName: domainName,
+      contracts: document,
+      entry: target,
+      activeTab: domainLayerActiveTab(domainId, entryId),
+      history: document.domainLayerChats[entryId] ?? const <SpecChatMessage>[],
+      userInput: promptInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterReply,
+      forceFollowUpQuestions: forceFollowUpQuestions,
+      companyGlossary: _companyGlossary,
+    );
+
+    var currentPrompt = buildPrompt(
+      contracts,
+      entry,
+      afterReply: afterAskUserReply,
+    );
+    final userMessage = SpecChatMessage(
+      id: 'dlmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+    final turnToolTraces = <VibeToolTrace>[];
+    final priorCauses = <String>[];
+    Future<bool> append(SpecChatMessage message) =>
+        _updateDomainLayerChat(domainId, entryId, (chat) => [...chat, message]);
+
+    final registry =
+        _customToolRegistry ??
+        SpecForgeToolRegistry.build(
+          readProject: readModelProject,
+          readCompanyGlossary: () => _companyGlossary,
+          readModelPreferences: () => _modelPreferences,
+          onUpdateProject: (_) async {},
+          onNavigateStage: (_) async {},
+          toolNames: DomainLayerAiAgent.toolNames,
+        );
+
+    _isSending = true;
+    _sendingDomainLayerKey = '$domainId/$entryId';
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Conception de la couche Domain (${entry.name})…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final started = await _updateDomainLayerChat(
+        domainId,
+        entryId,
+        (chat) => [
+          for (final message in chat)
+            if (message.id == answered?.id) answered! else message,
+          userMessage,
+        ],
+      );
+      if (!started) return;
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.businessRules,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour de la couche Domain…',
+            systemInstructionOverride: DomainLayerAiAgent.systemInstruction,
+            staticGuideOverride: DomainLayerAiAgent.staticGuide,
+          );
+          final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
+          if (response == null) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            await append(
+              SpecChatMessage(
+                id: 'dlmsg_${shortid.generate()}',
+                isUser: false,
+                text: partial.isNotEmpty
+                    ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                    : 'Réflexion IA interrompue par l’utilisateur.',
+                toolTraces: traces,
+              ),
+            );
+            return;
+          }
+          parsedResponse = response;
+
+          final current = _domainContractsOf(domainId);
+          final currentEntry = current?.entryById(entryId);
+          if (current == null || currentEntry == null) return;
+          var next = current;
+          var patchSummary = '';
+          final patch = response.specPatch;
+          if (patch != null && patch.isNotEmpty) {
+            final applied = DomainLayerAiAgent.applyPatch(
+              current.domainLayerFor(currentEntry),
+              patch,
+            );
+            if (applied.summary.isNotEmpty) {
+              next = next.withDomainLayer(entryId, layer: applied.layer);
+              patchSummary = applied.summary;
+            }
+          }
+          final assistantMessage = SpecChatMessage(
+            id: 'dlmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: traces,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          await updateDomainContracts(
+            domainId,
+            next.withDomainLayer(
+              entryId,
+              chat: [...?next.domainLayerChats[entryId], assistantMessage],
+            ),
+          );
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+          saveError(
+            '[SpecForge Domain Layer IA] Tentative ${attempt + 1}/$maxRecoveryAttempts : $cause',
+            stack,
+          );
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          final document = _domainContractsOf(domainId);
+          final target = document?.entryById(entryId);
+          final project = readModelProject();
+          if (attempt < maxRecoveryAttempts - 1 &&
+              isValidationError &&
+              document != null &&
+              target != null &&
+              project != null) {
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: buildPrompt(
+                document,
+                target,
+                afterReply: afterAskUserReply,
+              ),
+              priorCauses: priorCauses,
+              salvage: SpecSalvageOutcome.none(
+                project,
+                wasTruncated: parsedResponse == null,
+              ),
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+          _lastError = cause;
+          await append(
+            SpecChatMessage(
+              id: 'dlmsg_${shortid.generate()}',
+              isUser: false,
+              text:
+                  'Erreur lors de l’appel à l’assistant Couche Domain '
+                  '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n'
+                  '${priorCauses.length > 1 ? priorCauses.join('\n') : cause}',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            ),
+          );
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingDomainLayerKey = null;
       _sendingStage = null;
       _streamingMessage = null;
       _streamingStatus = '';

@@ -153,6 +153,16 @@ un bloc déplacé vers une autre rubrique, renommé, retypé ou coupé puis reco
 garde son titre, ses états, sa version, ses attributs et son chat. Les anciens catalogues, indexés par
 chemin `rubrique.nom`, sont migrés au chargement.
 
+Pour les entrées du domaine (`model`, `part`, `component`), l’en-tête de la fiche
+expose également le bouton **« Couche Domain »** ouvrant une page de niveau 2
+dans le fil d’Ariane (*domaine › Liste des modèles et contrats › nom › version › Couche Domain*).
+Cette page combine un chat IA dédié (`DomainLayerAiAgent` — DDD & Architecture Hexagonale,
+avec son propre historique persisté sous l’ID de l’entrée) et les **7 onglets**
+de la couche Domain avec édition manuelle complète : **Invariants**,
+**State changing**, **Query**, **Policy Services**, **Factory**, **Domain events**
+et **Persistence policy** (port sortant Repository, frontière transactionnelle,
+concurrence, suppression et méthodes du port).
+
 ## Lancement & Validation
 
 ```powershell

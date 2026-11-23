@@ -13,6 +13,7 @@ import 'package:super_container_layout/super_container_layout.dart'
 import '../../models/domain_contracts.dart';
 import '../../services/spec_forge_controller.dart';
 import '../workspace/markdown_viewer_dialog.dart';
+import 'contract_domain_layer_view.dart';
 import 'contract_entry_view.dart';
 import 'domain_contracts_editor.dart';
 
@@ -142,7 +143,7 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
         domains.firstOrNull;
     final document = selected?.contracts ?? DomainContracts.empty;
     final opened = document.entryById(_openId);
-    final entry = _level == 1 ? opened : null;
+    final entry = _level >= 1 ? opened : null;
     const navy = Color(0xFF132F43);
     const textStyle = TextStyle(
       color: Colors.white,
@@ -159,10 +160,16 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: _level == 0
-                      ? 'Retour au menu Design'
-                      : 'Retour à la liste des modèles et contrats',
-                  onPressed: () => _goTo(_level - 1),
+                  tooltip: switch (_level) {
+                    0 => 'Retour au menu Design',
+                    1 => 'Retour à la liste des modèles et contrats',
+                    _ => 'Retour à la fiche du modèle',
+                  },
+                  onPressed: () => _goTo(
+                    _level - 1,
+                    domainId: _level > 1 ? selected?.id : null,
+                    entryId: _level > 1 ? opened?.id : null,
+                  ),
                   color: Colors.white,
                   icon: const Icon(Icons.arrow_back),
                 ),
@@ -277,12 +284,44 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                     ),
                   ),
                 ),
-                if (entry != null)
-                  for (final label in [
-                    entry.name,
-                    (document.details[entry.id] ?? ContractDetails.defaults)
-                        .version,
-                  ])
+                if (entry != null) ...[
+                  ClipPath(
+                    clipper: TriangleClipper(false),
+                    child: Material(
+                      color: _level > 1 ? navy : Colors.blueGrey.shade800,
+                      child: InkWell(
+                        key: const ValueKey('contracts-entry-crumb'),
+                        onTap: _level > 1
+                            ? () => _goTo(
+                                1,
+                                domainId: selected?.id,
+                                entryId: entry.id,
+                              )
+                            : null,
+                        child: Container(
+                          height: 44,
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.only(left: 10, right: 26),
+                          child: Text(entry.name, style: textStyle),
+                        ),
+                      ),
+                    ),
+                  ),
+                  ClipPath(
+                    clipper: TriangleClipper(false),
+                    child: Container(
+                      color: Colors.blueGrey.shade800,
+                      height: 44,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.only(left: 10, right: 26),
+                      child: Text(
+                        (document.details[entry.id] ?? ContractDetails.defaults)
+                            .version,
+                        style: textStyle,
+                      ),
+                    ),
+                  ),
+                  if (_level >= 2)
                     ClipPath(
                       clipper: TriangleClipper(false),
                       child: Container(
@@ -290,9 +329,10 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                         height: 44,
                         alignment: Alignment.center,
                         padding: const EdgeInsets.only(left: 10, right: 26),
-                        child: Text(label, style: textStyle),
+                        child: const Text('Couche Domain', style: textStyle),
                       ),
                     ),
+                ],
               ],
             ),
           ),
@@ -349,6 +389,11 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                         domainId: selected.id,
                         document: document,
                         entry: opened,
+                        onOpenDomainLayer: () => _goTo(
+                          2,
+                          domainId: selected.id,
+                          entryId: opened.id,
+                        ),
                         pickAttachments: widget.pickAttachments,
                         pasteAttachments: widget.pasteAttachments,
                         hasClipboardMedia: widget.hasClipboardMedia,
@@ -356,6 +401,25 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                         schemaViewerSurfaceBuilder:
                             widget.schemaViewerSurfaceBuilder,
                         schemaBrowserLauncher: widget.schemaBrowserLauncher,
+                      ),
+                    if (opened == null)
+                      const Center(child: Text('Cette entrée n’existe plus.'))
+                    else
+                      ContractDomainLayerView(
+                        key: const ValueKey('contract-domain-layer-page'),
+                        controller: widget.controller,
+                        domainId: selected.id,
+                        document: document,
+                        entry: opened,
+                        onBackToModel: () => _goTo(
+                          1,
+                          domainId: selected.id,
+                          entryId: opened.id,
+                        ),
+                        pickAttachments: widget.pickAttachments,
+                        pasteAttachments: widget.pasteAttachments,
+                        hasClipboardMedia: widget.hasClipboardMedia,
+                        pasteClipboardMedia: widget.pasteClipboardMedia,
                       ),
                   ],
                 ),
