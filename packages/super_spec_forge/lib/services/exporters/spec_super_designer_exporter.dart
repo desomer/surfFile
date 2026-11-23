@@ -97,6 +97,37 @@ abstract final class SpecSuperDesignerExporter {
     return '${buf.toString().trimRight()}\n';
   }
 
+  /// Génère le YAML « JSON Schemas Light » pour un unique objet métier [obj],
+  /// en résolvant ses éventuelles références via [contextProject].
+  static String toSingleObjectYamlLightSchema(
+    SpecForgeProject contextProject,
+    BusinessObjectSpec obj,
+  ) {
+    final buf = StringBuffer()
+      ..writeln('# Schéma généré par SuperSpecForge — ${obj.name}')
+      ..writeln();
+    if (obj.attributes.isEmpty && obj.relations.isEmpty) {
+      buf.writeln('${obj.technicalName}: {}');
+    } else {
+      buf.writeln('${obj.technicalName}:');
+      for (final attr in obj.attributes) {
+        _writeDslAttribute(buf, contextProject, attr, indent: '  ');
+      }
+      for (final rel in obj.relations) {
+        final target = contextProject.findBusinessObject(rel.targetObjectId);
+        final targetType =
+            target?.technicalName ?? _toPascal(rel.targetObjectId);
+        final isList =
+            rel.cardinality == BusinessRelationCardinality.oneToMany ||
+            rel.cardinality == BusinessRelationCardinality.manyToMany;
+        final suffix = rel.required ? '!' : '';
+        final key = isList ? '${rel.name}[]' : rel.name;
+        buf.writeln('  $key: $targetType$suffix');
+      }
+    }
+    return '${buf.toString().trimRight()}\n';
+  }
+
   /// Calcule l'alias snake_case du repository associé à [obj].
   static String repoAliasFor(BusinessObjectSpec obj) =>
       _toSnakeCase(obj.technicalName);

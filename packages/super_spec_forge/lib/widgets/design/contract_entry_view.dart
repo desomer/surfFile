@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:highlight/languages/yaml.dart' as yaml_lang;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
@@ -22,6 +23,8 @@ import '../spec_split_handle.dart';
 import '../workspace/attribute_constraints_editor.dart';
 import '../workspace/business_objects/business_object_inspector_panes.dart';
 import '../workspace/business_objects/business_object_tree_models.dart';
+import '../workspace/json_schema_viewer_dialog.dart';
+import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_model_chat_pane.dart';
 
 /// Icône de chaque étape, partagée par l'arbre, le formulaire et la fiche.
@@ -78,6 +81,8 @@ class ContractEntryView extends StatefulWidget {
     this.pasteAttachments,
     this.hasClipboardMedia,
     this.pasteClipboardMedia,
+    this.schemaViewerSurfaceBuilder,
+    this.schemaBrowserLauncher,
     super.key,
   });
 
@@ -98,6 +103,12 @@ class ContractEntryView extends StatefulWidget {
   final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
   final bool Function()? hasClipboardMedia;
   final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
+
+  /// Constructeur optionnel pour remplacer la WebView dans l'onglet « Repository » (tests).
+  final SpecMarkdownViewerSurfaceBuilder? schemaViewerSurfaceBuilder;
+
+  /// Lanceur navigateur optionnel pour l'ouverture du `.html` généré (tests).
+  final SpecMarkdownBrowserLauncher? schemaBrowserLauncher;
 
   @override
   State<ContractEntryView> createState() => _ContractEntryViewState();
@@ -129,6 +140,10 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   bool _showFilterBar = false;
   String? _syncedFilter;
   List<String> _syncedFocus = const [];
+  final ValueNotifier<String> _yamlErrorNotifier = ValueNotifier<String>('');
+  late final CodeEditorConfig _codeEditorConfig;
+  String _yamlText = '';
+  bool _yamlDirty = false;
 
   /// Attribut sélectionné (vide = objet entier), repéré par ses IDs et porté
   /// par le contrôleur : il survit aux réordonnancements et l'IA le pilote
@@ -145,7 +160,29 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   @override
   void initState() {
     super.initState();
-    _sync();
+    _codeEditorConfig = CodeEditorConfig(
+      mode: yaml_lang.yaml,
+      type: 'yaml',
+      getText: () => _yamlText,
+      onChange: (String value, CodeEditorConfig _) {
+        _yamlText = value;
+        _yamlDirty = true;
+        var err = '';
+        try {
+          SpecSchemaDslBridge.applySingleObjectYamlSource(
+            value,
+            current: _model.object,
+            referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+          );
+        } on FormatException catch (e) {
+          err = e.message;
+        }
+        _yamlErrorNotifier.value = err;
+      },
+      notifError: _yamlErrorNotifier,
+      useLargeTextViewer: false,
+    );
+    _sync(forceYaml: true);
   }
 
   @override
@@ -157,6 +194,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   @override
   void dispose() {
     _filterCtrl.dispose();
+    _yamlErrorNotifier.dispose();
     _store.dispose();
     super.dispose();
   }
@@ -177,7 +215,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
 
   /// Reconstruit l'objet et l'arbre quand le document, l'entrée ou le filtre
   /// change ; un simple changement de focus ne fait que resurligner le nœud.
-  void _sync() {
+  void _sync({bool forceYaml = false}) {
     final document = widget.document;
     final entry = widget.entry;
     final filter = _filter;
@@ -189,10 +227,14 @@ class _ContractEntryViewState extends State<ContractEntryView> {
           selection: TextSelection.collapsed(offset: filter.length),
         );
       }
-      if (entryChanged) _showFilterBar = false;
+      if (entryChanged) {
+        _showFilterBar = false;
+        _yamlDirty = false;
+      }
       if (filter.trim().isNotEmpty) _showFilterBar = true;
     }
-    if (identical(document, _syncedDocument) &&
+    if (!forceYaml &&
+        identical(document, _syncedDocument) &&
         !entryChanged &&
         filter == _syncedFilter) {
       if (!_samePath(_focusPath, _syncedFocus)) {
@@ -268,6 +310,13 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       index(node, 'nodes[$i]');
     }
     _model = (project: project, object: object, targets: targets, error: error);
+
+    if (!_yamlDirty || forceYaml || entryChanged) {
+      _yamlText = SpecSchemaDslBridge.toSingleObjectYamlLight(project, object);
+      _yamlErrorNotifier.value = '';
+      _yamlDirty = false;
+      _codeEditorConfig.repaintCode();
+    }
 
     if (_registered) {
       unawaited(
@@ -353,6 +402,32 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   Future<void> _deleteAttribute(List<String> path) => _save(
     BusinessObjectOperations.deleteAttributeAtPath(_model.object, path),
   );
+
+  Future<void> _applyYamlSource() async {
+    try {
+      final updated = SpecSchemaDslBridge.applySingleObjectYamlSource(
+        _yamlText,
+        current: _model.object,
+        referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+      );
+      _yamlErrorNotifier.value = '';
+      setState(() {
+        _yamlDirty = false;
+      });
+      await _save(updated);
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('Schéma YAML appliqué au modèle.'),
+          ),
+        );
+      }
+    } on FormatException catch (e) {
+      _yamlErrorNotifier.value = e.message;
+    } on Object catch (e) {
+      _yamlErrorNotifier.value = '$e';
+    }
+  }
 
   Future<void> _editDescription() async {
     final input = TextEditingController(text: _model.object.description);
@@ -449,17 +524,52 @@ class _ContractEntryViewState extends State<ContractEntryView> {
                 pasteClipboardMedia: widget.pasteClipboardMedia,
               ),
             ),
-            trailing: _SplitPane(
-              fraction: _treeFraction,
-              defaultFraction: _defaultTreeFraction,
-              onChanged: (value) => setState(() => _treeFraction = value),
-              handleKey: const ValueKey('contract-detail-split-handle'),
-              minLeading: 220,
-              minTrailing: 260,
-              leading: _buildTree(theme, colors),
-              trailing: KeyedSubtree(
-                key: const ValueKey('contract-model-inspector'),
-                child: _buildInspector(),
+            trailing: DefaultTabController(
+              length: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const TabBar(
+                    tabs: [
+                      Tab(
+                        key: ValueKey('contract-model-object-tab'),
+                        text: 'Objet',
+                      ),
+                      Tab(
+                        key: ValueKey('contract-model-repository-tab'),
+                        text: 'Repository',
+                      ),
+                      Tab(
+                        key: ValueKey('contract-model-dsl-tab'),
+                        text: 'DSL',
+                      ),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        _SplitPane(
+                          fraction: _treeFraction,
+                          defaultFraction: _defaultTreeFraction,
+                          onChanged: (value) =>
+                              setState(() => _treeFraction = value),
+                          handleKey: const ValueKey(
+                            'contract-detail-split-handle',
+                          ),
+                          minLeading: 220,
+                          minTrailing: 260,
+                          leading: _buildTree(theme, colors),
+                          trailing: KeyedSubtree(
+                            key: const ValueKey('contract-model-inspector'),
+                            child: _buildInspector(),
+                          ),
+                        ),
+                        _buildRepositoryTab(),
+                        _buildYamlSourceTab(colors, theme),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -814,6 +924,144 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       onEditAttribute: (attribute) => _editAttribute(existing: attribute),
       onDeleteAttribute: (attribute) => _deleteAttribute([attribute.id]),
     );
+  }
+
+  SpecForgeProject _domainResolutionProject() {
+    final document = widget.document;
+    final entry = widget.entry;
+    final others = <BusinessObjectSpec>[
+      for (final MapEntry(key: id, value: technicalName)
+          in document.referenceTargetsOf(entry).entries)
+        if (document.entryById(id) case final otherEntry?)
+          document.objectFor(otherEntry).copyWith(technicalName: technicalName),
+    ];
+    return _model.project.copyWith(
+      businessObjects: <BusinessObjectSpec>[_model.object, ...others],
+      businessObjectModelPreferences: widget.controller.modelPreferences,
+    );
+  }
+
+  Widget _buildRepositoryTab() {
+    final object = _model.object;
+    final resolutionProject = _domainResolutionProject();
+    final preview = SpecSuperDesignerExporter.buildRepositoryPreview(
+      resolutionProject,
+      object,
+      modelPreferencesOverride: widget.controller.modelPreferences,
+    );
+    final yamlLight = SpecSchemaDslBridge.toSingleObjectYamlLight(
+      resolutionProject,
+      object,
+    );
+    final bundle = SuperDesignerExportBundle(
+      yamlLightSchema: yamlLight,
+      repositoriesJsonSchemas: Map<String, Map<String, Object?>>.unmodifiable(
+        <String, Map<String, Object?>>{preview.alias: preview.schema},
+      ),
+      repositoriesSeedData: Map<String, Map<String, Object?>>.unmodifiable(
+        <String, Map<String, Object?>>{preview.alias: preview.seed},
+      ),
+    );
+    final safeDomain = _safeFileSlug(widget.domainId);
+    final safeTech = _safeFileSlug(object.technicalName);
+    return SpecJsonSchemaViewerView(
+      key: const ValueKey('contract-model-schema-viewer'),
+      bundle: bundle,
+      title: 'JSON Schema & Seed — ${object.name}',
+      filenameStem: '${safeDomain}_${safeTech}_repository_schema',
+      exportDirectory: Directory(
+        '${widget.controller.store.rootDirectory.path}${Platform.pathSeparator}exports${Platform.pathSeparator}domains${Platform.pathSeparator}$safeDomain',
+      ),
+      openInBrowser: widget.schemaBrowserLauncher,
+      htmlSurfaceBuilder: widget.schemaViewerSurfaceBuilder,
+      showTitle: false,
+    );
+  }
+
+  Widget _buildYamlSourceTab(ColorScheme colors, ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    _codeEditorConfig.style = SuperCodeStyle(
+      theme: isDark ? SuperCodeTheme.atomOneDark : SuperCodeTheme.atomOneLight,
+      fontSize: 13.5,
+      lineHeight: 1.45,
+      showLineNumbers: true,
+      showFoldingHandles: true,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'DSL YAML (Yaml2JsonSchemasParser)',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('contract-model-reset-yaml'),
+                    onPressed: () {
+                      _yamlDirty = false;
+                      _yamlText = SpecSchemaDslBridge.toSingleObjectYamlLight(
+                        _model.project,
+                        _model.object,
+                      );
+                      _yamlErrorNotifier.value = '';
+                      _codeEditorConfig.repaintCode();
+                      setState(() {});
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('Réinitialiser'),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey('contract-model-apply-yaml'),
+                    onPressed: _applyYamlSource,
+                    icon: const Icon(Icons.check_rounded, size: 16),
+                    label: const Text('Appliquer le YAML'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.outlineVariant),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: CodeEditor(
+                  key: const ValueKey('contract-model-yaml-editor'),
+                  config: _codeEditorConfig,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _safeFileSlug(String raw) {
+    final s = raw
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return s.isEmpty ? 'model' : s;
   }
 }
 

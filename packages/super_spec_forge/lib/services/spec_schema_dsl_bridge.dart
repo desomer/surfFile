@@ -15,6 +15,16 @@ abstract final class SpecSchemaDslBridge {
   static String toYamlLight(SpecForgeProject project) =>
       SpecSuperDesignerExporter.toYamlLightSchema(project);
 
+  /// Génère la source YAML « JSON Schemas Light » d'un unique [object] en résolvant
+  /// ses références via [contextProject].
+  static String toSingleObjectYamlLight(
+    SpecForgeProject contextProject,
+    BusinessObjectSpec object,
+  ) => SpecSuperDesignerExporter.toSingleObjectYamlLightSchema(
+    contextProject,
+    object,
+  );
+
   /// Parse [project.businessObjects] via [Yaml2JsonSchemasParser] et retourne
   /// la liste hiérarchique de cartes JSON prêtes pour le `SuperTreeView` (`nodes`).
   static List<Map<String, Object?>> buildTreeNodes(SpecForgeProject project) {
@@ -39,8 +49,11 @@ abstract final class SpecSchemaDslBridge {
   static List<BusinessObjectSpec> fromYamlLight(
     String yaml, {
     List<BusinessObjectSpec> existing = const <BusinessObjectSpec>[],
+    Set<String> externalTypes = const <String>{},
   }) {
-    final parsedNodes = Yaml2JsonSchemasParser().parse(yaml);
+    final parsedNodes = Yaml2JsonSchemasParser(
+      externalTypes: externalTypes,
+    ).parse(yaml);
     final existingByTech = <String, BusinessObjectSpec>{
       for (final obj in existing) obj.technicalName.toLowerCase(): obj,
     };
@@ -48,6 +61,7 @@ abstract final class SpecSchemaDslBridge {
       for (final obj in existing) obj.name.toLowerCase(): obj,
     };
     final knownTypeNames = {
+      ...externalTypes,
       for (final node in parsedNodes)
         if (node.type != Yaml2JsonSchemasParser.endpointType) node.name,
     };
@@ -113,6 +127,58 @@ abstract final class SpecSchemaDslBridge {
       result.add(obj);
     }
     return result;
+  }
+
+  /// Parse et applique une source YAML « JSON Schemas Light » sur un unique modèle
+  /// de domaine [current], en résolvant les références vers [referenceTargets]
+  /// (`entryId -> technicalName`).
+  static BusinessObjectSpec applySingleObjectYamlSource(
+    String yaml, {
+    required BusinessObjectSpec current,
+    required Map<String, String> referenceTargets,
+  }) {
+    final externalTypes = referenceTargets.values.toSet();
+    final parsedNodes = Yaml2JsonSchemasParser(
+      externalTypes: externalTypes,
+    ).parse(yaml);
+    final objectNodes = [
+      for (final node in parsedNodes)
+        if (node.type != Yaml2JsonSchemasParser.endpointType) node,
+    ];
+    if (objectNodes.isEmpty) {
+      throw FormatException(
+        'Le schéma YAML doit contenir la définition « ${current.technicalName} ».',
+      );
+    }
+    if (objectNodes.length > 1) {
+      throw FormatException(
+        'Ce schéma ne doit décrire qu’un seul modèle (${current.technicalName}).',
+      );
+    }
+    final rootName = objectNodes.single.name;
+    if (rootName != current.technicalName) {
+      throw FormatException(
+        'Le nom racine « $rootName » doit rester « ${current.technicalName} » '
+        '(renommez l’entrée depuis la liste du domaine).',
+      );
+    }
+    final stubs = <BusinessObjectSpec>[
+      for (final MapEntry(key: id, value: techName)
+          in referenceTargets.entries)
+        BusinessObjectSpec(
+          id: id,
+          name: techName,
+          technicalName: techName,
+        ),
+    ];
+    final parsed = fromYamlLight(
+      yaml,
+      existing: <BusinessObjectSpec>[current, ...stubs],
+      externalTypes: externalTypes,
+    );
+    final updated = current.copyWith(attributes: parsed.single.attributes);
+    updated.validate();
+    return updated;
   }
 
   static Map<String, Object?> _enrichRootNode(

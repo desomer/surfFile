@@ -12,6 +12,7 @@ import 'package:super_container_layout/super_container_layout.dart'
 
 import '../../models/domain_contracts.dart';
 import '../../services/spec_forge_controller.dart';
+import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_entry_view.dart';
 import 'domain_contracts_editor.dart';
 
@@ -33,6 +34,8 @@ class ModelsContractsView extends StatefulWidget {
     this.pasteAttachments,
     this.hasClipboardMedia,
     this.pasteClipboardMedia,
+    this.schemaViewerSurfaceBuilder,
+    this.schemaBrowserLauncher,
     super.key,
   });
 
@@ -57,6 +60,12 @@ class ModelsContractsView extends StatefulWidget {
   final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
   final bool Function()? hasClipboardMedia;
   final Future<List<VibeChatAttachment>> Function()? pasteClipboardMedia;
+
+  /// Constructeur optionnel pour remplacer la WebView dans l'onglet « Repository » d'une fiche (tests).
+  final SpecMarkdownViewerSurfaceBuilder? schemaViewerSurfaceBuilder;
+
+  /// Lanceur navigateur optionnel pour l'ouverture du `.html` généré d'une fiche (tests).
+  final SpecMarkdownBrowserLauncher? schemaBrowserLauncher;
 
   @override
   State<ModelsContractsView> createState() => _ModelsContractsViewState();
@@ -121,7 +130,12 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.controller,
+    builder: (context, _) => _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     final domains = widget.controller.domainCatalog.domains;
     final selected =
         domains.where((domain) => domain.id == _selectedId).firstOrNull ??
@@ -339,6 +353,9 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                         pasteAttachments: widget.pasteAttachments,
                         hasClipboardMedia: widget.hasClipboardMedia,
                         pasteClipboardMedia: widget.pasteClipboardMedia,
+                        schemaViewerSurfaceBuilder:
+                            widget.schemaViewerSurfaceBuilder,
+                        schemaBrowserLauncher: widget.schemaBrowserLauncher,
                       ),
                   ],
                 ),

@@ -123,9 +123,13 @@ version*. Cliquez sur « Liste des modèles et contrats » ou sur la flèche pou
 revenir à la liste, où le brouillon DSL est conservé. Changer de domaine ramène à la liste.
 La fiche reprend l’étape Spec **Objets métier** pour un seul objet : à gauche,
 un chat IA (Gemini) crée et modifie les attributs du modèle, pose des questions
-de clarification et accepte des pièces jointes ; à droite, le détail affiche les
-attributs dans un `SuperTreeView` et un inspecteur (description, jauge,
-aperçu JSON Schema, ajout, modification et suppression d’attributs). Un attribut
+de clarification et accepte des pièces jointes ; à droite, trois onglets alignés
+sur l’étape Objets métier du wizard Spec : **Objet** (`SuperTreeView` et
+inspecteur avec description, jauge, aperçu JSON Schema, ajout, modification et
+suppression d’attributs), **Repository** (`SpecJsonSchemaViewerView` : inspecteur
+JSON Schema Draft 2020-12, bac à sable Seed validé en direct et documentation
+HTML5) et **DSL** (éditeur `CodeEditor` YAML « JSON Schemas Light » avec
+validation en direct, boutons « Réinitialiser » et « Appliquer le YAML »). Un attribut
 `reference` cible une autre entrée du domaine, désignée par son nom technique.
 L’assistant applique les mêmes consignes que l’étape Objets métier
 (`SpecStageAgent.attributeModelingRules` et `attributeExamplesJson`) :

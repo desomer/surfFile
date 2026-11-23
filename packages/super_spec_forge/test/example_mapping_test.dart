@@ -120,7 +120,8 @@ class _FakeExampleMapperAi implements SpecAiService {
   }) async* {
     calledStages.add(stage);
     receivedPrompts.add(prompt);
-    const json = '{"message":"J’ai affiné CommandeClient grâce à 2 exemples concrets.","askUser":null,"specPatch":{"exampleMappings":[{"id":"em_ai_cmd","code":"EM-001","title":"Validation commande","targetObjectId":"obj_cmd","rules":[{"id":"emr_ai_1","title":"Seuil remise 500 EUR","category":"calculation","targetObjectIds":["obj_cmd"],"targetAttributes":["CommandeClient.montantHt","CommandeClient.tauxRemise"],"examples":[{"id":"ex_ai_1","title":"Commande 500 EUR -> 10%","kind":"boundary","given":"Commande brouillon de 500 EUR","when":"Validation","then":"tauxRemise vaut 10","inputValues":{"montantHt":500},"expectedOutcome":{"tauxRemise":10},"discoveredAttributes":["tauxRemise"]}]}],"questions":[]}],"businessObjects":[{"id":"obj_cmd","name":"Commande client","technicalName":"CommandeClient","attributes":[{"id":"attr_ht","name":"montantHt","type":"number","required":true,"schemaConstraints":{"minimum":0,"examples":[120,500]}},{"id":"attr_remise","name":"tauxRemise","type":"number","required":false,"schemaConstraints":{"minimum":0,"maximum":100,"examples":[0,10]}}]}]},"stageSummary":"1 tableau EM-001 et tauxRemise ajouté","stageReadyToAdvance":true}';
+    const json =
+        '{"message":"J’ai affiné CommandeClient grâce à 2 exemples concrets.","askUser":null,"specPatch":{"exampleMappings":[{"id":"em_ai_cmd","code":"EM-001","title":"Validation commande","targetObjectId":"obj_cmd","rules":[{"id":"emr_ai_1","title":"Seuil remise 500 EUR","category":"calculation","targetObjectIds":["obj_cmd"],"targetAttributes":["CommandeClient.montantHt","CommandeClient.tauxRemise"],"examples":[{"id":"ex_ai_1","title":"Commande 500 EUR -> 10%","kind":"boundary","given":"Commande brouillon de 500 EUR","when":"Validation","then":"tauxRemise vaut 10","inputValues":{"montantHt":500},"expectedOutcome":{"tauxRemise":10},"discoveredAttributes":["tauxRemise"]}]}],"questions":[]}],"businessObjects":[{"id":"obj_cmd","name":"Commande client","technicalName":"CommandeClient","attributes":[{"id":"attr_ht","name":"montantHt","type":"number","required":true,"schemaConstraints":{"minimum":0,"examples":[120,500]}},{"id":"attr_remise","name":"tauxRemise","type":"number","required":false,"schemaConstraints":{"minimum":0,"maximum":100,"examples":[0,10]}}]}]},"stageSummary":"1 tableau EM-001 et tauxRemise ajouté","stageReadyToAdvance":true}';
     yield const GeminiStreamEvent(
       deltaText: json,
       accumulatedText: json,
@@ -189,11 +190,7 @@ SpecForgeProject _buildSampleProject({
             isInitial: true,
           ),
           LifecycleState(name: 'validee', label: 'Validée'),
-          LifecycleState(
-            name: 'annulee',
-            label: 'Annulée',
-            isTerminal: true,
-          ),
+          LifecycleState(name: 'annulee', label: 'Annulée', isTerminal: true),
         ],
         lifecycleTransitions: const [
           LifecycleTransition(
@@ -219,10 +216,7 @@ void main() {
         SpecForgeStage.businessObjects.next,
         SpecForgeStage.exampleMapping,
       );
-      expect(
-        SpecForgeStage.exampleMapping.next,
-        SpecForgeStage.businessRules,
-      );
+      expect(SpecForgeStage.exampleMapping.next, SpecForgeStage.businessRules);
       expect(SpecForgeStage.businessRules.stepNumber, 6);
       expect(SpecForgeStage.reviewExport.stepNumber, 7);
       expect(
@@ -335,10 +329,7 @@ void main() {
           '${tempDir.path}${sep}projects${sep}commandes-b2b${sep}spec${sep}example_maps',
         );
         expect(await emDir.exists(), isTrue);
-        expect(
-          await File('${emDir.path}${sep}_order.json').exists(),
-          isTrue,
-        );
+        expect(await File('${emDir.path}${sep}_order.json').exists(), isTrue);
 
         final reloaded = await store.loadProject(project.id);
         expect(reloaded, isNotNull);
@@ -349,9 +340,8 @@ void main() {
 
         // Simule un projet v3 antérieur sans dossier example_maps/
         await emDir.delete(recursive: true);
-        final legacyReloaded = await SpecProjectStore(tempDir).loadProject(
-          project.id,
-        );
+        final legacyReloaded = await SpecProjectStore(tempDir)
+            .loadProject(project.id);
         expect(legacyReloaded, isNotNull);
         expect(legacyReloaded!.exampleMappings, isEmpty);
       } finally {
@@ -423,6 +413,101 @@ void main() {
         (a) => a.name == 'montantHt',
       );
       expect(montantAttr.schemaConstraints.examples, contains(500));
+
+      // Prévisualisation & injection sélective (modes append et replace + clés non rattachées)
+      final previewBase = promoted.project.copyWith(
+        businessObjects: [
+          cmdObj.copyWith(
+            attributes: [
+              for (final attr in cmdObj.attributes)
+                if (attr.name == 'montantHt')
+                  attr.copyWith(
+                    schemaConstraints: attr.schemaConstraints.copyWith(
+                      examples: const [120],
+                    ),
+                  )
+                else
+                  attr,
+            ],
+          ),
+        ],
+        exampleMappings: [
+          promoted.project.exampleMappings.single.copyWith(
+            rules: [
+              ...promoted.project.exampleMappings.single.rules,
+              ExampleMapRule(
+                id: 'emr_extra',
+                title: 'Remise',
+                examples: [
+                  ExampleMapExample(
+                    id: 'ex_extra',
+                    title: 'Seuil 1000',
+                    inputValues: const {'montantHt': 120},
+                    expectedOutcome: const {'tauxRemise': 15},
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      final preview = ExampleMappingOperations.buildExampleInjectionPreview(
+        previewBase,
+        storyId: seeded.first.id,
+      );
+      final montantComp = preview.attributeComparisons.firstWhere(
+        (c) => c.attributePath == 'montantHt',
+      );
+      expect(montantComp.existingExamples, const [120]);
+      expect(
+        montantComp.candidates
+            .firstWhere((c) => c.value == 120)
+            .alreadyPresent,
+        isTrue,
+      );
+      expect(
+        montantComp.candidates
+            .firstWhere((c) => c.value == 500)
+            .alreadyPresent,
+        isFalse,
+      );
+      expect(preview.unmatchedCandidates.keys, contains('tauxRemise'));
+
+      final appended = ExampleMappingOperations.applyExampleInjectionSelection(
+        previewBase,
+        storyId: seeded.first.id,
+        selectedByAttributePath: const {
+          'montantHt': [500],
+        },
+        mode: ExampleInjectionMode.append,
+      );
+      expect(
+        appended.project
+            .findBusinessObject('obj_cmd')!
+            .attributes
+            .firstWhere((a) => a.name == 'montantHt')
+            .schemaConstraints
+            .examples,
+        const [120, 500],
+      );
+
+      final replaced = ExampleMappingOperations.applyExampleInjectionSelection(
+        appended.project,
+        storyId: seeded.first.id,
+        selectedByAttributePath: const {
+          'montantHt': [500],
+        },
+        mode: ExampleInjectionMode.replace,
+      );
+      expect(
+        replaced.project
+            .findBusinessObject('obj_cmd')!
+            .attributes
+            .firstWhere((a) => a.name == 'montantHt')
+            .schemaConstraints
+            .examples,
+        const [500],
+      );
     });
 
     test('SpecCoherenceAnalyzer, SpecMarkdownExporter et QaAutoSeeder exploitent exampleMappings', () async {
@@ -460,10 +545,7 @@ void main() {
               ),
             ],
           ),
-          ExampleMapRule(
-            id: 'emr_empty',
-            title: 'Règle sans exemple',
-          ),
+          ExampleMapRule(id: 'emr_empty', title: 'Règle sans exemple'),
         ],
         questions: const [
           ExampleMapQuestion(
@@ -485,7 +567,9 @@ void main() {
       final md = SpecMarkdownExporter.export(project);
       expect(
         md,
-        contains('## 5. Example Mapping (Stories, Règles, Exemples & Questions)'),
+        contains(
+          '## 5. Example Mapping (Stories, Règles, Exemples & Questions)',
+        ),
       );
       expect(md, contains('EM-001'));
       expect(md, contains('Seuil remise'));
@@ -493,10 +577,7 @@ void main() {
 
       // Passerelle QA : fixtures + Scenario Outline Gherkin depuis cartes vertes
       final fixtures = QaAutoSeeder.seedFixturesFromSchema(project);
-      expect(
-        fixtures.any((f) => f.payload['montantHt'] == 500),
-        isTrue,
-      );
+      expect(fixtures.any((f) => f.payload['montantHt'] == 500), isTrue);
       final features = QaAutoSeeder.seedFeaturesFromSpecAndUx(project);
       final emFeature = features.firstWhere((f) => f.id == 'feat_em_em_001');
       expect(emFeature.scenarios.single.isOutline, isTrue);
@@ -596,14 +677,33 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('spec-em-seed-btn')));
         await tester.pumpAndSettle();
         expect(controller.project!.exampleMappings, hasLength(1));
-        expect(find.text('EM-001'), findsOneWidget);
+        final seededStoryId = controller.project!.exampleMappings.single.id;
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey('spec-em-story-chip-$seededStoryId')),
+            matching: find.text('EM-001'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey('spec-em-yellow-card-$seededStoryId')),
+            matching: find.text('EM-001'),
+          ),
+          findsOneWidget,
+        );
 
         // 2. Promotion d'une règle bleue vers RG-001
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
         final firstRuleId =
             controller.project!.exampleMappings.single.rules.first.id;
-        await tester.tap(
-          find.byKey(ValueKey('spec-em-promote-rule-$firstRuleId')),
+        final promoteBtn = find.byKey(
+          ValueKey('spec-em-promote-rule-$firstRuleId'),
         );
+        await tester.ensureVisible(promoteBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(promoteBtn);
         await tester.pumpAndSettle();
         expect(controller.project!.businessRules, hasLength(1));
         expect(controller.project!.businessRules.single.code, 'RG-001');
@@ -614,14 +714,53 @@ void main() {
 
         expect(fakeAi.calledStages, [SpecForgeStage.exampleMapping]);
         final cmd = controller.project!.findBusinessObject('obj_cmd')!;
-        expect(
-          cmd.attributes.any((a) => a.name == 'tauxRemise'),
-          isTrue,
-        );
+        expect(cmd.attributes.any((a) => a.name == 'tauxRemise'), isTrue);
         expect(
           controller.project!.exampleMappings.any((s) => s.id == 'em_ai_cmd'),
           isTrue,
         );
+
+        // 4. Sélection d'une story depuis la liste latérale gauche
+        await tester.tap(
+          find.byKey(const ValueKey('spec-em-story-chip-em_ai_cmd')),
+        );
+        await tester.pumpAndSettle();
+        expect(controller.focusedExampleStoryId, 'em_ai_cmd');
+        expect(
+          find.byKey(const ValueKey('spec-em-yellow-card-em_ai_cmd')),
+          findsOneWidget,
+        );
+
+        // 5. Ouverture de la popup de comparaison/choix sur "Injecter exemples"
+        final enrichBtn = find.byKey(
+          const ValueKey('spec-em-enrich-object-btn'),
+        );
+        await tester.ensureVisible(enrichBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(enrichBtn);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('spec-em-inject-dialog')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('spec-em-inject-attr-montantHt')),
+          findsOneWidget,
+        );
+
+        // En mode Remplacer, sélection de 500 sur montantHt et validation
+        await tester.tap(find.text('Remplacer'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('spec-em-inject-select-all-btn')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('spec-em-inject-confirm-btn')));
+        await tester.pumpAndSettle();
+
+        final updatedMontant = controller.project!
+            .findBusinessObject('obj_cmd')!
+            .attributes
+            .firstWhere((a) => a.name == 'montantHt');
+        expect(updatedMontant.schemaConstraints.examples, const [500]);
       },
     );
   });

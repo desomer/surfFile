@@ -966,6 +966,34 @@ class SpecForgeController extends ChangeNotifier {
     return result.injectedValuesCount;
   }
 
+  /// Applique la sélection utilisateur issue de la popup de comparaison/choix
+  /// pour injecter des exemples dans le schéma de l'objet métier cible.
+  Future<({int injectedValuesCount, int updatedAttributesCount})>
+  applyExampleInjectionSelection({
+    required String storyId,
+    required Map<String, List<Object?>> selectedByAttributePath,
+    ExampleInjectionMode mode = ExampleInjectionMode.append,
+  }) async {
+    final current = _project;
+    if (current == null) {
+      return (injectedValuesCount: 0, updatedAttributesCount: 0);
+    }
+    final result = ExampleMappingOperations.applyExampleInjectionSelection(
+      current,
+      storyId: storyId,
+      selectedByAttributePath: selectedByAttributePath,
+      mode: mode,
+    );
+    if (result.updatedAttributesCount == 0) {
+      return (injectedValuesCount: 0, updatedAttributesCount: 0);
+    }
+    await updateProject(result.project);
+    return (
+      injectedValuesCount: result.injectedValuesCount,
+      updatedAttributesCount: result.updatedAttributesCount,
+    );
+  }
+
   /// Crée ou met à jour un objet métier depuis l'atelier UX (annulable en 1 clic via Undo/Redo).
   Future<void> upsertBusinessObjectFromUx(BusinessObjectSpec object) async {
     object.validate();

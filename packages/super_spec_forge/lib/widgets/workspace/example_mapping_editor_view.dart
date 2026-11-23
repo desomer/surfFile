@@ -5,6 +5,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
@@ -14,6 +15,7 @@ import '../../models/example_mapping_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/example_mapping_operations.dart';
 import '../../services/spec_forge_controller.dart';
+import 'example_injection_dialog.dart';
 
 /// Vue interactive à 4 couleurs pour l'Example Mapping d'un [SpecForgeProject].
 class ExampleMappingEditorView extends StatefulWidget {
@@ -42,9 +44,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
     final msg = count > 0
         ? '$count tableau${count > 1 ? 'x' : ''} d’Example Mapping initialisé${count > 1 ? 's' : ''}.'
         : 'Tous les objets métiers ont déjà un tableau d’Example Mapping.';
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _enrichObject(
@@ -52,18 +53,31 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
     ExampleMapStory story, {
     String? exampleId,
   }) async {
-    final injected = await widget.controller
-        .enrichBusinessObjectFromExampleMapping(
-          storyId: story.id,
-          exampleId: exampleId,
-        );
-    if (!context.mounted) return;
-    final msg = injected > 0
-        ? '$injected valeur${injected > 1 ? 's' : ''} d’exemple injectée${injected > 1 ? 's' : ''} dans le schéma de l’objet métier.'
-        : 'Aucune nouvelle valeur d’attribut à injecter (ajoutez des inputValues correspondant aux attributs de l’objet).';
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(msg)),
+    final project = widget.controller.project;
+    if (project == null) return;
+
+    final preview = ExampleMappingOperations.buildExampleInjectionPreview(
+      project,
+      storyId: story.id,
+      exampleId: exampleId,
     );
+    final selection = await ExampleInjectionDialog.show(
+      context,
+      preview: preview,
+    );
+    if (selection == null || !context.mounted) return;
+
+    final res = await widget.controller.applyExampleInjectionSelection(
+      storyId: story.id,
+      selectedByAttributePath: selection.selectedByAttributePath,
+      mode: selection.mode,
+    );
+    if (!context.mounted) return;
+    final msg = res.updatedAttributesCount > 0
+        ? '${res.injectedValuesCount} valeur${res.injectedValuesCount > 1 ? 's' : ''} d’exemple injectée${res.injectedValuesCount > 1 ? 's' : ''} sur ${res.updatedAttributesCount} attribut${res.updatedAttributesCount > 1 ? 's' : ''}.'
+        : 'Aucune modification appliquée au schéma de l’objet métier.';
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _promoteRule(
@@ -79,9 +93,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
     final msg = res.createdNew
         ? 'Règle ${res.rule.code} créée dans les Règles de gestion.'
         : 'Exemples synchronisés avec la règle ${res.rule.code}.';
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _saveStories(
@@ -178,7 +191,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                 children: [
                   if (project.businessObjects.isNotEmpty)
                     DropdownButton<String?>(
-                      value: project.businessObjects.any(
+                      value:
+                          project.businessObjects.any(
                             (o) => o.id == _objectFilterId,
                           )
                           ? _objectFilterId
@@ -217,79 +231,209 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
             ],
           ),
         ),
-        if (stories.isNotEmpty) ...[
-          SizedBox(
-            height: 46,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              scrollDirection: Axis.horizontal,
-              itemCount: stories.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final story = stories[index];
-                final isSelected = selectedStory?.id == story.id;
-                final obj = story.targetObjectId.isEmpty
-                    ? null
-                    : project.findBusinessObject(story.targetObjectId);
-                return ChoiceChip(
-                  key: ValueKey('spec-em-story-chip-${story.id}'),
-                  selected: isSelected,
-                  onSelected: (_) =>
-                      widget.controller.focusExampleStory(story.id),
-                  avatar: story.openQuestionCount > 0
-                      ? Icon(
-                          Icons.help_outline_rounded,
-                          size: 16,
-                          color: isDark
-                              ? Colors.red.shade300
-                              : Colors.red.shade700,
-                        )
-                      : Icon(
-                          Icons.view_kanban_outlined,
-                          size: 16,
-                          color: isDark
-                              ? Colors.amber.shade300
-                              : Colors.amber.shade900,
-                        ),
-                  label: Text(
-                    '${story.code} · ${obj?.technicalName ?? story.title}',
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
         const Divider(height: 1),
         Expanded(
-          child: selectedStory == null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.view_kanban_outlined,
-                          size: 44,
-                          color: colors.primary.withValues(alpha: 0.7),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final masterPane = _buildStoriesMasterList(
+                context,
+                project,
+                stories,
+                selectedStory,
+                theme,
+                colors,
+                isDark,
+              );
+              final detailPane = selectedStory == null
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.view_kanban_outlined,
+                              size: 44,
+                              color: colors.primary.withValues(alpha: 0.7),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              project.businessObjects.isEmpty
+                                  ? 'Modélisez d’abord au moins un objet métier ou créez une Story manuellement.'
+                                  : 'Aucun tableau d’Example Mapping pour ce filtre.\nInitialisez depuis vos Objets métiers & Cas d’usage ou lancez « Example Mapper » à gauche.',
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          project.businessObjects.isEmpty
-                              ? 'Modélisez d’abord au moins un objet métier ou créez une Story manuellement.'
-                              : 'Aucun tableau d’Example Mapping pour ce filtre.\nInitialisez depuis vos Objets métiers & Cas d’usage ou lancez « Example Mapper » à gauche.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    )
+                  : _buildStoryBoard(context, project, selectedStory, isDark);
+              if (constraints.maxWidth >= 560) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: 260, child: masterPane),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: detailPane),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: math.min(180, constraints.maxHeight * 0.32),
+                    child: masterPane,
                   ),
-                )
-              : _buildStoryBoard(context, project, selectedStory, isDark),
+                  const Divider(height: 1),
+                  Expanded(child: detailPane),
+                ],
+              );
+            },
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStoriesMasterList(
+    BuildContext context,
+    SpecForgeProject project,
+    List<ExampleMapStory> stories,
+    ExampleMapStory? selectedStory,
+    ThemeData theme,
+    ColorScheme colors,
+    bool isDark,
+  ) {
+    if (stories.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Text(
+            project.exampleMappings.isEmpty
+                ? 'Aucune story définie.\nInitialisez depuis Objets & UC ou créez une Story.'
+                : 'Aucune story pour ce filtre.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final palette = _ExampleMapPalette.resolve(isDark, colors);
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(10),
+      itemCount: stories.length,
+      itemBuilder: (context, index) {
+        final story = stories[index];
+        final isSelected = selectedStory?.id == story.id;
+        final obj = story.targetObjectId.isEmpty
+            ? null
+            : project.findBusinessObject(story.targetObjectId);
+        final objectBadge = obj?.technicalName ?? 'Sans objet';
+
+        return Card(
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 8),
+          color: isSelected
+              ? colors.primaryContainer.withValues(alpha: 0.45)
+              : colors.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: isSelected ? colors.primary : colors.outlineVariant,
+              width: isSelected ? 1.5 : 1.0,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: ValueKey('spec-em-story-chip-${story.id}'),
+            onTap: () => widget.controller.focusExampleStory(story.id),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _ExampleMapBadge(
+                        label: story.code,
+                        backgroundColor: isSelected
+                            ? colors.primary
+                            : palette.yellowBadgeBg,
+                        foregroundColor: isSelected
+                            ? colors.onPrimary
+                            : palette.yellowBadgeFg,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          objectBadge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                      if (story.openQuestionCount > 0)
+                        Icon(
+                          Icons.help_outline_rounded,
+                          size: 15,
+                          color: palette.redBadgeFg,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    story.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      _ExampleMapBadge(
+                        label:
+                            '${story.rules.length} règle${story.rules.length > 1 ? 's' : ''}',
+                        backgroundColor: palette.blueBg,
+                        foregroundColor: isDark
+                            ? Colors.blue.shade200
+                            : Colors.blue.shade900,
+                      ),
+                      _ExampleMapBadge(
+                        label: '${story.totalExampleCount} ex.',
+                        backgroundColor: palette.greenBg,
+                        foregroundColor: isDark
+                            ? Colors.green.shade200
+                            : Colors.green.shade900,
+                      ),
+                      if (story.openQuestionCount > 0)
+                        _ExampleMapBadge(
+                          label: '${story.openQuestionCount} ? ',
+                          backgroundColor: palette.redBg,
+                          foregroundColor: palette.redBadgeFg,
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -466,10 +610,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                           ),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
-                              note,
-                              style: theme.textTheme.bodySmall,
-                            ),
+                            child: Text(note, style: theme.textTheme.bodySmall),
                           ),
                         ],
                       ),
@@ -515,13 +656,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
             )
           else
             for (final emRule in story.rules) ...[
-              _buildBlueRuleSection(
-                context,
-                project,
-                story,
-                emRule,
-                palette,
-              ),
+              _buildBlueRuleSection(context, project, story, emRule, palette),
               const SizedBox(height: 12),
             ],
 
@@ -638,21 +773,15 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
               IconButton(
                 tooltip: 'Modifier cette règle bleue',
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: () => _editRuleDialog(
-                  context,
-                  project,
-                  story,
-                  existing: emRule,
-                ),
+                onPressed: () =>
+                    _editRuleDialog(context, project, story, existing: emRule),
               ),
               IconButton(
                 tooltip: 'Supprimer cette règle bleue',
                 icon: const Icon(Icons.delete_outline, size: 18),
                 onPressed: () async {
                   final updatedStory = story.copyWith(
-                    rules: story.rules
-                        .where((r) => r.id != emRule.id)
-                        .toList(),
+                    rules: story.rules.where((r) => r.id != emRule.id).toList(),
                   );
                   await _saveStories(project, [
                     for (final s in project.exampleMappings)
@@ -703,11 +832,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
               ),
               FilledButton.tonalIcon(
                 key: ValueKey('spec-em-promote-rule-${emRule.id}'),
-                onPressed: () => _promoteRule(
-                  context,
-                  storyId: story.id,
-                  ruleId: emRule.id,
-                ),
+                onPressed: () =>
+                    _promoteRule(context, storyId: story.id, ruleId: emRule.id),
                 icon: const Icon(Icons.gavel_rounded, size: 16),
                 label: Text(
                   linkedRule != null
@@ -977,12 +1103,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                   children: [
                     TextButton.icon(
                       key: ValueKey('spec-em-toggle-question-${q.id}'),
-                      onPressed: () => _resolveQuestionDialog(
-                        context,
-                        project,
-                        story,
-                        q,
-                      ),
+                      onPressed: () =>
+                          _resolveQuestionDialog(context, project, story, q),
                       icon: Icon(
                         q.resolved ? Icons.replay_rounded : Icons.done_rounded,
                         size: 15,
@@ -1072,7 +1194,9 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                 children: [
                   TextField(
                     controller: codeCtrl,
-                    decoration: const InputDecoration(labelText: 'Code (EM-xxx)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Code (EM-xxx)',
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -1085,14 +1209,13 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                   TextField(
                     controller: descCtrl,
                     maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                    ),
+                    decoration: const InputDecoration(labelText: 'Description'),
                   ),
                   const SizedBox(height: 8),
                   if (project.businessObjects.isNotEmpty)
                     DropdownButtonFormField<String>(
-                      initialValue: project.businessObjects.any(
+                      initialValue:
+                          project.businessObjects.any(
                             (o) => o.id == selectedObjectId,
                           )
                           ? selectedObjectId
@@ -1117,7 +1240,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                   const SizedBox(height: 8),
                   if (project.cahierDesCharges.useCases.isNotEmpty)
                     DropdownButtonFormField<String>(
-                      initialValue: project.cahierDesCharges.useCases.any(
+                      initialValue:
+                          project.cahierDesCharges.useCases.any(
                             (u) => u.id == selectedUseCaseId,
                           )
                           ? selectedUseCaseId
@@ -1131,10 +1255,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                           child: Text('— Aucun —'),
                         ),
                         for (final uc in project.cahierDesCharges.useCases)
-                          DropdownMenuItem(
-                            value: uc.id,
-                            child: Text(uc.title),
-                          ),
+                          DropdownMenuItem(value: uc.id, child: Text(uc.title)),
                       ],
                       onChanged: (val) =>
                           setDialogState(() => selectedUseCaseId = val ?? ''),
@@ -1171,22 +1292,25 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    final story = (existing ??
-            ExampleMapStory(
-              id: _shortId('em'),
-              code: codeCtrl.text.trim(),
+    final story =
+        (existing ??
+                ExampleMapStory(
+                  id: _shortId('em'),
+                  code: codeCtrl.text.trim(),
+                  title: titleCtrl.text.trim(),
+                ))
+            .copyWith(
+              code: codeCtrl.text.trim().isEmpty
+                  ? ExampleMappingOperations.nextStoryCode(
+                      project.exampleMappings,
+                    )
+                  : codeCtrl.text.trim(),
               title: titleCtrl.text.trim(),
-            ))
-        .copyWith(
-          code: codeCtrl.text.trim().isEmpty
-              ? ExampleMappingOperations.nextStoryCode(project.exampleMappings)
-              : codeCtrl.text.trim(),
-          title: titleCtrl.text.trim(),
-          description: descCtrl.text.trim(),
-          targetObjectId: selectedObjectId,
-          useCaseId: selectedUseCaseId,
-          requirementIds: reqIds,
-        );
+              description: descCtrl.text.trim(),
+              targetObjectId: selectedObjectId,
+              useCaseId: selectedUseCaseId,
+              requirementIds: reqIds,
+            );
 
     final nextStories = existing == null
         ? [...project.exampleMappings, story]
@@ -1255,8 +1379,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                   TextField(
                     controller: attrsCtrl,
                     decoration: const InputDecoration(
-                      labelText:
-                          'Attributs cibles (ex. Commande.montantHt, Commande.statut)',
+                      labelText: 'Attributs cibles (ex. Commande.montantHt, Commande.statut)',
                     ),
                   ),
                 ],
@@ -1284,20 +1407,21 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    final rule = (existing ??
-            ExampleMapRule(
-              id: _shortId('emr'),
+    final rule =
+        (existing ??
+                ExampleMapRule(
+                  id: _shortId('emr'),
+                  title: titleCtrl.text.trim(),
+                  targetObjectIds: story.targetObjectId.isNotEmpty
+                      ? [story.targetObjectId]
+                      : const <String>[],
+                ))
+            .copyWith(
               title: titleCtrl.text.trim(),
-              targetObjectIds: story.targetObjectId.isNotEmpty
-                  ? [story.targetObjectId]
-                  : const <String>[],
-            ))
-        .copyWith(
-          title: titleCtrl.text.trim(),
-          description: descCtrl.text.trim(),
-          category: category,
-          targetAttributes: targetAttrs,
-        );
+              description: descCtrl.text.trim(),
+              category: category,
+              targetAttributes: targetAttrs,
+            );
 
     final nextRules = existing == null
         ? [...story.rules, rule]
@@ -1346,9 +1470,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
       if (decoded is! Map) {
         throw const FormatException('Doit être un objet JSON {"cle": valeur}.');
       }
-      return {
-        for (final entry in decoded.entries) '${entry.key}': entry.value,
-      };
+      return {for (final entry in decoded.entries) '${entry.key}': entry.value};
     }
 
     Map<String, Object?>? parsedInputs;
@@ -1474,21 +1596,22 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
         .where((e) => e.isNotEmpty)
         .toList();
 
-    final example = (existing ??
-            ExampleMapExample(
-              id: _shortId('ex'),
+    final example =
+        (existing ??
+                ExampleMapExample(
+                  id: _shortId('ex'),
+                  title: titleCtrl.text.trim(),
+                ))
+            .copyWith(
               title: titleCtrl.text.trim(),
-            ))
-        .copyWith(
-          title: titleCtrl.text.trim(),
-          kind: kind,
-          given: givenCtrl.text.trim(),
-          when: whenCtrl.text.trim(),
-          then: thenCtrl.text.trim(),
-          inputValues: parsedInputs ?? const <String, Object?>{},
-          expectedOutcome: parsedOutcomes ?? const <String, Object?>{},
-          discoveredAttributes: discovered,
-        );
+              kind: kind,
+              given: givenCtrl.text.trim(),
+              when: whenCtrl.text.trim(),
+              then: thenCtrl.text.trim(),
+              inputValues: parsedInputs ?? const <String, Object?>{},
+              expectedOutcome: parsedOutcomes ?? const <String, Object?>{},
+              discoveredAttributes: discovered,
+            );
 
     final nextExamples = existing == null
         ? [...emRule.examples, example]
@@ -1572,17 +1695,18 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
     );
     if (ok != true || questionCtrl.text.trim().isEmpty) return;
 
-    final q = (existing ??
-            ExampleMapQuestion(
-              id: _shortId('emq'),
+    final q =
+        (existing ??
+                ExampleMapQuestion(
+                  id: _shortId('emq'),
+                  question: questionCtrl.text.trim(),
+                  linkedObjectId: story.targetObjectId,
+                ))
+            .copyWith(
               question: questionCtrl.text.trim(),
-              linkedObjectId: story.targetObjectId,
-            ))
-        .copyWith(
-          question: questionCtrl.text.trim(),
-          impact: impactCtrl.text.trim(),
-          linkedAttributePath: attrCtrl.text.trim(),
-        );
+              impact: impactCtrl.text.trim(),
+              linkedAttributePath: attrCtrl.text.trim(),
+            );
 
     final nextQuestions = existing == null
         ? [...story.questions, q]
@@ -1631,9 +1755,8 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
             children: [
               Text(
                 q.question,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -1660,10 +1783,7 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
     );
     if (ok != true) return;
 
-    final updatedQ = q.copyWith(
-      resolved: true,
-      answer: answerCtrl.text.trim(),
-    );
+    final updatedQ = q.copyWith(resolved: true, answer: answerCtrl.text.trim());
     final updatedStory = story.copyWith(
       questions: [
         for (final item in story.questions)
@@ -1674,6 +1794,39 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
       for (final s in project.exampleMappings)
         if (s.id == story.id) updatedStory else s,
     ]);
+  }
+}
+
+class _ExampleMapBadge extends StatelessWidget {
+  const _ExampleMapBadge({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label.trim(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: foregroundColor,
+        ),
+      ),
+    );
   }
 }
 
