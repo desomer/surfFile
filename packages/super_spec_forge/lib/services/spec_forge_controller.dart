@@ -49,6 +49,7 @@ import '../models/ux/ux_screen_spec.dart';
 import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
 import 'domain_catalog_store.dart';
+import 'event_storming_operations.dart';
 import 'example_mapping_operations.dart';
 import 'exporters/qa_tdd_prompt_exporter.dart';
 import 'model_dictionary_store.dart';
@@ -148,6 +149,8 @@ class SpecForgeController extends ChangeNotifier {
   String? _focusedObjectId;
   List<String> _focusedAttributePath = const <String>[];
   String _businessObjectFilter = '';
+  String? _focusedEventStormFlowId;
+  String? _focusedEventStormNodeId;
   String? _focusedExampleStoryId;
   String? _focusedJourneyId;
   String? _focusedRouteId;
@@ -370,6 +373,12 @@ class SpecForgeController extends ChangeNotifier {
   /// Filtre texte courant sur les objets métiers et attributs dans « Arbre & Inspecteur ».
   String get businessObjectFilter => _businessObjectFilter;
 
+  /// Identifiant du flux Event Storming focalisé dans l'atelier.
+  String? get focusedEventStormFlowId => _focusedEventStormFlowId;
+
+  /// Identifiant de la carte Event Storming focalisée dans le flux courant.
+  String? get focusedEventStormNodeId => _focusedEventStormNodeId;
+
   /// Identifiant du tableau Example Mapping focalisé dans l'atelier.
   String? get focusedExampleStoryId => _focusedExampleStoryId;
 
@@ -460,6 +469,21 @@ class SpecForgeController extends ChangeNotifier {
   void setBusinessObjectFilter(String query) {
     if (_businessObjectFilter == query) return;
     _businessObjectFilter = query;
+    notifyListeners();
+  }
+
+  /// Met à jour le flux Event Storming sélectionné dans l'atelier.
+  void focusEventStormFlow(String? flowId) =>
+      focusEventStormSelection(flowId: flowId);
+
+  /// Met à jour le flux et/ou la carte Event Storming sélectionnés dans l'atelier.
+  void focusEventStormSelection({String? flowId, String? nodeId}) {
+    if (_focusedEventStormFlowId == flowId &&
+        _focusedEventStormNodeId == nodeId) {
+      return;
+    }
+    _focusedEventStormFlowId = flowId;
+    _focusedEventStormNodeId = nodeId;
     notifyListeners();
   }
 
@@ -566,6 +590,8 @@ class SpecForgeController extends ChangeNotifier {
     _focusedObjectId = null;
     _focusedAttributePath = const <String>[];
     _businessObjectFilter = '';
+    _focusedEventStormFlowId = null;
+    _focusedEventStormNodeId = null;
     _focusedExampleStoryId = null;
     _focusedJourneyId = null;
     _focusedRouteId = null;
@@ -979,6 +1005,68 @@ class SpecForgeController extends ChangeNotifier {
     return added.length;
   }
 
+  /// Initialise des Bounded Contexts et flux Event Storming depuis le Cahier des charges
+  /// et retourne le nombre de flux et contextes ajoutés.
+  Future<({int addedFlowsCount, int addedContextsCount})>
+  seedEventStormingFromSpecifications() async {
+    final current = _project;
+    if (current == null) {
+      return (addedFlowsCount: 0, addedContextsCount: 0);
+    }
+    final res = EventStormingOperations.seedFromCahierDesCharges(current);
+    if (res.addedFlowsCount == 0 && res.addedContextsCount == 0) {
+      return (addedFlowsCount: 0, addedContextsCount: 0);
+    }
+    final next = current.copyWith(eventStorming: res.updated);
+    await updateProject(next);
+    if (_focusedEventStormFlowId == null && res.updated.flows.isNotEmpty) {
+      focusEventStormFlow(res.updated.flows.first.id);
+    }
+    return (
+      addedFlowsCount: res.addedFlowsCount,
+      addedContextsCount: res.addedContextsCount,
+    );
+  }
+
+  /// Synthétise ou enrichit les objets métiers (et cycles de vie) à partir des
+  /// agrégats, commandes et événements modélisés dans l'Event Storming.
+  Future<({int createdObjectsCount, int enrichedObjectsCount})>
+  generateBusinessObjectsFromEventStorming() async {
+    final current = _project;
+    if (current == null) {
+      return (createdObjectsCount: 0, enrichedObjectsCount: 0);
+    }
+    final res =
+        EventStormingOperations.synthesizeBusinessObjectsFromEventStorming(
+          current,
+        );
+    if (res.project == current) {
+      return (createdObjectsCount: 0, enrichedObjectsCount: 0);
+    }
+    await updateProject(res.project);
+    return (
+      createdObjectsCount: res.createdObjectsCount,
+      enrichedObjectsCount: res.enrichedObjectsCount,
+    );
+  }
+
+  /// Promeut une carte Politique Event Storming en règle de gestion `RG-xxx`.
+  Future<({BusinessRuleSpec rule, bool createdNew})?>
+  promoteEventStormPolicyToBusinessRule({
+    required String flowId,
+    required String nodeId,
+  }) async {
+    final current = _project;
+    if (current == null) return null;
+    final res = EventStormingOperations.promotePolicyToBusinessRule(
+      current,
+      flowId: flowId,
+      nodeId: nodeId,
+    );
+    await updateProject(res.project);
+    return (rule: res.rule, createdNew: res.createdNew);
+  }
+
   /// Initialise des tableaux Jaunes d'Example Mapping pour les objets métiers
   /// non encore couverts et retourne le nombre de tableaux créés.
   Future<int> seedExampleMappingStories() async {
@@ -1194,8 +1282,10 @@ class SpecForgeController extends ChangeNotifier {
           'Démarrer le cadrage & acteurs à partir du lexique métier.',
         SpecForgeStage.specifications =>
           'Démarrer le cahier des charges à partir du cadrage.',
+        SpecForgeStage.eventStorming =>
+          'Lancer l’atelier Event Storming à partir du cahier des charges.',
         SpecForgeStage.businessObjects =>
-          'Modéliser les objets métiers à partir du cahier des charges.',
+          'Modéliser les objets métiers à partir de l’Event Storming et du cahier des charges.',
         SpecForgeStage.exampleMapping =>
           'Lancer l’Example Mapping pour affiner les objets métiers par des exemples concrets.',
         SpecForgeStage.businessRules =>
@@ -2793,6 +2883,8 @@ class SpecForgeController extends ChangeNotifier {
       focusedObjectId: _focusedObjectId,
       focusedAttributePath: _focusedAttributePath,
       businessObjectFilter: _businessObjectFilter,
+      focusedEventStormFlowId: _focusedEventStormFlowId,
+      focusedEventStormNodeId: _focusedEventStormNodeId,
       focusedExampleStoryId: _focusedExampleStoryId,
     );
 
@@ -2959,6 +3051,8 @@ class SpecForgeController extends ChangeNotifier {
               focusedObjectId: _focusedObjectId,
               focusedAttributePath: _focusedAttributePath,
               businessObjectFilter: _businessObjectFilter,
+              focusedEventStormFlowId: _focusedEventStormFlowId,
+              focusedEventStormNodeId: _focusedEventStormNodeId,
               focusedExampleStoryId: _focusedExampleStoryId,
             );
             currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
@@ -3047,6 +3141,7 @@ class SpecForgeController extends ChangeNotifier {
       },
       onFocusObject: focusBusinessObject,
       onFocusSelection: focusBusinessSelection,
+      onFocusEventStormFlow: focusEventStormFlow,
       onFocusExampleStory: focusExampleStory,
       onFilterBusinessObjects: setBusinessObjectFilter,
       onRunUxCoherenceAudit: (p) => UxCoherenceAnalyzer.analyze(

@@ -36,6 +36,7 @@ import 'ux_workspace/ux_review_export_view.dart';
 import 'ux_workspace/ux_screens_editor_view.dart';
 import 'workspace/business_objects_editor_view.dart';
 import 'workspace/business_rules_editor_view.dart';
+import 'workspace/event_storming_editor_view.dart';
 import 'workspace/example_mapping_editor_view.dart';
 import 'workspace/lexicon_editor_view.dart';
 import 'workspace/review_export_view.dart';
@@ -620,6 +621,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     SpecForgeStage.lexicon => LexiconEditorView(controller: widget.controller),
     SpecForgeStage.vision => VisionEditorView(controller: widget.controller),
     SpecForgeStage.specifications => SpecificationsEditorView(
+      controller: widget.controller,
+    ),
+    SpecForgeStage.eventStorming => EventStormingEditorView(
       controller: widget.controller,
     ),
     SpecForgeStage.businessObjects => BusinessObjectsEditorView(

@@ -5,6 +5,7 @@ import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/event_storming_spec.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
@@ -236,13 +237,144 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
-    // 3. Contrôles des objets métiers (Étape 3)
+    // 3. Contrôles des objets métiers (Étape 5)
     final objectIds = {for (final o in project.businessObjects) o.id};
     final objectsByAnyKey = <String, BusinessObjectSpec>{};
     for (final obj in project.businessObjects) {
       objectsByAnyKey[obj.id.toLowerCase()] = obj;
       objectsByAnyKey[obj.technicalName.toLowerCase()] = obj;
       objectsByAnyKey[obj.name.toLowerCase()] = obj;
+    }
+
+    // 2 bis. Contrôles d'Event Storming (Étape 4)
+    final es = project.eventStorming;
+    if (es.hasContent && es.flows.isEmpty) {
+      issues.add(
+        const SpecCoherenceIssue(
+          id: 'coh_es_empty',
+          severity: CoherenceSeverity.info,
+          stage: SpecForgeStage.eventStorming,
+          code: 'COH-ES-001',
+          title: 'Contextes bornés sans flux Event Storming',
+          description:
+              'Des Bounded Contexts sont déclarés, mais aucun flux chronologique d’événements, commandes et agrégats n’a encore été défini.',
+          suggestion:
+              'Amorcez l’Event Storming depuis le Cahier des charges pour faire émerger vos agrégats et politiques.',
+        ),
+      );
+    } else if (es.flows.isNotEmpty) {
+      final rulesByIdOrCode = <String, BusinessRuleSpec>{
+        for (final r in project.businessRules) ...{
+          r.id.toLowerCase(): r,
+          r.code.toLowerCase(): r,
+        },
+      };
+
+      for (final flow in es.flows) {
+        if (flow.domainEventCount == 0) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_es_no_evt_${flow.id}',
+              severity: CoherenceSeverity.info,
+              stage: SpecForgeStage.eventStorming,
+              code: 'COH-ES-003',
+              title: 'Flux sans événement domaine : ${flow.code}',
+              description:
+                  'Le flux « ${flow.title} » ne contient aucun événement domaine (carte orange).',
+              targetRef: flow.id,
+              suggestion:
+                  'Ajoutez au moins un événement métier formulé au passé pour matérialiser le résultat du flux.',
+            ),
+          );
+        }
+
+        if (flow.openHotspotCount > 0) {
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_es_open_hot_${flow.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.eventStorming,
+              code: 'COH-ES-002',
+              title:
+                  '${flow.openHotspotCount} hotspot(s) ouvert(s) dans ${flow.code}',
+              description:
+                  'Le flux « ${flow.title} » comporte encore ${flow.openHotspotCount} zone(s) d’ombre non tranchée(s).',
+              targetRef: flow.id,
+              suggestion:
+                  'Résolvez les hotspots rouges avec l’Event Storming Facilitator ou documentez la décision.',
+            ),
+          );
+        }
+
+        final nodeIds = {for (final n in flow.nodes) n.id};
+        for (final link in flow.links) {
+          if (!nodeIds.contains(link.fromNodeId) ||
+              !nodeIds.contains(link.toNodeId)) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_es_dangling_link_${flow.id}_${link.id}',
+                severity: CoherenceSeverity.warning,
+                stage: SpecForgeStage.eventStorming,
+                code: 'COH-ES-005',
+                title: 'Liaison incomplète dans ${flow.code}',
+                description:
+                    'Une liaison (${link.fromNodeId} → ${link.toNodeId}) pointe vers une carte absente du flux.',
+                targetRef: flow.id,
+                suggestion: 'Supprimez ou recâblez cette liaison.',
+              ),
+            );
+          }
+        }
+
+        for (final node in flow.nodes) {
+          if (node.kind == EventStormNodeKind.aggregate &&
+              project.businessObjects.isNotEmpty) {
+            final key = node.targetObjectId.trim().isNotEmpty
+                ? node.targetObjectId.trim().toLowerCase()
+                : node.title.trim().toLowerCase();
+            final pascalKey = node.title
+                .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '')
+                .toLowerCase();
+            if (!objectsByAnyKey.containsKey(key) &&
+                !objectsByAnyKey.containsKey(pascalKey)) {
+              issues.add(
+                SpecCoherenceIssue(
+                  id: 'coh_es_agg_unmapped_${flow.id}_${node.id}',
+                  severity: CoherenceSeverity.warning,
+                  stage: SpecForgeStage.eventStorming,
+                  code: 'COH-ES-004',
+                  title: 'Agrégat non modélisé en objet : ${node.title}',
+                  description:
+                      'L’agrégat « ${node.title} » du flux ${flow.code} ne correspond à aucun objet métier de l’étape 5.',
+                  targetRef: flow.id,
+                  suggestion:
+                      'Utilisez « Générer Objets métiers » ou rattachez cet agrégat à un objet existant.',
+                ),
+              );
+            }
+          }
+
+          if (node.kind == EventStormNodeKind.policy &&
+              node.linkedRuleId.trim().isNotEmpty &&
+              !rulesByIdOrCode.containsKey(
+                node.linkedRuleId.trim().toLowerCase(),
+              )) {
+            issues.add(
+              SpecCoherenceIssue(
+                id: 'coh_es_missing_rule_${flow.id}_${node.id}',
+                severity: CoherenceSeverity.warning,
+                stage: SpecForgeStage.eventStorming,
+                code: 'COH-ES-004',
+                title: 'Lien RG cassé sur politique (${node.linkedRuleId})',
+                description:
+                    'La politique « ${node.title} » dans ${flow.code} référence la règle « ${node.linkedRuleId} », introuvable dans les règles de gestion.',
+                targetRef: flow.id,
+                suggestion: 'Promouvez à nouveau cette politique en règle RG-xxx.',
+              ),
+            );
+          }
+        }
+      }
     }
 
     if (project.businessObjects.isEmpty) {
@@ -490,7 +622,7 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
-    // 3 bis. Contrôles d'Example Mapping (Étape 5)
+    // 3 bis. Contrôles d'Example Mapping (Étape 6)
     if (project.exampleMappings.isNotEmpty) {
       final mappedObjectIds = <String>{};
       final rulesByIdOrCode = <String, BusinessRuleSpec>{
@@ -602,7 +734,7 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
-    // 4. Contrôles des règles de gestion (Étape 6)
+    // 4. Contrôles des règles de gestion (Étape 7)
     if (project.businessRules.isEmpty) {
       issues.add(
         const SpecCoherenceIssue(
@@ -614,7 +746,7 @@ abstract final class SpecCoherenceAnalyzer {
           description:
               'Aucune règle RG-xxx n’a encore été rattachée aux objets métiers.',
           suggestion:
-              'Passez par l’étape 4 (Rule Architect) pour formaliser validations, calculs et transitions.',
+              'Passez par l’étape 7 (Rule Architect) pour formaliser validations, calculs et transitions.',
         ),
       );
     }

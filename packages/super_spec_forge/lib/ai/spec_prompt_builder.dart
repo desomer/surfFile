@@ -82,20 +82,23 @@ abstract final class SpecPromptBuilder {
     SpecForgeStage.specifications =>
       'Nous passons à l’étape 3 (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
           'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
+    SpecForgeStage.eventStorming =>
+      'Nous passons à l’étape 4 (Event Storming). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
+          'cartographie chronologiquement les flux métier : événements domaine (orange), commandes (bleues), acteurs (jaunes), agrégats (ambre), politiques réactives (lilas), read models (verts) et hotspots (rouges), ainsi que les Bounded Contexts.',
     SpecForgeStage.businessObjects =>
-      'Nous passons à l’étape 4 (Objets métiers). En t’appuyant sur le lexique, le cadrage et le cahier des charges, '
+      'Nous passons à l’étape 5 (Objets métiers). En t’appuyant sur le lexique, le cadrage, le cahier des charges et les agrégats/événements de l’Event Storming, '
           'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
           '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
     SpecForgeStage.exampleMapping =>
-      'Nous passons à l’étape 5 (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique et les cas d’usage du cahier des charges, '
+      'Nous passons à l’étape 6 (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique, l’Event Storming et les cas d’usage du cahier des charges, '
           'explore avec l’utilisateur les règles (cartes bleues), exemples concrets et cas aux limites (cartes vertes) et zones d’ombre (cartes rouges) '
           'pour affiner les attributs, bornes JSON Schema, énumérations et cycles de vie des objets métiers.\n\n'
           '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
     SpecForgeStage.businessRules =>
-      'Nous passons à l’étape 6 (Règles de gestion). En t’appuyant sur les objets métiers, les tableaux d’Example Mapping (règles bleues, exemples verts et questions résolues), le lexique et le cahier des charges, '
+      'Nous passons à l’étape 7 (Règles de gestion). En t’appuyant sur l’Event Storming (politiques, commandes, événements), les objets métiers, les tableaux d’Example Mapping (règles bleues, exemples verts et questions résolues), le lexique et le cahier des charges, '
           'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
     SpecForgeStage.reviewExport =>
-      'Nous passons à l’étape 7 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, objets métiers, Example Mapping et règles de gestion), '
+      'Nous passons à l’étape 8 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, Event Storming, objets métiers, Example Mapping et règles de gestion), '
           'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
   };
 
@@ -113,6 +116,8 @@ abstract final class SpecPromptBuilder {
     String? focusedObjectId,
     List<String> focusedAttributePath = const <String>[],
     String businessObjectFilter = '',
+    String? focusedEventStormFlowId,
+    String? focusedEventStormNodeId,
     String? focusedExampleStoryId,
   }) {
     final agent = SpecStageAgent.forStage(stage);
@@ -189,6 +194,8 @@ abstract final class SpecPromptBuilder {
       focusedObjectId: focusedObjectId,
       focusedAttributePath: focusedAttributePath,
       businessObjectFilter: businessObjectFilter,
+      focusedEventStormFlowId: focusedEventStormFlowId,
+      focusedEventStormNodeId: focusedEventStormNodeId,
       focusedExampleStoryId: focusedExampleStoryId,
     );
     if (focusBlock.isNotEmpty) {
@@ -229,6 +236,8 @@ abstract final class SpecPromptBuilder {
     required String? focusedObjectId,
     required List<String> focusedAttributePath,
     required String businessObjectFilter,
+    String? focusedEventStormFlowId,
+    String? focusedEventStormNodeId,
     String? focusedExampleStoryId,
     String treeLabel = 'Arbre & Inspecteur',
   }) {
@@ -237,6 +246,20 @@ abstract final class SpecPromptBuilder {
     final focusedObj = (focusedObjectId != null && focusedObjectId.isNotEmpty)
         ? project.findBusinessObject(focusedObjectId)
         : null;
+    final focusedFlow =
+        (focusedEventStormFlowId != null && focusedEventStormFlowId.isNotEmpty)
+            ? project.eventStorming.flows
+                  .where((f) => f.id == focusedEventStormFlowId)
+                  .firstOrNull
+            : null;
+    final focusedNode =
+        (focusedFlow != null &&
+                focusedEventStormNodeId != null &&
+                focusedEventStormNodeId.isNotEmpty)
+            ? focusedFlow.nodes
+                  .where((n) => n.id == focusedEventStormNodeId)
+                  .firstOrNull
+            : null;
     final focusedStory =
         (focusedExampleStoryId != null && focusedExampleStoryId.isNotEmpty)
             ? project.exampleMappings
@@ -245,12 +268,25 @@ abstract final class SpecPromptBuilder {
             : null;
 
     if (focusedObj == null &&
+        focusedFlow == null &&
         focusedStory == null &&
         trimmedFilter.isEmpty) {
       return '';
     }
 
     buf.writeln('FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION) :');
+    if (focusedFlow != null) {
+      buf.writeln(
+        '- Flux Event Storming sélectionné : ${focusedFlow.code} « ${focusedFlow.title} » '
+        '(id: ${focusedFlow.id}, ${focusedFlow.nodes.length} carte(s), ${focusedFlow.openHotspotCount} hotspot(s) ouvert(s))',
+      );
+      if (focusedNode != null) {
+        buf.writeln(
+          '- Carte Event Storming sélectionnée : [${focusedNode.kind.label}] « ${focusedNode.title} » '
+          '(id: ${focusedNode.id}, ordre: ${focusedNode.sequenceOrder})',
+        );
+      }
+    }
     if (focusedStory != null) {
       final storyObj = focusedStory.targetObjectId.isEmpty
           ? null

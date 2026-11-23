@@ -12,6 +12,7 @@ import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/event_storming_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
@@ -33,6 +34,7 @@ abstract final class SpecForgeToolRegistry {
   static const Set<String> specToolNames = <String>{
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
+    'get_event_storming',
     'inspect_business_object',
     'get_example_mapping',
     'get_business_rules',
@@ -101,6 +103,10 @@ abstract final class SpecForgeToolRegistry {
     (
       'get_requirements_summary',
       'liste les modules, exigences fonctionnelles (EXF), cas d\'usage et exigences non fonctionnelles (ENF).',
+    ),
+    (
+      'get_event_storming',
+      'lit les Bounded Contexts et flux Event Storming (événements domaine, commandes, acteurs, agrégats, politiques, read models et hotspots).',
     ),
     (
       'inspect_business_object',
@@ -214,6 +220,31 @@ abstract final class SpecForgeToolRegistry {
           'priority': <String, Object?>{
             'type': 'string',
             'description': 'Filtre optionnel par priorité MoSCoW (must, should, could, wont).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_event_storming',
+      description: 'Consulte les Bounded Contexts (BC-xxx) et flux chronologiques d’Event Storming (ES-xxx) avec leurs cartes (domainEvent, command, actor, aggregate, policy, readModel, hotspot) et liaisons.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'flowIdOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant, code ES-xxx ou titre de flux.',
+          },
+          'boundedContextId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par identifiant, code BC-xxx ou nom de Bounded Context.',
+          },
+          'kind': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel sur le type de carte (domainEvent, command, actor, aggregate, policy, readModel, hotspot).',
+          },
+          'onlyOpenHotspots': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Retourne uniquement les flux ayant au moins un hotspot ouvert (false par défaut).',
           },
         },
       },
@@ -348,7 +379,7 @@ abstract final class SpecForgeToolRegistry {
         'properties': <String, Object?>{
           'stage': <String, Object?>{
             'type': 'string',
-            'description': 'Nom de l’étape (lexicon, vision, specifications, businessObjects, exampleMapping, businessRules, reviewExport).',
+            'description': 'Nom de l’étape (lexicon, vision, specifications, eventStorming, businessObjects, exampleMapping, businessRules, reviewExport).',
           },
           'objectId': <String, Object?>{
             'type': 'string',
@@ -357,6 +388,10 @@ abstract final class SpecForgeToolRegistry {
           'attributePath': <String, Object?>{
             'type': 'string',
             'description': 'Nom ou chemin pointé de l’attribut à sélectionner dans l’objet (ex. "statut" ou "adresseLivraison.codePostal").',
+          },
+          'eventStormFlowId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code ES-xxx du flux Event Storming à sélectionner (optionnel).',
           },
           'exampleStoryId': <String, Object?>{
             'type': 'string',
@@ -569,6 +604,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String? objectId)? onFocusObject,
     void Function({String? objectId, List<String> attributePath})?
     onFocusSelection,
+    void Function(String? flowId)? onFocusEventStormFlow,
     void Function(String? storyId)? onFocusExampleStory,
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
@@ -603,6 +639,7 @@ abstract final class SpecForgeToolRegistry {
     onNavigateStage: onNavigateStage,
     onFocusObject: onFocusObject,
     onFocusSelection: onFocusSelection,
+    onFocusEventStormFlow: onFocusEventStormFlow,
     onFocusExampleStory: onFocusExampleStory,
     onFilterBusinessObjects: onFilterBusinessObjects,
     readCompanyGlossary: readCompanyGlossary,
@@ -629,6 +666,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String? objectId)? onFocusObject,
     void Function({String? objectId, List<String> attributePath})?
     onFocusSelection,
+    void Function(String? flowId)? onFocusEventStormFlow,
     void Function(String? storyId)? onFocusExampleStory,
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
@@ -749,6 +787,78 @@ abstract final class SpecForgeToolRegistry {
               for (final n
                   in project.cahierDesCharges.nonFunctionalRequirements)
                 n.toJson(),
+            ],
+          },
+        );
+      },
+      'get_event_storming': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final es = project.eventStorming;
+        final flowKey =
+            (call.arguments['flowIdOrCode'] as String?)?.trim().toLowerCase() ??
+            '';
+        final bcKey = (call.arguments['boundedContextId'] as String?)?.trim() ?? '';
+        final resolvedBc = bcKey.isEmpty ? null : es.findBoundedContext(bcKey);
+        final kindRaw = (call.arguments['kind'] as String?)?.trim() ?? '';
+        final kindFilter = kindRaw.isEmpty
+            ? null
+            : EventStormNodeKind.fromJson(kindRaw);
+        final onlyOpenHotspots = call.arguments['onlyOpenHotspots'] == true;
+
+        final flows = es.flows.where((f) {
+          if (flowKey.isNotEmpty &&
+              f.id.toLowerCase() != flowKey &&
+              f.code.toLowerCase() != flowKey &&
+              !f.title.toLowerCase().contains(flowKey)) {
+            return false;
+          }
+          if (bcKey.isNotEmpty) {
+            final bcId = resolvedBc?.id ?? bcKey;
+            final matchesBc =
+                f.boundedContextIds.contains(bcId) ||
+                f.nodes.any((n) => n.boundedContextId == bcId);
+            if (!matchesBc) return false;
+          }
+          if (onlyOpenHotspots && f.openHotspotCount == 0) {
+            return false;
+          }
+          if (kindFilter != null &&
+              !f.nodes.any((n) => n.kind == kindFilter)) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'boundedContextCount': es.boundedContexts.length,
+            'boundedContexts': [
+              for (final bc in es.boundedContexts) bc.toJson(),
+            ],
+            'flowCount': flows.length,
+            'totalEventCount': es.totalEventCount,
+            'openHotspotCount': es.openHotspotCount,
+            'flows': [
+              for (final f in flows)
+                if (kindFilter == null)
+                  f.toJson()
+                else
+                  f
+                      .copyWith(
+                        nodes: f.nodes
+                            .where((n) => n.kind == kindFilter)
+                            .toList(),
+                      )
+                      .toJson(),
             ],
           },
         );
@@ -1206,6 +1316,28 @@ abstract final class SpecForgeToolRegistry {
             }
           }
         }
+        final flowQuery =
+            (call.arguments['eventStormFlowId'] as String?)?.trim() ?? '';
+        String? resolvedFlowId;
+        if (flowQuery.isNotEmpty) {
+          final needle = flowQuery.toLowerCase();
+          final foundFlow = project.eventStorming.flows
+              .where(
+                (f) =>
+                    f.id.toLowerCase() == needle ||
+                    f.code.toLowerCase() == needle,
+              )
+              .firstOrNull;
+          if (foundFlow == null) {
+            return VibeToolResult.error(
+              callId: call.id,
+              name: call.name,
+              message: 'Flux Event Storming introuvable : $flowQuery',
+            );
+          }
+          resolvedFlowId = foundFlow.id;
+          onFocusEventStormFlow?.call(resolvedFlowId);
+        }
         final storyQuery =
             (call.arguments['exampleStoryId'] as String?)?.trim() ?? '';
         String? resolvedStoryId;
@@ -1244,6 +1376,7 @@ abstract final class SpecForgeToolRegistry {
           data: <String, Object?>{
             'stage': stage.name,
             'focusedObjectId': ?resolvedId,
+            'focusedEventStormFlowId': ?resolvedFlowId,
             'focusedExampleStoryId': ?resolvedStoryId,
             if (resolvedAttrPath.isNotEmpty)
               'focusedAttributePath': resolvedAttrPath,

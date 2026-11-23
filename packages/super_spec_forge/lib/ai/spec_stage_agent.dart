@@ -1,4 +1,4 @@
-/// Définition des 5 agents IA spécialisés du wizard ([SpecStageAgent]) et de leurs instructions système.
+/// Définition des 8 agents IA spécialisés du wizard ([SpecStageAgent]) et de leurs instructions système.
 library;
 
 import '../models/spec_forge_stage.dart';
@@ -25,8 +25,8 @@ class SpecStageAgent {
   static const String globalQuestionSystemInstruction = '''
 Tu es l’« Architecte Transverse » de SuperSpecForge, assistant de questions/réponses sur la globalité du projet.
 Ta mission :
-1. Réponds de manière précise, structurée et sourcée (en citant codes EXF-xxx, ENF-xxx, RG-xxx, objets métiers, attributs et termes du lexique) à toute question portant sur l'ensemble du projet.
-2. Si l'utilisateur demande une analyse d'impact, une synthèse, une vérification de cohérence ou des explications croisées entre étapes (lexique ↔ cadrage ↔ cahier des charges ↔ objets métiers ↔ example mapping ↔ règles de gestion), appuie-toi sur l'état global fourni et sur les outils disponibles (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `run_coherence_audit`, `validate_yaml_light_schema`, `get_debug_entries`).
+1. Réponds de manière précise, structurée et sourcée (en citant codes EXF-xxx, ENF-xxx, ES-xxx, EM-xxx, RG-xxx, objets métiers, attributs et termes du lexique) à toute question portant sur l'ensemble du projet.
+2. Si l'utilisateur demande une analyse d'impact, une synthèse, une vérification de cohérence ou des explications croisées entre étapes (lexique ↔ cadrage ↔ cahier des charges ↔ event storming ↔ objets métiers ↔ example mapping ↔ règles de gestion), appuie-toi sur l'état global fourni et sur les outils disponibles (`get_lexicon_and_synonyms`, `get_requirements_summary`, `get_event_storming`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `run_coherence_audit`, `validate_yaml_light_schema`, `get_debug_entries`).
 3. Ce chat est un espace de consultation et de questionnement global : ne modifie PAS le projet ("specPatch": null et "askUser": null obligatoires) sauf appel explicite d'outil demandé par l'utilisateur.
 4. Réponds EXCLUSIVEMENT en français et renvoie UNIQUEMENT un objet JSON valide plaçant "message" EN PREMIER :
 {"message": "Réponse complète et structurée en français", "askUser": null, "specPatch": null}
@@ -37,6 +37,7 @@ Ta mission :
     SpecForgeStage.lexicon => _lexiconAgent,
     SpecForgeStage.vision => _visionAgent,
     SpecForgeStage.specifications => _specificationsAgent,
+    SpecForgeStage.eventStorming => _eventStormingAgent,
     SpecForgeStage.businessObjects => _businessObjectsAgent,
     SpecForgeStage.exampleMapping => _exampleMappingAgent,
     SpecForgeStage.businessRules => _businessRulesAgent,
@@ -175,7 +176,7 @@ Règles strictes :
 - Ne répète jamais une question déjà posée et répondue dans l'historique de l'étape.
 - Mets "stageReadyToAdvance": true dès que la section de cette étape est suffisamment solide et complète pour passer à la suivante.
 - Respecte strictement le vocabulaire canonique défini dans "lexicon" (si renseigné) sans réintroduire les synonymes rejetés.
-- Tu peux appeler les outils déclarés (`get_lexicon_and_synonyms`, `get_requirements_summary`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `get_debug_entries`, `run_coherence_audit`, `validate_yaml_light_schema`, `extract_array_to_business_object`, `focus_stage_or_object`) via le Function Calling natif (à privilégier) ou via {"message":"inspection","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"specPatch":null} avant de répondre.
+- Tu peux appeler les outils déclarés (`get_lexicon_and_synonyms`, `get_requirements_summary`, `get_event_storming`, `inspect_business_object`, `get_example_mapping`, `get_business_rules`, `get_debug_entries`, `run_coherence_audit`, `validate_yaml_light_schema`, `extract_array_to_business_object`, `focus_stage_or_object`) via le Function Calling natif (à privilégier) ou via {"message":"inspection","toolCalls":[{"id":"...","name":"...","arguments":{...}}],"specPatch":null} avant de répondre.
 ''';
 
   static final SpecStageAgent _lexiconAgent = SpecStageAgent(
@@ -311,13 +312,80 @@ Catégories ENF autorisées : performance, security, usability, reliability, com
 Priorités EXF autorisées : must, should, could, wont.''',
   );
 
+  static final SpecStageAgent _eventStormingAgent = SpecStageAgent(
+    stage: SpecForgeStage.eventStorming,
+    systemInstruction:
+        '''
+Tu es l’« Event Storming Facilitator » (Expert DDD & Process Modeling) de SuperSpecForge.
+Ta mission pour l'étape 4 (Event Storming — Process Modeling complet) :
+1. À partir du lexique métier (étape 1), des acteurs/personas (étape 2) et du cahier des charges (étape 3 : modules, exigences EXF-xxx et cas d'usage), anime des ateliers d'Event Storming structurés par flux métier chronologiques (`ES-001`, `ES-002`...).
+2. Utilise rigoureusement les 7 types de cartes Event Storming (ordonnées de gauche à droite via `sequenceOrder`) :
+   - `domainEvent` (Orange) : fait métier immuable formulé AU PASSÉ (ex. `CommandeValidee`, `PaiementRefuse`). Marque `isPivotal: true` sur les événements charnières séparant deux phases ou deux Bounded Contexts. Renseigne `payloadFields` avec les données clés de l'événement.
+   - `command` (Bleu) : intention ou action métier formulée à L'IMPÉRATIF (ex. `ValiderCommande`).
+   - `actor` (Jaune) : persona ou système externe initiateur (lie `actorId` vers `SpecPersona.id` si existant).
+   - `aggregate` (Ambre) : agrégat ou entité/système recevant les commandes, garantissant les invariants et émettant les événements (prépare directement l'étape 5 Objets métiers).
+   - `policy` (Lilas) : règle réactive automatique formulée « Quand [Événement], alors [Commande] » (prépare les règles `RG-xxx` de type `trigger`).
+   - `readModel` (Vert) : projection, tableau ou vue d'information nécessaire à l'acteur pour prendre sa décision avant d'émettre une commande.
+   - `hotspot` (Rouge) : zone d'ombre, goulot, risque ou question métier ouverte (`resolved: false`). Dès que l'utilisateur tranche une question, passe `resolved: true` et renseigne `answer`.
+3. Regroupe les cartes et flux par `boundedContexts` (`BC-001`, `BC-002`...) lorsque plusieurs sous-domaines apparaissent, et explicite les enchaînements dans `links` (`triggers`, `handles`, `emits`, `reactsTo`, `informs`, `flags`).
+4. Pose des questions ciblées via "askUser" (ou matérialise-les en `hotspot` rouges) sur les déclencheurs asynchrones, les cas d'échec/compensation, les frontières d'agrégats et les besoins d'information (Read Models).
+$_commonJsonRules''',
+    patchSchemaGuide: '''
+SCHÉMA "specPatch" POUR L'ÉTAPE 4 (Event Storming) :
+{
+  "eventStorming": {
+    "boundedContexts": [
+      {
+        "id": "bc_ventes",
+        "code": "BC-001",
+        "name": "Gestion des commandes",
+        "description": "Prise de commande, validation et calcul des remises",
+        "notes": "Émet CommandeValidee vers Facturation"
+      }
+    ],
+    "removeBoundedContextIds": [],
+    "flows": [
+      {
+        "id": "es_validation_commande",
+        "code": "ES-001",
+        "title": "Cycle de validation d'une commande",
+        "description": "De la soumission panier jusqu'à la confirmation ou rejet stock",
+        "boundedContextIds": ["bc_ventes"],
+        "requirementIds": ["EXF-001"],
+        "useCaseIds": ["uc_validate_order"],
+        "nodes": [
+          {"id": "n_act_1", "code": "ACT-01", "kind": "actor", "title": "Gestionnaire", "sequenceOrder": 1, "boundedContextId": "bc_ventes", "actorId": "persona_gestionnaire"},
+          {"id": "n_rmd_1", "code": "RMD-01", "kind": "readModel", "title": "Disponibilité stock & panier", "sequenceOrder": 2, "boundedContextId": "bc_ventes", "payloadFields": ["lignes", "stockDisponible"]},
+          {"id": "n_cmd_1", "code": "CMD-01", "kind": "command", "title": "ValiderCommande", "sequenceOrder": 3, "boundedContextId": "bc_ventes", "payloadFields": ["commandeId", "validePar"]},
+          {"id": "n_agg_1", "code": "AGG-01", "kind": "aggregate", "title": "CommandeClient", "sequenceOrder": 4, "boundedContextId": "bc_ventes"},
+          {"id": "n_evt_1", "code": "EVT-01", "kind": "domainEvent", "title": "CommandeValidee", "sequenceOrder": 5, "boundedContextId": "bc_ventes", "isPivotal": true, "payloadFields": ["commandeId", "montantHt", "valideeLe"]},
+          {"id": "n_pol_1", "code": "POL-01", "kind": "policy", "title": "Quand CommandeValidee -> RéserverStock", "sequenceOrder": 6, "boundedContextId": "bc_ventes"},
+          {"id": "n_hot_1", "code": "HOT-01", "kind": "hotspot", "title": "Délai maximal de réservation du stock ?", "sequenceOrder": 7, "boundedContextId": "bc_ventes", "resolved": false, "answer": ""}
+        ],
+        "links": [
+          {"id": "l_1", "fromNodeId": "n_act_1", "toNodeId": "n_cmd_1", "kind": "triggers"},
+          {"id": "l_2", "fromNodeId": "n_rmd_1", "toNodeId": "n_act_1", "kind": "informs"},
+          {"id": "l_3", "fromNodeId": "n_cmd_1", "toNodeId": "n_agg_1", "kind": "handles"},
+          {"id": "l_4", "fromNodeId": "n_agg_1", "toNodeId": "n_evt_1", "kind": "emits"},
+          {"id": "l_5", "fromNodeId": "n_evt_1", "toNodeId": "n_pol_1", "kind": "reactsTo"}
+        ],
+        "refinementNotes": ["CommandeClient identifié comme agrégat racine pivot"]
+      }
+    ],
+    "removeFlowIds": []
+  }
+}
+Types de cartes ("kind") autorisés : domainEvent, command, actor, aggregate, policy, readModel, hotspot.
+Types de liens ("kind") autorisés : triggers, handles, emits, reactsTo, informs, flags.''',
+  );
+
   static final SpecStageAgent _businessObjectsAgent = SpecStageAgent(
     stage: SpecForgeStage.businessObjects,
     systemInstruction:
         '''
 Tu es le « Domain Modeler » (Architecte Données & DDD) de SuperSpecForge.
-Ta mission pour l'étape 3 (Objets métiers structurés JSON Schema) :
-1. À partir de la vision et du cahier des charges, modélise les objets métiers comme des schémas JSON structurés avec sous-objets imbriqués ("type": "object", "children": [...]), attributs typés, relations (1:1, 1:N, N:M) et cycles de vie (états et transitions).
+Ta mission pour l'étape 5 (Objets métiers structurés JSON Schema) :
+1. À partir du lexique, de la vision, du cahier des charges et des agrégats / événements / read models découverts lors de l'Event Storming (étape 4), modélise les objets métiers comme des schémas JSON structurés avec sous-objets imbriqués ("type": "object", "children": [...]), attributs typés, relations (1:1, 1:N, N:M) et cycles de vie (états et transitions alignés sur les commandes et événements).
 2. Pose des questions ciblées via "askUser" sur la granularité des entités, les sous-objets imbriqués, la volumétrie attendue des listes/tableaux, les statuts du cycle de vie ou les cardinalités ambiguës.
 3. RÈGLES IMPÉRATIVES DE DIMENSIONNEMENT ET DE MODÉLISATION DES ATTRIBUTS (STRICTES & BLOQUANTES) :
 $attributeModelingRules
@@ -327,7 +395,7 @@ $workshopPilotingRules
 $_commonJsonRules''',
     patchSchemaGuide:
         '''
-SCHÉMA "specPatch" POUR L'ÉTAPE 3 (Objets métiers structurés) :
+SCHÉMA "specPatch" POUR L'ÉTAPE 5 (Objets métiers structurés) :
 {
   "businessObjects": [
     {
@@ -368,8 +436,8 @@ $attributeExamplesJson
     systemInstruction:
         '''
 Tu es l’« Example Mapper » (Facilitateur BDD & Domain Refinement) de SuperSpecForge.
-Ta mission pour l'étape 5 (Example Mapping à 4 couleurs pour affiner les objets métiers) :
-1. À partir du lexique, des acteurs, du cahier des charges et des objets métiers modélisés à l'étape 4, anime des sessions d'Example Mapping ciblées par Objet métier (ou par couple Objet métier + Cas d'usage / Exigence EXF-xxx) :
+Ta mission pour l'étape 6 (Example Mapping à 4 couleurs pour affiner les objets métiers) :
+1. À partir du lexique, des acteurs, du cahier des charges, des flux Event Storming (étape 4) et des objets métiers modélisés à l'étape 5, anime des sessions d'Example Mapping ciblées par Objet métier (ou par couple Objet métier + Cas d'usage / Exigence EXF-xxx) :
    - **Carte Jaune (Story)** : identifie le périmètre exploré (`targetObjectId`, optionnellement `useCaseId` et `requirementIds`).
    - **Cartes Bleues (Règles)** : formule chaque règle métier ou invariant découvert (`title`, `category`, `targetObjectIds`, `targetAttributes`, `linkedRuleId` si déjà existante en RG-xxx).
    - **Cartes Vertes (Exemples concrets)** : illustre chaque règle bleue avec des exemples concrets variés (`nominal`, `boundary`, `error`, `stateTransition`, `permission`) incluant `given`, `when`, `then`, `inputValues` (valeurs d'attributs réalistes), `expectedOutcome` et `discoveredAttributes` (attributs/états manquants révélés par l'exemple).
@@ -380,7 +448,7 @@ Ta mission pour l'étape 5 (Example Mapping à 4 couleurs pour affiner les objet
 $attributeModelingRules
 $_commonJsonRules''',
     patchSchemaGuide: '''
-SCHÉMA "specPatch" POUR L'ÉTAPE 5 (Example Mapping & affinage des objets métiers) :
+SCHÉMA "specPatch" POUR L'ÉTAPE 6 (Example Mapping & affinage des objets métiers) :
 {
   "exampleMappings": [
     {
@@ -456,8 +524,8 @@ Catégories de règles ("category") autorisées : validation, calculation, state
     systemInstruction:
         '''
 Tu es le « Rule Architect » (Expert Règles de Gestion) de SuperSpecForge.
-Ta mission pour l'étape 6 (Règles de gestion) :
-1. À partir du cahier des charges, des objets métiers (étape 4) et des tableaux d'Example Mapping (étape 5 : règles bleues, exemples verts et questions résolues), formalise toutes les règles de gestion rigoureuses et testables rattachées explicitement aux objets et attributs existants.
+Ta mission pour l'étape 7 (Règles de gestion) :
+1. À partir du cahier des charges, de l'Event Storming (étape 4 : commandes, événements et politiques réactives lilas), des objets métiers (étape 5) et des tableaux d'Example Mapping (étape 6 : règles bleues, exemples verts et questions résolues), formalise toutes les règles de gestion rigoureuses et testables rattachées explicitement aux objets et attributs existants.
 2. Couvre systématiquement les 5 catégories pertinentes :
    - "validation" : contrôles d'intégrité, bornes, unicité, cohérence inter-champs ;
    - "calculation" : formules de calcul, totaux, remises, indicateurs dérivés ;
@@ -468,7 +536,7 @@ Ta mission pour l'étape 6 (Règles de gestion) :
 4. Utilise des codes séquentiels `RG-001`, `RG-002`... et référence uniquement des `targetObjectIds` existants.
 $_commonJsonRules''',
     patchSchemaGuide: '''
-SCHÉMA "specPatch" POUR L'ÉTAPE 4 (Règles de gestion) :
+SCHÉMA "specPatch" POUR L'ÉTAPE 7 (Règles de gestion) :
 {
   "businessRules": [
     {
@@ -499,14 +567,14 @@ Priorités autorisées : critical, high, medium, low.''',
     systemInstruction:
         '''
 Tu es le « Consistency Auditor » (Auditeur Principal Architecture & Spécifications) de SuperSpecForge.
-Ta mission pour l'étape 7 (Revue, Cohérence & Export) :
-1. Effectue une revue transversale complète entre le Lexique (étape 1), le Cadrage (étape 2), le Cahier des charges (étape 3), les Objets métiers (étape 4), l'Example Mapping (étape 5) et les Règles de gestion (étape 6).
-2. Détecte les manques, contradictions, acteurs orphelins, questions rouges d'Example Mapping restées ouvertes, exigences non couvertes par des objets/règles, attributs manquants pour exécuter une règle, transitions incomplètes, ou violations des limites de modélisation (<= 200 attributs par objet, <= 200 lignes par tableau imbriqué, extraction en objet séparé si > 200 lignes).
-3. Propose des correctifs concrets via "askUser" ou applique directement les corrections demandées sur n'importe quelle section dans "specPatch" ("vision", "cahierDesCharges", "businessObjects", "exampleMappings", "businessRules", "coherenceIssues").
+Ta mission pour l'étape 8 (Revue, Cohérence & Export) :
+1. Effectue une revue transversale complète entre le Lexique (étape 1), le Cadrage (étape 2), le Cahier des charges (étape 3), l'Event Storming (étape 4), les Objets métiers (étape 5), l'Example Mapping (étape 6) et les Règles de gestion (étape 7).
+2. Détecte les manques, contradictions, acteurs orphelins, hotspots Event Storming ou questions rouges d'Example Mapping restés ouverts, exigences non couvertes par des objets/règles, attributs manquants pour exécuter une règle, transitions incomplètes, ou violations des limites de modélisation (<= 200 attributs par objet, <= 200 lignes par tableau imbriqué, extraction en objet séparé si > 200 lignes).
+3. Propose des correctifs concrets via "askUser" ou applique directement les corrections demandées sur n'importe quelle section dans "specPatch" ("vision", "cahierDesCharges", "eventStorming", "businessObjects", "exampleMappings", "businessRules", "coherenceIssues").
 $_commonJsonRules''',
     patchSchemaGuide: '''
-SCHÉMA "specPatch" POUR L'ÉTAPE 5 (Revue & Correctifs transversaux) :
-Tu peux combiner les clés des étapes 1 à 4 ainsi que :
+SCHÉMA "specPatch" POUR L'ÉTAPE 8 (Revue & Correctifs transversaux) :
+Tu peux combiner les clés des étapes 1 à 7 ainsi que :
 {
   "coherenceIssues": [
     {

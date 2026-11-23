@@ -1,4 +1,4 @@
-/// Barre de navigation horizontale des 7 étapes du wizard IA ([SpecWizardStepper]).
+/// Barre de navigation horizontale des 8 étapes du wizard IA ([SpecWizardStepper]).
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 
-/// Affiche la progression dans les 7 étapes spécialisées et permet de naviguer entre elles.
+/// Affiche la progression dans les 8 étapes spécialisées et permet de naviguer entre elles.
 class SpecWizardStepper extends StatelessWidget {
   /// Crée la barre de progression pour [project].
   const SpecWizardStepper({
@@ -143,7 +143,7 @@ class _StageStepTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(10),
@@ -152,14 +152,14 @@ class _StageStepTile extends StatelessWidget {
         child: Row(
           children: [
             CircleAvatar(
-              radius: 13,
+              radius: 12,
               backgroundColor: isActive
                   ? colors.primary
                   : (status == SpecStageStatus.validated
                         ? colors.secondary
                         : colors.surfaceContainerHighest),
               child: status == SpecStageStatus.validated && !isActive
-                  ? Icon(Icons.check_rounded, size: 15, color: colors.onSecondary)
+                  ? Icon(Icons.check_rounded, size: 14, color: colors.onSecondary)
                   : Text(
                       '${stage.stepNumber}',
                       style: theme.textTheme.labelSmall?.copyWith(
@@ -170,7 +170,7 @@ class _StageStepTile extends StatelessWidget {
                       ),
                     ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

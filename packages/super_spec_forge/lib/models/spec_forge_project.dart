@@ -7,6 +7,7 @@ import 'package:shortid/shortid.dart';
 import 'business_object_model_preferences.dart';
 import 'business_object_spec.dart';
 import 'business_rule_spec.dart';
+import 'event_storming_spec.dart';
 import 'example_mapping_spec.dart';
 import 'qa/qa_forge_spec.dart';
 import 'spec_cahier_des_charges.dart';
@@ -17,7 +18,7 @@ import 'spec_stage_chat.dart';
 import 'spec_vision.dart';
 import 'ux/ux_forge_spec.dart';
 
-/// Projet complet de spécification construit au fil des 7 étapes du wizard IA.
+/// Projet complet de spécification construit au fil des 8 étapes du wizard IA.
 @immutable
 class SpecForgeProject {
   /// Construit un projet immuable de spécification.
@@ -31,6 +32,7 @@ class SpecForgeProject {
     SpecLexicon? lexicon,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
+    EventStormingSpec? eventStorming,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
     List<ExampleMapStory> exampleMappings = const <ExampleMapStory>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
@@ -44,6 +46,7 @@ class SpecForgeProject {
   }) : lexicon = lexicon ?? SpecLexicon.empty,
        vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
+       eventStorming = eventStorming ?? EventStormingSpec.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
        _exampleMappings = List<ExampleMapStory>.unmodifiable(exampleMappings),
        businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
@@ -123,19 +126,22 @@ class SpecForgeProject {
   /// Livrable de l'étape 2 (Cadrage & Acteurs).
   final SpecVision vision;
 
-  /// Livrable de l'étape 2 (Cahier des charges fonctionnel et non fonctionnel).
+  /// Livrable de l'étape 3 (Cahier des charges fonctionnel et non fonctionnel).
   final SpecCahierDesCharges cahierDesCharges;
 
-  /// Livrable de l'étape 4 (Objets métiers, attributs, relations, cycles de vie).
+  /// Livrable de l'étape 4 (Event Storming : événements, commandes, politiques, agrégats, read models, hotspots, bounded contexts).
+  final EventStormingSpec eventStorming;
+
+  /// Livrable de l'étape 5 (Objets métiers, attributs, relations, cycles de vie).
   final List<BusinessObjectSpec> businessObjects;
 
   final List<ExampleMapStory>? _exampleMappings;
 
-  /// Livrable de l'étape 5 (Tableaux d'Example Mapping à 4 couleurs).
+  /// Livrable de l'étape 6 (Tableaux d'Example Mapping à 4 couleurs).
   List<ExampleMapStory> get exampleMappings =>
       _exampleMappings ?? const <ExampleMapStory>[];
 
-  /// Livrable de l'étape 6 (Règles de gestion structurées).
+  /// Livrable de l'étape 7 (Règles de gestion structurées).
   final List<BusinessRuleSpec> businessRules;
 
   /// Préférences unifiées de modélisation (langues, casse, clés/audit, rigueur JSON Schema, profil régional).
@@ -227,6 +233,7 @@ class SpecForgeProject {
     lexicon.validate();
     vision.validate();
     cahierDesCharges.validate();
+    eventStorming.validate();
     businessObjectModelPreferences.validate();
 
     final objIds = <String>{};
@@ -269,6 +276,9 @@ class SpecForgeProject {
         if (stage.index >= SpecForgeStage.specifications.index ||
             cahierDesCharges.hasContent)
           'cahierDesCharges': cahierDesCharges.toJson(),
+        if (stage.index >= SpecForgeStage.eventStorming.index ||
+            eventStorming.hasContent)
+          'eventStorming': eventStorming.toJson(),
         if (stage.index >= SpecForgeStage.businessObjects.index ||
             businessObjects.isNotEmpty)
           'businessObjects': [for (final o in businessObjects) o.toJson()],
@@ -375,6 +385,7 @@ class SpecForgeProject {
     SpecLexicon? lexicon,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
+    EventStormingSpec? eventStorming,
     List<BusinessObjectSpec>? businessObjects,
     List<ExampleMapStory>? exampleMappings,
     List<BusinessRuleSpec>? businessRules,
@@ -395,6 +406,7 @@ class SpecForgeProject {
     lexicon: lexicon ?? this.lexicon,
     vision: vision ?? this.vision,
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
+    eventStorming: eventStorming ?? this.eventStorming,
     businessObjects: businessObjects ?? this.businessObjects,
     exampleMappings: exampleMappings ?? this.exampleMappings,
     businessRules: businessRules ?? this.businessRules,
@@ -422,6 +434,7 @@ class SpecForgeProject {
     'lexicon': lexicon.toJson(),
     'vision': vision.toJson(),
     'cahierDesCharges': cahierDesCharges.toJson(),
+    if (eventStorming.hasContent) 'eventStorming': eventStorming.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
     if (exampleMappings.isNotEmpty)
       'exampleMappings': [for (final s in exampleMappings) s.toJson()],
@@ -475,6 +488,7 @@ class SpecForgeProject {
       lexicon: SpecLexicon.fromJson(raw['lexicon']),
       vision: SpecVision.fromJson(raw['vision']),
       cahierDesCharges: SpecCahierDesCharges.fromJson(raw['cahierDesCharges']),
+      eventStorming: EventStormingSpec.fromJson(raw['eventStorming']),
       businessObjects: [
         if (raw['businessObjects'] is List)
           for (final item in raw['businessObjects'] as List)
@@ -544,6 +558,7 @@ class SpecForgeProject {
           other.lexicon == lexicon &&
           other.vision == vision &&
           other.cahierDesCharges == cahierDesCharges &&
+          other.eventStorming == eventStorming &&
           listEquals(other.businessObjects, businessObjects) &&
           listEquals(other.exampleMappings, exampleMappings) &&
           listEquals(other.businessRules, businessRules) &&
@@ -566,6 +581,7 @@ class SpecForgeProject {
     lexicon,
     vision,
     cahierDesCharges,
+    eventStorming,
     Object.hashAll(businessObjects),
     Object.hashAll(exampleMappings),
     Object.hashAll(businessRules),

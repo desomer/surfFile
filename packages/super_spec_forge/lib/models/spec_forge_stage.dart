@@ -36,9 +36,20 @@ enum SpecForgeStage {
     icon: Icons.assignment_outlined,
   ),
 
-  /// Étape 4 : Objets métiers, attributs typés, relations et cycles de vie.
-  businessObjects(
+  /// Étape 4 : Event Storming (événements domaine, commandes, acteurs, agrégats, politiques, read models et hotspots).
+  eventStorming(
     stepNumber: 4,
+    shortLabel: 'Event Storming',
+    title: 'Event Storming',
+    agentTitle: 'Event Storming Facilitator',
+    agentSubtitle:
+        'Chronologie des événements, commandes, acteurs, agrégats, politiques, read models et hotspots',
+    icon: Icons.bolt_rounded,
+  ),
+
+  /// Étape 5 : Objets métiers, attributs typés, relations et cycles de vie.
+  businessObjects(
+    stepNumber: 5,
     shortLabel: 'Objets métiers',
     title: 'Objets métiers',
     agentTitle: 'Domain Modeler',
@@ -46,9 +57,9 @@ enum SpecForgeStage {
     icon: Icons.hub_outlined,
   ),
 
-  /// Étape 5 : Example Mapping (Story jaune, Règles bleues, Exemples verts, Questions rouges).
+  /// Étape 6 : Example Mapping (Story jaune, Règles bleues, Exemples verts, Questions rouges).
   exampleMapping(
-    stepNumber: 5,
+    stepNumber: 6,
     shortLabel: 'Example Map',
     title: 'Example Mapping',
     agentTitle: 'Example Mapper',
@@ -57,9 +68,9 @@ enum SpecForgeStage {
     icon: Icons.view_kanban_outlined,
   ),
 
-  /// Étape 6 : Règles de gestion structurées (validations, calculs, transitions, droits).
+  /// Étape 7 : Règles de gestion structurées (validations, calculs, transitions, droits).
   businessRules(
-    stepNumber: 6,
+    stepNumber: 7,
     shortLabel: 'Règles de gestion',
     title: 'Règles de gestion',
     agentTitle: 'Rule Architect',
@@ -68,9 +79,9 @@ enum SpecForgeStage {
     icon: Icons.gavel_rounded,
   ),
 
-  /// Étape 7 : Audit de cohérence inter-étapes, revue finale et exports.
+  /// Étape 8 : Audit de cohérence inter-étapes, revue finale et exports.
   reviewExport(
-    stepNumber: 7,
+    stepNumber: 8,
     shortLabel: 'Revue & Export',
     title: 'Revue, Cohérence & Export',
     agentTitle: 'Consistency Auditor',
@@ -88,7 +99,7 @@ enum SpecForgeStage {
     required this.icon,
   });
 
-  /// Numéro d'ordre affiché (`1..7`).
+  /// Numéro d'ordre affiché (`1..8`).
   final int stepNumber;
 
   /// Libellé compact affiché dans le stepper horizontal.
@@ -124,6 +135,13 @@ enum SpecForgeStage {
       }
       final norm = trimmed.toLowerCase();
       switch (norm) {
+        case 'event_storming':
+        case 'event-storming':
+        case 'eventstorming':
+        case 'event_storm':
+        case 'event-storm':
+        case 'eventstorm':
+          return SpecForgeStage.eventStorming;
         case 'example_mapping':
         case 'example-mapping':
         case 'examplemapping':

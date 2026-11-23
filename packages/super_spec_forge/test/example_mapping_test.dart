@@ -209,16 +209,18 @@ SpecForgeProject _buildSampleProject({
 
 void main() {
   group('Modèles, Patch & Persistance Example Mapping', () {
-    test('SpecForgeStage compte 7 étapes avec exampleMapping en étape 5', () {
-      expect(SpecForgeStage.values.length, 7);
-      expect(SpecForgeStage.exampleMapping.stepNumber, 5);
+    test('SpecForgeStage compte 8 étapes avec exampleMapping en étape 6', () {
+      expect(SpecForgeStage.values.length, 8);
+      expect(SpecForgeStage.eventStorming.stepNumber, 4);
+      expect(SpecForgeStage.businessObjects.stepNumber, 5);
+      expect(SpecForgeStage.exampleMapping.stepNumber, 6);
       expect(
         SpecForgeStage.businessObjects.next,
         SpecForgeStage.exampleMapping,
       );
       expect(SpecForgeStage.exampleMapping.next, SpecForgeStage.businessRules);
-      expect(SpecForgeStage.businessRules.stepNumber, 6);
-      expect(SpecForgeStage.reviewExport.stepNumber, 7);
+      expect(SpecForgeStage.businessRules.stepNumber, 7);
+      expect(SpecForgeStage.reviewExport.stepNumber, 8);
       expect(
         SpecForgeStage.fromJson('example_mapping'),
         SpecForgeStage.exampleMapping,
@@ -563,12 +565,12 @@ void main() {
       expect(issues.any((i) => i.code == 'COH-EM-001'), isTrue);
       expect(issues.any((i) => i.code == 'COH-EM-003'), isTrue);
 
-      // Export Markdown : section 5 Example Mapping
+      // Export Markdown : section 6 Example Mapping
       final md = SpecMarkdownExporter.export(project);
       expect(
         md,
         contains(
-          '## 5. Example Mapping (Stories, Règles, Exemples & Questions)',
+          '## 6. Example Mapping (Stories, Règles, Exemples & Questions)',
         ),
       );
       expect(md, contains('EM-001'));
@@ -620,7 +622,7 @@ void main() {
 
   group('Atelier UI & Stepper Example Mapping', () {
     testWidgets(
-      'Stepper 7 étapes, ExampleMappingEditorView 1-clic et affinage IA fonctionnent sans erreur',
+      'Stepper 8 étapes, ExampleMappingEditorView 1-clic et affinage IA fonctionnent sans erreur',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1440, 900));
         addTearDown(() => tester.binding.setSurfaceSize(null));

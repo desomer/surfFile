@@ -3,6 +3,7 @@ library;
 
 import '../../models/business_object_spec.dart';
 import '../../models/business_rule_spec.dart';
+import '../../models/event_storming_spec.dart';
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
 import '../spec_coherence_analyzer.dart';
@@ -25,6 +26,7 @@ abstract final class SpecMarkdownExporter {
     _writeLexicon(buf, project);
     _writeVision(buf, project);
     _writeCahierDesCharges(buf, project);
+    _writeEventStorming(buf, project);
     _writeBusinessObjects(buf, project);
     _writeExampleMapping(buf, project);
     _writeBusinessRules(buf, project);
@@ -223,6 +225,168 @@ abstract final class SpecMarkdownExporter {
     }
   }
 
+  static void _writeEventStorming(
+    StringBuffer buf,
+    SpecForgeProject project,
+  ) {
+    final es = project.eventStorming;
+    buf
+      ..writeln('---')
+      ..writeln()
+      ..writeln(
+        '## 4. Event Storming (Flux, Événements, Commandes, Politiques & Contextes)',
+      )
+      ..writeln();
+
+    if (!es.hasContent) {
+      buf
+        ..writeln('_Aucun flux Event Storming formalisé._')
+        ..writeln();
+      return;
+    }
+
+    if (es.boundedContexts.isNotEmpty) {
+      buf
+        ..writeln('### 4.1 Bounded Contexts')
+        ..writeln()
+        ..writeln('| Code | Contexte borné | Responsabilité | Notes |')
+        ..writeln('|---|---|---|---|');
+      for (final bc in es.boundedContexts) {
+        buf.writeln(
+          '| `${bc.code}` | **${_esc(bc.name)}** | ${_esc(bc.description.isEmpty ? '—' : bc.description)} | ${_esc(bc.notes.isEmpty ? '—' : bc.notes)} |',
+        );
+      }
+      buf.writeln();
+    }
+
+    for (final flow in es.flows) {
+      buf.writeln('### ${flow.code} — ${flow.title}');
+      if (flow.description.isNotEmpty) {
+        buf.writeln(flow.description);
+      }
+      if (flow.requirementIds.isNotEmpty) {
+        buf.writeln(
+          '- **Exigences liées** : `${flow.requirementIds.join('`, `')}`',
+        );
+      }
+      final sorted = flow.sortedNodes;
+      if (sorted.isNotEmpty) {
+        buf
+          ..writeln()
+          ..writeln('```mermaid')
+          ..writeln('flowchart LR')
+          ..writeln(
+            '  classDef domainEvent fill:#FF9800,stroke:#E65100,color:#111;',
+          )
+          ..writeln(
+            '  classDef command fill:#2196F3,stroke:#0D47A1,color:#fff;',
+          )
+          ..writeln(
+            '  classDef actor fill:#FFEB3B,stroke:#F57F17,color:#111;',
+          )
+          ..writeln(
+            '  classDef aggregate fill:#FFC107,stroke:#FF6F00,color:#111;',
+          )
+          ..writeln(
+            '  classDef policy fill:#BA68C8,stroke:#4A148C,color:#fff;',
+          )
+          ..writeln(
+            '  classDef readModel fill:#66BB6A,stroke:#1B5E20,color:#111;',
+          )
+          ..writeln(
+            '  classDef hotspot fill:#EF5350,stroke:#B71C1C,color:#fff;',
+          );
+
+        final nodeAlias = <String, String>{};
+        for (var i = 0; i < sorted.length; i++) {
+          nodeAlias[sorted[i].id] = 'N$i';
+        }
+
+        final groupedByBc = <String, List<EventStormNode>>{};
+        for (final node in sorted) {
+          groupedByBc
+              .putIfAbsent(node.boundedContextId, () => <EventStormNode>[])
+              .add(node);
+        }
+
+        for (final entry in groupedByBc.entries) {
+          final bc = entry.key.isEmpty
+              ? null
+              : es.findBoundedContext(entry.key);
+          if (bc != null) {
+            final safeSubId = bc.id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+            buf.writeln(
+              '  subgraph $safeSubId ["${_mermaidEsc('${bc.code} · ${bc.name}')}"]',
+            );
+          }
+          for (final node in entry.value) {
+            final alias = nodeAlias[node.id]!;
+            final pivotFlag = node.isPivotal ? ' ★' : '';
+            final label = _mermaidEsc(
+              '[${node.kind.shortCode}] ${node.title}$pivotFlag',
+            );
+            final indent = bc != null ? '    ' : '  ';
+            buf.writeln('$indent$alias["$label"]:::${node.kind.name}');
+          }
+          if (bc != null) {
+            buf.writeln('  end');
+          }
+        }
+
+        if (flow.links.isNotEmpty) {
+          for (final link in flow.links) {
+            final fromAlias = nodeAlias[link.fromNodeId];
+            final toAlias = nodeAlias[link.toNodeId];
+            if (fromAlias == null || toAlias == null) continue;
+            final edgeLabel = _mermaidEsc(
+              link.label.isNotEmpty ? link.label : link.kind.label,
+            );
+            buf.writeln('  $fromAlias -->|"$edgeLabel"| $toAlias');
+          }
+        } else {
+          for (var i = 0; i + 1 < sorted.length; i++) {
+            final fromAlias = nodeAlias[sorted[i].id]!;
+            final toAlias = nodeAlias[sorted[i + 1].id]!;
+            buf.writeln('  $fromAlias --> $toAlias');
+          }
+        }
+
+        buf
+          ..writeln('```')
+          ..writeln()
+          ..writeln('| Ordre | Type | Carte | Contexte | Détails / Données |')
+          ..writeln('|---|---|---|---|---|');
+        for (final node in sorted) {
+          final bcName = node.boundedContextId.isEmpty
+              ? '—'
+              : (es.findBoundedContext(node.boundedContextId)?.name ??
+                    node.boundedContextId);
+          final details = <String>[
+            if (node.isPivotal) 'Événement pivot',
+            if (node.description.isNotEmpty) node.description,
+            if (node.payloadFields.isNotEmpty)
+              'Données: ${node.payloadFields.join(', ')}',
+            if (node.linkedRuleId.isNotEmpty) 'Règle: ${node.linkedRuleId}',
+            if (node.kind == EventStormNodeKind.hotspot)
+              node.resolved
+                  ? 'Résolu${node.answer.isNotEmpty ? ' → ${node.answer}' : ''}'
+                  : 'Ouvert',
+          ].join(' ; ');
+          buf.writeln(
+            '| ${node.sequenceOrder} | **${node.kind.label}** | ${_esc(node.title)} | ${_esc(bcName)} | ${_esc(details.isEmpty ? '—' : details)} |',
+          );
+        }
+        buf.writeln();
+      }
+      if (flow.refinementNotes.isNotEmpty) {
+        buf.writeln(
+          '- **Notes de synthèse** : ${flow.refinementNotes.join(' ; ')}',
+        );
+        buf.writeln();
+      }
+    }
+  }
+
   static void _writeBusinessObjects(
     StringBuffer buf,
     SpecForgeProject project,
@@ -230,7 +394,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 4. Objets métiers')
+      ..writeln('## 5. Objets métiers')
       ..writeln();
 
     if (project.businessObjects.isEmpty) {
@@ -359,7 +523,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 5. Example Mapping (Stories, Règles, Exemples & Questions)')
+      ..writeln('## 6. Example Mapping (Stories, Règles, Exemples & Questions)')
       ..writeln();
 
     if (project.exampleMappings.isEmpty) {
@@ -426,7 +590,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 6. Règles de gestion')
+      ..writeln('## 7. Règles de gestion')
       ..writeln();
 
     if (project.businessRules.isEmpty) {
@@ -442,7 +606,7 @@ abstract final class SpecMarkdownExporter {
           .toList();
       if (rules.isEmpty) continue;
       buf
-        ..writeln('### 6.${category.index + 1} ${category.label}')
+        ..writeln('### 7.${category.index + 1} ${category.label}')
         ..writeln();
       for (final rule in rules) {
         buf.writeln(
@@ -490,7 +654,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 6. Points de vigilance & Cohérence')
+      ..writeln('## 8. Points de vigilance & Cohérence')
       ..writeln();
     for (final issue in all) {
       final prefix = switch (issue.severity) {
@@ -505,4 +669,7 @@ abstract final class SpecMarkdownExporter {
 
   static String _esc(String value) =>
       value.replaceAll('|', '\\|').replaceAll('\n', '<br>');
+
+  static String _mermaidEsc(String value) =>
+      value.replaceAll('"', "'").replaceAll('\n', ' ').trim();
 }

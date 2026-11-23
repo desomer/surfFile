@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/event_storming_spec.dart';
 import '../models/example_mapping_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
@@ -129,6 +130,31 @@ abstract final class SpecPatchApplier {
       if (updatedCdc != next.cahierDesCharges) {
         next = next.copyWith(cahierDesCharges: updatedCdc);
         summaries.add('cahier des charges');
+      }
+    }
+
+    if (patch['eventStorming'] is Map ||
+        patch['removeBoundedContextIds'] is List ||
+        patch['removeFlowIds'] is List) {
+      final rawEs = patch['eventStorming'];
+      final esMap = rawEs is Map ? rawEs : const <Object?, Object?>{};
+      final updatedEs = _applyEventStormingPatch(
+        next.eventStorming,
+        rawEs,
+        removeContextIds: {
+          ..._stringSet(patch['removeBoundedContextIds']),
+          ..._stringSet(esMap['removeBoundedContextIds']),
+        },
+        removeFlowIds: {
+          ..._stringSet(patch['removeFlowIds']),
+          ..._stringSet(esMap['removeFlowIds']),
+        },
+      );
+      if (updatedEs != next.eventStorming) {
+        next = next.copyWith(eventStorming: updatedEs);
+        summaries.add(
+          'event storming (${updatedEs.flows.length} flux, ${updatedEs.totalEventCount} événement(s))',
+        );
       }
     }
 
@@ -389,6 +415,94 @@ abstract final class SpecPatchApplier {
       applyListSection('nonFunctionalRequirements', 'ENF');
     }
 
+    if (patch['eventStorming'] is Map ||
+        patch['removeBoundedContextIds'] is List ||
+        patch['removeFlowIds'] is List) {
+      final rawEs = patch['eventStorming'];
+      final esMap = rawEs is Map ? rawEs : const <Object?, Object?>{};
+
+      final rawContexts = esMap['boundedContexts'];
+      if (rawContexts is List) {
+        var count = 0;
+        for (var i = 0; i < rawContexts.length; i++) {
+          final item = rawContexts[i];
+          try {
+            final res = apply(current, {
+              'eventStorming': {
+                'boundedContexts': [item],
+              },
+            });
+            current = res.project;
+            count++;
+          } catch (e) {
+            rejected.add(
+              SpecPatchRejectedEntry(
+                section: 'eventStorming.boundedContexts',
+                key: _labelForItem(item, fallback: '#$i'),
+                reason: _reasonOf(e),
+              ),
+            );
+          }
+        }
+        if (count > 0) appliedSummaries.add('$count contexte(s) borné(s)');
+      }
+
+      final rawFlows = esMap['flows'] ?? esMap['boards'];
+      if (rawFlows is List) {
+        var count = 0;
+        for (var i = 0; i < rawFlows.length; i++) {
+          final item = rawFlows[i];
+          try {
+            final res = apply(current, {
+              'eventStorming': {
+                'flows': [item],
+              },
+            });
+            current = res.project;
+            count++;
+          } catch (e) {
+            rejected.add(
+              SpecPatchRejectedEntry(
+                section: 'eventStorming.flows',
+                key: _labelForItem(item, fallback: '#$i'),
+                reason: _reasonOf(e),
+              ),
+            );
+          }
+        }
+        if (count > 0) appliedSummaries.add('$count flux Event Storming');
+      }
+
+      final removeContexts = [
+        if (patch['removeBoundedContextIds'] is List)
+          ...patch['removeBoundedContextIds'] as List,
+        if (esMap['removeBoundedContextIds'] is List)
+          ...esMap['removeBoundedContextIds'] as List,
+      ];
+      final removeFlows = [
+        if (patch['removeFlowIds'] is List) ...patch['removeFlowIds'] as List,
+        if (esMap['removeFlowIds'] is List) ...esMap['removeFlowIds'] as List,
+      ];
+      if (removeContexts.isNotEmpty || removeFlows.isNotEmpty) {
+        try {
+          final res = apply(current, {
+            if (removeContexts.isNotEmpty)
+              'removeBoundedContextIds': removeContexts,
+            if (removeFlows.isNotEmpty) 'removeFlowIds': removeFlows,
+          });
+          current = res.project;
+        } catch (e) {
+          rejected.add(
+            SpecPatchRejectedEntry(
+              section: 'eventStorming',
+              key: 'remove',
+              reason: _reasonOf(e),
+            ),
+          );
+        }
+      }
+    }
+
     if (patch['businessObjects'] is List) {
       final list = patch['businessObjects'] as List;
       var count = 0;
@@ -643,6 +757,40 @@ abstract final class SpecPatchApplier {
       useCases: useCases,
       nonFunctionalRequirements: nfrs,
     );
+  }
+
+  static EventStormingSpec _applyEventStormingPatch(
+    EventStormingSpec current,
+    Object? rawEs, {
+    required Set<String> removeContextIds,
+    required Set<String> removeFlowIds,
+  }) {
+    final map = rawEs is Map ? rawEs : const <Object?, Object?>{};
+    final incomingContexts = map['boundedContexts'] is List
+        ? [
+            for (final item in map['boundedContexts'] as List)
+              EventStormBoundedContext.fromJson(item),
+          ]
+        : const <EventStormBoundedContext>[];
+    final contexts = _mergeById<EventStormBoundedContext>(
+      existing: current.boundedContexts,
+      incoming: incomingContexts,
+      removeIds: removeContextIds,
+      idOf: (c) => c.id,
+    );
+
+    final rawFlows = map['flows'] ?? map['boards'];
+    final incomingFlows = rawFlows is List
+        ? [for (final item in rawFlows) EventStormBoard.fromJson(item)]
+        : const <EventStormBoard>[];
+    final flows = _mergeById<EventStormBoard>(
+      existing: current.flows,
+      incoming: incomingFlows,
+      removeIds: removeFlowIds,
+      idOf: (f) => f.id,
+    );
+
+    return current.copyWith(boundedContexts: contexts, flows: flows);
   }
 
   static List<T> _mergeById<T>({
