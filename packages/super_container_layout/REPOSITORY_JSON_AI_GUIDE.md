@@ -35,7 +35,44 @@ Lorsqu'une demande nécessite de créer un repository, d'enrichir son schéma ou
         "type": "object",
         "required": ["articles"],
         "properties": {
-          "articles": { "type": "array" }
+          "articles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["reference", "designation", "quantite", "prixUnitaire", "statut"],
+              "properties": {
+                "reference": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3}-[0-9]{4}$",
+                  "x-mask": "UUU-####",
+                  "x-maskIncludeLiterals": true,
+                  "x-validationMessage": "Format attendu : 3 lettres majuscules, tiret et 4 chiffres (ex. ART-1042).",
+                  "default": "ART-0001"
+                },
+                "designation": { "type": "string", "minLength": 2, "maxLength": 120, "default": "Nouvel article" },
+                "quantite": { "type": "integer", "minimum": 1, "maximum": 9999, "default": 1 },
+                "prixUnitaire": {
+                  "type": "number",
+                  "minimum": 0,
+                  "multipleOf": 0.01,
+                  "x-decimalDigits": 2,
+                  "x-decimalSeparator": ",",
+                  "x-thousandsSeparator": " ",
+                  "x-validationMessage": "Le prix unitaire doit être un montant positif."
+                },
+                "statut": { "type": "string", "enum": ["brouillon", "valide", "archive"], "default": "brouillon" },
+                "dateLivraison": { "type": "string", "format": "date" },
+                "telephone": {
+                  "type": ["string", "null"],
+                  "format": "phone",
+                  "x-mask": "## ## ## ## ##",
+                  "x-maskIncludeLiterals": false,
+                  "x-validationMessage": "Saisissez un numéro à 10 chiffres."
+                },
+                "contactEmail": { "type": ["string", "null"], "format": "email" }
+              }
+            }
+          }
         }
       }
     }
@@ -46,12 +83,40 @@ Lorsqu'une demande nécessite de créer un repository, d'enrichir son schéma ou
 }
 ```
 
-- **JSON Schema associé (`"jsonSchema"` & outil `manage_repository_json_schema`)** :
-  - Lorsqu'un repository de `REPOSITORIES DISPONIBLES` expose un champ `"jsonSchema"` (JSON Schema Draft 7 / Draft 2020-12), toute écriture est validée de manière **stricte et bloquante** par `JsonSchemaValidator` (`JsonSchemaValidationException`) : respecte impérativement tous les types, champs `required`, `enum`, bornes numériques, `format` et `additionalProperties` du schéma.
-  - Tu peux fournir la clé optionnelle `"jsonSchema"` dans l'enveloppe d'une entrée de `"repositories"` (objet JSON Schema standard, ou `null` pour dissocier) lorsqu'on te demande de définir ou modifier le schéma de validation d'un repository (sauf si le schéma est figé dans le code via `RepositoryImpl.jsonSchema`).
+- **JSON Schema associé (`"jsonSchema"` & outil `manage_repository_json_schema`) — systématique à la création et à l'évolution** :
+  - **À chaque création d'un nouveau repository** dans `"repositories.<alias>"`, **fournis systématiquement `"jsonSchema"`** (JSON Schema Draft 7 / Draft 2020-12) décrivant intégralement la structure de `"data"`, afin que tous les champs `SuperValue` liés (`useRepositorySchema: true` par défaut) héritent immédiatement des types, formats, masques et validations.
+  - **À l'évolution d'un repository existant** : lorsqu'un repository de `REPOSITORIES DISPONIBLES` expose déjà un champ `"jsonSchema"`, toute écriture est validée de manière **stricte et bloquante** par `JsonSchemaValidator` (`JsonSchemaValidationException`). Respecte impérativement tous les types, champs `required`, `enum`, bornes numériques, `format` et `additionalProperties` du schéma ; si tu ajoutes de nouveaux attributs ou sous-collections dans `"data"` (hors schéma figé en code via `RepositoryImpl.jsonSchema`), **mets à jour `"jsonSchema"` dans la même entrée de `"repositories"`** pour les déclarer. Ne passe `"jsonSchema": null` que sur demande explicite de dissociation.
+  - **Profil de schéma riche et compatible saisie** :
+    - Déclare l'arborescence complète (`type: "object"`, `properties`, sous-objets imbriqués, `type: "array"` + `items`).
+    - Renseigne les contraintes métier utiles : `enum` alignés exactement sur les options de `SuperValue.choice` et les clés de `states.named`, `format` standard (`"date"`, `"date-time"`, `"time"`, `"email"`, `"uri"`, `"phone"`), bornes numériques réalistes (`minimum`, `maximum`), et extensions UI (`x-decimalDigits`, `x-decimalSeparator`, `x-thousandsSeparator`, `x-mask`, `x-maskIncludeLiterals`, `x-dateFormat`, `x-validationMessage`).
+    - N'inclus **jamais** les attributs calculés `@...` dans `"jsonSchema"` (ils sont en lecture seule et absents du document JSON stocké).
+    - N'ajoute **pas** `"additionalProperties": false` par défaut (sauf demande explicite de verrouillage strict), afin de faciliter les ajouts incrémentaux.
+    - **Compatibilité avec l'ajout de lignes (`allowAdd: true`)** : sur les propriétés d'`items` d'un tableau éditable, fournis `"default"` sur les champs requis contraints (`minLength`, `pattern`, `enum`) et préfère un type nullable `["string", "null"]` pour les champs optionnels formatés (ex. `email`, `phone`, `uri`) afin que la création d'une nouvelle ligne soit toujours valide contre le schéma.
+    - Vérifie toujours que toutes les valeurs de `"data"` (y compris les données d'exemple initiales) respectent intégralement le `"jsonSchema"` émis.
   - Tu peux aussi utiliser le tool `manage_repository_json_schema` (`action`: `get` | `infer` | `validate` | `create` | `update` | `delete`) pendant ton raisonnement pour lire, inférer, tester ou modifier le schéma d'un repository existant (participatif à la transaction du tour, avec `validateCurrentDocument: false` si tu mets à jour les données dans le même tour), et `query_repository_data` pour lire son `jsonSchema` courant.
   - Tout `SuperValue` texte lié (`useRepositorySchema: true` par défaut) hérite automatiquement les contraintes (`type`, `required`, `minLength`, `maxLength`, `pattern`, `format`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `enum`, `const`) et masques/formats (`x-mask`, `x-maskIncludeLiterals`, `x-dateFormat`, `x-decimalDigits`, `x-decimalSeparator`, `x-thousandsSeparator`, `x-validationMessage`, ainsi que la déduction automatique pour `format`: `"date"` / `"date-time"` / `"time"`) de l'attribut ciblé dans le `jsonSchema` du repository.
   - **Règle stricte pour les dates (`"format": "date"` / `"date-time"`)** : stocke **toujours** les dates au format ISO 8601 dans `"data"` (`"2026-05-19"` pour `"date"`, `"2026-05-19T14:30:00Z"` pour `"date-time"`), et utilise uniquement `"format": "date"` (ou `"date-time"`) dans le `jsonSchema` **sans** `x-mask` manuel redondant ni `pattern` regex de type `dd/MM/yyyy` (le moteur gère automatiquement le masque d'affichage/saisie `##/##/####` + `dd/MM/yyyy` et reconvertit vers ISO à l'écriture).
+
+#### 1.1 bis. Exploiter toutes les capacités `SuperValue` via `"jsonSchema"` (source de vérité unique)
+
+Tout `SuperValue` texte lié (`useRepositorySchema: true` par défaut) lit automatiquement le nœud `jsonSchema` de son attribut via `JsonSchemaFieldResolver` **en saisie (`mode: "input"`) comme en affichage (`mode: "display"`)** (masques et formatage actifs sur les champs monolignes non masqués). Déclare systématiquement ces propriétés métier dans `"jsonSchema"` plutôt que de les dupliquer dans `components.<id>.field` :
+
+| Capacité `SuperValue` | Mots-clés `jsonSchema` reconnus | Exemples métier recommandés |
+| :--- | :--- | :--- |
+| **Type & obligation** | `type` (`"string"`, `"integer"`, `"number"`, `"boolean"`, ou `["<type>", "null"]`), `required` | Entier pour quantité/âge, nombre pour montant/taux, `required` sur les champs clés |
+| **Longueur & regex** | `minLength`, `maxLength`, `pattern` | Nom `minLength: 2, maxLength: 80` ; code postal `pattern: "^[0-9]{5}$"` ; référence `pattern: "^[A-Z]{3}-[0-9]{4}$"` |
+| **Formats standard (10)** | `format`: `"date"`, `"date-time"`, `"time"`, `"email"`, `"uri"`, `"uuid"`, `"phone"`, `"ipv4"`, `"ipv6"`, `"hostname"` | `"date"` $\rightarrow$ auto `dd/MM/yyyy` + `##/##/####` ; `"date-time"` $\rightarrow$ auto `dd/MM/yyyy HH:mm` ; `"time"` $\rightarrow$ auto `##:##:##` |
+| **Bornes & pas numériques** | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf` | Pourcentage `minimum: 0, maximum: 100` ; montant `minimum: 0, multipleOf: 0.01` ; note `minimum: 1, maximum: 5` |
+| **Listes fermées & défauts** | `enum`, `const`, `default` | `enum` synchronisé avec `SuperValue.choice` et `states.named` ; `default` pour pré-remplir les nouvelles lignes (`allowAdd`) |
+| **Masques de saisie / affichage** | `x-mask` (jetons : `#` chiffre, `A` lettre, `U` majuscule, `L` minuscule, `*` alphanumérique, `\` échappement) + `x-maskIncludeLiterals` (`bool`, défaut `false`) | Téléphone FR : `"x-mask": "## ## ## ## ##", "x-maskIncludeLiterals": false` (stocké `"0612345678"`) ; Code postal : `"x-mask": "#####"` ; SIRET : `"x-mask": "### ### ### #####", "x-maskIncludeLiterals": false` ; Référence : `"x-mask": "UUU-####", "x-maskIncludeLiterals": true` (stocké `"CMD-1042"`) |
+| **Formatage numérique localisé** | `x-decimalDigits` (`0..10`), `x-decimalSeparator` (`","` \| `"."`), `x-thousandsSeparator` (`" "` \| `""` \| `","` \| `"."`, différent du séparateur décimal) | Montants FR : `"x-decimalDigits": 2, "x-decimalSeparator": ",", "x-thousandsSeparator": " "` (`1 250,50`) ; taux/pourcentages : `"x-decimalDigits": 1, "x-decimalSeparator": ","` ; grands entiers : `"x-decimalDigits": 0, "x-thousandsSeparator": " "` |
+| **Format d'affichage de date** | `x-dateFormat` (motif `intl`, ex. `"dd/MM/yyyy"`, `"yyyy-MM-dd"`) | Optionnel uniquement si tu veux surcharger le format par défaut déduit de `"format": "date"` / `"date-time"` (jamais de `x-mask` incompatible sans `x-dateFormat` assorti) |
+| **Message d'erreur métier** | `x-validationMessage` (`string`) | Message français clair affiché dans l'info-bulle du triangle rouge de validation `SuperValue` (ex. `"Le SIRET doit contenir 14 chiffres."`) |
+
+> **Cohérence `x-mask` / `x-maskIncludeLiterals` / `"data"` / `pattern`** :
+> - Si `x-maskIncludeLiterals` vaut `false` (défaut), stocke dans `"data"` la valeur **brute sans séparateurs** (ex. `"0612345678"`, `"44215896300021"`) et aligne `pattern` / `minLength` / `maxLength` sur cette forme brute.
+> - Si `x-maskIncludeLiterals` vaut `true`, stocke dans `"data"` la valeur **avec ses littéraux** (ex. `"ART-1042"`) et aligne `pattern` dessus.
+> - Réserve `components.<id>` aux réglages visuels (`label`, `placeholder`, `prefix`, `suffix`, `affixPlacement`, `mode`, `maxLines`, typographie) ; ne recopie pas les contraintes ou masques déjà portés par `jsonSchema`.
 
 - **Mise à jour portant uniquement sur les données** : si l'IHM n'a pas besoin d'être modifiée (ajout de lignes d'exemple, correction de valeurs, enrichissement d'une nomenclature déjà liée), omets `"vibe"` ou définis `"vibe": null`.
 - **Forme explicite recommandée vs raccourci toléré** :
@@ -293,9 +358,9 @@ Chaque consommateur de liaison exige un type JSON précis dans le repository. Un
 
 Lorsque tu crées ou enrichis un repository dans `"repositories"`, applique systématiquement ces 3 exigences de qualité :
 
-### 5.1. Homogénéité stricte des tableaux et règle critique de `items.last`
+### 5.1. Homogénéité stricte des tableaux, `jsonSchema` et règle de repli `items.last`
 
-Dans `JsonRepositoryStore`, lorsque l'utilisateur clique sur le bouton **Ajouter (`+`)** d'une `SuperListView`, d'une `SuperTable` ou d'un `SuperTab` dynamique (`allowAdd: true`), `appendArrayItem` crée la nouvelle ligne en appelant **`JsonRepositoryStore.blank(items.last)`** sur le **dernier élément** du tableau :
+Dans `SuperListView`, `SuperTable` et `SuperTab` dynamique (`allowAdd: true`), lorsque l'utilisateur clique sur le bouton **Ajouter (`+`)**, `RepositoryArrayCreationService` construit la nouvelle ligne **en priorité à partir du `jsonSchema` du repository** (en respectant `default`, `const`, `enum`, `format` ISO et bornes numériques, puis les `CreationDefaultAction` éventuelles), et en l'absence de schéma appelle **`JsonRepositoryStore.blank(items.last)`** sur le **dernier élément** du tableau :
 
 - `String` $\rightarrow$ `""`
 - `num` $\rightarrow$ `0`

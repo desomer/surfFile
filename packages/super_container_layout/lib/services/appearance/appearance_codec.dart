@@ -166,7 +166,8 @@ class AppearanceCodec {
           for (final entry in a.usages.entries)
             entry.key: entry.value.toCompactJson(),
         },
-      if (a.pageCatalog.pages.isNotEmpty) 'pageCatalog': a.pageCatalog.toJson(),
+      if (a.pageCatalog.pages.isNotEmpty || a.pageCatalog.hasShells)
+        'pageCatalog': a.pageCatalog.toJson(),
       if (!a.responsiveLayout.isDefault)
         'responsiveLayout': a.responsiveLayout.toCompactJson(),
     };
@@ -398,6 +399,24 @@ class AppearanceCodec {
       };
     }
     return map;
+  }
+
+  /// Attaches extracted [selfConstraints] to any parent container in [appearance] placing the slot.
+  static Appearance applyDirectSlotSizeConstraints(
+    Appearance appearance,
+    Map<String, SlotSizeConstraints> selfConstraints,
+  ) {
+    if (selfConstraints.isEmpty || appearance.components.isEmpty) {
+      return appearance;
+    }
+    final updated = Map<String, ComponentConfig>.of(appearance.components);
+    _applySelfSlotSizeConstraints(updated, selfConstraints);
+    for (final entry in updated.entries) {
+      if (appearance.components[entry.key] != entry.value) {
+        return appearance.copyWith(components: updated);
+      }
+    }
+    return appearance;
   }
 
   /// Attaches extracted self-constraints to any parent container placing the slot.
@@ -653,7 +672,9 @@ class AppearanceCodec {
               selfConstraints,
             );
             if (existing != null &&
-                (rawType == null || existing.componentType == rawType)) {
+                (rawType == null ||
+                    existing.componentType == rawType ||
+                    _areCompatibleScaffoldTypes(existing, rawType))) {
               final payload = <String, Object?>{
                 for (final e in map.entries)
                   if (e.key is String &&
@@ -661,7 +682,11 @@ class AppearanceCodec {
                       e.key != 'componentType')
                     e.key as String: e.value,
               };
-              components[id] = existing.patchFromJson(payload);
+              components[id] = _patchCompatibleComponent(
+                existing,
+                rawType,
+                payload,
+              );
             } else {
               components[id] = ComponentConfig.fromJson(map);
             }
@@ -741,7 +766,7 @@ class AppearanceCodec {
 
     var pageCatalog = current.pageCatalog;
     if (patch.containsKey('pageCatalog') && patch['pageCatalog'] != null) {
-      pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
+      pageCatalog = current.pageCatalog.patchFromJson(patch['pageCatalog']);
     }
 
     var responsiveLayout = current.responsiveLayout;
@@ -1128,7 +1153,9 @@ class AppearanceCodec {
                 entryConstraints,
               );
               if (existing != null &&
-                  (rawType == null || existing.componentType == rawType)) {
+                  (rawType == null ||
+                      existing.componentType == rawType ||
+                      _areCompatibleScaffoldTypes(existing, rawType))) {
                 final payload = <String, Object?>{
                   for (final e in map.entries)
                     if (e.key is String &&
@@ -1136,7 +1163,11 @@ class AppearanceCodec {
                         e.key != 'componentType')
                       e.key as String: e.value,
                 };
-                components[id] = existing.patchFromJson(payload);
+                components[id] = _patchCompatibleComponent(
+                  existing,
+                  rawType,
+                  payload,
+                );
               } else {
                 components[id] = ComponentConfig.fromJson(map);
               }
@@ -1222,7 +1253,7 @@ class AppearanceCodec {
     var pageCatalog = current.pageCatalog;
     if (patch.containsKey('pageCatalog') && patch['pageCatalog'] != null) {
       try {
-        pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
+        pageCatalog = current.pageCatalog.patchFromJson(patch['pageCatalog']);
         applied['pageCatalog'] = patch['pageCatalog'];
       } on FormatException catch (error) {
         rejected.add(
@@ -1393,6 +1424,45 @@ class AppearanceCodec {
       appliedPatch: applied,
       rejectedEntries: List<PatchRejectedEntry>.unmodifiable(rejected),
     );
+  }
+
+  static const Set<String> _scaffoldTypeAliases = {'scaffold', 'superScaffold'};
+
+  static bool _isScaffoldCompatibleNative(NativeComponentConfig native) {
+    final validRegions = ScaffoldPageRegion.values.map((r) => r.name).toSet();
+    return native.regions['body'] != false &&
+        native.regions.keys.every(validRegions.contains) &&
+        native.placements.keys.every(validRegions.contains);
+  }
+
+  static bool _areCompatibleScaffoldTypes(
+    ComponentConfig existing,
+    Object? rawType,
+  ) {
+    if (rawType is! String) return false;
+    final trimmed = rawType.trim();
+    if (existing is ScaffoldPageConfig) {
+      return _scaffoldTypeAliases.contains(trimmed) || trimmed == 'native';
+    }
+    if (existing is NativeComponentConfig &&
+        _scaffoldTypeAliases.contains(trimmed)) {
+      return _isScaffoldCompatibleNative(existing);
+    }
+    return false;
+  }
+
+  static ComponentConfig _patchCompatibleComponent(
+    ComponentConfig existing,
+    Object? rawType,
+    Map<String, Object?> payload,
+  ) {
+    if (existing is NativeComponentConfig &&
+        rawType is String &&
+        _scaffoldTypeAliases.contains(rawType.trim()) &&
+        _isScaffoldCompatibleNative(existing)) {
+      return ScaffoldPageConfig.fromNative(existing).patchFromJson(payload);
+    }
+    return existing.patchFromJson(payload);
   }
 
   Map<String, Object?> normalizeTransfer(

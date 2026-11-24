@@ -176,12 +176,21 @@ abstract final class JsonSchemaFieldResolver {
       }
       try {
         final result = <String, dynamic>{};
+        final requiredKeys = <String>{
+          if (node['required'] case final List<Object?> req)
+            for (final item in req)
+              if (item is String) item,
+        };
         final props = node['properties'];
         if (props is Map) {
           for (final entry in props.entries) {
             final key = entry.key.toString();
             final propNode = _unwrapNode(entry.value, rootSchema, <String>{});
             if (propNode == null) continue;
+            if (!requiredKeys.contains(key) &&
+                _shouldOmitOptionalProperty(propNode)) {
+              continue;
+            }
             result[key] = _buildDefaultValue(propNode, rootSchema, activeNodes);
           }
         }
@@ -192,6 +201,21 @@ abstract final class JsonSchemaFieldResolver {
     }
 
     if (rawType == 'array') {
+      final minItems = node['minItems'];
+      final count = minItems is int && minItems > 0 ? minItems : 0;
+      if (count > 0 && node['items'] != null && activeNodes.add(node)) {
+        try {
+          final itemNode = _unwrapNode(node['items'], rootSchema, <String>{});
+          if (itemNode != null) {
+            return <Object?>[
+              for (var i = 0; i < count; i++)
+                _buildDefaultValue(itemNode, rootSchema, activeNodes),
+            ];
+          }
+        } finally {
+          activeNodes.remove(node);
+        }
+      }
       return <Object?>[];
     }
 
@@ -199,14 +223,98 @@ abstract final class JsonSchemaFieldResolver {
       return _cloneJsonValue((node['enum'] as List).first);
     }
 
+    if (_allowsNullType(node) && _hasConstrainedStringRule(node)) {
+      return null;
+    }
+
     return switch (rawType) {
-      'string' => '',
+      'string' => _defaultStringFor(node),
       'boolean' => false,
       'integer' => _defaultIntegerFor(node),
       'number' => _defaultNumberFor(node),
       'null' => null,
       _ => null,
     };
+  }
+
+  static bool _allowsNullType(Map<String, Object?> node) {
+    final raw = node['type'];
+    return raw == 'null' || (raw is List && raw.contains('null'));
+  }
+
+  static bool _hasConstrainedStringRule(Map<String, Object?> node) {
+    if (_primaryJsonType(node) != 'string') return false;
+    final minLen = node['minLength'];
+    if (minLen is int && minLen > 0) return true;
+    final pattern = node['pattern'];
+    if (pattern is String && pattern.isNotEmpty) return true;
+    final format = node['format'];
+    if (format is String && format.trim().isNotEmpty) return true;
+    return false;
+  }
+
+  static bool _shouldOmitOptionalProperty(Map<String, Object?> node) {
+    if (node.containsKey('default') || node.containsKey('const')) return false;
+    if (node['enum'] is List && (node['enum'] as List).isNotEmpty) return false;
+    if (_allowsNullType(node)) return false;
+    if (_primaryJsonType(node) != 'string') return false;
+
+    final pattern = node['pattern'];
+    if (pattern is String && pattern.isNotEmpty) return true;
+
+    final format = (node['format'] as String?)?.trim().toLowerCase();
+    if (format != null &&
+        format.isNotEmpty &&
+        format != 'date' &&
+        format != 'date-time' &&
+        format != 'time' &&
+        format != 'uuid') {
+      return true;
+    }
+
+    final minLen = node['minLength'];
+    if (minLen is int && minLen > 0) return true;
+    return false;
+  }
+
+  static String _defaultStringFor(Map<String, Object?> node) {
+    final format = (node['format'] as String?)?.trim().toLowerCase();
+    if (format != null && format.isNotEmpty) {
+      final nowUtc = DateTime.now().toUtc();
+      String two(int v) => v.toString().padLeft(2, '0');
+      final isoDate =
+          '${nowUtc.year.toString().padLeft(4, '0')}-${two(nowUtc.month)}-${two(nowUtc.day)}';
+      switch (format) {
+        case 'date':
+          return isoDate;
+        case 'date-time':
+          return '${isoDate}T${two(nowUtc.hour)}:${two(nowUtc.minute)}:${two(nowUtc.second)}Z';
+        case 'time':
+          return '00:00:00';
+        case 'uuid':
+          return '00000000-0000-0000-0000-000000000000';
+        case 'email':
+          return 'nouveau@exemple.com';
+        case 'uri':
+        case 'url':
+          return 'https://exemple.com';
+        case 'ipv4':
+          return '127.0.0.1';
+        case 'ipv6':
+          return '::1';
+        case 'hostname':
+          return 'exemple.com';
+      }
+    }
+    final minLen = node['minLength'];
+    if (minLen is int && minLen > 0) {
+      final maxLen = node['maxLength'];
+      final targetLen = maxLen is int && maxLen > 0 && maxLen < minLen
+          ? maxLen
+          : minLen;
+      return '-' * targetLen;
+    }
+    return '';
   }
 
   static String? _primaryJsonType(Map<String, Object?> node) {
@@ -224,16 +332,45 @@ abstract final class JsonSchemaFieldResolver {
   static int _defaultIntegerFor(Map<String, Object?> node) {
     final min = node['minimum'];
     final exMin = node['exclusiveMinimum'];
-    var candidate = 0;
-    if (min is num && min.isFinite && min > candidate) {
-      candidate = min.ceil();
-    }
-    if (exMin is num && exMin.isFinite && exMin >= candidate) {
-      candidate = exMin.floor() + 1;
-    }
     final max = node['maximum'];
-    if (max is num && max.isFinite && candidate > max) {
-      candidate = max.floor();
+    final exMax = node['exclusiveMaximum'];
+    int? lower;
+    if (min is num && min.isFinite) {
+      lower = min.ceil();
+    }
+    if (exMin is num && exMin.isFinite) {
+      final exLower = exMin.floor() + 1;
+      lower = lower == null || exLower > lower ? exLower : lower;
+    }
+    int? upper;
+    if (max is num && max.isFinite) {
+      upper = max.floor();
+    }
+    if (exMax is num && exMax.isFinite) {
+      final exUpper = exMax.ceil() - 1;
+      upper = upper == null || exUpper < upper ? exUpper : upper;
+    }
+
+    var candidate = 0;
+    if (lower != null && candidate < lower) {
+      candidate = lower;
+    }
+    if (upper != null && candidate > upper) {
+      candidate = upper;
+    }
+
+    final multipleOf = node['multipleOf'];
+    if (multipleOf is num && multipleOf.isFinite && multipleOf > 0) {
+      final step = multipleOf.round();
+      if (step > 0 && (multipleOf - step).abs() < 1e-9 && candidate % step != 0) {
+        final up = ((candidate / step).ceil()) * step;
+        final down = ((candidate / step).floor()) * step;
+        if (upper == null || up <= upper) {
+          candidate = up;
+        } else if (lower == null || down >= lower) {
+          candidate = down;
+        }
+      }
     }
     return candidate;
   }
@@ -241,16 +378,59 @@ abstract final class JsonSchemaFieldResolver {
   static double _defaultNumberFor(Map<String, Object?> node) {
     final min = node['minimum'];
     final exMin = node['exclusiveMinimum'];
+    final max = node['maximum'];
+    final exMax = node['exclusiveMaximum'];
+    final multipleOf = node['multipleOf'];
+    final step = (multipleOf is num && multipleOf.isFinite && multipleOf > 0)
+        ? multipleOf.toDouble()
+        : null;
+
     var candidate = 0.0;
-    if (min is num && min.isFinite && min > candidate) {
+    if (min is num && min.isFinite && candidate < min) {
       candidate = min.toDouble();
     }
-    if (exMin is num && exMin.isFinite && exMin >= candidate) {
-      candidate = exMin.toDouble() + 1.0;
+    if (exMin is num && exMin.isFinite && candidate <= exMin) {
+      final upperBound = max is num && max.isFinite
+          ? max.toDouble()
+          : (exMax is num && exMax.isFinite ? exMax.toDouble() : null);
+      final delta = step ?? 1.0;
+      if (upperBound != null && exMin.toDouble() + delta > upperBound) {
+        candidate = (exMin.toDouble() + upperBound) / 2.0;
+      } else {
+        candidate = exMin.toDouble() + delta;
+      }
     }
-    final max = node['maximum'];
     if (max is num && max.isFinite && candidate > max) {
       candidate = max.toDouble();
+    }
+    if (exMax is num && exMax.isFinite && candidate >= exMax) {
+      final lowerBound = min is num && min.isFinite
+          ? min.toDouble()
+          : (exMin is num && exMin.isFinite ? exMin.toDouble() : null);
+      final delta = step ?? 1.0;
+      if (lowerBound != null && exMax.toDouble() - delta < lowerBound) {
+        candidate = (lowerBound + exMax.toDouble()) / 2.0;
+      } else {
+        candidate = exMax.toDouble() - delta;
+      }
+    }
+    if (step != null) {
+      final ratio = candidate / step;
+      if ((ratio - ratio.round()).abs() > 1e-9) {
+        final up = ratio.ceil() * step;
+        final down = ratio.floor() * step;
+        final fitsUpper =
+            (max is! num || !max.isFinite || up <= max) &&
+            (exMax is! num || !exMax.isFinite || up < exMax);
+        final fitsLower =
+            (min is! num || !min.isFinite || down >= min) &&
+            (exMin is! num || !exMin.isFinite || down > exMin);
+        if (fitsUpper) {
+          candidate = up;
+        } else if (fitsLower) {
+          candidate = down;
+        }
+      }
     }
     return candidate;
   }

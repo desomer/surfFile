@@ -48,11 +48,34 @@ void main() {
       expect(json['pagePath'], '/details');
       expect(json['pageId'], 'page-1');
       expect(json['pageName'], 'Détails');
+      expect(json.containsKey('navigationMode'), isFalse);
 
       final decoded = BehaviorActionCatalog.decode(json);
       expect(decoded, isA<GoToPageAction>());
       expect(decoded, equals(action));
       expect(decoded.hashCode, equals(action.hashCode));
+
+      const goAction = GoToPageAction(
+        pagePath: '/orders',
+        navigationMode: GoToPageNavigationMode.go,
+      );
+      expect(goAction.toJson()['navigationMode'], 'go');
+      expect(BehaviorActionCatalog.decode(goAction.toJson()), equals(goAction));
+      expect(goAction, isNot(equals(const GoToPageAction(pagePath: '/orders'))));
+
+      const pushAction = GoToPageAction(
+        pagePath: '/orders',
+        navigationMode: GoToPageNavigationMode.push,
+      );
+      expect(pushAction.toJson()['navigationMode'], 'push');
+      expect(
+        BehaviorActionCatalog.decode(pushAction.toJson()),
+        equals(pushAction),
+      );
+      expect(
+        () => GoToPageNavigationMode.fromName('invalid'),
+        throwsFormatException,
+      );
     });
 
     test('ComponentBehavior serialization and catalog', () {
@@ -2302,6 +2325,183 @@ void main() {
           updated.action,
           EmitEventAction(eventId: 'form.submitted', custom: {'step': 1}),
         );
+      },
+    );
+
+    testWidgets(
+      'GoToPageAction auto uses go inside/toward shells and push for modals or standalone pages',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final registry = Registry()..bootstrap();
+        addTearDown(registry.dispose);
+        final routing = EditorPageRouter(
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (_, _) => const SuperPage(
+                  id: 'root',
+                  child: Center(child: Text('Root Shell Home')),
+                ),
+              ),
+            ],
+          ),
+        );
+        addTearDown(routing.dispose);
+
+        final catalog = EditorPageCatalog(
+          shells: [EditorShellConfig(id: 'main-shell', name: 'Shell')],
+          rootShellId: 'main-shell',
+          pages: [
+            EditorPageConfig(
+              id: 'orders',
+              name: 'Commandes',
+              path: '/orders',
+              shellId: 'main-shell',
+            ),
+            EditorPageConfig(
+              id: 'login',
+              name: 'Connexion',
+              path: '/login',
+            ),
+            EditorPageConfig(
+              id: 'confirm-modal',
+              name: 'Confirmation',
+              path: '/confirm-modal',
+              pageType: EditorPageType.dialog,
+            ),
+          ],
+        );
+
+        final appearance = Appearance(
+          pageCatalog: catalog,
+          components: {
+            'main-shell': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.appBar: const ['nav-bar'],
+                ScaffoldPageRegion.body: const ['scaffold:outlet'],
+              },
+              slotTypes: const {'nav-bar': 'registry:ApplicationBar'},
+            ),
+            'nav-bar': NativeComponentConfig(
+              placements: const {
+                'actions': ['btn-orders', 'btn-modal', 'btn-login'],
+              },
+              slotTypes: const {
+                'btn-orders': 'registry:Action',
+                'btn-modal': 'registry:Action',
+                'btn-login': 'registry:Action',
+              },
+            ),
+            'btn-orders': const SuperActionConfig(label: 'Aller Commandes'),
+            'btn-modal': const SuperActionConfig(label: 'Ouvrir Modale'),
+            'btn-login': const SuperActionConfig(label: 'Aller Connexion'),
+            'orders': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['orders-text'],
+              },
+              slotTypes: {'orders-text': 'registry:Value'},
+            ),
+            'orders-text': const SuperValueConfig(initialText: 'Vue Commandes'),
+            'login': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.body: const ['btn-back-root'],
+              },
+              slotTypes: const {'btn-back-root': 'registry:Action'},
+            ),
+            'btn-back-root': const SuperActionConfig(label: 'Retour Shell'),
+            'confirm-modal': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.body: const ['modal-body'],
+              },
+              slotTypes: const {'modal-body': 'registry:Value'},
+            ),
+            'modal-body': const SuperValueConfig(initialText: 'Dialogue Actif'),
+          },
+          behaviors: {
+            'btn-orders': [
+              const ComponentBehavior(
+                id: 'go-orders',
+                trigger: BehaviorTrigger.click,
+                action: GoToPageAction(pagePath: '/orders', pageId: 'orders'),
+              ),
+            ],
+            'btn-modal': [
+              const ComponentBehavior(
+                id: 'open-modal',
+                trigger: BehaviorTrigger.click,
+                action: GoToPageAction(
+                  pagePath: '/confirm-modal',
+                  pageId: 'confirm-modal',
+                ),
+              ),
+            ],
+            'btn-login': [
+              const ComponentBehavior(
+                id: 'go-login',
+                trigger: BehaviorTrigger.click,
+                action: GoToPageAction(pagePath: '/login', pageId: 'login'),
+              ),
+            ],
+            'btn-back-root': [
+              const ComponentBehavior(
+                id: 'go-root',
+                trigger: BehaviorTrigger.click,
+                action: GoToPageAction(pagePath: '/'),
+              ),
+            ],
+          },
+        );
+
+        final store = AppearanceStore(key: 'go-to-page-shell-mode');
+        await store.save(appearance);
+
+        await tester.pumpWidget(
+          SuperApp(
+            router: routing.router,
+            pageRouting: routing,
+            registry: registry,
+            appearanceStore: store,
+            fontManager: DynamicFontManager(
+              useDefaultCacheDirectory: false,
+              autoDownloadEnabled: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Inside shell -> /orders uses go (no BackButton / no pop stack).
+        await tester.tap(find.text('Aller Commandes'));
+        await tester.pumpAndSettle();
+        expect(routing.currentUri.path, '/orders');
+        expect(find.text('Vue Commandes'), findsOneWidget);
+        expect(routing.router.canPop(), isFalse);
+        expect(find.byType(BackButton), findsNothing);
+
+        // 2. Modal target from inside shell -> pushes modal on top.
+        await tester.tap(find.text('Ouvrir Modale'));
+        await tester.pumpAndSettle();
+        expect(routing.currentUri.path, '/confirm-modal');
+        expect(find.text('Dialogue Actif'), findsOneWidget);
+        expect(routing.router.canPop(), isTrue);
+        await tester.tap(find.byKey(const ValueKey('editor-modal-page-close')));
+        await tester.pumpAndSettle();
+        expect(routing.currentUri.path, '/orders');
+
+        // 3. Leaving shell to standalone /login -> uses go (from inside shell).
+        await tester.tap(find.text('Aller Connexion'));
+        await tester.pumpAndSettle();
+        expect(routing.currentUri.path, '/login');
+        expect(routing.router.canPop(), isFalse);
+
+        // 4. Returning from standalone /login to '/' with rootShellId -> uses go.
+        await tester.tap(find.text('Retour Shell'));
+        await tester.pumpAndSettle();
+        expect(routing.currentUri.path, '/');
+        expect(find.text('Root Shell Home'), findsOneWidget);
+        expect(routing.router.canPop(), isFalse);
       },
     );
   });

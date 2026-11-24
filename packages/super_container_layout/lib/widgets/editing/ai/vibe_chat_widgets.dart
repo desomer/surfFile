@@ -1142,6 +1142,88 @@ class VibeVisibleOnlyChip extends StatelessWidget {
   }
 }
 
+/// Sélecteur activant ou désactivant la passe de vérification visuelle
+/// post-rendu (`verifyRender`) demandée par l'IA en fin de génération.
+class VibeVerifyRenderChip extends StatelessWidget {
+  /// Crée une puce bascule pour la vérification post-rendu `verifyRender`.
+  const VibeVerifyRenderChip({
+    required this.selected,
+    required this.enabled,
+    required this.onToggle,
+    super.key,
+  });
+
+  /// Indique si la vérification visuelle post-rendu `verifyRender` est autorisée.
+  final bool selected;
+
+  /// Indique si le basculement est autorisé (désactivé pendant la génération).
+  final bool enabled;
+
+  /// Callback appelé au clic.
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.primary : scheme.outlineVariant;
+    return Tooltip(
+      message: selected
+          ? 'Vérif. rendu active : contrôle local automatique après génération et correction IA uniquement si une anomalie est détectée (cliquer pour désactiver)'
+          : 'Vérif. rendu désactivée : ignore verifyRender pour accélérer la fin de génération (les erreurs critiques restent corrigées)',
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: 'Vérif. rendu',
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: const ValueKey('vibe-chat-verify-render'),
+            onTap: enabled ? onToggle : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected ? Icons.fact_check : Icons.fact_check_outlined,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Vérif. rendu',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bouton lançant une génération orientée vers les valeurs calculées réactives.
 class VibeReactiveValuesActionChip extends StatelessWidget {
   /// Crée la puce « Valeur réactif ».

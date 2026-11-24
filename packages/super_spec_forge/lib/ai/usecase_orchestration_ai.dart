@@ -576,9 +576,14 @@ SCHÉMA "specPatch" POUR « CAS D’USAGE & ORCHESTRATION » :
           'code': nextCode,
         }, fallbackIndex: i);
         if (existingIdx >= 0) {
-          useCases[existingIdx] = raw.containsKey('states')
-              ? parsed
-              : parsed.copyWith(states: useCases[existingIdx].states);
+          useCases[existingIdx] = parsed.copyWith(
+            states: raw.containsKey('states')
+                ? parsed.states
+                : useCases[existingIdx].states,
+            version: raw.containsKey('version')
+                ? parsed.version
+                : useCases[existingIdx].version,
+          );
           ucUpdated++;
         } else {
           useCases.add(parsed);
@@ -640,9 +645,14 @@ SCHÉMA "specPatch" POUR « CAS D’USAGE & ORCHESTRATION » :
           'code': nextCode,
         }, fallbackIndex: i);
         if (existingIdx >= 0) {
-          sagas[existingIdx] = raw.containsKey('states')
-              ? parsed
-              : parsed.copyWith(states: sagas[existingIdx].states);
+          sagas[existingIdx] = parsed.copyWith(
+            states: raw.containsKey('states')
+                ? parsed.states
+                : sagas[existingIdx].states,
+            version: raw.containsKey('version')
+                ? parsed.version
+                : sagas[existingIdx].version,
+          );
           sagaUpdated++;
         } else {
           sagas.add(parsed);

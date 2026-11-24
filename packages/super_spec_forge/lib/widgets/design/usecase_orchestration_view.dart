@@ -22,9 +22,9 @@ import '../spec_split_handle.dart';
 import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_entry_view.dart'
     show
+        ContractPhaseStatusStrip,
         contractStageIcons,
         contractStageLabels,
-        contractStatusColor,
         contractStatusLabels;
 import 'design_domain_breadcrumb.dart';
 import 'saga_compensation_table.dart';
@@ -203,12 +203,6 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
     widget.onDomainChanged?.call(domain.id);
   }
 
-  static ContractStatus _nextStatus(ContractStatus? current) => switch (current) {
-    null || ContractStatus.pending => ContractStatus.inProgress,
-    ContractStatus.inProgress => ContractStatus.done,
-    ContractStatus.done => ContractStatus.pending,
-  };
-
   Future<void> _cycleUseCaseStage(
     FunctionalDomain domain,
     UseCaseOrchestrationSpec spec,
@@ -216,7 +210,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
     ContractStage stage,
   ) {
     final nextStates = Map<ContractStage, ContractStatus>.from(useCase.states)
-      ..[stage] = _nextStatus(useCase.states[stage]);
+      ..[stage] = nextContractStatus(useCase.states[stage]);
     final updated = useCase.copyWith(states: nextStates);
     return _saveSpec(
       domain.id,
@@ -236,7 +230,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
     ContractStage stage,
   ) {
     final nextStates = Map<ContractStage, ContractStatus>.from(saga.states)
-      ..[stage] = _nextStatus(saga.states[stage]);
+      ..[stage] = nextContractStatus(saga.states[stage]);
     final updated = saga.copyWith(states: nextStates);
     return _saveSpec(
       domain.id,
@@ -1280,6 +1274,9 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
     final refsCtrl = TextEditingController(
       text: (existing?.linkedSpecRefs ?? const []).join(', '),
     );
+    final versionCtrl = TextEditingController(
+      text: existing?.version ?? '0.0.1',
+    );
     var cqrsType = existing?.cqrsType ?? UseCaseCqrsType.command;
     final states = Map<ContractStage, ContractStatus>.from(
       existing?.states ?? const {},
@@ -1292,6 +1289,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
           codeCtrl,
           nameCtrl,
           titleCtrl,
+          versionCtrl,
           bcCtrl,
           aggCtrl,
           goalCtrl,
@@ -1371,12 +1369,36 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                         ),
                       ],
                     ),
-                  TextFormField(
-                    key: const ValueKey('usecase-form-title'),
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Titre fonctionnel',
-                    ),
+                  Row(
+                    spacing: 10,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          key: const ValueKey('usecase-form-title'),
+                          controller: titleCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Titre fonctionnel',
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 115,
+                        child: TextFormField(
+                          key: const ValueKey('usecase-form-version'),
+                          controller: versionCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Version *',
+                            hintText: '0.0.1',
+                          ),
+                          validator: (v) =>
+                              ContractDetails.versionPattern.hasMatch(
+                                v?.trim() ?? '',
+                              )
+                              ? null
+                              : 'Format x.y.z',
+                        ),
+                      ),
+                    ],
                   ),
                   Row(
                     spacing: 10,
@@ -1540,6 +1562,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                         : codeCtrl.text.trim(),
                     name: nameCtrl.text.trim(),
                     title: titleCtrl.text.trim(),
+                    version: versionCtrl.text.trim(),
                     boundedContext: bcCtrl.text.trim(),
                     cqrsType: cqrsType,
                     targetAggregate: aggCtrl.text.trim(),
@@ -1593,6 +1616,9 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
     );
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final titleCtrl = TextEditingController(text: existing?.title ?? '');
+    final versionCtrl = TextEditingController(
+      text: existing?.version ?? '0.0.1',
+    );
     final contextsCtrl = TextEditingController(
       text: existing?.boundedContexts.join(', ') ?? domain.name,
     );
@@ -1621,6 +1647,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
           codeCtrl,
           nameCtrl,
           titleCtrl,
+          versionCtrl,
           contextsCtrl,
           triggerCtrl,
           correlationCtrl,
@@ -1690,11 +1717,35 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                         ),
                       ],
                     ),
-                  TextFormField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Titre fonctionnel',
-                    ),
+                  Row(
+                    spacing: 10,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: titleCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Titre fonctionnel',
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 115,
+                        child: TextFormField(
+                          key: const ValueKey('usecase-saga-form-version'),
+                          controller: versionCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Version *',
+                            hintText: '0.0.1',
+                          ),
+                          validator: (v) =>
+                              ContractDetails.versionPattern.hasMatch(
+                                v?.trim() ?? '',
+                              )
+                              ? null
+                              : 'Format x.y.z',
+                        ),
+                      ),
+                    ],
                   ),
                   TextFormField(
                     controller: contextsCtrl,
@@ -1785,6 +1836,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                         : codeCtrl.text.trim(),
                     name: nameCtrl.text.trim(),
                     title: titleCtrl.text.trim(),
+                    version: versionCtrl.text.trim(),
                     boundedContexts: _splitCommasOrLines(contextsCtrl.text),
                     coordinationMode: mode,
                     triggerEventOrCommand: triggerCtrl.text.trim(),
@@ -2265,6 +2317,11 @@ class _UseCaseCard extends StatelessWidget {
                                       ? Colors.teal.shade700
                                       : Colors.indigo.shade700,
                                 ),
+                                _PillBadge(
+                                  label: 'v${useCase.version}',
+                                  background: colors.surfaceContainerHighest,
+                                  foreground: colors.onSurfaceVariant,
+                                ),
                                 Text(
                                   useCase.name,
                                   style: theme.textTheme.titleSmall?.copyWith(
@@ -2287,7 +2344,7 @@ class _UseCaseCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _PhaseStatusStrip(
+                ContractPhaseStatusStrip(
                   keyPrefix: 'usecase-phase-${useCase.id}',
                   states: useCase.states,
                   onStageTap: onStageTap,
@@ -2745,6 +2802,11 @@ class _SagaCard extends StatelessWidget {
                                   background: colors.secondaryContainer,
                                   foreground: colors.onSecondaryContainer,
                                 ),
+                                _PillBadge(
+                                  label: 'v${saga.version}',
+                                  background: colors.surfaceContainerHighest,
+                                  foreground: colors.onSurfaceVariant,
+                                ),
                                 Text(
                                   saga.name,
                                   style: theme.textTheme.titleSmall?.copyWith(
@@ -2767,7 +2829,7 @@ class _SagaCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                _PhaseStatusStrip(
+                ContractPhaseStatusStrip(
                   keyPrefix: 'usecase-saga-phase-${saga.id}',
                   states: saga.states,
                   onStageTap: onStageTap,
@@ -2961,49 +3023,6 @@ class _SagaCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _PhaseStatusStrip extends StatelessWidget {
-  const _PhaseStatusStrip({
-    required this.keyPrefix,
-    required this.states,
-    required this.onStageTap,
-  });
-
-  final String keyPrefix;
-  final Map<ContractStage, ContractStatus> states;
-  final ValueChanged<ContractStage> onStageTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      spacing: 4,
-      children: [
-        for (final stage in ContractStage.values)
-          Tooltip(
-            message:
-                '${contractStageLabels[stage]} : '
-                '${contractStatusLabels[states[stage] ?? ContractStatus.pending]}'
-                ' (cliquer pour changer)',
-            child: InkWell(
-              key: ValueKey('$keyPrefix-${stage.name}'),
-              borderRadius: BorderRadius.circular(6),
-              onTap: () => onStageTap(stage),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  contractStageIcons[stage],
-                  size: 16,
-                  color: contractStatusColor(states[stage], colors),
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

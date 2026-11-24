@@ -1067,5 +1067,187 @@ void main() {
         await tester.pump();
       },
     );
+
+    test('caches _PageOwnershipIndex across repeated streaming/preview lookups when components and pageCatalog are unchanged', () {
+      final routing = createRouter();
+      addTearDown(routing.dispose);
+      final appearance = Appearance(
+        components: {
+          'p-dash': ScaffoldPageConfig(
+            placements: {
+              ScaffoldPageRegion.body: const ['kpi-a'],
+            },
+            slotTypes: const {'kpi-a': 'registry:Value'},
+          ),
+          'kpi-a': const SuperValueConfig(initialText: '100'),
+        },
+        pageCatalog: EditorPageCatalog(
+          homePageId: 'p-dash',
+          pages: [EditorPageConfig(id: 'p-dash', name: 'Dash', path: '/dash')],
+        ),
+      );
+      routing.synchronize(appearance.pageCatalog);
+      VibeLivePageRouter.resetDebugCache();
+
+      for (var i = 0; i < 10; i++) {
+        final decision = VibeLivePageRouter.resolveForStreamingEntry(
+          routing: routing,
+          appearance: appearance,
+          activeSection: 'components',
+          activeEntryKey: 'kpi-a',
+          initialPageIds: const <String>{},
+          hasNavigatedForVisualChange: false,
+        );
+        expect(decision?.target.pageId, 'p-dash');
+      }
+      // Un changement purement cosmétique (`styles`) conserve les mêmes composants et le même catalogue -> 0 reconstruction d'index !
+      final restyled = appearance.copyWith(
+        styles: const {'kpi-a': ContainerStyle(padding: 12)},
+      );
+      VibeLivePageRouter.resolveForPreviewStep(
+        routing: routing,
+        previousAppearance: appearance,
+        nextAppearance: restyled,
+        effectivePatch: const {
+          'styles': {
+            'kpi-a': {'padding': 12},
+          },
+        },
+        initialPageIds: const <String>{},
+        hasNavigatedForVisualChange: false,
+      );
+      VibeLivePageRouter.resolveForTurnOutcome(
+        routing: routing,
+        baseAppearance: appearance,
+        finalAppearance: restyled,
+        initialPageIds: const <String>{},
+      );
+
+      expect(VibeLivePageRouter.debugOwnershipIndexBuildCount, 1);
+    });
+
+    test(
+      'maps shell components and descendants to coded root when rootShellId matches or first shelled page otherwise',
+      () {
+        final routing = createRouter();
+        addTearDown(routing.dispose);
+        VibeLivePageRouter.resetDebugCache();
+
+        final catalogWithRootShell = EditorPageCatalog(
+          shells: [EditorShellConfig(id: 'app-shell', name: 'Shell')],
+          rootShellId: 'app-shell',
+          pages: [
+            EditorPageConfig(
+              id: 'orders',
+              name: 'Commandes',
+              path: '/orders',
+              shellId: 'app-shell',
+            ),
+            EditorPageConfig(
+              id: 'login',
+              name: 'Connexion',
+              path: '/login',
+            ),
+          ],
+        );
+
+        final appearanceWithRootShell = Appearance(
+          pageCatalog: catalogWithRootShell,
+          components: {
+            'app-shell': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.appBar: const ['app-header'],
+                ScaffoldPageRegion.sidebarStart: const ['app-rail'],
+                ScaffoldPageRegion.body: const ['scaffold:outlet'],
+              },
+              slotTypes: const {
+                'app-header': 'registry:ApplicationBar',
+                'app-rail': 'registry:NavigationRail',
+              },
+            ),
+            'app-header': NativeComponentConfig(),
+            'app-rail': NativeComponentConfig(),
+            'login': ScaffoldPageConfig(),
+          },
+        );
+
+        routing.synchronize(catalogWithRootShell);
+        routing.openLocation('/login');
+        expect(routing.currentUri.path, '/login');
+
+        // Streaming a shell descendant from /login resolves to coded root '/'.
+        final streamToRoot = VibeLivePageRouter.resolveForStreamingEntry(
+          routing: routing,
+          appearance: appearanceWithRootShell,
+          activeSection: 'components',
+          activeEntryKey: 'app-header',
+          initialPageIds: const {'orders', 'login'},
+          hasNavigatedForVisualChange: false,
+        );
+        expect(streamToRoot?.target.isCodedRoot, isTrue);
+
+        // Preview step updating app-rail from /login resolves to coded root '/'.
+        final updatedHeader = appearanceWithRootShell.withStyle(
+          'app-rail',
+          const ContainerStyle(padding: 8),
+        );
+        final stepToRoot = VibeLivePageRouter.resolveForPreviewStep(
+          routing: routing,
+          previousAppearance: appearanceWithRootShell,
+          nextAppearance: updatedHeader,
+          effectivePatch: {
+            'styles': {
+              'app-rail': const ContainerStyle(padding: 8).toJson(),
+            },
+          },
+          initialPageIds: const {'orders', 'login'},
+          hasNavigatedForVisualChange: false,
+        );
+        expect(stepToRoot?.target.isCodedRoot, isTrue);
+
+        // When already on /orders (same shell), editing app-header stays on /orders.
+        routing.openLocation('/orders');
+        final stayOnOrders = VibeLivePageRouter.resolveForStreamingEntry(
+          routing: routing,
+          appearance: appearanceWithRootShell,
+          activeSection: 'components',
+          activeEntryKey: 'app-header',
+          initialPageIds: const {'orders', 'login'},
+          hasNavigatedForVisualChange: false,
+        );
+        expect(stayOnOrders?.target.pageId, 'orders');
+
+        // Without rootShellId, shell edits map to the first page using that shell.
+        final catalogNoRootShell = catalogWithRootShell.copyWith(
+          clearRootShellId: true,
+        );
+        final appearanceNoRootShell = appearanceWithRootShell.copyWith(
+          pageCatalog: catalogNoRootShell,
+        );
+        routing.synchronize(catalogNoRootShell);
+        routing.openLocation('/login');
+
+        final streamToFirstShelled = VibeLivePageRouter.resolveForStreamingEntry(
+          routing: routing,
+          appearance: appearanceNoRootShell,
+          activeSection: 'components',
+          activeEntryKey: 'app-shell',
+          initialPageIds: const {'orders', 'login'},
+          hasNavigatedForVisualChange: false,
+        );
+        expect(streamToFirstShelled?.target.pageId, 'orders');
+
+        final outcomeToFirstShelled = VibeLivePageRouter.resolveForTurnOutcome(
+          routing: routing,
+          baseAppearance: appearanceNoRootShell,
+          finalAppearance: appearanceNoRootShell.withStyle(
+            'app-header',
+            const ContainerStyle(padding: 12),
+          ),
+          initialPageIds: const {'orders', 'login'},
+        );
+        expect(outcomeToFirstShelled?.pageId, 'orders');
+      },
+    );
   });
 }

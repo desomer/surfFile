@@ -290,8 +290,10 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                   ),
                 );
               }
+              final routeListenable = currentRouteListenable(context);
               return ListenableBuilder(
                 listenable: Listenable.merge([
+                  ?routeListenable,
                   for (final slot in slots)
                     if (registry != null)
                       registry.actionController(
@@ -302,7 +304,12 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                       ),
                 ]),
                 builder: (context, _) {
-                  final effectiveIndex = _selectedIndex.clamp(
+                  final routeIndex = activeDestinationIndexForRoute(
+                    context,
+                    slots,
+                    supplied,
+                  );
+                  final effectiveIndex = (routeIndex ?? _selectedIndex).clamp(
                     0,
                     slots.length - 1,
                   );

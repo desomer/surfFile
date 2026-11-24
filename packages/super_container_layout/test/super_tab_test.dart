@@ -1509,4 +1509,123 @@ void main() {
       expect(resolvedIconColor('tab-c2'), overrideIconColor);
     },
   );
+
+  testWidgets(
+    'SuperTab dynamic allowAdd builds a schema-compliant item from repository jsonSchema',
+    (tester) async {
+      final arrayBinding = JsonTextBinding(
+        repositoryId: repositoryId,
+        path: 'categories',
+      );
+      await tester.runAsync(() async {
+        await repositoryStore.replaceDocumentById(repositoryId, {
+          'categories': [
+            {
+              'nom': 'Principal',
+              'statut': 'actif',
+              'dateCreation': '2026-05-10',
+              'ordre': 1,
+            },
+          ],
+        });
+        await repositoryStore.saveJsonSchema(repositoryId, {
+          'type': 'object',
+          'required': ['categories'],
+          'properties': {
+            'categories': {
+              'type': 'array',
+              'items': {
+                'type': 'object',
+                'required': ['nom', 'statut', 'dateCreation', 'ordre'],
+                'properties': {
+                  'nom': {'type': 'string', 'default': 'Nouvel onglet'},
+                  'statut': {
+                    'type': 'string',
+                    'enum': ['brouillon', 'actif'],
+                  },
+                  'dateCreation': {'type': 'string', 'format': 'date'},
+                  'ordre': {'type': 'integer', 'minimum': 1},
+                },
+              },
+            },
+          },
+        });
+      });
+
+      final registry = Registry()..bootstrap();
+      registry.tabController('schema-tabs').value = SuperTabConfig(
+        mode: SuperTabMode.dynamic,
+        binding: arrayBinding,
+        allowAdd: true,
+        placements: const {
+          'tabs': ['tpl-schema-action'],
+          'content': ['tpl-schema-value'],
+        },
+        slotTypes: const {
+          'tpl-schema-action': 'registry:Action',
+          'tpl-schema-value': 'registry:Value',
+        },
+      );
+      registry.actionController(
+        'tpl-schema-action',
+        fallback: SuperActionConfig(
+          label: 'Onglet',
+          propertyBindings: {
+            SuperActionProperty.label: JsonTextBinding(
+              repositoryId: repositoryId,
+              path: 'categories[?].nom',
+            ),
+          },
+        ),
+      );
+      registry.valueController(
+        'tpl-schema-value',
+        fallback: SuperValueConfig(
+          mode: SuperValueMode.display,
+          binding: JsonTextBinding(
+            repositoryId: repositoryId,
+            path: 'categories[?].statut',
+          ),
+        ),
+      );
+
+      final appearanceController = ValueNotifier(Appearance());
+      addTearDown(appearanceController.dispose);
+      await mount(
+        AppearanceScope(
+          controller: appearanceController,
+          child: const SuperPage(child: SuperTab(id: 'schema-tabs')),
+        ),
+        tester,
+        registry,
+      );
+      await real(tester, () async {});
+
+      expect(find.text('Principal'), findsOneWidget);
+
+      await real(tester, () async {
+        await tester.tap(
+          find.byKey(const ValueKey('super-tab-add-schema-tabs')),
+        );
+      });
+
+      final items = await tester.runAsync(
+        () => repositoryStore.readArray(repositoryId, 'categories'),
+      );
+      expect(items, hasLength(2));
+      final created = items![1] as Map<String, Object?>;
+      expect(created['nom'], 'Nouvel onglet');
+      expect(created['statut'], 'brouillon');
+      expect(
+        RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(created['dateCreation']! as String),
+        isTrue,
+      );
+      expect(created['ordre'], 1);
+
+      final validation = await tester.runAsync(
+        () => repositoryStore.validateRepository(repositoryId),
+      );
+      expect(validation!.isValid, isTrue);
+    },
+  );
 }

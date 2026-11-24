@@ -401,4 +401,209 @@ void main() {
     expect((await store.load()).pageCatalog.pages, isEmpty);
     expect(tester.takeException(), isNull);
   });
+
+  group('ShellRoute & SuperShellScope', () {
+    DynamicFontManager noopFontManager() => DynamicFontManager(
+      useDefaultCacheDirectory: false,
+      autoDownloadEnabled: false,
+    );
+
+    testWidgets(
+      'wraps rootShellId and shelled pages in a single ShellRoute without duplicating pageWrapper or root Scaffold',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        var wrapperBuildCount = 0;
+        final controller = EditorPageRouter(
+          pageWrapper: (context, state, child) {
+            wrapperBuildCount++;
+            return KeyedSubtree(
+              key: const ValueKey('appearance-wrapper'),
+              child: child,
+            );
+          },
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, state) => SuperPage(
+                  id: 'root',
+                  child: Center(
+                    child: Text(
+                      'Host Root (shell=${SuperShellScope.maybeOf(context)?.shellId}, wraps=${SuperShellScope.maybeOf(context)?.wrapsAppearanceShell})',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        addTearDown(controller.dispose);
+
+        final registry = Registry()..bootstrap();
+        addTearDown(registry.dispose);
+
+        final catalog = EditorPageCatalog(
+          shells: [
+            EditorShellConfig(id: 'app-shell', name: 'Shell Principal'),
+            EditorShellConfig(id: 'unused-shell', name: 'Shell Inutilisé'),
+          ],
+          rootShellId: 'app-shell',
+          pages: [
+            EditorPageConfig(
+              id: 'orders',
+              name: 'Commandes',
+              path: '/orders',
+              shellId: 'app-shell',
+            ),
+            EditorPageConfig(
+              id: 'empty-shelled',
+              name: 'Vide',
+              path: '/empty',
+              shellId: 'app-shell',
+            ),
+            EditorPageConfig(
+              id: 'typed-shelled',
+              name: 'Typed',
+              path: '/typed',
+              shellId: 'app-shell',
+            ),
+            EditorPageConfig(
+              id: 'login',
+              name: 'Connexion',
+              path: '/login',
+            ),
+            EditorPageConfig(
+              id: 'order-modal',
+              name: 'Détail commande',
+              path: '/order-modal',
+              pageType: EditorPageType.dialog,
+            ),
+          ],
+        );
+
+        final appearance = Appearance(
+          pageCatalog: catalog,
+          components: {
+            'app-shell': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.appBar: const ['shell-bar'],
+                ScaffoldPageRegion.body: const ['scaffold:outlet'],
+              },
+              slotTypes: const {'shell-bar': 'registry:ApplicationBar'},
+            ),
+            'shell-bar': NativeComponentConfig(
+              placements: const {
+                'title': ['shell-title'],
+              },
+              slotTypes: const {'shell-title': 'registry:Value'},
+            ),
+            'shell-title': const SuperValueConfig(initialText: 'Header Partagé'),
+            'orders': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['orders-label'],
+              },
+              slotTypes: {'orders-label': 'registry:Value'},
+            ),
+            'orders-label': const SuperValueConfig(initialText: 'Liste Commandes'),
+            'typed-shelled': const SuperValueConfig(initialText: 'Direct Value Page'),
+            // AI tolerance: standalone page with SuperLayoutConfig
+            'login': const SuperLayoutConfig(
+              placements: {
+                SuperLayoutZone.center: ['login-label'],
+              },
+              slotTypes: {'login-label': 'registry:Value'},
+            ),
+            'login-label': const SuperValueConfig(initialText: 'Écran Connexion'),
+            'order-modal': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.body: const ['modal-label'],
+              },
+              slotTypes: const {'modal-label': 'registry:Value'},
+            ),
+            'modal-label': const SuperValueConfig(initialText: 'Contenu Modale'),
+          },
+        );
+
+        final store = AppearanceStore(key: 'shell-route-integration');
+        await store.save(appearance);
+
+        await tester.pumpWidget(
+          SuperApp(
+            router: controller.router,
+            pageRouting: controller,
+            registry: registry,
+            appearanceStore: store,
+            fontManager: noopFontManager(),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Sur '/', SuperPage(id: 'root') délègue son Scaffold au shell englobant.
+        expect(find.byKey(const ValueKey('editor-shell-app-shell')), findsOneWidget);
+        expect(find.text('Header Partagé'), findsOneWidget);
+        expect(find.text('Host Root (shell=app-shell, wraps=true)'), findsOneWidget);
+        expect(find.byType(Scaffold), findsOneWidget);
+        expect(find.byKey(const ValueKey('appearance-wrapper')), findsOneWidget);
+        expect(wrapperBuildCount, 1);
+
+        // codedRoutes '/' reste résoluble malgré son déplacement dans ShellRoute.
+        final rootCoded = controller.codedRoutes.singleWhere((r) => r.path == '/');
+        expect(controller.locationForCodedRoute(rootCoded, const {}), '/');
+
+        // 2. Navigation vers un frère dans le même shell (/orders) :
+        // SuperScaffold reste monté et pageWrapper n'est pas rappelé pour la page enfant.
+        final shellElement = tester.element(
+          find.byKey(const ValueKey('editor-shell-app-shell')),
+        );
+        controller.openLocation('/orders');
+        await tester.pumpAndSettle();
+        expect(controller.currentUri.path, '/orders');
+        expect(find.text('Header Partagé'), findsOneWidget);
+        expect(find.text('Liste Commandes'), findsOneWidget);
+        expect(
+          tester.element(find.byKey(const ValueKey('editor-shell-app-shell'))),
+          same(shellElement),
+        );
+        expect(find.byKey(const ValueKey('appearance-wrapper')), findsOneWidget);
+
+        // 3. Page shellée vide -> SuperLayout éditable par défaut.
+        controller.openLocation('/empty');
+        await tester.pumpAndSettle();
+        expect(find.byType(SuperLayout), findsOneWidget);
+        expect(find.text('Header Partagé'), findsOneWidget);
+
+        // 4. Page shellée avec un composant typé non-layout -> monté via Registry.
+        controller.openLocation('/typed');
+        await tester.pumpAndSettle();
+        expect(find.text('Direct Value Page'), findsOneWidget);
+        expect(find.text('Header Partagé'), findsOneWidget);
+
+        // 5. Modale poussée par-dessus une route shellée : currentUri = /order-modal.
+        controller.openLocation('/order-modal');
+        await tester.pumpAndSettle();
+        expect(controller.currentUri.path, '/order-modal');
+        expect(find.text('Contenu Modale'), findsOneWidget);
+        expect(
+          find.text('Header Partagé', skipOffstage: false),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('editor-modal-page-close')));
+        await tester.pumpAndSettle();
+        expect(controller.currentUri.path, '/typed');
+
+        // 6. Navigation vers une page autonome (/login) avec SuperLayoutConfig :
+        // sort du shell et enveloppe automatiquement dans un Scaffold.
+        controller.openLocation('/login');
+        await tester.pumpAndSettle();
+        expect(controller.currentUri.path, '/login');
+        expect(find.byKey(const ValueKey('editor-shell-app-shell')), findsNothing);
+        expect(find.text('Header Partagé'), findsNothing);
+        expect(find.text('Écran Connexion'), findsOneWidget);
+        expect(find.byKey(const ValueKey('appearance-wrapper')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
 }

@@ -6,7 +6,8 @@
 /// de maintenir le routeur [EditorPageRouter] sur la page en cours de construction.
 library;
 
-import 'package:flutter/foundation.dart' show immutable, listEquals;
+import 'package:flutter/foundation.dart'
+    show immutable, listEquals, mapEquals, visibleForTesting;
 
 import '../../../models/editor_page_config.dart';
 import '../../../models/scaffold_page_config.dart';
@@ -75,6 +76,8 @@ class _PageOwnershipIndex {
     required this.hasCodedRoot,
     required this.targets,
     required this.subtreesByKey,
+    required this.shellSubtreesById,
+    required this.shellTargetsById,
   });
 
   factory _PageOwnershipIndex.build(
@@ -112,16 +115,35 @@ class _PageOwnershipIndex {
       subtreesByKey[rootTarget.key] = _collectSubtreeIds(appearance, rootSeeds);
     }
 
+    final shellSubtreesById = <String, Set<String>>{};
+    final shellTargetsById = <String, List<VibeRouteTarget>>{};
+    for (final shell in appearance.pageCatalog.shells) {
+      final shellTargets = <VibeRouteTarget>[
+        if (hasCodedRoot && appearance.pageCatalog.rootShellId == shell.id)
+          const VibeRouteTarget.codedRoot(),
+        for (final page in pages)
+          if (!page.pageType.isModal && page.shellId == shell.id)
+            VibeRouteTarget.catalogPage(page),
+      ];
+      if (shellTargets.isEmpty) continue;
+      shellTargetsById[shell.id] = shellTargets;
+      shellSubtreesById[shell.id] = _collectSubtreeIds(appearance, [shell.id]);
+    }
+
     return _PageOwnershipIndex._(
       hasCodedRoot: hasCodedRoot,
       targets: targets,
       subtreesByKey: subtreesByKey,
+      shellSubtreesById: shellSubtreesById,
+      shellTargetsById: shellTargetsById,
     );
   }
 
   final bool hasCodedRoot;
   final List<VibeRouteTarget> targets;
   final Map<String, Set<String>> subtreesByKey;
+  final Map<String, Set<String>> shellSubtreesById;
+  final Map<String, List<VibeRouteTarget>> shellTargetsById;
 
   static bool _rootIncludesMainLayout(Appearance appearance) {
     final rootConfig = appearance.components['root'];
@@ -191,6 +213,27 @@ class _PageOwnershipIndex {
     return candidates;
   }
 
+  bool isShellOwned(String rawId) {
+    final candidates = _candidateComponentIds(rawId);
+    if (candidates.isEmpty) return false;
+    for (final subtree in shellSubtreesById.values) {
+      if (candidates.any(subtree.contains)) return true;
+    }
+    return false;
+  }
+
+  bool isOwnedByPopulatedShell(String rawId, Appearance appearance) {
+    final candidates = _candidateComponentIds(rawId);
+    if (candidates.isEmpty) return false;
+    for (final entry in shellSubtreesById.entries) {
+      if (candidates.any(entry.value.contains) &&
+          appearance.components.containsKey(entry.key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   List<VibeRouteTarget> ownersOf(String rawId) {
     final candidates = _candidateComponentIds(rawId);
     if (candidates.isEmpty) return const <VibeRouteTarget>[];
@@ -201,13 +244,88 @@ class _PageOwnershipIndex {
         matches.add(target);
       }
     }
+    for (final entry in shellSubtreesById.entries) {
+      if (candidates.any(entry.value.contains)) {
+        for (final target in shellTargetsById[entry.key]!) {
+          if (!matches.contains(target)) {
+            matches.add(target);
+          }
+        }
+      }
+    }
     return matches;
   }
+}
+
+class _CachedOwnershipEntry {
+  const _CachedOwnershipEntry({
+    required this.components,
+    required this.pageCatalog,
+    required this.hasCodedRoot,
+    required this.index,
+  });
+
+  final Map<String, Object?> components;
+  final EditorPageCatalog pageCatalog;
+  final bool hasCodedRoot;
+  final _PageOwnershipIndex index;
 }
 
 /// Moteur pur de sélection et d'application de la route active durant la construction IA.
 abstract final class VibeLivePageRouter {
   static const List<String> _parameterFallbacks = <String>['1', 'demo', 'a'];
+  static const int _maxCachedIndices = 4;
+  static final List<_CachedOwnershipEntry> _indexCache =
+      <_CachedOwnershipEntry>[];
+
+  /// Compteur de constructions effectives de `_PageOwnershipIndex` (exposé pour les tests).
+  @visibleForTesting
+  static int debugOwnershipIndexBuildCount = 0;
+
+  /// Réinitialise le cache d'index et les compteurs de diagnostic (exposé pour les tests).
+  @visibleForTesting
+  static void resetDebugCache() {
+    _indexCache.clear();
+    debugOwnershipIndexBuildCount = 0;
+  }
+
+  static _PageOwnershipIndex _ownershipIndexFor(
+    Appearance appearance,
+    EditorPageRouter routing,
+  ) {
+    final hasCodedRoot = routing.codedRoutes.any(
+      (route) => route.path == '/' && route.parameters.isEmpty,
+    );
+    for (var i = 0; i < _indexCache.length; i++) {
+      final entry = _indexCache[i];
+      if (entry.hasCodedRoot == hasCodedRoot &&
+          entry.pageCatalog == appearance.pageCatalog &&
+          (identical(entry.components, appearance.components) ||
+              mapEquals(entry.components, appearance.components))) {
+        if (i > 0) {
+          _indexCache
+            ..removeAt(i)
+            ..insert(0, entry);
+        }
+        return entry.index;
+      }
+    }
+    debugOwnershipIndexBuildCount++;
+    final built = _PageOwnershipIndex.build(appearance, routing);
+    _indexCache.insert(
+      0,
+      _CachedOwnershipEntry(
+        components: appearance.components,
+        pageCatalog: appearance.pageCatalog,
+        hasCodedRoot: hasCodedRoot,
+        index: built,
+      ),
+    );
+    if (_indexCache.length > _maxCachedIndices) {
+      _indexCache.removeLast();
+    }
+    return built;
+  }
 
   /// Retourne la cible correspondant à l'URI actuellement affichée par [routing], ou `null`.
   static VibeRouteTarget? currentTarget(
@@ -335,13 +453,16 @@ abstract final class VibeLivePageRouter {
       return null;
     }
 
-    final index = _PageOwnershipIndex.build(appearance, routing);
+    final index = _ownershipIndexFor(appearance, routing);
     final current = currentTarget(routing, appearance);
+    final isShellKey = index.isShellOwned(activeEntryKey);
     final owners = _filterUnpopulatedNewPagesForNonComponent(
       owners: index.ownersOf(activeEntryKey),
       appearance: appearance,
       initialPageIds: initialPageIds,
-      isComponentSection: activeSection == 'components',
+      isComponentSection:
+          activeSection == 'components' ||
+          index.isOwnedByPopulatedShell(activeEntryKey, appearance),
     );
     if (owners.isEmpty) return null;
     if (current != null && owners.contains(current)) {
@@ -350,9 +471,9 @@ abstract final class VibeLivePageRouter {
         isVisualChange: isVisualSection,
       );
     }
-    if (owners.length == 1) {
+    if (owners.length == 1 || isShellKey) {
       return VibeStepNavigationDecision(
-        target: owners.single,
+        target: owners.first,
         isVisualChange: isVisualSection,
       );
     }
@@ -372,7 +493,7 @@ abstract final class VibeLivePageRouter {
     final payload = effectivePatch['data'] is Map<String, dynamic>
         ? effectivePatch['data'] as Map<String, dynamic>
         : effectivePatch;
-    final index = _PageOwnershipIndex.build(nextAppearance, routing);
+    final index = _ownershipIndexFor(nextAppearance, routing);
     final current = currentTarget(routing, nextAppearance);
 
     final stepComponentIds = _orderedChangedKeys(
@@ -485,7 +606,7 @@ abstract final class VibeLivePageRouter {
     required Appearance finalAppearance,
     required Set<String> initialPageIds,
   }) {
-    final index = _PageOwnershipIndex.build(finalAppearance, routing);
+    final index = _ownershipIndexFor(finalAppearance, routing);
     final current = currentTarget(routing, finalAppearance);
 
     final exclusiveCompCounts = <VibeRouteTarget, int>{};
@@ -691,7 +812,9 @@ abstract final class VibeLivePageRouter {
         owners: index.ownersOf(orderedIds[i]),
         appearance: appearance,
         initialPageIds: initialPageIds,
-        isComponentSection: isComponentSection,
+        isComponentSection:
+            isComponentSection ||
+            index.isOwnedByPopulatedShell(orderedIds[i], appearance),
       );
       if (owners.length == 1) {
         return owners.single;
@@ -702,7 +825,9 @@ abstract final class VibeLivePageRouter {
         owners: index.ownersOf(orderedIds[i]),
         appearance: appearance,
         initialPageIds: initialPageIds,
-        isComponentSection: isComponentSection,
+        isComponentSection:
+            isComponentSection ||
+            index.isOwnedByPopulatedShell(orderedIds[i], appearance),
       );
       if (owners.isNotEmpty) {
         if (current != null && owners.contains(current)) {

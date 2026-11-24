@@ -3,6 +3,7 @@
 ///
 /// Agrège en une passe structurée :
 /// - la géométrie réelle et les coupures/débordements (`get_component_geometry`) ;
+/// - la cohérence multi-pages (shells partagés, `scaffold:outlet` et navigation des pages) ;
 /// - les erreurs runtime capturées dans `debugEntries` (`RenderFlex`, contraintes) ;
 /// - les liaisons JSON, marges/tailles fixes et `@calculs` manquants (`inspect_bindings_and_diagnostics`) ;
 /// - les défauts de contraste WCAG AA (`get_theme_and_contrast`).
@@ -11,6 +12,12 @@ library;
 import 'package:flutter/foundation.dart' show immutable, listEquals;
 import 'package:material_ui/material_ui.dart' show Axis;
 
+import '../../models/behaviours/go_back_action.dart';
+import '../../models/behaviours/go_to_page_action.dart';
+import '../../models/component_config.dart';
+import '../../models/editor_page_config.dart';
+import '../../models/native_component_config.dart';
+import '../../models/scaffold_page_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../theme/appearance.dart';
@@ -391,6 +398,197 @@ abstract final class VibePageAuditService {
   static const int _maxGeometryIds = 60;
   static const int _maxTabSwitches = 24;
   static const int _maxNestedTabDepth = 3;
+
+  static const Set<String> _navigationRegionNames = <String>{
+    'appBar',
+    'sidebarStart',
+    'sidebarEnd',
+    'bottomNavigationBar',
+    'drawer',
+    'endDrawer',
+  };
+
+  static bool _hasNavigationRegion(ComponentConfig? config) {
+    if (config is ScaffoldPageConfig) {
+      for (final region in ScaffoldPageRegion.values) {
+        if (_navigationRegionNames.contains(region.name) &&
+            config.isEnabled(region) &&
+            config.slotsOf(region).isNotEmpty) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (config is NativeComponentConfig) {
+      for (final name in _navigationRegionNames) {
+        if (config.isEnabled(name) && config.slotsOf(name).isNotEmpty) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static bool _hasShellOutletSlot(ComponentConfig? config) {
+    if (config is ScaffoldPageConfig) {
+      return config
+          .slotsOf(ScaffoldPageRegion.body)
+          .any(
+            (slotId) =>
+                slotId == 'scaffold:outlet' ||
+                config.slotTypeOf(slotId) == 'scaffold:outlet',
+          );
+    }
+    if (config is NativeComponentConfig) {
+      return config
+          .slotsOf('body')
+          .any(
+            (slotId) =>
+                slotId == 'scaffold:outlet' ||
+                config.slotTypeOf(slotId) == 'scaffold:outlet',
+          );
+    }
+    return false;
+  }
+
+  static bool _isStandaloneAuthOrOnboardingPath(String path) {
+    final normalized = path.trim().toLowerCase();
+    for (final prefix in const <String>[
+      '/login',
+      '/signin',
+      '/sign-in',
+      '/register',
+      '/signup',
+      '/sign-up',
+      '/auth',
+      '/onboarding',
+    ]) {
+      if (normalized == prefix || normalized.startsWith('$prefix/')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _subtreeHasNavigationAction(
+    Appearance appearance,
+    String rootId,
+  ) {
+    final subtreeIds = _collectSubtreeFromRoots(appearance, <String>[rootId]);
+    for (final id in subtreeIds) {
+      for (final key in <String>[id, '$id:item']) {
+        final behaviors = appearance.behaviors[key];
+        if (behaviors == null) continue;
+        for (final behavior in behaviors) {
+          if (behavior.action is GoToPageAction ||
+              behavior.action is GoBackAction ||
+              behavior.elseAction is GoToPageAction ||
+              behavior.elseAction is GoBackAction) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  static void _collectMultiPageNavigationFindings({
+    required Appearance appearance,
+    required void Function(VibeAuditFinding finding) addFinding,
+  }) {
+    final catalog = appearance.pageCatalog;
+
+    // Vérifie que chaque shell partagé possède son composant Scaffold et son slot scaffold:outlet.
+    for (final shell in catalog.shells) {
+      final shellComp = appearance.components[shell.id];
+      if (shellComp is! ScaffoldPageConfig &&
+          shellComp is! NativeComponentConfig) {
+        addFinding(
+          VibeAuditFinding(
+            category: VibeAuditCategory.layoutAndClipping,
+            severity: VibeAuditSeverity.error,
+            kind: 'missing_shell_outlet',
+            componentId: shell.id,
+            location: 'pageCatalog.shells[${shell.id}]',
+            message:
+                'Le shell "${shell.name}" (${shell.id}) déclaré dans pageCatalog.shells '
+                'n’a pas de composant components["${shell.id}"] de type "scaffold" / "superScaffold" '
+                'avec {"id": "scaffold:outlet", "type": "scaffold:outlet"} dans placements.body.',
+          ),
+        );
+        continue;
+      }
+      if (!_hasShellOutletSlot(shellComp)) {
+        addFinding(
+          VibeAuditFinding(
+            category: VibeAuditCategory.layoutAndClipping,
+            severity: VibeAuditSeverity.error,
+            kind: 'missing_shell_outlet',
+            componentId: shell.id,
+            location: 'components[${shell.id}].placements.body',
+            message:
+                'Le shell "${shell.name}" (${shell.id}) ne place pas '
+                '{"id": "scaffold:outlet", "type": "scaffold:outlet"} dans placements.body : '
+                'le contenu des pages rattachées ne pourra pas s’afficher dans le shell.',
+          ),
+        );
+      }
+    }
+
+    if (catalog.pages.isEmpty) return;
+
+    final hasAppChrome =
+        catalog.shells.isNotEmpty ||
+        _hasNavigationRegion(appearance.components['root']);
+    final firstShellId = catalog.shells.isNotEmpty
+        ? catalog.shells.first.id
+        : null;
+
+    for (final page in catalog.pages) {
+      if (page.pageType.isModal ||
+          page.pageType == EditorPageType.a4Document) {
+        continue;
+      }
+      if (page.shellId != null) continue;
+
+      final pageConfig = appearance.components[page.id];
+      if (_hasNavigationRegion(pageConfig)) continue;
+
+      final hasNavAction = _subtreeHasNavigationAction(appearance, page.id);
+      final isAuthOrOnboarding = _isStandaloneAuthOrOnboardingPath(page.path);
+
+      if (hasNavAction && (isAuthOrOnboarding || !hasAppChrome)) {
+        continue;
+      }
+
+      final severity = hasNavAction
+          ? VibeAuditSeverity.warning
+          : VibeAuditSeverity.error;
+      final deadEndSuffix = hasNavAction
+          ? ''
+          : ' (impasse de navigation : aucune action goToPage/goBack détectée dans la page)';
+      final recommendation = firstShellId != null
+          ? 'Rattache cette page au shell existant via "shellId": "$firstShellId" '
+                '(en passant components["${page.id}"] en "type": "layout"), '
+                'ou ajoute une barre de navigation (appBar / sidebarStart / bottomNavigationBar) à son Scaffold.'
+          : 'Déclare un shell partagé dans pageCatalog.shells et rattache cette page via "shellId", '
+                'ou ajoute une barre de navigation (appBar / sidebarStart / bottomNavigationBar) à son Scaffold.';
+
+      addFinding(
+        VibeAuditFinding(
+          category: VibeAuditCategory.layoutAndClipping,
+          severity: severity,
+          kind: 'missing_page_navigation',
+          componentId: page.id,
+          location: 'pageCatalog.pages[${page.id}]',
+          message:
+              'La page "${page.name}" (${page.path}) n’a ni shellId partagé ni région de navigation '
+              'propre (appBar, sidebarStart, sidebarEnd, bottomNavigationBar ou drawer)$deadEndSuffix. '
+              '$recommendation',
+        ),
+      );
+    }
+  }
 
   static Set<String> _collectSubtreeFromRoots(
     Appearance appearance,
@@ -1111,6 +1309,14 @@ abstract final class VibePageAuditService {
           ),
         );
       }
+    }
+
+    // 5. Cohérence de navigation multi-pages et intégrité des shells partagés (hors scope / visibleOnly).
+    if (scope == null && !visibleOnly) {
+      _collectMultiPageNavigationFindings(
+        appearance: appearance,
+        addFinding: addFinding,
+      );
     }
 
     return VibePageAuditReport(

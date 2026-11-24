@@ -1,14 +1,15 @@
-/// Page standard ([SuperPage]) assemblant la structure `Scaffold` et le `SuperLayout` principal.
+/// Page standard ([SuperPage]) et coquille structurelle ([SuperScaffold]) assemblant le `Scaffold` éditable.
 ///
-/// Combine [ScaffoldPageLayout] (`root`), [RegisteredSuperLayout] (`mainLayout`),
-/// la surface d'arrière-plan (`background`) et la barre d'outils flottante
-/// ([AppearanceToolbar]) ainsi que la bannière du mode édition ([StyleEditBanner]).
+/// Délègue le montage des régions (`appBar`, `body`, `sidebarStart`, `sidebarEnd`,
+/// `drawer`, `endDrawer`, `bottomNavigationBar`, `floatingActionButton`, `bottomSheet`
+/// et `scaffold:outlet`) à [ScaffoldPageLayout] avec prise en charge d'[EditorZoom].
 library;
 
 import 'package:material_ui/material_ui.dart';
 
 import 'models/responsive_layout_config.dart';
 import 'models/scaffold_page_config.dart';
+import 'widgets/appearance/super_shell_scope.dart';
 import 'widgets/components/super_component.dart';
 import 'widgets/editing/overlay/editor_zoom.dart';
 import 'widgets/components/native/scaffold_page_layout.dart';
@@ -21,7 +22,10 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
     this.label = 'Page',
     this.menuIcon,
     this.child = const SizedBox.shrink(),
+    this.outlet,
     this.appBar,
+    this.sidebarStart,
+    this.sidebarEnd,
     this.drawer,
     this.endDrawer,
     this.bottomBar,
@@ -30,6 +34,10 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
     this.bottomSheet,
     this.slots = const [],
     this.pageConfig,
+    this.headerSpan,
+    this.sidebarStartWidth,
+    this.sidebarEndWidth,
+    this.responsiveSidebarToDrawer,
     this.bodyMode,
     this.extendBody,
     this.extendBodyBehindAppBar,
@@ -53,7 +61,18 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
   final String label;
   final IconData? menuIcon;
   final Widget child;
+
+  /// Contenu de la route enfant monté dans le slot `'scaffold:outlet'` (shell partagé).
+  final Widget? outlet;
+
   final PreferredSizeWidget? appBar;
+
+  /// Panneau latéral fixe au début (gauche en LTR) pour la région `sidebarStart`.
+  final Widget? sidebarStart;
+
+  /// Panneau latéral fixe à la fin (droite en LTR) pour la région `sidebarEnd`.
+  final Widget? sidebarEnd;
+
   final Widget? drawer;
   final Widget? endDrawer;
 
@@ -68,6 +87,18 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
   final ScaffoldPageConfig? pageConfig;
   @override
   ScaffoldPageConfig? get config => pageConfig;
+
+  /// Portée horizontale de l'en-tête (`fullWidth` ou `contentOnly`).
+  final ScaffoldHeaderSpan? headerSpan;
+
+  /// Largeur fixe optionnelle de la région `sidebarStart` (en pixels).
+  final double? sidebarStartWidth;
+
+  /// Largeur fixe optionnelle de la région `sidebarEnd` (en pixels).
+  final double? sidebarEndWidth;
+
+  /// Replie automatiquement `sidebarStart` dans le `drawer` sous le seuil tablette.
+  final bool? responsiveSidebarToDrawer;
 
   /// Mode d'affichage de la zone `body` (`standard`, `singleChildScrollView`, `customScrollView`).
   final ScaffoldBodyMode? bodyMode;
@@ -87,13 +118,25 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
 
   @override
   Widget build(BuildContext context) {
+    if (SuperShellScope.maybeOf(context) != null &&
+        id == 'root' &&
+        outlet == null &&
+        this is! SuperScaffold) {
+      return child;
+    }
     var resolvedConfig =
         pageConfig ??
         ScaffoldPageConfig(
           placements: {
             if (appBar != null)
               ScaffoldPageRegion.appBar: const ['scaffold:appBar'],
-            ScaffoldPageRegion.body: const ['scaffold:body'],
+            ScaffoldPageRegion.body: outlet != null
+                ? const ['scaffold:outlet']
+                : const ['scaffold:body'],
+            if (sidebarStart != null)
+              ScaffoldPageRegion.sidebarStart: const ['scaffold:sidebarStart'],
+            if (sidebarEnd != null)
+              ScaffoldPageRegion.sidebarEnd: const ['scaffold:sidebarEnd'],
             if (drawer != null)
               ScaffoldPageRegion.drawer: const ['scaffold:drawer'],
             if (endDrawer != null)
@@ -110,6 +153,20 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
               ScaffoldPageRegion.bottomSheet: const ['scaffold:bottomSheet'],
           },
         );
+    if (headerSpan != null) {
+      resolvedConfig = resolvedConfig.withHeaderSpan(headerSpan);
+    }
+    if (sidebarStartWidth != null) {
+      resolvedConfig = resolvedConfig.withSidebarStartWidth(sidebarStartWidth);
+    }
+    if (sidebarEndWidth != null) {
+      resolvedConfig = resolvedConfig.withSidebarEndWidth(sidebarEndWidth);
+    }
+    if (responsiveSidebarToDrawer != null) {
+      resolvedConfig = resolvedConfig.withResponsiveSidebarToDrawer(
+        responsiveSidebarToDrawer,
+      );
+    }
     if (bodyMode != null) {
       resolvedConfig = resolvedConfig.withBodyMode(bodyMode);
     }
@@ -147,6 +204,9 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
         slots: slots,
         appBar: appBar,
         body: child,
+        sidebarStart: sidebarStart,
+        sidebarEnd: sidebarEnd,
+        outlet: outlet,
         drawer: drawer,
         endDrawer: endDrawer,
         bottomNavigationBar: bottomNavigationBar ?? bottomBar,
@@ -156,4 +216,47 @@ class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
       ),
     );
   }
+}
+
+/// Coquille structurelle éditable ([SuperScaffold]) pour construire un shell
+/// partagé multi-pages (avec [outlet]) ou une page complète avec panneaux latéraux.
+///
+/// Étend [SuperPage] avec des valeurs par défaut ergonomiques (`id = 'main-shell'`,
+/// `label = 'Structure'`) et relaie l'ensemble des régions natives du `Scaffold`.
+class SuperScaffold extends SuperPage {
+  /// Crée un [SuperScaffold] configurable via [pageConfig] ou les régions fournies.
+  const SuperScaffold({
+    super.id = 'main-shell',
+    super.label = 'Structure',
+    super.menuIcon,
+    super.outlet,
+    super.child = const SizedBox.shrink(),
+    super.appBar,
+    super.sidebarStart,
+    super.sidebarEnd,
+    super.drawer,
+    super.endDrawer,
+    super.bottomBar,
+    super.bottomNavigationBar,
+    super.floatingActionButton,
+    super.bottomSheet,
+    super.slots = const [],
+    super.pageConfig,
+    super.headerSpan,
+    super.sidebarStartWidth,
+    super.sidebarEndWidth,
+    super.responsiveSidebarToDrawer,
+    super.bodyMode,
+    super.extendBody,
+    super.extendBodyBehindAppBar,
+    super.scrollDirection,
+    super.reverse,
+    super.primary,
+    super.scrollPadding,
+    super.clipBehavior,
+    super.responsiveLayout,
+    super.maxAutoZoomExtent = EditorZoom.defaultMaxAutoZoomExtent,
+    super.behaviours,
+    super.key,
+  });
 }

@@ -519,6 +519,16 @@ void main() {
         ),
       );
       expect(capturedPrompts[1], contains('en-tête de carte maître'));
+      expect(capturedPrompts[1], contains('occurrenceIndex: 0'));
+      expect(
+        capturedPrompts[1],
+        contains('Maîtrise du budget de largeur & prévention de la troncature silencieuse'),
+      );
+      expect(capturedPrompts[1], contains('autoSides: ["east"]'));
+      expect(
+        capturedPrompts[1],
+        contains('[somme(tailles fixes des côtés actifs) + paddings + marges]'),
+      );
       expect(
         capturedPrompts[1],
         contains('excessive_margin_or_padding_for_fixed_size'),
@@ -556,6 +566,8 @@ void main() {
         ),
       );
       expect(capturedPrompts[2], contains('en-tête de carte maître'));
+      expect(capturedPrompts[2], contains('occurrenceIndex: 0'));
+      expect(capturedPrompts[2], contains('autoSides: ["east"]'));
       expect(capturedPrompts[3], contains('VÉRIFICATION POST-RENDU'));
       expect(
         capturedPrompts[3],
@@ -567,6 +579,11 @@ void main() {
         capturedPrompts[3],
         contains('somme(width) > parentWidth - paddings'),
       );
+      expect(
+        capturedPrompts[3],
+        contains('Maîtrise du budget de largeur & prévention de la troncature silencieuse'),
+      );
+      expect(capturedPrompts[3], contains('occurrenceIndex: 0'));
       expect(
         capturedPrompts[3],
         contains(
@@ -1226,6 +1243,256 @@ void main() {
       );
       expect(scrollableState.position.pixels, closeTo(lockedScrollOffset, 0.5));
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'smartVerifyLocalGate skips post-render LLM round when mounted page is clean, escalates when an anomaly exists, and VibeVerifyRenderChip disables verifyRender',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final registry = Registry()..bootstrap();
+      addTearDown(registry.unbindAppearance);
+
+      final initialAppearance = Appearance(
+        components: <String, ComponentConfig>{
+          'mainLayout': const SuperLayoutConfig(
+            placements: <SuperLayoutZone, List<String>>{
+              SuperLayoutZone.center: <String>['kpi-card'],
+            },
+            slotTypes: <String, String>{'kpi-card': 'registry:Value'},
+          ),
+          'kpi-card': const SuperValueConfig(
+            label: 'CA',
+            initialText: '1 200 €',
+          ),
+        },
+      );
+      final store = _MemoryAppearanceStore(initialAppearance);
+      final mainLayout = registry.layoutController('mainLayout');
+
+      var llmCalls = 0;
+      var returnClippedAnomaly = false;
+      final logs = <String>[];
+      final previousDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) logs.add(message);
+      };
+      addTearDown(() => debugPrint = previousDebugPrint);
+
+      late ValueNotifier<Appearance> appAppearance;
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(
+                        id: 'mainLayout',
+                        config: cfg,
+                        editable: true,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 560,
+                    height: 640,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        smartVerifyLocalGate: true,
+                        throttleStreamingPreviewLogs: true,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) async => '',
+                        streamGenerate:
+                            (
+                              prompt, {
+                              systemInstruction,
+                              staticGuide,
+                              attachments = const [],
+                              speedMode = VibeAiSpeedMode.fast,
+                            }) async* {
+                              llmCalls++;
+                              if (prompt.contains('VÉRIFICATION POST-RENDU')) {
+                                final fixResp = jsonEncode({
+                                  'message': 'Marge excessive corrigée.',
+                                  'vibe': {
+                                    'styles': {
+                                      'kpi-card': {'margin': 0, 'padding': 8},
+                                    },
+                                  },
+                                });
+                                yield GeminiStreamEvent(
+                                  deltaText: fixResp,
+                                  accumulatedText: fixResp,
+                                  isDone: true,
+                                  usedContextCache: true,
+                                );
+                                return;
+                              }
+                              if (!returnClippedAnomaly) {
+                                const c1 =
+                                    '{"message":"Mis à jour proprement.","verifyRender":true,"vibe":{"components":{"kpi-card":{"type":"value","label":"CA","text":"2 400 €"}},';
+                                const c2 =
+                                    '"styles":{"kpi-card":{"padding":8}}}}';
+                                yield const GeminiStreamEvent(
+                                  deltaText: c1,
+                                  accumulatedText: c1,
+                                  isDone: false,
+                                  usedContextCache: true,
+                                );
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 260),
+                                );
+                                yield const GeminiStreamEvent(
+                                  deltaText: c2,
+                                  accumulatedText: '$c1$c2',
+                                  isDone: true,
+                                  usedContextCache: true,
+                                );
+                                return;
+                              }
+                              final anomalous = jsonEncode({
+                                'message': 'Marge trop grande.',
+                                'verifyRender': true,
+                                'vibe': {
+                                  'components': {
+                                    'mainLayout': {
+                                      'type': 'layout',
+                                      'slotSizeConstraints': {
+                                        'kpi-card': {
+                                          'preferredWidth': 76,
+                                          'fitContent': false,
+                                        },
+                                      },
+                                    },
+                                  },
+                                  'styles': {
+                                    'kpi-card': {'margin': 18, 'padding': 18},
+                                  },
+                                },
+                              });
+                              yield GeminiStreamEvent(
+                                deltaText: anomalous,
+                                accumulatedText: anomalous,
+                                isDone: true,
+                                usedContextCache: true,
+                              );
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        DefaultAssetBundle(
+          bundle: _GuideBundle(),
+          child: SuperApp(
+            router: router,
+            appearanceStore: store,
+            registry: registry,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> pumpRealUntil(bool Function() condition) async {
+        await tester.runAsync(() async {
+          final sw = Stopwatch()..start();
+          while (!condition() && sw.elapsed < const Duration(seconds: 6)) {
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            await tester.pump();
+          }
+        });
+        await tester.pumpAndSettle();
+      }
+
+      // Cas 1 : Page saine + verifyRender: true -> 1 seul appel LLM (court-circuit local) + bilan logs streaming regroupé !
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Double le CA',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealUntil(
+        () => logs.any((l) => l.contains('Apparence mise à jour')),
+      );
+
+      expect(llmCalls, 1, reason: logs.join('\n'));
+      expect(
+        logs.join('\n'),
+        contains('[PostVerify] Court-circuit local : 0 anomalie détectée'),
+      );
+      expect(
+        logs.join('\n'),
+        contains(
+          '[Vibe IA][Preview] Bilan streaming : 2 palier(s) appliqué(s)',
+        ),
+      );
+
+      // Cas 2 : Anomalie locale (marge excessive 80px sur 60px) -> escalade automatique vers le tour LLM correctif !
+      logs.clear();
+      llmCalls = 0;
+      returnClippedAnomaly = true;
+      final expandBtn = find.byKey(const ValueKey('vibe-chat-expand'));
+      if (expandBtn.evaluate().isNotEmpty) {
+        await tester.tap(expandBtn);
+        await tester.pumpAndSettle();
+      }
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Teste une marge trop grande',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealUntil(
+        () => logs.any((l) => l.contains('Apparence mise à jour')),
+      );
+
+      expect(llmCalls, 2);
+      expect(appAppearance.value.styles['kpi-card']?.margin, 0);
+      expect(appAppearance.value.styles['kpi-card']?.padding, 8);
+
+      // Cas 3 : Désactivation de la puce VibeVerifyRenderChip -> ignore verifyRender: true même avec anomalie non-runtime (1 seul appel LLM).
+      logs.clear();
+      llmCalls = 0;
+      if (expandBtn.evaluate().isNotEmpty) {
+        await tester.tap(expandBtn);
+        await tester.pumpAndSettle();
+      }
+      final verifyChip = find.byKey(const ValueKey('vibe-chat-verify-render'));
+      await tester.ensureVisible(verifyChip);
+      await tester.tap(verifyChip);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Sans vérif rendu',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealUntil(
+        () => logs.any((l) => l.contains('Apparence mise à jour')),
+      );
+
+      expect(llmCalls, 1);
     },
   );
 }

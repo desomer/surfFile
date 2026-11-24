@@ -23,6 +23,7 @@ import '../editing/slots/editor_slot.dart';
 import 'component_common.dart';
 import 'component_property_bindings.dart';
 import 'component_state_behavior.dart';
+import 'native/native_component_common.dart';
 import 'super_action_visual.dart';
 import 'super_component.dart';
 import 'super_layout/slot_implementation.dart';
@@ -268,14 +269,31 @@ class _SuperActionState extends State<SuperAction>
     final configuration =
         registry?.actionController(widget.id, fallback: widget.config) ??
         _local;
+    final navPath = goToPagePathForComponent(
+      context,
+      widget.id,
+      widgetBehaviors: widget.behaviours,
+    );
+    final routeListenable = navPath != null
+        ? currentRouteListenable(context)
+        : null;
+    final listenable = routeListenable != null
+        ? Listenable.merge([configuration, routeListenable])
+        : configuration;
 
     return wrapWithComponentHoverRegion(
-      ValueListenableBuilder<SuperActionConfig>(
-        valueListenable: configuration,
-        builder: (context, savedConfig, _) {
+      ListenableBuilder(
+        listenable: listenable,
+        builder: (context, _) {
+          final savedConfig = configuration.value;
           final navScope = SuperActionNavigationScope.maybeOf(context);
-          final isSelected =
+          final scopeSelected =
               (listScope?.selected ?? false) || (navScope?.selected ?? false);
+          final routeSelected =
+              !scopeSelected &&
+              navPath != null &&
+              matchesRoutePath(currentRouteUri(context), navPath);
+          final isSelected = scopeSelected || routeSelected;
           final effective = _resolveStates(
             savedConfig,
             listScope,
@@ -371,7 +389,7 @@ class _SuperActionState extends State<SuperAction>
                   activeState: stateReader?.stateName,
                   stateError: stateError,
                   isHovered: isComponentHovered,
-                  isSelected: listScope?.selected ?? false,
+                  isSelected: isSelected,
                   allowContentHover: ContentHoverScope.maybeOf(context) != null,
                   activeAutomatic: automaticActiveStates,
                   onPreviewChanged: (draft) {
@@ -520,8 +538,19 @@ class _SuperActionState extends State<SuperAction>
     final listScope = JsonListScope.maybeOf(context);
     final repositories = JsonRepositoryScope.maybeOf(context);
     final navScope = SuperActionNavigationScope.maybeOf(context);
-    final isSelected =
+    final scopeSelected =
         (listScope?.selected ?? false) || (navScope?.selected ?? false);
+    final navPath = scopeSelected
+        ? null
+        : goToPagePathForComponent(
+            context,
+            widget.id,
+            widgetBehaviors: widget.behaviours,
+            listen: false,
+          );
+    final routeSelected =
+        navPath != null && matchesRoutePath(currentRouteUri(context), navPath);
+    final isSelected = scopeSelected || routeSelected;
     final effective = _resolveStates(
       saved,
       listScope,

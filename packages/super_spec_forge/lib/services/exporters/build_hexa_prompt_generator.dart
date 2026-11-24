@@ -1,0 +1,259 @@
+/// Orchestrateur de génération de prompts IA en Architecture Hexagonale
+/// ([BuildHexaPromptGenerator]), déléguant chaque type de prompt au module
+/// dédié sous `prompt_generator/`.
+library;
+
+import '../../models/build_design_item.dart';
+import '../../models/build_tech_stack_profile.dart';
+import '../../models/business_object_model_preferences.dart';
+import '../../models/company_glossary.dart';
+import '../../models/domain_catalog.dart';
+import '../../models/usecase_orchestration_spec.dart';
+import '../spec_storage_slug.dart';
+import 'prompt_generator/model_implementation_prompt_builder.dart';
+import 'prompt_generator/model_persistence_prompt_builder.dart';
+import 'prompt_generator/model_prompt_context.dart';
+import 'prompt_generator/model_unit_test_prompt_builder.dart';
+import 'prompt_generator/prompt_generator_models.dart';
+import 'prompt_generator/prompt_yaml_header_builder.dart';
+import 'prompt_generator/saga_implementation_prompt_builder.dart';
+import 'prompt_generator/saga_unit_test_prompt_builder.dart';
+import 'prompt_generator/usecase_implementation_prompt_builder.dart';
+import 'prompt_generator/usecase_unit_test_prompt_builder.dart';
+
+export 'prompt_generator/prompt_generator_models.dart';
+
+/// Assemble les prompts Markdown pour implémenter les modèles, cas d'usage et
+/// sagas sélectionnés selon une **Architecture Hexagonale** stricte (Ports &
+/// Adapters, DDD, CQRS & TDD).
+abstract final class BuildHexaPromptGenerator {
+  /// Rôles de prompts applicables à une catégorie d'élément [kind] :
+  /// - `model` : `implementation`, `unitTest`, `persistence` (3 prompts),
+  /// - `useCase` / `saga` : `implementation`, `unitTest` (2 prompts).
+  static List<BuildHexaPromptRole> rolesForKind(BuildDesignItemKind kind) =>
+      switch (kind) {
+        BuildDesignItemKind.model => const <BuildHexaPromptRole>[
+          BuildHexaPromptRole.implementation,
+          BuildHexaPromptRole.unitTest,
+          BuildHexaPromptRole.persistence,
+        ],
+        BuildDesignItemKind.useCase ||
+        BuildDesignItemKind.saga => const <BuildHexaPromptRole>[
+          BuildHexaPromptRole.implementation,
+          BuildHexaPromptRole.unitTest,
+        ],
+      };
+
+  /// Retourne l'identifiant canonique `kind` en `kebab-case` pour un couple
+  /// catégorie d'élément / rôle de prompt (ex. `model-implementation`,
+  /// `model-persistence`, `usecase-unit-test`, `saga-implementation`).
+  static String kindFor(
+    BuildDesignItemKind itemKind,
+    BuildHexaPromptRole role,
+  ) => PromptYamlHeaderBuilder.kindFor(itemKind, role);
+
+  /// Extrait le contenu YAML brut de l'en-tête ```` ```yaml ... ``` ```` situé
+  /// au début de [promptMarkdown], ou `null` s'il est absent.
+  static String? extractYamlHeader(String promptMarkdown) =>
+      PromptYamlHeaderBuilder.extractYamlHeader(promptMarkdown);
+
+  /// Génère les groupes de prompts pour chaque élément de [selectedItems] dans [domain].
+  static List<BuildItemPromptGroup> generateGroups({
+    required FunctionalDomain domain,
+    required List<BuildDesignItem> selectedItems,
+    DomainCatalog? catalog,
+    BuildTechStackProfile? techStack,
+    CompanyGlossary? glossary,
+    BusinessObjectModelPreferences? modelPreferences,
+    DateTime? referenceDate,
+  }) {
+    final dates = PromptYamlHeaderBuilder.resolveMetadataDates(
+      domain: domain,
+      catalog: catalog,
+      referenceDate: referenceDate,
+    );
+    final effectiveStack = techStack ?? catalog?.techStackForDomain(domain);
+    final groups = <BuildItemPromptGroup>[];
+    for (final item in selectedItems) {
+      final prompts = switch (item.kind) {
+        BuildDesignItemKind.model => _buildModelPrompts(
+          domain: domain,
+          item: item,
+          dates: dates,
+          techStack: effectiveStack,
+          glossary: glossary,
+          modelPreferences: modelPreferences,
+        ),
+        BuildDesignItemKind.useCase => _buildUseCasePrompts(
+          domain: domain,
+          item: item,
+          dates: dates,
+          techStack: effectiveStack,
+          glossary: glossary,
+          modelPreferences: modelPreferences,
+        ),
+        BuildDesignItemKind.saga => _buildSagaPrompts(
+          domain: domain,
+          item: item,
+          dates: dates,
+          techStack: effectiveStack,
+          glossary: glossary,
+        ),
+      };
+      if (prompts.isNotEmpty) {
+        groups.add(BuildItemPromptGroup(item: item, prompts: prompts));
+      }
+    }
+    return groups;
+  }
+
+  /// Concatène une sélection de [prompts] en un document Markdown unique prêt
+  /// à être exécuté.
+  static String combinePromptsMarkdown({
+    required FunctionalDomain domain,
+    required Iterable<BuildHexaPromptSpec> prompts,
+  }) {
+    final list = prompts.toList(growable: false);
+    if (list.isEmpty) return '';
+    if (list.length == 1) return list.single.promptMarkdown;
+
+    final buf = StringBuffer()
+      ..writeln(
+        '# Plan d’implémentation — Architecture Hexagonale (${domain.name})',
+      )
+      ..writeln()
+      ..writeln(
+        'Exécute séquentiellement les **${list.length} prompts** ci-dessous pour le domaine **`${domain.domainCode}`** (**${domain.name}**), en respectant strictement l’isolation des couches **Domain → Application → Infrastructure (Ports & Adapters)** et la validation des tests à chaque étape.',
+      )
+      ..writeln();
+
+    for (var i = 0; i < list.length; i++) {
+      final prompt = list[i];
+      buf
+        ..writeln('---')
+        ..writeln()
+        ..writeln(
+          '<!-- Étape ${i + 1}/${list.length} : ${prompt.item.name} — ${prompt.role.label} -->',
+        )
+        ..writeln(prompt.promptMarkdown.trimRight())
+        ..writeln();
+    }
+    return SpecStorageIo.normalizeLf(buf.toString());
+  }
+
+  static List<BuildHexaPromptSpec> _buildModelPrompts({
+    required FunctionalDomain domain,
+    required BuildDesignItem item,
+    required PromptMetadataDates dates,
+    BuildTechStackProfile? techStack,
+    CompanyGlossary? glossary,
+    BusinessObjectModelPreferences? modelPreferences,
+  }) {
+    final ctx = ModelPromptContext.resolve(
+      domain: domain,
+      item: item,
+      modelPreferences: modelPreferences,
+    );
+    return <BuildHexaPromptSpec>[
+      buildModelImplementationPrompt(
+        ctx: ctx,
+        dates: dates,
+        techStack: techStack,
+        glossary: glossary,
+        modelPreferences: modelPreferences,
+      ),
+      buildModelUnitTestPrompt(
+        ctx: ctx,
+        dates: dates,
+        techStack: techStack,
+      ),
+      buildModelPersistencePrompt(
+        ctx: ctx,
+        dates: dates,
+        techStack: techStack,
+        modelPreferences: modelPreferences,
+      ),
+    ];
+  }
+
+  static List<BuildHexaPromptSpec> _buildUseCasePrompts({
+    required FunctionalDomain domain,
+    required BuildDesignItem item,
+    required PromptMetadataDates dates,
+    BuildTechStackProfile? techStack,
+    CompanyGlossary? glossary,
+    BusinessObjectModelPreferences? modelPreferences,
+  }) {
+    final existing = domain.useCaseOrchestration?.useCases
+        .where((uc) => uc.id == item.id)
+        .firstOrNull;
+    final useCase =
+        existing ??
+        ApplicationUseCaseSpec(
+          id: item.id,
+          code: item.primaryBadge.isNotEmpty ? item.primaryBadge : 'UC-001',
+          name: item.name,
+          title: item.subtitle,
+          version: item.version,
+          boundedContext: item.groupName,
+        );
+
+    return <BuildHexaPromptSpec>[
+      buildUseCaseImplementationPrompt(
+        domain: domain,
+        item: item,
+        useCase: useCase,
+        dates: dates,
+        techStack: techStack,
+        glossary: glossary,
+        modelPreferences: modelPreferences,
+      ),
+      buildUseCaseUnitTestPrompt(
+        domain: domain,
+        item: item,
+        useCase: useCase,
+        dates: dates,
+        techStack: techStack,
+      ),
+    ];
+  }
+
+  static List<BuildHexaPromptSpec> _buildSagaPrompts({
+    required FunctionalDomain domain,
+    required BuildDesignItem item,
+    required PromptMetadataDates dates,
+    BuildTechStackProfile? techStack,
+    CompanyGlossary? glossary,
+  }) {
+    final existing = domain.useCaseOrchestration?.sagas
+        .where((s) => s.id == item.id)
+        .firstOrNull;
+    final saga =
+        existing ??
+        OrchestrationSagaSpec(
+          id: item.id,
+          code: item.primaryBadge.isNotEmpty ? item.primaryBadge : 'SAGA-001',
+          name: item.name,
+          title: item.subtitle,
+          version: item.version,
+        );
+
+    return <BuildHexaPromptSpec>[
+      buildSagaImplementationPrompt(
+        domain: domain,
+        item: item,
+        saga: saga,
+        dates: dates,
+        techStack: techStack,
+        glossary: glossary,
+      ),
+      buildSagaUnitTestPrompt(
+        domain: domain,
+        item: item,
+        saga: saga,
+        dates: dates,
+        techStack: techStack,
+      ),
+    ];
+  }
+}

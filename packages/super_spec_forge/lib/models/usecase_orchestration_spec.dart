@@ -658,6 +658,7 @@ class ApplicationUseCaseSpec {
     required this.code,
     required this.name,
     this.title = '',
+    this.version = '0.0.1',
     this.boundedContext = '',
     this.cqrsType = UseCaseCqrsType.command,
     this.targetAggregate = '',
@@ -709,6 +710,9 @@ class ApplicationUseCaseSpec {
 
   /// Titre fonctionnel en français.
   final String title;
+
+  /// Version sémantique (`x.y.z`).
+  final String version;
 
   /// Bounded Context propriétaire.
   final String boundedContext;
@@ -774,6 +778,11 @@ class ApplicationUseCaseSpec {
         'ApplicationUseCaseSpec.name ou title requis.',
       );
     }
+    if (!ContractDetails.versionPattern.hasMatch(version)) {
+      throw const FormatException(
+        'La version du Use Case doit être au format x.y.z.',
+      );
+    }
     for (final input in triggerInputs) {
       input.validate();
     }
@@ -791,6 +800,7 @@ class ApplicationUseCaseSpec {
     String? code,
     String? name,
     String? title,
+    String? version,
     String? boundedContext,
     UseCaseCqrsType? cqrsType,
     String? targetAggregate,
@@ -814,6 +824,7 @@ class ApplicationUseCaseSpec {
     code: code ?? this.code,
     name: name ?? this.name,
     title: title ?? this.title,
+    version: version ?? this.version,
     boundedContext: boundedContext ?? this.boundedContext,
     cqrsType: cqrsType ?? this.cqrsType,
     targetAggregate: targetAggregate ?? this.targetAggregate,
@@ -841,6 +852,7 @@ class ApplicationUseCaseSpec {
     'code': code,
     'name': name,
     'title': title,
+    'version': version,
     'boundedContext': boundedContext,
     'cqrsType': cqrsType.name,
     'targetAggregate': targetAggregate,
@@ -872,6 +884,7 @@ class ApplicationUseCaseSpec {
     }
     final name = (raw['name'] as String?)?.trim() ?? '';
     final title = (raw['title'] as String?)?.trim() ?? '';
+    final rawVersion = (raw['version'] as String?)?.trim() ?? '';
     final code = (raw['code'] as String?)?.trim() ?? '';
     final id = (raw['id'] as String?)?.trim() ?? '';
     final rawInputs = raw['triggerInputs'] ?? raw['inputs'] ?? raw['input'];
@@ -887,6 +900,7 @@ class ApplicationUseCaseSpec {
           : code,
       name: name.isEmpty ? title : name,
       title: title.isEmpty ? name : title,
+      version: rawVersion.isEmpty ? '0.0.1' : rawVersion,
       boundedContext: (raw['boundedContext'] as String?)?.trim() ?? '',
       cqrsType: UseCaseCqrsType.fromJson(raw['cqrsType'] ?? raw['type']),
       targetAggregate: (raw['targetAggregate'] as String?)?.trim() ?? '',
@@ -936,6 +950,7 @@ class ApplicationUseCaseSpec {
           other.code == code &&
           other.name == name &&
           other.title == title &&
+          other.version == version &&
           other.boundedContext == boundedContext &&
           other.cqrsType == cqrsType &&
           other.targetAggregate == targetAggregate &&
@@ -961,6 +976,7 @@ class ApplicationUseCaseSpec {
     code,
     name,
     title,
+    version,
     boundedContext,
     cqrsType,
     targetAggregate,
@@ -1135,6 +1151,7 @@ class OrchestrationSagaSpec {
     required this.code,
     required this.name,
     this.title = '',
+    this.version = '0.0.1',
     List<String> boundedContexts = const <String>[],
     this.coordinationMode = SagaCoordinationMode.orchestration,
     this.triggerEventOrCommand = '',
@@ -1164,6 +1181,9 @@ class OrchestrationSagaSpec {
 
   /// Titre lisible en français.
   final String title;
+
+  /// Version sémantique (`x.y.z`).
+  final String version;
 
   /// Bounded Contexts coordonnés par la Saga.
   final List<String> boundedContexts;
@@ -1199,6 +1219,11 @@ class OrchestrationSagaSpec {
         'OrchestrationSagaSpec.name ou title requis.',
       );
     }
+    if (!ContractDetails.versionPattern.hasMatch(version)) {
+      throw const FormatException(
+        'La version de la Saga doit être au format x.y.z.',
+      );
+    }
     for (final row in compensationMatrix) {
       row.validate();
     }
@@ -1210,6 +1235,7 @@ class OrchestrationSagaSpec {
     String? code,
     String? name,
     String? title,
+    String? version,
     List<String>? boundedContexts,
     SagaCoordinationMode? coordinationMode,
     String? triggerEventOrCommand,
@@ -1223,6 +1249,7 @@ class OrchestrationSagaSpec {
     code: code ?? this.code,
     name: name ?? this.name,
     title: title ?? this.title,
+    version: version ?? this.version,
     boundedContexts: boundedContexts ?? this.boundedContexts,
     coordinationMode: coordinationMode ?? this.coordinationMode,
     triggerEventOrCommand:
@@ -1241,6 +1268,7 @@ class OrchestrationSagaSpec {
     'code': code,
     'name': name,
     'title': title,
+    'version': version,
     'boundedContexts': boundedContexts,
     'coordinationMode': coordinationMode.name,
     'triggerEventOrCommand': triggerEventOrCommand,
@@ -1262,6 +1290,7 @@ class OrchestrationSagaSpec {
     }
     final name = (raw['name'] as String?)?.trim() ?? '';
     final title = (raw['title'] as String?)?.trim() ?? '';
+    final rawVersion = (raw['version'] as String?)?.trim() ?? '';
     final code = (raw['code'] as String?)?.trim() ?? '';
     final id = (raw['id'] as String?)?.trim() ?? '';
     final rawMatrix = raw['compensationMatrix'] ?? raw['compensations'];
@@ -1275,6 +1304,7 @@ class OrchestrationSagaSpec {
           : code,
       name: name.isEmpty ? title : name,
       title: title.isEmpty ? name : title,
+      version: rawVersion.isEmpty ? '0.0.1' : rawVersion,
       boundedContexts: _cleanStringList(raw['boundedContexts']),
       coordinationMode: SagaCoordinationMode.fromJson(raw['coordinationMode']),
       triggerEventOrCommand:
@@ -1303,6 +1333,7 @@ class OrchestrationSagaSpec {
           other.code == code &&
           other.name == name &&
           other.title == title &&
+          other.version == version &&
           listEquals(other.boundedContexts, boundedContexts) &&
           other.coordinationMode == coordinationMode &&
           other.triggerEventOrCommand == triggerEventOrCommand &&
@@ -1318,6 +1349,7 @@ class OrchestrationSagaSpec {
     code,
     name,
     title,
+    version,
     Object.hashAll(boundedContexts),
     coordinationMode,
     triggerEventOrCommand,

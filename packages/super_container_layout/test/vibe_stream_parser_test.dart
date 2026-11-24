@@ -2,6 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:super_container_layout/ai/vibe_stream_parser.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
+import 'package:super_container_layout/services/appearance/appearance_codec.dart';
+import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_incremental_preview.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_context_menu.dart';
 
 void main() {
   group('VibeIncrementalStreamParser', () {
@@ -595,5 +602,118 @@ void main() {
         expect(snap.activeEntryKey, isNull);
       },
     );
+
+    test(
+      'maintient nonUsagesPatchRevision stable lorsque seuls des usages streament et expose patchEntries dans l’ordre exact',
+      () {
+        final parser = VibeIncrementalStreamParser();
+
+        var snap = parser.addChunk(
+          '{"message":"OK","vibe":{"mode":"dark","components":{"kpi":{"type":"value","text":"10"}},',
+        );
+        expect(snap.patchRevision, 2);
+        expect(snap.nonUsagesPatchRevision, 2);
+        expect(snap.patchEntries, hasLength(2));
+        expect(snap.patchEntries[0].section, isNull);
+        expect(snap.patchEntries[0].key, 'mode');
+        expect(snap.patchEntries[1].section, 'components');
+        expect(snap.patchEntries[1].key, 'kpi');
+        expect(snap.patchEntries[1].isUsageEntry, isFalse);
+
+        // Les entrées "usages" incrémentent patchRevision mais PAS nonUsagesPatchRevision.
+        snap = parser.addChunk(
+          '"usages":{"kpi":{"kind":"staticData"},"root":{"kind":"layout"}}}}',
+        );
+        expect(snap.patchRevision, 4);
+        expect(snap.nonUsagesPatchRevision, 2);
+        expect(snap.patchEntries, hasLength(4));
+        expect(snap.patchEntries[2].isUsageEntry, isTrue);
+        expect(snap.patchEntries[3].isUsageEntry, isTrue);
+      },
+    );
+
+    test(
+      'VibeIncrementalPreviewApplier décode en O(N) sur tout le flux et gère les enfants reçus avant leur parent (selfConstraints & scope)',
+      () {
+        final base = Appearance(
+          components: {
+            'scoped-card': const SuperLayoutConfig(
+              placements: {SuperLayoutZone.center: ['existing-title']},
+              slotTypes: {'existing-title': 'registry:Value'},
+            ),
+            'existing-title': const SuperValueConfig(initialText: 'Initial'),
+            'outside-box': const SuperValueConfig(initialText: 'Externe'),
+          },
+        );
+        const scope = VibeChatScope(
+          componentId: 'scoped-card',
+          label: 'Carte ciblée',
+        );
+
+        final parser = VibeIncrementalStreamParser();
+        final applier = VibeIncrementalPreviewApplier(baseAppearance: base);
+
+        // Palier 1 : style d'un nouvel enfant "new-badge" (pas encore rattaché à scoped-card -> différé)
+        // + composant "new-badge" avec slotSizeConstraints directes avant son parent !
+        var snap = parser.addChunk(
+          '{"message":"Maj","vibe":{'
+          '"styles":{"new-badge":{"padding":10},"outside-box":{"padding":99}},'
+          '"components":{"new-badge":{"type":"value","text":"Nouveau","slotSizeConstraints":{"preferredWidth":140,"fitContent":false}},',
+        );
+        final step1 = applier.applyStep(snapshot: snap, scope: scope);
+        expect(step1, isNotNull);
+        // "outside-box" est filtré hors scope.
+        expect(step1!.appearance.styles.containsKey('outside-box'), isFalse);
+        // "new-badge" n'étant pas encore placé sous scoped-card, son style était hors allowedSubtreeIds au palier 1.
+        expect(step1.appearance.styles.containsKey('new-badge'), isFalse);
+
+        // Palier 2 : "scoped-card" place maintenant "new-badge" -> rattache selfConstraints ET débloque styles["new-badge"] sans re-décoder "new-badge" !
+        snap = parser.addChunk(
+          '"scoped-card":{"type":"layout","placements":{"center":["existing-title","new-badge"]},"slotTypes":{"existing-title":"registry:Value","new-badge":"registry:Value"}}}}}',
+        );
+        final step2 = applier.applyStep(snapshot: snap, scope: scope);
+        expect(step2, isNotNull);
+        expect(step2!.appearance.styles['new-badge']?.padding, 10);
+        final updatedLayout =
+            step2.appearance.components['scoped-card'] as SuperLayoutConfig;
+        expect(
+          updatedLayout.slotSizeConstraints['new-badge']?.preferredWidth?.value,
+          140,
+        );
+        expect(
+          updatedLayout.slotSizeConstraints['new-badge']?.fitContent,
+          isFalse,
+        );
+
+        // Vérifie l'équivalence exacte avec une application cumulative complète depuis `base`.
+        final fullEffective = VibeScopeHelpersOnTest.filterScoped(
+          base,
+          snap.partialVibePatch!,
+          scope,
+        );
+        final expected = AppearanceTransfer.applyVibeMapPartial(
+          base,
+          fullEffective,
+        ).appearance;
+        expect(
+          const AppearanceCodec().toJson(step2.appearance),
+          const AppearanceCodec().toJson(expected),
+        );
+        // 3 entrées effectives décodées au total (new-badge component, scoped-card component, new-badge style) -> pas de re-décodage cumulatif !
+        expect(applier.debugTotalDecodedEntries, 3);
+      },
+    );
   });
+}
+
+abstract final class VibeScopeHelpersOnTest {
+  static Map<String, dynamic> filterScoped(
+    Appearance base,
+    Map<String, dynamic> patch,
+    VibeChatScope scope,
+  ) => VibeIncrementalPreviewApplier(baseAppearance: base)
+      .buildEffectiveCumulativePatch(
+        snapshot: VibeStreamSnapshot(partialVibePatch: patch, patchRevision: 1),
+        scope: scope,
+      )!;
 }

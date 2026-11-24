@@ -192,6 +192,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   String? _selectedPagePath;
   String? _selectedPageName;
   bool _customPath = false;
+  GoToPageNavigationMode _navigationMode = GoToPageNavigationMode.auto;
   late final TextEditingController _customPathController =
       TextEditingController(text: '/');
   final _formKey = GlobalKey<FormState>();
@@ -357,6 +358,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           _selectedPageId = a.pageId;
           _selectedPagePath = a.pagePath;
           _selectedPageName = a.pageName;
+          _navigationMode = a.navigationMode;
         case GoBackAction a:
           _goBackFallbackController.text = a.fallbackPagePath ?? '';
         case ShowMessageAction a:
@@ -1114,6 +1116,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             pagePath: path,
             pageId: _customPath ? null : _selectedPageId,
             pageName: _customPath ? null : _selectedPageName,
+            navigationMode: _navigationMode,
           );
   }
 
@@ -2285,6 +2288,26 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                 },
               ),
             ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<GoToPageNavigationMode>(
+            key: const ValueKey('behavior-navigation-mode-dropdown'),
+            isExpanded: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              labelText: 'Mode de navigation',
+            ),
+            initialValue: _navigationMode,
+            items: [
+              for (final mode in GoToPageNavigationMode.values)
+                DropdownMenuItem(value: mode, child: Text(mode.label)),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _navigationMode = value);
+              }
+            },
+          ),
         ],
       ),
     );

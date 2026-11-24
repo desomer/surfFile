@@ -92,7 +92,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
 1. **`components`** (`Map<String, ComponentConfig>`) : contient **tous** les composants, chacun identifié par son discriminateur `"type"` :
    - `"layout"` (`SuperLayoutConfig`)
    - `"native"` (`NativeComponentConfig`)
-   - `"scaffold"` (`ScaffoldPageConfig`)
+   - `"scaffold"` (alias `"superScaffold"`, `ScaffoldPageConfig` / `SuperScaffoldConfig`)
    - `"a4Document"` (`A4PageConfig`, page document A4 multi-feuilles pour l'aperçu et la génération PDF)
    - `"value"` (`SuperValueConfig`)
    - `"action"` (`SuperActionConfig`)
@@ -106,7 +106,10 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`). **Attention** : un composant placé en `"registry:Layout"` (`SuperLayout`) est purement structurel et **n'a pas de surface** — `styles[<layoutId>]` est ignoré au rendu ; pour colorer/styliser un conteneur de grille, utilise `"registry:IterableContent"` (même ID dans `styles` et dans `components` avec `"type": "layout"`) ou enveloppe le `Layout` dans une `"registry:Card"`.
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements attachés aux composants, structurés en **3 paramètres** : événement déclencheur (`event`), condition de garde optionnelle (`validator`) et action polymorphe (`action`, ex. `"goToPage"`, `"runJavaScript"`, `"sortCollection"`, `"filterCollection"`, `"emitEvent"`, `"datasource"`, etc.). Voir le guide dédié [`BEHAVIOR_JSON_AI_GUIDE.md`](BEHAVIOR_JSON_AI_GUIDE.md).
-4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`). Chaque page déclare `id`, `name`, `path`, et optionnellement `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels et `showCloseButton`: `true` par défaut, `false` pour masquer le bouton `×` en haut à droite) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
+4. **`pageCatalog`** : catalogue des pages routées et des shells partagés (`pages`, `shells`, `homePageId`, `rootShellId`).
+   - **`shells`** (`List<{"id": string, "name": string}>`, optionnel) : coquilles de navigation partagées (`EditorShellConfig`), chacune configurée dans `components[<shellId>]` (`type: "scaffold"` ou `"superScaffold"`) avec `{"id": "scaffold:outlet", "type": "scaffold:outlet"}` dans `placements.body`.
+   - **`rootShellId`** (`string?`, optionnel) : identifiant d'un shell déclaré dans `shells` enveloppant la route hôte codée `'/'`.
+   - **`pages`** : chaque page déclare `id`, `name`, `path`, et optionnellement `shellId` (identifiant d'un shell déclaré dans `shells` pour partager `AppBar`/menu latéral sans les dupliquer — interdit sur les pages modales), `pageType` (`"standard"` par défaut, `"a4Document"` pour les documents PDF A4, `"dialog"`, `"bottomSheet"`, `"sideSheet"` pour les pages modales avec `modalWidth`/`modalHeight` optionnels et `showCloseButton`: `true` par défaut, `false` pour masquer le bouton `×` en haut à droite) ainsi qu'une surcharge responsive optionnelle `layoutOverride` (`containerMode`: `"fullPage"` | `"constrained"`, `maxWidth`, `mobileGutter`, `tabletGutter`, `desktopGutter`, `largeDesktopGutter`).
    - **Contraintes strictes de `path`** : doit commencer par un seul `/`, être **différent de `"/"`** (la route `"/"` existe déjà côté hôte pour `"root"` / `"mainLayout"` — ne la redéclare jamais dans `pageCatalog`), ne pas se terminer par `"/"`, ne contenir ni espace, ni `"?"`, ni `"#"`, et ne pas chevaucher une route codée existante. Pour personnaliser l'écran principal `"/"`, modifie directement `"root"` et `"mainLayout"`, ou déclare une page avec un chemin distinct (ex. `"/accueil"`) et renseigne `"homePageId"`.
 5. **`responsiveLayout`** (optionnel à la racine) : configuration responsive globale du `body` des pages (`containerMode`: `"fullPage"` par défaut ou `"constrained"`, `maxWidth`: `1440` par défaut, `gutters`: `{"mobile": 24, "desktop": 32}`, `breakpoints`: `{"mobileWidth": 375, "tabletMinWidth": 768, "desktopMinWidth": 1280, "largeDesktopMinWidth": 1440}`).
 6. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
@@ -433,7 +436,7 @@ En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`)
       "spacing": 12,
       "template": {
         "east": true,
-        "autoSides": ["east"],
+        "eastSize": 180,
         "slotLabels": { "btn-delete": "Supprimer le client" },
         "placements": {
           "center": [{ "id": "row-client-nom", "type": "registry:Value" }],
@@ -602,10 +605,11 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
   - **Bonne pratique (empilement de `Card`, boutons ou champs sans occuper toute la hauteur)** :
     - Par défaut dans `center`, les composants sans `preferredHeight` se partagent toute la hauteur (`expandSlots: true`). Pour empiler des cartes (`Card`) ou contrôles qui s'adaptent à la hauteur de leur contenu, configure `zoneFlows.center` avec `"expandSlots": false` (et `"scrollable": true` si la liste de composants peut dépasser l'écran), ou mets `"fitContent": true` sur les slots concernés dans `slotSizeConstraints`.
     - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"mainLayout"` (ou le layout de la page).
-  - **Règles de dimensionnement (`autoSides`, défilement et `Card` enveloppante)** :
-    - **Règle 1 : Pas d'`autoSides` sur les volets latéraux contenant des listes ou layouts complexes**. Un panneau latéral (`westSize` ou `eastSize`) doit avoir une taille fixe explicite (ex: `340px`) sans figurer dans `autoSides` dès lors qu'il héberge une `ListView` ou un contenu défilant.
+  - **Règles de dimensionnement (`autoSides`, budget de largeur, défilement et `Card` enveloppante)** :
+    - **Règle 1 : Interdiction d'`autoSides: ["east"]` / `["west"]` sur données variables, listes, badges ou actions**. N'utilise jamais `autoSides: ["east"]` ou `autoSides: ["west"]` sur un layout ou un gabarit de liste (`template`) dès que ce côté héberge une `ListView`, un contenu défilant, des données textuelles dynamiques (email, téléphone, dates), des badges ou des groupes d'actions : déclare systématiquement une dimension fixe explicite (`eastSize` ou `westSize` entre `180` et `320` dp, ou `340` pour un panneau maître) afin de borner l'espace restant alloué au `center` et prévenir toute troncature silencieuse.
     - **Règle 2 : Jamais d'`autoSides` sur un layout feuille défilant**. Retirer `autoSides` de tout `layout` dont une zone est `scrollable: true`.
     - **Règle 3 : `card` enveloppante sans contrainte zéro**. Les cartes mono-enfant (`Card`) doivent s'étirer naturellement (`expandSlots: true` dans le parent `mainLayout`) pour que leur enfant prenne toute la hauteur disponible du viewport.
+    - **Règle 4 : Vérification universelle du budget horizontal & découpage déterministe des lignes riches**. Pour **tout `SuperLayout`** (pas uniquement `zoneAxes: 'row'`), vérifie que `[somme(tailles fixes des côtés actifs) + paddings + marges] < largeur totale disponible` avec une largeur minimale viable pour `center`. Dans tout composant combinant une désignation principale (nom, titre, description) et des attributs secondaires (statut, montant, actions), dimensionne la zone droite en dur via `eastSize`, ou organise la ligne avec des `slotSizeConstraints` explicites (`maxWidth` sur le texte long et `fitContent: true` sur les contrôles).
   - **Règle absolue d'auto-dimensionnement sur `mainLayout`** :
     - N'incluez **jamais** `"west"` ou `"east"` dans `autoSides` sur le conteneur racine `mainLayout` (ou tout layout parent direct de volets latéraux) : ces colonnes doivent obligatoirement être dimensionnées via `westSize` ou `eastSize` (ex: `280` à `360`).
     - La zone `center` de `mainLayout` doit toujours conserver `expandSlots: true` (valeur par défaut) avec une `Card` centrale extensible, sous peine de voir le volet latéral absorber toute la largeur disponible et occulter la vue centrale.
@@ -615,8 +619,8 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
   - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
 - **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` au minimum `16`, `gap` au minimum `0`). Les plafonds des sliders (`400` pour `rowHeight`, `64` pour `gap`) ne limitent pas les valeurs JSON.
 
-### 4.2. `"native"` (`NativeComponentConfig`) & `"scaffold"` (`ScaffoldPageConfig`) — Lien avec les widgets Flutter Material
-Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les widgets structurels standards de la bibliothèque **Flutter Material** (`package:flutter/material.dart`). Leurs noms de régions dans `regions` et `placements` reprennent exactement les paramètres nommés des constructeurs Flutter correspondants :
+### 4.2. `"native"` (`NativeComponentConfig`) & `"scaffold"` / `"superScaffold"` (`ScaffoldPageConfig`) — Lien avec les widgets Flutter Material
+Les composants `"native"`, `"scaffold"` et son alias `"superScaffold"` sont des adaptateurs directs vers les widgets structurels standards de la bibliothèque **Flutter Material** (`package:flutter/material.dart`). Leurs noms de régions dans `regions` et `placements` reprennent exactement les paramètres nommés des constructeurs Flutter correspondants (enrichis des panneaux latéraux fixes `sidebarStart` / `sidebarEnd` et du slot `scaffold:outlet` pour les shells partagés) :
 
 Pour les propriétés dimensionnelles éditées par slider (`elevation`,
 `scrolledUnderElevation`, `leadingWidth`, `titleSpacing`, `notchMargin`,
@@ -625,22 +629,32 @@ Pour les propriétés dimensionnelles éditées par slider (`elevation`,
 `expandedHeight`, `collapsedHeight`, `actionsPadding`, `scrollPadding`),
 les maxima indiqués ci-dessous décrivent la plage du slider, sans plafond JSON.
 Les minima restent appliqués, sauf pour les décalages signés. Les rayons et
-épaisseurs de `shape` sont également positifs ou nuls, sans plafond JSON.
-Les opacités et alignements bornés conservent leurs limites structurelles.
+épaisseurs de `shape` sont également positifs ou nulles, sans plafond JSON.
+Les largeurs de panneaux latéraux (`sidebarStartWidth`, `sidebarEndWidth`) sont
+bornées entre `48` et `2000` pixels par le modèle. Les opacités et alignements
+bornés conservent leurs limites structurelles.
 
-- **Page / Écran (`"root"` ou `<pageId>` du `pageCatalog`) $\rightarrow$ `Scaffold` de Flutter** (`type: "native"` ou `"scaffold"`) :
+- **Page / Écran / Shell (`"root"`, `<shellId>` ou `<pageId>` autonome du `pageCatalog`) $\rightarrow$ `Scaffold` / `SuperScaffold` de Flutter** (`type: "scaffold"`, alias `"superScaffold"` ou `"native"`) :
   - **Régions** :
     - `appBar` (1 slot max, dédié au composant `"registry:ApplicationBar"`) : barre supérieure du `Scaffold` (ou premier sliver `SliverAppBar` lorsque `bodyMode` vaut `"customScrollView"`).
-    - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"mainLayout"`.
+    - `body` (empilement vertical, toujours actif) : contenu principal de la page ou point d'insertion du shell :
+      - Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"mainLayout"`.
+      - Pour un **shell partagé** (`pageCatalog.shells`), place obligatoirement le slot **`{"id": "scaffold:outlet", "type": "scaffold:outlet"}`** dans `placements.body` : le routeur `ShellRoute` y injecte dynamiquement la page active rattachée au shell.
+    - `sidebarStart` (panneau latéral fixe au début — gauche en LTR, ex. `"registry:NavigationRail"` ou menu de navigation vertical permanent).
+    - `sidebarEnd` (panneau latéral fixe à la fin — droite en LTR, ex. inspecteur ou volet d'aide contextuel).
     - `drawer` / `endDrawer` (empilement vertical) : panneaux latéraux coulissants gauche / droite (`Drawer` Flutter).
     - `bottomNavigationBar` (1 slot max, dédié aux composants `"registry:BottomNavigationBar"` ou `"registry:BottomAppBar"`) : barre de navigation inférieure.
     - `floatingActionButton` (1 slot max) : bouton d'action flottant en bas à droite.
     - `bottomSheet` (1 slot max) : panneau persistant affiché en bas du `Scaffold`.
-  - **Propriétés du `Scaffold` et mode du corps (`bodyMode`) — directement à la racine de `components["root"]` ou `components[pageId]`** :
+  - **Propriétés du `Scaffold` / `SuperScaffold`, panneaux latéraux et mode du corps (`bodyMode`) — directement à la racine de `components["root"]`, `components[shellId]` ou `components[pageId]`** :
     - `bodyMode` (`"standard"` | `"singleChildScrollView"` | `"customScrollView"`, défaut `"standard"`) :
       - `"standard"` : zone `body` fixe occupant tout l'espace disponible (`SizedBox.expand`).
       - `"singleChildScrollView"` : enveloppe la zone `body` dans un `SingleChildScrollView` (avec `SlotContentFitScope` automatique pour que `"mainLayout"` et sa zone `center` prennent la hauteur naturelle de leurs enfants sans avoir à fixer une hauteur en pixels sur `"scaffold:body"`).
       - `"customScrollView"` : affiche la page dans un `CustomScrollView` unifié où la région `appBar` devient un `SliverAppBar`, les `ListView` deviennent des `SliverList` / `SliverFixedExtentList`, et les autres composants (dont `"mainLayout"`) sont enveloppés dans des `SliverToBoxAdapter` prenant la hauteur de leurs enfants.
+    - `headerSpan` (`"fullWidth"` | `"contentOnly"`, défaut `"fullWidth"`) : portée horizontale de la barre d'en-tête `appBar` par rapport aux panneaux latéraux `sidebarStart` et `sidebarEnd` (`"fullWidth"` = pleine largeur au-dessus des panneaux latéraux ; `"contentOnly"` = en-tête restreint à la zone centrale entre les panneaux latéraux).
+    - `sidebarStartWidth` (`number`, `48`..`2000`, plage du slider `56`..`420`, auto si omis) : largeur fixe en pixels du panneau latéral gauche `sidebarStart`.
+    - `sidebarEndWidth` (`number`, `48`..`2000`, plage du slider `160`..`480`, auto si omis) : largeur fixe en pixels du panneau latéral droit `sidebarEnd`.
+    - `responsiveSidebarToDrawer` (`bool`, défaut `false`) : sur écran étroit (mobile / tablette compacte), déplace automatiquement le contenu de `sidebarStart` dans le `drawer` escamotable.
     - `extendBodyBehindAppBar` (`bool`, défaut `false`) : étend la zone `body` sous l'`AppBar` en haut de la page (utile avec une `ApplicationBar` transparente ou translucide).
     - `extendBody` (`bool`, défaut `false`) : étend la zone `body` derrière la `bottomNavigationBar` en bas de la page.
     - **Options de défilement** (actives lorsque `bodyMode` vaut `"singleChildScrollView"` ou `"customScrollView"`) :
@@ -649,6 +663,77 @@ Les opacités et alignements bornés conservent leurs limites structurelles.
       - `primary` (`bool`, défaut `true`) : associe la vue de défilement au `PrimaryScrollController` de la page.
       - `scrollPadding` (`0`..`64`, défaut `0`) : marge intérieure uniforme (en pixels) autour du contenu défilant.
       - `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`, défaut `"hardEdge"`) : mode de découpage de la zone de défilement.
+
+#### Patterns multi-pages : `pageCatalog.shells`, `rootShellId` et `shellId`
+
+Pour toute application comportant plusieurs écrans, choisis l'un des deux patterns suivants :
+
+1. **Shell mutualisé (recommandé par défaut dès ≥ 2 pages liées)** :
+   - Déclare un ou plusieurs shells dans `pageCatalog.shells` (ex. `{"id": "main-shell", "name": "Navigation principale"}`), renseigne `"rootShellId": "main-shell"` si la route hôte `'/'` partage la même navigation, et attache chaque page liée via `"shellId": "main-shell"`.
+   - Définis `components["main-shell"]` avec `"type": "scaffold"` (ou `"superScaffold"`), ses régions de navigation (`appBar`, `sidebarStart`, `bottomNavigationBar`, etc.) et obligatoirement `{"id": "scaffold:outlet", "type": "scaffold:outlet"}` dans `placements.body`.
+   - Pour chaque page secondaire rattachée à un `shellId`, écris directement `components[<pageId>]` en **`"type": "layout"`** (sans répéter ni `Scaffold`, ni `AppBar`, ni menu latéral — seul le contenu métier de la page est injecté dans `scaffold:outlet`).
+   - Exemple JSON complet :
+     ```json
+     {
+       "pageCatalog": {
+         "shells": [{ "id": "main-shell", "name": "Navigation principale" }],
+         "rootShellId": "main-shell",
+         "pages": [
+           { "id": "page-clients", "name": "Clients", "path": "/clients", "shellId": "main-shell" },
+           { "id": "page-login", "name": "Connexion", "path": "/login" }
+         ]
+       },
+       "components": {
+         "main-shell": {
+           "type": "superScaffold",
+           "headerSpan": "fullWidth",
+           "sidebarStartWidth": 80,
+           "responsiveSidebarToDrawer": true,
+           "regions": { "appBar": true, "sidebarStart": true, "body": true },
+           "slotLabels": { "app-header": "Barre supérieure", "app-rail": "Navigation" },
+           "placements": {
+             "appBar": [{ "id": "app-header", "type": "registry:ApplicationBar" }],
+             "sidebarStart": [{ "id": "app-rail", "type": "registry:NavigationRail" }],
+             "body": [{ "id": "scaffold:outlet", "type": "scaffold:outlet" }]
+           }
+         },
+         "app-header": {
+           "type": "native",
+           "regions": { "title": true },
+           "slotLabels": { "app-title": "Titre application" },
+           "placements": { "title": [{ "id": "app-title", "type": "registry:Value" }] }
+         },
+         "app-title": { "type": "value", "text": "Mon CRM", "fontSize": 18, "fontWeight": "w600" },
+         "app-rail": {
+           "type": "native",
+           "labelType": "all",
+           "regions": { "destinations": true },
+           "slotLabels": { "nav-home": "Accueil", "nav-clients": "Clients" },
+           "placements": {
+             "destinations": [
+               { "id": "nav-home", "type": "registry:Action" },
+               { "id": "nav-clients", "type": "registry:Action" }
+             ]
+           }
+         },
+         "nav-home": { "type": "action", "label": "Accueil", "icon": "dashboard" },
+         "nav-clients": { "type": "action", "label": "Clients", "icon": "people" },
+         "page-clients": {
+           "type": "layout",
+           "slotLabels": { "clients-title": "Titre Clients" },
+           "zoneFlows": { "center": { "expandSlots": false, "scrollable": true, "padding": 24, "spacing": 16 } },
+           "placements": { "center": [{ "id": "clients-title", "type": "registry:Value" }] }
+         },
+         "clients-title": { "type": "value", "text": "Annuaire clients", "fontSize": 24, "fontWeight": "bold" }
+       },
+       "behaviors": {
+         "nav-home": [{ "id": "go-home", "event": "onTap", "action": { "type": "goToPage", "pagePath": "/", "navigationMode": "go" } }],
+         "nav-clients": [{ "id": "go-clients", "event": "onTap", "action": { "type": "goToPage", "pagePath": "/clients", "navigationMode": "go" } }]
+       }
+     }
+     ```
+2. **Scaffold dédié par page (`shellId: null`)** :
+   - À réserver aux pages isolées hors navigation principale (ex. `/login`, `/onboarding`) ou lorsque l'utilisateur demande explicitement de dupliquer `AppBar`/menu sur chaque page. Dans ce cas, `components[<pageId>]` a `"type": "scaffold"` (ou `"superScaffold"`) et définit ses propres régions (`appBar`, `sidebarStart`, `body`, etc.) ou au moins un bouton de sortie (`goToPage` / `goBack`) afin d'éviter toute page en impasse.
 
 - **`"registry:ApplicationBar"` $\rightarrow$ `AppBar` / `SliverAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `appBar` d'une page) :
   - `useDefaultNavigation` (`bool`, `true` par défaut) : laisse Flutter gérer automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`). Mettre à `false` pour utiliser une région `leading` personnalisée.
@@ -813,7 +898,7 @@ Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un 
 - `bindingDebounceMs` (`int?`, `100..2000`) et `bindingSaveOnBlurOnly` (`bool?`) : surcharges optionnelles du délai anti-rebond (en ms, défaut global `350`) et de l'enregistrement uniquement à la perte de focus (omis par défaut pour hériter du réglage global `Appearance.bindingDebounceMs` / `Appearance.bindingSaveOnBlurOnly`).
 - `field` (`SuperTextFieldConfig`, utilisé pour `mode: "input"` et `kind: "text"`, ainsi que pour les masques d'affichage en `mode: "display"`).
   - Masques et formatage : `mask` (`string`, jetons `#` chiffre, `A` lettre, `U` majuscule, `L` minuscule, `*` alphanumérique, `\` échappement), `maskIncludeLiterals` (`bool`, `false` par défaut pour stocker la valeur brute), `dateFormat` (`string` `intl`, ex. `"dd/MM/yyyy"` avec conversion ISO 8601 — `YYYY-MM-DD` ou `YYYY-MM-DDTHH:MM:SSZ` en UTC), `decimalDigits` (`int?`), `decimalSeparator` (`"."` | `","`), `thousandsSeparator` (`string`). Pour une date liée à un repository `format: "date"` / `"date-time"`, laisse le stockage en ISO 8601 et évite de définir un `x-mask` ou `pattern` en `dd/MM/yyyy`.
-  - Contraintes JSON Schema : `valueType` (`"string"` | `"integer"` | `"number"`), `required` (`bool`), `minLength` (`int?`), `maxLength` (`int?`), `validationPattern` (`string` regex complète), `format` (`"none"` | `"email"` | `"uri"` | `"uuid"` | `"date"` | `"date-time"` | `"time"` | `"ipv4"` | `"ipv6"` | `"hostname"` | `"phone"`), `minimum` / `maximum` / `exclusiveMinimum` / `exclusiveMaximum` / `multipleOf` (`number?`), `enumValues` (`List<string>`), `constValue` (`string?`), `validationMessage` (`string`), `useRepositorySchema` (`bool`, `true` par défaut — hérite automatiquement les contraintes et masques du `jsonSchema` du repository lié s'il existe). En cas de violation après modification ou perte de focus, un indicateur triangle rouge (façon Excel) avec info-bulle d'erreur s'affiche en coin supérieur droit sans agrandir le champ, `AutomaticState.invalid` s'active et l'écriture repository est bloquée.
+  - Contraintes JSON Schema : `valueType` (`"string"` | `"integer"` | `"number"`), `required` (`bool`), `minLength` (`int?`), `maxLength` (`int?`), `validationPattern` (`string` regex complète), `format` (`"none"` | `"email"` | `"uri"` | `"uuid"` | `"date"` | `"date-time"` | `"time"` | `"ipv4"` | `"ipv6"` | `"hostname"` | `"phone"`), `minimum` / `maximum` / `exclusiveMinimum` / `exclusiveMaximum` / `multipleOf` (`number?`), `enumValues` (`List<string>`), `constValue` (`string?`), `validationMessage` (`string`), `useRepositorySchema` (`bool`, `true` par défaut — hérite automatiquement les contraintes, les formats, `x-validationMessage`, `x-mask` / `x-maskIncludeLiterals`, `x-dateFormat`, `x-decimalDigits`, `x-decimalSeparator` et `x-thousandsSeparator` du `jsonSchema` du repository lié s'il existe). **Source de vérité unique** : pour tout `SuperValue` lié à un repository, place systématiquement ces contraintes, masques, formatages numériques et messages de validation directement dans le `"jsonSchema"` du repository plutôt que de les dupliquer dans `components.<id>.field` (qui reste réservé aux réglages visuels ou aux champs non liés). En cas de violation après modification ou perte de focus, un indicateur triangle rouge (façon Excel) avec info-bulle d'erreur s'affiche en coin supérieur droit sans agrandir le champ, `AutomaticState.invalid` s'active et l'écriture repository est bloquée.
 - `choice` (`SuperChoiceConfig`, pour `kind: "choice"`) :
   - `variant` : `"segmented"` (2 à 5 choix uniques `SegmentedButton`), `"dropdown"` (défaut, `DropdownButton`), `"radio"` (`RadioListTile`), `"filterChip"` (choix multiples `FilterChip`), `"checkboxList"` (choix multiples `CheckboxListTile`), `"searchAnchor"` (grande liste recherchable `SearchAnchor`).
   - `options` : liste d'options statiques (`["opt1", "opt2"]` ou `[{"value": "fr", "label": "France", "icon": "flag"}]`).
@@ -834,6 +919,7 @@ Affiche un bouton interactif :
 - `enabled` (`bool`, défaut `true`).
 - Typographie & Couleurs : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`.
   - **Contraste obligatoire sur `variant: "filled"`** : déclare systématiquement `"color": "theme:onPrimary"` et `"iconColor": "theme:onPrimary"` (ou la paire sémantique correspondante si `backgroundColor` est surchargé : `"theme:secondary"` $\rightarrow$ `"theme:onSecondary"`, `"theme:error"` $\rightarrow$ `"theme:onError"`, `"theme:errorContainer"` $\rightarrow$ `"theme:onErrorContainer"`) afin de verrouiller un contraste AA/AAA conforme.
+  - **Onglets dans un `SuperTab` (`placements.tabs`)** : ne définis **jamais** de style de fond ni de bordure spécifique sur une `SuperAction` placée dans `placements.tabs` (pas de `backgroundColor`, `borderColor`, `borderWidth`, `elevation`, `style` ou `styles["<tabSlotId>"]`, ni de `variant` plein/encadré) ; omets `variant` (résolu automatiquement en `"text"` dans les onglets) et pilote l'apparence via `SuperTab` (`tabBarStyle`, `indicator*`, `labelColor`, `unselectedLabelColor`).
 - `style` (`ContainerStyle`) : style de surface avancé optionnel.
 - `propertyBindings` & `states` : liaisons repository et états nommés/automatiques (voir § 4.8).
 
@@ -903,6 +989,11 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
      - **Zone `"content"`** (`placements.content`, sans suffixe `:id`) : contient les composants formant le **gabarit de contenu** partagé par chaque onglet généré. Le `SuperTab` fournit automatiquement un `JsonListScope` synchronisé avec l'onglet actif : tous les composants enfants utilisant `"categories[?]..."` lisent et modifient l'élément correspondant à l'onglet sélectionné.
      - `allowAdd` (`false`), `allowRemove` (`false`) : `bool`. En mode `"dynamic"`, affiche automatiquement un bouton `+` dans la `TabBar` pour ajouter un élément au tableau JSON et un bouton `×` sur chaque onglet pour le supprimer (inutile de créer des boutons `Action` manuels pour ajouter/supprimer un onglet).
      - `emptyText` : `string` (`"Aucun onglet"` par défaut), affiché lorsque le tableau dynamique est vide.
+
+- **Règle stricte sur les `SuperAction` d'onglets (`placements.tabs`) — aucun fond ni bordure spécifique** :
+  - Les composants `"type": "action"` ajoutés dans `placements.tabs` (en mode `"static"` comme `"dynamic"`) ne doivent **jamais** avoir de style de fond ni de bordure spécifique : **aucun** `backgroundColor`, **aucun** `borderColor`, **aucun** `borderWidth`, **aucune** `elevation`, **aucun** `style` (`ContainerStyle`) et **aucune** entrée de surface dans `styles["<tabSlotId>"]`.
+  - Omets `variant` (le moteur applique automatiquement le rendu `"text"` transparent dans les onglets) et n'utilise pas de variante remplie/encadrée (`"filled"`, `"tonal"`, `"elevated"`, `"outlined"`, `"surface"`).
+  - Pilote tout l'habillage visuel de la barre et de l'onglet actif au niveau du `SuperTab` (`tabBarStyle`, `indicatorKind`, `indicatorColor`, `indicatorRadius`, `labelColor`, `unselectedLabelColor`).
 
 - **Propriétés de disposition et de barre d'onglets (`components[tabId]`, `type: "tab"`)** :
   - `tabBarPosition` : `"top"` (défaut, barre d'onglets en haut) ou `"bottom"` (barre d'onglets en bas).
@@ -1558,7 +1649,7 @@ Le dictionnaire plat `"behaviors"` (`Map<String, List<ComponentBehavior>>`) atta
    - **13 événements impératifs** : `"onTap"`, `"onDoubleTap"`, `"onLongPress"`, `"onHoverEnter"`, `"onHoverExit"`, `"onSelected"`, `"onChanged"`, `"onSubmitted"`, `"onFocus"`, `"onBlur"`, `"onExpanded"`, `"onCollapsed"`, `"onMount"` ;
    - **3 événements déclaratifs / réactifs (couplages stricts)** : `"onHover"` (*uniquement* `"onTooltip"`), `"onBinding"` (*uniquement* `"bindState"`, `"bindZoneSize"`, `"sortCollection"`, `"filterCollection"`), `"onCreate"` (*uniquement* `"creationDefault"`).
 3. **`"validator"`** *(optionnel)* : condition de garde avant une action impérative (ou garde/prédicat en `"onBinding"` sur une collection).
-4. **`"action"`** *(20 types)* et **`"elseAction"`** *(optionnelle, exécutée si `validator` vaut `false`)* : `"goToPage"`, `"goBack"`, `"generatePdf"`, `"emitEvent"`, `"showMessage"`, `"copyToClipboard"`, `"setStyle"`, `"setVisibility"`, `"setState"`, `"onTooltip"`, `"bindState"`, `"bindZoneSize"`, `"addArrayItem"`, `"removeArrayItem"`, `"creationDefault"`, `"runJavaScript"`, `"sortCollection"`, `"filterCollection"`, `"searchProvider"`, `"datasource"`.
+4. **`"action"`** *(20 types)* et **`"elseAction"`** *(optionnelle, exécutée si `validator` vaut `false`)* : `"goToPage"` (accepte `"navigationMode"`: `"auto"` | `"go"` | `"push"`, défaut `"auto"` — `"go"` pour changer d'écran dans un shell, `"push"` pour empiler ou ouvrir une modale), `"goBack"`, `"generatePdf"`, `"emitEvent"`, `"showMessage"`, `"copyToClipboard"`, `"setStyle"`, `"setVisibility"`, `"setState"`, `"onTooltip"`, `"bindState"`, `"bindZoneSize"`, `"addArrayItem"`, `"removeArrayItem"`, `"creationDefault"`, `"runJavaScript"`, `"sortCollection"`, `"filterCollection"`, `"searchProvider"`, `"datasource"`.
 
 > **Rappel Vibe** : émets `"behaviors"` après `"components"` ; une entrée `behaviors["<id>"]` remplace toute la liste du composant `<id>` (conserve les comportements existants à garder).
 
@@ -1572,7 +1663,7 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 | :--- | :--- | :--- |
 | **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"mainLayout"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["mainLayout"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
 | **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`) — avec `"paddingInsets": [top, 38, bottom, left]` (`right >= 38`) dès que `"allowRemove": true` — et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
-| **Barre d'onglets d'un `SuperTab` (`<tabId>`)** | La `TabBar` est déjà enveloppée dans une surface stylisable via `components["<tabId>"].tabBarStyle`, et en mode `"dynamic"`, les boutons `+` (`allowAdd`) et `×` (`allowRemove`) sont générés nativement. | Configure directement `tabBarStyle` dans `components["<tabId>"]` et active `allowAdd` / `allowRemove` en mode `"dynamic"` sans créer de boutons d'ajout/suppression supplémentaires. |
+| **Barre d'onglets d'un `SuperTab` (`<tabId>`)** | La `TabBar` est déjà enveloppée dans une surface stylisable via `components["<tabId>"].tabBarStyle`, et en mode `"dynamic"`, les boutons `+` (`allowAdd`) et `×` (`allowRemove`) sont générés nativement. | Configure directement `tabBarStyle` et les propriétés `indicator*` / `labelColor` dans `components["<tabId>"]`, laisse les `SuperAction` de `placements.tabs` sans couleur de fond ni bordure spécifique (pas de `backgroundColor`, `borderColor`, `borderWidth`, `style`, `styles["<tabSlotId>"]` ni `variant` plein/encadré), et active `allowAdd` / `allowRemove` en mode `"dynamic"`. |
 | **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |
 
 ---
@@ -1587,9 +1678,9 @@ La liste exhaustive des outils et de leurs paramètres est injectée dynamiqueme
 - **Quand appeler les outils** : mesures géométriques ou slots applicatifs hors JSON (`get_component_geometry`, `get_runtime_tree`), erreurs Flutter/overflow/JS/binding (`get_debug_entries`), audit des liaisons (`inspect_bindings_and_diagnostics`), données et JSON Schemas (`query_repository_data`, `manage_repository_json_schema`), datasources/providers existants (`get_datasources_and_providers`), contraste (`get_theme_and_contrast`), prévisualisation d'une ligne, d'une page ou d'un onglet `SuperTab` (`preview_navigation_or_selection`) ou inspection visuelle isolée (`capture_element_screenshot`, toujours préféré à `capture_screenshot` pour un composant ou une zone).
 - **Quand ne pas les appeler** : modifications déclaratives simples dont le JSON courant suffit déjà.
 - **Auto-vérification post-rendu** : l'IA peut joindre `"verifyRender": true` avec `"vibe"` (également déclenché automatiquement en mode « Reproduire à l'identique » ou dès qu'une nouvelle erreur `critical`, `error` ou `warning` — hors `userInput` — apparaît dans `debugEntries` après l'aperçu) pour inspecter le rendu réel et se corriger en 1 passe avant validation finale.
-- **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)** : Sur tout conteneur ou zone disposé en ligne (`zoneAxes: 'row'`), additionne systématiquement via `get_component_geometry` les largeurs mesurées des composants enfants et lève une alerte dès que `somme(width) > parentWidth - paddings` (`[somme(width) + espacements]` strictement inférieur à `parentWidth - paddingLeft - paddingRight`).
+- **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`) & budget horizontal universel (`SuperLayout`)** : Sur tout conteneur ou zone disposé en ligne (`zoneAxes: 'row'`), additionne systématiquement via `get_component_geometry` les largeurs mesurées des composants enfants et lève une alerte dès que `somme(width) > parentWidth - paddings` (`[somme(width) + espacements]` strictement inférieur à `parentWidth - paddingLeft - paddingRight`). Au-delà des zones en ligne, pour tout `SuperLayout`, vérifie que `[somme(tailles fixes des côtés actifs) + paddings + marges] < largeur totale disponible`, que `center` conserve une largeur minimale viable, qu'aucun `autoSides: ["east"]` / `["west"]` n'est posé sur des données variables/badges/actions (y compris dans un `template` de liste $\rightarrow$ `eastSize`/`westSize` fixe entre `180` et `320` dp), et que toute ligne riche (titre + métadonnées) applique soit un `eastSize` fixe soit des `slotSizeConstraints` (`maxWidth` sur texte long + `fitContent: true` sur contrôles).
 - **Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)** : Interdiction sur une même ligne de faire cohabiter un titre long (> 30 caractères) et un bouton d'action complet texte + icône ; utiliser soit un bouton d'action à icône seule (`kind: 'icon'`, avec `tooltip`), soit un titre compacté.
-- **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** : Exécuter une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore un lot d'audit (ainsi qu'en cas de modification d'en-tête ou de barre d'outils) pour valider l'alignement et l'absence de débordement au bord de carte.
+- **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** : Exécuter une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore un lot d'audit (ainsi qu'en cas de modification d'en-tête ou de barre d'outils), et sur la première occurrence (`occurrenceIndex: 0`) de toute `SuperListView` ou `SuperTable` créée ou auditée, pour valider l'alignement et l'absence de coupure, de texte tronqué ou de superposition en fin de ligne.
 - **Balayage des onglets (hors scope)** : Lorsqu'aucun scope restreint ni mode « Uniquement visible » n'est actif, l'audit de page balaie automatiquement chaque onglet des `SuperTab` de la page, et l'IA peut basculer vers n'importe quel onglet via `preview_navigation_or_selection` (`tabComponentId` + `tabIndex` ou `tabId`, restauré automatiquement au rollback) avant d'appeler `get_component_geometry` ou `capture_element_screenshot`.
 - **Mode « Uniquement visible »** : Lorsqu'il est activé dans la barre d'action du chat, l'IA reste verrouillée sur l'onglet actif et la position de scroll courante (ni changement d'onglet/route, ni `scrollIntoView`) pour toutes les opérations (ajout, modification, plan, audit) et protège les onglets masqués ainsi que les composants hors de la fenêtre de scroll courante.
 

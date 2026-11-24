@@ -406,4 +406,95 @@ void main() {
     expect(find.text('From file'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('supports imported appearances with shared shells and layout pages', (
+    tester,
+  ) async {
+    final appearance = Appearance(
+      pageCatalog: EditorPageCatalog(
+        shells: [EditorShellConfig(id: 'app-shell', name: 'Shell')],
+        homePageId: 'dashboard',
+        pages: [
+          EditorPageConfig(
+            id: 'dashboard',
+            name: 'Dashboard',
+            path: '/dashboard',
+            shellId: 'app-shell',
+          ),
+          EditorPageConfig(
+            id: 'orders',
+            name: 'Orders',
+            path: '/orders',
+            shellId: 'app-shell',
+          ),
+        ],
+      ),
+      components: {
+        'app-shell': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.appBar: const ['shell-header'],
+            ScaffoldPageRegion.body: const ['scaffold:outlet'],
+          },
+          slotTypes: const {'shell-header': 'registry:ApplicationBar'},
+        ),
+        'shell-header': NativeComponentConfig(
+          placements: const {
+            'title': ['shell-title'],
+            'actions': ['nav-orders'],
+          },
+          slotTypes: const {
+            'shell-title': 'registry:Value',
+            'nav-orders': 'registry:Action',
+          },
+        ),
+        'shell-title': const SuperValueConfig(initialText: 'Renderer Shell'),
+        'nav-orders': const SuperActionConfig(label: 'Go Orders'),
+        'dashboard': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['dash-text'],
+          },
+          slotTypes: {'dash-text': 'registry:Value'},
+        ),
+        'dash-text': const SuperValueConfig(initialText: 'Dashboard Body'),
+        'orders': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['orders-text'],
+          },
+          slotTypes: {'orders-text': 'registry:Value'},
+        ),
+        'orders-text': const SuperValueConfig(initialText: 'Orders Body'),
+      },
+      behaviors: {
+        'nav-orders': [
+          const ComponentBehavior(
+            id: 'open-orders',
+            trigger: BehaviorTrigger.click,
+            action: GoToPageAction(pagePath: '/orders', pageId: 'orders'),
+          ),
+        ],
+      },
+    );
+
+    await tester.pumpWidget(
+      host(
+        SuperRenderer(
+          source: AppearanceTransfer.export(appearance, {
+            ...TransferGroup.values,
+          }),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Renderer Shell'), findsOneWidget);
+    expect(find.text('Dashboard Body'), findsOneWidget);
+
+    await tester.tap(find.text('Go Orders'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Renderer Shell'), findsOneWidget);
+    expect(find.text('Orders Body'), findsOneWidget);
+    expect(find.text('Dashboard Body'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

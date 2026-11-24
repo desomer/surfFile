@@ -11,6 +11,7 @@ import '../models/spec_forge_stage.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
 import '../services/spec_project_store.dart';
+import 'build/build_design_items_view.dart';
 import 'cost_stage_ai_chat_pane.dart';
 import 'cost_wizard_stepper.dart';
 import 'design/company_glossary_view.dart';
@@ -95,6 +96,8 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   final GlobalKey _costSplitRowKey = GlobalKey();
   final ModelsContractsNavigationController _modelsNavController =
       ModelsContractsNavigationController();
+  final BuildNavigationController _buildNavController =
+      BuildNavigationController();
   double _chatPaneFraction = 0.50;
   double _chatDragOffset = SpecSplitHandle.width / 2;
   int _selectedRailIndex = 0;
@@ -107,18 +110,28 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   @override
   void dispose() {
     _modelsNavController.dispose();
+    _buildNavController.dispose();
     super.dispose();
   }
 
-  void _selectRail(int index) => setState(() {
-    if (index == 0 && _selectedRailIndex == 0) _activeSpecLinkId = null;
-    if (index == 1 && _selectedRailIndex == 1) _activeDesignLinkId = null;
-    if (index != _selectedRailIndex || index == 1) {
-      _designDetail = null;
-      _modelsNavController.reset();
+  void _selectRail(int index) {
+    if (index == 2 && _selectedRailIndex == 2 && _buildNavController.level > 0) {
+      _buildNavController.goBack();
+      return;
     }
-    _selectedRailIndex = index;
-  });
+    setState(() {
+      if (index == 0 && _selectedRailIndex == 0) _activeSpecLinkId = null;
+      if (index == 1 && _selectedRailIndex == 1) _activeDesignLinkId = null;
+      if (index != _selectedRailIndex || index == 1) {
+        _designDetail = null;
+        _modelsNavController.reset();
+      }
+      if (index != 2) {
+        _buildNavController.reset();
+      }
+      _selectedRailIndex = index;
+    });
+  }
 
   void _selectDesignPage(String? id, {String? initialDomainId}) => setState(() {
     _activeDesignLinkId = id;
@@ -158,6 +171,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         return (
           tooltip: 'Retour au menu Design',
           onBack: () => _selectDesignPage(null),
+        );
+      case 2:
+        if (_buildNavController.level <= 0) return null;
+        return (
+          tooltip: 'Retour aux items de design',
+          onBack: _buildNavController.goBack,
         );
       default:
         return null;
@@ -208,7 +227,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         }
         return 'Design › $page';
       case 2:
-        return 'Build';
+        return _buildNavController.level > 0
+            ? 'Build › Sélection des Prompts IA'
+            : 'Build';
       default:
         return project == null ? 'Question' : 'Question — ${project.name}';
     }
@@ -247,7 +268,11 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.controller, _modelsNavController]),
+      listenable: Listenable.merge([
+        widget.controller,
+        _modelsNavController,
+        _buildNavController,
+      ]),
       builder: (context, _) {
         final project = widget.controller.project;
         final colors = Theme.of(context).colorScheme;
@@ -412,9 +437,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                 child: switch (_selectedRailIndex) {
                   0 => _buildSpecContent(context, project, colors),
                   1 => _buildDesignContent(context),
-                  2 => const SizedBox.shrink(
-                    key: ValueKey('spec-forge-build-empty'),
-                  ),
+                  2 => _buildBuildContent(),
                   _ => GlobalQuestionChatPane(
                     controller: widget.controller,
                     onNavigateToSpec: () => setState(() {
@@ -434,6 +457,26 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildBuildContent() {
+    return KeyedSubtree(
+      key: const ValueKey('spec-forge-build-view'),
+      child: BuildDesignItemsView(
+        key: ObjectKey(widget.controller.store),
+        controller: widget.controller,
+        navigationController: _buildNavController,
+        onManageDomains: () {
+          setState(() {
+            _selectedRailIndex = 1;
+            _activeDesignLinkId = 'domain_management';
+            _designDetail = null;
+            _modelsNavController.reset();
+            _buildNavController.reset();
+          });
+        },
+      ),
     );
   }
 

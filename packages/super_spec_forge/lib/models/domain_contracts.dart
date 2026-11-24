@@ -14,6 +14,13 @@ import 'spec_stage_chat.dart';
 /// Avancement d'une étape du contrat.
 enum ContractStatus { pending, inProgress, done }
 
+/// Retourne le statut suivant dans le cycle `À faire → En cours → Terminé → À faire`.
+ContractStatus nextContractStatus(ContractStatus? current) => switch (current) {
+  null || ContractStatus.pending => ContractStatus.inProgress,
+  ContractStatus.inProgress => ContractStatus.done,
+  ContractStatus.done => ContractStatus.pending,
+};
+
 /// Étapes représentées par les quatre indicateurs dans l'arbre.
 enum ContractStage { design, validation, code, delivery }
 
@@ -37,6 +44,17 @@ class ContractDetails {
   final String title;
   final String version;
   final Map<ContractStage, ContractStatus> states;
+
+  /// Copie modifiée des métadonnées du contrat.
+  ContractDetails copyWith({
+    String? title,
+    String? version,
+    Map<ContractStage, ContractStatus>? states,
+  }) => ContractDetails(
+    title: title ?? this.title,
+    version: version ?? this.version,
+    states: states ?? this.states,
+  );
 
   Map<String, Object?> toJson() => {
     'title': title,

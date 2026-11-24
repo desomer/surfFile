@@ -1,7 +1,8 @@
 /// Service de persistance multi-fichiers ([PagedFileAppearanceStore]) de l'[Appearance].
 ///
 /// Conserve les réglages globaux, le catalogue [EditorPageCatalog], la page `'/'`
-/// (`root` / `mainLayout`), le fond global et les éléments partagés dans
+/// (`root` / `mainLayout`), les shells partagés (`pageCatalog.shells`) et leurs
+/// composants, le fond global et les éléments partagés dans
 /// `<appDir>/appearance.json`, et persiste les configurations exclusives de
 /// chaque page du catalogue dans un fichier dédié `<appDir>/pages/<pageId>.json`
 /// chargé à la demande et réécrit de manière incrémentale et atomique.
@@ -76,6 +77,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   Registry? registry;
   final Set<String> _loadedPageIds = <String>{};
   final Set<String> _knownCatalogPageIds = <String>{};
+  final Set<String> _knownCatalogShellIds = <String>{};
   final Set<String> _globalProtectedIds = <String>{};
   final Map<String, EditorPageAppearanceSlice> _persistedPages =
       <String, EditorPageAppearanceSlice>{};
@@ -98,6 +100,11 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   /// Indique si [pageId] appartient au catalogue déjà persisté sur disque.
   bool isKnownCatalogPage(String pageId) =>
       _knownCatalogPageIds.contains(pageId.trim());
+
+  /// Indique si [shellId] correspond à un shell partagé du catalogue persisté
+  /// dans `appearance.json` (jamais stocké dans `pages/<shellId>.json`).
+  bool isKnownCatalogShell(String shellId) =>
+      _knownCatalogShellIds.contains(shellId.trim());
 
   /// Retourne le nom de fichier sûr correspondant à [pageId] dans [pagesDirectory].
   static String pageFileNameFor(String pageId) {
@@ -251,6 +258,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   Future<Appearance> load() async {
     _loadedPageIds.clear();
     _knownCatalogPageIds.clear();
+    _knownCatalogShellIds.clear();
     _globalProtectedIds.clear();
     _persistedPages.clear();
     _inFlightPageLoads.clear();
@@ -276,6 +284,7 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
     }
     codec.restoreAdditional(stored);
     _knownCatalogPageIds.addAll(result.pageCatalog.pages.map((p) => p.id));
+    _knownCatalogShellIds.addAll(result.pageCatalog.shells.map((s) => s.id));
     _globalProtectedIds.addAll(_collectIds(result));
     if (codec.needsMigration(stored)) {
       await save(result);
@@ -286,14 +295,16 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
   /// Charge à la demande la tranche JSON dédiée à [pageId] depuis [pagesDirectory].
   ///
   /// Retourne une tranche vide si le fichier `pages/<pageId>.json` n'existe pas
-  /// encore sur disque. Les lectures concurrentes pour un même [pageId] sont
-  /// dédupliquées.
+  /// encore sur disque ou si [pageId] désigne un shell partagé (toujours chargé
+  /// dans `appearance.json`). Les lectures concurrentes pour un même [pageId]
+  /// sont dédupliquées.
   Future<EditorPageAppearanceSlice> loadPage(String pageId) {
     final trimmed = pageId.trim();
     if (trimmed.isEmpty) {
       throw const FormatException('Identifiant de page vide.');
     }
-    if (_loadedPageIds.contains(trimmed)) {
+    if (_knownCatalogShellIds.contains(trimmed) ||
+        _loadedPageIds.contains(trimmed)) {
       return Future<EditorPageAppearanceSlice>.value(
         const EditorPageAppearanceSlice.empty(),
       );
@@ -446,6 +457,9 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
     final currentCatalogIds = <String>{
       for (final page in appearance.pageCatalog.pages) page.id,
     };
+    final currentShellIds = <String>{
+      for (final shell in appearance.pageCatalog.shells) shell.id,
+    };
 
     // Toute page nouvellement créée en mémoire (absente du catalogue initial
     // et sans fichier préexistant) est considérée comme chargée pour pouvoir
@@ -486,10 +500,18 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
       }
     }
 
+    final nextGlobalProtectedIds = _collectIds(partition.global);
+
     if (!globalNeedsWrite && dirtyPages.isEmpty && deletedPageIds.isEmpty) {
       _knownCatalogPageIds
         ..clear()
         ..addAll(currentCatalogIds);
+      _knownCatalogShellIds
+        ..clear()
+        ..addAll(currentShellIds);
+      _globalProtectedIds
+        ..clear()
+        ..addAll(nextGlobalProtectedIds);
       return;
     }
 
@@ -511,6 +533,12 @@ class PagedFileAppearanceStore extends FileAppearanceStore {
       _knownCatalogPageIds
         ..clear()
         ..addAll(currentCatalogIds);
+      _knownCatalogShellIds
+        ..clear()
+        ..addAll(currentShellIds);
+      _globalProtectedIds
+        ..clear()
+        ..addAll(nextGlobalProtectedIds);
     });
   }
 

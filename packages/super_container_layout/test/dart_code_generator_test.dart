@@ -994,6 +994,168 @@ void main() {
       expect(customCode, contains("'type': 'customTest'"));
     },
   );
+
+  group('ScaffoldPageConfig & Shell Dart codegen', () {
+    test('exports SuperPage with sidebarStart, sidebarEnd and non-default scaffold properties', () {
+      final registry = Registry()..bootstrap();
+      addTearDown(registry.dispose);
+
+      final appearance = Appearance(
+        components: {
+          'workspace-page': ScaffoldPageConfig(
+            placements: const {
+              ScaffoldPageRegion.appBar: ['top-bar'],
+              ScaffoldPageRegion.sidebarStart: ['left-nav'],
+              ScaffoldPageRegion.sidebarEnd: ['right-panel'],
+              ScaffoldPageRegion.body: ['main-body'],
+            },
+            regions: const {
+              ScaffoldPageRegion.appBar: true,
+              ScaffoldPageRegion.sidebarStart: true,
+              ScaffoldPageRegion.sidebarEnd: true,
+            },
+            slotTypes: const {
+              'top-bar': 'registry:ApplicationBar',
+              'left-nav': 'registry:Value',
+              'right-panel': 'registry:Value',
+              'main-body': 'registry:Value',
+            },
+            headerSpan: ScaffoldHeaderSpan.contentOnly,
+            sidebarStartWidth: 260,
+            sidebarEndWidth: 320,
+            responsiveSidebarToDrawer: true,
+          ),
+          'top-bar': NativeComponentConfig(
+            placements: const {
+              'title': ['bar-title'],
+            },
+            slotTypes: const {'bar-title': 'registry:Value'},
+          ),
+          'bar-title': const SuperValueConfig(initialText: 'Workspace'),
+          'left-nav': const SuperValueConfig(initialText: 'Navigation'),
+          'right-panel': const SuperValueConfig(initialText: 'Inspector'),
+          'main-body': const SuperValueConfig(initialText: 'Content'),
+        },
+        pageCatalog: EditorPageCatalog(
+          homePageId: 'workspace-page',
+          pages: [
+            EditorPageConfig(
+              id: 'workspace-page',
+              name: 'Workspace',
+              path: '/workspace',
+            ),
+          ],
+        ),
+      );
+
+      final code = DartCodeExporter.export(
+        appearance: appearance,
+        registry: registry,
+        componentId: 'workspace-page',
+      );
+
+      expect(code, contains('SuperPage('));
+      expect(code, contains('pageConfig: ScaffoldPageConfig('));
+      expect(code, contains('ScaffoldPageRegion.sidebarStart'));
+      expect(code, contains('ScaffoldPageRegion.sidebarEnd'));
+      expect(code, contains('headerSpan: ScaffoldHeaderSpan.contentOnly'));
+      expect(code, contains('sidebarStartWidth: 260'));
+      expect(code, contains('sidebarEndWidth: 320'));
+      expect(code, contains('responsiveSidebarToDrawer: true'));
+      expect(code, contains("id: 'left-nav'"));
+      expect(code, contains("id: 'right-panel'"));
+      expect(code, contains("id: 'main-body'"));
+
+      // Default ScaffoldPageConfig omits default headerSpan/sidebar widths/responsive flag.
+      final defaultCtx = DartCodegenContext(
+        appearance: Appearance(),
+        registry: registry,
+      );
+      final defaultConfigCode = defaultCtx.formatScaffoldPageConfig(
+        ScaffoldPageConfig(),
+      );
+      expect(defaultConfigCode, 'ScaffoldPageConfig()');
+    });
+
+    test('exports shell directly and shelled pages/root replacing scaffold:outlet cleanly', () {
+      final registry = Registry()..bootstrap();
+      addTearDown(registry.dispose);
+
+      final appearance = Appearance(
+        components: {
+          'main-shell': ScaffoldPageConfig(
+            placements: const {
+              ScaffoldPageRegion.sidebarStart: ['shell-nav'],
+              ScaffoldPageRegion.body: ['scaffold:outlet'],
+            },
+            regions: const {ScaffoldPageRegion.sidebarStart: true},
+            slotTypes: const {'shell-nav': 'registry:Value'},
+            sidebarStartWidth: 240,
+            responsiveSidebarToDrawer: true,
+          ),
+          'shell-nav': const SuperValueConfig(initialText: 'Sidebar'),
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['home-val'],
+            },
+            slotTypes: {'home-val': 'registry:Value'},
+          ),
+          'home-val': const SuperValueConfig(initialText: 'Home Body'),
+          'dashboard': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['kpi-val'],
+            },
+            slotTypes: {'kpi-val': 'registry:Value'},
+          ),
+          'kpi-val': const SuperValueConfig(initialText: 'KPI 42'),
+        },
+        pageCatalog: EditorPageCatalog(
+          rootShellId: 'main-shell',
+          shells: [EditorShellConfig(id: 'main-shell', name: 'Main Shell')],
+          pages: [
+            EditorPageConfig(
+              id: 'dashboard',
+              name: 'Dashboard',
+              path: '/dashboard',
+              shellId: 'main-shell',
+            ),
+          ],
+        ),
+      );
+
+      // 1. Direct export of the shell omits scaffold:outlet without crashing.
+      final shellCode = DartCodeExporter.export(
+        appearance: appearance,
+        registry: registry,
+        componentId: 'main-shell',
+      );
+      expect(shellCode, contains('SuperPage('));
+      expect(shellCode, contains('ScaffoldPageRegion.sidebarStart'));
+      expect(shellCode, contains('sidebarStartWidth: 240'));
+      expect(shellCode, isNot(contains('scaffold:outlet')));
+
+      // 2. Export of shelled page replaces scaffold:outlet with the page layout.
+      final pageCode = DartCodeExporter.export(
+        appearance: appearance,
+        registry: registry,
+        componentId: 'dashboard',
+      );
+      expect(pageCode, contains('SuperPage('));
+      expect(pageCode, contains("ScaffoldPageRegion.body: ['dashboard']"));
+      expect(pageCode, contains("initialText: 'KPI 42'"));
+      expect(pageCode, isNot(contains('scaffold:outlet')));
+
+      // 3. Export of root app (componentId: null) resolves rootShellId + mainLayout.
+      final rootCode = DartCodeExporter.export(
+        appearance: appearance,
+        registry: registry,
+      );
+      expect(rootCode, contains('SuperPage('));
+      expect(rootCode, contains("ScaffoldPageRegion.body: ['mainLayout']"));
+      expect(rootCode, contains("initialText: 'Home Body'"));
+      expect(rootCode, isNot(contains('scaffold:outlet')));
+    });
+  });
 }
 
 class _CustomValidatorForCodegenTest extends BehaviorValidator {

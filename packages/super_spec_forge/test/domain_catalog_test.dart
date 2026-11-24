@@ -470,4 +470,87 @@ void main() {
       throwsStateError,
     );
   });
+
+  test('DomainCatalog gère les profils de stacks techniques et leur liaison aux domaines', () {
+    expect(
+      DomainCatalog.empty.techStacks.map((s) => s.code),
+      contains('ts-nestjs'),
+    );
+
+    const customStack = BuildTechStackProfile(
+      id: 'stack_java_spring',
+      code: 'java-spring-boot',
+      name: 'Java 21 / Spring Boot 3',
+      technicalStack: '- Java 21, Spring Boot 3, JPA, JUnit 5',
+      implementationFolderStructure:
+          'src/main/java/com/acme/{{domain}}/domain/',
+      unitTestFolderStructure: 'src/test/java/com/acme/{{domain}}/domain/',
+      persistenceFolderStructure:
+          'src/main/java/com/acme/{{domain}}/infrastructure/persistence/',
+      implementationExtension:
+          '- Utiliser des Java records pour les Value Objects.',
+    );
+
+    final catalog = DomainCatalog(
+      domains: const [
+        FunctionalDomain(
+          id: 'domain_1',
+          domainCode: 'billing',
+          name: 'Facturation',
+          techStackId: 'stack_java_spring',
+        ),
+      ],
+      techStacks: [...BuildTechStackProfile.defaults, customStack],
+    );
+    catalog.validate();
+
+    final restored = DomainCatalog.fromJson(
+      jsonDecode(jsonEncode(catalog.toJson())),
+    );
+    expect(restored.techStacks, hasLength(2));
+    expect(
+      restored.techStackForDomain(restored.domains.single),
+      equals(customStack),
+    );
+    expect(
+      customStack.resolveFolderStructure('billing', roleName: 'implementation'),
+      'src/main/java/com/acme/billing/domain/',
+    );
+    expect(
+      customStack.resolveFolderStructure('billing', roleName: 'unitTest'),
+      'src/test/java/com/acme/billing/domain/',
+    );
+    expect(
+      customStack.resolveFolderStructure('billing', roleName: 'persistence'),
+      'src/main/java/com/acme/billing/infrastructure/persistence/',
+    );
+
+    // Rétrocompatibilité : un ancien JSON sans `techStacks` charge la stack par défaut.
+    final legacy = DomainCatalog.fromJson(const <String, Object?>{
+      'domains': <Object?>[
+        <String, Object?>{
+          'id': 'domain_legacy',
+          'domainCode': 'legacy-ctx',
+          'name': 'Legacy',
+        },
+      ],
+    });
+    expect(legacy.techStacks.single.code, 'ts-nestjs');
+    expect(legacy.domains.single.techStackId, isNull);
+
+    // Un domaine pointant sur une stack inexistante est rejeté.
+    expect(
+      () => DomainCatalog(
+        domains: const [
+          FunctionalDomain(
+            id: 'domain_bad',
+            domainCode: 'billing',
+            name: 'Billing',
+            techStackId: 'stack_unknown',
+          ),
+        ],
+      ).validate(),
+      throwsFormatException,
+    );
+  });
 }

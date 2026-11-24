@@ -29,6 +29,7 @@ import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
+import '../../services/repositories/repository_array_creation.dart';
 import '../../super_app.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
@@ -999,12 +1000,23 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
   Future<void> _addDynamicTab() {
     final length = _dynamicItems?.length ?? 0;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final existing = _dynamicItems;
+    final templatePath = _dynamicTemplatePath;
     return _changeDynamicArray((store, binding) async {
+      final initialItem = await RepositoryArrayCreationService.buildNewRow(
+        store: store,
+        repositoryId: binding.repositoryId!,
+        arrayTemplatePath: templatePath ?? binding.path,
+        appearance: appearance,
+        existingItems: existing,
+      );
       final count = await store.appendArrayItem(
         binding.repositoryId!,
         binding.path,
         expectedLength: length,
         componentId: widget.id,
+        initialItem: initialItem,
       );
       if (mounted && _dynamicSource?.binding == binding) {
         final nextIndex = count - 1;

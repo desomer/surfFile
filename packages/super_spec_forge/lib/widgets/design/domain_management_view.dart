@@ -10,6 +10,7 @@ import '../../models/domain_catalog.dart';
 import '../../services/domain_env_exporter.dart';
 import '../../services/domain_secret_cipher.dart';
 import '../../services/spec_forge_controller.dart';
+import '../build/build_tech_stacks_dialog.dart';
 
 /// Vue de gestion des domaines fonctionnels depuis le menu Design.
 class DomainManagementView extends StatefulWidget {
@@ -157,11 +158,31 @@ class _DomainManagementViewState extends State<DomainManagementView> {
               ),
             ],
           ),
-          Text(
-            'Catalogue local au workspace',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 10,
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('domain-manage-tech-stacks-btn'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => showBuildTechStacksDialog(
+                  context,
+                  controller: widget.controller,
+                ),
+                icon: const Icon(Icons.layers_rounded, size: 16),
+                label: Text(
+                  'Stacks techniques (${catalog.techStacks.length})',
+                ),
+              ),
+              Text(
+                'Catalogue local au workspace',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -316,6 +337,7 @@ class _DomainManagementViewState extends State<DomainManagementView> {
     final serviceCount = catalog.microservices
         .where((item) => item.domainId == domain.id)
         .length;
+    final techStack = catalog.techStackForDomain(domain);
     return DefaultTabController(
       length: 3,
       child: Column(
@@ -339,7 +361,8 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                     ),
                     Text(
                       '${domain.domainCode} · $environmentCount environnement(s) · '
-                      '$serviceCount microservice(s)',
+                      '$serviceCount microservice(s)'
+                      '${techStack == null ? '' : ' · Stack : ${techStack.name}'}',
                       style: Theme.of(context).textTheme.bodySmall
                           ?.copyWith(color: colors.onSurfaceVariant),
                     ),
@@ -772,10 +795,16 @@ class _DomainManagementViewState extends State<DomainManagementView> {
       text: existing?.description ?? '',
     );
     final active = ValueNotifier<bool>(existing?.isActive ?? true);
+    final availableStacks = widget.controller.domainCatalog.techStacks;
+    final selectedStackId = ValueNotifier<String?>(
+      availableStacks.any((s) => s.id == existing?.techStackId)
+          ? existing?.techStackId
+          : null,
+    );
     final result = await showDialog<FunctionalDomain>(
       context: context,
       builder: (dialogContext) => _DialogDisposalScope(
-        disposables: [code, name, description, active],
+        disposables: [code, name, description, active, selectedStackId],
         child: AlertDialog(
           title: Text(
             existing == null ? 'Nouveau domaine' : 'Modifier le domaine',
@@ -811,6 +840,38 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                     decoration: const InputDecoration(
                       labelText: 'Description métier',
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  ValueListenableBuilder<String?>(
+                    valueListenable: selectedStackId,
+                    builder: (context, value, _) =>
+                        DropdownButtonFormField<String?>(
+                          key: const ValueKey('domain-tech-stack-field'),
+                          isExpanded: true,
+                          initialValue: value,
+                          decoration: const InputDecoration(
+                            labelText: 'Stack technique (prompts Build)',
+                            icon: Icon(Icons.layers_rounded),
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text(
+                                'Aucune stack',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            for (final stack in availableStacks)
+                              DropdownMenuItem<String?>(
+                                value: stack.id,
+                                child: Text(
+                                  '${stack.name} (${stack.code})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (next) => selectedStackId.value = next,
+                        ),
                   ),
                   ValueListenableBuilder<bool>(
                     valueListenable: active,
@@ -855,6 +916,7 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                     name: name.text.trim(),
                     description: description.text.trim(),
                     isActive: active.value,
+                    techStackId: selectedStackId.value,
                     contracts: existing?.contracts,
                     useCaseOrchestration: existing?.useCaseOrchestration,
                   ),

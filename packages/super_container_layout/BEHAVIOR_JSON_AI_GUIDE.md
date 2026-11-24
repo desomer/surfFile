@@ -274,10 +274,11 @@ Les validateurs peuvent s'imbriquer sans limite de profondeur avec évaluation c
 ### 4.1. Navigation, Export PDF & Bus d'événements
 
 #### 1. `"goToPage"` (`GoToPageAction`)
-Pousse (`router.push`) une route du `pageCatalog` (y compris les pages modales `"pageType": "dialog" | "bottomSheet" | "sideSheet"` qui s'ouvrent par-dessus l'écran courant tout en partageant la sélection Maître / Détail des repositories !).
+Navigue vers une route du `pageCatalog` (y compris les pages modales `"pageType": "dialog" | "bottomSheet" | "sideSheet"` qui s'ouvrent par-dessus l'écran courant tout en partageant la sélection Maître / Détail des repositories !).
 - `"pagePath"` *(requis, `string` ; alias `"path"` accepté)* : chemin de la page cible commençant par `"/"` (ex. `"/clients/edition"`).
 - `"pageId"` *(optionnel, `string`)* : identifiant de la page dans `pageCatalog.pages`.
 - `"pageName"` *(optionnel, `string`)* : libellé lisible de la page.
+- `"navigationMode"` *(optionnel, `"auto"` | `"go"` | `"push"`, défaut `"auto"`)* : contrôle la transition routeur : `"auto"` utilise `go` pour changer de route principale (notamment entre pages partageant un shell `pageCatalog.shells`) et `push` pour les pages modales (`dialog` / `bottomSheet` / `sideSheet`) ou les vues de détail empilées ; `"go"` remplace directement la route courante dans le shell ; `"push"` empile toujours la route dans la pile de navigation.
 
 ```json
 {

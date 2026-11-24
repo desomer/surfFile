@@ -11,11 +11,18 @@ import 'dart:math' as math;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/component_config.dart';
 import '../../models/editor_page_config.dart';
+import '../../models/native_component_config.dart';
+import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
+import '../../models/super_layout_config.dart';
+import '../../super_app.dart';
 import '../../super_page.dart';
 import '../../widgets/appearance/appearance_scope.dart';
+import '../../widgets/appearance/super_shell_scope.dart';
 import '../../widgets/components/a4_document_page.dart';
+import '../../widgets/components/super_layout/super_layout.dart';
 import '../appearance/appearance_store.dart';
 
 /// A route declared in the application's code, exposed for navigation only.
@@ -133,12 +140,7 @@ class EditorPageRouter {
                   pageId: page.id,
                   isPageLoaded: isPageLoaded,
                   loadPage: loadPage,
-                  builder: (_) => SuperPage(
-                    key: ValueKey('editor-page-${page.id}'),
-                    id: page.id,
-                    label: page.name,
-                    pageConfig: ScaffoldPageConfig(),
-                  ),
+                  builder: (_) => _EditorPageContent(page: page),
                 );
                 return buildEditorModalPage(
                       page: page,
@@ -161,14 +163,12 @@ class EditorPageRouter {
                       id: page.id,
                       label: page.name,
                     ),
-                    _ => SuperPage(
-                      key: ValueKey('editor-page-${page.id}'),
-                      id: page.id,
-                      label: page.name,
-                      pageConfig: ScaffoldPageConfig(),
-                    ),
+                    _ => _EditorPageContent(page: page),
                   },
                 );
+                if (page.shellId != null) {
+                  return child;
+                }
                 return pageWrapper?.call(context, state, child) ?? child;
               },
       );
@@ -441,6 +441,11 @@ class EditorPageRouter {
 
   void validate(EditorPageCatalog catalog) {
     if (catalog == _validatedCatalog) return;
+    try {
+      catalog.validate();
+    } on ArgumentError catch (error) {
+      throw FormatException('Catalogue de pages invalide : $error');
+    }
     final coded = _codedRoutes();
     final accepted = <GoRoute>[];
     final reservedNames = <String>{};
@@ -492,10 +497,13 @@ class EditorPageRouter {
   Uri get currentUri {
     final config = router.routerDelegate.currentConfiguration;
     final providerUri = router.routeInformationProvider.value.uri;
-    if (config.matches.isNotEmpty) {
-      final last = config.matches.last;
-      if (last is ImperativeRouteMatch && config.uri == providerUri) {
-        return last.matches.uri;
+    if (config.matches.isNotEmpty && config.uri == providerUri) {
+      RouteMatchBase current = config.matches.last;
+      while (current is ShellRouteMatch && current.matches.isNotEmpty) {
+        current = current.matches.last;
+      }
+      if (current is ImperativeRouteMatch) {
+        return current.matches.uri;
       }
     }
     return providerUri;
@@ -558,6 +566,62 @@ class EditorPageRouter {
     return '/';
   }
 
+  List<RouteBase> _buildRoutes(EditorPageCatalog catalog) {
+    final rootCodedRoutes = <RouteBase>[];
+    final otherBaseRoutes = <RouteBase>[];
+    for (final route in baseConfig.routes) {
+      if (catalog.rootShellId != null &&
+          route is GoRoute &&
+          route.path == '/') {
+        rootCodedRoutes.add(route);
+      } else {
+        otherBaseRoutes.add(route);
+      }
+    }
+
+    final shellRoutes = <RouteBase>[];
+    for (final shell in catalog.shells) {
+      final shellChildren = <RouteBase>[
+        if (catalog.rootShellId == shell.id) ...rootCodedRoutes,
+        for (final page in catalog.pages)
+          if (!page.pageType.isModal && page.shellId == shell.id)
+            routeFor(page),
+      ];
+      if (shellChildren.isEmpty) continue;
+      shellRoutes.add(
+        ShellRoute(
+          builder: (context, state, child) {
+            final shellWidget = SuperShellScope(
+              shellId: shell.id,
+              wrapsAppearanceShell: pageWrapper != null,
+              child: SuperScaffold(
+                key: ValueKey('editor-shell-${shell.id}'),
+                id: shell.id,
+                label: shell.name,
+                outlet: child,
+                pageConfig: ScaffoldPageConfig(
+                  placements: const {
+                    ScaffoldPageRegion.body: ['scaffold:outlet'],
+                  },
+                ),
+              ),
+            );
+            return pageWrapper?.call(context, state, shellWidget) ??
+                shellWidget;
+          },
+          routes: shellChildren,
+        ),
+      );
+    }
+
+    return <RouteBase>[
+      ...otherBaseRoutes,
+      ...shellRoutes,
+      for (final page in catalog.pages)
+        if (page.shellId == null || page.pageType.isModal) routeFor(page),
+    ];
+  }
+
   /// Returns a visible explanation when the current destination was removed.
   String? synchronize(EditorPageCatalog catalog) {
     validate(catalog);
@@ -599,7 +663,7 @@ class EditorPageRouter {
     _catalog = catalog;
     _initialized = true;
     _routing.value = RoutingConfig(
-      routes: [...baseConfig.routes, ...catalog.pages.map(routeFor)],
+      routes: _buildRoutes(catalog),
       redirect: baseConfig.redirect,
       redirectLimit: baseConfig.redirectLimit,
       onEnter: baseConfig.onEnter,
@@ -611,6 +675,113 @@ class EditorPageRouter {
   void dispose() {
     router.dispose();
     _routing.dispose();
+  }
+}
+
+class _EditorPageContent extends StatelessWidget {
+  const _EditorPageContent({required this.page});
+
+  final EditorPageConfig page;
+
+  static const Map<String, String> _factoryKeysByComponentType = {
+    'tab': 'Tab',
+    'table': 'Table',
+    'list': 'ListView',
+    'treeView': 'TreeView',
+    'value': 'Value',
+    'action': 'Action',
+    'indicator': 'Indicator',
+    'separator': 'Separator',
+    'conditional': 'Conditional',
+    'renderer': 'Renderer',
+  };
+
+  Widget _buildLayout(Registry? registry, SuperLayoutConfig fallback) {
+    if (registry == null) {
+      return SuperLayout(
+        key: ValueKey('editor-page-${page.id}'),
+        id: page.id,
+        label: page.name,
+        config: fallback,
+      );
+    }
+    final controller = registry.layoutController(page.id, fallback: fallback);
+    return ValueListenableBuilder<SuperLayoutConfig>(
+      key: ValueKey('editor-page-${page.id}'),
+      valueListenable: controller,
+      builder: (context, layoutConfig, _) => SuperLayout(
+        id: page.id,
+        label: page.name,
+        config: layoutConfig,
+        onChanged: (value) => controller.value = value,
+      ),
+    );
+  }
+
+  Widget? _buildTypedComponent(Registry? registry, ComponentConfig config) {
+    if (registry == null) return null;
+    final mappedKey = _factoryKeysByComponentType[config.componentType];
+    ComponentBuilder? builder = mappedKey == null
+        ? null
+        : registry.registry[mappedKey];
+    if (builder == null) {
+      final expected = config.componentType.toLowerCase();
+      for (final entry in registry.registry.entries) {
+        if (entry.key.toLowerCase() == expected) {
+          builder = entry.value;
+          break;
+        }
+      }
+    }
+    if (builder == null) return null;
+    return KeyedSubtree(
+      key: ValueKey('editor-page-${page.id}'),
+      child: builder.getWidget(XuiBuildCtx(id: page.id)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final config = appearance?.components[page.id];
+
+    if (page.shellId != null) {
+      if (config == null) {
+        return _buildLayout(registry, const SuperLayoutConfig());
+      }
+      if (config is SuperLayoutConfig) {
+        return _buildLayout(registry, config);
+      }
+      if (config is ScaffoldPageConfig || config is NativeComponentConfig) {
+        return SuperPage(
+          key: ValueKey('editor-page-${page.id}'),
+          id: page.id,
+          label: page.name,
+          pageConfig: ScaffoldPageConfig(),
+        );
+      }
+      return _buildTypedComponent(registry, config) ??
+          SuperPage(
+            key: ValueKey('editor-page-${page.id}'),
+            id: page.id,
+            label: page.name,
+            pageConfig: ScaffoldPageConfig(),
+          );
+    }
+
+    if (config is SuperLayoutConfig) {
+      return Scaffold(
+        body: SizedBox.expand(child: _buildLayout(registry, config)),
+      );
+    }
+
+    return SuperPage(
+      key: ValueKey('editor-page-${page.id}'),
+      id: page.id,
+      label: page.name,
+      pageConfig: ScaffoldPageConfig(),
+    );
   }
 }
 

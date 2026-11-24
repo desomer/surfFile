@@ -626,4 +626,144 @@ void main() {
       await tester.pumpAndSettle();
     });
   });
+
+  group('PagedFileAppearanceStore with shared shells', () {
+    Appearance shelledAppearance() => Appearance(
+      styles: {
+        'background': const ContainerStyle(color: Color(0xFF101010)),
+        'shell-nav': const ContainerStyle(color: Color(0xFF202020)),
+        'val-a': const ContainerStyle(color: Color(0xFFAA0000)),
+      },
+      components: {
+        'root': ScaffoldPageConfig(
+          placements: const {
+            ScaffoldPageRegion.body: ['mainLayout'],
+          },
+          slotTypes: const {'mainLayout': 'registry:Layout'},
+        ),
+        'mainLayout': const SuperLayoutConfig(),
+        'main-shell': ScaffoldPageConfig(
+          placements: const {
+            ScaffoldPageRegion.sidebarStart: ['shell-nav'],
+            ScaffoldPageRegion.body: ['scaffold:outlet'],
+          },
+          regions: const {ScaffoldPageRegion.sidebarStart: true},
+          slotTypes: const {'shell-nav': 'registry:Value'},
+          sidebarStartWidth: 240,
+        ),
+        'shell-nav': const SuperValueConfig(initialText: 'Shell Sidebar'),
+        'page-a': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['val-a'],
+          },
+          slotTypes: {'val-a': 'registry:Value'},
+        ),
+        'val-a': const SuperValueConfig(initialText: 'Page A Body'),
+        'page-b': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['val-b'],
+          },
+          slotTypes: {'val-b': 'registry:Value'},
+        ),
+        'val-b': const SuperValueConfig(initialText: 'Page B Body'),
+      },
+      pageCatalog: EditorPageCatalog(
+        rootShellId: 'main-shell',
+        shells: [EditorShellConfig(id: 'main-shell', name: 'Main Shell')],
+        pages: [
+          EditorPageConfig(
+            id: 'page-a',
+            name: 'Page A',
+            path: '/page-a',
+            shellId: 'main-shell',
+          ),
+          EditorPageConfig(
+            id: 'page-b',
+            name: 'Page B',
+            path: '/page-b',
+            shellId: 'main-shell',
+          ),
+        ],
+      ),
+    );
+
+    test('persists shells in appearance.json, lazy-loads shelled pages, and persists detach/remove cleanly', () async {
+      final registry = Registry()..bootstrap();
+      addTearDown(registry.dispose);
+
+      final appDir = Directory('${tempDir.path}${Platform.pathSeparator}app_shells');
+      final store = SandboxedApplicationStore.appearanceStoreFor(
+        appDir,
+        registry: registry,
+      );
+
+      await store.save(shelledAppearance());
+
+      final globalFile = SandboxedApplicationStore.appearanceFileFor(appDir);
+      final shellFile = SandboxedApplicationStore.pageFileFor(appDir, 'main-shell');
+      final pageAFile = SandboxedApplicationStore.pageFileFor(appDir, 'page-a');
+      final pageBFile = SandboxedApplicationStore.pageFileFor(appDir, 'page-b');
+
+      expect(globalFile.existsSync(), isTrue);
+      expect(shellFile.existsSync(), isFalse);
+      expect(pageAFile.existsSync(), isTrue);
+      expect(pageBFile.existsSync(), isTrue);
+
+      final globalJson = jsonDecode(globalFile.readAsStringSync()) as Map<String, dynamic>;
+      final globalComponents = globalJson['components'] as Map;
+      expect(globalComponents.keys, containsAll(['root', 'mainLayout', 'main-shell', 'shell-nav']));
+      expect(globalComponents.keys, isNot(contains('page-a')));
+      expect(globalComponents.keys, isNot(contains('val-a')));
+
+      // Fresh load: shells are immediately available in global; pages lazy-load on demand.
+      final fresh = SandboxedApplicationStore.appearanceStoreFor(
+        appDir,
+        registry: registry,
+      );
+      final loaded = await fresh.load();
+      expect(fresh.isKnownCatalogShell('main-shell'), isTrue);
+      expect(fresh.isKnownCatalogPage('main-shell'), isFalse);
+      expect(fresh.isPageLoaded('page-a'), isFalse);
+      expect(loaded.components.containsKey('main-shell'), isTrue);
+      expect(loaded.components.containsKey('shell-nav'), isTrue);
+      expect(loaded.components.containsKey('page-a'), isFalse);
+
+      // Calling loadPage on a shell ID is a safe no-op returning an empty slice.
+      final emptyShellSlice = await fresh.loadPage('main-shell');
+      expect(emptyShellSlice.isEmpty, isTrue);
+      expect(fresh.isPageLoaded('main-shell'), isFalse);
+
+      // Lazy-load page-a and detach it from main-shell; page-b stays untouched on disk.
+      final pageBBefore = pageBFile.readAsStringSync();
+      final withPageA = (await fresh.loadPage('page-a')).mergeInto(loaded);
+      final detached = EditorPageGraph.detachPageFromShell(
+        appearance: withPageA,
+        registry: registry,
+        pageId: 'page-a',
+      );
+      await fresh.save(detached);
+
+      expect(shellFile.existsSync(), isFalse);
+      expect(pageBFile.readAsStringSync(), pageBBefore);
+      final pageAJson = jsonDecode(pageAFile.readAsStringSync()) as Map<String, dynamic>;
+      expect((pageAJson['components'] as Map).keys, containsAll(['page-a', 'page-a-body', 'val-a']));
+      final globalAfterDetach = jsonDecode(globalFile.readAsStringSync()) as Map<String, dynamic>;
+      expect((globalAfterDetach['components'] as Map).keys, containsAll(['main-shell', 'shell-nav']));
+
+      // Remove main-shell and persist: shell & exclusive chrome disappear from appearance.json.
+      final removed = EditorPageGraph.removeShell(
+        appearance: detached,
+        registry: registry,
+        shellId: 'main-shell',
+      ).appearance;
+      await fresh.save(removed);
+
+      expect(shellFile.existsSync(), isFalse);
+      expect(fresh.isKnownCatalogShell('main-shell'), isFalse);
+      final globalAfterRemove = jsonDecode(globalFile.readAsStringSync()) as Map<String, dynamic>;
+      final globalCompsAfterRemove = globalAfterRemove['components'] as Map;
+      expect(globalCompsAfterRemove.containsKey('main-shell'), isFalse);
+      expect(globalCompsAfterRemove.containsKey('shell-nav'), isFalse);
+    });
+  });
 }

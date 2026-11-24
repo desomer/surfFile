@@ -25,13 +25,21 @@ abstract final class DartCodeExporter {
     final context = DartCodegenContext(
       appearance: appearance,
       registry: registry,
-      rootComponentId: resolved.singleComponentId,
+      rootComponentId: resolved.shellId ?? resolved.singleComponentId,
       rootInstanceVariable: 'id',
       decomposeComponents: decomposeComponents,
     );
 
     final String builderExpression;
-    if (resolved.singleComponentId case final rootId?) {
+    if (resolved.shellId case final shellId?) {
+      builderExpression = context.generateScaffoldPageWidget(
+        shellId,
+        label: resolved.label,
+        indent: 4,
+        outletReplacementIds: resolved.outletReplacementIds,
+        extraSlotTypes: resolved.slotTypes,
+      );
+    } else if (resolved.singleComponentId case final rootId?) {
       builderExpression = context.generateComponentWidget(
         rootId,
         slotType: resolved.slotTypes[rootId],
@@ -189,6 +197,8 @@ abstract final class DartCodeExporter {
     String label,
     String? singleComponentId,
     List<String> multipleComponentIds,
+    String? shellId,
+    List<String> outletReplacementIds,
     Map<String, String> slotTypes,
   })
   _resolveExportRoot({
@@ -206,8 +216,11 @@ abstract final class DartCodeExporter {
     // une ScaffoldPageConfig synthétique (__export_root) porte les cibles dans body.
     if (homeConfig is ScaffoldPageConfig &&
         homeId.startsWith('__export_root')) {
-      final bodyIds =
-          homeConfig.placements[ScaffoldPageRegion.body] ?? const [];
+      final bodyIds = <String>[
+        for (final id
+            in homeConfig.placements[ScaffoldPageRegion.body] ?? const <String>[])
+          if (id != 'scaffold:outlet') id,
+      ];
       if (bodyIds.length == 1) {
         final targetId = bodyIds.single;
         final effectiveRegId = _cleanRegistrationId(
@@ -224,6 +237,8 @@ abstract final class DartCodeExporter {
           label: effectiveLabel,
           singleComponentId: targetId,
           multipleComponentIds: const [],
+          shellId: null,
+          outletReplacementIds: const [],
           slotTypes: homeConfig.slotTypes,
         );
       }
@@ -242,52 +257,123 @@ abstract final class DartCodeExporter {
           label: effectiveLabel,
           singleComponentId: null,
           multipleComponentIds: bodyIds,
+          shellId: null,
+          outletReplacementIds: const [],
           slotTypes: homeConfig.slotTypes,
         );
       }
     }
 
-    if (componentId != null &&
-        (appearance.components.containsKey(componentId) ||
-            appearance.styles.containsKey(componentId))) {
-      final effectiveLabel =
-          (componentLabel != null && componentLabel.trim().isNotEmpty)
-          ? componentLabel.trim()
-          : componentId;
+    ({List<String> ids, Map<String, String> slotTypes}) resolveOutletContent(
+      String targetId,
+    ) {
+      final content = appearance.components[targetId];
+      if (content is ScaffoldPageConfig) {
+        return (
+          ids: [
+            for (final id in content.slotsOf(ScaffoldPageRegion.body))
+              if (id != 'scaffold:outlet' && id != 'scaffold:body') id,
+          ],
+          slotTypes: content.slotTypes,
+        );
+      }
+      if (content is NativeComponentConfig &&
+          content.placements.containsKey('body')) {
+        return (
+          ids: [
+            for (final id in content.slotsOf('body'))
+              if (id != 'scaffold:outlet' && id != 'scaffold:body') id,
+          ],
+          slotTypes: content.slotTypes,
+        );
+      }
+      if (content != null || appearance.styles.containsKey(targetId)) {
+        return (ids: [targetId], slotTypes: const {});
+      }
+      if (targetId == 'root' && appearance.components.containsKey('mainLayout')) {
+        return (ids: const ['mainLayout'], slotTypes: const {});
+      }
+      return (ids: const [], slotTypes: const {});
+    }
+
+    if (componentId != null) {
+      final targetPage = appearance.pageCatalog.pages
+          .where((p) => p.id == componentId)
+          .firstOrNull;
+      final pageShellId =
+          targetPage?.shellId ??
+          (componentId == 'root' ? appearance.pageCatalog.rootShellId : null);
+      if (pageShellId != null &&
+          appearance.tryComponent<ScaffoldPageConfig>(pageShellId) != null) {
+        final outlet = resolveOutletContent(componentId);
+        final effectiveLabel =
+            (componentLabel != null && componentLabel.trim().isNotEmpty)
+            ? componentLabel.trim()
+            : (targetPage?.name ?? componentId);
+        return (
+          registrationId: _cleanRegistrationId(componentId),
+          label: effectiveLabel,
+          singleComponentId: componentId,
+          multipleComponentIds: const [],
+          shellId: pageShellId,
+          outletReplacementIds: outlet.ids,
+          slotTypes: outlet.slotTypes,
+        );
+      }
+      if (appearance.components.containsKey(componentId) ||
+          appearance.styles.containsKey(componentId)) {
+        final effectiveLabel =
+            (componentLabel != null && componentLabel.trim().isNotEmpty)
+            ? componentLabel.trim()
+            : componentId;
+        return (
+          registrationId: _cleanRegistrationId(componentId),
+          label: effectiveLabel,
+          singleComponentId: componentId,
+          multipleComponentIds: const [],
+          shellId: null,
+          outletReplacementIds: const [],
+          slotTypes: const {},
+        );
+      }
+    }
+
+    // Cas d'une page ou route racine enveloppée par un shell partagé.
+    final activeShellId =
+        homePage?.shellId ??
+        (homeId == 'root' ? appearance.pageCatalog.rootShellId : null);
+    if (activeShellId != null &&
+        appearance.tryComponent<ScaffoldPageConfig>(activeShellId) != null) {
+      final outlet = resolveOutletContent(homeId);
       return (
-        registrationId: _cleanRegistrationId(componentId),
-        label: effectiveLabel,
-        singleComponentId: componentId,
+        registrationId: _cleanRegistrationId(componentId ?? homeId),
+        label: componentLabel ?? homePage?.name ?? homeId,
+        singleComponentId: homeId,
         multipleComponentIds: const [],
-        slotTypes: const {},
+        shellId: activeShellId,
+        outletReplacementIds: outlet.ids,
+        slotTypes: outlet.slotTypes,
       );
     }
 
     // Cas d'une page complète ou d'une apparence autonome.
     if (homeConfig is ScaffoldPageConfig) {
-      final bodyIds =
-          homeConfig.placements[ScaffoldPageRegion.body] ?? const [];
-      if (bodyIds.length == 1) {
-        final single = bodyIds.single;
-        return (
-          registrationId: _cleanRegistrationId(componentId ?? single),
-          label: componentLabel ?? homePage?.name ?? single,
-          singleComponentId: single,
-          multipleComponentIds: const [],
-          slotTypes: homeConfig.slotTypes,
-        );
-      }
       return (
         registrationId: _cleanRegistrationId(componentId ?? homeId),
         label: componentLabel ?? homePage?.name ?? homeId,
-        singleComponentId: null,
-        multipleComponentIds: bodyIds,
+        singleComponentId: homeId,
+        multipleComponentIds: const [],
+        shellId: null,
+        outletReplacementIds: const [],
         slotTypes: homeConfig.slotTypes,
       );
     }
 
     if (homeConfig is NativeComponentConfig) {
-      final bodyIds = homeConfig.placements['body'] ?? const [];
+      final bodyIds = <String>[
+        for (final id in homeConfig.placements['body'] ?? const <String>[])
+          if (id != 'scaffold:outlet') id,
+      ];
       if (bodyIds.length == 1) {
         final single = bodyIds.single;
         return (
@@ -295,6 +381,8 @@ abstract final class DartCodeExporter {
           label: componentLabel ?? homePage?.name ?? single,
           singleComponentId: single,
           multipleComponentIds: const [],
+          shellId: null,
+          outletReplacementIds: const [],
           slotTypes: homeConfig.slotTypes,
         );
       }
@@ -304,6 +392,8 @@ abstract final class DartCodeExporter {
           label: componentLabel ?? homePage?.name ?? homeId,
           singleComponentId: null,
           multipleComponentIds: bodyIds,
+          shellId: null,
+          outletReplacementIds: const [],
           slotTypes: homeConfig.slotTypes,
         );
       }
@@ -315,6 +405,8 @@ abstract final class DartCodeExporter {
       label: componentLabel ?? firstId,
       singleComponentId: firstId,
       multipleComponentIds: const [],
+      shellId: null,
+      outletReplacementIds: const [],
       slotTypes: const {},
     );
   }

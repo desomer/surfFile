@@ -1,6 +1,8 @@
-/// Assemblage de la structure `Scaffold` d'une page ([ScaffoldPageLayout]).
+/// Assemblage de la structure `Scaffold` d'une page ou d'un shell ([ScaffoldPageLayout]).
 ///
-/// Monte les régions `appBar`, `body`, `bottomNavigationBar`, `drawer`, `endDrawer` et `bottomSheet`.
+/// Monte les régions `appBar`, `body`, `sidebarStart`, `sidebarEnd`, `drawer`,
+/// `endDrawer`, `bottomNavigationBar`, `floatingActionButton` et `bottomSheet`,
+/// ainsi que le slot `scaffold:outlet` pour les shells partagés.
 library;
 
 import 'dart:math' as math;
@@ -28,6 +30,9 @@ class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
     required this.slots,
     required this.appBar,
     required this.body,
+    this.sidebarStart,
+    this.sidebarEnd,
+    this.outlet,
     required this.drawer,
     required this.endDrawer,
     required this.bottomNavigationBar,
@@ -47,6 +52,16 @@ class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
   final List<SlotImplementation> slots;
   final PreferredSizeWidget? appBar;
   final Widget body;
+
+  /// Widget fourni par défaut pour la région latérale gauche (`sidebarStart`).
+  final Widget? sidebarStart;
+
+  /// Widget fourni par défaut pour la région latérale droite (`sidebarEnd`).
+  final Widget? sidebarEnd;
+
+  /// Contenu de route enfant exposé via le slot `'scaffold:outlet'` dans `body`.
+  final Widget? outlet;
+
   final Widget? drawer;
   final Widget? endDrawer;
   final Widget? bottomNavigationBar;
@@ -61,8 +76,19 @@ class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
 }
 
 class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
+  static const double _defaultSidebarStartWidth = 240.0;
+  static const double _defaultSidebarEndWidth = 280.0;
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late final _localConfig = ValueNotifier(widget.config);
+
+  @override
+  void didUpdateWidget(ScaffoldPageLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.config != oldWidget.config) {
+      _localConfig.value = widget.config;
+    }
+  }
 
   static const _regions = [
     NativeRegion(
@@ -71,6 +97,22 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       tagFilter: ComponentTagFilter(include: {'appBar'}),
     ),
     NativeRegion('body', 'Corps', required: true, editableFlow: true),
+    NativeRegion(
+      'sidebarStart',
+      'Menu gauche',
+      axis: Axis.vertical,
+      expand: true,
+      editableFlow: true,
+      emptySize: Size(_defaultSidebarStartWidth, double.infinity),
+    ),
+    NativeRegion(
+      'sidebarEnd',
+      'Panneau droit',
+      axis: Axis.vertical,
+      expand: true,
+      editableFlow: true,
+      emptySize: Size(_defaultSidebarEndWidth, double.infinity),
+    ),
     NativeRegion('drawer', 'Drawer gauche', editableFlow: true),
     NativeRegion('endDrawer', 'Drawer droit', editableFlow: true),
     NativeRegion(
@@ -120,6 +162,40 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       label: 'Body',
       builder: (_) => widget.body,
     ),
+    if (widget.outlet case final outlet?)
+      BuilderSlot(
+        id: 'scaffold:outlet',
+        label: 'Contenu de la page',
+        builder: (_) => outlet,
+      ),
+    if (widget.sidebarStart case final sidebar?)
+      if (sidebar is NativePreferredSizeWidget)
+        NativeWidgetSlot(
+          id: 'scaffold:sidebarStart',
+          label: 'Menu gauche',
+          sizing: SlotSizing.fill,
+          child: sidebar,
+        )
+      else
+        BuilderSlot(
+          id: 'scaffold:sidebarStart',
+          label: 'Menu gauche',
+          builder: (_) => sidebar,
+        ),
+    if (widget.sidebarEnd case final sidebar?)
+      if (sidebar is NativePreferredSizeWidget)
+        NativeWidgetSlot(
+          id: 'scaffold:sidebarEnd',
+          label: 'Panneau droit',
+          sizing: SlotSizing.fill,
+          child: sidebar,
+        )
+      else
+        BuilderSlot(
+          id: 'scaffold:sidebarEnd',
+          label: 'Panneau droit',
+          builder: (_) => sidebar,
+        ),
     if (widget.drawer case final drawer?)
       BuilderSlot(
         id: 'scaffold:drawer',
@@ -165,6 +241,52 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     } else {
       _scaffoldKey.currentState?.openEndDrawer();
     }
+  }
+
+  double _resolveSidebarWidth(
+    String region,
+    double? configuredWidth,
+    NativeComponentEditorState editor,
+    double fallbackWidth,
+  ) {
+    if (configuredWidth != null && configuredWidth.isFinite) {
+      return configuredWidth;
+    }
+    final regionSlots = editor.slotsFor(region);
+    if (regionSlots.isEmpty) return fallbackWidth;
+    double? maxPreferredWidth;
+    var allHaveFiniteWidth = true;
+    for (final slot in regionSlots) {
+      final width = editor.preferredSizeFor(slot)?.width;
+      if (width != null && width.isFinite && width > 0) {
+        maxPreferredWidth = maxPreferredWidth == null
+            ? width
+            : math.max(maxPreferredWidth, width);
+      } else {
+        allHaveFiniteWidth = false;
+      }
+    }
+    if (allHaveFiniteWidth && maxPreferredWidth != null) {
+      return maxPreferredWidth;
+    }
+    return maxPreferredWidth != null
+        ? math.max(maxPreferredWidth, fallbackWidth)
+        : fallbackWidth;
+  }
+
+  Widget _buildSidebar(
+    String region,
+    double? configuredWidth,
+    NativeComponentEditorState editor,
+    double fallbackWidth,
+  ) {
+    final width = _resolveSidebarWidth(
+      region,
+      configuredWidth,
+      editor,
+      fallbackWidth,
+    );
+    return SizedBox(width: width, child: editor.region(region));
   }
 
   PreferredSizeWidget? _appBar(NativeComponentEditorState editor) {
@@ -237,11 +359,20 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     final padding = paddingValue != null && paddingValue > 0
         ? EdgeInsets.all(paddingValue)
         : EdgeInsets.zero;
+    final fallbackOutletSlot =
+        widget.outlet != null && editor.slotsFor('body').isEmpty
+        ? BuilderSlot(
+            id: 'scaffold:outlet',
+            label: 'Contenu de la page',
+            builder: (_) => widget.outlet!,
+          )
+        : null;
+    Widget bodyRegion() => editor.region('body', item: fallbackOutletSlot);
     return switch (config.bodyMode) {
       ScaffoldBodyMode.standard => SizedBox.expand(
         child: ResponsiveBodyContainer(
           config: responsiveConfig,
-          child: editor.region('body'),
+          child: bodyRegion(),
         ),
       ),
       ScaffoldBodyMode.singleChildScrollView => SizedBox.expand(
@@ -261,20 +392,22 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
               child: SlotContentFitScope(
                 fitWidth: scrollAxis == Axis.horizontal,
                 fitHeight: scrollAxis == Axis.vertical,
-                child: editor.region('body'),
+                child: bodyRegion(),
               ),
             ),
           ),
         ),
       ),
       ScaffoldBodyMode.customScrollView => () {
-        final rawBodySliver = editor.sliverRegion(
-          'body',
-          scrollDirection: scrollAxis,
-          fillWhenEmpty: true,
-        );
-        final bodySliver = responsiveConfig.containerMode ==
-                PageContainerMode.fullPage
+        final rawBodySliver = fallbackOutletSlot != null
+            ? SliverFillRemaining(child: widget.outlet!)
+            : editor.sliverRegion(
+                'body',
+                scrollDirection: scrollAxis,
+                fillWhenEmpty: true,
+              );
+        final bodySliver =
+            responsiveConfig.containerMode == PageContainerMode.fullPage
             ? (padding != EdgeInsets.zero
                   ? SliverPadding(padding: padding, sliver: rawBodySliver)
                   : rawBodySliver)
@@ -359,6 +492,133 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     };
   }
 
+  Widget _buildScaffold(
+    BuildContext context,
+    ScaffoldPageConfig config,
+    NativeComponentEditorState editor,
+    ResponsiveLayoutConfig responsiveConfig,
+    double viewportWidth,
+  ) {
+    final hasSidebarStart = editor.visible('sidebarStart');
+    final hasSidebarEnd = editor.visible('sidebarEnd');
+    final foldSidebarStartToDrawer =
+        config.responsiveSidebarToDrawer &&
+        hasSidebarStart &&
+        viewportWidth < responsiveConfig.breakpoints.tabletMinWidth;
+    final showDockedSidebarStart =
+        hasSidebarStart && !foldSidebarStartToDrawer;
+    final showDockedSidebarEnd = hasSidebarEnd;
+
+    final explicitDrawer = _drawer('drawer', editor, widget.drawer);
+    final effectiveDrawer =
+        explicitDrawer ??
+        (foldSidebarStartToDrawer
+            ? Drawer(
+                width: config.sidebarStartWidth,
+                child: editor.region('sidebarStart'),
+              )
+            : null);
+    final effectiveEndDrawer = _drawer('endDrawer', editor, widget.endDrawer);
+    final effectiveBottomNav = editor.visible('bottomNavigationBar')
+        ? editor.region('bottomNavigationBar')
+        : null;
+    final effectiveFab = editor.visible('floatingActionButton')
+        ? editor.region('floatingActionButton')
+        : null;
+    final effectiveBottomSheet = editor.visible('bottomSheet')
+        ? editor.region('bottomSheet')
+        : null;
+    final mainBody = _body(context, config, editor, responsiveConfig);
+
+    if (!showDockedSidebarStart && !showDockedSidebarEnd) {
+      return Scaffold(
+        key: _scaffoldKey,
+        extendBody: config.extendBody,
+        extendBodyBehindAppBar: config.extendBodyBehindAppBar,
+        appBar: config.bodyMode == ScaffoldBodyMode.customScrollView
+            ? null
+            : _appBar(editor),
+        body: mainBody,
+        drawer: effectiveDrawer,
+        endDrawer: effectiveEndDrawer,
+        bottomNavigationBar: effectiveBottomNav,
+        floatingActionButton: effectiveFab,
+        bottomSheet: effectiveBottomSheet,
+      );
+    }
+
+    final isContentOnlyHeader =
+        config.headerSpan == ScaffoldHeaderSpan.contentOnly;
+    final header = config.bodyMode == ScaffoldBodyMode.customScrollView
+        ? null
+        : _appBar(editor);
+    Widget centerContent = mainBody;
+    if (isContentOnlyHeader && header != null) {
+      final topPadding = MediaQuery.paddingOf(context).top;
+      final headerHeight = header.preferredSize.height + topPadding;
+      centerContent = config.extendBodyBehindAppBar
+          ? Stack(
+              children: [
+                Positioned.fill(child: mainBody),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: headerHeight,
+                  child: header,
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: headerHeight, child: header),
+                Expanded(
+                  child: topPadding > 0
+                      ? MediaQuery.removePadding(
+                          context: context,
+                          removeTop: true,
+                          child: mainBody,
+                        )
+                      : mainBody,
+                ),
+              ],
+            );
+    }
+
+    return Scaffold(
+      key: _scaffoldKey,
+      extendBody: config.extendBody,
+      extendBodyBehindAppBar: config.extendBodyBehindAppBar,
+      appBar: isContentOnlyHeader ? null : header,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (showDockedSidebarStart)
+            _buildSidebar(
+              'sidebarStart',
+              config.sidebarStartWidth,
+              editor,
+              _defaultSidebarStartWidth,
+            ),
+          Expanded(child: centerContent),
+          if (showDockedSidebarEnd)
+            _buildSidebar(
+              'sidebarEnd',
+              config.sidebarEndWidth,
+              editor,
+              _defaultSidebarEndWidth,
+            ),
+        ],
+      ),
+      drawer: effectiveDrawer,
+      endDrawer: effectiveEndDrawer,
+      bottomNavigationBar: effectiveBottomNav,
+      floatingActionButton: effectiveFab,
+      bottomSheet: effectiveBottomSheet,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
@@ -385,13 +645,24 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           registry: registry,
           propertyDescriptors: ScaffoldPageConfig.propertyDescriptors,
           isPropertyAvailable: (nativeConfig, descriptor) =>
-              descriptor.id == 'bodyMode' ||
-              descriptor.id == 'extendBody' ||
-              descriptor.id == 'extendBodyBehindAppBar' ||
-              ScaffoldBodyMode.fromName(
-                    nativeConfig.stringProperty('bodyMode'),
-                  ) !=
-                  ScaffoldBodyMode.standard,
+              switch (descriptor.id) {
+                'bodyMode' ||
+                'extendBody' ||
+                'extendBodyBehindAppBar' => true,
+                'headerSpan' =>
+                  nativeConfig.isEnabled('sidebarStart') ||
+                      nativeConfig.isEnabled('sidebarEnd'),
+                'sidebarStartWidth' ||
+                'responsiveSidebarToDrawer' => nativeConfig.isEnabled(
+                  'sidebarStart',
+                ),
+                'sidebarEndWidth' => nativeConfig.isEnabled('sidebarEnd'),
+                _ =>
+                  ScaffoldBodyMode.fromName(
+                        nativeConfig.stringProperty('bodyMode'),
+                      ) !=
+                      ScaffoldBodyMode.standard,
+              },
           onConfigured: (regions) {
             final drawer = regions
                 .where((id) => id == 'drawer' || id == 'endDrawer')
@@ -421,36 +692,42 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
             listenable: Listenable.merge([
               for (final slot in [
                 ...editor.slotsFor('appBar'),
+                ...editor.slotsFor('sidebarStart'),
+                ...editor.slotsFor('sidebarEnd'),
                 ...editor.slotsFor('bottomNavigationBar'),
               ])
                 if (slot case NativePreferredSizeWidget native)
                   native.sizeListenable(context),
             ]),
-            builder: (context, _) => Scaffold(
-              key: _scaffoldKey,
-              extendBody: config.extendBody,
-              extendBodyBehindAppBar: config.extendBodyBehindAppBar,
-              appBar: config.bodyMode == ScaffoldBodyMode.customScrollView
-                  ? null
-                  : _appBar(editor),
-              body: _body(
-                context,
-                config,
-                editor,
-                _resolveResponsiveLayout(context),
-              ),
-              drawer: _drawer('drawer', editor, widget.drawer),
-              endDrawer: _drawer('endDrawer', editor, widget.endDrawer),
-              bottomNavigationBar: editor.visible('bottomNavigationBar')
-                  ? editor.region('bottomNavigationBar')
-                  : null,
-              floatingActionButton: editor.visible('floatingActionButton')
-                  ? editor.region('floatingActionButton')
-                  : null,
-              bottomSheet: editor.visible('bottomSheet')
-                  ? editor.region('bottomSheet')
-                  : null,
-            ),
+            builder: (context, _) {
+              final responsiveConfig = _resolveResponsiveLayout(context);
+              final needsResponsiveViewport =
+                  config.responsiveSidebarToDrawer &&
+                  editor.visible('sidebarStart');
+              if (!needsResponsiveViewport) {
+                return _buildScaffold(
+                  context,
+                  config,
+                  editor,
+                  responsiveConfig,
+                  MediaQuery.sizeOf(context).width,
+                );
+              }
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth.isFinite
+                      ? constraints.maxWidth
+                      : MediaQuery.sizeOf(context).width;
+                  return _buildScaffold(
+                    context,
+                    config,
+                    editor,
+                    responsiveConfig,
+                    width,
+                  );
+                },
+              );
+            },
           ),
         );
       },

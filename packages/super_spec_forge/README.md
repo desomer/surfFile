@@ -173,6 +173,46 @@ et les contrats/couches Domain du domaine) avec un atelier à 3 onglets à droit
 événements et scénarios `Given / When / Then`) et **Sagas & Compensations**
 (diagrammes Mermaid, matrice de rollback à 8 colonnes et aperçu Markdown/Mermaid).
 
+## Suivi Build par domaine
+
+L'onglet **Build** du `NavigationRail` (`BuildDesignItemsView`) affiche, pour le
+domaine sélectionné dans le fil d'Ariane (`DesignDomainBreadcrumbBar`, synchronisé
+avec l'espace **Design**), l'ensemble des items de conception porteurs des
+quatre indicateurs d'avancement (`Conception`, `Validation`, `Code`, `Livraison`) :
+- **Modèles & Contrats** (toutes les entrées du catalogue `DomainContracts` : `model`, `part`, `component`, DTO, messages),
+- **Cas d’usage** (`ApplicationUseCaseSpec`),
+- **Sagas** (`OrchestrationSagaSpec`).
+
+Une barre de recherche et de filtrage rapide (catégorie, étape, statut) permet
+d'isoler les éléments à implémenter ou livrer, et un clic direct sur les icônes
+d'étapes fait évoluer leur statut (`À faire → En cours → Terminé`) avec
+persistance immédiate dans le domaine.
+
+La sélection multiple d'items (`Modèles`, `Use Cases`, `Sagas`) active le bouton
+**Sélection des Prompts IA**, qui ouvre dans le fil d'Ariane
+(*Domaine › Items de design & avancement › Sélection des Prompts IA*) la vue
+`BuildPromptsSelectionView` (`BuildHexaPromptGenerator`) regroupant par élément
+sélectionné les prompts Markdown en **Architecture Hexagonale** :
+- **Modèle** (3 prompts) : *Implémentation Couche Domain*, *Tests unitaires Couche Domain* et *Persistance (Port sortant Repository & Adaptateur Infra)*,
+- **Use Case** (2 prompts) : *Implémentation Couche Application (CQRS)* et *Tests unitaires Couche Application*,
+- **Saga** (2 prompts) : *Implémentation Saga* et *Tests unitaires Saga & Rollbacks*.
+
+Chaque prompt démarre par un bloc de métadonnées ```` ```yaml ... ``` ````
+normalisé (`kind` `model-*` / `usecase-*` / `saga-*`, `name`, `title`,
+`version` SemVer partagée entre Modèles, Use Cases et Sagas, `domain`,
+`description`, `owner: <domain>-team`, `status: approved`, `tags`, `security`,
+`ai`, `generation` auto-calculé — incluant `stack` lorsqu'une stack est affectée
+au domaine — et `metadata` `created`/`updated` au format `YYYY-MM-DD`), embarque
+les **JSON Schemas Draft 2020-12** des modèles (références résolues) et des
+contrats `Input`/`Output` des Use Cases, et se termine par une section
+d'**extensions paramétrables par stack technique** (`BuildTechStackProfile` :
+stack technique globale, plus structure de dossiers cible avec interpolation
+`{{domain}}` et consignes spécifiques configurables par onglet de rôle
+*Implémentation*, *Tests unitaires* et *Persistance*). Le profil **TypeScript / NestJS**
+(`ts-nestjs`) est fourni par défaut et entièrement personnalisable dans un
+éditeur quasi plein écran depuis **Design › Gestion des domaines** ou directement
+depuis **Build**.
+
 ## Lancement & Validation
 
 ```powershell

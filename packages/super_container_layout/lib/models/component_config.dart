@@ -51,6 +51,10 @@ abstract final class ComponentConfigCatalog {
       type: 'scaffold',
       fromJson: ScaffoldPageConfig.fromJson,
     ),
+    'superScaffold': ComponentConfigCodec<ScaffoldPageConfig>(
+      type: 'superScaffold',
+      fromJson: ScaffoldPageConfig.fromJson,
+    ),
     'a4Document': ComponentConfigCodec<A4PageConfig>(
       type: 'a4Document',
       fromJson: A4PageConfig.fromJson,

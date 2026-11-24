@@ -7,7 +7,7 @@ library;
 
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show immutable, listEquals, mapEquals;
 import 'package:flutter/painting.dart' show Axis, ShapeBorder;
 import 'package:material_ui/material_ui.dart' show ColorScheme;
 
@@ -19,6 +19,7 @@ import 'native_shape_config.dart';
 import 'super_layout_config.dart' show SlotSizeConstraints, ZoneFlowConfig;
 
 /// Immutable placements shared by adapters for native Flutter components.
+@immutable
 class NativeComponentConfig extends ComponentConfig {
   static const Set<String> _reservedJsonKeys = {
     'type',
@@ -558,6 +559,123 @@ class NativeComponentConfig extends ComponentConfig {
       throw const FormatException('Invalid native region or slot IDs.');
     }
   }
+
+  static bool _deepValueEquals(Object? a, Object? b) {
+    if (identical(a, b)) return true;
+    if (a is Map && b is Map) {
+      if (a.length != b.length) return false;
+      for (final entry in a.entries) {
+        if (!b.containsKey(entry.key) ||
+            !_deepValueEquals(entry.value, b[entry.key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (!_deepValueEquals(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    return a == b;
+  }
+
+  static int _deepValueHash(Object? value) {
+    if (value is Map) {
+      return Object.hashAllUnordered([
+        for (final entry in value.entries)
+          Object.hash(entry.key, _deepValueHash(entry.value)),
+      ]);
+    }
+    if (value is List) {
+      return Object.hashAll([for (final item in value) _deepValueHash(item)]);
+    }
+    return value.hashCode;
+  }
+
+  static bool _placementsEquals(
+    Map<String, List<String>> a,
+    Map<String, List<String>> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (!b.containsKey(entry.key) || !listEquals(entry.value, b[entry.key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _slotTypesEquals(Map<String, String> a, Map<String, String> b) {
+    if (identical(a, b)) return true;
+    for (final entry in a.entries) {
+      if ((b[entry.key] ?? entry.key) != entry.value) return false;
+    }
+    for (final entry in b.entries) {
+      if ((a[entry.key] ?? entry.key) != entry.value) return false;
+    }
+    return true;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NativeComponentConfig &&
+          other.binding == binding &&
+          _deepValueEquals(other.properties, properties) &&
+          _placementsEquals(other.placements, placements) &&
+          _slotTypesEquals(other.slotTypes, slotTypes) &&
+          mapEquals(other.regions, regions) &&
+          mapEquals(other.regionAxes, regionAxes) &&
+          mapEquals(other.regionFlows, regionFlows) &&
+          mapEquals(other.regionSizes, regionSizes) &&
+          mapEquals(other.slotPreferredSizes, slotPreferredSizes) &&
+          mapEquals(other.slotSizeConstraints, slotSizeConstraints) &&
+          mapEquals(other.slotLabels, slotLabels));
+
+  @override
+  int get hashCode => Object.hash(
+    binding,
+    _deepValueHash(properties),
+    Object.hashAllUnordered([
+      for (final entry in placements.entries)
+        Object.hash(entry.key, Object.hashAll(entry.value)),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in slotTypes.entries)
+        if (entry.value != entry.key) Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in regions.entries) Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in regionAxes.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in regionFlows.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in regionSizes.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in slotPreferredSizes.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in slotSizeConstraints.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in slotLabels.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+  );
 }
 
 String _formatNativeDescriptorValue(

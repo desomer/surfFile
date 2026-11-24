@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
+import 'package:super_container_layout/models/native_component_config.dart';
+import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
 import 'package:super_container_layout/services/appearance/default_appearance_codec.dart';
@@ -371,5 +373,292 @@ void main() {
         reason: '$bad',
       );
     }
+  });
+
+  test('EditorShellConfig validates, copies, compares and round-trips JSON', () {
+    final shell = EditorShellConfig(id: 'shell-main', name: 'Shell principal');
+    expect(shell.toJson(), {'id': 'shell-main', 'name': 'Shell principal'});
+    expect(shell.toCompactJson(), shell.toJson());
+    expect(EditorShellConfig.fromJson(shell.toJson()), shell);
+    expect(shell.hashCode, EditorShellConfig(id: 'shell-main', name: 'Shell principal').hashCode);
+
+    final renamed = shell.copyWith(name: 'Navigation');
+    expect(renamed.id, 'shell-main');
+    expect(renamed.name, 'Navigation');
+    expect(renamed, isNot(equals(shell)));
+
+    for (final invalid in [('', 'Valid'), ('   ', 'Valid'), ('id', ''), ('id', '  ')]) {
+      expect(
+        () => EditorShellConfig(id: invalid.$1, name: invalid.$2),
+        throwsArgumentError,
+      );
+    }
+    for (final bad in <Object?>[
+      null,
+      [],
+      {},
+      {'id': 's'},
+      {'id': 1, 'name': 'Shell'},
+      {'id': 's', 'name': ''},
+      {'id': 's', 'name': 'Shell', 'extra': true},
+    ]) {
+      expect(
+        () => EditorShellConfig.fromJson(bad),
+        throwsFormatException,
+        reason: '$bad',
+      );
+    }
+  });
+
+  test('EditorPageConfig shellId supports standard/a4Document and rejects modals', () {
+    final std = EditorPageConfig(
+      id: 'dash',
+      name: 'Dashboard',
+      path: '/dash',
+      shellId: 'shell-main',
+    );
+    expect(std.shellId, 'shell-main');
+    expect(std.toJson()['shellId'], 'shell-main');
+    expect(std.toCompactJson()['shellId'], 'shell-main');
+    expect(EditorPageConfig.fromJson(std.toJson()), std);
+
+    final cleared = std.copyWith(clearShellId: true);
+    expect(cleared.shellId, isNull);
+    expect(cleared.toJson(), isNot(contains('shellId')));
+    expect(cleared.toCompactJson(), isNot(contains('shellId')));
+
+    final a4 = EditorPageConfig(
+      id: 'doc',
+      name: 'Rapport',
+      path: '/doc',
+      pageType: EditorPageType.a4Document,
+      shellId: 'shell-main',
+    );
+    expect(a4.shellId, 'shell-main');
+
+    expect(
+      () => EditorPageConfig(id: 'p', name: 'P', path: '/p', shellId: '  '),
+      throwsArgumentError,
+    );
+    for (final modalType in [
+      EditorPageType.dialog,
+      EditorPageType.bottomSheet,
+      EditorPageType.sideSheet,
+    ]) {
+      expect(
+        () => EditorPageConfig(
+          id: 'm',
+          name: 'Modal',
+          path: '/m',
+          pageType: modalType,
+          shellId: 'shell-main',
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => EditorPageConfig.fromJson({
+          'id': 'm',
+          'name': 'Modal',
+          'path': '/m',
+          'pageType': modalType.name,
+          'shellId': 'shell-main',
+        }),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => EditorPageConfig.fromJson({
+        'id': 'p',
+        'name': 'P',
+        'path': '/p',
+        'shellId': 42,
+      }),
+      throwsFormatException,
+    );
+  });
+
+  test('EditorPageCatalog validates, serializes and patches shells and rootShellId', () {
+    final empty = const EditorPageCatalog.empty();
+    expect(empty.hasShells, isFalse);
+    expect(empty.shellById('shell-main'), isNull);
+    expect(empty.toJson(), {'pages': const <Object>[], 'homePageId': null});
+    expect(empty.toCompactJson(), {'pages': const <Object>[]});
+
+    final shellA = EditorShellConfig(id: 'shell-main', name: 'Principal');
+    final shellB = EditorShellConfig(id: 'shell-admin', name: 'Admin');
+    final pageA = EditorPageConfig(
+      id: 'dash',
+      name: 'Dashboard',
+      path: '/dash',
+      shellId: 'shell-main',
+    );
+    final pageB = EditorPageConfig(
+      id: 'settings',
+      name: 'Settings',
+      path: '/settings',
+      shellId: 'shell-admin',
+    );
+    final catalog = EditorPageCatalog(
+      pages: [pageA, pageB],
+      shells: [shellA, shellB],
+      homePageId: 'dash',
+      rootShellId: 'shell-main',
+    );
+    expect(catalog.hasShells, isTrue);
+    expect(catalog.shellById('shell-main'), shellA);
+    expect(catalog.shellById('missing'), isNull);
+    expect(() => catalog.shells.clear(), throwsUnsupportedError);
+
+    final restored = EditorPageCatalog.fromJson(
+      jsonDecode(jsonEncode(catalog.toJson())),
+    );
+    expect(restored, catalog);
+    expect(restored.toJson(), catalog.toJson());
+    expect(catalog.copyWith(clearRootShellId: true).rootShellId, isNull);
+
+    // Validation errors
+    expect(
+      () => EditorPageCatalog(shells: [shellA, shellA]),
+      throwsArgumentError,
+    );
+    expect(
+      () => EditorPageCatalog(
+        shells: [EditorShellConfig(id: 'dup', name: 'Shell')],
+        pages: [EditorPageConfig(id: 'dup', name: 'Page', path: '/dup')],
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      () => EditorPageCatalog(pages: [pageA]),
+      throwsArgumentError,
+    );
+    expect(
+      () => EditorPageCatalog(rootShellId: 'missing'),
+      throwsArgumentError,
+    );
+
+    // patchFromJson preserves shells & rootShellId when only pages change
+    final patchedPages = catalog.patchFromJson({
+      'pages': [
+        {'id': 'overview', 'name': 'Overview', 'path': '/overview', 'shellId': 'shell-main'},
+      ],
+    });
+    expect(patchedPages.shells, [shellA, shellB]);
+    expect(patchedPages.rootShellId, 'shell-main');
+    expect(patchedPages.homePageId, isNull);
+    expect(patchedPages.pages.single.id, 'overview');
+
+    // patchFromJson preserves pages when only rootShellId changes
+    final patchedRoot = catalog.patchFromJson({'rootShellId': 'shell-admin'});
+    expect(patchedRoot.pages, catalog.pages);
+    expect(patchedRoot.shells, catalog.shells);
+    expect(patchedRoot.rootShellId, 'shell-admin');
+
+    // patchFromJson clears rootShellId if omitted and removed from shells
+    final onlyAdminCatalog = EditorPageCatalog(
+      pages: [pageB],
+      shells: [shellA, shellB],
+      rootShellId: 'shell-main',
+    );
+    final removedShellA = onlyAdminCatalog.patchFromJson({
+      'shells': [shellB.toJson()],
+    });
+    expect(removedShellA.rootShellId, isNull);
+    expect(removedShellA.shells, [shellB]);
+  });
+
+  test('AppearanceCodec patches pageCatalog incrementally and handles compatible scaffold types', () {
+    const codec = AppearanceCodec();
+    final shell = EditorShellConfig(id: 'shell-main', name: 'Principal');
+    final initial = Appearance(
+      pageCatalog: EditorPageCatalog(
+        shells: [shell],
+        rootShellId: 'shell-main',
+      ),
+      components: {
+        'shell-main': ScaffoldPageConfig(
+          regions: const {ScaffoldPageRegion.appBar: true},
+          placements: const {
+            ScaffoldPageRegion.appBar: ['top-bar'],
+          },
+          slotTypes: const {'top-bar': 'registry:ApplicationBar'},
+        ),
+        'legacy-page': NativeComponentConfig(
+          regions: const {'appBar': true},
+          placements: const {
+            'appBar': ['legacy-bar'],
+          },
+          slotTypes: const {'legacy-bar': 'registry:ApplicationBar'},
+        ),
+      },
+    );
+
+    // Compact JSON retains pageCatalog even when only shells are declared
+    expect(codec.toCompactJson(initial), contains('pageCatalog'));
+
+    // Incremental Vibe patch on pageCatalog preserves shells & rootShellId
+    final patched = codec.patchFromJson(initial, {
+      'pageCatalog': {
+        'pages': [
+          {
+            'id': 'reports',
+            'name': 'Rapports',
+            'path': '/reports',
+            'shellId': 'shell-main',
+          },
+        ],
+      },
+      'components': {
+        'shell-main': {
+          'type': 'superScaffold',
+          'extendBody': true,
+        },
+        'legacy-page': {
+          'type': 'superScaffold',
+          'extendBodyBehindAppBar': true,
+        },
+      },
+    });
+    expect(patched.pageCatalog.shells, [shell]);
+    expect(patched.pageCatalog.rootShellId, 'shell-main');
+    expect(patched.pageCatalog.pages.single.id, 'reports');
+    expect(patched.pageCatalog.pages.single.shellId, 'shell-main');
+
+    final updatedShell = patched.components['shell-main'] as ScaffoldPageConfig;
+    expect(updatedShell.extendBody, isTrue);
+    expect(updatedShell.slotsOf(ScaffoldPageRegion.appBar), ['top-bar']);
+
+    final upgradedLegacy =
+        patched.components['legacy-page'] as ScaffoldPageConfig;
+    expect(upgradedLegacy.extendBodyBehindAppBar, isTrue);
+    expect(upgradedLegacy.slotsOf(ScaffoldPageRegion.appBar), ['legacy-bar']);
+
+    // Partial patch path also uses patchFromJson for pageCatalog and compatible scaffold types
+    final partial = AppearanceTransfer.applyVibeMapPartial(initial, {
+      'pageCatalog': {
+        'pages': [
+          {
+            'id': 'analytics',
+            'name': 'Analytique',
+            'path': '/analytics',
+            'shellId': 'shell-main',
+          },
+        ],
+      },
+      'components': {
+        'shell-main': {
+          'type': 'native',
+          'extendBody': true,
+        },
+      },
+    });
+    expect(partial.hasRejections, isFalse);
+    expect(partial.appearance.pageCatalog.shells, [shell]);
+    expect(partial.appearance.pageCatalog.rootShellId, 'shell-main');
+    expect(partial.appearance.pageCatalog.pages.single.id, 'analytics');
+    final partialShell =
+        partial.appearance.components['shell-main'] as ScaffoldPageConfig;
+    expect(partialShell.extendBody, isTrue);
+    expect(partialShell.slotsOf(ScaffoldPageRegion.appBar), ['top-bar']);
   });
 }

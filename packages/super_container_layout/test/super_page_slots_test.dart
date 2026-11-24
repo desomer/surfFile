@@ -330,7 +330,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SwitchListTile), findsNWidgets(8));
+      expect(find.byType(SwitchListTile), findsNWidgets(10));
+      expect(
+        find.byKey(const ValueKey('scaffold-page-switch-sidebarStart')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('scaffold-page-switch-sidebarEnd')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('scaffold-page-switch-body')),
         findsNothing,

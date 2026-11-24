@@ -166,6 +166,7 @@ export 'theme/neon_style.dart';
 export 'theme/style_extras.dart';
 export 'widgets/appearance/appearance_scope.dart';
 export 'widgets/appearance/dynamic_font_scope.dart';
+export 'widgets/appearance/super_shell_scope.dart';
 export 'widgets/appearance/typed_appearance_scope.dart';
 export 'widgets/surfaces/surface_image_providers.dart';
 export 'widgets/appearance/appearance_transfer_dialog.dart';

@@ -705,35 +705,42 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
   /// Enveloppe une page dans la surface de fond éditable et la barre d'outils flottante.
   Widget wrapPageWithAppearanceShell(Widget page) {
-    return EditableSurface(
-      slot: AppearanceSlot(
-        'Fond',
-        name: 'demo-background',
-        role: AppearanceSurfaceRole.applicationBackground,
-        editShape: false,
-        extendedLook: false,
-        read: (a) => a.backgroundStyle,
-        write: (a, style) => a.withStyle('background', style),
-        reset: (a) => a.withStyle('background', null),
-      ),
-      menuIcon: Icons.wallpaper_outlined,
-      decorate: false,
-      applyPadding: true,
-      child: Stack(
-        children: [
-          Positioned.fill(child: page),
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: Builder(
-                builder: (toolbarContext) => FloatingAppearanceToolbar(
-                  onOpenApplications: () =>
-                      _openApplicationSelector(toolbarContext),
+    return Builder(
+      builder: (context) {
+        if (SuperShellScope.maybeOf(context)?.wrapsAppearanceShell == true) {
+          return page;
+        }
+        return EditableSurface(
+          slot: AppearanceSlot(
+            'Fond',
+            name: 'demo-background',
+            role: AppearanceSurfaceRole.applicationBackground,
+            editShape: false,
+            extendedLook: false,
+            read: (a) => a.backgroundStyle,
+            write: (a, style) => a.withStyle('background', style),
+            reset: (a) => a.withStyle('background', null),
+          ),
+          menuIcon: Icons.wallpaper_outlined,
+          decorate: false,
+          applyPadding: true,
+          child: Stack(
+            children: [
+              Positioned.fill(child: page),
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: Builder(
+                    builder: (toolbarContext) => FloatingAppearanceToolbar(
+                      onOpenApplications: () =>
+                          _openApplicationSelector(toolbarContext),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

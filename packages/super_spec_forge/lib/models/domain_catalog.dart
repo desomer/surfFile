@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'build_tech_stack_profile.dart';
 import 'domain_contracts.dart';
 import 'usecase_orchestration_spec.dart';
 
@@ -88,6 +89,7 @@ class FunctionalDomain {
     required this.name,
     this.description = '',
     this.isActive = true,
+    this.techStackId,
     this.contracts,
     this.useCaseOrchestration,
   });
@@ -106,6 +108,10 @@ class FunctionalDomain {
 
   /// Indique si le domaine est actif.
   final bool isActive;
+
+  /// Identifiant optionnel du profil de stack technique ([BuildTechStackProfile.id])
+  /// associé à ce domaine pour la génération des prompts Build.
+  final String? techStackId;
 
   /// Catalogue de modèles et contrats, absent pour un domaine encore vierge.
   final DomainContracts? contracts;
@@ -133,6 +139,8 @@ class FunctionalDomain {
     String? name,
     String? description,
     bool? isActive,
+    String? techStackId,
+    bool clearTechStackId = false,
     DomainContracts? contracts,
     UseCaseOrchestrationSpec? useCaseOrchestration,
   }) => FunctionalDomain(
@@ -141,6 +149,7 @@ class FunctionalDomain {
     name: name ?? this.name,
     description: description ?? this.description,
     isActive: isActive ?? this.isActive,
+    techStackId: clearTechStackId ? null : (techStackId ?? this.techStackId),
     contracts: contracts ?? this.contracts,
     useCaseOrchestration: useCaseOrchestration ?? this.useCaseOrchestration,
   );
@@ -152,6 +161,8 @@ class FunctionalDomain {
     'name': name,
     'description': description,
     'isActive': isActive,
+    if (techStackId != null && techStackId!.trim().isNotEmpty)
+      'techStackId': techStackId,
     if (contracts != null) 'contracts': contracts!.toJson(),
     if (useCaseOrchestration != null && !useCaseOrchestration!.isEmpty)
       'useCaseOrchestration': useCaseOrchestration!.toJson(),
@@ -160,12 +171,16 @@ class FunctionalDomain {
   /// Désérialise un domaine.
   factory FunctionalDomain.fromJson(Object? raw) {
     if (raw is! Map) throw const FormatException('Domaine invalide.');
+    final rawStackId = (raw['techStackId'] as String?)?.trim();
     final item = FunctionalDomain(
       id: raw['id'] as String? ?? '',
       domainCode: raw['domainCode'] as String? ?? '',
       name: raw['name'] as String? ?? '',
       description: raw['description'] as String? ?? '',
       isActive: raw['isActive'] as bool? ?? true,
+      techStackId: (rawStackId == null || rawStackId.isEmpty)
+          ? null
+          : rawStackId,
       contracts: raw.containsKey('contracts') ? DomainContracts.fromJson(raw['contracts']) : null,
       useCaseOrchestration: raw['useCaseOrchestration'] != null
           ? UseCaseOrchestrationSpec.fromJson(raw['useCaseOrchestration'])
@@ -636,6 +651,7 @@ class DomainCatalog {
     List<ConfigurationEntry> configurationEntries =
         const <ConfigurationEntry>[],
     List<AuditLogEntry> auditLog = const <AuditLogEntry>[],
+    List<BuildTechStackProfile>? techStacks,
     DateTime? updatedAt,
   }) : domains = List<FunctionalDomain>.unmodifiable(domains),
        environments = List<LogicalEnvironment>.unmodifiable(environments),
@@ -644,6 +660,9 @@ class DomainCatalog {
          configurationEntries,
        ),
        auditLog = List<AuditLogEntry>.unmodifiable(auditLog),
+       techStacks = List<BuildTechStackProfile>.unmodifiable(
+         techStacks ?? BuildTechStackProfile.defaults,
+       ),
        updatedAt = updatedAt?.toUtc();
 
   /// Catalogue vide.
@@ -664,8 +683,18 @@ class DomainCatalog {
   /// Journal append-only de l'application.
   final List<AuditLogEntry> auditLog;
 
+  /// Profils de stacks techniques configurés dans le workspace pour les prompts Build.
+  final List<BuildTechStackProfile> techStacks;
+
   /// Horodatage UTC de la dernière modification.
   final DateTime? updatedAt;
+
+  /// Retourne le profil de stack technique associé à [domain], ou `null` si aucun.
+  BuildTechStackProfile? techStackForDomain(FunctionalDomain domain) {
+    final stackId = domain.techStackId;
+    if (stackId == null || stackId.isEmpty) return null;
+    return techStacks.where((stack) => stack.id == stackId).firstOrNull;
+  }
 
   /// Valide l'intégrité référentielle et l'unicité de toutes les entités.
   void validate() {
@@ -674,6 +703,17 @@ class DomainCatalog {
     _validateUniqueIds(microservices.map((e) => e.id), 'microservice');
     _validateUniqueIds(configurationEntries.map((e) => e.id), 'configuration');
     _validateUniqueIds(auditLog.map((e) => e.id), 'audit');
+    _validateUniqueIds(techStacks.map((e) => e.id), 'stack technique');
+
+    _validateUniqueBy(
+      techStacks,
+      (s) => s.code,
+      'Code de stack technique dupliqué',
+    );
+    for (final stack in techStacks) {
+      stack.validate();
+    }
+    final techStackIds = techStacks.map((s) => s.id).toSet();
 
     final domainIds = domains.map((e) => e.id).toSet();
     final environmentById = {for (final e in environments) e.id: e};
@@ -685,6 +725,12 @@ class DomainCatalog {
     );
     for (final domain in domains) {
       domain.validate();
+      if (domain.techStackId != null &&
+          !techStackIds.contains(domain.techStackId)) {
+        throw FormatException(
+          'Stack technique introuvable pour le domaine ${domain.domainCode} : ${domain.techStackId}',
+        );
+      }
     }
 
     final environmentCodes = <String>{};
@@ -764,6 +810,7 @@ class DomainCatalog {
     List<Microservice>? microservices,
     List<ConfigurationEntry>? configurationEntries,
     List<AuditLogEntry>? auditLog,
+    List<BuildTechStackProfile>? techStacks,
     DateTime? updatedAt,
   }) => DomainCatalog(
     domains: domains ?? this.domains,
@@ -771,6 +818,7 @@ class DomainCatalog {
     microservices: microservices ?? this.microservices,
     configurationEntries: configurationEntries ?? this.configurationEntries,
     auditLog: auditLog ?? this.auditLog,
+    techStacks: techStacks ?? this.techStacks,
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
@@ -783,6 +831,7 @@ class DomainCatalog {
       for (final item in configurationEntries) item.toJson(),
     ],
     'auditLog': [for (final item in auditLog) item.toJson()],
+    'techStacks': [for (final item in techStacks) item.toJson()],
     if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
   };
 
@@ -791,6 +840,12 @@ class DomainCatalog {
     if (raw is! Map) throw const FormatException('Catalogue de domaines invalide.');
     final date = raw['updatedAt'] is String
         ? DateTime.tryParse(raw['updatedAt'] as String)
+        : null;
+    final parsedTechStacks = raw.containsKey('techStacks') && raw['techStacks'] is List
+        ? <BuildTechStackProfile>[
+            for (final item in raw['techStacks'] as List)
+              BuildTechStackProfile.fromJson(item),
+          ]
         : null;
     final catalog = DomainCatalog(
       domains: [
@@ -817,6 +872,7 @@ class DomainCatalog {
         if (raw['auditLog'] is List)
           for (final item in raw['auditLog'] as List) AuditLogEntry.fromJson(item),
       ],
+      techStacks: parsedTechStacks,
       updatedAt: date,
     );
     catalog.validate();

@@ -9,6 +9,7 @@ import '../../../models/datasources/datasource_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
+import '../../../models/scaffold_page_config.dart';
 import '../../../models/super_action_config.dart';
 import '../../../models/super_indicator_config.dart';
 import '../../../models/super_layout_config.dart';
@@ -644,6 +645,8 @@ class DartCodegenContext {
           'pagePath': formatString(go.pagePath),
           if (go.pageId != null) 'pageId': formatString(go.pageId!),
           if (go.pageName != null) 'pageName': formatString(go.pageName!),
+          if (go.navigationMode != GoToPageNavigationMode.auto)
+            'navigationMode': 'GoToPageNavigationMode.${go.navigationMode.name}',
         }, indent: indent);
       case final GoBackAction back:
         return formatCall('const GoBackAction', const [], {
@@ -1531,6 +1534,9 @@ class DartCodegenContext {
     String? label,
     int indent = 0,
   }) {
+    if (id == 'scaffold:outlet') {
+      return 'const SizedBox.shrink()';
+    }
     if (!_visiting.add(id)) {
       return 'const SizedBox.shrink()';
     }
@@ -1607,6 +1613,14 @@ class DartCodegenContext {
           }
         }
       }
+      if (appearance.components[id] case final ScaffoldPageConfig scaffoldConfig) {
+        return generateScaffoldPageWidget(
+          id,
+          config: scaffoldConfig,
+          label: label,
+          indent: indent,
+        );
+      }
       final generator = resolveGenerator(id, slotType: slotType);
       if (generator != null) {
         return generator.generateWidget(
@@ -1627,6 +1641,259 @@ class DartCodegenContext {
     } finally {
       _visiting.remove(id);
     }
+  }
+
+  /// Clés de propriétés typées directement gérées par le constructeur [ScaffoldPageConfig].
+  static const Set<String> _typedScaffoldPropertyKeys = {
+    'bodyMode',
+    'headerSpan',
+    'sidebarStartWidth',
+    'sidebarEndWidth',
+    'responsiveSidebarToDrawer',
+    'extendBody',
+    'extendBodyBehindAppBar',
+    'scrollDirection',
+    'reverse',
+    'primary',
+    'scrollPadding',
+    'clipBehavior',
+  };
+
+  /// Résout les identifiants de slots effectifs de [region] en remplaçant
+  /// `'scaffold:outlet'` par [outletReplacementIds] (ou en le filtrant).
+  List<String> _resolvedScaffoldRegionSlots(
+    ScaffoldPageConfig config,
+    ScaffoldPageRegion region, {
+    List<String>? outletReplacementIds,
+  }) {
+    final raw = config.placements[region] ?? const <String>[];
+    if (raw.isEmpty) {
+      if (region == ScaffoldPageRegion.body &&
+          outletReplacementIds != null &&
+          outletReplacementIds.isNotEmpty) {
+        return List<String>.of(outletReplacementIds);
+      }
+      return const <String>[];
+    }
+    final result = <String>[];
+    var replaced = false;
+    for (final slotId in raw) {
+      if (slotId == 'scaffold:outlet') {
+        if (!replaced && outletReplacementIds != null) {
+          result.addAll(
+            outletReplacementIds.where((id) => id != 'scaffold:outlet'),
+          );
+          replaced = true;
+        }
+      } else {
+        result.add(slotId);
+      }
+    }
+    if (region == ScaffoldPageRegion.body &&
+        !replaced &&
+        outletReplacementIds != null &&
+        outletReplacementIds.isNotEmpty) {
+      result.addAll(
+        outletReplacementIds.where((id) => id != 'scaffold:outlet'),
+      );
+    }
+    return result;
+  }
+
+  /// Formate une [ScaffoldPageConfig] en appel Dart `ScaffoldPageConfig(...)`,
+  /// incluant `sidebarStart`, `sidebarEnd`, `headerSpan`, `sidebarStartWidth`,
+  /// `sidebarEndWidth` et `responsiveSidebarToDrawer` lorsqu'ils diffèrent des
+  /// valeurs par défaut, tout en gérant proprement `'scaffold:outlet'`.
+  String formatScaffoldPageConfig(
+    ScaffoldPageConfig config, {
+    int indent = 0,
+    List<String>? outletReplacementIds,
+    Map<String, String> extraSlotTypes = const {},
+  }) {
+    final resolvedPlacements = <ScaffoldPageRegion, List<String>>{};
+    final allPlacedIds = <String>{};
+    for (final region in ScaffoldPageRegion.values) {
+      final ids = _resolvedScaffoldRegionSlots(
+        config,
+        region,
+        outletReplacementIds: outletReplacementIds,
+      );
+      if (ids.isNotEmpty) {
+        resolvedPlacements[region] = ids;
+        allPlacedIds.addAll(ids);
+      }
+    }
+
+    final mergedSlotTypes = <String, String>{
+      for (final entry in config.slotTypes.entries)
+        if (entry.key != 'scaffold:outlet' && allPlacedIds.contains(entry.key))
+          entry.key: entry.value,
+      for (final entry in extraSlotTypes.entries)
+        if (entry.key != 'scaffold:outlet' && allPlacedIds.contains(entry.key))
+          entry.key: entry.value,
+    };
+
+    final extraProperties = <String, Object>{
+      for (final entry in config.native.properties.entries)
+        if (!_typedScaffoldPropertyKeys.contains(entry.key))
+          entry.key: entry.value,
+    };
+
+    final args = <String, String>{
+      if (resolvedPlacements.isNotEmpty)
+        'placements': formatMap(
+          {
+            for (final entry in resolvedPlacements.entries)
+              'ScaffoldPageRegion.${entry.key.name}': formatList(
+                [for (final id in entry.value) formatString(id)],
+                indent: indent + 4,
+              ),
+          },
+          indent: indent + 2,
+          isConst: true,
+        ),
+      if (mergedSlotTypes.isNotEmpty)
+        'slotTypes': formatMap(
+          {
+            for (final entry in mergedSlotTypes.entries)
+              formatString(entry.key): formatString(entry.value),
+          },
+          indent: indent + 2,
+          isConst: true,
+        ),
+      if (config.regions.isNotEmpty)
+        'regions': formatMap(
+          {
+            for (final entry in config.regions.entries)
+              'ScaffoldPageRegion.${entry.key.name}': '${entry.value}',
+          },
+          indent: indent + 2,
+          isConst: true,
+        ),
+      if (extraProperties.isNotEmpty)
+        'properties': formatMap(
+          {
+            for (final entry in extraProperties.entries)
+              formatString(entry.key): formatLiteralValue(
+                entry.value,
+                indent: indent + 4,
+              ),
+          },
+          indent: indent + 2,
+          isConst: true,
+        ),
+      if (config.bodyMode != ScaffoldBodyMode.standard)
+        'bodyMode': 'ScaffoldBodyMode.${config.bodyMode.name}',
+      if (config.headerSpan != ScaffoldHeaderSpan.fullWidth)
+        'headerSpan': 'ScaffoldHeaderSpan.${config.headerSpan.name}',
+      if (config.sidebarStartWidth != null)
+        'sidebarStartWidth': formatNum(config.sidebarStartWidth!),
+      if (config.sidebarEndWidth != null)
+        'sidebarEndWidth': formatNum(config.sidebarEndWidth!),
+      if (config.responsiveSidebarToDrawer)
+        'responsiveSidebarToDrawer': 'true',
+      if (config.extendBody) 'extendBody': 'true',
+      if (config.extendBodyBehindAppBar) 'extendBodyBehindAppBar': 'true',
+      if (config.scrollDirection != Axis.vertical)
+        'scrollDirection': formatAxis(config.scrollDirection),
+      if (config.reverse) 'reverse': 'true',
+      if (config.primary != null) 'primary': '${config.primary}',
+      if (config.scrollPadding != null)
+        'scrollPadding': formatNum(config.scrollPadding!),
+      if (config.clipBehavior != null)
+        'clipBehavior': 'Clip.${config.clipBehavior!.name}',
+    };
+
+    return formatCall(
+      'ScaffoldPageConfig',
+      const [],
+      args,
+      indent: indent,
+      forceMultiline: args.isNotEmpty,
+    );
+  }
+
+  /// Génère le widget Dart `SuperPage(...)` correspondant à une [ScaffoldPageConfig].
+  ///
+  /// Lorsque [outletReplacementIds] est fourni (export d'une page rattachée à un
+  /// shell), `'scaffold:outlet'` est remplacé par ces identifiants dans `body`
+  /// et leurs `BuilderSlot` sont générés. Sans remplacement, `'scaffold:outlet'`
+  /// est ignoré sans erreur afin de produire un code Dart valide.
+  String generateScaffoldPageWidget(
+    String id, {
+    ScaffoldPageConfig? config,
+    String? label,
+    int indent = 0,
+    List<String>? outletReplacementIds,
+    Map<String, String> extraSlotTypes = const {},
+  }) {
+    final resolved =
+        config ??
+        appearance.tryComponent<ScaffoldPageConfig>(id) ??
+        ScaffoldPageConfig();
+    final behaviors = appearance.behaviorsFor(id);
+
+    final seenSlotIds = <String>{};
+    final slotEntries = <String>[];
+    for (final region in ScaffoldPageRegion.values) {
+      final regionSlots = _resolvedScaffoldRegionSlots(
+        resolved,
+        region,
+        outletReplacementIds: outletReplacementIds,
+      );
+      for (final slotId in regionSlots) {
+        if (slotId == 'scaffold:outlet') continue;
+        if (slotId == 'scaffold:body' &&
+            !appearance.components.containsKey(slotId) &&
+            !appearance.styles.containsKey(slotId)) {
+          continue;
+        }
+        if (!seenSlotIds.add(slotId)) continue;
+        slotEntries.add(
+          generateBuilderSlot(
+            slotId,
+            slotType: extraSlotTypes[slotId] ?? resolved.slotTypes[slotId],
+            label: resolved.native.slotLabels[slotId],
+            preferredSize: resolved.native.slotPreferredSizes[slotId],
+            indent: indent + 4,
+          ),
+        );
+      }
+    }
+
+    final pageConfigCode = formatScaffoldPageConfig(
+      resolved,
+      indent: indent + 2,
+      outletReplacementIds: outletReplacementIds,
+      extraSlotTypes: extraSlotTypes,
+    );
+
+    final args = <String, String>{
+      'id': formatInstanceId(id),
+      if (label != null &&
+          label.trim().isNotEmpty &&
+          label != 'Page' &&
+          label != id)
+        'label': formatString(label),
+      if (behaviors.isNotEmpty)
+        'behaviours': formatBehaviors(behaviors, indent: indent + 2),
+      if (pageConfigCode != 'ScaffoldPageConfig()')
+        'pageConfig': pageConfigCode,
+      if (slotEntries.isNotEmpty)
+        'slots': formatList(
+          slotEntries,
+          indent: indent + 2,
+          forceMultiline: true,
+        ),
+    };
+
+    return formatCall(
+      'SuperPage',
+      const [],
+      args,
+      indent: indent,
+      forceMultiline: true,
+    );
   }
 
   /// Génère une entrée `BuilderSlot(id: ..., label: ..., builder: (_) => ...)` pour [id].

@@ -173,6 +173,14 @@ class NativePropertyDescriptor {
     'collapsedHeight',
     'actionsPadding',
     'scrollPadding',
+    'sidebarStartWidth',
+    'sidebarEndWidth',
+  }.contains(id);
+
+  /// Propriétés numériques dont la validation d'intervalle est déléguée au modèle.
+  bool get _hasModelManagedRange => const {
+    'sidebarStartWidth',
+    'sidebarEndWidth',
   }.contains(id);
 
   /// Normalise et valide une valeur brute JSON pour ce descripteur.
@@ -191,6 +199,9 @@ class NativePropertyDescriptor {
           throw FormatException('Nombre fini attendu pour "$id".');
         }
         var value = raw.toDouble();
+        if (_hasModelManagedRange) {
+          return value;
+        }
         if (min != null &&
             value < min! &&
             !(allowsExtendedNumber && min! < 0)) {
@@ -951,5 +962,48 @@ const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
     label: 'Découpage (Clip)',
     subtitle: 'Mode de découpage de la zone de défilement',
     options: _clipBehaviorOptions,
+  ),
+  NativePropertyDescriptor.select(
+    id: 'headerSpan',
+    label: 'Portée de l’en-tête (headerSpan)',
+    subtitle:
+        'Position de l’AppBar par rapport aux panneaux latéraux (sidebarStart / sidebarEnd)',
+    defaultValue: 'fullWidth',
+    nullable: false,
+    options: [
+      NativePropertyOption(
+        value: 'fullWidth',
+        label: 'Pleine largeur (au-dessus des menus)',
+      ),
+      NativePropertyOption(
+        value: 'contentOnly',
+        label: 'Zone centrale uniquement',
+      ),
+    ],
+  ),
+  NativePropertyDescriptor.number(
+    id: 'sidebarStartWidth',
+    label: 'Largeur du panneau latéral gauche',
+    subtitle:
+        'Largeur fixe en pixels de la région sidebarStart (auto si vide)',
+    min: 56,
+    max: 420,
+    divisions: 91,
+  ),
+  NativePropertyDescriptor.number(
+    id: 'sidebarEndWidth',
+    label: 'Largeur du panneau latéral droit',
+    subtitle:
+        'Largeur fixe en pixels de la région sidebarEnd (auto si vide)',
+    min: 160,
+    max: 480,
+    divisions: 80,
+  ),
+  NativePropertyDescriptor.flag(
+    id: 'responsiveSidebarToDrawer',
+    label: 'Replier le menu gauche en Drawer sur mobile',
+    subtitle:
+        'Déplace automatiquement sidebarStart dans le Drawer sur écran étroit',
+    defaultValue: false,
   ),
 ];

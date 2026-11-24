@@ -262,6 +262,20 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
           backgroundColor: bg,
           content: Row(
             children: [
+              TextButton(
+                onPressed: () => _messenger.currentState?.hideCurrentSnackBar(),
+                style: TextButton.styleFrom(
+                  foregroundColor: fg,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Fermer'),
+              ),
+              const SizedBox(width: 8),
               Icon(
                 severity == DebugSeverity.critical
                     ? Icons.dangerous_outlined
@@ -295,11 +309,6 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                 ),
               ),
             ],
-          ),
-          action: SnackBarAction(
-            label: 'Fermer',
-            textColor: fg,
-            onPressed: () => _messenger.currentState?.hideCurrentSnackBar(),
           ),
         ),
         replaceCurrent: true,

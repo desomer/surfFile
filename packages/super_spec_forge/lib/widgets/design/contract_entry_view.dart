@@ -68,6 +68,73 @@ Color contractTypeColor(String type) => switch (type) {
   _ => Colors.indigo,
 };
 
+/// Bandeau compact des 4 indicateurs d'avancement ([ContractStage]),
+/// cliquables lorsque [onStageTap] est renseigné.
+class ContractPhaseStatusStrip extends StatelessWidget {
+  /// Crée un bandeau d'indicateurs d'avancement.
+  const ContractPhaseStatusStrip({
+    required this.keyPrefix,
+    required this.states,
+    this.onStageTap,
+    this.iconSize = 16,
+    super.key,
+  });
+
+  /// Préfixe de clé appliqué à chaque icône (`$keyPrefix-${stage.name}`).
+  final String keyPrefix;
+
+  /// Statuts par étape (les étapes absentes valent [ContractStatus.pending]).
+  final Map<ContractStage, ContractStatus> states;
+
+  /// Callback optionnel déclenché lorsqu'on clique sur une étape.
+  final ValueChanged<ContractStage>? onStageTap;
+
+  /// Taille des icônes d'étape.
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final callback = onStageTap;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 4,
+      children: [
+        for (final stage in ContractStage.values)
+          Tooltip(
+            message:
+                '${contractStageLabels[stage]} : '
+                '${contractStatusLabels[states[stage] ?? ContractStatus.pending]}'
+                '${callback != null ? ' (cliquer pour changer)' : ''}',
+            child: callback == null
+                ? Padding(
+                    key: ValueKey('$keyPrefix-${stage.name}'),
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      contractStageIcons[stage],
+                      size: iconSize,
+                      color: contractStatusColor(states[stage], colors),
+                    ),
+                  )
+                : InkWell(
+                    key: ValueKey('$keyPrefix-${stage.name}'),
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => callback(stage),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        contractStageIcons[stage],
+                        size: iconSize,
+                        color: contractStatusColor(states[stage], colors),
+                      ),
+                    ),
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Page de détail d'une entrée du catalogue : identité et avancement, puis
 /// chat IA | détail de l'objet, comme l'étape Spec « Objets métier » mais
 /// pour un seul objet stocké dans le domaine sous l'ID de l'entrée.

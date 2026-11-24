@@ -549,4 +549,68 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'SuperDesignerApp does not duplicate background EditableSurface, toolbar or root Scaffold when rootShellId is active',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+      await tester.pump();
+
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.pumpAndSettle();
+
+      final rootCtx = tester.element(find.byType(SuperPage));
+      final appearance = AppearanceScope.controllerOf(rootCtx)!;
+
+      appearance.value = appearance.value.copyWith(
+        pageCatalog: EditorPageCatalog(
+          shells: [EditorShellConfig(id: 'app-shell', name: 'Shell')],
+          rootShellId: 'app-shell',
+          pages: [
+            EditorPageConfig(
+              id: 'orders',
+              name: 'Commandes',
+              path: '/orders',
+              shellId: 'app-shell',
+            ),
+          ],
+        ),
+        components: {
+          ...appearance.value.components,
+          'app-shell': ScaffoldPageConfig(
+            placements: {
+              ScaffoldPageRegion.appBar: const ['shell-bar'],
+              ScaffoldPageRegion.body: const ['scaffold:outlet'],
+            },
+            slotTypes: const {'shell-bar': 'registry:ApplicationBar'},
+          ),
+          'shell-bar': NativeComponentConfig(
+            placements: const {
+              'title': ['shell-title'],
+            },
+            slotTypes: const {'shell-title': 'registry:Value'},
+          ),
+          'shell-title': const SuperValueConfig(initialText: 'Designer Shell'),
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Designer Shell'), findsOneWidget);
+      expect(find.byType(FloatingAppearanceToolbar), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is EditableSurface &&
+              widget.slot?.name == 'demo-background',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(Scaffold), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

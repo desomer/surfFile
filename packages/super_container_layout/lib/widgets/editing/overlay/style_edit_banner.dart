@@ -83,6 +83,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   VibeQuestioningLevel _chatQuestioningLevel = VibeQuestioningLevel.balanced;
   bool _chatPlanMode = false;
   bool _chatVisibleOnlyMode = false;
+  bool _chatVerifyRenderEnabled = true;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
@@ -786,6 +787,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     initialVisibleOnlyMode: _chatVisibleOnlyMode,
                     onVisibleOnlyModeChanged: (enabled) =>
                         setState(() => _chatVisibleOnlyMode = enabled),
+                    initialVerifyRenderEnabled: _chatVerifyRenderEnabled,
+                    onVerifyRenderEnabledChanged: (enabled) =>
+                        setState(() => _chatVerifyRenderEnabled = enabled),
                     initialDesignSystem: _selectedDesignSystem,
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),

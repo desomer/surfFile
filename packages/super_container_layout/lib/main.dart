@@ -15,6 +15,7 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_toolbar.dart';
+import 'package:super_container_layout/widgets/appearance/super_shell_scope.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
@@ -74,28 +75,35 @@ class _TestAppState extends State<TestApp> {
 
   /// Enveloppe une page dans la surface de fond éditable et la barre d'outils flottante.
   Widget wrapPageWithAppearanceShell(Widget page) {
-    return EditableSurface(
-      slot: AppearanceSlot(
-        'Fond',
-        name: 'demo-background',
-        role: AppearanceSurfaceRole.applicationBackground,
-        editShape: false,
-        extendedLook: false,
-        read: (a) => a.backgroundStyle,
-        write: (a, style) => a.withStyle('background', style),
-        reset: (a) => a.withStyle('background', null),
-      ),
-      menuIcon: Icons.wallpaper_outlined,
-      decorate: false,
-      applyPadding: true,
-      child: Stack(
-        children: [
-          Positioned.fill(child: page),
-          const Positioned.fill(
-            child: FloatingAppearanceToolbar(),
+    return Builder(
+      builder: (context) {
+        if (SuperShellScope.maybeOf(context)?.wrapsAppearanceShell == true) {
+          return page;
+        }
+        return EditableSurface(
+          slot: AppearanceSlot(
+            'Fond',
+            name: 'demo-background',
+            role: AppearanceSurfaceRole.applicationBackground,
+            editShape: false,
+            extendedLook: false,
+            read: (a) => a.backgroundStyle,
+            write: (a, style) => a.withStyle('background', style),
+            reset: (a) => a.withStyle('background', null),
           ),
-        ],
-      ),
+          menuIcon: Icons.wallpaper_outlined,
+          decorate: false,
+          applyPadding: true,
+          child: Stack(
+            children: [
+              Positioned.fill(child: page),
+              const Positioned.fill(
+                child: FloatingAppearanceToolbar(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -151,6 +151,7 @@ abstract final class VibeDeltaRecovery {
       ...?instantiatedIds,
       if (!hasRegistry && instantiatedIds == null)
         ...baseForScope.components.keys,
+      for (final shell in next.pageCatalog.shells) shell.id,
       for (final page in next.pageCatalog.pages)
         if (!requireNewPageComponent ||
             initialPageIds.contains(page.id) ||
@@ -220,27 +221,89 @@ abstract final class VibeDeltaRecovery {
       allRejected.addAll(partial.rejectedEntries);
     }
 
-    // Si de nouvelles pages n'ont pas encore leur composant racine (ex. flux coupé ou page orpheline),
-    // retire ces pages incomplètes du checkpoint pour éviter une route vide.
+    // Si de nouveaux shells ou de nouvelles pages n'ont pas encore leur composant racine
+    // (ex. flux coupé ou entrée orpheline), retire ces entrées incomplètes du checkpoint
+    // tout en préservant les shells valides et rootShellId.
     if (candidate.pageCatalog != workingAppearance.pageCatalog) {
-      final validPages = <EditorPageConfig>[
-        for (final page in candidate.pageCatalog.pages)
-          if (initialPageIds.contains(page.id) ||
-              candidate.components.containsKey(page.id))
-            page,
+      final initialShellIds = {
+        for (final shell in initialAppearance.pageCatalog.shells) shell.id,
+      };
+      final validShells = <EditorShellConfig>[
+        for (final shell in candidate.pageCatalog.shells)
+          if (initialShellIds.contains(shell.id) ||
+              candidate.components.containsKey(shell.id))
+            shell,
       ];
-      if (validPages.length != candidate.pageCatalog.pages.length) {
-        final validIds = {for (final p in validPages) p.id};
-        final prevHome = candidate.pageCatalog.homePageId;
-        final nextHome = prevHome != null && validIds.contains(prevHome)
-            ? prevHome
-            : workingAppearance.pageCatalog.homePageId;
+      final validShellIds = {for (final s in validShells) s.id};
+      final previousPagesById = {
+        for (final p in workingAppearance.pageCatalog.pages) p.id: p,
+      };
+      final validPages = <EditorPageConfig>[];
+      for (final page in candidate.pageCatalog.pages) {
+        final isInitialPage = initialPageIds.contains(page.id);
+        if (!isInitialPage && !candidate.components.containsKey(page.id)) {
+          continue;
+        }
+        if (page.shellId != null && !validShellIds.contains(page.shellId)) {
+          if (!isInitialPage) {
+            continue;
+          }
+          final prevShellId = previousPagesById[page.id]?.shellId;
+          validPages.add(
+            prevShellId != null && validShellIds.contains(prevShellId)
+                ? page.copyWith(shellId: prevShellId)
+                : page.copyWith(clearShellId: true),
+          );
+          continue;
+        }
+        validPages.add(page);
+      }
+
+      final validIds = {for (final p in validPages) p.id};
+      final prevHome = candidate.pageCatalog.homePageId;
+      final nextHome = prevHome != null && validIds.contains(prevHome)
+          ? prevHome
+          : (workingAppearance.pageCatalog.homePageId != null &&
+                    validIds.contains(workingAppearance.pageCatalog.homePageId)
+                ? workingAppearance.pageCatalog.homePageId
+                : null);
+      final prevRootShell = candidate.pageCatalog.rootShellId;
+      final nextRootShell =
+          prevRootShell != null && validShellIds.contains(prevRootShell)
+          ? prevRootShell
+          : (workingAppearance.pageCatalog.rootShellId != null &&
+                    validShellIds.contains(
+                      workingAppearance.pageCatalog.rootShellId,
+                    )
+                ? workingAppearance.pageCatalog.rootShellId
+                : null);
+
+      final catalogChanged =
+          validPages.length != candidate.pageCatalog.pages.length ||
+          validShells.length != candidate.pageCatalog.shells.length ||
+          nextHome != candidate.pageCatalog.homePageId ||
+          nextRootShell != candidate.pageCatalog.rootShellId ||
+          !_samePageList(validPages, candidate.pageCatalog.pages) ||
+          !_sameShellList(validShells, candidate.pageCatalog.shells);
+      if (catalogChanged) {
         final restoredCatalog =
             validPages.length == workingAppearance.pageCatalog.pages.length &&
+                validShells.length ==
+                    workingAppearance.pageCatalog.shells.length &&
                 nextHome == workingAppearance.pageCatalog.homePageId &&
-                _samePageList(validPages, workingAppearance.pageCatalog.pages)
+                nextRootShell == workingAppearance.pageCatalog.rootShellId &&
+                _samePageList(validPages, workingAppearance.pageCatalog.pages) &&
+                _sameShellList(
+                  validShells,
+                  workingAppearance.pageCatalog.shells,
+                )
             ? workingAppearance.pageCatalog
-            : EditorPageCatalog(pages: validPages, homePageId: nextHome);
+            : EditorPageCatalog(
+                pages: validPages,
+                shells: validShells,
+                homePageId: nextHome,
+                rootShellId: nextRootShell,
+              );
         candidate = candidate.copyWith(pageCatalog: restoredCatalog);
       }
     }
@@ -256,6 +319,7 @@ abstract final class VibeDeltaRecovery {
                     ? (effectiveVibePatch['data'] as Map)['pageCatalog']
                     : effectiveVibePatch['pageCatalog']);
           final rawPagesById = <String, Object?>{};
+          final rawShellsById = <String, Object?>{};
           if (rawPageCatalog is Map && rawPageCatalog['pages'] is List) {
             for (final rawPage in rawPageCatalog['pages'] as List) {
               if (rawPage is Map && rawPage['id'] is String) {
@@ -263,11 +327,55 @@ abstract final class VibeDeltaRecovery {
               }
             }
           }
+          if (rawPageCatalog is Map && rawPageCatalog['shells'] is List) {
+            for (final rawShell in rawPageCatalog['shells'] as List) {
+              if (rawShell is Map && rawShell['id'] is String) {
+                rawShellsById[rawShell['id'] as String] = rawShell;
+              }
+            }
+          }
+
+          final acceptedShells = <EditorShellConfig>[];
+          for (final shell in candidate.pageCatalog.shells) {
+            final trialCatalog = EditorPageCatalog(
+              shells: [...acceptedShells, shell],
+            );
+            try {
+              validateAppearance(candidate.copyWith(pageCatalog: trialCatalog));
+              acceptedShells.add(shell);
+            } catch (shellError) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: shell.id,
+                  message: shellError is FormatException
+                      ? shellError.message
+                      : shellError.toString(),
+                  rawValue: rawShellsById[shell.id] ?? shell.toJson(),
+                ),
+              );
+            }
+          }
+          final acceptedShellIds = {for (final s in acceptedShells) s.id};
 
           final acceptedPages = <EditorPageConfig>[];
           for (final page in candidate.pageCatalog.pages) {
+            if (page.shellId != null &&
+                !acceptedShellIds.contains(page.shellId)) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: page.id,
+                  message:
+                      'La page "${page.id}" référence un shell inconnu ou rejeté ("${page.shellId}").',
+                  rawValue: rawPagesById[page.id] ?? page.toJson(),
+                ),
+              );
+              continue;
+            }
             final trialCatalog = EditorPageCatalog(
               pages: [...acceptedPages, page],
+              shells: acceptedShells,
             );
             try {
               validateAppearance(candidate.copyWith(pageCatalog: trialCatalog));
@@ -295,6 +403,7 @@ abstract final class VibeDeltaRecovery {
                 candidate.copyWith(
                   pageCatalog: EditorPageCatalog(
                     pages: acceptedPages,
+                    shells: acceptedShells,
                     homePageId: candidateHomeId,
                   ),
                 ),
@@ -322,6 +431,7 @@ abstract final class VibeDeltaRecovery {
                   candidate.copyWith(
                     pageCatalog: EditorPageCatalog(
                       pages: acceptedPages,
+                      shells: acceptedShells,
                       homePageId: prevHomeId,
                     ),
                   ),
@@ -333,18 +443,79 @@ abstract final class VibeDeltaRecovery {
             }
           }
 
+          String? resolvedRootShellId;
+          final candidateRootShellId = candidate.pageCatalog.rootShellId;
+          if (candidateRootShellId != null &&
+              acceptedShellIds.contains(candidateRootShellId)) {
+            try {
+              validateAppearance(
+                candidate.copyWith(
+                  pageCatalog: EditorPageCatalog(
+                    pages: acceptedPages,
+                    shells: acceptedShells,
+                    homePageId: resolvedHomeId,
+                    rootShellId: candidateRootShellId,
+                  ),
+                ),
+              );
+              resolvedRootShellId = candidateRootShellId;
+            } catch (rootShellError) {
+              allRejected.add(
+                PatchRejectedEntry(
+                  section: 'pageCatalog',
+                  key: 'rootShellId',
+                  message: rootShellError is FormatException
+                      ? rootShellError.message
+                      : rootShellError.toString(),
+                  rawValue: candidateRootShellId,
+                ),
+              );
+            }
+          }
+          if (resolvedRootShellId == null) {
+            final prevRootShellId = workingAppearance.pageCatalog.rootShellId;
+            if (prevRootShellId != null &&
+                acceptedShellIds.contains(prevRootShellId)) {
+              try {
+                validateAppearance(
+                  candidate.copyWith(
+                    pageCatalog: EditorPageCatalog(
+                      pages: acceptedPages,
+                      shells: acceptedShells,
+                      homePageId: resolvedHomeId,
+                      rootShellId: prevRootShellId,
+                    ),
+                  ),
+                );
+                resolvedRootShellId = prevRootShellId;
+              } catch (_) {
+                resolvedRootShellId = null;
+              }
+            }
+          }
+
           final salvagedCatalog =
               acceptedPages.length ==
                       workingAppearance.pageCatalog.pages.length &&
+                  acceptedShells.length ==
+                      workingAppearance.pageCatalog.shells.length &&
                   resolvedHomeId == workingAppearance.pageCatalog.homePageId &&
+                  resolvedRootShellId ==
+                      workingAppearance.pageCatalog.rootShellId &&
                   _samePageList(
                     acceptedPages,
                     workingAppearance.pageCatalog.pages,
+                  ) &&
+                  _sameShellList(
+                    acceptedShells,
+                    workingAppearance.pageCatalog.shells,
                   )
               ? workingAppearance.pageCatalog
               : EditorPageCatalog(
                   pages: acceptedPages,
+                  shells: acceptedShells,
                   homePageId: resolvedHomeId,
+                  rootShellId: resolvedRootShellId,
                 );
           final salvagedCandidate = candidate.copyWith(
             pageCatalog: salvagedCatalog,
@@ -722,13 +893,30 @@ abstract final class VibeDeltaRecovery {
     return true;
   }
 
+  static bool _sameShellList(
+    List<EditorShellConfig> a,
+    List<EditorShellConfig> b,
+  ) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   static bool _hasReachableComponentOrPageChanges({
     required Appearance previous,
     required Appearance next,
     required Set<String> reachableIds,
   }) {
     if (!_samePageList(previous.pageCatalog.pages, next.pageCatalog.pages) ||
-        previous.pageCatalog.homePageId != next.pageCatalog.homePageId) {
+        !_sameShellList(
+          previous.pageCatalog.shells,
+          next.pageCatalog.shells,
+        ) ||
+        previous.pageCatalog.homePageId != next.pageCatalog.homePageId ||
+        previous.pageCatalog.rootShellId != next.pageCatalog.rootShellId) {
       return true;
     }
     for (final id in reachableIds) {
@@ -752,7 +940,12 @@ abstract final class VibeDeltaRecovery {
         previous.bindingDebounceMs != next.bindingDebounceMs ||
         previous.bindingSaveOnBlurOnly != next.bindingSaveOnBlurOnly ||
         !_samePageList(previous.pageCatalog.pages, next.pageCatalog.pages) ||
-        previous.pageCatalog.homePageId != next.pageCatalog.homePageId) {
+        !_sameShellList(
+          previous.pageCatalog.shells,
+          next.pageCatalog.shells,
+        ) ||
+        previous.pageCatalog.homePageId != next.pageCatalog.homePageId ||
+        previous.pageCatalog.rootShellId != next.pageCatalog.rootShellId) {
       return true;
     }
 
@@ -806,7 +999,7 @@ abstract final class VibeDeltaRecovery {
 
     for (final entry in nextTypes.entries) {
       final slotId = entry.key;
-      if (slotId == 'scaffold:body') continue;
+      if (slotId == 'scaffold:body' || slotId == 'scaffold:outlet') continue;
       if (next.components.containsKey(slotId)) continue;
       if (previousTypes.containsKey(slotId) &&
           !previous.components.containsKey(slotId)) {

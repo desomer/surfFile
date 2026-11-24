@@ -114,6 +114,25 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
      2. **Jamais d'`autoSides`** sur un `layout` feuille dont une zone a `scrollable: true` $\rightarrow$ définir `"autoSides": []`.
      3. **`Card` enveloppante sans contrainte zéro** : une `Card` mono-enfant principale dans `mainLayout` doit pouvoir s'étirer naturellement (`expandSlots: true` dans le parent `mainLayout`) pour offrir toute la hauteur du viewport à son contenu.
 
+### Règle d'or : Maîtrise du budget de largeur et prévention de la troncature silencieuse
+
+1. **Sanctuarisation des colonnes et panneaux latéraux (interdiction d'`autoSides` sur données variables)** :
+   - N'utilise **jamais** `autoSides: ["east"]` ou `autoSides: ["west"]` sur un layout ou un gabarit de liste (`template`) dès que ce côté héberge des données textuelles dynamiques (email, téléphone, dates), des badges ou des groupes d'actions.
+   - Déclare systématiquement une dimension fixe explicite (`eastSize` ou `westSize` entre `180` et `320` dp) afin de borner rigoureusement l'espace restant alloué au `center` et d'éviter que le texte principal ne soit tronqué ou ne déborde silencieusement.
+2. **Vérification universelle du budget horizontal (au-delà de `zoneAxes: 'row'`)** :
+   - Le contrôle de budget ne doit pas se limiter aux seules zones en ligne (`zoneAxes: 'row'`).
+   - Pour **tout `SuperLayout`**, vérifie que `[somme(tailles fixes des côtés actifs) + paddings + marges] < largeur totale disponible`, et assure-toi que la zone `center` dispose d'une largeur minimale viable pour afficher ses libellés sans compression excessive.
+3. **Découpage déterministe des lignes riches (Titre + Métadonnées)** :
+   - Dans tout composant combinant une désignation principale (nom, titre, description) et des attributs secondaires (statut, montant, actions) :
+    - soit la zone droite est dimensionnée en dur via `eastSize` ;
+    - soit les éléments sont organisés dans un layout en ligne avec des contraintes explicites (`slotSizeConstraints` avec `maxWidth` sur le texte long et `fitContent: true` sur les contrôles).
+4. **Audit visuel proactif des listes et gabarits répétés** :
+   - Lors de la création ou de l'audit d'une `SuperListView` ou d'un `SuperTable`, déclenche une capture visuelle ciblée via `capture_element_screenshot` sur la première occurrence (`occurrenceIndex: 0`) pour contrôler l'absence de coupure, de texte tronqué ou de superposition en fin de ligne.
+5. **Architecture de navigation multi-pages (Shell mutualisé `pageCatalog.shells`)** :
+   - Dès que l'application comporte ≥ 2 pages liées, privilégie systématiquement un **shell partagé** dans `pageCatalog.shells` (`main-shell` avec `type: "superScaffold"` / `"scaffold"`, `appBar`, `sidebarStart` en `NavigationRail` ou menu latéral, ou `bottomNavigationBar`, `headerSpan`, `responsiveSidebarToDrawer: true`, et `{"id": "scaffold:outlet", "type": "scaffold:outlet"}` dans `body`) associé à `rootShellId` et `page.shellId`. Les pages liées n'ont alors besoin que d'un `"type": "layout"` sans jamais dupliquer l'en-tête ni le menu.
+   - **Route active visible** : mets clairement en évidence l'entrée de navigation correspondant à la route active via `states.selected` (ou `indicatorColor` / `selectedItemColor`) en utilisant les tokens Material 3 (`theme:secondaryContainer` + `theme:onSecondaryContainer`).
+   - **Zéro page en impasse** : réserve `shellId: null` aux pages véritablement isolées (ex. `/login`, `/onboarding`) ou aux demandes explicites de `Scaffold` indépendant, et garantis toujours une sortie explicite (`goToPage` / `goBack` ou barre de navigation dédiée).
+
 ### Règle impérative d'héritage de repository & branches sœurs (Pattern Maître / Détail)
 
 1. **Périmètre strict de la liaison courte héritée** :
@@ -140,6 +159,7 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
 - **Actions compactes de barre d'outils ou de ligne** : utilise `kind: "icon"`, `variant: "icon"` (ou `"surface"`), avec `"iconColor": "theme:onSurfaceVariant"` au repos (ou `"theme:primary"` / `"theme:error"` selon l'intention) et toujours un **`tooltip` explicite**.
 - **Couleurs d'icônes Material 3 (`iconColor`) sur toutes les variantes** : utilise toujours des tokens `theme:*` pour `iconColor` (`"theme:onPrimary"` sur `"filled"`, `"theme:onSecondaryContainer"` sur `"tonal"`, `"theme:onSurface"` ou `"theme:primary"` sur `"outlined"` / `"text"`, `"theme:onSurfaceVariant"` sur `"icon"`), sans laisser une couleur hexadécimale fixe casser le thème sombre.
 - **Pas de bouton géant pleine largeur sur Desktop** : dans une zone verticale en `crossAxisAlignment: "stretch"`, place les boutons d'action dans une barre horizontale dédiée (`zoneAxes: {"south": "row"}` ou sous-layout horizontal avec `mainAxisAlignment: "end"`, `spacing: 8`), ou applique `fitContent: true` / un alignement adapté.
+- **Onglets `SuperAction` dans un `SuperTab` (`placements.tabs`)** : ne mets **aucun** style de fond ni de bordure spécifique sur les `SuperAction` d'onglets (pas de `backgroundColor`, `borderColor`, `borderWidth`, `style`, `styles["<tabSlotId>"]`, ni de `variant` `"filled"`/`"outlined"`/`"tonal"`/`"surface"` — omets `variant`). Gère l'aspect de la barre et de l'onglet actif exclusivement via `tabBarStyle`, `indicator*`, `labelColor` et `unselectedLabelColor` du `SuperTab`.
 - Associe une icône Material pertinente (`kind: "textAndIcon"`) sur l'action primaire et les entrées de navigation.
 
 ### 6.2. Choix ergonomique des contrôles (`SuperValue`)
@@ -154,7 +174,7 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
 Toute ligne interactive (`styles["<listId>:item"]` ou `IterableContent`) doit offrir un retour visuel immédiat :
 1. **Survol** : active `"hoverEffect": true`.
 2. **Sélection Maître / Détail** : configure `states.selected` sur `styles["<listId>:item"]` pour marquer clairement l'élément actif (`background` en `"theme:secondaryContainer"` et/ou `border` en `"theme:primary"`).
-3. **Actions de ligne discrètes** : place les boutons secondaires d'édition/ouverture en zone `east` du `template` (`autoSides: ["east"]` sur la ligne courte fixe) et révèle-les élégamment au survol/focus via `states.automatic.contentHover` + `focused` (opacité `0` au repos $\rightarrow$ `1` au survol de la ligne).
+3. **Actions de ligne discrètes** : place les boutons secondaires d'édition/ouverture en zone `east` du `template` avec une largeur fixe explicite (`eastSize`, sans `autoSides: ["east"]`) et révèle-les élégamment au survol/focus via `states.automatic.contentHover` + `focused` (opacité `0` au repos $\rightarrow$ `1` au survol de la ligne).
 
 ---
 
@@ -172,6 +192,7 @@ Toute ligne interactive (`styles["<listId>:item"]` ou `IterableContent`) doit of
 - **Double boîte dans `ListView`** : n'ajoute jamais de `"registry:Card"` ni `"registry:IterableContent"` dans `list.template.placements` (chaque ligne possède déjà sa propre surface `<listId>:item`).
 - **Contenu chevauchant l'icône supprimer d'une `ListView`** : n'active jamais `"allowRemove": true` sur une `ListView` sans réserver au moins `38` px de marge droite dans `styles["<listId>:item"].paddingInsets` (ex. `[12, 38, 12, 12]`).
 - **Concurrence d'actions primaires** : ne place jamais 2 ou 3 boutons `variant: "filled"` côte à côte dans la même barre d'actions.
+- **Boutons d'onglets `SuperTab` stylés en boîtes** : ne mets jamais de couleur de fond (`backgroundColor`), de bordure (`borderWidth` / `borderColor`), de `style` ou de `styles["<tabSlotId>"]` (ni de `variant` `"filled"`/`"outlined"`/`"tonal"`/`"surface"`) sur les `SuperAction` placées dans `placements.tabs` d'un `SuperTab`.
 - **`SuperValue` fourre-tout multi-notions ou bloc `textarea` de récapitulatif** : ne concatène jamais plusieurs données ou un couple « libellé + valeur » dans un seul `SuperValue` (ex: `"CA : 128 k€ • +12 %"`), et ne remplace jamais une liste ou synthèse métier (affaires, contrats, interlocuteurs, « résumé », « notes ») par un placeholder texte libre multiligne (`maxLines > 1`) au lieu de cartes, champs unitaires atomiques ou `SuperTable`.
 - **Surcharge typographique** : n'utilise pas l'italique ou le tout-majuscule sur de longs textes, ni des tailles `< 11` illisibles sur Desktop.
 

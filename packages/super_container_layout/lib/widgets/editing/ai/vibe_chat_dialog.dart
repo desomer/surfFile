@@ -70,6 +70,7 @@ import 'design_system_preview_card.dart';
 import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
 import 'vibe_delta_recovery.dart';
+import 'vibe_incremental_preview.dart';
 import 'vibe_live_page_router.dart';
 import 'vibe_prompt_builder.dart';
 import 'vibe_repository_applier.dart';
@@ -111,7 +112,8 @@ export '../../../ai/vibe_plan.dart'
         VibeTimedTrace,
         formatVibeDuration;
 export '../../../ai/vibe_speech_to_text.dart';
-export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
+export '../../../ai/vibe_stream_parser.dart'
+    show VibePatchEntryDelta, VibeStreamSnapshot;
 export '../../../services/appearance/custom_design_system_store.dart'
     show CustomDesignSystemStore;
 export 'design_system_catalog_dialog.dart';
@@ -150,6 +152,10 @@ class VibeChatDialog extends StatefulWidget {
     this.onReproduceExactModeChanged,
     this.initialVisibleOnlyMode = false,
     this.onVisibleOnlyModeChanged,
+    this.initialVerifyRenderEnabled = true,
+    this.onVerifyRenderEnabledChanged,
+    this.smartVerifyLocalGate,
+    this.throttleStreamingPreviewLogs,
     this.scope,
     this.onScopeChanged,
     this.pickAttachments,
@@ -210,13 +216,16 @@ Formatage compact & ordre d'émission obligatoire dans "vibe" pour le streaming 
 - Ordonne les clés de "vibe" dans cet ordre : d'abord "pageCatalog" et les réglages globaux de thème s'ils changent, puis "styles", puis "components", puis "behaviors" et éventuellement "usages".
 - Dans "components", émets toujours les conteneurs de haut en bas (Top-Down) : d'abord la page ou le conteneur racine avec ses "placements", "slotTypes" et "slotLabels", puis chaque sous-conteneur/zone dans l'ordre visuel de lecture, et enfin les composants feuilles placés dans chaque zone, afin que l'utilisateur voie la structure et les zones se construire en direct.
 Règles pour "repositories" (création et mise à jour des repositories JSON) :
-- Lorsqu'une section REPOSITORIES DISPONIBLES (JSON) est fournie dans le contexte du tour, tu peux créer de nouveaux repositories ou mettre à jour/peupler des repositories existants via la clé optionnelle "repositories" placée après "message" et avant "vibe" : {"message":"...","repositories":{"<idOuAlias>":{"name":"...","mode":"merge","data":{...}}},"vibe":{...}} (ou "vibe": null si la demande ne modifie que les données des repositories sans changer l'écran). Si aucune section REPOSITORIES DISPONIBLES (JSON) n'est présente dans le contexte, n'émets pas la clé "repositories".
+- Lorsqu'une section REPOSITORIES DISPONIBLES (JSON) est fournie dans le contexte du tour, tu peux créer de nouveaux repositories ou mettre à jour/peupler des repositories existants via la clé optionnelle "repositories" placée après "message" et avant "vibe" : {"message":"...","repositories":{"<idOuAlias>":{"name":"...","mode":"merge","data":{...},"jsonSchema":{...}}},"vibe":{...}} (ou "vibe": null si la demande ne modifie que les données des repositories sans changer l'écran). Si aucune section REPOSITORIES DISPONIBLES (JSON) n'est présente dans le contexte, n'émets pas la clé "repositories".
 - Respecte impérativement l'ordre d'émission live : "message" -> "repositories" -> "vibe", afin que les repositories soient créés et peuplés avant l'instanciation des composants liés.
 - Réutilise systématiquement les identifiants ("id") existants de REPOSITORIES DISPONIBLES lorsqu'un repository correspond au domaine métier. Pour tout nouveau repository, choisis un alias snake_case (^[a-z0-9_]{1,32}\$, sans inventer d'ID de 32 caractères hexadécimaux) et utilise directement cet alias dans les bindings "<alias>:chemin" (ou {"repositoryId":"<alias>","path":"chemin"}) de "vibe".
 - Chemins de liaison dans une liste/table/onglet dynamique (mode « hérité de la liste englobante ») : écris TOUJOURS le chemin complet depuis la racine du repository avec joker(s) [?] (ex: "deals[?].title", "clients[?].nom", "clients[?].commandes[?].ref"), même si repositoryId est omis ; n'écris JAMAIS un nom de champ nu comme "title" ou "nom" (sauf dans un SuperTreeView), sinon il est lu à la racine du document et affiche vide.
 - Héritage strictement descendant (Pattern Maître / Détail) : l'héritage de repositoryId ne se propage JAMAIS horizontalement vers une branche sœur (ex: du panneau west vers la fiche détaillée en center). Tout composant hors de la liste source (SuperValue, KPI, sous-liste, Chart) DOIT déclarer explicitement son préfixe "<repoId>:..." ou "<alias>:..." (ou {"repositoryId":"...","path":"..."}) afin que le runtime synchronise sa sélection [?].
 - Dans chaque entrée de "repositories", "data" doit être un objet JSON {...} à la racine, et aucune clé JSON stockée ne doit jamais débuter par "@" (préfixe strictement réservé aux attributs calculés en lecture seule) ni contenir ".", "[", "]", "?" ou espace.
-- Si un repository de REPOSITORIES DISPONIBLES expose un champ "jsonSchema", respecte strictement ce JSON Schema dans toutes les données produites ou fusionnées (toute violation bloque l'écriture). Tu peux aussi fournir une clé optionnelle "jsonSchema" (objet JSON Schema Draft 7/2020-12 ou null) dans l'enveloppe d'une entrée de "repositories" lorsqu'on te demande de définir, modifier ou dissocier le schéma d'un repository.
+- JSON Schema associé ("jsonSchema") — création systématique et évolution cohérente :
+  - À CHAQUE création d'un nouveau repository dans "repositories.<alias>", génère SYSTÉMATIQUEMENT une clé "jsonSchema" (objet JSON Schema Draft 7 / Draft 2020-12) cohérente avec "data", afin que les champs liés (`SuperValue` avec `useRepositorySchema: true`) héritent automatiquement des types, formats, masques et validations.
+  - Lorsqu'un repository existant de REPOSITORIES DISPONIBLES expose déjà un "jsonSchema", respecte strictement ce schéma dans toutes les données produites ou fusionnées (toute violation bloque l'écriture) ; si tu ajoutes de nouveaux champs ou tableaux à ce repository (hors schéma figé en code), mets à jour "jsonSchema" dans la même entrée de "repositories" pour les déclarer. Tu peux aussi passer "jsonSchema": null uniquement sur demande explicite de dissociation.
+  - Profil de schéma riche et compatible saisie (exploite TOUTES les capacités `SuperValue` héritées via `useRepositorySchema: true` sans les dupliquer dans `components.<id>.field`) : déclare l'arborescence complète (`type`, `properties`, `items`, `required`), les longueurs et motifs (`minLength`, `maxLength`, `pattern`), les `enum`/`const` alignés sur les `SuperValue.choice` et `states.named`, les `format` standard (`date`, `date-time`, `time`, `email`, `uri`, `uuid`, `phone`, `ipv4`, `ipv6`, `hostname`), les bornes et pas numériques (`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`), ainsi que les extensions UI `SuperValue` dès qu'elles s'appliquent : formatage numérique FR (`x-decimalDigits`, `x-decimalSeparator`: `","`, `x-thousandsSeparator`: `" "` pour montants/taux/grands nombres), masques (`x-mask` avec jetons `#`/`A`/`U`/`L`/`*` + `x-maskIncludeLiterals` cohérent avec `"data"` et `pattern`, ex. téléphone `"## ## ## ## ##"`, code postal `"#####"`, SIRET `"### ### ### #####"`, référence `"UUU-####"`), et `x-validationMessage` en français. N'inclus JAMAIS les attributs calculés `@...` dans "jsonSchema", n'ajoute PAS `"additionalProperties": false` par défaut (sauf demande explicite de verrouillage strict), et veille à la compatibilité avec l'ajout de nouvelles lignes (`allowAdd: true`) en fournissant `"default"` sur les champs requis contraints ou en utilisant un type nullable `["string", "null"]` pour les champs optionnels formatés (ex. email, téléphone, URI).
 - Convention stricte pour les dates dans "jsonSchema" et "data" : stocke TOUJOURS les dates au format ISO 8601 (`"YYYY-MM-DD"` pour `"format": "date"`, `"YYYY-MM-DDTHH:MM:SSZ"` pour `"format": "date-time"`) dans `"repositories.*.data"` ; n'ajoute NI `"x-mask"` manuel redondant NI `"pattern"` au format `"dd/MM/yyyy"` sur un champ `"format": "date"` (le moteur déduit automatiquement le masque d'affichage/saisie `##/##/####` + `dd/MM/yyyy` et reconvertit vers ISO à l'écriture).
 Règles pour "askUser" :
 - Quelle que soit l'étape (création initiale, ajout, modification d'un écran existant ou d'un scope ciblé), applique systématiquement le NIVEAU DE QUESTIONNEMENT défini par le slider dans le contexte du tour courant, sans restreindre les questions à la première étape (seul le niveau 0/Aucun ou le tour d'application immédiate des réponses qui viennent d'être fournies désactive "askUser").
@@ -227,6 +236,7 @@ Priorité absolue — Respect strict de la règle d'atomicité lors de chaque g�
 - Évite tout placeholder de texte libre multiligne (textarea / maxLines > 1) pour représenter des listes ou récapitulatifs métier (affaires, contrats, interlocuteurs, etc., même si la demande mentionne « résumé », « récapitulatif » ou « notes ») : utilise systématiquement des cartes, des champs unitaires SuperValue atomiques, une SuperListView ou un tableau SuperTable.
 Par défaut, ne mets pas de padding (ni paddingInsets) sur styles["background"] (laisse padding à 0 par défaut, sauf demande explicite) : avec les composants Flutter (Scaffold, ApplicationBar, NavigationRail, BottomAppBar, SuperLayout), ce n'est pas nécessaire ; règle l'espacement éventuel dans les zones des layouts (zoneFlows) ou les cartes.
 Lorsque "allowRemove": true sur une SuperListView, le bouton supprimer natif flotte en haut à droite (top: 0, right: 0) de chaque ligne : configure systématiquement styles["<listId>:item"].paddingInsets avec right >= 38 (ex. [12, 38, 12, 12]) pour éviter tout chevauchement avec le contenu.
+Pour les SuperAction placées dans placements.tabs d'un SuperTab (onglets), ne définis JAMAIS de style de fond ni de bordure spécifique (pas de backgroundColor, borderColor, borderWidth, elevation, style, styles["<tabSlotId>"], ni de variant plein/encadré — omets variant) ; l'habillage de la barre et de l'onglet actif se règle uniquement sur le SuperTab (tabBarStyle, indicator*, labelColor, unselectedLabelColor).
 Ne mets JAMAIS d'entrée dans "styles" pour un composant placé en "registry:Layout" (ni pour "mainLayout") : SuperLayout est purement structurel et n'a pas de surface (styles[id] est sans effet). Pour styliser un conteneur de zones (couleur, bordure, arrondi, paddingInsets), passe son placement parent en "registry:IterableContent" (en gardant components[id] en "type": "layout") ou enveloppe-le dans une "registry:Card".
 Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
@@ -317,6 +327,24 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le ni
 
   /// Callback optionnel notifié lorsque le mode « Uniquement visible » change.
   final ValueChanged<bool>? onVisibleOnlyModeChanged;
+
+  /// Autorise par défaut la passe de vérification post-rendu (`verifyRender: true`) demandée par l'IA.
+  final bool initialVerifyRenderEnabled;
+
+  /// Callback optionnel notifié lorsque l'activation de `verifyRender` change.
+  final ValueChanged<bool>? onVerifyRenderEnabledChanged;
+
+  /// Court-circuite l'appel LLM `verifyRender` lorsque le pré-audit déterministe local
+  /// (`VibePageAuditService` + diagnostics + erreurs runtime) ne détecte aucune anomalie.
+  ///
+  /// Vaut `true` par défaut hors `TestWidgetsFlutterBinding` (où la pompe de frame n'est pas automatique).
+  final bool? smartVerifyLocalGate;
+
+  /// Regroupe les logs console `[Vibe IA][Preview]` intermédiaires pendant le streaming
+  /// (1er palier + paliers avec rejets + bilan final).
+  ///
+  /// Vaut `true` par défaut hors `TestWidgetsFlutterBinding` lorsque [verboseLogging] est `false`.
+  final bool? throttleStreamingPreviewLogs;
 
   /// Périmètre restreint optionnel limitant les modifications de l'IA à un sous-arbre.
   final VibeChatScope? scope;
@@ -921,6 +949,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
   late bool _planMode = widget.initialPlanMode;
   late bool _reproduceExactMode = widget.initialReproduceExactMode;
   late bool _visibleOnlyMode = widget.initialVisibleOnlyMode;
+  late bool _verifyRenderEnabled = widget.initialVerifyRenderEnabled;
   late VibeQuestioningLevel? _questioningLevelBeforeExactMode =
       widget.initialReproduceExactMode ? widget.initialQuestioningLevel : null;
   int? _activePlanMessageIndex;
@@ -1282,6 +1311,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     if (oldWidget.initialVisibleOnlyMode != widget.initialVisibleOnlyMode) {
       _setVisibleOnlyMode(widget.initialVisibleOnlyMode, notifyCallback: false);
     }
+    if (oldWidget.initialVerifyRenderEnabled !=
+        widget.initialVerifyRenderEnabled) {
+      _setVerifyRenderEnabled(
+        widget.initialVerifyRenderEnabled,
+        notifyCallback: false,
+      );
+    }
     if (widget.expanded != null &&
         widget.expanded != oldWidget.expanded &&
         widget.expanded != _expanded) {
@@ -1383,6 +1419,21 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
   }
 
+  void _setVerifyRenderEnabled(bool enabled, {bool notifyCallback = true}) {
+    if (_verifyRenderEnabled == enabled || _isBusy) return;
+    setState(() => _verifyRenderEnabled = enabled);
+    if (notifyCallback) {
+      widget.onVerifyRenderEnabledChanged?.call(enabled);
+    }
+  }
+
+  bool get _effectiveSmartVerifyLocalGate =>
+      widget.smartVerifyLocalGate ?? !_isWidgetTestBinding;
+
+  bool get _effectiveThrottlePreviewLogs =>
+      widget.throttleStreamingPreviewLogs ??
+      (!_isWidgetTestBinding && !VibeChatDialog.verboseLogging);
+
   VibeVisibleViewportSnapshot _captureVisibleViewportSnapshot(
     Appearance appearance,
   ) => VibeAppInspector(
@@ -1460,6 +1511,23 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
   }
 
+  Set<String> _resolveScopedExistingSubtreeIds(
+    _LiveTurnSession session,
+    Appearance appearance,
+    VibeChatScope activeScope,
+  ) {
+    if (identical(session.cachedSubtreeAppearance, appearance) &&
+        session.cachedSubtreeScope == activeScope &&
+        session.cachedSubtreeIds != null) {
+      return session.cachedSubtreeIds!;
+    }
+    final built = VibeScopeHelpers.existingSubtreeIds(appearance, activeScope);
+    session.cachedSubtreeAppearance = appearance;
+    session.cachedSubtreeScope = activeScope;
+    session.cachedSubtreeIds = built;
+    return built;
+  }
+
   void _syncStreamingWorkHighlight(
     _LiveTurnSession session,
     VibeStreamSnapshot snapshot,
@@ -1476,12 +1544,30 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         entryKey.isEmpty ||
         section == null ||
         !highlightSections.contains(section)) {
-      VibeWorkHighlightController.instance.clearStreamingTargets();
+      if (session.lastHighlightEntryKey != null) {
+        session.lastHighlightSection = null;
+        session.lastHighlightEntryKey = null;
+        session.lastHighlightAppearance = null;
+        VibeWorkHighlightController.instance.clearStreamingTargets();
+      }
       return;
     }
+    if (session.lastHighlightSection == section &&
+        session.lastHighlightEntryKey == entryKey &&
+        identical(
+          session.lastHighlightAppearance,
+          session.lastPreviewAppearance,
+        )) {
+      return;
+    }
+    session.lastHighlightSection = section;
+    session.lastHighlightEntryKey = entryKey;
+    session.lastHighlightAppearance = session.lastPreviewAppearance;
+
     final activeScope = _scope;
     if (activeScope != null) {
-      final allowed = VibeScopeHelpers.existingSubtreeIds(
+      final allowed = _resolveScopedExistingSubtreeIds(
+        session,
         session.lastPreviewAppearance,
         activeScope,
       );
@@ -1528,17 +1614,14 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
   }
 
-  static String _nonUsagesPatchSignature(Map<String, dynamic> patch) {
-    final payload = patch['data'] is Map<String, dynamic>
-        ? patch['data'] as Map<String, dynamic>
-        : patch;
-    if (!payload.containsKey('usages')) {
-      return jsonEncode(payload);
-    }
-    return jsonEncode(<String, dynamic>{
-      for (final entry in payload.entries)
-        if (entry.key != 'usages') entry.key: entry.value,
-    });
+  void _flushSuppressedPreviewLogSummary(_LiveTurnSession session) {
+    final suppressed = session.suppressedPreviewLogCount;
+    if (suppressed <= 0) return;
+    session.suppressedPreviewLogCount = 0;
+    debugPrint(
+      '[Vibe IA][Preview] Bilan streaming : ${session.appliedPreviewStepCount} '
+      'palier(s) appliqué(s) ($suppressed intermédiaire(s) regroupé(s)).',
+    );
   }
 
   void _applyLivePreviewFromSnapshot(VibeStreamSnapshot snapshot) {
@@ -1598,8 +1681,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       }
       final capturedRepoPatch = snapshot.partialRepositoriesPatch;
       final capturedRepoRev = snapshot.repositoriesRevision;
-      final capturedVibePatch = snapshot.partialVibePatch;
+      final capturedSnapshot = snapshot;
       final capturedPatchRev = snapshot.patchRevision;
+      final capturedNonUsagesRev = snapshot.nonUsagesPatchRevision;
 
       session.liveRepoQueue = session.liveRepoQueue
           .then((_) async {
@@ -1627,20 +1711,28 @@ class _VibeChatDialogState extends State<VibeChatDialog>
                 !identical(_activeTurnSession, session)) {
               return;
             }
-            if (capturedVibePatch != null &&
-                capturedPatchRev > session.lastAppliedPatchRevision) {
+            final aliasMap = repoTx.aliasToActualId;
+            final aliasChanged =
+                aliasMap.length != session.lastAppliedAliasCount;
+            if (capturedSnapshot.partialVibePatch != null &&
+                (capturedPatchRev > session.lastAppliedPatchRevision ||
+                    aliasChanged)) {
               session.lastAppliedPatchRevision = capturedPatchRev;
-              final rewritten = repoTx.rewriteVibePatchBindings(
-                capturedVibePatch,
-              );
-              final nonUsagesSig = _nonUsagesPatchSignature(rewritten);
-              if (nonUsagesSig == session.lastPreviewNonUsagesJson) {
+              if (!aliasChanged &&
+                  capturedNonUsagesRev > 0 &&
+                  capturedNonUsagesRev ==
+                      session.lastAppliedNonUsagesRevision) {
                 return;
               }
-              session.lastPreviewNonUsagesJson = nonUsagesSig;
+              session.lastAppliedNonUsagesRevision = capturedNonUsagesRev;
+              session.lastAppliedAliasCount = aliasMap.length;
               session.lastPreviewApplyElapsedMs =
                   session.turnStopwatch.elapsedMilliseconds;
-              _applyVibePatchPreview(session, rewritten);
+              _applyVibePatchPreviewSnapshot(
+                session,
+                capturedSnapshot,
+                aliasToActualId: aliasMap,
+              );
             }
           })
           .catchError((Object _) {});
@@ -1651,89 +1743,97 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       return;
     }
     session.lastAppliedPatchRevision = snapshot.patchRevision;
-    final rawPatch = snapshot.partialVibePatch;
-    if (rawPatch == null) return;
-    final nonUsagesSig = _nonUsagesPatchSignature(rawPatch);
-    if (nonUsagesSig == session.lastPreviewNonUsagesJson) {
+    if (snapshot.partialVibePatch == null) return;
+    if (snapshot.nonUsagesPatchRevision > 0 &&
+        snapshot.nonUsagesPatchRevision ==
+            session.lastAppliedNonUsagesRevision) {
       return;
     }
-    session.lastPreviewNonUsagesJson = nonUsagesSig;
+    if (snapshot.nonUsagesPatchRevision == 0 &&
+        snapshot.patchEntries.isNotEmpty &&
+        snapshot.patchEntries.every((e) => e.isUsageEntry)) {
+      return;
+    }
+    session.lastAppliedNonUsagesRevision = snapshot.nonUsagesPatchRevision;
     session.lastPreviewApplyElapsedMs =
         session.turnStopwatch.elapsedMilliseconds;
-    _applyVibePatchPreview(session, rawPatch);
+    _applyVibePatchPreviewSnapshot(session, snapshot);
   }
 
-  void _applyVibePatchPreview(
+  void _applyVibePatchPreviewSnapshot(
     _LiveTurnSession session,
-    Map<String, dynamic> rawPatch,
-  ) {
+    VibeStreamSnapshot snapshot, {
+    Map<String, String> aliasToActualId = const <String, String>{},
+  }) {
     final base = session.checkpointAppearance;
+    final applier = session.previewApplier ??= VibeIncrementalPreviewApplier(
+      baseAppearance: base,
+      codec: widget.codec,
+    );
+    if (!identical(applier.baseAppearance, base)) {
+      applier.reset(base);
+    }
     final activeScope = _scope;
-    var effectivePatch = activeScope == null
-        ? rawPatch
-        : VibeChatDialog.filterPatchToScope(base, rawPatch, activeScope);
-    if (_visibleOnlyMode && session.visibleViewportSnapshot != null) {
-      effectivePatch = VibeScopeHelpers.filterPatchToVisibleViewport(
-        base,
-        effectivePatch,
-        session.visibleViewportSnapshot!,
-      );
-    }
-    if (!_hasPatchChanges(effectivePatch)) {
-      if (activeScope != null) {
-        debugPrint(
-          '[Vibe IA][Preview] Patch partiel #${session.lastAppliedPatchRevision} '
-          'ignoré (hors scope "${activeScope.displayLabel}").',
-        );
-      }
-      return;
-    }
+    final viewportSnap = _visibleOnlyMode
+        ? session.visibleViewportSnapshot
+        : null;
 
     try {
-      final partial = AppearanceTransfer.applyVibeMapPartial(
-        base,
-        effectivePatch,
-        codec: widget.codec,
+      final stepResult = applier.applyStep(
+        snapshot: snapshot,
+        aliasToActualId: aliasToActualId,
+        scope: activeScope,
+        visibleViewportSnapshot: viewportSnap,
+        validateAppearance: widget.validateAppearance,
       );
-      if (!partial.hasAppliedEntries &&
-          partial.appearance == session.lastPreviewAppearance) {
+      if (stepResult == null) {
+        if (activeScope != null && !_effectiveThrottlePreviewLogs) {
+          debugPrint(
+            '[Vibe IA][Preview] Patch partiel #${session.lastAppliedPatchRevision} '
+            'ignoré (hors scope "${activeScope.displayLabel}").',
+          );
+        }
         return;
       }
-      var previewAppearance = partial.appearance;
-      if (widget.validateAppearance != null) {
-        try {
-          widget.validateAppearance!(previewAppearance);
-        } catch (_) {
-          if (previewAppearance.pageCatalog != base.pageCatalog) {
-            previewAppearance = previewAppearance.copyWith(
-              pageCatalog: base.pageCatalog,
-            );
-            widget.validateAppearance!(previewAppearance);
-          } else {
-            rethrow;
-          }
-        }
+      if (!stepResult.didChangeAppearance &&
+          stepResult.appearance == session.lastPreviewAppearance) {
+        return;
       }
+      final previewAppearance = stepResult.appearance;
       final prevPreview = session.lastPreviewAppearance;
       _setPreviewAppearance(previewAppearance);
       final appliedAppearance = widget.controller.value;
       _pulseAppearanceDiff(session, appliedAppearance);
       session.hasAppliedLivePreview = true;
-      final diffDesc = _describeAppearanceDiff(prevPreview, appliedAppearance);
-      final rejDesc = partial.rejectedEntries.isEmpty
-          ? ''
-          : ', rejets=${partial.rejectedEntries.map((e) => '${e.section}[${e.key}]').toList()}';
-      debugPrint(
-        '[Vibe IA][Preview] Palier #${session.lastAppliedPatchRevision} '
-        '(${_describePatchTargets(effectivePatch)}) -> '
-        '${diffDesc.isEmpty ? "aucun delta" : diffDesc}$rejDesc',
-      );
+      session.appliedPreviewStepCount++;
+
+      final shouldLogThisStep =
+          !_effectiveThrottlePreviewLogs ||
+          session.appliedPreviewStepCount == 1 ||
+          stepResult.rejectedEntries.isNotEmpty;
+      if (shouldLogThisStep) {
+        final diffDesc = _describeAppearanceDiff(
+          prevPreview,
+          appliedAppearance,
+        );
+        final rejDesc = stepResult.rejectedEntries.isEmpty
+            ? ''
+            : ', rejets=${stepResult.rejectedEntries.map((e) => '${e.section}[${e.key}]').toList()}';
+        debugPrint(
+          '[Vibe IA][Preview] Palier #${session.lastAppliedPatchRevision} '
+          '(${_describePatchTargets(stepResult.effectiveStepPatch)}) -> '
+          '${diffDesc.isEmpty ? "aucun delta" : diffDesc}$rejDesc',
+        );
+      } else {
+        session.suppressedPreviewLogCount++;
+      }
+
       if (!_visibleOnlyMode && session.pageRouting != null) {
         final decision = VibeLivePageRouter.resolveForPreviewStep(
           routing: session.pageRouting!,
           previousAppearance: prevPreview,
           nextAppearance: appliedAppearance,
-          effectivePatch: effectivePatch,
+          effectivePatch: stepResult.effectiveStepPatch,
           initialPageIds: session.initialPageIds,
           hasNavigatedForVisualChange: session.hasNavigatedForVisualChange,
         );
@@ -1808,6 +1908,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
 
   void _rollbackLivePreview(_LiveTurnSession session) {
     session.lastAppliedPatchRevision = 0;
+    session.lastAppliedNonUsagesRevision = 0;
+    session.lastAppliedAliasCount = 0;
+    session.previewApplier?.reset(session.baseAppearance);
+    session.lastHighlightSection = null;
+    session.lastHighlightEntryKey = null;
+    session.lastHighlightAppearance = null;
     session.lastPreviewAppearance = session.baseAppearance;
     session.hasNavigatedForVisualChange = false;
     final hadPreviewChange =
@@ -1854,7 +1960,13 @@ class _VibeChatDialogState extends State<VibeChatDialog>
 
   void _restoreCheckpointPreview(_LiveTurnSession session) {
     session.lastAppliedPatchRevision = 0;
+    session.lastAppliedNonUsagesRevision = 0;
+    session.lastAppliedAliasCount = 0;
     session.lastAppliedRepositoriesRevision = 0;
+    session.previewApplier?.reset(session.checkpointAppearance);
+    session.lastHighlightSection = null;
+    session.lastHighlightEntryKey = null;
+    session.lastHighlightAppearance = null;
     session.lastPreviewAppearance = session.checkpointAppearance;
     VibeWorkHighlightController.instance.clearStreamingTargets();
     try {
@@ -3398,10 +3510,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
     final startIdx = plan.nextActionableIndex;
     if (startIdx < 0) return;
-    _updatePlanAt(
-      messageIndex,
-      (p) => p.copyWith(parallelExecution: parallel),
-    );
+    _updatePlanAt(messageIndex, (p) => p.copyWith(parallelExecution: parallel));
     _planPreRunAppearances.putIfAbsent(
       messageIndex,
       () => widget.controller.value,
@@ -4722,8 +4831,15 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     var waveClosed = false;
     var waveUiFrameScheduled = false;
     var wavePreviewStepCount = 0;
+    var waveSuppressedPreviewLogCount = 0;
     int? lastWavePreviewApplyElapsedMs;
     String? lastWaveNonUsagesSignature;
+    final cachedWavePrefixSteps =
+        <({int lotIdx, String lotToken, Appearance composed})>[];
+    int? lastWaveHighlightFocusLot;
+    String? lastWaveHighlightSection;
+    String? lastWaveHighlightKey;
+    Appearance? lastWaveHighlightAppearance;
     Timer? waveDeferredPreviewTimer;
     Future<void> waveRepoQueue = Future<void>.value();
     var lastWavePreviewAppearance = waveBaseAppearance;
@@ -4887,7 +5003,18 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         if (focusKey != null &&
             focusKey.isNotEmpty &&
             focusSec != null &&
-            highlightSections.contains(focusSec)) {
+            highlightSections.contains(focusSec) &&
+            (lastWaveHighlightFocusLot != focusedLotIndex ||
+                lastWaveHighlightSection != focusSec ||
+                lastWaveHighlightKey != focusKey ||
+                !identical(
+                  lastWaveHighlightAppearance,
+                  lastWavePreviewAppearance,
+                ))) {
+          lastWaveHighlightFocusLot = focusedLotIndex;
+          lastWaveHighlightSection = focusSec;
+          lastWaveHighlightKey = focusKey;
+          lastWaveHighlightAppearance = lastWavePreviewAppearance;
           final decision = VibeLivePageRouter.resolveForStreamingEntry(
             routing: resolvedPageRouting,
             appearance: lastWavePreviewAppearance,
@@ -4908,21 +5035,42 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       syncWaveStreamingHighlights();
 
       final activeScope = _scope;
-      final collectedPatches = <({int lotIdx, Map<String, dynamic> patch})>[];
+      final collectedPatches =
+          <({int lotIdx, String lotToken, Map<String, dynamic> patch})>[];
       for (final idx in waveIndices) {
         if (failedWaveLots.contains(idx)) continue;
         Map<String, dynamic>? candidatePatch;
+        String lotToken;
         if (completedWavePatches.containsKey(idx)) {
           candidatePatch = completedWavePatches[idx];
+          lotToken = 'done:$idx';
         } else {
           final session = sessionsByIndex[idx]!;
-          final snapPatch = session.lastStreamSnapshot?.partialVibePatch;
-          if (snapPatch != null) {
-            candidatePatch =
-                session.repoTransaction != null &&
-                    session.repoTransaction!.aliasToActualId.isNotEmpty
-                ? session.repoTransaction!.rewriteVibePatchBindings(snapPatch)
-                : snapPatch;
+          final snap = session.lastStreamSnapshot;
+          final snapPatch = snap?.partialVibePatch;
+          if (snap == null || snapPatch == null) continue;
+          final nonUsagesRev = snap.nonUsagesPatchRevision;
+          if (nonUsagesRev == 0 &&
+              snap.patchEntries.isNotEmpty &&
+              snap.patchEntries.every((e) => e.isUsageEntry)) {
+            continue;
+          }
+          final aliasMap =
+              session.repoTransaction?.aliasToActualId ??
+              const <String, String>{};
+          lotToken = 'stream:$nonUsagesRev:${aliasMap.length}';
+          if (aliasMap.isNotEmpty) {
+            final applier = session.previewApplier ??=
+                VibeIncrementalPreviewApplier(
+                  baseAppearance: waveBaseAppearance,
+                  codec: widget.codec,
+                );
+            candidatePatch = applier.buildEffectiveCumulativePatch(
+              snapshot: snap,
+              aliasToActualId: aliasMap,
+            );
+          } else {
+            candidatePatch = snapPatch;
           }
         }
         if (candidatePatch == null) continue;
@@ -4941,7 +5089,11 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           );
         }
         if (_hasPatchChanges(filtered)) {
-          collectedPatches.add((lotIdx: idx, patch: filtered));
+          collectedPatches.add((
+            lotIdx: idx,
+            lotToken: lotToken,
+            patch: filtered,
+          ));
         }
       }
       if (collectedPatches.isEmpty) return;
@@ -4949,8 +5101,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       final focusChanged = lastTrackedFocusedLot != focusedLotIndex;
       lastTrackedFocusedLot = focusedLotIndex;
       final combinedSig = [
-        for (final item in collectedPatches)
-          '${item.lotIdx}:${_nonUsagesPatchSignature(item.patch)}',
+        for (final item in collectedPatches) '${item.lotIdx}:${item.lotToken}',
       ].join('|');
       if (!forceRouteCheck &&
           !focusChanged &&
@@ -4965,8 +5116,30 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       Appearance? afterFocusedAppearance;
       Map<String, dynamic>? focusedReconciledPatch;
       var appliedAny = false;
+      var rejectedCount = 0;
 
-      for (final item in collectedPatches) {
+      var reuseCount = 0;
+      while (reuseCount < cachedWavePrefixSteps.length &&
+          reuseCount < collectedPatches.length) {
+        final cached = cachedWavePrefixSteps[reuseCount];
+        final target = collectedPatches[reuseCount];
+        if (cached.lotIdx != target.lotIdx ||
+            cached.lotToken != target.lotToken ||
+            target.lotIdx == focusedLotIndex) {
+          break;
+        }
+        composed = cached.composed;
+        reuseCount++;
+      }
+      if (cachedWavePrefixSteps.length > reuseCount) {
+        cachedWavePrefixSteps.removeRange(
+          reuseCount,
+          cachedWavePrefixSteps.length,
+        );
+      }
+
+      for (var i = reuseCount; i < collectedPatches.length; i++) {
+        final item = collectedPatches[i];
         final reconciled = _reconcileParallelPatchAgainstAccumulated(
           waveBase: waveBaseAppearance,
           accumulated: composed,
@@ -4983,6 +5156,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             reconciled,
             codec: widget.codec,
           );
+          rejectedCount += partial.rejectedEntries.length;
           var candidate = partial.appearance;
           if (widget.validateAppearance != null) {
             try {
@@ -5012,6 +5186,11 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         if (item.lotIdx == focusedLotIndex) {
           afterFocusedAppearance = composed;
         }
+        cachedWavePrefixSteps.add((
+          lotIdx: item.lotIdx,
+          lotToken: item.lotToken,
+          composed: composed,
+        ));
       }
 
       if (!appliedAny &&
@@ -5038,16 +5217,22 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           );
         }
         wavePreviewStepCount++;
-        final diffDesc = _describeAppearanceDiff(
-          prevWavePreview,
-          appliedAppearance,
-        );
-        debugPrint(
-          '[Vibe IA][Preview][Parallèle] Palier #$wavePreviewStepCount '
-          '(lots: ${collectedPatches.map((e) => e.lotIdx + 1).toList()}'
-          '${focusedLotIndex != null ? ", focus=${focusedLotIndex! + 1}" : ""}) -> '
-          '${diffDesc.isEmpty ? "aucun delta" : diffDesc}',
-        );
+        if (!_effectiveThrottlePreviewLogs ||
+            wavePreviewStepCount == 1 ||
+            rejectedCount > 0) {
+          final diffDesc = _describeAppearanceDiff(
+            prevWavePreview,
+            appliedAppearance,
+          );
+          debugPrint(
+            '[Vibe IA][Preview][Parallèle] Palier #$wavePreviewStepCount '
+            '(lots: ${collectedPatches.map((e) => e.lotIdx + 1).toList()}'
+            '${focusedLotIndex != null ? ", focus=${focusedLotIndex! + 1}" : ""}) -> '
+            '${diffDesc.isEmpty ? "aucun delta" : diffDesc}',
+          );
+        } else {
+          waveSuppressedPreviewLogCount++;
+        }
       }
 
       if (!_visibleOnlyMode &&
@@ -5360,6 +5545,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       waveClosed = true;
       waveDeferredPreviewTimer?.cancel();
       waveDeferredPreviewTimer = null;
+      if (waveSuppressedPreviewLogCount > 0) {
+        debugPrint(
+          '[Vibe IA][Preview][Parallèle] Bilan streaming : $wavePreviewStepCount '
+          'palier(s) appliqué(s) ($waveSuppressedPreviewLogCount intermédiaire(s) regroupé(s)).',
+        );
+      }
       try {
         await waveRepoQueue;
       } catch (_) {}
@@ -5884,6 +6075,59 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
   }
 
+  Future<({bool satisfiedLocally, String? precomputedAuditSummary})>
+  _evaluateLocalVerifyRenderGate({
+    required Appearance candidateAppearance,
+    required _LiveTurnSession session,
+    required String traceScopeLabel,
+  }) async {
+    try {
+      final inspector = VibeAppInspector(
+        readAppearance: () => candidateAppearance,
+        registry: widget.registry,
+        repositoryStore: _resolveRepositoryStore(),
+        pageRouting: session.pageRouting,
+        readScope: () => _scope,
+        readVisibleOnly: () => _visibleOnlyMode,
+        fallbackContext: () => mounted ? context : null,
+        turnStartMarker: session.turnStartMarker,
+      );
+      if (inspector.slotIndex.mountedComponentIds.isEmpty) {
+        debugPrint(
+          '[Vibe IA][$traceScopeLabel][PostVerify] Contrôle local non concluant (aucun slot monté).',
+        );
+        return (satisfiedLocally: false, precomputedAuditSummary: null);
+      }
+      final auditReport = await VibePageAuditService.collect(inspector);
+      if (auditReport.measuredGeometrySummaries.isEmpty) {
+        debugPrint(
+          '[Vibe IA][$traceScopeLabel][PostVerify] Contrôle local non concluant (0 mesure géométrique).',
+        );
+        return (satisfiedLocally: false, precomputedAuditSummary: null);
+      }
+      final renderFindings = auditReport.findings
+          .where((f) => f.category != VibeAuditCategory.missingCalculation)
+          .toList(growable: false);
+      if (renderFindings.isEmpty) {
+        return (satisfiedLocally: true, precomputedAuditSummary: null);
+      }
+      debugPrint(
+        '[Vibe IA][$traceScopeLabel][PostVerify] Escalade LLM après contrôle local '
+        '(${renderFindings.length} anomalie(s) : '
+        '${renderFindings.take(4).map((f) => '${f.kind}@${f.componentId ?? ""}/${f.zoneId ?? ""}').join(', ')}).',
+      );
+      return (
+        satisfiedLocally: false,
+        precomputedAuditSummary: auditReport.toPromptSummary(),
+      );
+    } catch (error) {
+      debugPrint(
+        '[Vibe IA][$traceScopeLabel][PostVerify] Contrôle local en échec ($error), repli LLM.',
+      );
+      return (satisfiedLocally: false, precomputedAuditSummary: null);
+    }
+  }
+
   Future<({Appearance? correctedAppearance, String? summaryMessage})>
   _runPostRenderVerifyPass({
     required Appearance candidateAppearance,
@@ -5894,6 +6138,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     required bool useStreaming,
     List<VibeChatAttachment> cachedAttachments = const <VibeChatAttachment>[],
     List<DebugEntry> detectedErrors = const <DebugEntry>[],
+    String? precomputedAuditSummary,
     String traceScopeLabel = 'Tour',
   }) async {
     const maxVerifyToolRounds = 3;
@@ -5936,10 +6181,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
 
       final mountedSummaries = VibeMountedSlotIndex.instance
           .mountedSlotSummaries();
-      final preVerifyDiagnosticsSection = await _collectFastVerifyContext(
-        candidateAppearance: candidateAppearance,
-        session: session,
-      );
+      final preVerifyDiagnosticsSection =
+          precomputedAuditSummary ??
+          await _collectFastVerifyContext(
+            candidateAppearance: candidateAppearance,
+            session: session,
+          );
       final errorsSection = detectedErrors.isEmpty
           ? null
           : 'ERREURS D’EXÉCUTION DÉTECTÉES DANS debugEntries APRÈS L’APERÇU :\n'
@@ -5954,8 +6201,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           'Slots montés actuellement à l’écran : ${jsonEncode(mountedSummaries)}.',
         'Réutilise directement les diagnostics et dimensions ci-dessus sans rappeler d’outil inutile ; appelle en un seul lot parallèle `get_component_geometry`, `get_debug_entries` ou `capture_element_screenshot` uniquement si une mesure supplémentaire manque réellement.',
         "- **Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)** / **Contrôle budgétaire de largeur en ligne (`zoneAxes: 'row'`)** : Dès qu'une zone est disposée en ligne (`zoneAxes: 'row'`), additionne systématiquement via `get_component_geometry` les largeurs mesurées des composants enfants et lève/corrige une alerte dès que `somme(width) > parentWidth - paddings` (`[somme(width) + espacements]` doit rester strictement inférieur à `parentWidth - paddingLeft - paddingRight`).",
+        "- **Maîtrise du budget de largeur & prévention de la troncature silencieuse (tout `SuperLayout` et `template`)** : Interdis `autoSides: [\"east\"]` / `[\"west\"]` dès que le côté héberge données dynamiques, badges ou actions (remplace par `eastSize`/`westSize` fixe entre 180 et 320 dp) ; vérifie sur tout `SuperLayout` que `[somme(tailles fixes des côtés actifs) + paddings + marges] < largeur totale disponible` avec une zone `center` viable ; et sur toute ligne riche (titre + métadonnées), impose soit `eastSize` en dur, soit `slotSizeConstraints` (`maxWidth` sur le texte long et `fitContent: true` sur les contrôles).",
         "- **Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)** : Interdis sur une même ligne la cohabitation d'un titre long (> 30 caractères) et d'un bouton d'action complet texte + icône ; exige soit un bouton d'action à icône seule (`kind: 'icon'`), soit un titre compacté.",
-        "- **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** & **Inspection visuelle par élément** : Ordonne et exécute une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore un lot d'audit (ainsi qu'en cas de modification d'en-tête ou de barre d'outils) pour valider l'alignement et l'absence de débordement au bord de carte.",
+        "- **Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)** & **Inspection visuelle par élément** : Ordonne et exécute une capture visuelle de contrôle avec `capture_element_screenshot` sur chaque en-tête de carte maître avant de clore un lot d'audit (ainsi qu'en cas de modification d'en-tête ou de barre d'outils), et sur la première occurrence (`occurrenceIndex: 0`) de toute `SuperListView` ou `SuperTable` créée ou auditée pour valider l'alignement et l'absence de coupure, de texte tronqué ou de superposition en fin de ligne.",
         if (_visibleOnlyMode)
           "- **Mode Uniquement visible** : Reste strictement sur l'onglet actif et la position de scroll courante ; vérifie uniquement les éléments actuellement visibles à l'écran sans changer d'onglet ni faire défiler la vue."
         else if (_scope == null)
@@ -6569,11 +6817,14 @@ class _VibeChatDialogState extends State<VibeChatDialog>
               session.lastStreamSnapshot = doneSnap;
               if (session.suppressUiUpdates) {
                 session.onStreamProgress?.call(doneSnap);
-              } else if (hadPending ||
-                  doneSnap.patchRevision > session.lastAppliedPatchRevision ||
-                  doneSnap.repositoriesRevision >
-                      session.lastAppliedRepositoriesRevision) {
-                _applyLivePreviewFromSnapshot(doneSnap);
+              } else {
+                if (hadPending ||
+                    doneSnap.patchRevision > session.lastAppliedPatchRevision ||
+                    doneSnap.repositoriesRevision >
+                        session.lastAppliedRepositoriesRevision) {
+                  _applyLivePreviewFromSnapshot(doneSnap);
+                }
+                _flushSuppressedPreviewLogSummary(session);
               }
             }
             if (session == null || !session.suppressUiUpdates) {
@@ -7448,11 +7699,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             toolRegistry.isNotEmpty &&
             !session.suppressUiUpdates) {
           var errorCheckMarker = attemptDebugMarker;
-          if (!_isWidgetTestBinding) {
+          if (!_isWidgetTestBinding || _effectiveSmartVerifyLocalGate) {
             errorCheckMarker = VibeDebugCapture.markNow();
             _setPreviewAppearance(appearance);
             session.hasAppliedLivePreview = true;
             _syncLivePageOutcome(session, widget.controller.value);
+            SchedulerBinding.instance.ensureVisualUpdate();
             if (SchedulerBinding.instance.hasScheduledFrame) {
               try {
                 await SchedulerBinding.instance.endOfFrame.timeout(
@@ -7473,49 +7725,87 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             result['verifyRender'] == true ||
             (result['vibe'] is Map &&
                 (result['vibe'] as Map)['verifyRender'] == true);
+        final hasRuntimeErrorTrigger =
+            !isIntermediatePlanLot && detectedPostErrors.isNotEmpty;
+        final hasExactModeTrigger =
+            _reproduceExactMode &&
+            !isIntermediatePlanLot &&
+            isDirectGemini &&
+            VibeMountedSlotIndex.instance.allEntries.isNotEmpty;
         final wantsPostVerify =
             appearance != null &&
             toolRegistry.isNotEmpty &&
             !session.suppressUiUpdates &&
-            (explicitVerifyRender ||
-                (!isIntermediatePlanLot && detectedPostErrors.isNotEmpty) ||
-                (_reproduceExactMode &&
-                    !isIntermediatePlanLot &&
-                    isDirectGemini &&
-                    VibeMountedSlotIndex.instance.allEntries.isNotEmpty));
+            ((_verifyRenderEnabled && explicitVerifyRender) ||
+                hasRuntimeErrorTrigger ||
+                hasExactModeTrigger);
         if (wantsPostVerify) {
           final verifyStopwatch = Stopwatch()..start();
-          final verified = await _runPostRenderVerifyPass(
-            candidateAppearance: appearance,
-            systemGuide: systemGuide,
-            session: session,
-            toolRegistry: toolRegistry,
-            isDirectGemini: isDirectGemini,
-            useStreaming: useStreaming,
-            cachedAttachments: effectiveCachedAttachments,
-            detectedErrors: detectedPostErrors,
-            traceScopeLabel: traceScopeLabel,
-          );
-          verifyStopwatch.stop();
-          _recordTimedTrace(
-            session,
-            phase: 'verify',
-            label: 'Vérification post-rendu',
-            durationMs: verifyStopwatch.elapsedMilliseconds,
-            detail: verified.correctedAppearance != null
-                ? 'ajustement appliqué'
-                : 'conforme',
-            scopeLabel: traceScopeLabel,
-          );
-          if (verified.correctedAppearance != null) {
-            appearance = verified.correctedAppearance;
+          String? precomputedAuditSummary;
+          var skipLlmVerify = false;
+          final hasImageAttachment = attachments.any((a) => a.isImage);
+          if (_effectiveSmartVerifyLocalGate &&
+              !hasRuntimeErrorTrigger &&
+              !hasExactModeTrigger &&
+              !hasImageAttachment) {
+            final localGate = await _evaluateLocalVerifyRenderGate(
+              candidateAppearance: appearance,
+              session: session,
+              traceScopeLabel: traceScopeLabel,
+            );
+            precomputedAuditSummary = localGate.precomputedAuditSummary;
+            if (localGate.satisfiedLocally) {
+              skipLlmVerify = true;
+              verifyStopwatch.stop();
+              debugPrint(
+                '[Vibe IA][$traceScopeLabel][PostVerify] Court-circuit local : '
+                '0 anomalie détectée (${verifyStopwatch.elapsedMilliseconds}ms), '
+                'appel LLM post-rendu évité.',
+              );
+              _recordTimedTrace(
+                session,
+                phase: 'verify',
+                label: 'Vérification post-rendu (locale)',
+                durationMs: verifyStopwatch.elapsedMilliseconds,
+                detail: 'conforme sans appel IA',
+                scopeLabel: traceScopeLabel,
+              );
+            }
           }
-          if (verified.summaryMessage != null &&
-              verified.summaryMessage!.isNotEmpty) {
-            finalResult = <String, dynamic>{
-              ...result,
-              'message': verified.summaryMessage,
-            };
+          if (!skipLlmVerify) {
+            final verified = await _runPostRenderVerifyPass(
+              candidateAppearance: appearance,
+              systemGuide: systemGuide,
+              session: session,
+              toolRegistry: toolRegistry,
+              isDirectGemini: isDirectGemini,
+              useStreaming: useStreaming,
+              cachedAttachments: effectiveCachedAttachments,
+              detectedErrors: detectedPostErrors,
+              precomputedAuditSummary: precomputedAuditSummary,
+              traceScopeLabel: traceScopeLabel,
+            );
+            verifyStopwatch.stop();
+            _recordTimedTrace(
+              session,
+              phase: 'verify',
+              label: 'Vérification post-rendu',
+              durationMs: verifyStopwatch.elapsedMilliseconds,
+              detail: verified.correctedAppearance != null
+                  ? 'ajustement appliqué'
+                  : 'conforme',
+              scopeLabel: traceScopeLabel,
+            );
+            if (verified.correctedAppearance != null) {
+              appearance = verified.correctedAppearance;
+            }
+            if (verified.summaryMessage != null &&
+                verified.summaryMessage!.isNotEmpty) {
+              finalResult = <String, dynamic>{
+                ...result,
+                'message': verified.summaryMessage,
+              };
+            }
           }
         }
         attemptStopwatch.stop();
@@ -7924,7 +8214,7 @@ ${priorCauses.length == 1 ? causesSummary : '- $causesSummary'}
 $toolResultsSection
 Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
-Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte).
+Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte). Pour tout nouveau repository, fournis son "jsonSchema" conforme à "data" (sans clés "@..." et sans "x-mask"/"pattern" redondant sur "format": "date").
 Si tu crées une page dans "pageCatalog", son chemin doit commencer par un seul "/", être différent de "/" (car "/" est déjà réservé par la page racine "root" / "mainLayout"), ne contenir ni espace, ni "?", ni "#", et ne pas se terminer par "/".
 Pour modifier la page d’accueil "/" existante, configure directement "root" et "mainLayout" sans ajouter de page "/" dans "pageCatalog" (ou utilise un chemin distinct comme "/accueil" avec "homePageId").
 Réponse précédente invalide :
@@ -8554,6 +8844,14 @@ $response
                                         ),
                                       ),
                                       const SizedBox(width: 6),
+                                      VibeVerifyRenderChip(
+                                        selected: _verifyRenderEnabled,
+                                        enabled: !_isBusy,
+                                        onToggle: () => _setVerifyRenderEnabled(
+                                          !_verifyRenderEnabled,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
                                       VibeReactiveValuesActionChip(
                                         enabled: !_isBusy,
                                         onPressed: _runReactiveValues,
@@ -9138,9 +9436,19 @@ final class _LiveTurnSession {
 
   Appearance lastPreviewAppearance;
   int lastAppliedPatchRevision = 0;
+  int lastAppliedNonUsagesRevision = 0;
+  int lastAppliedAliasCount = 0;
   int lastAppliedRepositoriesRevision = 0;
   int? lastPreviewApplyElapsedMs;
-  String? lastPreviewNonUsagesJson;
+  int appliedPreviewStepCount = 0;
+  int suppressedPreviewLogCount = 0;
+  VibeIncrementalPreviewApplier? previewApplier;
+  String? lastHighlightSection;
+  String? lastHighlightEntryKey;
+  Appearance? lastHighlightAppearance;
+  Appearance? cachedSubtreeAppearance;
+  VibeChatScope? cachedSubtreeScope;
+  Set<String>? cachedSubtreeIds;
   VibeStreamSnapshot? deferredPreviewSnapshot;
   Timer? deferredPreviewTimer;
   Future<void> liveRepoQueue = Future<void>.value();

@@ -902,4 +902,358 @@ void main() {
       unorderedEquals(['input']),
     );
   });
+
+  group('Shells: partitionForPages, removeShell, detachPageFromShell, removal & duplicate', () {
+    Appearance shellSample() => Appearance(
+      styles: {
+        'background': const ContainerStyle(radius: 1),
+        'shell-nav': const ContainerStyle(radius: 4),
+        'shell-aside': const ContainerStyle(radius: 5),
+        'page-a': const ContainerStyle(radius: 6),
+        'val-a': const ContainerStyle(radius: 7),
+        'shared-badge': const ContainerStyle(radius: 8),
+      },
+      components: {
+        'root': ScaffoldPageConfig(
+          placements: const {
+            ScaffoldPageRegion.body: ['mainLayout'],
+          },
+          slotTypes: const {'mainLayout': 'registry:Layout'},
+        ),
+        'mainLayout': const SuperLayoutConfig(),
+        'main-shell': ScaffoldPageConfig(
+          placements: const {
+            ScaffoldPageRegion.appBar: ['shell-bar'],
+            ScaffoldPageRegion.sidebarStart: ['shell-nav'],
+            ScaffoldPageRegion.sidebarEnd: ['shell-aside'],
+            ScaffoldPageRegion.body: ['scaffold:outlet'],
+          },
+          regions: const {
+            ScaffoldPageRegion.appBar: true,
+            ScaffoldPageRegion.sidebarStart: true,
+            ScaffoldPageRegion.sidebarEnd: true,
+          },
+          slotTypes: const {
+            'shell-bar': 'registry:ApplicationBar',
+            'shell-nav': 'registry:Layout',
+            'shell-aside': 'registry:Value',
+          },
+          headerSpan: ScaffoldHeaderSpan.contentOnly,
+          sidebarStartWidth: 260,
+          sidebarEndWidth: 300,
+          responsiveSidebarToDrawer: true,
+        ),
+        'shell-bar': NativeComponentConfig(
+          placements: const {
+            'title': ['shell-title'],
+            'actions': ['shared-badge'],
+          },
+          slotTypes: const {
+            'shell-title': 'registry:Value',
+            'shared-badge': 'registry:Value',
+          },
+        ),
+        'shell-title': const SuperValueConfig(initialText: 'App Shell'),
+        'shell-nav': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['nav-item'],
+          },
+          slotTypes: {'nav-item': 'registry:Value'},
+        ),
+        'nav-item': const SuperValueConfig(initialText: 'Nav Item'),
+        'shell-aside': const SuperValueConfig(initialText: 'Inspector'),
+        'shared-badge': const SuperValueConfig(initialText: 'Shared'),
+        'page-a': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['val-a', 'shared-badge'],
+          },
+          slotTypes: {
+            'val-a': 'registry:Value',
+            'shared-badge': 'registry:Value',
+          },
+        ),
+        'val-a': const SuperValueConfig(
+          initialText: 'Page A Content',
+          binding: JsonTextBinding(repositoryId: 'repo', path: 'a.title'),
+        ),
+        'page-b': ScaffoldPageConfig(
+          placements: const {
+            ScaffoldPageRegion.body: ['val-b'],
+          },
+          slotTypes: const {'val-b': 'registry:Value'},
+        ),
+        'val-b': const SuperValueConfig(initialText: 'Page B Content'),
+      },
+      behaviors: {
+        'nav-item': [
+          ComponentBehavior(
+            id: 'nav-beh',
+            event: BehaviorEvent.onTap,
+            validator: const ValueBehaviorValidator.otherIsFill('shell-title'),
+            action: EmitEventAction(eventId: 'nav'),
+          ),
+        ],
+        'page-a': [
+          ComponentBehavior(
+            id: 'page-a-beh',
+            event: BehaviorEvent.onTap,
+            action: EmitEventAction(eventId: 'page-a-root'),
+          ),
+        ],
+        'val-a': [
+          ComponentBehavior(
+            id: 'val-a-beh',
+            event: BehaviorEvent.onTap,
+            validator: const ValueBehaviorValidator.otherIsFill('page-a'),
+            action: EmitEventAction(eventId: 'val-a-tap'),
+          ),
+        ],
+      },
+      usages: {
+        'shell-title': const ComponentUsage(kind: ComponentUsageKind.staticData),
+        'page-a': const ComponentUsage(kind: ComponentUsageKind.dynamicData),
+        'val-a': const ComponentUsage(kind: ComponentUsageKind.dynamicData),
+      },
+      pageCatalog: EditorPageCatalog(
+        rootShellId: 'main-shell',
+        shells: [
+          EditorShellConfig(id: 'main-shell', name: 'Main Shell'),
+        ],
+        pages: [
+          EditorPageConfig(
+            id: 'page-a',
+            name: 'Page A',
+            path: '/page-a',
+            shellId: 'main-shell',
+          ),
+          EditorPageConfig(
+            id: 'page-b',
+            name: 'Page B',
+            path: '/page-b',
+            shellId: 'main-shell',
+          ),
+          EditorPageConfig(
+            id: 'page-empty',
+            name: 'Page Empty',
+            path: '/page-empty',
+            shellId: 'main-shell',
+          ),
+        ],
+      ),
+    );
+
+    test('partitionForPages keeps shells and all their chrome in global and pages in slices', () {
+      final registry = _registry();
+      final partition = EditorPageGraph.partitionForPages(
+        appearance: shellSample(),
+        registry: registry,
+        loadedPageIds: const {'page-a', 'page-b', 'page-empty'},
+      );
+
+      expect(
+        partition.global.components.keys,
+        containsAll([
+          'root',
+          'mainLayout',
+          'main-shell',
+          'shell-bar',
+          'shell-title',
+          'shell-nav',
+          'nav-item',
+          'shell-aside',
+          'shared-badge',
+        ]),
+      );
+      expect(partition.global.components.keys, isNot(contains('page-a')));
+      expect(partition.global.components.keys, isNot(contains('val-a')));
+      expect(partition.global.components.keys, isNot(contains('page-b')));
+      expect(partition.global.components.keys, isNot(contains('val-b')));
+      expect(partition.global.styles.keys, containsAll(['shell-nav', 'shell-aside', 'shared-badge']));
+      expect(partition.pages.keys, unorderedEquals(['page-a', 'page-b', 'page-empty']));
+      expect(partition.pages.containsKey('main-shell'), isFalse);
+
+      expect(partition.pages['page-a']!.components.keys, unorderedEquals(['page-a', 'val-a']));
+      expect(partition.pages['page-a']!.styles.keys, unorderedEquals(['page-a', 'val-a']));
+      expect(partition.pages['page-b']!.components.keys, unorderedEquals(['page-b', 'val-b']));
+    });
+
+    test('removeShell detaches pages, clears rootShellId, deletes exclusive chrome and preserves shared components', () {
+      final registry = _registry();
+      final result = EditorPageGraph.removeShell(
+        appearance: shellSample(),
+        registry: registry,
+        shellId: 'main-shell',
+      );
+      final updated = result.appearance;
+
+      expect(updated.pageCatalog.shells, isEmpty);
+      expect(updated.pageCatalog.rootShellId, isNull);
+      for (final page in updated.pageCatalog.pages) {
+        expect(page.shellId, isNull);
+      }
+      // Exclusive shell components & styles are deleted.
+      for (final id in ['main-shell', 'shell-bar', 'shell-title', 'shell-nav', 'nav-item', 'shell-aside']) {
+        expect(updated.components.containsKey(id), isFalse, reason: '$id should be deleted');
+        expect(updated.styles.containsKey(id), isFalse, reason: 'style $id should be deleted');
+      }
+      expect(updated.behaviors.containsKey('nav-item'), isFalse);
+      expect(updated.usages.containsKey('shell-title'), isFalse);
+      // Shared component (also placed in page-a) and pages are preserved.
+      expect(updated.components.containsKey('shared-badge'), isTrue);
+      expect(updated.styles.containsKey('shared-badge'), isTrue);
+      expect(updated.components.containsKey('page-a'), isTrue);
+      expect(updated.components.containsKey('val-a'), isTrue);
+      expect(result.preserved, contains(const EditorConfigRef.value('shared-badge')));
+    });
+
+    test('removal of a page never deletes shell-owned components and deletes shelled non-scaffold page content', () {
+      final registry = _registry();
+      final result = EditorPageGraph.removal(
+        appearance: shellSample(),
+        registry: registry,
+        pageId: 'page-a',
+      );
+      final updated = result.appearance;
+
+      // page-a (SuperLayoutConfig) and exclusive val-a are deleted.
+      expect(updated.components.containsKey('page-a'), isFalse);
+      expect(updated.components.containsKey('val-a'), isFalse);
+      expect(updated.styles.containsKey('page-a'), isFalse);
+      expect(updated.styles.containsKey('val-a'), isFalse);
+      // shared-badge is protected because it belongs to main-shell.
+      expect(updated.components.containsKey('shared-badge'), isTrue);
+      expect(updated.components.containsKey('main-shell'), isTrue);
+      expect(updated.components.containsKey('shell-nav'), isTrue);
+    });
+
+    test('detachPageFromShell deep-duplicates shell chrome and replaces scaffold:outlet for layout, scaffold and empty pages', () {
+      final registry = _registry();
+      final base = shellSample();
+
+      // 1. Non-scaffold page (SuperLayoutConfig): moves content to page-a-body.
+      final detachedA = EditorPageGraph.detachPageFromShell(
+        appearance: base,
+        registry: registry,
+        pageId: 'page-a',
+        generateId: _ids(),
+      );
+      expect(
+        detachedA.pageCatalog.pages.firstWhere((p) => p.id == 'page-a').shellId,
+        isNull,
+      );
+      // Original shell remains completely untouched.
+      expect(detachedA.components['main-shell'], base.components['main-shell']);
+      expect(detachedA.components['shell-bar'], base.components['shell-bar']);
+
+      final detachedScaffold = detachedA.tryComponent<ScaffoldPageConfig>('page-a');
+      expect(detachedScaffold, isNotNull);
+      expect(detachedScaffold!.headerSpan, ScaffoldHeaderSpan.contentOnly);
+      expect(detachedScaffold.sidebarStartWidth, 260);
+      expect(detachedScaffold.sidebarEndWidth, 300);
+      expect(detachedScaffold.responsiveSidebarToDrawer, isTrue);
+
+      // Chrome IDs are fresh unique copies.
+      final copiedBar = detachedScaffold.slotsOf(ScaffoldPageRegion.appBar).single;
+      final copiedNav = detachedScaffold.slotsOf(ScaffoldPageRegion.sidebarStart).single;
+      final copiedAside = detachedScaffold.slotsOf(ScaffoldPageRegion.sidebarEnd).single;
+      expect(copiedBar, isNot('shell-bar'));
+      expect(copiedNav, isNot('shell-nav'));
+      expect(copiedAside, isNot('shell-aside'));
+      expect(detachedA.styles[copiedNav], const ContainerStyle(radius: 4));
+      final copiedNavItem = detachedA.layout(copiedNav).placementsOf(SuperLayoutZone.center).single;
+      final copiedTitle = detachedA.nativeComponent(copiedBar).slotsOf('title').single;
+      expect(
+        detachedA.behaviorsFor(copiedNavItem).single.validator!.referencedComponentIds,
+        contains(copiedTitle),
+      );
+      expect(detachedA.usageFor(copiedTitle), const ComponentUsage(kind: ComponentUsageKind.staticData));
+
+      // Body replaces scaffold:outlet with page-a-body preserving styles, usages, bindings & remapped behaviors.
+      expect(detachedScaffold.slotsOf(ScaffoldPageRegion.body), ['page-a-body']);
+      expect(detachedScaffold.slotTypes['page-a-body'], 'registry:Layout');
+      expect(detachedA.components['page-a-body'], base.components['page-a']);
+      expect(detachedA.styles['page-a-body'], const ContainerStyle(radius: 6));
+      expect(detachedA.usageFor('page-a-body'), const ComponentUsage(kind: ComponentUsageKind.dynamicData));
+      expect(detachedA.behaviorsFor('page-a-body').single.id, 'page-a-beh');
+      expect(
+        detachedA.behaviorsFor('val-a').single.validator!.referencedComponentIds,
+        ['page-a-body'],
+      );
+      expect(detachedA.valueComponent('val-a').binding, const JsonTextBinding(repositoryId: 'repo', path: 'a.title'));
+
+      // 2. Existing ScaffoldPageConfig page: keeps its body slots in place of scaffold:outlet.
+      final detachedB = EditorPageGraph.detachPageFromShell(
+        appearance: base,
+        registry: registry,
+        pageId: 'page-b',
+        generateId: _ids(),
+      );
+      final scaffoldB = detachedB.tryComponent<ScaffoldPageConfig>('page-b')!;
+      expect(scaffoldB.slotsOf(ScaffoldPageRegion.body), ['val-b']);
+      expect(scaffoldB.slotTypes['val-b'], 'registry:Value');
+      expect(detachedB.pageCatalog.pages.firstWhere((p) => p.id == 'page-b').shellId, isNull);
+
+      // 3. Empty page (absent components[pageId]): removes scaffold:outlet cleanly.
+      final detachedEmpty = EditorPageGraph.detachPageFromShell(
+        appearance: base,
+        registry: registry,
+        pageId: 'page-empty',
+        generateId: _ids(),
+      );
+      final scaffoldEmpty = detachedEmpty.tryComponent<ScaffoldPageConfig>('page-empty')!;
+      expect(scaffoldEmpty.slotsOf(ScaffoldPageRegion.body), isEmpty);
+      expect(detachedEmpty.pageCatalog.pages.firstWhere((p) => p.id == 'page-empty').shellId, isNull);
+
+      // 4. Calling detachPageFromShell on an already detached page is a no-op.
+      expect(
+        EditorPageGraph.detachPageFromShell(
+          appearance: detachedA,
+          registry: registry,
+          pageId: 'page-a',
+        ),
+        same(detachedA),
+      );
+    });
+
+    test('duplicate copies only page content for shelled pages and full scaffold including sidebars for standalone pages', () {
+      final registry = _registry();
+      final base = shellSample();
+
+      // Shelled page: duplicates page-a's own SuperLayoutConfig without duplicating main-shell.
+      final dupShelled = EditorPageGraph.duplicate(
+        appearance: base,
+        registry: registry,
+        sourcePageId: 'page-a',
+        targetPageId: 'page-a-copy',
+        generateId: _ids(),
+      );
+      expect(identical(dupShelled.pageCatalog, base.pageCatalog), isTrue);
+      expect(dupShelled.components['page-a-copy'], isA<SuperLayoutConfig>());
+      expect(dupShelled.styles['page-a-copy'], const ContainerStyle(radius: 6));
+      final copiedChildren = dupShelled
+          .layout('page-a-copy')
+          .placementsOf(SuperLayoutZone.center);
+      expect(copiedChildren, hasLength(2));
+      expect(copiedChildren, isNot(contains('val-a')));
+      expect(dupShelled.components['main-shell'], base.components['main-shell']);
+
+      // Standalone ScaffoldPageConfig with sidebarStart/sidebarEnd + scaffold:outlet:
+      // duplicates all sidebar children and preserves scaffold:outlet un-remapped.
+      final dupShell = EditorPageGraph.duplicate(
+        appearance: base,
+        registry: registry,
+        sourcePageId: 'main-shell',
+        targetPageId: 'admin-shell',
+        generateId: _ids(),
+      );
+      final adminShell = dupShell.tryComponent<ScaffoldPageConfig>('admin-shell')!;
+      expect(adminShell.slotsOf(ScaffoldPageRegion.body), ['scaffold:outlet']);
+      expect(adminShell.slotsOf(ScaffoldPageRegion.sidebarStart).single, isNot('shell-nav'));
+      expect(adminShell.slotsOf(ScaffoldPageRegion.sidebarEnd).single, isNot('shell-aside'));
+      expect(adminShell.headerSpan, ScaffoldHeaderSpan.contentOnly);
+      expect(adminShell.sidebarStartWidth, 260);
+      expect(adminShell.sidebarEndWidth, 300);
+      expect(adminShell.responsiveSidebarToDrawer, isTrue);
+    });
+  });
 }

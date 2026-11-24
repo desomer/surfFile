@@ -229,10 +229,16 @@ class AppearanceTransfer {
     final previousTypes = previous == null
         ? const <String, String>{}
         : _collectPlacedSlotTypes(previous);
-    final nextPageIds = {for (final page in next.pageCatalog.pages) page.id};
+    final nextPageIds = {
+      for (final page in next.pageCatalog.pages) page.id,
+      for (final shell in next.pageCatalog.shells) shell.id,
+    };
     final previousPageIds = previous == null
         ? const <String>{}
-        : {for (final page in previous.pageCatalog.pages) page.id};
+        : {
+            for (final page in previous.pageCatalog.pages) page.id,
+            for (final shell in previous.pageCatalog.shells) shell.id,
+          };
 
     for (final entry in next.components.entries) {
       final id = entry.key;
@@ -771,6 +777,9 @@ class AppearanceTransfer {
 
   /// Rétablit dans [next] l'usage de [current] de chaque composant lié à des
   /// données dont l'usage a changé.
+  static Appearance preserveBoundUsages(Appearance current, Appearance next) =>
+      _keepBoundUsages(current, next);
+
   static Appearance _keepBoundUsages(Appearance current, Appearance next) {
     final usages = Map<String, ComponentUsage>.of(next.usages);
     var restored = false;

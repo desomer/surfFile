@@ -190,8 +190,10 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
               ),
             );
           }
+          final routeListenable = currentRouteListenable(context);
           return ListenableBuilder(
             listenable: Listenable.merge([
+              ?routeListenable,
               for (final slot in slots)
                 if (registry != null)
                   registry.actionController(
@@ -201,7 +203,15 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                   ),
             ]),
             builder: (context, _) {
-              final effectiveIndex = _selectedIndex.clamp(0, slots.length - 1);
+              final routeIndex = activeDestinationIndexForRoute(
+                context,
+                slots,
+                supplied,
+              );
+              final effectiveIndex = (routeIndex ?? _selectedIndex).clamp(
+                0,
+                slots.length - 1,
+              );
               final effectiveLabelType =
                   widget.labelType ??
                   (widget.extended

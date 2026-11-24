@@ -5,11 +5,15 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/a4_page_config.dart';
+import '../../models/component_config.dart';
+import '../../models/editor_page_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
+import '../../models/super_layout_config.dart';
 import '../../models/super_renderer_config.dart';
 import 'a4_document_page.dart';
+import 'super_layout/super_layout.dart';
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../services/appearance/appearance_transfer.dart';
@@ -32,6 +36,7 @@ import '../editing/slots/editor_slot.dart';
 import '../surfaces/styled_surface.dart';
 import 'super_component.dart';
 import '../appearance/appearance_scope.dart';
+import '../appearance/super_shell_scope.dart';
 
 /// Importe une apparence et rend son contenu dans un contexte runtime isole.
 ///
@@ -201,35 +206,101 @@ class _RendererDocumentState extends State<_RendererDocument> {
     _router = _createRouter(_appearance.value);
   }
 
-  GoRouter _createRouter(Appearance appearance) => GoRouter(
-    routes: [
-      GoRoute(
-        path: '/',
-        builder: (_, _) => ValueListenableBuilder<String?>(
-          valueListenable: _rootSelection,
-          builder: (_, selected, _) => _root(selected ?? widget.config.rootId),
-        ),
+  GoRouter _createRouter(Appearance appearance) {
+    final catalog = appearance.pageCatalog;
+    final rootRoute = GoRoute(
+      path: '/',
+      builder: (_, _) => ValueListenableBuilder<String?>(
+        valueListenable: _rootSelection,
+        builder: (_, selected, _) => _root(selected ?? widget.config.rootId),
       ),
-      for (final page in appearance.pageCatalog.pages)
-        if (page.path != '/')
-          GoRoute(
-            path: page.path,
-            pageBuilder: page.pageType.isModal
-                ? (_, state) =>
-                    buildEditorModalPage(
-                      page: page,
-                      key: state.pageKey,
-                      child: _root(page.id),
-                    ) ??
-                    MaterialPage<void>(key: state.pageKey, child: _root(page.id))
-                : null,
-            builder: page.pageType.isModal ? null : (_, _) => _root(page.id),
+    );
+
+    GoRoute pageRoute(EditorPageConfig page) => GoRoute(
+      path: page.path,
+      pageBuilder: page.pageType.isModal
+          ? (_, state) =>
+                buildEditorModalPage(
+                  page: page,
+                  key: state.pageKey,
+                  child: _root(page.id),
+                ) ??
+                MaterialPage<void>(key: state.pageKey, child: _root(page.id))
+          : null,
+      builder: page.pageType.isModal ? null : (_, _) => _root(page.id),
+    );
+
+    final attachRootToShell =
+        catalog.rootShellId != null &&
+        widget.config.rootId == null &&
+        _rootSelection.value == null;
+
+    var rootPlacedInShell = false;
+    final shellRoutes = <RouteBase>[];
+    for (final shell in catalog.shells) {
+      final includeRoot = attachRootToShell && catalog.rootShellId == shell.id;
+      final shellChildren = <RouteBase>[
+        if (includeRoot) rootRoute,
+        for (final page in catalog.pages)
+          if (!page.pageType.isModal &&
+              page.path != '/' &&
+              page.shellId == shell.id)
+            pageRoute(page),
+      ];
+      if (shellChildren.isEmpty) continue;
+      if (includeRoot) rootPlacedInShell = true;
+      shellRoutes.add(
+        ShellRoute(
+          builder: (_, _, child) => SuperShellScope(
+            shellId: shell.id,
+            child: SuperScaffold(
+              key: ValueKey('editor-shell-${shell.id}'),
+              id: shell.id,
+              label: shell.name,
+              outlet: child,
+              pageConfig: ScaffoldPageConfig(
+                placements: const {
+                  ScaffoldPageRegion.body: ['scaffold:outlet'],
+                },
+              ),
+            ),
           ),
-    ],
-    errorBuilder: (_, state) => Material(
-      child: Center(child: Text('Navigation impossible : ${state.error}')),
-    ),
-  );
+          routes: shellChildren,
+        ),
+      );
+    }
+
+    String? initialLocation;
+    if (widget.config.rootId == null &&
+        _rootSelection.value == null &&
+        catalog.rootShellId == null &&
+        catalog.homePageId != null) {
+      final homePage = catalog.pages
+          .where((page) => page.id == catalog.homePageId)
+          .firstOrNull;
+      if (homePage != null &&
+          homePage.shellId != null &&
+          !homePage.pageType.isModal &&
+          homePage.path != '/' &&
+          !homePage.path.contains(':')) {
+        initialLocation = homePage.path;
+      }
+    }
+
+    return GoRouter(
+      initialLocation: initialLocation,
+      routes: [
+        if (!rootPlacedInShell) rootRoute,
+        ...shellRoutes,
+        for (final page in catalog.pages)
+          if (page.path != '/' && (page.shellId == null || page.pageType.isModal))
+            pageRoute(page),
+      ],
+      errorBuilder: (_, state) => Material(
+        child: Center(child: Text('Navigation impossible : ${state.error}')),
+      ),
+    );
+  }
 
   void _loadSource() {
     if (widget.config.source.trim().isEmpty) {
@@ -261,6 +332,10 @@ class _RendererDocumentState extends State<_RendererDocument> {
     if (requested != null) return requested;
     if (appearance.pageCatalog.homePageId case final home?) return home;
     if (appearance.components.containsKey('root')) return 'root';
+    if (appearance.pageCatalog.rootShellId != null &&
+        appearance.components.containsKey('mainLayout')) {
+      return 'mainLayout';
+    }
     if (appearance.pageCatalog.pages.length == 1) {
       return appearance.pageCatalog.pages.single.id;
     }
@@ -279,17 +354,75 @@ class _RendererDocumentState extends State<_RendererDocument> {
     }
   }
 
+  static const Map<String, String> _factoryKeysByComponentType = {
+    'tab': 'Tab',
+    'table': 'Table',
+    'list': 'ListView',
+    'treeView': 'TreeView',
+    'value': 'Value',
+    'action': 'Action',
+    'indicator': 'Indicator',
+    'separator': 'Separator',
+    'conditional': 'Conditional',
+    'renderer': 'Renderer',
+  };
+
+  Widget _buildLayoutPage(String id, String label, SuperLayoutConfig fallback) {
+    final controller = _registry.layoutController(id, fallback: fallback);
+    return ValueListenableBuilder<SuperLayoutConfig>(
+      key: ValueKey(id),
+      valueListenable: controller,
+      builder: (_, layoutConfig, _) => SuperLayout(
+        id: id,
+        label: label,
+        config: layoutConfig,
+        onChanged: (value) => controller.value = value,
+      ),
+    );
+  }
+
+  Widget? _buildTypedComponent(String id, ComponentConfig config) {
+    final mappedKey = _factoryKeysByComponentType[config.componentType];
+    ComponentBuilder? builder = mappedKey == null
+        ? null
+        : _registry.registry[mappedKey];
+    if (builder == null) {
+      final expected = config.componentType.toLowerCase();
+      for (final entry in _registry.registry.entries) {
+        if (entry.key.toLowerCase() == expected) {
+          builder = entry.value;
+          break;
+        }
+      }
+    }
+    if (builder == null) return null;
+    return KeyedSubtree(
+      key: ValueKey(id),
+      child: builder.getWidget(XuiBuildCtx(id: id)),
+    );
+  }
+
   Widget _root(String? requested) => ValueListenableBuilder<Appearance>(
     valueListenable: _appearance,
     builder: (context, appearance, _) {
       try {
         final id = _rootId(appearance, requested);
         final config = appearance.components[id];
+        final page = appearance.pageCatalog.pages
+            .where((entry) => entry.id == id)
+            .firstOrNull;
+        final insideShell = SuperShellScope.isInsideShell(context);
+        final isShelledPage = insideShell || page?.shellId != null;
         final isPage =
             config is ScaffoldPageConfig ||
             config is A4PageConfig ||
-            appearance.pageCatalog.pages.any((page) => page.id == id) ||
+            page != null ||
             id == 'root';
+        if (config is SuperLayoutConfig && (isPage || insideShell)) {
+          final layout = _buildLayoutPage(id, page?.name ?? id, config);
+          if (isShelledPage) return layout;
+          return Scaffold(body: SizedBox.expand(child: layout));
+        }
         if (isPage) {
           if (config is A4PageConfig) {
             return A4DocumentPage(
@@ -297,6 +430,16 @@ class _RendererDocumentState extends State<_RendererDocument> {
               id: id,
               pageConfig: config,
             );
+          }
+          if (page != null && page.shellId != null) {
+            if (config == null) {
+              return _buildLayoutPage(id, page.name, const SuperLayoutConfig());
+            }
+            if (config is! ScaffoldPageConfig &&
+                config is! NativeComponentConfig) {
+              final typed = _buildTypedComponent(id, config);
+              if (typed != null) return typed;
+            }
           }
           return SuperPage(
             key: ValueKey(id),

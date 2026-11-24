@@ -4,6 +4,8 @@
 /// dupliquer profondément un sous-graphe ou supprimer un composant sans laisser d'orphelins.
 library;
 
+import 'dart:ui' show Size;
+
 import 'package:flutter/foundation.dart' show immutable, listEquals, mapEquals;
 import 'package:shortid/shortid.dart';
 
@@ -184,6 +186,9 @@ class EditorPagePartition {
 /// sizes) into the configurations declared by each component's
 /// [ComponentDuplicationContract]. Runtime controllers are never read.
 abstract final class EditorPageGraph {
+  /// Identifiant réservé du slot d'insertion du contenu de page dans un shell (`ScaffoldPageConfig`).
+  static const String outletSlotId = 'scaffold:outlet';
+
   /// Extrait un composant ou le contenu exact d'une zone, avec une page racine.
   ///
   /// Raccourci de [export] qui ignore la liste des enfants omis.
@@ -401,7 +406,7 @@ abstract final class EditorPageGraph {
         }
       }
     } else if (isPage) {
-      _roots(componentId).forEach(visitConfig);
+      _rootsFor(snapshot, componentId).forEach(visitConfig);
     } else {
       String? declared;
       for (final ref in _allRefs(snapshot)) {
@@ -529,16 +534,26 @@ abstract final class EditorPageGraph {
     );
   }
 
-  static List<EditorConfigRef> _roots(String pageId) => [
-    EditorConfigRef.nativeComponent(pageId),
-    EditorConfigRef.scaffoldPage(pageId),
-    EditorConfigRef.a4Page(pageId),
-  ];
+  static List<EditorConfigRef> _rootsFor(Appearance appearance, String id) {
+    final refs = <EditorConfigRef>[];
+    if (appearance.styles.containsKey(id)) {
+      refs.add(EditorConfigRef.style(id));
+    }
+    final component = appearance.components[id];
+    if (component != null) {
+      refs.addAll(_refsForComponent(id, component));
+    }
+    return refs;
+  }
 
   /// Copies the graph of [sourcePageId] under [targetPageId] with new,
   /// unique instance IDs. The page catalog is left unchanged. Declared
   /// usages (`Appearance.usages`) and behaviors (`Appearance.behaviors`,
   /// with validator target IDs remapped) follow the copied instances.
+  ///
+  /// When [sourcePageId] belongs to a shell (`shellId != null`), only the
+  /// page's own component tree is duplicated; the shell and `page.shellId`
+  /// remain untouched.
   ///
   /// Throws a [FormatException] without changing anything when the graph
   /// contains a component without duplication contract, an unknown
@@ -558,12 +573,44 @@ abstract final class EditorPageGraph {
         'La copie doit avoir un identifiant different de la page source.',
       );
     }
-    if (_roots(targetPageId).any((ref) => _read(appearance, ref) != null)) {
+    if (_rootsFor(appearance, targetPageId).isNotEmpty) {
       throw FormatException(
         'Impossible de dupliquer la page : « $targetPageId » a deja une configuration.',
       );
     }
-    final graph = _Graph.build(appearance, registry, _roots(sourcePageId));
+    final cloned = _cloneRootSubgraph(
+      appearance: appearance,
+      registry: registry,
+      sourceRootId: sourcePageId,
+      targetRootId: targetPageId,
+      generateId: generateId,
+    );
+    return _write(
+      appearance,
+      copies: cloned.copies,
+      usageCopies: {
+        for (final MapEntry(key: source, value: target) in cloned.ids.entries)
+          if (source != target) target: source,
+      },
+      behaviorCopies: cloned.behaviorCopies,
+    );
+  }
+
+  static ({
+    Map<String, String> ids,
+    Map<EditorConfigRef, Object> copies,
+    Map<String, List<ComponentBehavior>> behaviorCopies,
+    Set<String> used,
+  })
+  _cloneRootSubgraph({
+    required Appearance appearance,
+    required Registry registry,
+    required String sourceRootId,
+    required String targetRootId,
+    String Function()? generateId,
+  }) {
+    final sourceRoots = _rootsFor(appearance, sourceRootId);
+    final graph = _Graph.build(appearance, registry, sourceRoots);
     if (graph.cycles.isNotEmpty) {
       throw FormatException(
         'Impossible de dupliquer la page : la disposition contient un cycle '
@@ -591,11 +638,11 @@ abstract final class EditorPageGraph {
     }
 
     final next = generateId ?? () => shortid.generate();
-    final used = _usedIds(appearance)..add(targetPageId);
-    final ids = <String, String>{sourcePageId: targetPageId};
+    final used = _usedIds(appearance)..add(targetRootId);
+    final ids = <String, String>{sourceRootId: targetRootId};
     final refs = <EditorConfigRef, EditorConfigRef>{
-      for (final root in _roots(sourcePageId))
-        root: EditorConfigRef(root.kind, targetPageId),
+      for (final root in sourceRoots)
+        root: EditorConfigRef(root.kind, targetRootId),
     };
     void map(String from, String to) {
       final previous = ids[from];
@@ -641,6 +688,11 @@ abstract final class EditorPageGraph {
           if (source[i].id != instance.id) map(source[i].id, target[i].id);
           refs[source[i]] = target[i];
           used.add(target[i].id);
+        }
+        final sourceStyle = EditorConfigRef.style(instance.id);
+        if (!refs.containsKey(sourceStyle) &&
+            appearance.styles.containsKey(instance.id)) {
+          refs[sourceStyle] = EditorConfigRef.style(id);
         }
         break;
       }
@@ -690,14 +742,11 @@ abstract final class EditorPageGraph {
               when list.isNotEmpty)
             target: _remapBehaviorList(list, behaviorIdMap),
     };
-    return _write(
-      appearance,
+    return (
+      ids: ids,
       copies: copies,
-      usageCopies: {
-        for (final MapEntry(key: source, value: target) in ids.entries)
-          if (source != target) target: source,
-      },
       behaviorCopies: behaviorCopies,
+      used: used,
     );
   }
 
@@ -705,12 +754,12 @@ abstract final class EditorPageGraph {
   /// des tranches exclusives par page pour les pages chargées ([loadedPageIds]).
   ///
   /// Les styles/composants/comportements/usages atteignables depuis une seule
-  /// page chargée (et non partagés avec `root`, `mainLayout`, d'autres pages
-  /// ou des composants hors catalogue) sont placés dans la tranche de cette
-  /// page. Tant que toutes les pages de `appearance.pageCatalog` ne sont pas
-  /// dans [loadedPageIds], les identifiants listés dans [globalProtectedIds]
-  /// restent protégés dans le document global afin de préserver les éventuels
-  /// partages avec des pages non encore chargées.
+  /// page chargée (et non partagés avec `root`, `mainLayout`, les shells du
+  /// catalogue, d'autres pages ou des composants hors catalogue) sont placés
+  /// dans la tranche de cette page. Tant que toutes les pages de
+  /// `appearance.pageCatalog` ne sont pas dans [loadedPageIds], les identifiants
+  /// listés dans [globalProtectedIds] restent protégés dans le document global
+  /// afin de préserver les éventuels partages avec des pages non encore chargées.
   static EditorPagePartition partitionForPages({
     required Appearance appearance,
     Registry? registry,
@@ -720,6 +769,9 @@ abstract final class EditorPageGraph {
   }) {
     final catalogPageIds = <String>{
       for (final page in appearance.pageCatalog.pages) page.id,
+    };
+    final catalogShellIds = <String>{
+      for (final shell in appearance.pageCatalog.shells) shell.id,
     };
     final activeLoadedPageIds = <String>[
       for (final page in appearance.pageCatalog.pages)
@@ -757,6 +809,7 @@ abstract final class EditorPageGraph {
         final slots = _slots(kind, config);
         for (final entry in slots.entries) {
           final childId = entry.key;
+          if (childId == outletSlotId) continue;
           if (registry != null) {
             final contract = _resolve(registry, entry.value, kind).contract;
             if (contract != null) {
@@ -788,6 +841,7 @@ abstract final class EditorPageGraph {
     final effectiveGlobalRoots = <String>{
       for (final id in globalRootIds)
         if (!catalogPageIds.contains(id)) id,
+      ...catalogShellIds,
       for (final id in appearance.components.keys)
         if (!catalogPageIds.contains(id) && !anyPageReachable.contains(id)) id,
     };
@@ -904,17 +958,25 @@ abstract final class EditorPageGraph {
   /// Same as [remove], with the list of deleted and preserved data.
   ///
   /// A configuration is deleted only when every container placing its owner
-  /// is itself deleted and no other page of `appearance.pageCatalog` reaches
-  /// it. Data of components without contract is never guessed nor deleted.
+  /// is itself deleted and no other page or shell of `appearance.pageCatalog`
+  /// reaches it. Data of components without contract is never guessed nor deleted.
   static EditorPageRemoval removal({
     required Appearance appearance,
     required Registry registry,
     required String pageId,
   }) {
-    final graph = _Graph.build(appearance, registry, _roots(pageId));
+    final graph = _Graph.build(
+      appearance,
+      registry,
+      _rootsFor(appearance, pageId),
+    );
     final protected = _Graph.build(appearance, registry, [
       for (final page in appearance.pageCatalog.pages)
-        if (page.id != pageId) ..._roots(page.id),
+        if (page.id != pageId) ..._rootsFor(appearance, page.id),
+      for (final shell in appearance.pageCatalog.shells)
+        if (shell.id != pageId) ..._rootsFor(appearance, shell.id),
+      if (pageId != 'root') ..._rootsFor(appearance, 'root'),
+      if (pageId != 'mainLayout') ..._rootsFor(appearance, 'mainLayout'),
     ]).configs;
     final candidates = _exclusive(
       appearance,
@@ -937,6 +999,414 @@ abstract final class EditorPageGraph {
     );
   }
 
+  /// Supprime le shell [shellId] du catalogue ainsi que les configurations
+  /// qu'il possède exclusivement.
+  ///
+  /// Détache toute page dont `shellId == shellId` (`clearShellId: true`),
+  /// efface `rootShellId` s'il correspond à [shellId], retire [shellId] de
+  /// `pageCatalog.shells` et préserve tous les composants partagés atteignables
+  /// depuis une page, un autre shell ou les racines globales (`root`, `mainLayout`).
+  static EditorPageRemoval removeShell({
+    required Appearance appearance,
+    required Registry registry,
+    required String shellId,
+  }) {
+    final graph = _Graph.build(
+      appearance,
+      registry,
+      _rootsFor(appearance, shellId),
+    );
+    final protected = _Graph.build(appearance, registry, [
+      for (final page in appearance.pageCatalog.pages)
+        ..._rootsFor(appearance, page.id),
+      for (final shell in appearance.pageCatalog.shells)
+        if (shell.id != shellId) ..._rootsFor(appearance, shell.id),
+      if (shellId != 'root') ..._rootsFor(appearance, 'root'),
+      if (shellId != 'mainLayout') ..._rootsFor(appearance, 'mainLayout'),
+    ]).configs;
+    final candidates = _exclusive(
+      appearance,
+      registry,
+      {...graph.configs}..removeAll(protected),
+    );
+    final limitations = [
+      for (final instance in graph.instances.values)
+        if (instance.status == _Status.unsupported ||
+            instance.status == _Status.unknown)
+          'Donnees eventuelles du composant « ${instance.label} » '
+              '(instance « ${instance.id} ») conservees : '
+              'propriete inconnue.',
+    ];
+    final nextCatalog = appearance.pageCatalog.copyWith(
+      pages: [
+        for (final page in appearance.pageCatalog.pages)
+          page.shellId == shellId ? page.copyWith(clearShellId: true) : page,
+      ],
+      shells: [
+        for (final shell in appearance.pageCatalog.shells)
+          if (shell.id != shellId) shell,
+      ],
+      clearRootShellId: appearance.pageCatalog.rootShellId == shellId,
+    );
+    final nextAppearance = _write(
+      appearance,
+      removed: candidates,
+      usageDrops: protected.any((ref) => ref.id == shellId)
+          ? const {}
+          : {shellId},
+    ).copyWith(pageCatalog: nextCatalog);
+    return EditorPageRemoval(
+      appearance: nextAppearance,
+      removed: candidates,
+      preserved: {...graph.configs}..removeAll(candidates),
+      limitations: limitations,
+    );
+  }
+
+  /// Détache [pageId] de son shell partagé en matérialisant une copie profonde
+  /// indépendante du `ScaffoldPageConfig` du shell et de tout son habillage
+  /// (AppBar, sidebars, tiroirs, barres basses, styles, comportements et usages)
+  /// directement sous [pageId].
+  ///
+  /// Le slot réservé `'scaffold:outlet'` est remplacé par le contenu existant
+  /// de la page sans perdre ses liaisons, styles ou comportements, puis
+  /// `shellId` est effacé dans `appearance.pageCatalog`. Retourne [appearance]
+  /// inchangée si [pageId] est introuvable ou n'a pas de `shellId`.
+  static Appearance detachPageFromShell({
+    required Appearance appearance,
+    required Registry registry,
+    required String pageId,
+    String Function()? generateId,
+  }) {
+    final pageIndex = appearance.pageCatalog.pages.indexWhere(
+      (page) => page.id == pageId,
+    );
+    if (pageIndex < 0) return appearance;
+    final page = appearance.pageCatalog.pages[pageIndex];
+    final shellId = page.shellId;
+    if (shellId == null) return appearance;
+
+    final clonedShell = _cloneRootSubgraph(
+      appearance: appearance,
+      registry: registry,
+      sourceRootId: shellId,
+      targetRootId: pageId,
+      generateId: generateId,
+    );
+
+    final copiedShellRoot =
+        clonedShell.copies[EditorConfigRef.scaffoldPage(pageId)] ??
+        clonedShell.copies[EditorConfigRef.nativeComponent(pageId)];
+    final baseShellScaffold = switch (copiedShellRoot) {
+      final ScaffoldPageConfig scaffold => scaffold,
+      final NativeComponentConfig native => ScaffoldPageConfig.fromNative(
+        native,
+      ),
+      _ => ScaffoldPageConfig(
+        placements: const {
+          ScaffoldPageRegion.body: [outletSlotId],
+        },
+      ),
+    };
+
+    final existingComponent = appearance.components[pageId];
+    final existingStyle = appearance.styles[pageId];
+    final existingIsCard =
+        existingStyle != null &&
+        (existingComponent == null ||
+            (existingComponent is NativeComponentConfig &&
+                !existingComponent.placements.containsKey('body')));
+    final existingIsScaffoldLike =
+        !existingIsCard &&
+        (existingComponent is ScaffoldPageConfig ||
+            existingComponent is NativeComponentConfig);
+
+    final nextStyles = <String, ContainerStyle>{...appearance.styles};
+    final nextComponents = <String, ComponentConfig>{...appearance.components};
+    final nextBehaviors = <String, List<ComponentBehavior>>{
+      ...appearance.behaviors,
+    };
+    final nextUsages = <String, ComponentUsage>{...appearance.usages};
+
+    // Applique toutes les copies des descendants du shell (tout sauf la racine pageId).
+    for (final entry in clonedShell.copies.entries) {
+      if (entry.key.id == pageId) continue;
+      if (entry.key.kind == EditorConfigKind.style) {
+        nextStyles[entry.key.id] = entry.value as ContainerStyle;
+      } else {
+        final id = entry.key.id;
+        final value = entry.value;
+        final current = nextComponents[id];
+        if (value is SuperLayoutConfig && current is SuperListViewConfig) {
+          nextComponents[id] = current.copyWith(template: value);
+        } else if (value is SuperListViewConfig &&
+            current is SuperLayoutConfig) {
+          nextComponents[id] = value.copyWith(template: current);
+        } else {
+          nextComponents[id] = value as ComponentConfig;
+        }
+      }
+    }
+    for (final MapEntry(key: source, value: target) in clonedShell.ids.entries) {
+      if (source == target || target == pageId) continue;
+      final usage = appearance.usages[source];
+      if (usage != null) nextUsages[target] = usage;
+    }
+    for (final entry in clonedShell.behaviorCopies.entries) {
+      if (entry.key == pageId ||
+          entry.key == '$pageId:item' ||
+          entry.key == '$pageId:layout') {
+        continue;
+      }
+      nextBehaviors[entry.key] = entry.value;
+    }
+
+    final ScaffoldPageConfig mergedScaffold;
+    if (existingIsScaffoldLike) {
+      final existingNative = existingComponent is ScaffoldPageConfig
+          ? existingComponent.native
+          : existingComponent as NativeComponentConfig;
+      final bodySlots = [
+        for (final id in existingNative.slotsOf('body'))
+          if (id != outletSlotId) id,
+      ];
+      mergedScaffold = _replaceOutletInScaffold(
+        baseShellScaffold,
+        replacementIds: bodySlots,
+        slotTypes: {
+          for (final id in bodySlots)
+            if (existingNative.slotTypes.containsKey(id))
+              id: existingNative.slotTypes[id]!,
+        },
+        slotPreferredSizes: {
+          for (final id in bodySlots)
+            if (existingNative.slotPreferredSizes.containsKey(id))
+              id: existingNative.slotPreferredSizes[id]!,
+        },
+        slotSizeConstraints: {
+          for (final id in bodySlots)
+            if (existingNative.slotSizeConstraints.containsKey(id))
+              id: existingNative.slotSizeConstraints[id]!,
+        },
+        slotLabels: {
+          for (final id in bodySlots)
+            if (existingNative.slotLabels.containsKey(id))
+              id: existingNative.slotLabels[id]!,
+        },
+      );
+      if (!nextStyles.containsKey(pageId)) {
+        final shellRootStyle =
+            clonedShell.copies[EditorConfigRef.style(pageId)] as ContainerStyle?;
+        if (shellRootStyle != null) nextStyles[pageId] = shellRootStyle;
+      }
+      if (!nextUsages.containsKey(pageId) &&
+          appearance.usages[shellId] != null) {
+        nextUsages[pageId] = appearance.usages[shellId]!;
+      }
+      if (!nextBehaviors.containsKey(pageId) &&
+          clonedShell.behaviorCopies[pageId] != null) {
+        nextBehaviors[pageId] = clonedShell.behaviorCopies[pageId]!;
+      }
+    } else if (existingComponent != null || existingStyle != null) {
+      final used = clonedShell.used;
+      var bodyChildId = '$pageId-body';
+      for (var suffix = 2; used.contains(bodyChildId); suffix++) {
+        bodyChildId = '$pageId-body-$suffix';
+      }
+      used.add(bodyChildId);
+
+      // Collecte les descendants de la page avant déplacement pour remapper
+      // d'éventuels validateurs/actions ciblant l'ancien identifiant racine.
+      final pageSubgraphIds = <String>{
+        for (final ref in _Graph.build(
+          appearance,
+          registry,
+          _rootsFor(appearance, pageId),
+        ).configs)
+          ref.id,
+      };
+      final moveMap = <String, String>{
+        pageId: bodyChildId,
+        '$pageId:item': '$bodyChildId:item',
+        '$pageId:layout': '$bodyChildId:layout',
+      };
+
+      if (existingComponent != null) {
+        nextComponents[bodyChildId] = existingComponent;
+      }
+      if (existingStyle != null) {
+        nextStyles[bodyChildId] = existingStyle;
+        nextStyles.remove(pageId);
+      }
+      for (final suffix in const [':item', ':layout']) {
+        final oldKey = '$pageId$suffix';
+        final newKey = '$bodyChildId$suffix';
+        if (nextStyles.containsKey(oldKey)) {
+          nextStyles[newKey] = nextStyles.remove(oldKey)!;
+        }
+        if (nextBehaviors.containsKey(oldKey)) {
+          nextBehaviors[newKey] = _remapBehaviorList(
+            nextBehaviors.remove(oldKey)!,
+            moveMap,
+          );
+        }
+      }
+      if (nextUsages.containsKey(pageId)) {
+        nextUsages[bodyChildId] = nextUsages.remove(pageId)!;
+      }
+      if (nextBehaviors.containsKey(pageId)) {
+        nextBehaviors[bodyChildId] = _remapBehaviorList(
+          nextBehaviors.remove(pageId)!,
+          moveMap,
+        );
+      }
+      for (final descendantId in pageSubgraphIds) {
+        if (descendantId == pageId) continue;
+        final list = nextBehaviors[descendantId];
+        if (list != null && list.isNotEmpty) {
+          nextBehaviors[descendantId] = _remapBehaviorList(list, moveMap);
+        }
+      }
+
+      // Copie l'éventuel style/usage/comportement racine du shell sur pageId.
+      final shellRootStyle =
+          clonedShell.copies[EditorConfigRef.style(pageId)] as ContainerStyle?;
+      if (shellRootStyle != null) {
+        nextStyles[pageId] = shellRootStyle;
+      }
+      final shellRootUsage = appearance.usages[shellId];
+      if (shellRootUsage != null) {
+        nextUsages[pageId] = shellRootUsage;
+      }
+      final shellRootBehaviors = clonedShell.behaviorCopies[pageId];
+      if (shellRootBehaviors != null && shellRootBehaviors.isNotEmpty) {
+        nextBehaviors[pageId] = shellRootBehaviors;
+      }
+
+      final slotType = _inferRegistrySlotType(
+        existingComponent,
+        hasStyle: existingStyle != null,
+        registry: registry,
+      );
+      mergedScaffold = _replaceOutletInScaffold(
+        baseShellScaffold,
+        replacementIds: [bodyChildId],
+        slotTypes: {bodyChildId: slotType},
+      );
+    } else {
+      mergedScaffold = _replaceOutletInScaffold(
+        baseShellScaffold,
+        replacementIds: const [],
+      );
+      final shellRootStyle =
+          clonedShell.copies[EditorConfigRef.style(pageId)] as ContainerStyle?;
+      if (shellRootStyle != null) {
+        nextStyles[pageId] = shellRootStyle;
+      }
+      final shellRootUsage = appearance.usages[shellId];
+      if (shellRootUsage != null) {
+        nextUsages[pageId] = shellRootUsage;
+      }
+      final shellRootBehaviors = clonedShell.behaviorCopies[pageId];
+      if (shellRootBehaviors != null && shellRootBehaviors.isNotEmpty) {
+        nextBehaviors[pageId] = shellRootBehaviors;
+      }
+    }
+
+    nextComponents[pageId] = mergedScaffold;
+
+    final nextPages = [...appearance.pageCatalog.pages];
+    nextPages[pageIndex] = page.copyWith(clearShellId: true);
+
+    return appearance.copyWith(
+      styles: nextStyles,
+      components: nextComponents,
+      behaviors: nextBehaviors,
+      usages: nextUsages,
+      pageCatalog: appearance.pageCatalog.copyWith(pages: nextPages),
+    );
+  }
+
+  static String _inferRegistrySlotType(
+    ComponentConfig? config, {
+    required bool hasStyle,
+    required Registry registry,
+  }) => switch (config) {
+    null => hasStyle ? 'registry:Card' : 'registry:Layout',
+    NativeComponentConfig() when hasStyle => 'registry:Card',
+    SuperLayoutConfig() => 'registry:Layout',
+    SuperListViewConfig() => 'registry:ListView',
+    SuperValueConfig() => 'registry:Value',
+    SuperActionConfig() => 'registry:Action',
+    SuperIndicatorConfig() => 'registry:Indicator',
+    SuperSeparatorConfig() => 'registry:Separator',
+    SuperTabConfig() => 'registry:Tab',
+    SuperConditionalConfig() => 'registry:Conditional',
+    SuperTreeViewConfig() => 'registry:TreeView',
+    SuperTableConfig() => 'registry:Table',
+    final value =>
+      registry.registry.keys
+          .where((key) => key.toLowerCase() == value.componentType.toLowerCase())
+          .map((key) => 'registry:$key')
+          .firstOrNull ??
+      'registry:${value.componentType}',
+  };
+
+  static ScaffoldPageConfig _replaceOutletInScaffold(
+    ScaffoldPageConfig shellScaffold, {
+    required List<String> replacementIds,
+    Map<String, String> slotTypes = const {},
+    Map<String, Size?> slotPreferredSizes = const {},
+    Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
+    Map<String, String> slotLabels = const {},
+  }) {
+    final native = shellScaffold.native;
+    final currentBody = native.slotsOf('body');
+    final nextBody = <String>[];
+    var replaced = false;
+    for (final id in currentBody) {
+      if (id == outletSlotId) {
+        if (!replaced) {
+          nextBody.addAll(replacementIds);
+          replaced = true;
+        }
+      } else {
+        nextBody.add(id);
+      }
+    }
+    if (!replaced && replacementIds.isNotEmpty) {
+      nextBody.addAll(replacementIds);
+    }
+    final nextPlacements = <String, List<String>>{
+      ...native.placements,
+      'body': nextBody,
+    };
+    final nextSlotTypes = <String, String>{...native.slotTypes}
+      ..remove(outletSlotId)
+      ..addAll(slotTypes);
+    final nextPreferredSizes = <String, Size?>{...native.slotPreferredSizes}
+      ..remove(outletSlotId)
+      ..addAll(slotPreferredSizes);
+    final nextSizeConstraints = <String, SlotSizeConstraints>{
+      ...native.slotSizeConstraints,
+    }
+      ..remove(outletSlotId)
+      ..addAll(slotSizeConstraints);
+    final nextSlotLabels = <String, String>{...native.slotLabels}
+      ..remove(outletSlotId)
+      ..addAll(slotLabels);
+
+    return ScaffoldPageConfig.fromNative(
+      native.copyWith(
+        placements: nextPlacements,
+        slotTypes: nextSlotTypes,
+        slotPreferredSizes: nextPreferredSizes,
+        slotSizeConstraints: nextSizeConstraints,
+        slotLabels: nextSlotLabels,
+      ),
+    );
+  }
+
   /// Deletes, recursively, the configurations owned by the slot instance
   /// [instanceId] of [type] once it has been unplaced from its container of
   /// [containerKind] in [appearance].
@@ -944,8 +1414,8 @@ abstract final class EditorPageGraph {
   /// Nothing is deleted while the instance is still placed somewhere, nor for
   /// components without [ComponentDuplicationContract]. Descendant
   /// configurations shared with remaining containers or reachable from a page
-  /// of the catalog are kept. The declared usage of the unplaced instance is
-  /// always dropped.
+  /// or shell of the catalog are kept. The declared usage of the unplaced
+  /// instance is always dropped.
   static Appearance removeInstance({
     required Appearance appearance,
     required Registry registry,
@@ -966,7 +1436,10 @@ abstract final class EditorPageGraph {
       contract.ownedConfigs(instanceId),
     );
     final protected = _Graph.build(appearance, registry, [
-      for (final page in appearance.pageCatalog.pages) ..._roots(page.id),
+      for (final page in appearance.pageCatalog.pages)
+        ..._rootsFor(appearance, page.id),
+      for (final shell in appearance.pageCatalog.shells)
+        ..._rootsFor(appearance, shell.id),
     ]).configs;
     final candidates = _exclusive(
       appearance,
@@ -994,8 +1467,10 @@ abstract final class EditorPageGraph {
       ).entries) {
         containers.putIfAbsent(id, () => {}).add(ref);
         final contract = _resolve(registry, type, ref.kind).contract;
-        for (final owned in contract?.ownedConfigs(id) ?? const []) {
-          owners.putIfAbsent(owned, () => {}).add(id);
+        if (contract != null) {
+          for (final owned in _ownedRefs(appearance, contract, id)) {
+            owners.putIfAbsent(owned, () => {}).add(id);
+          }
         }
       }
     }
@@ -1015,6 +1490,21 @@ abstract final class EditorPageGraph {
 }
 
 enum _Status { supplied, contract, unsupported, unknown }
+
+/// Retourne les références possédées par [id] selon [contract], en incluant
+/// son éventuel [ContainerStyle] (`styles[id]`) s'il existe dans [appearance].
+Iterable<EditorConfigRef> _ownedRefs(
+  Appearance appearance,
+  ComponentDuplicationContract contract,
+  String id,
+) {
+  final base = contract.ownedConfigs(id);
+  final styleRef = EditorConfigRef.style(id);
+  if (appearance.styles.containsKey(id) && !base.contains(styleRef)) {
+    return [...base, styleRef];
+  }
+  return base;
+}
 
 class _Instance {
   _Instance(this.id, this.label, this.status, this.contract);
@@ -1052,16 +1542,20 @@ class _Graph {
         ref.kind,
         value,
       ).entries) {
+        if (id == EditorPageGraph.outletSlotId) continue;
         final resolved = _resolve(registry, type, ref.kind);
         final instance = graph.instances.putIfAbsent(
           id,
           () =>
               _Instance(id, resolved.label, resolved.status, resolved.contract),
         )..types.add(type);
-        for (final owned in instance.contract?.ownedConfigs(id) ?? const []) {
-          if (_read(appearance, owned) == null) continue;
-          graph.owners.putIfAbsent(owned, () => {}).add(id);
-          visit(owned);
+        final contract = instance.contract;
+        if (contract != null) {
+          for (final owned in _ownedRefs(appearance, contract, id)) {
+            if (_read(appearance, owned) == null) continue;
+            graph.owners.putIfAbsent(owned, () => {}).add(id);
+            visit(owned);
+          }
         }
       }
       stack.removeLast();
@@ -1079,6 +1573,9 @@ typedef _Resolution = ({
 });
 
 _Resolution _resolve(Registry registry, String type, EditorConfigKind kind) {
+  if (type == EditorPageGraph.outletSlotId) {
+    return (label: type, status: _Status.supplied, contract: null);
+  }
   _Resolution found(String label, ComponentDuplicationContract? contract) => (
     label: label,
     status: contract == null ? _Status.unsupported : _Status.contract,
@@ -1192,28 +1689,31 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.table => value is SuperTableConfig,
 };
 
+List<EditorConfigRef> _refsForComponent(String id, ComponentConfig component) =>
+    switch (component) {
+      SuperLayoutConfig() => [EditorConfigRef.layout(id)],
+      NativeComponentConfig() => [EditorConfigRef.nativeComponent(id)],
+      ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(id)],
+      A4PageConfig() => [EditorConfigRef.a4Page(id)],
+      SuperValueConfig() => [EditorConfigRef.value(id)],
+      SuperActionConfig() => [EditorConfigRef.action(id)],
+      SuperIndicatorConfig() => [EditorConfigRef.indicator(id)],
+      SuperSeparatorConfig() => [EditorConfigRef.separator(id)],
+      SuperTabConfig() => [EditorConfigRef.tab(id)],
+      SuperConditionalConfig() => [EditorConfigRef.conditional(id)],
+      SuperTreeViewConfig() => [EditorConfigRef.treeView(id)],
+      SuperTableConfig() => [EditorConfigRef.table(id)],
+      SuperListViewConfig() => [
+        EditorConfigRef.layout(id),
+        EditorConfigRef.list(id),
+      ],
+      _ => [EditorConfigRef.component(id)],
+    };
+
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
   for (final id in appearance.styles.keys) EditorConfigRef.style(id),
   for (final entry in appearance.components.entries)
-    ...switch (entry.value) {
-      SuperLayoutConfig() => [EditorConfigRef.layout(entry.key)],
-      NativeComponentConfig() => [EditorConfigRef.nativeComponent(entry.key)],
-      ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(entry.key)],
-      A4PageConfig() => [EditorConfigRef.a4Page(entry.key)],
-      SuperValueConfig() => [EditorConfigRef.value(entry.key)],
-      SuperActionConfig() => [EditorConfigRef.action(entry.key)],
-      SuperIndicatorConfig() => [EditorConfigRef.indicator(entry.key)],
-      SuperSeparatorConfig() => [EditorConfigRef.separator(entry.key)],
-      SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
-      SuperConditionalConfig() => [EditorConfigRef.conditional(entry.key)],
-      SuperTreeViewConfig() => [EditorConfigRef.treeView(entry.key)],
-      SuperTableConfig() => [EditorConfigRef.table(entry.key)],
-      SuperListViewConfig() => [
-        EditorConfigRef.layout(entry.key),
-        EditorConfigRef.list(entry.key),
-      ],
-      _ => [EditorConfigRef.component(entry.key)],
-    },
+    ..._refsForComponent(entry.key, entry.value),
 ];
 
 Set<String> _usedIds(Appearance appearance) => {
@@ -1222,6 +1722,7 @@ Set<String> _usedIds(Appearance appearance) => {
     ..._slots(ref.kind, _read(appearance, ref)!).keys,
   ],
   for (final page in appearance.pageCatalog.pages) page.id,
+  for (final shell in appearance.pageCatalog.shells) shell.id,
 };
 
 /// Every slot instance ID of a container (placed, hidden or only sized) with
@@ -1421,6 +1922,11 @@ Object _copy(Object value, String Function(String) remap) {
       zoneAxes: Map.unmodifiable({...value.zoneAxes}),
       slotLabels: _remapKeys(value.slotLabels, remap),
       grid: grid?.copyWith(items: _remapKeys(grid.items, remap)),
+    );
+  }
+  if (value is SuperListViewConfig) {
+    return value.copyWith(
+      template: _copy(value.template, remap) as SuperLayoutConfig,
     );
   }
   if (value is ComponentConfig) {

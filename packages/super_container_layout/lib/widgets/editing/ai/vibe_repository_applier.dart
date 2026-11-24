@@ -99,7 +99,7 @@ abstract final class VibeRepositoryPromptFormatter {
   /// Message renvoyé lorsque le store actif ne contient encore aucun repository.
   static const String emptyStoreMessage =
       '$sectionHeader\n'
-      '[] (Aucun repository existant dans le store actif. Tu peux en créer via la clé racine "repositories" avec un alias snake_case.)';
+      '[] (Aucun repository existant dans le store actif. Tu peux en créer via la clé racine "repositories" avec un alias snake_case en fournissant "data" et son "jsonSchema" associé.)';
 
   /// Formate la liste descriptive et les échantillons bornés des repositories de [store].
   ///

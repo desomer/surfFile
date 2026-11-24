@@ -750,6 +750,7 @@ void main() {
       addTearDown(router.dispose);
 
       await tester.pumpWidget(SuperApp(router: router, repositoryStore: store));
+      await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
       await tester.pumpAndSettle();
 
       store.reportBindingError('Erreur date A');
@@ -760,13 +761,24 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       store.reportBindingError('Erreur date A');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
 
       // clearSnackBars() + removeCurrentSnackBar() keeps only the latest SnackBar.
       expect(find.byType(SnackBar), findsOneWidget);
       expect(find.text('Erreur date A'), findsOneWidget);
+      final closeFinder = find.text('Fermer');
+      final categoryFinder = find.text('Liaison / Données');
+      expect(closeFinder, findsOneWidget);
+      expect(categoryFinder, findsOneWidget);
+      expect(
+        tester.getTopLeft(closeFinder).dx,
+        lessThan(tester.getTopLeft(categoryFinder).dx),
+      );
+      await tester.tap(closeFinder);
+      await tester.pumpAndSettle();
+      expect(find.byType(SnackBar), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
+      await tester.pumpAndSettle();
     });
 
     test('VibeAppInspector.inspectBindingsAndDiagnostics surfaces schema/mask/data conflicts', () async {

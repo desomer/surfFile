@@ -16,6 +16,50 @@ import 'package:flutter/foundation.dart';
 import 'vibe_app_tools.dart';
 import 'vibe_plan.dart';
 
+/// Entrée élémentaire nouvellement complétée dans le patch `"vibe"` en streaming.
+@immutable
+class VibePatchEntryDelta {
+  /// Construit un delta d'entrée de patch `"vibe"` indexé par [revision].
+  const VibePatchEntryDelta({
+    required this.revision,
+    required this.section,
+    required this.key,
+    required this.value,
+  });
+
+  /// Numéro de révision monotone (`patchRevision`, base 1) associé à cette entrée.
+  final int revision;
+
+  /// Section cible (`"components"`, `"styles"`, `"behaviors"`, `"usages"`),
+  /// ou `null` pour une clé racine directe (`"mode"`, `"accent"`, `"pageCatalog"`, etc.).
+  final String? section;
+
+  /// Clé de l'entrée dans [section] (ou clé directe à la racine du patch).
+  final String key;
+
+  /// Valeur JSON décodée de l'entrée (`Map`, `List`, scalaire ou `null`).
+  final Object? value;
+
+  /// Indique si cette entrée appartient à la section documentaire `"usages"`.
+  bool get isUsageEntry => section == 'usages';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VibePatchEntryDelta &&
+          other.revision == revision &&
+          other.section == section &&
+          other.key == key &&
+          other.value == value;
+
+  @override
+  int get hashCode => Object.hash(revision, section, key, value);
+
+  @override
+  String toString() =>
+      'VibePatchEntryDelta(#$revision, ${section ?? 'root'}[$key])';
+}
+
 /// État instantané immuable décodé par [VibeIncrementalStreamParser] pendant le streaming SSE.
 @immutable
 class VibeStreamSnapshot {
@@ -32,6 +76,8 @@ class VibeStreamSnapshot {
     this.receivedChars = 0,
     this.partialVibePatch,
     this.patchRevision = 0,
+    this.nonUsagesPatchRevision = 0,
+    this.patchEntries = const <VibePatchEntryDelta>[],
     this.partialRepositoriesPatch,
     this.repositoriesRevision = 0,
     this.activeSection,
@@ -92,6 +138,15 @@ class VibeStreamSnapshot {
   /// Compteur monotone incrémenté à chaque nouvelle entrée complète ajoutée à [partialVibePatch].
   final int patchRevision;
 
+  /// Compteur monotone incrémenté uniquement pour les entrées hors section `"usages"`.
+  ///
+  /// Permet de court-circuiter en $O(1)$ les reconstructions d'aperçu lorsque
+  /// seules des métadonnées `"usages"` sont reçues en fin de flux.
+  final int nonUsagesPatchRevision;
+
+  /// Journal ordonné immuable des entrées `"vibe"` complétées depuis le début du flux.
+  final List<VibePatchEntryDelta> patchEntries;
+
   /// Map immuable cumulative contenant toutes les entrées directes `<repoKey>: <valeur>`
   /// de `"repositories"` déjà complètement fermées dans le flux JSON,
   /// ou `null` tant qu'aucune entrée n'est complète.
@@ -138,6 +193,8 @@ class VibeStreamSnapshot {
     Map<String, dynamic>? partialVibePatch,
     bool clearPartialVibePatch = false,
     int? patchRevision,
+    int? nonUsagesPatchRevision,
+    List<VibePatchEntryDelta>? patchEntries,
     Map<String, dynamic>? partialRepositoriesPatch,
     bool clearPartialRepositoriesPatch = false,
     int? repositoriesRevision,
@@ -167,6 +224,11 @@ class VibeStreamSnapshot {
         ? null
         : (partialVibePatch ?? this.partialVibePatch),
     patchRevision: patchRevision ?? this.patchRevision,
+    nonUsagesPatchRevision:
+        nonUsagesPatchRevision ?? this.nonUsagesPatchRevision,
+    patchEntries: clearPartialVibePatch
+        ? const <VibePatchEntryDelta>[]
+        : (patchEntries ?? this.patchEntries),
     partialRepositoriesPatch: clearPartialRepositoriesPatch
         ? null
         : (partialRepositoriesPatch ?? this.partialRepositoriesPatch),
@@ -203,6 +265,8 @@ class VibeStreamSnapshot {
           other.estimatedComponentCount == estimatedComponentCount &&
           other.receivedChars == receivedChars &&
           other.patchRevision == patchRevision &&
+          other.nonUsagesPatchRevision == nonUsagesPatchRevision &&
+          other.patchEntries.length == patchEntries.length &&
           other.repositoriesRevision == repositoriesRevision &&
           other.activeSection == activeSection &&
           other.activeEntryKey == activeEntryKey &&
@@ -217,7 +281,7 @@ class VibeStreamSnapshot {
 
   /// Code de hachage cohérent avec [operator ==].
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll(<Object?>[
     message,
     isMessageComplete,
     hasVibeObject,
@@ -228,6 +292,8 @@ class VibeStreamSnapshot {
     estimatedComponentCount,
     receivedChars,
     patchRevision,
+    nonUsagesPatchRevision,
+    patchEntries.length,
     repositoriesRevision,
     activeSection,
     activeEntryKey,
@@ -238,7 +304,7 @@ class VibeStreamSnapshot {
     Object.hashAll(timedTraces),
     partialVibePatch != null,
     partialRepositoriesPatch != null,
-  );
+  ]);
 
   /// Représentation textuelle de diagnostic de l'instantané.
   @override
@@ -254,6 +320,7 @@ class VibeStreamSnapshot {
       'estimatedComponentCount: $estimatedComponentCount, '
       'receivedChars: $receivedChars, '
       'patchRevision: $patchRevision, '
+      'nonUsagesPatchRevision: $nonUsagesPatchRevision, '
       'repositoriesRevision: $repositoriesRevision, '
       'activeSection: $activeSection, '
       'activeEntryKey: $activeEntryKey, '
@@ -342,7 +409,10 @@ class VibeIncrementalStreamParser {
   final Map<String, Map<String, Object?>> _sectionPatchEntries =
       <String, Map<String, Object?>>{};
   Map<String, dynamic>? _cachedPartialPatch;
+  final List<VibePatchEntryDelta> _patchEntries = <VibePatchEntryDelta>[];
+  List<VibePatchEntryDelta>? _cachedPatchEntries;
   int _patchRevision = 0;
+  int _nonUsagesPatchRevision = 0;
   final Map<String, Object?> _repositoriesPatchEntries = <String, Object?>{};
   Map<String, dynamic>? _cachedPartialRepositoriesPatch;
   int _repositoriesRevision = 0;
@@ -387,7 +457,10 @@ class VibeIncrementalStreamParser {
     _rootPatchEntries.clear();
     _sectionPatchEntries.clear();
     _cachedPartialPatch = null;
+    _patchEntries.clear();
+    _cachedPatchEntries = null;
     _patchRevision = 0;
+    _nonUsagesPatchRevision = 0;
     _repositoriesPatchEntries.clear();
     _cachedPartialRepositoriesPatch = null;
     _repositoriesRevision = 0;
@@ -458,6 +531,12 @@ class VibeIncrementalStreamParser {
           ? null
           : (_cachedPartialPatch ??= _buildFrozenPartialPatch()),
       patchRevision: _patchRevision,
+      nonUsagesPatchRevision: _nonUsagesPatchRevision,
+      patchEntries: _patchEntries.isEmpty
+          ? const <VibePatchEntryDelta>[]
+          : (_cachedPatchEntries ??= List<VibePatchEntryDelta>.unmodifiable(
+              _patchEntries,
+            )),
       partialRepositoriesPatch: _repositoriesRevision == 0
           ? null
           : (_cachedPartialRepositoriesPatch ??=
@@ -664,7 +743,19 @@ class VibeIncrementalStreamParser {
       _rootPatchEntries[capture.entryKey] = decoded;
     }
     _patchRevision++;
+    if (capture.section != 'usages') {
+      _nonUsagesPatchRevision++;
+    }
+    _patchEntries.add(
+      VibePatchEntryDelta(
+        revision: _patchRevision,
+        section: capture.section,
+        key: capture.entryKey,
+        value: decoded,
+      ),
+    );
     _cachedPartialPatch = null;
+    _cachedPatchEntries = null;
   }
 
   void _startValue(_ContainerFrame parent, int cu) {
