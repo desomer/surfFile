@@ -18,9 +18,10 @@ import '../design/contract_entry_view.dart'
 import '../workspace/markdown_viewer_dialog.dart';
 import 'build_tech_stacks_dialog.dart';
 
-/// Vue « Sélection des Prompts IA » regroupant par élément sélectionné :
-/// - pour un **Modèle** : 3 prompts (`Implémentation`, `Tests unitaires`, `Persistance`),
-/// - pour un **Use Case** ou une **Saga** : 2 prompts (`Implémentation`, `Tests unitaires`).
+/// Vue « Sélection des Prompts IA » regroupant :
+/// - pour chaque **Modèle** sélectionné : 4 prompts (`Domain Impl/TU`, `Persistance Impl/TU`),
+/// - pour chaque **Use Case** ou **Saga** sélectionné : 2 prompts (`UseCase / Saga Impl/TU`),
+/// - en bas de la liste (sans rattachement) : les groupes autonomes **Outbound** et **Inbound** (`Impl/TU`).
 class BuildPromptsSelectionView extends StatefulWidget {
   /// Crée la vue de sélection et copie des prompts IA.
   const BuildPromptsSelectionView({
@@ -81,11 +82,14 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   final Set<String> _collapsedGroupKeys = <String>{};
   final Set<String> _expandedPromptIds = <String>{};
   BuildHexaPromptRole? _roleFilter;
-
-  String _groupKey(BuildDesignItem item) => '${item.kind.name}:${item.id}';
+  BuildTechStackSection? _sectionFilter;
 
   bool _isPromptSelected(BuildHexaPromptSpec prompt) =>
       !_deselectedPromptIds.contains(prompt.id);
+
+  bool _matchesFilters(BuildHexaPromptSpec prompt) =>
+      (_roleFilter == null || prompt.role == _roleFilter) &&
+      (_sectionFilter == null || prompt.section == _sectionFilter);
 
   List<BuildHexaPromptSpec> get _allPrompts => <BuildHexaPromptSpec>[
     for (final group in widget.groups) ...group.prompts,
@@ -94,14 +98,18 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   List<BuildHexaPromptSpec> get _selectedPrompts => <BuildHexaPromptSpec>[
     for (final group in widget.groups)
       for (final prompt in group.prompts)
-        if (_isPromptSelected(prompt) &&
-            (_roleFilter == null || prompt.role == _roleFilter))
-          prompt,
+        if (_isPromptSelected(prompt) && _matchesFilters(prompt)) prompt,
   ];
 
-  bool get _hasAnyPersistencePrompt => widget.groups.any(
-    (g) => g.prompts.any((p) => p.role == BuildHexaPromptRole.persistence),
-  );
+  List<BuildTechStackSection> get _availableSections {
+    final present = {
+      for (final p in _allPrompts) p.section,
+    };
+    return <BuildTechStackSection>[
+      for (final section in BuildTechStackSection.values)
+        if (present.contains(section)) section,
+    ];
+  }
 
   void _togglePromptSelection(String promptId) {
     setState(() {
@@ -114,7 +122,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   void _selectAllVisible() {
     setState(() {
       for (final prompt in _allPrompts) {
-        if (_roleFilter == null || prompt.role == _roleFilter) {
+        if (_matchesFilters(prompt)) {
           _deselectedPromptIds.remove(prompt.id);
         }
       }
@@ -124,15 +132,15 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   void _clearAllVisible() {
     setState(() {
       for (final prompt in _allPrompts) {
-        if (_roleFilter == null || prompt.role == _roleFilter) {
+        if (_matchesFilters(prompt)) {
           _deselectedPromptIds.add(prompt.id);
         }
       }
     });
   }
 
-  void _toggleGroupCollapsed(BuildDesignItem item) {
-    final key = _groupKey(item);
+  void _toggleGroupCollapsed(BuildItemPromptGroup group) {
+    final key = group.groupId;
     setState(() {
       if (!_collapsedGroupKeys.remove(key)) {
         _collapsedGroupKeys.add(key);
@@ -226,11 +234,8 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
 
     final allPrompts = _allPrompts;
     final selectedPrompts = _selectedPrompts;
-    final availableRoles = <BuildHexaPromptRole>[
-      BuildHexaPromptRole.implementation,
-      BuildHexaPromptRole.unitTest,
-      if (_hasAnyPersistencePrompt) BuildHexaPromptRole.persistence,
-    ];
+    final availableRoles = BuildHexaPromptRole.values;
+    final availableSections = _availableSections;
 
     return Column(
       key: const ValueKey('build-prompts-selection-page'),
@@ -243,7 +248,51 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
           allPromptsCount: allPrompts.length,
           selectedPrompts: selectedPrompts,
           availableRoles: availableRoles,
+          availableSections: availableSections,
         ),
+        if (widget.selectedTechStackId == null &&
+            widget.techStacks.isNotEmpty &&
+            widget.onTechStackChanged != null)
+          Container(
+            key: const ValueKey('build-prompts-no-stack-banner'),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: colors.tertiaryContainer.withValues(alpha: 0.45),
+              border: Border(
+                bottom: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: 0.65),
+                ),
+              ),
+            ),
+            child: Row(
+              spacing: 12,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: colors.onTertiaryContainer,
+                ),
+                Expanded(
+                  child: Text(
+                    'Aucune stack technique affectée au domaine « ${widget.domain.name} » : les contraintes et dossiers de stack ne sont pas ajoutés en fin de prompt.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey('build-prompts-apply-default-stack-btn'),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () =>
+                      widget.onTechStackChanged!(widget.techStacks.first.id),
+                  icon: const Icon(Icons.layers_rounded, size: 15),
+                  label: Text('Appliquer ${widget.techStacks.first.name}'),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
@@ -253,14 +302,12 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
               final group = widget.groups[index];
               final visiblePrompts = <BuildHexaPromptSpec>[
                 for (final p in group.prompts)
-                  if (_roleFilter == null || p.role == _roleFilter) p,
+                  if (_matchesFilters(p)) p,
               ];
               if (visiblePrompts.isEmpty) {
                 return const SizedBox.shrink();
               }
-              final collapsed = _collapsedGroupKeys.contains(
-                _groupKey(group.item),
-              );
+              final collapsed = _collapsedGroupKeys.contains(group.groupId);
               final selectedInGroup = visiblePrompts
                   .where(_isPromptSelected)
                   .toList(growable: false);
@@ -272,11 +319,11 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
                 collapsed: collapsed,
                 isPromptSelected: _isPromptSelected,
                 isPromptExpanded: _expandedPromptIds.contains,
-                onToggleCollapsed: () => _toggleGroupCollapsed(group.item),
+                onToggleCollapsed: () => _toggleGroupCollapsed(group),
                 onTogglePromptSelected: _togglePromptSelection,
                 onTogglePromptExpanded: _togglePromptExpanded,
-                onStageTap: widget.onStageTap != null
-                    ? (stage) => widget.onStageTap!(group.item, stage)
+                onStageTap: widget.onStageTap != null && group.item != null
+                    ? (stage) => widget.onStageTap!(group.item!, stage)
                     : null,
                 onCopyGroup: selectedInGroup.isEmpty
                     ? null
@@ -289,7 +336,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
                                 prompts: selectedInGroup,
                               ),
                           feedbackMessage:
-                              '${selectedInGroup.length} prompt(s) de « ${group.item.name} » copié(s)',
+                              '${selectedInGroup.length} prompt(s) de « ${group.groupTitle} » copié(s)',
                         ),
                       ),
                 onCopyPrompt: (prompt) => unawaited(
@@ -304,7 +351,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
                   markdown: prompt.promptMarkdown,
                   title: prompt.title,
                   filenameStem:
-                      'prompt_${widget.domain.domainCode}_${group.item.name}_${prompt.role.name}',
+                      'prompt_${widget.domain.domainCode}_${group.groupTitle}_${prompt.section.name}_${prompt.role.name}',
                 ),
               );
             },
@@ -321,6 +368,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
     required int allPromptsCount,
     required List<BuildHexaPromptSpec> selectedPrompts,
     required List<BuildHexaPromptRole> availableRoles,
+    required List<BuildTechStackSection> availableSections,
   }) {
     return Container(
       key: const ValueKey('build-prompts-toolbar'),
@@ -344,7 +392,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
             children: [
               Icon(Icons.terminal_rounded, size: 18, color: colors.primary),
               Text(
-                '${selectedPrompts.length} / $allPromptsCount prompt(s) · ${widget.groups.length} élément(s)',
+                '${selectedPrompts.length} / $allPromptsCount prompt(s) · ${widget.groups.length} groupe(s)',
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -368,6 +416,17 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
               onSelected: (selected) =>
                   setState(() => _roleFilter = selected ? role : null),
             ),
+          if (availableSections.length > 1)
+            for (final section in availableSections)
+              ChoiceChip(
+                key: ValueKey('build-prompts-section-filter-${section.name}'),
+                avatar: Icon(_iconForSection(section), size: 14),
+                label: Text(section.label),
+                selected: _sectionFilter == section,
+                visualDensity: VisualDensity.compact,
+                onSelected: (selected) =>
+                    setState(() => _sectionFilter = selected ? section : null),
+              ),
           if (widget.onTechStackChanged != null)
             DomainTechStackSelector(
               dropdownKey: const ValueKey('build-prompts-stack-selector'),
@@ -472,10 +531,13 @@ class _BuildPromptGroupCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final item = group.item;
-    final (badgeBg, badgeFg) = _itemBadgeColors(item, colors);
+    final (badgeBg, badgeFg) = _groupBadgeColors(group, colors);
+    final keySlug = item != null
+        ? '${item.kind.name}-${item.id}'
+        : 'standalone-${group.standaloneSection!.name}';
 
     return Container(
-      key: ValueKey('build-prompt-group-${item.kind.name}-${item.id}'),
+      key: ValueKey('build-prompt-group-$keySlug'),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
@@ -490,9 +552,7 @@ class _BuildPromptGroupCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: InkWell(
-                    key: ValueKey(
-                      'build-prompt-group-toggle-${item.kind.name}-${item.id}',
-                    ),
+                    key: ValueKey('build-prompt-group-toggle-$keySlug'),
                     borderRadius: BorderRadius.circular(10),
                     onTap: onToggleCollapsed,
                     child: Padding(
@@ -514,7 +574,9 @@ class _BuildPromptGroupCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Icon(
-                            _iconForItemKind(item.kind),
+                            item != null
+                                ? _iconForItemKind(item.kind)
+                                : _iconForSection(group.standaloneSection!),
                             size: 20,
                             color: colors.primary,
                           ),
@@ -526,25 +588,25 @@ class _BuildPromptGroupCard extends StatelessWidget {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 _GroupPill(
-                                  label: item.kind.shortLabel,
+                                  label: group.kindLabel,
                                   background: colors.primaryContainer,
                                   foreground: colors.onPrimaryContainer,
                                 ),
-                                if (item.primaryBadge.isNotEmpty)
+                                if (group.primaryBadge.isNotEmpty)
                                   _GroupPill(
-                                    label: item.primaryBadge,
+                                    label: group.primaryBadge,
                                     background: badgeBg,
                                     foreground: badgeFg,
                                   ),
                                 Text(
-                                  item.name,
+                                  group.groupTitle,
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                if (item.subtitle.isNotEmpty)
+                                if (group.groupSubtitle.isNotEmpty)
                                   Text(
-                                    '— ${item.subtitle}',
+                                    '— ${group.groupSubtitle}',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: colors.onSurfaceVariant,
                                     ),
@@ -564,18 +626,17 @@ class _BuildPromptGroupCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                ContractPhaseStatusStrip(
-                  keyPrefix:
-                      'build-prompt-group-phase-${item.kind.name}-${item.id}',
-                  states: item.states,
-                  iconSize: 15,
-                  onStageTap: onStageTap,
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  key: ValueKey(
-                    'build-prompt-group-copy-${item.kind.name}-${item.id}',
+                if (item != null) ...[
+                  ContractPhaseStatusStrip(
+                    keyPrefix: 'build-prompt-group-phase-$keySlug',
+                    states: item.states,
+                    iconSize: 15,
+                    onStageTap: onStageTap,
                   ),
+                  const SizedBox(width: 8),
+                ],
+                TextButton.icon(
+                  key: ValueKey('build-prompt-group-copy-$keySlug'),
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                   ),
@@ -618,10 +679,24 @@ class _BuildPromptGroupCard extends StatelessWidget {
     );
   }
 
-  static (Color, Color) _itemBadgeColors(
-    BuildDesignItem item,
+  static (Color, Color) _groupBadgeColors(
+    BuildItemPromptGroup group,
     ColorScheme colors,
   ) {
+    final item = group.item;
+    if (item == null) {
+      return switch (group.standaloneSection) {
+        BuildTechStackSection.outbound => (
+          colors.tertiaryContainer,
+          colors.onTertiaryContainer,
+        ),
+        BuildTechStackSection.inbound => (
+          colors.secondaryContainer,
+          colors.onSecondaryContainer,
+        ),
+        _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
+      };
+    }
     switch (item.kind) {
       case BuildDesignItemKind.model:
         final base = contractTypeColor(item.primaryBadge);
@@ -658,6 +733,7 @@ class _BuildPromptTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final (roleBg, roleFg) = _roleBadgeColors(prompt.role, colors);
+    final (sectionBg, sectionFg) = _sectionBadgeColors(prompt.section, colors);
 
     return Container(
       key: ValueKey('build-prompt-card-${prompt.id}'),
@@ -704,6 +780,12 @@ class _BuildPromptTile extends StatelessWidget {
                             runSpacing: 4,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
+                              _GroupPill(
+                                label: prompt.section.label,
+                                background: sectionBg,
+                                foreground: sectionFg,
+                                icon: _iconForSection(prompt.section),
+                              ),
                               _GroupPill(
                                 label: prompt.role.label,
                                 background: roleBg,
@@ -796,7 +878,29 @@ class _BuildPromptTile extends StatelessWidget {
       Colors.teal.withValues(alpha: 0.15),
       Colors.teal.shade700,
     ),
-    BuildHexaPromptRole.persistence => (
+  };
+
+  static (Color, Color) _sectionBadgeColors(
+    BuildTechStackSection section,
+    ColorScheme colors,
+  ) => switch (section) {
+    BuildTechStackSection.domain => (
+      colors.primaryContainer,
+      colors.onPrimaryContainer,
+    ),
+    BuildTechStackSection.useCaseSaga => (
+      colors.secondaryContainer,
+      colors.onSecondaryContainer,
+    ),
+    BuildTechStackSection.outbound => (
+      Colors.amber.withValues(alpha: 0.18),
+      Colors.amber.shade900,
+    ),
+    BuildTechStackSection.inbound => (
+      Colors.purple.withValues(alpha: 0.14),
+      Colors.purple.shade800,
+    ),
+    BuildTechStackSection.persistence => (
       Colors.deepOrange.withValues(alpha: 0.14),
       Colors.deepOrange.shade800,
     ),
@@ -849,8 +953,15 @@ IconData _iconForItemKind(BuildDesignItemKind kind) => switch (kind) {
   BuildDesignItemKind.saga => Icons.account_tree_outlined,
 };
 
+IconData _iconForSection(BuildTechStackSection section) => switch (section) {
+  BuildTechStackSection.domain => Icons.data_object_rounded,
+  BuildTechStackSection.useCaseSaga => Icons.account_tree_outlined,
+  BuildTechStackSection.outbound => Icons.call_made_rounded,
+  BuildTechStackSection.inbound => Icons.call_received_rounded,
+  BuildTechStackSection.persistence => Icons.storage_rounded,
+};
+
 IconData _iconForRole(BuildHexaPromptRole role) => switch (role) {
-  BuildHexaPromptRole.implementation => Icons.layers_outlined,
+  BuildHexaPromptRole.implementation => Icons.code_rounded,
   BuildHexaPromptRole.unitTest => Icons.science_outlined,
-  BuildHexaPromptRole.persistence => Icons.storage_rounded,
 };

@@ -149,51 +149,74 @@ abstract final class PromptMarkdownSections {
   }
 
   /// Ajoute en fin de prompt la section d'extension de la stack technique,
-  /// de la structure des dossiers cible et des consignes spécifiques au rôle.
+  /// de la structure des dossiers cible, des consignes spécifiques à la partie
+  /// et au sous-rôle, puis la section globale **Documentation IA** tout à la fin.
   static void writeTechStackExtensionSection(
     StringBuffer buf, {
     required FunctionalDomain domain,
+    required BuildTechStackSection section,
     required BuildHexaPromptRole role,
     required BuildTechStackProfile? techStack,
   }) {
-    if (techStack == null || !techStack.hasExtensionContentForRole(role.name)) {
+    if (techStack == null) return;
+    final subRole = role.toStackSubRole;
+    if (!techStack.hasExtensionContentFor(section, subRole)) {
       return;
     }
 
-    final stackText = techStack.technicalStack.trim();
-    final foldersText = techStack.resolveFolderStructure(
+    final stackText = BuildTechStackProfile.resolvePlaceholders(
+      techStack.technicalStack.trim(),
       domain.domainCode,
-      roleName: role.name,
     );
-    final roleExt = techStack.roleExtensionForName(role.name);
+    final foldersText = techStack.resolveFolderStructureFor(
+      domain.domainCode,
+      section: section,
+      subRole: subRole,
+    );
+    final roleExt = BuildTechStackProfile.resolvePlaceholders(
+      techStack.extensionFor(section, subRole),
+      domain.domainCode,
+    );
+    final aiDocText = techStack.resolveAiDocumentation(domain.domainCode);
 
-    buf
-      ..writeln()
-      ..writeln(
-        '## Extension Stack Technique & Structure des Dossiers (${techStack.name})',
-      );
-
-    if (stackText.isNotEmpty) {
+    if (stackText.isNotEmpty || foldersText.isNotEmpty || roleExt.isNotEmpty) {
       buf
         ..writeln()
-        ..writeln('### Stack technique')
-        ..writeln(stackText);
+        ..writeln(
+          '## Extension Stack Technique & Structure des Dossiers (${techStack.name})',
+        );
+
+      if (stackText.isNotEmpty) {
+        buf
+          ..writeln()
+          ..writeln('### Stack technique')
+          ..writeln(stackText);
+      }
+
+      if (foldersText.isNotEmpty) {
+        buf
+          ..writeln()
+          ..writeln('### Structure des dossiers cible')
+          ..writeln('```text')
+          ..writeln(foldersText)
+          ..writeln('```');
+      }
+
+      if (roleExt.isNotEmpty) {
+        buf
+          ..writeln()
+          ..writeln(
+            '### Consignes spécifiques — ${section.label} (${subRole.label})',
+          )
+          ..writeln(roleExt);
+      }
     }
 
-    if (foldersText.isNotEmpty) {
+    if (aiDocText.isNotEmpty) {
       buf
         ..writeln()
-        ..writeln('### Structure des dossiers cible')
-        ..writeln('```text')
-        ..writeln(foldersText)
-        ..writeln('```');
-    }
-
-    if (roleExt.isNotEmpty) {
-      buf
-        ..writeln()
-        ..writeln('### Consignes spécifiques — ${role.label}')
-        ..writeln(roleExt);
+        ..writeln('## Documentation IA')
+        ..writeln(aiDocText);
     }
   }
 }

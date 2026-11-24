@@ -428,7 +428,7 @@ void main() {
       );
     });
 
-    test('BuildHexaPromptGenerator génère 3 prompts pour un Modèle (impl + test + persistance) et 2 pour Use Case / Saga', () {
+    test('BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2+2 autonomes Outbound / Inbound', () {
       final domain = _buildBillingDomain();
       final projection = BuildDomainDesignItems.fromDomain(domain);
       final invoiceItem = projection.models.firstWhere(
@@ -458,11 +458,15 @@ void main() {
         catalog: catalog,
       );
 
-      expect(groups, hasLength(3));
+      expect(groups, hasLength(5));
+      expect(groups[3].standaloneSection, BuildTechStackSection.outbound);
+      expect(groups[3].item, isNull);
+      expect(groups[4].standaloneSection, BuildTechStackSection.inbound);
+      expect(groups[4].item, isNull);
 
-      // Vérifie la validité YAML et le schéma d'en-tête sur les 7 variantes de prompts.
+      // Vérifie la validité YAML et le schéma d'en-tête sur les 12 variantes de prompts.
       final allGenerated = groups.expand((g) => g.prompts).toList();
-      expect(allGenerated, hasLength(7));
+      expect(allGenerated, hasLength(12));
       expect(
         allGenerated.map((p) {
           final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -488,11 +492,16 @@ void main() {
         equals(const <String>[
           'model-implementation@1.2.0',
           'model-unit-test@1.2.0',
-          'model-persistence@1.2.0',
+          'model-persistence-implementation@1.2.0',
+          'model-persistence-unit-test@1.2.0',
           'usecase-implementation@2.1.0',
           'usecase-unit-test@2.1.0',
           'saga-implementation@0.4.2',
           'saga-unit-test@0.4.2',
+          'outbound-implementation@1.0.0',
+          'outbound-unit-test@1.0.0',
+          'inbound-implementation@1.0.0',
+          'inbound-unit-test@1.0.0',
         ]),
       );
 
@@ -501,7 +510,7 @@ void main() {
           groups[0].prompts[2].promptMarkdown,
         )!,
       ) as YamlMap;
-      expect(persistenceYaml['name'], 'invoice-persistence');
+      expect(persistenceYaml['name'], 'invoice-persistence-implementation');
       expect(persistenceYaml['generation']['layer'], 'infrastructure');
       expect(
         persistenceYaml['generation']['repositoryPort'],
@@ -517,14 +526,18 @@ void main() {
         ];
       }
 
-      // Modèle : Implémentation + Tests unitaires + Persistance intègrent tous le JSON Schema
+      // Modèle : Domain (Impl + TU) + Persistance (Impl + TU) intègrent tous le JSON Schema
       // Draft 2020-12 avec résolution des références (MoneyAmount), sans puces texte.
       expect(
-        groups[0].prompts.map((p) => p.role),
-        equals(const <BuildHexaPromptRole>[
-          BuildHexaPromptRole.implementation,
-          BuildHexaPromptRole.unitTest,
-          BuildHexaPromptRole.persistence,
+        groups[0].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.domain, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.domain, BuildHexaPromptRole.unitTest),
+          (
+            BuildTechStackSection.persistence,
+            BuildHexaPromptRole.implementation,
+          ),
+          (BuildTechStackSection.persistence, BuildHexaPromptRole.unitTest),
         ]),
       );
       for (final modelPrompt in groups[0].prompts) {
@@ -573,6 +586,10 @@ void main() {
           contains('Verrouillage optimiste'),
           contains('Suppression logique'),
         ),
+      );
+      expect(
+        groups[0].prompts[3].promptMarkdown,
+        allOf(contains('Tests Unitaires Persistance'), contains('InvoiceRepository')),
       );
 
       // Use Case : Implémentation contient les JSON Schemas stricts Input & Output + Tests unitaires.
@@ -655,13 +672,37 @@ void main() {
       );
       expect(groups[2].prompts[1].promptMarkdown, contains('PaymentRejected'));
 
+      // Outbound & Inbound (autonomes en fin de liste).
+      expect(
+        groups[3].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.outbound, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.outbound, BuildHexaPromptRole.unitTest),
+        ]),
+      );
+      expect(
+        groups[3].prompts[0].promptMarkdown,
+        contains('InvoiceIssuedEvent'),
+      );
+      expect(
+        groups[4].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.inbound, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.inbound, BuildHexaPromptRole.unitTest),
+        ]),
+      );
+      expect(
+        groups[4].prompts[0].promptMarkdown,
+        allOf(contains('IssueInvoiceUseCase'), contains('CreateInvoiceRequest')),
+      );
+
       final combined = BuildHexaPromptGenerator.combinePromptsMarkdown(
         domain: domain,
         prompts: groups.expand((g) => g.prompts),
       );
-      expect(combined, contains('7 prompts'));
-      expect(combined, contains('Étape 1/7'));
-      expect(combined, contains('Étape 7/7'));
+      expect(combined, contains('12 prompts'));
+      expect(combined, contains('Étape 1/12'));
+      expect(combined, contains('Étape 12/12'));
     });
   });
 
@@ -882,28 +923,43 @@ void main() {
         findsOneWidget,
       );
 
-      // Regroupement par élément sélectionné : 3 prompts pour Invoice, 2 pour IssueInvoice, 2 pour Saga = 7 prompts.
-      expect(find.text('7 / 7 prompt(s) · 3 élément(s)'), findsOneWidget);
+      // Regroupement par élément sélectionné : 4 prompts pour Invoice, 2 pour IssueInvoice,
+      // 2 pour Saga + 2 Outbound + 2 Inbound autonomes en bas = 12 prompts.
+      expect(find.text('12 / 12 prompt(s) · 5 groupe(s)'), findsOneWidget);
       expect(
         find.byKey(
-          ValueKey('build-prompt-card-model:$invoiceNodeId:implementation'),
+          ValueKey(
+            'build-prompt-card-model:$invoiceNodeId:domain:implementation',
+          ),
         ),
         findsOneWidget,
       );
       expect(
-        find.byKey(ValueKey('build-prompt-card-model:$invoiceNodeId:unitTest')),
+        find.byKey(
+          ValueKey('build-prompt-card-model:$invoiceNodeId:domain:unitTest'),
+        ),
         findsOneWidget,
       );
       expect(
         find.byKey(
-          ValueKey('build-prompt-card-model:$invoiceNodeId:persistence'),
+          ValueKey(
+            'build-prompt-card-model:$invoiceNodeId:persistence:implementation',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          ValueKey(
+            'build-prompt-card-model:$invoiceNodeId:persistence:unitTest',
+          ),
         ),
         findsOneWidget,
       );
       expect(
         find.byKey(
           const ValueKey(
-            'build-prompt-card-useCase:uc_issue_invoice:persistence',
+            'build-prompt-card-useCase:uc_issue_invoice:persistence:implementation',
           ),
         ),
         findsNothing,
@@ -911,29 +967,55 @@ void main() {
       expect(
         find.byKey(
           const ValueKey(
-            'build-prompt-card-saga:saga_invoice_settlement:persistence',
+            'build-prompt-card-saga:saga_invoice_settlement:persistence:implementation',
           ),
         ),
         findsNothing,
       );
 
-      // Décoche 1 prompt puis copie les 6 prompts sélectionnés.
+      // Décoche 1 prompt puis copie les 11 prompts sélectionnés.
       await tester.tap(
         find.byKey(
-          ValueKey('build-prompt-check-model:$invoiceNodeId:unitTest'),
+          ValueKey('build-prompt-check-model:$invoiceNodeId:domain:unitTest'),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('6 / 7 prompt(s) · 3 élément(s)'), findsOneWidget);
+      expect(find.text('11 / 12 prompt(s) · 5 groupe(s)'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('6 prompt(s) copié(s)'), findsOneWidget);
+      expect(find.text('11 prompt(s) copié(s)'), findsOneWidget);
       expect(lastClipboardText, isNotNull);
-      expect(lastClipboardText, contains('6 prompts'));
+      expect(lastClipboardText, contains('11 prompts'));
       expect(lastClipboardText, contains('InvoiceRepository'));
+
+      // Vérifie les groupes autonomes Outbound et Inbound en bas de la liste.
+      final promptsScrollable = find.descendant(
+        of: find.byKey(const ValueKey('build-prompts-selection-page')),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('build-prompt-group-standalone-outbound')),
+        400,
+        scrollable: promptsScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('build-prompt-group-standalone-outbound')),
+        findsOneWidget,
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('build-prompt-group-standalone-inbound')),
+        400,
+        scrollable: promptsScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('build-prompt-group-standalone-inbound')),
+        findsOneWidget,
+      );
 
       // Retour au niveau 0 via le segment parent du fil d'Ariane -> conserve la sélection (3).
       await tester.tap(find.byKey(const ValueKey('build-items-crumb')));
@@ -977,7 +1059,7 @@ void main() {
     );
 
     final allPrompts = groups.expand((g) => g.prompts).toList();
-    expect(allPrompts, hasLength(7));
+    expect(allPrompts, hasLength(12));
 
     for (final prompt in allPrompts) {
       final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -998,33 +1080,89 @@ void main() {
         prompt.promptMarkdown,
         contains('### Structure des dossiers cible'),
       );
-      expect(prompt.promptMarkdown, contains('└── billing/'));
+      expect(prompt.promptMarkdown, contains('billing'));
       expect(prompt.promptMarkdown, isNot(contains('{{domain}}')));
+      expect(prompt.promptMarkdown, isNot(contains('{{module}}')));
       expect(
         prompt.promptMarkdown,
-        contains('### Consignes spécifiques — ${prompt.role.label}'),
+        contains(
+          '### Consignes spécifiques — ${prompt.section.label} (${prompt.role.label})',
+        ),
       );
-      switch (prompt.role) {
-        case BuildHexaPromptRole.implementation:
-          expect(prompt.promptMarkdown, contains('src/\n└── billing/'));
-          expect(prompt.promptMarkdown, isNot(contains('├── entities/')));
-        case BuildHexaPromptRole.unitTest:
-          expect(prompt.promptMarkdown, contains('test/\n└── billing/'));
-          expect(prompt.promptMarkdown, isNot(contains('src/\n└── billing/')));
-        case BuildHexaPromptRole.persistence:
-          expect(prompt.promptMarkdown, contains('├── entities/'));
-          expect(prompt.promptMarkdown, contains('└── infrastructure/'));
+
+      // La section Documentation IA doit être présente tout à la fin de chaque prompt.
+      final extIdx = prompt.promptMarkdown.indexOf(
+        '## Extension Stack Technique & Structure des Dossiers',
+      );
+      final docIdx = prompt.promptMarkdown.indexOf('## Documentation IA');
+      expect(docIdx, greaterThan(extIdx));
+      expect(
+        prompt.promptMarkdown,
+        allOf(
+          contains('## Mise à jour obligatoire de la documentation IA du projet'),
+          contains('du module `billing`'),
+        ),
+      );
+
+      switch ((prompt.section, prompt.role)) {
+        case (BuildTechStackSection.domain, BuildHexaPromptRole.implementation):
+          expect(
+            prompt.promptMarkdown,
+            contains('src/\n└── core/                # Domaine pur (DDD)\n    └── billing/'),
+          );
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('# Contraintes techniques :'),
+              contains('# MODE STRICT - CONTRAINTES BLOQUANTES'),
+              contains('src/core/billing/'),
+              contains('Neverthrow'),
+            ),
+          );
+        case (BuildTechStackSection.domain, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('test/\n└── billing/\n    └── domain/'));
+        case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.implementation):
+          expect(prompt.promptMarkdown, contains('src/\n└── application/\n    └── billing/'));
+        case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('test/\n└── billing/\n    └── application/'));
+        case (BuildTechStackSection.outbound, BuildHexaPromptRole.implementation):
+          expect(prompt.promptMarkdown, contains('└── outbound/'));
+        case (BuildTechStackSection.outbound, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('└── outbound/'));
+        case (BuildTechStackSection.inbound, BuildHexaPromptRole.implementation):
+          expect(prompt.promptMarkdown, contains('└── inbound/'));
+        case (BuildTechStackSection.inbound, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('└── inbound/'));
+        case (BuildTechStackSection.persistence, BuildHexaPromptRole.implementation):
+          expect(
+            prompt.promptMarkdown,
+            contains('src/\n└── infrastructure/\n    └── billing/'),
+          );
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('billing.module.ts'),
+              contains('SCHÉMA MONGOOSE & INDEXATION'),
+              contains('core/billing/ports/repositories'),
+              contains('src/infrastructure/billing/outbound/persistence/repositories/'),
+              contains('error.code === 11000'),
+              contains('@collaborators'),
+            ),
+          );
+        case (BuildTechStackSection.persistence, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('└── persistence/'));
       }
     }
 
-    // Sans stack affectée au domaine, aucune section d'extension ni generation.stack.
+    // Sans stack affectée au domaine, aucune section d'extension, aucune Documentation IA ni generation.stack.
     final withoutStack = _buildBillingDomain();
     final noStackGroups = BuildHexaPromptGenerator.generateGroups(
       domain: withoutStack,
       selectedItems: <BuildDesignItem>[invoiceItem],
       catalog: DomainCatalog(domains: <FunctionalDomain>[withoutStack]),
     );
-    final noStackPrompt = noStackGroups.single.prompts.first;
+    expect(noStackGroups, hasLength(3));
+    final noStackPrompt = noStackGroups.first.prompts.first;
     final noStackYaml = loadYaml(
       BuildHexaPromptGenerator.extractYamlHeader(noStackPrompt.promptMarkdown)!,
     ) as YamlMap;
@@ -1032,6 +1170,10 @@ void main() {
     expect(
       noStackPrompt.promptMarkdown,
       isNot(contains('## Extension Stack Technique & Structure des Dossiers')),
+    );
+    expect(
+      noStackPrompt.promptMarkdown,
+      isNot(contains('## Documentation IA')),
     );
   });
 
@@ -1100,30 +1242,69 @@ void main() {
         find.byKey(const ValueKey('tech-stack-technical-field')),
         '- Java 21 · Spring Boot 3 · JPA · JUnit 5',
       );
+      await tester.enterText(
+        find.byKey(const ValueKey('tech-stack-ai-documentation-field')),
+        '- Mettre à jour `docs/architecture.md` pour `{{domain}}`.',
+      );
 
-      // Onglet Implémentation : structure des dossiers et consignes dédiées.
+      // Onglet Domain (renommé depuis Implémentation) -> sous-onglet Implémentation.
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-domain')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-useCaseSaga')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-outbound')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-inbound')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-persistence')),
+        findsOneWidget,
+      );
+
       await tester.tap(
-        find.byKey(const ValueKey('tech-stack-tab-implementation')),
+        find.byKey(const ValueKey('tech-stack-tab-useCaseSaga')),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('tech-stack-folders-implementation-field')),
-        'src/main/java/com/acme/{{domain}}/domain/',
+        find.byKey(
+          const ValueKey(
+            'tech-stack-folders-useCaseSaga-implementation-field',
+          ),
+        ),
+        'src/main/java/com/acme/{{domain}}/application/',
       );
       await tester.enterText(
-        find.byKey(const ValueKey('tech-stack-ext-implementation-field')),
-        '- Utilise des records Java pour les Value Objects.',
+        find.byKey(
+          const ValueKey('tech-stack-ext-useCaseSaga-implementation-field'),
+        ),
+        '- Utilise des records Java pour les Commands/Queries.',
       );
 
-      // Onglet Tests unitaires : structure des dossiers dédiée aux tests.
-      await tester.tap(find.byKey(const ValueKey('tech-stack-tab-unitTest')));
+      // Sous-onglet Test unitaire sous UseCase / Saga.
+      await tester.tap(
+        find.byKey(
+          const ValueKey('tech-stack-subtab-useCaseSaga-unitTest'),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('tech-stack-folders-unitTest-field')),
+        find.byKey(
+          const ValueKey('tech-stack-folders-useCaseSaga-unitTest-field'),
+        ),
         'src/test/java/com/acme/{{domain}}/application/',
       );
       await tester.enterText(
-        find.byKey(const ValueKey('tech-stack-ext-unit-test-field')),
+        find.byKey(
+          const ValueKey('tech-stack-ext-useCaseSaga-unitTest-field'),
+        ),
         '- Utilise JUnit 5 avec fakes en mémoire.',
       );
 
@@ -1174,7 +1355,7 @@ void main() {
       );
       expect(
         lastClipboardText,
-        contains('src/main/java/com/acme/billing/domain/'),
+        contains('src/main/java/com/acme/billing/application/'),
       );
       expect(
         lastClipboardText,
@@ -1182,11 +1363,98 @@ void main() {
       );
       expect(
         lastClipboardText,
-        contains('Utilise des records Java pour les Value Objects.'),
+        contains('Utilise des records Java pour les Commands/Queries.'),
       );
       expect(
         lastClipboardText,
         contains('Utilise JUnit 5 avec fakes en mémoire.'),
+      );
+      expect(
+        lastClipboardText,
+        contains('## Documentation IA'),
+      );
+      expect(
+        lastClipboardText,
+        contains('Mettre à jour `docs/architecture.md` pour `billing`.'),
+      );
+    },
+  );
+
+  testWidgets(
+    'Build : bannière 1-clic sur domaine sans stack et affectation par défaut à la création',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final billing = _buildBillingDomain();
+      final controller = _createController(
+        DomainCatalog(domains: <FunctionalDomain>[billing]),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      // Un nouveau domaine créé via le contrôleur reçoit automatiquement la stack par défaut.
+      final created = await controller.createFunctionalDomain(
+        domainCode: 'orders',
+        name: 'Commandes',
+      );
+      expect(created.techStackId, BuildTechStackProfile.defaultTsNestJsId);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Build'));
+      await tester.pumpAndSettle();
+
+      // Sélectionne un item de Facturation (encore sans stack) puis ouvre Prompts IA.
+      await tester.tap(
+        find.byKey(const ValueKey('build-item-useCase-uc_issue_invoice')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('build-next-prompts-btn')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('build-prompts-no-stack-banner')),
+        findsOneWidget,
+      );
+
+      // Un clic applique la stack par défaut et injecte immédiatement la section en fin de prompt.
+      await tester.tap(
+        find.byKey(const ValueKey('build-prompts-apply-default-stack-btn')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('build-prompts-no-stack-banner')),
+        findsNothing,
+      );
+      final updatedBilling = controller.domainCatalog.domains.firstWhere(
+        (d) => d.id == 'dom_billing',
+      );
+      expect(
+        updatedBilling.techStackId,
+        BuildTechStackProfile.defaultTsNestJsId,
+      );
+
+      // Ouvre le prompt d'implémentation pour vérifier la section injectée en fin de prompt.
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'build-prompt-expand-useCase:uc_issue_invoice:useCaseSaga:implementation',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('## Extension Stack Technique & Structure des Dossiers'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('## Documentation IA'),
+        findsOneWidget,
       );
     },
   );

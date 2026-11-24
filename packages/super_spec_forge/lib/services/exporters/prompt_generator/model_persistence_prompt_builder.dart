@@ -27,17 +27,19 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
   final portName = ctx.portName;
 
   const summary =
-      'Port sortant Repository, entité de persistance dédiée, mapper Domain ↔ Infra, concurrence et tests de persistance.';
-  final title = '${item.name} — Persistance (Port & Adaptateur)';
+      'Port sortant Repository, entité/schéma de persistance dédié, mapper Domain ↔ Infra et adaptateur.';
+  final title = '${item.name} — Persistance (Implémentation)';
 
   final header = PromptYamlHeaderBuilder.buildFencedYamlHeader(
     kind: PromptYamlHeaderBuilder.kindFor(
       BuildDesignItemKind.model,
-      BuildHexaPromptRole.persistence,
+      BuildTechStackSection.persistence,
+      BuildHexaPromptRole.implementation,
     ),
     name: PromptYamlHeaderBuilder.buildPromptSlug(
       objectSpec.technicalName,
-      BuildHexaPromptRole.persistence,
+      BuildHexaPromptRole.implementation,
+      section: BuildTechStackSection.persistence,
     ),
     title: title,
     version: ctx.detail.version,
@@ -51,12 +53,14 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
       'infrastructure-layer',
       'persistence',
       'repository',
+      'implementation',
     ],
     generation: <String, String>{
       'architecture': 'hexagonal',
       if (techStack != null) 'stack': techStack.code,
+      'section': BuildTechStackSection.persistence.slug,
       'layer': 'infrastructure',
-      'role': 'persistence',
+      'role': 'implementation',
       'artifactType': dslType,
       'artifactName': objectSpec.technicalName,
       'repositoryPort': portName,
@@ -73,9 +77,10 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
   );
 
   return BuildHexaPromptSpec(
-    id: '${item.kind.name}:${item.id}:${BuildHexaPromptRole.persistence.name}',
+    id: '${item.kind.name}:${item.id}:${BuildTechStackSection.persistence.name}:${BuildHexaPromptRole.implementation.name}',
     item: item,
-    role: BuildHexaPromptRole.persistence,
+    section: BuildTechStackSection.persistence,
+    role: BuildHexaPromptRole.implementation,
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
@@ -194,7 +199,8 @@ String _formatBody({
   PromptMarkdownSections.writeTechStackExtensionSection(
     buf,
     domain: domain,
-    role: BuildHexaPromptRole.persistence,
+    section: BuildTechStackSection.persistence,
+    role: BuildHexaPromptRole.implementation,
     techStack: techStack,
   );
 

@@ -86,6 +86,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   bool _chatPlanMode = false;
   bool _chatVisibleOnlyMode = false;
   bool _chatVerifyRenderEnabled = true;
+  bool? _chatReactiveValuesEnabled;
   DesignSystemPreset? _selectedDesignSystem;
   List<DesignSystemPreset> _customDesignSystems = const [];
   final _chevronKeys = <int, GlobalKey>{};
@@ -807,6 +808,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     initialVerifyRenderEnabled: _chatVerifyRenderEnabled,
                     onVerifyRenderEnabledChanged: (enabled) =>
                         setState(() => _chatVerifyRenderEnabled = enabled),
+                    initialReactiveValuesEnabled: _chatReactiveValuesEnabled,
+                    onReactiveValuesEnabledChanged: (enabled) =>
+                        setState(() => _chatReactiveValuesEnabled = enabled),
                     initialDesignSystem: _selectedDesignSystem,
                     onDesignSystemChanged: (preset) =>
                         setState(() => _selectedDesignSystem = preset),

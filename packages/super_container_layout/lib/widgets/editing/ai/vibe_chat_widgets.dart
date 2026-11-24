@@ -1224,50 +1224,65 @@ class VibeVerifyRenderChip extends StatelessWidget {
   }
 }
 
-/// Bouton lançant une génération orientée vers les valeurs calculées réactives.
-class VibeReactiveValuesActionChip extends StatelessWidget {
-  /// Crée la puce « Valeur réactif ».
-  const VibeReactiveValuesActionChip({
+/// Sélecteur activant ou désactivant la phase finale « Valeurs réactives »
+/// exécutée après la génération (et avant « Vérif. rendu »).
+class VibeReactiveValuesChip extends StatelessWidget {
+  /// Crée une puce bascule pour la phase finale « Valeur réactif ».
+  const VibeReactiveValuesChip({
+    required this.selected,
     required this.enabled,
-    required this.onPressed,
+    required this.onToggle,
     super.key,
   });
 
-  /// Indique si le bouton est cliquable.
+  /// Indique si la phase finale « Valeurs réactives » est activée.
+  final bool selected;
+
+  /// Indique si le basculement est autorisé (désactivé pendant la génération).
   final bool enabled;
 
-  /// Callback déclenché au clic.
-  final VoidCallback onPressed;
+  /// Callback appelé au clic.
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final foreground = scheme.secondary;
+    final background = selected
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.primary : scheme.outlineVariant;
     return Tooltip(
-      message:
-          'Configurer les calculatedAttributes, les champs de saisie et '
-          'les valeurs calculées en consultation',
+      message: selected
+          ? 'Valeur réactif actif : ajoute en fin de génération une phase '
+                'de configuration des calculatedAttributes, champs de '
+                'saisie/consultation et graphiques réactifs (cliquer pour désactiver)'
+          : 'Valeur réactif désactivé : ignore la phase finale de valeurs '
+                'réactives pour accélérer la génération (cliquer pour activer)',
       child: Semantics(
         button: true,
+        selected: selected,
         enabled: enabled,
         label: 'Valeur réactif',
         child: Material(
-          color: scheme.surfaceContainerLow,
+          color: background,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: scheme.outlineVariant),
+            side: BorderSide(color: borderColor),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             key: const ValueKey('vibe-chat-reactive-values'),
-            onTap: enabled ? onPressed : null,
+            onTap: enabled ? onToggle : null,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.calculate_outlined,
+                    selected ? Icons.calculate : Icons.calculate_outlined,
                     size: 14,
                     color: enabled
                         ? foreground
@@ -1278,19 +1293,11 @@ class VibeReactiveValuesActionChip extends StatelessWidget {
                     'Valeur réactif',
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                       color: enabled
                           ? foreground
                           : foreground.withValues(alpha: 0.5),
                     ),
-                  ),
-                  const SizedBox(width: 3),
-                  Icon(
-                    Icons.play_arrow_rounded,
-                    size: 14,
-                    color: enabled
-                        ? foreground
-                        : foreground.withValues(alpha: 0.5),
                   ),
                 ],
               ),

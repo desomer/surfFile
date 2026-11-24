@@ -1,12 +1,13 @@
 /// Point d'entrée de l'application autonome `super_designer`.
 ///
 /// Combine le moteur `super_container_layout` et le catalogue d'extensions
-/// `super_container_extensions` (`SuperChart`, etc.) au sein d'un même [Registry].
+/// `super_container_extensions` (`SuperChart`, `SuperCode`, etc.) au sein d'un
+/// même [Registry], avec gestion des applications sandboxées et persistance paginée.
 library;
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show AppExitResponse;
+import 'dart:ui' show AppExitResponse, Brightness, PlatformDispatcher;
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -14,13 +15,6 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_designer/impl.dart';
-
-import 'repository_schema_model.dart';
-import 'yaml2jsonschemas_parser.dart';
-
-export 'json_browser.dart';
-export 'yaml2jsonschemas_parser.dart';
 
 export 'package:super_container_extensions/super_container_extensions.dart';
 export 'package:super_container_layout/super_container_layout.dart';
@@ -38,37 +32,47 @@ typedef TestApp = SuperDesignerApp;
 
 /// Lance l'application autonome `super_designer` en capturant les journaux et erreurs.
 void main() {
-  // Capture les erreurs Flutter (UI, widgets, rendering…)
   FlutterError.onError = (FlutterErrorDetails details) {
-    final message = '[FLUTTER ERROR] ${details.exceptionAsString()}';
-    saveError(message, details.stack);
-    //debugPrintSynchronously(message /*, stackTrace: details.stack*/);
+    saveError('[FLUTTER ERROR] ${details.exceptionAsString()}', details.stack);
     FlutterError.dumpErrorToConsole(details);
   };
 
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    saveError('[PLATFORM ERROR] $error\n$stack', stack);
+    FlutterError.dumpErrorToConsole(
+      FlutterErrorDetails(exception: error, stack: stack),
+    );
+    return true;
+  };
+
   runZonedGuarded(
-    () async {
+    () {
       WidgetsFlutterBinding.ensureInitialized();
-      final geminiKey = await resolveGeminiApiKey();
       if (!dotenv.isInitialized) {
         dotenv.loadFromString(envString: '', isOptional: true);
       }
-      if (geminiKey.isNotEmpty) {
-        unawaited(VibeChatDialog.warmUp(rootBundle));
-      }
-      // Le point d'entrée de démonstration active la persistance par défaut.
+      unawaited(_warmUpAiServices());
       runApp(const SuperDesignerApp(persistRepository: true));
     },
     (error, stack) {
-      final message = '[DART ERROR] $error\n$stack';
-      saveError(message, stack);
-      //debugPrintSynchronously(message);
+      saveError('[DART ERROR] $error\n$stack', stack);
       FlutterError.dumpErrorToConsole(
         FlutterErrorDetails(exception: error, stack: stack),
       );
     },
     zoneSpecification: createSuperDesignerLogZoneSpecification(),
   );
+}
+
+Future<void> _warmUpAiServices() async {
+  try {
+    final geminiKey = await resolveGeminiApiKey();
+    if (geminiKey.isNotEmpty) {
+      await VibeChatDialog.warmUp(rootBundle);
+    }
+  } catch (error, stack) {
+    saveError('[AI WARMUP ERROR] $error', stack);
+  }
 }
 
 /// Construit la [ZoneSpecification] de journalisation console horodatée pour `super_designer`.
@@ -79,10 +83,7 @@ ZoneSpecification createSuperDesignerLogZoneSpecification({
   DateTime Function()? clock,
 }) => ZoneSpecification(
   print: (self, parent, zone, line) {
-    // Capture la stack ici, dans le contexte de l'appelant du print
     saveLog(line, null);
-
-    // Et tu continues d'afficher normalement avec l'horodatage console
     parent.print(
       zone,
       formatTimestampedConsoleLog(line, timestamp: clock?.call()),
@@ -90,7 +91,16 @@ ZoneSpecification createSuperDesignerLogZoneSpecification({
   },
 );
 
-/// Widget racine de l'application de démonstration et d'édition `super_designer`,
+ContainerStyle _readBackgroundStyle(Appearance appearance) =>
+    appearance.backgroundStyle;
+
+Appearance _writeBackgroundStyle(Appearance appearance, ContainerStyle style) =>
+    appearance.withStyle('background', style);
+
+Appearance _resetBackgroundStyle(Appearance appearance) =>
+    appearance.withStyle('background', null);
+
+/// Widget racine de l'application d'édition visuelle et IA `super_designer`,
 /// donnant accès au moteur `super_container_layout` et à ses extensions.
 class SuperDesignerApp extends StatefulWidget {
   const SuperDesignerApp({
@@ -102,10 +112,11 @@ class SuperDesignerApp extends StatefulWidget {
     this.pickDirectory,
   });
 
-  /// Active la restauration et l'enregistrement automatique du repository.
+  /// Active la restauration et l'enregistrement automatique des données.
   final bool persistRepository;
 
-  /// Dossier du store ; `null` utilise le dossier utilisateur par défaut.
+  /// Dossier explicite du store de repositories ; `null` utilise le mode
+  /// application sandboxée (si [persistRepository] est actif) ou le dossier par défaut.
   final Directory? repositoryDirectory;
 
   /// Dossier initial de l'application sandboxée ; `null` ouvre la dernière
@@ -124,235 +135,70 @@ class SuperDesignerApp extends StatefulWidget {
 }
 
 class _SuperDesignerAppState extends State<SuperDesignerApp> {
+  static const _backgroundSlot = AppearanceSlot(
+    'Fond',
+    name: 'demo-background',
+    role: AppearanceSurfaceRole.applicationBackground,
+    editShape: false,
+    extendedLook: false,
+    read: _readBackgroundStyle,
+    write: _writeBackgroundStyle,
+    reset: _resetBackgroundStyle,
+  );
+
   Registry _registry = createSuperDesignerRegistry();
   final _eventBus = SuperEventBus();
-  late final StreamSubscription<SuperComponentEvent> _eventSubscription;
-
-  static const _repositoryId = 'pan_model_repository';
-  static const _eastSizeBinding = JsonTextBinding(
-    repositoryId: _repositoryId,
-    path: 'estSize',
-  );
-  static const _sourceBinding = JsonTextBinding(
-    repositoryId: _repositoryId,
-    path: 'source',
-  );
 
   late final SandboxedApplicationStore _applicationStore =
       widget.applicationStore ?? SandboxedApplicationStore();
   late final CustomDesignSystemStore? _globalDesignSystemStore =
       CustomDesignSystemStore.tryDefaultStore();
 
-  late JsonRepositoryStore _repositoryStore;
-  FileAppearanceStore? _appearanceStore;
+  late EditorPageRouter _pageRouting;
+  JsonRepositoryStore? _repositoryStore;
+  PagedFileAppearanceStore? _appearanceStore;
   Directory? _currentAppDir;
   String? _currentAppName;
   int _appSessionGeneration = 0;
 
-  late final _schemaModel = RepositorySchemaModel(Yaml2JsonSchemasParser());
-
-  // L'initialisation est distincte de la validation, que des edits peuvent
-  // ajouter à la file pendant une sauvegarde ou une fermeture.
-  Future<void>? _repositoryInitialization;
-  Future<void>? _validationQueue;
+  Future<void>? _sessionInitialization;
   AppLifecycleListener? _lifecycle;
-  bool? _schemaModelReady;
-  Object? _validationFailure;
-  StackTrace? _validationFailureStack;
 
-  /// Publie les mises à jour du schéma après un changement du repository.
-  void _onRepositoryChanged(ChangeContext change) {
-    final details = change.path.isEmpty
-        ? '(document entier)'
-        : '(${change.oldValue} -> ${change.newValue})';
-    debugPrint(
-      'Repository ${change.repositoryId}: ${change.path} changed by '
-      '${change.componentId ?? 'unknown component'} '
-      '$details',
-    );
-    if (change.path == 'source') {
-      _queueValidation();
-    } else if (change.path.isEmpty) {
-      final previous = change.oldValue;
-      final next = change.newValue;
-      final sourceChanged =
-          previous is Map &&
-          next is Map &&
-          previous['source'] != next['source'];
-      _queueValidation(
-        restoreModel: true,
-        updateNodes: !change.isReload && sourceChanged,
-      );
-    }
-  }
-
-  /// Rend l'erreur visible à l'hôte et dans les liaisons de l'application.
-  void _reportRepositoryFailure(Object error, StackTrace stack) {
-    FlutterError.reportError(
-      FlutterErrorDetails(
-        exception: error,
-        stack: stack,
-        library: 'super_designer',
-      ),
-    );
-    _repositoryStore.reportBindingError('Erreur du repository : $error');
-  }
-
-  /// Sérialise la validation YAML pour éviter qu'un résultat ancien écrase le
-  /// schéma correspondant à une source plus récente.
-  void _queueValidation({bool restoreModel = false, bool updateNodes = true}) {
-    _validationQueue = (_validationQueue ?? Future<void>.value())
-        .then((_) async {
-          if (!mounted ||
-              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
-            return;
-          }
-          if (restoreModel || _schemaModelReady != true) {
-            final nodes = await _repositoryStore.readArray(
-              _repositoryId,
-              'nodes',
-            );
-            if (!mounted ||
-                !_repositoryStore.isRegisteredRepository(_repositoryId)) {
-              return;
-            }
-            _schemaModel.restore(nodes);
-            _schemaModelReady = true;
-          }
-          final source = await _repositoryStore.readAttribute(_sourceBinding);
-          if (!mounted ||
-              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
-            return;
-          }
-          await _validateYaml(source.value, updateNodes: updateNodes);
-          _validationFailure = null;
-          _validationFailureStack = null;
-        })
-        .catchError((Object error, StackTrace stack) {
-          if (!mounted ||
-              !_repositoryStore.isRegisteredRepository(_repositoryId)) {
-            return;
-          }
-          _validationFailure = error;
-          _validationFailureStack = stack;
-          _reportRepositoryFailure(error, stack);
-        });
-  }
-
-  /// Charge d'abord le document sauvegardé, puis valide sa source YAML.
-  Future<void> _initializePersistentRepository(
-    RepositoryImpl repository,
-  ) async {
-    final restored = await _repositoryStore.registerPersistentRepository(
-      repository,
-    );
-    if (!mounted) return;
-    final nodes = await _repositoryStore.readArray(_repositoryId, 'nodes');
-    if (!mounted) return;
-    _schemaModel.restore(nodes);
-    _schemaModelReady = true;
-    final source = await _repositoryStore.readAttribute(_sourceBinding);
-    if (!mounted) return;
-    await _validateYaml(source.value, updateNodes: !restored);
-  }
-
-  /// Vérifie le YAML et patche les nœuds sans perdre leurs données éditées.
-  Future<void> _validateYaml(Object? source, {bool updateNodes = true}) async {
-    if (source is! String) {
-      throw const FormatException('Le champ source doit être une chaîne.');
-    }
-    for (var attempt = 0; attempt < 5; attempt++) {
-      final previousNodes = await _repositoryStore.readArray(
-        _repositoryId,
-        'nodes',
-      );
-      if (!mounted) return;
-      var message = '';
-      List<Object?>? nodes;
-      try {
-        nodes = await _schemaModel.patchAsync(source, previousNodes);
-      } on FormatException catch (error) {
-        message = error.message;
-      }
-      if (!mounted) return;
-      final currentSource = await _repositoryStore.readAttribute(
-        _sourceBinding,
-      );
-      if (!mounted || currentSource.value != source) return;
-      const errorBinding = JsonTextBinding(
-        repositoryId: _repositoryId,
-        path: 'yamlError',
-      );
-      final current = await _repositoryStore.readAttribute(errorBinding);
-      if (current.value != message) {
-        await _repositoryStore.writeAttribute(
-          errorBinding,
-          message,
-          expectedValue: current.value,
-          componentId: 'yaml-validator',
-        );
-      }
-      if (nodes == null || !updateNodes) return;
-      try {
-        await _repositoryStore.replaceArray(
-          _repositoryId,
-          'nodes',
-          nodes,
-          componentId: 'yaml-validator',
-          expectedValues: {'source': source, 'nodes': previousNodes},
-        );
-        return;
-      } on JsonRepositoryConflictException {
-        if (attempt == 4) rethrow;
-        final latestSource = await _repositoryStore.readAttribute(
-          _sourceBinding,
-        );
-        if (!mounted || latestSource.value != source) return;
-      }
-    }
-  }
-
-  /// Déclare la page d'entrée de l'éditeur SuperDesigner.
-  late EditorPageRouter _pageRouting;
   GoRouter get _router => _pageRouting.router;
 
   bool get _usesSandboxedAppMode =>
       widget.repositoryDirectory == null &&
       (widget.persistRepository || widget.applicationDirectory != null);
 
-  EditorPageRouter _createPageRouting(Registry registry) => EditorPageRouter(
+  EditorPageRouter _createPageRouting() => EditorPageRouter(
     pageWrapper: (context, state, child) => wrapPageWithAppearanceShell(child),
     baseConfig: RoutingConfig(
       routes: [
         GoRoute(
           path: '/',
-          builder: (context, state) => getRootWidget(registry),
+          builder: (context, state) => _buildRootPage(),
         ),
       ],
     ),
   );
 
-  // RepositoryImpl _createPanModelRepository() {
-  //   final repository = RepositoryImpl(
-  //     id: _repositoryId,
-  //     onChanged: _onRepositoryChanged,
-  //     json: {
-  //       'source': '',
-  //       'estSize': 300,
-  //       'yamlError': '',
-  //       'nodes': <Object?>[],
-  //     },
-  //   );
+  @override
+  void initState() {
+    super.initState();
+    if (widget.persistRepository || widget.applicationDirectory != null) {
+      // Annule la fermeture si des saisies ou leur sauvegarde échouent.
+      _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
+    }
+    _pageRouting = _createPageRouting();
 
-  //   repository.addCalculatedAttribute('total', (ctx) {
-  //     final articles = ctx.sync.getValue('articles')! as List;
-  //     return articles.fold<num>(
-  //       0,
-  //       (sum, article) => sum + ((article as Map)['prix'] as num),
-  //     );
-  //   });
-  //   return repository;
-  // }
+    if (_usesSandboxedAppMode) {
+      _sessionInitialization = _initializeSandboxedSession();
+    } else {
+      _repositoryStore = widget.repositoryDirectory == null
+          ? JsonRepositoryStore.defaultStore()
+          : JsonRepositoryStore(widget.repositoryDirectory!);
+    }
+  }
 
   Future<void> _initializeSandboxedSession() async {
     final requestedDir = widget.applicationDirectory;
@@ -388,7 +234,6 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
           );
     }
     if (!mounted) return;
-    _repositoryStore.dispose();
     _currentAppDir = targetDir;
     _currentAppName = manifest.name;
     _appearanceStore = SandboxedApplicationStore.appearanceStoreFor(
@@ -396,61 +241,18 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       registry: _registry,
     );
     _repositoryStore = SandboxedApplicationStore.repositoryStoreFor(targetDir);
-    //await _initializePersistentRepository(_createPanModelRepository());
   }
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.persistRepository || widget.applicationDirectory != null) {
-      // Annule la fermeture si des saisies ou leur sauvegarde échouent.
-      _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
-    }
-    _eventSubscription = _eventBus
-        .on('node.click')
-        .asyncMap((event) async {
-          if (!_repositoryStore.isRegisteredRepository(_repositoryId)) {
-            return event;
-          }
-          final current = await _repositoryStore.readAttribute(
-            _eastSizeBinding,
-          );
-          final size = current.value;
-          if (size is! num || !size.isFinite) {
-            throw StateError('estSize doit etre une taille numerique finie.');
-          }
-          await _repositoryStore.writeAttribute(
-            _eastSizeBinding,
-            size == 0 ? '300' : '0',
-            expectedValue: current.value,
-            componentId: event.componentId,
-          );
-          return event;
-        })
-        .listen((event) {
-          debugPrint(
-            'Event ${event.eventId} from ${event.componentId} '
-            '(${event.trigger}): ${event.data}',
-          );
-        });
-
-    //SuperDesignerRegistry(_registry).addRegistry();
-    _pageRouting = _createPageRouting(_registry);
-    _repositoryStore = widget.repositoryDirectory == null
-        ? JsonRepositoryStore.defaultStore()
-        : JsonRepositoryStore(widget.repositoryDirectory!);
-
-    if (_usesSandboxedAppMode) {
-      _repositoryInitialization = _initializeSandboxedSession();
-    } else if (widget.persistRepository) {
-      // _repositoryInitialization = _initializePersistentRepository(
-      //   _createPanModelRepository(),
-      // );
-    } else {
-      //_repositoryStore.registerRepository(_createPanModelRepository());
-      _repositoryInitialization = null;
-      _queueValidation();
-    }
+  /// Rend l'erreur visible à l'hôte et dans les liaisons de l'application.
+  void _reportRepositoryFailure(Object error, StackTrace stack) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'super_designer',
+      ),
+    );
+    _repositoryStore?.reportBindingError('Erreur du repository : $error');
   }
 
   /// Enregistre les modifications d'apparence et de repositories en attente.
@@ -470,14 +272,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
         await _appearanceStore?.save(controller.value);
       }
     }
-    if (_repositoryStore.isRegisteredRepository(_repositoryId)) {
-      await _repositoryStore.flushBindings();
-      final pending = _validationQueue;
-      if (pending != null) await pending;
-      if (_repositoryStore.isPersistentRepository(_repositoryId)) {
-        await _repositoryStore.saveRepository(_repositoryId);
-      }
-    }
+    await _repositoryStore?.flushBindings();
   }
 
   /// Bascule à chaud toute l'application vers le dossier [targetDir].
@@ -493,13 +288,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     final previousRepositoryStore = _repositoryStore;
 
     LayoutSelection.clearAll();
-    _validationQueue = null;
-    _validationFailure = null;
-    _validationFailureStack = null;
-    _schemaModelReady = false;
 
     final nextRegistry = createSuperDesignerRegistry();
-    //SuperDesignerRegistry(nextRegistry).addRegistry();
     final nextRepositoryStore = SandboxedApplicationStore.repositoryStoreFor(
       targetDir,
     );
@@ -507,7 +297,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       targetDir,
       registry: nextRegistry,
     );
-    final nextPageRouting = _createPageRouting(nextRegistry);
+    final nextPageRouting = _createPageRouting();
 
     _registry = nextRegistry;
     _repositoryStore = nextRepositoryStore;
@@ -515,20 +305,16 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _pageRouting = nextPageRouting;
     _currentAppDir = targetDir;
     _currentAppName = manifest.name;
+    _sessionInitialization = null;
     _appSessionGeneration++;
 
-    // _repositoryInitialization = _initializePersistentRepository(
-    //   _createPanModelRepository(),
-    // );
     setState(() {});
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       previousPageRouting.dispose();
-      previousRepositoryStore.dispose();
+      previousRepositoryStore?.dispose();
       previousRegistry.dispose();
     });
-
-    await _repositoryInitialization;
   }
 
   Future<void> _switchToApplication(
@@ -589,10 +375,9 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                 ),
       );
 
-  /// Attend l'initialisation, les saisies et validations en attente avant
-  /// d'enregistrer un dernier état cohérent sur disque.
+  /// Attend l'initialisation et vide les saisies en cours avant de fermer.
   Future<AppExitResponse> _onExitRequested() async {
-    final initialization = _repositoryInitialization;
+    final initialization = _sessionInitialization;
     if (initialization != null) {
       try {
         await initialization;
@@ -603,46 +388,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     }
     if (!mounted) return AppExitResponse.exit;
     try {
-      final navContext =
-          _pageRouting.router.routerDelegate.navigatorKey.currentContext;
-      if (navContext != null && navContext.mounted) {
-        final controller = AppearanceScope.controllerOf(navContext);
-        if (controller is PersistentAppearanceController) {
-          await controller.flush();
-        }
-      }
-      while (true) {
-        await _repositoryStore.flushBindings();
-        if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
-          return AppExitResponse.exit;
-        }
-        final pending = _validationQueue;
-        if (pending != null) await pending;
-        if (!identical(pending, _validationQueue)) continue;
-        if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
-          return AppExitResponse.exit;
-        }
-        final error = _validationFailure;
-        if (error != null) {
-          Error.throwWithStackTrace(
-            error,
-            _validationFailureStack ?? StackTrace.current,
-          );
-        }
-        if (_repositoryStore.isPersistentRepository(_repositoryId)) {
-          try {
-            await _repositoryStore.saveRepository(_repositoryId);
-          } catch (_) {
-            if (!_repositoryStore.isPersistentRepository(_repositoryId)) {
-              return AppExitResponse.exit;
-            }
-            rethrow;
-          }
-        }
-        if (identical(pending, _validationQueue)) {
-          return AppExitResponse.exit;
-        }
-      }
+      await _flushActiveApplication(null);
+      return AppExitResponse.exit;
     } catch (error, stack) {
       _reportRepositoryFailure(error, stack);
       return AppExitResponse.cancel;
@@ -653,35 +400,45 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   @override
   void dispose() {
     _lifecycle?.dispose();
-    unawaited(_eventSubscription.cancel());
     unawaited(_eventBus.close());
     _pageRouting.dispose();
-    _repositoryStore.dispose();
+    _repositoryStore?.dispose();
+    _registry.dispose();
     super.dispose();
   }
 
-  /// Affiche l'application seulement après la restauration du repository.
+  /// Affiche l'application dès que la session initiale est prête.
   @override
   Widget build(BuildContext context) {
-    final initialization = _repositoryInitialization;
+    final initialization = _sessionInitialization;
     if (initialization == null) return _buildApp();
     return FutureBuilder<void>(
       future: initialization,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return MaterialApp(
+            debugShowCheckedModeBanner: false,
             home: Scaffold(
               body: Center(
-                child: Text(
-                  'Impossible de charger le repository : ${snapshot.error}',
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Impossible d’initialiser l’application : ${snapshot.error}',
+                  ),
                 ),
               ),
             ),
           );
         }
         if (snapshot.connectionState != ConnectionState.done) {
-          return const MaterialApp(
-            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+          final isDark =
+              PlatformDispatcher.instance.platformBrightness == Brightness.dark;
+          return ColoredBox(
+            color: isDark ? const Color(0xFF121212) : const Color(0xFFFAFAFA),
+            child: const Directionality(
+              textDirection: TextDirection.ltr,
+              child: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
         return _buildApp();
@@ -711,16 +468,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
           return page;
         }
         return EditableSurface(
-          slot: AppearanceSlot(
-            'Fond',
-            name: 'demo-background',
-            role: AppearanceSurfaceRole.applicationBackground,
-            editShape: false,
-            extendedLook: false,
-            read: (a) => a.backgroundStyle,
-            write: (a, style) => a.withStyle('background', style),
-            reset: (a) => a.withStyle('background', null),
-          ),
+          slot: _backgroundSlot,
           menuIcon: Icons.wallpaper_outlined,
           decorate: false,
           applyPadding: true,
@@ -744,12 +492,13 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     );
   }
 
-  /// Construit la surface racine contenant la [SuperPage] et la barre d'outils flottante.
-  Widget getRootWidget(Registry registry) {
+  /// Construit la surface racine contenant la [SuperPage] et son layout principal.
+  Widget _buildRootPage() {
     return Builder(
       builder: (context) {
-        final superapp = SuperApp.of(context);
-        final superLayoutConfig = superapp.getLayoutConfigById('mainLayout');
+        final superLayoutConfig = SuperApp.of(
+          context,
+        ).getLayoutConfigById('mainLayout');
 
         return wrapPageWithAppearanceShell(
           SuperPage(

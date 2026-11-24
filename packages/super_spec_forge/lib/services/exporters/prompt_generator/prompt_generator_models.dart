@@ -5,26 +5,20 @@ library;
 import 'package:flutter/foundation.dart';
 
 import '../../../models/build_design_item.dart';
+import '../../../models/build_tech_stack_profile.dart';
 
-/// Nature d'un prompt de génération de code en Architecture Hexagonale.
+/// Sous-rôle d'un prompt de génération de code en Architecture Hexagonale.
 enum BuildHexaPromptRole {
-  /// Implémentation de la couche métier (Domain) ou applicative (Use Case / Saga).
+  /// Implémentation de la couche ou de l'adaptateur ciblé.
   implementation(
     label: 'Implémentation',
-    subtitle: 'Code de production en Architecture Hexagonale (pur métier / application)',
+    subtitle: 'Code de production en Architecture Hexagonale',
   ),
 
-  /// Suite de tests unitaires TDD isolée de l'infrastructure.
+  /// Suite de tests unitaires TDD associée.
   unitTest(
-    label: 'Tests unitaires',
-    subtitle:
-        'Tests unitaires TDD rapides et déterministes sans infrastructure',
-  ),
-
-  /// Port sortant Repository, mapper et adaptateur de persistance (modèles uniquement).
-  persistence(
-    label: 'Persistance',
-    subtitle: 'Port sortant Repository, entité infra, mapper et adaptateur de persistance',
+    label: 'Test unitaire',
+    subtitle: 'Tests unitaires TDD rapides et déterministes',
   );
 
   const BuildHexaPromptRole({required this.label, required this.subtitle});
@@ -34,6 +28,12 @@ enum BuildHexaPromptRole {
 
   /// Description synthétique du périmètre couvert par le prompt.
   final String subtitle;
+
+  /// Convertit vers le sous-rôle correspondant de [BuildTechStackProfile].
+  BuildTechStackSubRole get toStackSubRole => switch (this) {
+    BuildHexaPromptRole.implementation => BuildTechStackSubRole.implementation,
+    BuildHexaPromptRole.unitTest => BuildTechStackSubRole.unitTest,
+  };
 }
 
 /// Prompt individuel prêt à être copié et exécuté.
@@ -42,20 +42,24 @@ class BuildHexaPromptSpec {
   /// Crée une fiche de prompt IA en Architecture Hexagonale.
   const BuildHexaPromptSpec({
     required this.id,
-    required this.item,
+    required this.section,
     required this.role,
     required this.title,
     required this.summary,
     required this.promptMarkdown,
+    this.item,
   });
 
-  /// Identifiant unique stable (`<kind>:<itemId>:<role>`).
+  /// Identifiant unique stable (`<kind>:<itemId>:<section>:<role>` ou `domain:<section>:<role>`).
   final String id;
 
-  /// Élément de design auquel se rattache ce prompt.
-  final BuildDesignItem item;
+  /// Élément de design auquel se rattache ce prompt (`null` pour Outbound / Inbound autonomes).
+  final BuildDesignItem? item;
 
-  /// Rôle architectural du prompt (`implementation`, `unitTest`, `persistence`).
+  /// Partie architecturale ciblée (`domain`, `useCaseSaga`, `outbound`, `inbound`, `persistence`).
+  final BuildTechStackSection section;
+
+  /// Sous-rôle architectural du prompt (`implementation`, `unitTest`).
   final BuildHexaPromptRole role;
 
   /// Titre lisible du prompt.
@@ -67,12 +71,16 @@ class BuildHexaPromptSpec {
   /// Contenu complet du prompt au format Markdown.
   final String promptMarkdown;
 
+  /// Libellé synthétique de la cible (nom de l'item ou nom de la section autonome).
+  String get targetLabel => item?.name ?? section.label;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is BuildHexaPromptSpec &&
           other.id == id &&
           other.item == item &&
+          other.section == section &&
           other.role == role &&
           other.title == title &&
           other.summary == summary &&
@@ -80,24 +88,63 @@ class BuildHexaPromptSpec {
 
   @override
   int get hashCode =>
-      Object.hash(id, item, role, title, summary, promptMarkdown);
+      Object.hash(id, item, section, role, title, summary, promptMarkdown);
 }
 
-/// Groupe de prompts IA rattachés à un même [BuildDesignItem] sélectionné.
+/// Groupe de prompts IA rattachés à un [BuildDesignItem] sélectionné ou à une
+/// section autonome de niveau domaine (`Outbound`, `Inbound`).
 @immutable
 class BuildItemPromptGroup {
-  /// Crée un groupe de prompts pour [item].
+  /// Crée un groupe de prompts pour un élément de design [item].
   BuildItemPromptGroup({
-    required this.item,
+    required BuildDesignItem this.item,
     required List<BuildHexaPromptSpec> prompts,
-  }) : prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
+  }) : standaloneSection = null,
+       groupId = '${item.kind.name}:${item.id}',
+       groupTitle = item.name,
+       groupSubtitle = item.subtitle,
+       kindLabel = item.kind.shortLabel,
+       primaryBadge = item.primaryBadge,
+       prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
 
-  /// Élément de design sélectionné (`Modèle`, `Use Case` ou `Saga`).
-  final BuildDesignItem item;
+  /// Crée un groupe autonome sans rattachement à un item (ex. `Outbound`, `Inbound`).
+  BuildItemPromptGroup.standalone({
+    required BuildTechStackSection section,
+    required String subtitle,
+    required String domainCode,
+    required List<BuildHexaPromptSpec> prompts,
+  }) : item = null,
+       standaloneSection = section,
+       groupId = 'standalone:${section.name}',
+       groupTitle = section.label,
+       groupSubtitle = subtitle,
+       kindLabel = 'Ports & Adaptateurs',
+       primaryBadge = domainCode,
+       prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
 
-  /// Liste ordonnée des `x` prompts IA générés pour [item] :
-  /// - 3 prompts pour un `Modèle` (`Implémentation`, `Tests unitaires`, `Persistance`),
-  /// - 2 prompts pour un `Use Case` ou une `Saga` (`Implémentation`, `Tests unitaires`).
+  /// Élément de design sélectionné (`Modèle`, `Use Case` ou `Saga`), ou `null`
+  /// pour un groupe autonome sans rattachement.
+  final BuildDesignItem? item;
+
+  /// Section autonome lorsque [item] est `null` (`outbound` ou `inbound`).
+  final BuildTechStackSection? standaloneSection;
+
+  /// Identifiant stable du groupe dans l'interface.
+  final String groupId;
+
+  /// Titre principal du groupe.
+  final String groupTitle;
+
+  /// Sous-titre descriptif optionnel.
+  final String groupSubtitle;
+
+  /// Badge de catégorie du groupe (`Modèle`, `Use Case`, `Saga`, `Ports & Adaptateurs`).
+  final String kindLabel;
+
+  /// Badge secondaire (type DSL, code `UC-xxx`, ou `domainCode`).
+  final String primaryBadge;
+
+  /// Liste ordonnée des prompts IA du groupe.
   final List<BuildHexaPromptSpec> prompts;
 
   @override
@@ -105,8 +152,23 @@ class BuildItemPromptGroup {
       identical(this, other) ||
       other is BuildItemPromptGroup &&
           other.item == item &&
+          other.standaloneSection == standaloneSection &&
+          other.groupId == groupId &&
+          other.groupTitle == groupTitle &&
+          other.groupSubtitle == groupSubtitle &&
+          other.kindLabel == kindLabel &&
+          other.primaryBadge == primaryBadge &&
           listEquals(other.prompts, prompts);
 
   @override
-  int get hashCode => Object.hash(item, Object.hashAll(prompts));
+  int get hashCode => Object.hash(
+    item,
+    standaloneSection,
+    groupId,
+    groupTitle,
+    groupSubtitle,
+    kindLabel,
+    primaryBadge,
+    Object.hashAll(prompts),
+  );
 }

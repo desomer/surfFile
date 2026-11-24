@@ -27,6 +27,7 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
   final header = PromptYamlHeaderBuilder.buildFencedYamlHeader(
     kind: PromptYamlHeaderBuilder.kindFor(
       BuildDesignItemKind.saga,
+      BuildTechStackSection.useCaseSaga,
       BuildHexaPromptRole.unitTest,
     ),
     name: PromptYamlHeaderBuilder.buildPromptSlug(
@@ -50,6 +51,7 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
     generation: <String, String>{
       'architecture': 'hexagonal',
       if (techStack != null) 'stack': techStack.code,
+      'section': BuildTechStackSection.useCaseSaga.slug,
       'layer': 'application',
       'role': 'unit-test',
       'artifactType': 'saga',
@@ -63,8 +65,9 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
   final body = _formatBody(domain: domain, saga: saga, techStack: techStack);
 
   return BuildHexaPromptSpec(
-    id: '${item.kind.name}:${item.id}:${BuildHexaPromptRole.unitTest.name}',
+    id: '${item.kind.name}:${item.id}:${BuildTechStackSection.useCaseSaga.name}:${BuildHexaPromptRole.unitTest.name}',
     item: item,
+    section: BuildTechStackSection.useCaseSaga,
     role: BuildHexaPromptRole.unitTest,
     title: title,
     summary: summary,
@@ -123,6 +126,7 @@ String _formatBody({
   PromptMarkdownSections.writeTechStackExtensionSection(
     buf,
     domain: domain,
+    section: BuildTechStackSection.useCaseSaga,
     role: BuildHexaPromptRole.unitTest,
     techStack: techStack,
   );

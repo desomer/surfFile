@@ -361,7 +361,7 @@ class _EventStormingEditorViewState extends State<EventStormingEditorView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Event Storming DSL v1.0 (${es.documents.length} contexte(s))',
+                    'Event Storming (${es.documents.length} contexte(s))',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),

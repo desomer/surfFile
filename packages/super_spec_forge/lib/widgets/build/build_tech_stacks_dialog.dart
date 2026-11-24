@@ -12,16 +12,22 @@ import '../../services/spec_forge_controller.dart';
 
 final RegExp _stackCodePattern = RegExp(r'^[a-z0-9]+(?:-[a-z0-9]+)*$');
 
+/// Callback déclenchée après sauvegarde d'un profil dans l'éditeur de stacks.
+typedef BuildTechStackSavedCallback =
+    void Function(BuildTechStackProfile profile, {required bool created});
+
 /// Ouvre l'éditeur de profils de stacks techniques du workspace actif.
 Future<void> showBuildTechStacksDialog(
   BuildContext context, {
   required SpecForgeController controller,
   String? initialStackId,
+  BuildTechStackSavedCallback? onStackSaved,
 }) => showDialog<void>(
   context: context,
   builder: (_) => _BuildTechStacksDialog(
     controller: controller,
     initialStackId: initialStackId,
+    onStackSaved: onStackSaved,
   ),
 );
 
@@ -143,10 +149,12 @@ class _BuildTechStacksDialog extends StatefulWidget {
   const _BuildTechStacksDialog({
     required this.controller,
     this.initialStackId,
+    this.onStackSaved,
   });
 
   final SpecForgeController controller;
   final String? initialStackId;
+  final BuildTechStackSavedCallback? onStackSaved;
 
   @override
   State<_BuildTechStacksDialog> createState() => _BuildTechStacksDialogState();
@@ -160,12 +168,19 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
   final TextEditingController _descCtrl = TextEditingController();
   final TextEditingController _techStackCtrl = TextEditingController();
   final TextEditingController _foldersCtrl = TextEditingController();
-  final TextEditingController _implFoldersCtrl = TextEditingController();
-  final TextEditingController _testFoldersCtrl = TextEditingController();
-  final TextEditingController _persistenceFoldersCtrl = TextEditingController();
-  final TextEditingController _implExtCtrl = TextEditingController();
-  final TextEditingController _testExtCtrl = TextEditingController();
-  final TextEditingController _persistenceExtCtrl = TextEditingController();
+  final TextEditingController _aiDocCtrl = TextEditingController();
+  late final Map<
+    (BuildTechStackSection, BuildTechStackSubRole),
+    ({TextEditingController folders, TextEditingController ext})
+  >
+  _sectionControllers = {
+    for (final section in BuildTechStackSection.values)
+      for (final subRole in BuildTechStackSubRole.values)
+        (section, subRole): (
+          folders: TextEditingController(),
+          ext: TextEditingController(),
+        ),
+  };
 
   late final TabController _tabController;
   String? _selectedId;
@@ -176,7 +191,10 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(
+      length: 1 + BuildTechStackSection.values.length,
+      vsync: this,
+    );
     final stacks = widget.controller.domainCatalog.techStacks;
     final initial =
         stacks.where((s) => s.id == widget.initialStackId).firstOrNull ??
@@ -196,12 +214,11 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
     _descCtrl.dispose();
     _techStackCtrl.dispose();
     _foldersCtrl.dispose();
-    _implFoldersCtrl.dispose();
-    _testFoldersCtrl.dispose();
-    _persistenceFoldersCtrl.dispose();
-    _implExtCtrl.dispose();
-    _testExtCtrl.dispose();
-    _persistenceExtCtrl.dispose();
+    _aiDocCtrl.dispose();
+    for (final pair in _sectionControllers.values) {
+      pair.folders.dispose();
+      pair.ext.dispose();
+    }
     super.dispose();
   }
 
@@ -214,54 +231,112 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
     _descCtrl.text = profile.description;
     _techStackCtrl.text = profile.technicalStack;
     _foldersCtrl.text = profile.folderStructure;
-    _implFoldersCtrl.text = profile.implementationFolderStructure;
-    _testFoldersCtrl.text = profile.unitTestFolderStructure;
-    _persistenceFoldersCtrl.text = profile.persistenceFolderStructure;
-    _implExtCtrl.text = profile.implementationExtension;
-    _testExtCtrl.text = profile.unitTestExtension;
-    _persistenceExtCtrl.text = profile.persistenceExtension;
+    _aiDocCtrl.text = profile.aiDocumentation;
+    for (final entry in _sectionControllers.entries) {
+      final (section, subRole) = entry.key;
+      final (folders: foldersCtrl, ext: extCtrl) = entry.value;
+      foldersCtrl.text = switch ((section, subRole)) {
+        (BuildTechStackSection.domain, BuildTechStackSubRole.implementation) =>
+          profile.domainImplementationFolderStructure,
+        (BuildTechStackSection.domain, BuildTechStackSubRole.unitTest) =>
+          profile.domainUnitTestFolderStructure,
+        (
+          BuildTechStackSection.useCaseSaga,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.useCaseSagaImplementationFolderStructure,
+        (BuildTechStackSection.useCaseSaga, BuildTechStackSubRole.unitTest) =>
+          profile.useCaseSagaUnitTestFolderStructure,
+        (
+          BuildTechStackSection.outbound,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.outboundImplementationFolderStructure,
+        (BuildTechStackSection.outbound, BuildTechStackSubRole.unitTest) =>
+          profile.outboundUnitTestFolderStructure,
+        (BuildTechStackSection.inbound, BuildTechStackSubRole.implementation) =>
+          profile.inboundImplementationFolderStructure,
+        (BuildTechStackSection.inbound, BuildTechStackSubRole.unitTest) =>
+          profile.inboundUnitTestFolderStructure,
+        (
+          BuildTechStackSection.persistence,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.persistenceImplementationFolderStructure,
+        (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
+          profile.persistenceUnitTestFolderStructure,
+      };
+      extCtrl.text = profile.extensionFor(section, subRole);
+    }
   }
 
   void _startNewStack({BuildTechStackProfile? basedOn}) {
+    if (basedOn != null) {
+      _loadIntoForm(basedOn);
+      _selectedId = null;
+      _creatingNew = true;
+      _codeCtrl.text = '${basedOn.code}-copy';
+      _nameCtrl.text = '${basedOn.name} (copie)';
+      return;
+    }
     _selectedId = null;
     _creatingNew = true;
     _feedback = null;
-    if (basedOn != null) {
-      _codeCtrl.text = '${basedOn.code}-copy';
-      _nameCtrl.text = '${basedOn.name} (copie)';
-      _descCtrl.text = basedOn.description;
-      _techStackCtrl.text = basedOn.technicalStack;
-      _foldersCtrl.text = basedOn.folderStructure;
-      _implFoldersCtrl.text = basedOn.implementationFolderStructure;
-      _testFoldersCtrl.text = basedOn.unitTestFolderStructure;
-      _persistenceFoldersCtrl.text = basedOn.persistenceFolderStructure;
-      _implExtCtrl.text = basedOn.implementationExtension;
-      _testExtCtrl.text = basedOn.unitTestExtension;
-      _persistenceExtCtrl.text = basedOn.persistenceExtension;
-    } else {
-      _codeCtrl.text = '';
-      _nameCtrl.text = '';
-      _descCtrl.text = '';
-      _techStackCtrl.text = '';
-      _foldersCtrl.text = '';
-      _implFoldersCtrl.text =
-          'src/{{domain}}/\n'
-          '├── domain/\n'
-          '└── application/';
-      _testFoldersCtrl.text =
-          'test/{{domain}}/\n'
-          '├── domain/\n'
-          '└── application/';
-      _persistenceFoldersCtrl.text =
-          'src/{{domain}}/\n'
-          '├── domain/ports/outbound/\n'
-          '└── infrastructure/persistence/\n'
-          'test/{{domain}}/infrastructure/';
-      _implExtCtrl.text = '';
-      _testExtCtrl.text = '';
-      _persistenceExtCtrl.text = '';
+    _codeCtrl.text = '';
+    _nameCtrl.text = '';
+    _descCtrl.text = '';
+    _techStackCtrl.text = '';
+    _foldersCtrl.text = '';
+    _aiDocCtrl.text = '';
+    for (final entry in _sectionControllers.entries) {
+      final (section, subRole) = entry.key;
+      final (folders: foldersCtrl, ext: extCtrl) = entry.value;
+      foldersCtrl.text = _defaultPlaceholderFolderFor(section, subRole);
+      extCtrl.text = '';
     }
   }
+
+  static String _defaultPlaceholderFolderFor(
+    BuildTechStackSection section,
+    BuildTechStackSubRole subRole,
+  ) => switch ((section, subRole)) {
+    (BuildTechStackSection.domain, BuildTechStackSubRole.implementation) =>
+      'src/core/{{domain}}/domain/',
+    (BuildTechStackSection.domain, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/domain/',
+    (
+      BuildTechStackSection.useCaseSaga,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'src/application/{{domain}}/',
+    (BuildTechStackSection.useCaseSaga, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/application/',
+    (BuildTechStackSection.outbound, BuildTechStackSubRole.implementation) =>
+      'src/infrastructure/{{domain}}/outbound/',
+    (BuildTechStackSection.outbound, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/infrastructure/outbound/',
+    (BuildTechStackSection.inbound, BuildTechStackSubRole.implementation) =>
+      'src/infrastructure/{{domain}}/inbound/',
+    (BuildTechStackSection.inbound, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/infrastructure/inbound/',
+    (
+      BuildTechStackSection.persistence,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'src/infrastructure/{{domain}}/outbound/persistence/',
+    (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/infrastructure/persistence/',
+  };
+
+  String _foldersText(
+    BuildTechStackSection section,
+    BuildTechStackSubRole subRole,
+  ) => _sectionControllers[(section, subRole)]!.folders.text.trim();
+
+  String _extText(
+    BuildTechStackSection section,
+    BuildTechStackSubRole subRole,
+  ) => _sectionControllers[(section, subRole)]!.ext.text.trim();
 
   Future<void> _saveCurrent() async {
     if (_saving) return;
@@ -286,21 +361,97 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       description: _descCtrl.text.trim(),
       technicalStack: _techStackCtrl.text.trim(),
       folderStructure: _foldersCtrl.text.trim(),
-      implementationFolderStructure: _implFoldersCtrl.text.trim(),
-      unitTestFolderStructure: _testFoldersCtrl.text.trim(),
-      persistenceFolderStructure: _persistenceFoldersCtrl.text.trim(),
-      implementationExtension: _implExtCtrl.text.trim(),
-      unitTestExtension: _testExtCtrl.text.trim(),
-      persistenceExtension: _persistenceExtCtrl.text.trim(),
+      aiDocumentation: _aiDocCtrl.text.trim(),
+      domainImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.domain,
+        BuildTechStackSubRole.implementation,
+      ),
+      domainUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.domain,
+        BuildTechStackSubRole.unitTest,
+      ),
+      useCaseSagaImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.useCaseSaga,
+        BuildTechStackSubRole.implementation,
+      ),
+      useCaseSagaUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.useCaseSaga,
+        BuildTechStackSubRole.unitTest,
+      ),
+      outboundImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.outbound,
+        BuildTechStackSubRole.implementation,
+      ),
+      outboundUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.outbound,
+        BuildTechStackSubRole.unitTest,
+      ),
+      inboundImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.inbound,
+        BuildTechStackSubRole.implementation,
+      ),
+      inboundUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.inbound,
+        BuildTechStackSubRole.unitTest,
+      ),
+      persistenceImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.persistence,
+        BuildTechStackSubRole.implementation,
+      ),
+      persistenceUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.persistence,
+        BuildTechStackSubRole.unitTest,
+      ),
+      domainImplementationExtension: _extText(
+        BuildTechStackSection.domain,
+        BuildTechStackSubRole.implementation,
+      ),
+      domainUnitTestExtension: _extText(
+        BuildTechStackSection.domain,
+        BuildTechStackSubRole.unitTest,
+      ),
+      useCaseSagaImplementationExtension: _extText(
+        BuildTechStackSection.useCaseSaga,
+        BuildTechStackSubRole.implementation,
+      ),
+      useCaseSagaUnitTestExtension: _extText(
+        BuildTechStackSection.useCaseSaga,
+        BuildTechStackSubRole.unitTest,
+      ),
+      outboundImplementationExtension: _extText(
+        BuildTechStackSection.outbound,
+        BuildTechStackSubRole.implementation,
+      ),
+      outboundUnitTestExtension: _extText(
+        BuildTechStackSection.outbound,
+        BuildTechStackSubRole.unitTest,
+      ),
+      inboundImplementationExtension: _extText(
+        BuildTechStackSection.inbound,
+        BuildTechStackSubRole.implementation,
+      ),
+      inboundUnitTestExtension: _extText(
+        BuildTechStackSection.inbound,
+        BuildTechStackSubRole.unitTest,
+      ),
+      persistenceImplementationExtension: _extText(
+        BuildTechStackSection.persistence,
+        BuildTechStackSubRole.implementation,
+      ),
+      persistenceUnitTestExtension: _extText(
+        BuildTechStackSection.persistence,
+        BuildTechStackSubRole.unitTest,
+      ),
     );
 
     setState(() {
       _saving = true;
       _feedback = null;
     });
+    final wasCreated = _creatingNew || _selectedId == null;
     try {
       profile.validate();
-      final nextStacks = _creatingNew || _selectedId == null
+      final nextStacks = wasCreated
           ? <BuildTechStackProfile>[...catalog.techStacks, profile]
           : <BuildTechStackProfile>[
               for (final existing in catalog.techStacks)
@@ -312,6 +463,7 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
           updatedAt: DateTime.now().toUtc(),
         ),
       );
+      widget.onStackSaved?.call(profile, created: wasCreated);
       if (!mounted) return;
       setState(() {
         _loadIntoForm(profile);
@@ -644,27 +796,18 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
             controller: _tabController,
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            tabs: const [
-              Tab(
+            tabs: [
+              const Tab(
                 key: ValueKey('tech-stack-tab-general'),
                 icon: Icon(Icons.layers_rounded, size: 17),
                 text: 'Stack technique',
               ),
-              Tab(
-                key: ValueKey('tech-stack-tab-implementation'),
-                icon: Icon(Icons.code_rounded, size: 17),
-                text: 'Implémentation',
-              ),
-              Tab(
-                key: ValueKey('tech-stack-tab-unitTest'),
-                icon: Icon(Icons.science_outlined, size: 17),
-                text: 'Tests unitaires',
-              ),
-              Tab(
-                key: ValueKey('tech-stack-tab-persistence'),
-                icon: Icon(Icons.storage_rounded, size: 17),
-                text: 'Persistance',
-              ),
+              for (final section in BuildTechStackSection.values)
+                Tab(
+                  key: ValueKey('tech-stack-tab-${section.name}'),
+                  icon: Icon(_iconForSection(section), size: 17),
+                  text: section.label,
+                ),
             ],
           ),
           Expanded(
@@ -672,51 +815,8 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
               controller: _tabController,
               children: [
                 _buildGeneralTab(theme, colors),
-                _buildRoleTab(
-                  theme: theme,
-                  colors: colors,
-                  roleTitle: 'Implémentation',
-                  roleSubtitle:
-                      'Arborescence et consignes ajoutées en fin des prompts de rôle Implémentation (Modèle Domain, Use Case, Saga).',
-                  foldersKey: const ValueKey(
-                    'tech-stack-folders-implementation-field',
-                  ),
-                  foldersController: _implFoldersCtrl,
-                  extensionKey: const ValueKey(
-                    'tech-stack-ext-implementation-field',
-                  ),
-                  extensionController: _implExtCtrl,
-                ),
-                _buildRoleTab(
-                  theme: theme,
-                  colors: colors,
-                  roleTitle: 'Tests unitaires',
-                  roleSubtitle:
-                      'Arborescence et consignes ajoutées en fin des prompts de rôle Tests unitaires (TDD Domain, Application, Saga).',
-                  foldersKey: const ValueKey(
-                    'tech-stack-folders-unitTest-field',
-                  ),
-                  foldersController: _testFoldersCtrl,
-                  extensionKey: const ValueKey(
-                    'tech-stack-ext-unit-test-field',
-                  ),
-                  extensionController: _testExtCtrl,
-                ),
-                _buildRoleTab(
-                  theme: theme,
-                  colors: colors,
-                  roleTitle: 'Persistance',
-                  roleSubtitle:
-                      'Arborescence et consignes ajoutées en fin des prompts de rôle Persistance (Port sortant Repository, Mapper & Adaptateur).',
-                  foldersKey: const ValueKey(
-                    'tech-stack-folders-persistence-field',
-                  ),
-                  foldersController: _persistenceFoldersCtrl,
-                  extensionKey: const ValueKey(
-                    'tech-stack-ext-persistence-field',
-                  ),
-                  extensionController: _persistenceExtCtrl,
-                ),
+                for (final section in BuildTechStackSection.values)
+                  _buildSectionTab(theme, colors, section),
               ],
             ),
           ),
@@ -732,6 +832,21 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                     onPressed: _saving ? null : _deleteCurrent,
                     icon: const Icon(Icons.delete_outline_rounded, size: 18),
                     label: const Text('Supprimer'),
+                  ),
+                if (currentProfile?.id == BuildTechStackProfile.defaultTsNestJsId)
+                  TextButton.icon(
+                    key: const ValueKey('tech-stack-reset-preset-btn'),
+                    onPressed: _saving
+                        ? null
+                        : () => setState(() {
+                            _loadIntoForm(
+                              BuildTechStackProfile.tsNestJsPreset,
+                            );
+                            _feedback =
+                                'Valeurs par défaut chargées (cliquez sur Enregistrer pour appliquer).';
+                          }),
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: const Text('Rétablir le preset'),
                   ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -766,52 +881,193 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
     );
   }
 
+  static IconData _iconForSection(BuildTechStackSection section) =>
+      switch (section) {
+        BuildTechStackSection.domain => Icons.data_object_rounded,
+        BuildTechStackSection.useCaseSaga => Icons.account_tree_outlined,
+        BuildTechStackSection.outbound => Icons.call_made_rounded,
+        BuildTechStackSection.inbound => Icons.call_received_rounded,
+        BuildTechStackSection.persistence => Icons.storage_rounded,
+      };
+
+  static String _subtitleFor(
+    BuildTechStackSection section,
+    BuildTechStackSubRole subRole,
+  ) => switch ((section, subRole)) {
+    (BuildTechStackSection.domain, BuildTechStackSubRole.implementation) =>
+      'Arborescence et consignes ajoutées en fin des prompts Domain — Implémentation (Agrégats, Entités, Value Objects, Services, Ports).',
+    (BuildTechStackSection.domain, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Domain — Test unitaire.',
+    (
+      BuildTechStackSection.useCaseSaga,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'Arborescence et consignes ajoutées en fin des prompts UseCase / Saga — Implémentation.',
+    (BuildTechStackSection.useCaseSaga, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts UseCase / Saga — Test unitaire.',
+    (BuildTechStackSection.outbound, BuildTechStackSubRole.implementation) =>
+      'Arborescence et consignes ajoutées en fin des prompts Outbound — Implémentation (adaptateurs sortants hors persistance).',
+    (BuildTechStackSection.outbound, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Outbound — Test unitaire.',
+    (BuildTechStackSection.inbound, BuildTechStackSubRole.implementation) =>
+      'Arborescence et consignes ajoutées en fin des prompts Inbound — Implémentation (contrôleurs, DTOs, consumers).',
+    (BuildTechStackSection.inbound, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Inbound — Test unitaire.',
+    (
+      BuildTechStackSection.persistence,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'Arborescence et consignes ajoutées en fin des prompts Persistance — Implémentation (schémas, mappers, repositories).',
+    (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Persistance — Test unitaire.',
+  };
+
   Widget _buildGeneralTab(ThemeData theme, ColorScheme colors) {
     return Padding(
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 14,
+        spacing: 12,
         children: [
           Text(
-            'Décrivez la stack technique globale (injectée dans tous les rôles) et, si besoin, une structure de dossiers commune de repli.',
+            'Décrivez la stack technique globale (injectée dans tous les prompts), une structure de dossiers de repli et les consignes de Documentation IA (ajoutées à la toute fin de chaque prompt).',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
           Expanded(
-            flex: 3,
-            child: TextFormField(
-              key: const ValueKey('tech-stack-technical-field'),
-              controller: _techStackCtrl,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: const InputDecoration(
-                labelText: 'Stack technique (langage, frameworks, outils)',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
+            flex: 5,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 12,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextFormField(
+                          key: const ValueKey('tech-stack-technical-field'),
+                          controller: _techStackCtrl,
+                          expands: true,
+                          maxLines: null,
+                          minLines: null,
+                          textAlignVertical: TextAlignVertical.top,
+                          decoration: const InputDecoration(
+                            labelText:
+                                'Stack technique (langage, frameworks, outils)',
+                            alignLabelWithHint: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          key: const ValueKey('tech-stack-folders-field'),
+                          controller: _foldersCtrl,
+                          expands: true,
+                          maxLines: null,
+                          minLines: null,
+                          textAlignVertical: TextAlignVertical.top,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12.5,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText:
+                                'Structure des dossiers commune (repli optionnel)',
+                            helperText:
+                                'Utilisée uniquement lorsqu’un sous-onglet n’a pas sa propre structure. Supporte {{domain}}.',
+                            alignLabelWithHint: true,
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: TextFormField(
+                    key: const ValueKey('tech-stack-ai-documentation-field'),
+                    controller: _aiDocCtrl,
+                    expands: true,
+                    maxLines: null,
+                    minLines: null,
+                    textAlignVertical: TextAlignVertical.top,
+                    decoration: const InputDecoration(
+                      labelText: 'Documentation IA',
+                      helperText:
+                          'Ajoutée à la toute fin de chaque prompt généré. Supporte {{domain}} et {{module}}.',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTab(
+    ThemeData theme,
+    ColorScheme colors,
+    BuildTechStackSection section,
+  ) {
+    return DefaultTabController(
+      key: ValueKey('tech-stack-section-tabs-${section.name}'),
+      length: BuildTechStackSubRole.values.length,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: colors.surfaceContainerLow.withValues(alpha: 0.45),
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: [
+                for (final subRole in BuildTechStackSubRole.values)
+                  Tab(
+                    key: ValueKey(
+                      'tech-stack-subtab-${section.name}-${subRole.name}',
+                    ),
+                    icon: Icon(
+                      subRole == BuildTechStackSubRole.implementation
+                          ? Icons.code_rounded
+                          : Icons.science_outlined,
+                      size: 16,
+                    ),
+                    text: subRole.label,
+                  ),
+              ],
             ),
           ),
           Expanded(
-            flex: 2,
-            child: TextFormField(
-              key: const ValueKey('tech-stack-folders-field'),
-              controller: _foldersCtrl,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
-              decoration: const InputDecoration(
-                labelText: 'Structure des dossiers commune (repli optionnel)',
-                helperText:
-                    'Utilisée uniquement lorsqu’un onglet de rôle n’a pas sa propre structure. Supporte {{domain}}.',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
+            child: TabBarView(
+              children: [
+                for (final subRole in BuildTechStackSubRole.values)
+                  _buildRoleTab(
+                    theme: theme,
+                    colors: colors,
+                    roleTitle: '${section.label} — ${subRole.label}',
+                    roleSubtitle: _subtitleFor(section, subRole),
+                    foldersKey: ValueKey(
+                      'tech-stack-folders-${section.name}-${subRole.name}-field',
+                    ),
+                    foldersController:
+                        _sectionControllers[(section, subRole)]!.folders,
+                    extensionKey: ValueKey(
+                      'tech-stack-ext-${section.name}-${subRole.name}-field',
+                    ),
+                    extensionController:
+                        _sectionControllers[(section, subRole)]!.ext,
+                  ),
+              ],
             ),
           ),
         ],

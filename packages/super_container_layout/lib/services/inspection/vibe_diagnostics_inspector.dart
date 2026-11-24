@@ -1178,6 +1178,7 @@ class VibeDiagnosticsInspector {
       if (scope == null) ...<String>[
         ...?registry?.instantiatedComponentIds,
         ...slotIndex.mountedComponentIds,
+        for (final s in appearance.pageCatalog.shells) s.id,
         for (final p in appearance.pageCatalog.pages) p.id,
         if (appearance.components.containsKey('root')) 'root',
         if (appearance.components.containsKey('mainLayout')) 'mainLayout',
@@ -1405,6 +1406,7 @@ class VibeDiagnosticsInspector {
     for (final rootId in <String>{
       ...?registry?.instantiatedComponentIds,
       ...slotIndex.mountedComponentIds,
+      for (final s in appearance.pageCatalog.shells) s.id,
       for (final p in appearance.pageCatalog.pages) p.id,
       ...appearance.components.keys,
     }) {

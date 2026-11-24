@@ -10,8 +10,11 @@ import '../../models/company_glossary.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/usecase_orchestration_spec.dart';
 import '../spec_storage_slug.dart';
+import 'prompt_generator/domain_inbound_prompt_builders.dart';
+import 'prompt_generator/domain_outbound_prompt_builders.dart';
 import 'prompt_generator/model_implementation_prompt_builder.dart';
 import 'prompt_generator/model_persistence_prompt_builder.dart';
+import 'prompt_generator/model_persistence_unit_test_prompt_builder.dart';
 import 'prompt_generator/model_prompt_context.dart';
 import 'prompt_generator/model_unit_test_prompt_builder.dart';
 import 'prompt_generator/prompt_generator_models.dart';
@@ -23,41 +26,33 @@ import 'prompt_generator/usecase_unit_test_prompt_builder.dart';
 
 export 'prompt_generator/prompt_generator_models.dart';
 
-/// Assemble les prompts Markdown pour implémenter les modèles, cas d'usage et
-/// sagas sélectionnés selon une **Architecture Hexagonale** stricte (Ports &
-/// Adapters, DDD, CQRS & TDD).
+/// Assemble les prompts Markdown pour implémenter les modèles, cas d'usage,
+/// sagas et adaptateurs Outbound / Inbound selon une **Architecture Hexagonale**
+/// stricte (Ports & Adapters, DDD, CQRS & TDD).
 abstract final class BuildHexaPromptGenerator {
-  /// Rôles de prompts applicables à une catégorie d'élément [kind] :
-  /// - `model` : `implementation`, `unitTest`, `persistence` (3 prompts),
-  /// - `useCase` / `saga` : `implementation`, `unitTest` (2 prompts).
-  static List<BuildHexaPromptRole> rolesForKind(BuildDesignItemKind kind) =>
-      switch (kind) {
-        BuildDesignItemKind.model => const <BuildHexaPromptRole>[
-          BuildHexaPromptRole.implementation,
-          BuildHexaPromptRole.unitTest,
-          BuildHexaPromptRole.persistence,
-        ],
-        BuildDesignItemKind.useCase ||
-        BuildDesignItemKind.saga => const <BuildHexaPromptRole>[
-          BuildHexaPromptRole.implementation,
-          BuildHexaPromptRole.unitTest,
-        ],
-      };
+  /// Rôles de prompts applicables à chaque section (`Implémentation`, `Test unitaire`).
+  static const List<BuildHexaPromptRole> standardRoles = <BuildHexaPromptRole>[
+    BuildHexaPromptRole.implementation,
+    BuildHexaPromptRole.unitTest,
+  ];
 
   /// Retourne l'identifiant canonique `kind` en `kebab-case` pour un couple
-  /// catégorie d'élément / rôle de prompt (ex. `model-implementation`,
-  /// `model-persistence`, `usecase-unit-test`, `saga-implementation`).
+  /// catégorie d'élément (ou `null` pour Outbound/Inbound autonomes), section
+  /// architecturale et rôle de prompt.
   static String kindFor(
-    BuildDesignItemKind itemKind,
+    BuildDesignItemKind? itemKind,
+    BuildTechStackSection section,
     BuildHexaPromptRole role,
-  ) => PromptYamlHeaderBuilder.kindFor(itemKind, role);
+  ) => PromptYamlHeaderBuilder.kindFor(itemKind, section, role);
 
   /// Extrait le contenu YAML brut de l'en-tête ```` ```yaml ... ``` ```` situé
   /// au début de [promptMarkdown], ou `null` s'il est absent.
   static String? extractYamlHeader(String promptMarkdown) =>
       PromptYamlHeaderBuilder.extractYamlHeader(promptMarkdown);
 
-  /// Génère les groupes de prompts pour chaque élément de [selectedItems] dans [domain].
+  /// Génère les groupes de prompts pour chaque élément de [selectedItems] dans [domain],
+  /// suivis en fin de liste par les groupes autonomes **Outbound** et **Inbound**
+  /// (lorsque [includeDomainAdapters] vaut `true`).
   static List<BuildItemPromptGroup> generateGroups({
     required FunctionalDomain domain,
     required List<BuildDesignItem> selectedItems,
@@ -66,6 +61,7 @@ abstract final class BuildHexaPromptGenerator {
     CompanyGlossary? glossary,
     BusinessObjectModelPreferences? modelPreferences,
     DateTime? referenceDate,
+    bool includeDomainAdapters = true,
   }) {
     final dates = PromptYamlHeaderBuilder.resolveMetadataDates(
       domain: domain,
@@ -104,6 +100,50 @@ abstract final class BuildHexaPromptGenerator {
         groups.add(BuildItemPromptGroup(item: item, prompts: prompts));
       }
     }
+    if (includeDomainAdapters) {
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.outbound,
+          subtitle: 'Adaptateurs sortants hors persistance (messaging, logger, clients)',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainOutboundImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainOutboundUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.inbound,
+          subtitle: 'Points d’entrée entrants (contrôleurs, DTOs, consumers, guards)',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainInboundImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainInboundUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+    }
     return groups;
   }
 
@@ -133,7 +173,7 @@ abstract final class BuildHexaPromptGenerator {
         ..writeln('---')
         ..writeln()
         ..writeln(
-          '<!-- Étape ${i + 1}/${list.length} : ${prompt.item.name} — ${prompt.role.label} -->',
+          '<!-- Étape ${i + 1}/${list.length} : ${prompt.targetLabel} · ${prompt.section.label} — ${prompt.role.label} -->',
         )
         ..writeln(prompt.promptMarkdown.trimRight())
         ..writeln();
@@ -172,6 +212,11 @@ abstract final class BuildHexaPromptGenerator {
         dates: dates,
         techStack: techStack,
         modelPreferences: modelPreferences,
+      ),
+      buildModelPersistenceUnitTestPrompt(
+        ctx: ctx,
+        dates: dates,
+        techStack: techStack,
       ),
     ];
   }

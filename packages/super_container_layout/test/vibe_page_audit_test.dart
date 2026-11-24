@@ -351,6 +351,14 @@ void main() {
                               'vibe': null,
                             });
                           }
+                          if (prompt.contains(
+                            'PHASE FINALE — VALEURS RÉACTIVES',
+                          )) {
+                            return jsonEncode(<String, Object?>{
+                              'message': 'Valeurs réactives vérifiées.',
+                              'vibe': null,
+                            });
+                          }
                           if (prompt.contains('PHASE 2 — EXÉCUTION DU LOT')) {
                             return jsonEncode(<String, Object?>{
                               'message': 'Marges corrigées.',
@@ -384,16 +392,11 @@ void main() {
                                   <String, Object?>{
                                     'id': 'lot-1',
                                     'title': 'Corriger les marges du KPI',
-                                    'description': 'Réduire les marges/paddings de kpi-total et activer fitContent.',
+                                    'description':
+                                        'Réduire les marges/paddings de kpi-total et activer fitContent.',
                                   },
                                 ],
                               },
-                              'vibe': null,
-                            });
-                          }
-                          if (prompt.contains('MODE « VALEURS RÉACTIVES »')) {
-                            return jsonEncode(<String, Object?>{
-                              'message': 'Consignes de valeurs réactives prises en compte.',
                               'vibe': null,
                             });
                           }
@@ -432,29 +435,20 @@ void main() {
       final auditChip = find.byKey(const ValueKey('vibe-chat-audit-page'));
       expect(reactiveChip, findsOneWidget);
       expect(auditChip, findsOneWidget);
-      final reactivePlayIcon = find.descendant(
-        of: reactiveChip,
-        matching: find.byIcon(Icons.play_arrow_rounded),
+      // « Valeur réactif » est désormais une puce bascule (sans icône Play),
+      // contrairement à « Audit & correction » qui reste un bouton d'action.
+      expect(
+        find.descendant(
+          of: reactiveChip,
+          matching: find.byIcon(Icons.play_arrow_rounded),
+        ),
+        findsNothing,
       );
       final auditPlayIcon = find.descendant(
         of: auditChip,
         matching: find.byIcon(Icons.play_arrow_rounded),
       );
-      expect(reactivePlayIcon, findsOneWidget);
       expect(auditPlayIcon, findsOneWidget);
-      expect(
-        tester.getTopLeft(reactivePlayIcon).dx,
-        greaterThan(
-          tester
-              .getTopLeft(
-                find.descendant(
-                  of: reactiveChip,
-                  matching: find.text('Valeur réactif'),
-                ),
-              )
-              .dx,
-        ),
-      );
       expect(
         tester.getTopLeft(auditPlayIcon).dx,
         greaterThan(
@@ -468,22 +462,18 @@ void main() {
               .dx,
         ),
       );
+      final reactivePos = tester.getTopLeft(reactiveChip);
+      final auditPos = tester.getTopLeft(auditChip);
       expect(
-        tester.getTopLeft(reactiveChip).dx,
-        lessThan(tester.getTopLeft(auditChip).dx),
+        auditPos.dy > reactivePos.dy ||
+            (auditPos.dy == reactivePos.dy && auditPos.dx > reactivePos.dx),
+        isTrue,
       );
+      // Activer « Valeur réactif » bascule simplement l'option sans lancer d'appel LLM.
       await tester.ensureVisible(reactiveChip);
       await tester.tap(reactiveChip);
-      await pumpUntil(() => capturedPrompts.isNotEmpty);
       await tester.pumpAndSettle();
-
-      expect(capturedPrompts, hasLength(1));
-      expect(capturedPrompts.first, contains('MODE « VALEURS RÉACTIVES »'));
-      expect(capturedPrompts.first, contains('calculatedAttributes'));
-      expect(capturedPrompts.first, contains('(row, ctx, doc)'));
-      expect(capturedPrompts.first, contains('SuperValue'));
-      expect(capturedPrompts.first, contains('lecture seule'));
-      expect(capturedPrompts.first, contains('plan de réalisation par lots'));
+      expect(capturedPrompts, isEmpty);
 
       await tester.ensureVisible(auditChip);
       await tester.tap(auditChip);
@@ -493,44 +483,46 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(capturedPrompts, hasLength(2));
-      expect(capturedPrompts[1], contains('MODE « AUDIT & CORRECTION »'));
+      expect(capturedPrompts, hasLength(1));
+      expect(capturedPrompts[0], contains('MODE « AUDIT & CORRECTION »'));
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains(
           "Contrôle systématique du budget de largeur en ligne (`zoneAxes: 'row'`)",
         ),
       );
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains('somme(width) > parentWidth - paddings'),
       );
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains(
           "Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)",
         ),
       );
-      expect(capturedPrompts[1], contains("kind: 'icon'"));
+      expect(capturedPrompts[0], contains("kind: 'icon'"));
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains(
           'Audit visuel obligatoire par capture isolée (`capture_element_screenshot`)',
         ),
       );
-      expect(capturedPrompts[1], contains('en-tête de carte maître'));
-      expect(capturedPrompts[1], contains('occurrenceIndex: 0'));
+      expect(capturedPrompts[0], contains('en-tête de carte maître'));
+      expect(capturedPrompts[0], contains('occurrenceIndex: 0'));
       expect(
-        capturedPrompts[1],
-        contains('Maîtrise du budget de largeur & prévention de la troncature silencieuse'),
+        capturedPrompts[0],
+        contains(
+          'Maîtrise du budget de largeur & prévention de la troncature silencieuse',
+        ),
       );
-      expect(capturedPrompts[1], contains('autoSides: ["east"]'));
+      expect(capturedPrompts[0], contains('autoSides: ["east"]'));
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains('[somme(tailles fixes des côtés actifs) + paddings + marges]'),
       );
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains('excessive_margin_or_padding_for_fixed_size'),
       );
       expect(find.text('Plan d’audit et correction'), findsOneWidget);
@@ -538,7 +530,7 @@ void main() {
       // Hors mode Plan, le bouton « Exécution en parallèle » n'est pas affiché
       // et la directive de dépendances parallèles d'audit n'est pas injectée.
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         isNot(contains('DÉPENDANCES ENTRE LOTS D’AUDIT')),
       );
       expect(
@@ -546,7 +538,8 @@ void main() {
         findsNothing,
       );
 
-      // Exécute le lot proposé par le plan d'audit.
+      // Exécute le lot proposé par le plan d'audit :
+      // Lot 1/1 -> phase « Valeurs réactives » -> phase « Vérification post-rendu ».
       final startButton = find.byKey(const ValueKey('vibe-plan-start'));
       expect(startButton, findsOneWidget);
       await tester.ensureVisible(startButton);
@@ -557,17 +550,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(capturedPrompts, hasLength(4));
-      expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
-      expect(capturedPrompts[2], contains('verifyRender'));
+      expect(capturedPrompts[1], contains('PHASE 2 — EXÉCUTION DU LOT 1/1'));
+      expect(capturedPrompts[1], contains('verifyRender'));
       expect(
-        capturedPrompts[2],
+        capturedPrompts[1],
         contains(
           "Règle d'or sur les volets latéraux étroits (largeur ≤ 480 dp)",
         ),
       );
-      expect(capturedPrompts[2], contains('en-tête de carte maître'));
-      expect(capturedPrompts[2], contains('occurrenceIndex: 0'));
-      expect(capturedPrompts[2], contains('autoSides: ["east"]'));
+      expect(capturedPrompts[1], contains('en-tête de carte maître'));
+      expect(capturedPrompts[1], contains('occurrenceIndex: 0'));
+      expect(capturedPrompts[1], contains('autoSides: ["east"]'));
+      expect(
+        capturedPrompts[2],
+        contains('PHASE FINALE — VALEURS RÉACTIVES'),
+      );
+      expect(capturedPrompts[2], contains('MODE « VALEURS RÉACTIVES »'));
+      expect(capturedPrompts[2], contains('calculatedAttributes'));
+      expect(capturedPrompts[2], contains('(row, ctx, doc)'));
+      expect(capturedPrompts[2], contains('SuperValue'));
+      expect(capturedPrompts[2], contains('lecture seule'));
+      expect(
+        capturedPrompts[2],
+        isNot(contains('plan de réalisation par lots')),
+      );
       expect(capturedPrompts[3], contains('VÉRIFICATION POST-RENDU'));
       expect(
         capturedPrompts[3],
@@ -599,7 +605,7 @@ void main() {
       expect(capturedPrompts[3], contains('en-tête de carte maître'));
       expect(capturedPrompts[3], contains('Balayage des onglets (hors scope)'));
       expect(
-        capturedPrompts[1],
+        capturedPrompts[0],
         contains('BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE)'),
       );
       expect(appAppearance.value.styles['kpi-total']?.padding, 8);
@@ -1108,7 +1114,8 @@ void main() {
         });
       }
 
-      // 1) Vérifie la position dans la barre d'action : juste après "À l'identique" et avant "Valeur réactif".
+      // 1) Vérifie la position dans la barre d'action (Wrap) : ordre de lecture
+      // « À l'identique » -> « Uniquement visible » -> « Valeur réactif ».
       final exactChip = find.byKey(const ValueKey('vibe-chat-reproduce-exact'));
       final visibleChip = find.byKey(const ValueKey('vibe-chat-visible-only'));
       final reactiveChip = find.byKey(
@@ -1117,13 +1124,21 @@ void main() {
       expect(exactChip, findsOneWidget);
       expect(visibleChip, findsOneWidget);
       expect(reactiveChip, findsOneWidget);
+      bool isBeforeInReadingOrder(Offset a, Offset b) =>
+          b.dy > a.dy + 1 || ((b.dy - a.dy).abs() <= 1 && b.dx > a.dx);
       expect(
-        tester.getTopLeft(exactChip).dx,
-        lessThan(tester.getTopLeft(visibleChip).dx),
+        isBeforeInReadingOrder(
+          tester.getTopLeft(exactChip),
+          tester.getTopLeft(visibleChip),
+        ),
+        isTrue,
       );
       expect(
-        tester.getTopLeft(visibleChip).dx,
-        lessThan(tester.getTopLeft(reactiveChip).dx),
+        isBeforeInReadingOrder(
+          tester.getTopLeft(visibleChip),
+          tester.getTopLeft(reactiveChip),
+        ),
+        isTrue,
       );
 
       // 2) Passe sur le 2e onglet ("Détails avancés") et scrolle tout en bas pour sortir top_scrolled_out du viewport.
@@ -1523,6 +1538,378 @@ void main() {
       );
       expect(diag['orphanComponentCount'], 3);
       expect(diag['emptyMountedRootIds'], ['mainLayout']);
+    },
+  );
+
+  testWidgets(
+    'VibeReactiveValuesChip toggles post-generation reactive phase (repositories + vibe), skips when disabled, and runs once at end of multi-lot plan',
+    (tester) async {
+      final tempDir = Directory.systemTemp.createTempSync(
+        'vibe_reactive_phase_',
+      );
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+      final repoStore = JsonRepositoryStore(tempDir);
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(
+        Appearance(
+          components: const <String, ComponentConfig>{
+            'mainLayout': SuperLayoutConfig(),
+          },
+        ),
+      );
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final toggleChanges = <bool>[];
+      final capturedPrompts = <String>[];
+      var callCount = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                repositoryStore: repoStore,
+                codec: const AppearanceCodec(),
+                initialQuestioningLevel: VibeQuestioningLevel.none,
+                initialVerifyRenderEnabled: false,
+                initialReactiveValuesEnabled: true,
+                onReactiveValuesEnabledChanged: toggleChanges.add,
+                onClose: () {},
+                onDrag: (_) {},
+                generate: (prompt) async {
+                  callCount++;
+                  capturedPrompts.add(prompt);
+                  if (prompt.contains('PHASE FINALE — VALEURS RÉACTIVES')) {
+                    final entries = await repoStore.catalog();
+                    final repoId = entries.isEmpty
+                        ? 'factures'
+                        : entries.first.id;
+                    return jsonEncode(<String, Object?>{
+                      'message': 'Calcul réactif @totalTtc configuré.',
+                      'repositories': <String, Object?>{
+                        repoId: <String, Object?>{
+                          'mode': 'merge',
+                          'calculatedAttributes': <Map<String, Object?>>[
+                            <String, Object?>{
+                              'name': 'totalTtc',
+                              'code': '(doc.montantHt ?? 0) * 1.2',
+                              'description': 'Montant TTC calculé',
+                            },
+                          ],
+                        },
+                      },
+                      'vibe': <String, Object?>{
+                        'components': <String, Object?>{
+                          'kpi-ttc': <String, Object?>{
+                            'type': 'value',
+                            'mode': 'display',
+                            'label': 'Total TTC',
+                            'binding': <String, Object?>{
+                              'repositoryId': repoId,
+                              'path': '@totalTtc',
+                            },
+                          },
+                        },
+                      },
+                    });
+                  }
+                  if (prompt.contains('PHASE 1 — PLANIFICATION EN LOTS')) {
+                    return jsonEncode(<String, Object?>{
+                      'message': 'Plan en 2 lots prêt.',
+                      'plan': <String, Object?>{
+                        'title': 'Plan facturation',
+                        'lots': <Map<String, Object?>>[
+                          <String, Object?>{
+                            'id': 'lot-1',
+                            'title': 'Lot 1 : champs',
+                            'description': 'Ajoute un champ HT.',
+                          },
+                          <String, Object?>{
+                            'id': 'lot-2',
+                            'title': 'Lot 2 : total',
+                            'description': 'Ajoute un KPI TTC.',
+                          },
+                        ],
+                      },
+                      'vibe': null,
+                    });
+                  }
+                  if (prompt.contains('PHASE 2 — EXÉCUTION DU LOT 1/2')) {
+                    return jsonEncode(<String, Object?>{
+                      'message': 'Lot 1 appliqué.',
+                      'vibe': <String, Object?>{
+                        'components': <String, Object?>{
+                          'mainLayout': <String, Object?>{
+                            'type': 'layout',
+                            'placements': <String, Object?>{
+                              'center': <Map<String, Object?>>[
+                                <String, Object?>{
+                                  'id': 'kpi-ttc',
+                                  'type': 'registry:Value',
+                                },
+                                <String, Object?>{
+                                  'id': 'champ-ht',
+                                  'type': 'registry:Value',
+                                },
+                              ],
+                            },
+                          },
+                          'champ-ht': <String, Object?>{
+                            'type': 'value',
+                            'mode': 'input',
+                            'label': 'Montant HT',
+                          },
+                        },
+                      },
+                    });
+                  }
+                  if (prompt.contains('PHASE 2 — EXÉCUTION DU LOT 2/2')) {
+                    return jsonEncode(<String, Object?>{
+                      'message': 'Lot 2 appliqué.',
+                      'vibe': <String, Object?>{
+                        'components': <String, Object?>{
+                          'kpi-ttc': <String, Object?>{
+                            'type': 'value',
+                            'label': 'Total TTC brut',
+                            'text': '120',
+                          },
+                        },
+                      },
+                    });
+                  }
+                  return jsonEncode(<String, Object?>{
+                    'message': 'Écran facture créé.',
+                    'repositories': <String, Object?>{
+                      'factures': <String, Object?>{
+                        'name': 'Factures',
+                        'data': <String, Object?>{'montantHt': 100},
+                        'jsonSchema': <String, Object?>{
+                          'type': 'object',
+                          'properties': <String, Object?>{
+                            'montantHt': <String, Object?>{'type': 'number'},
+                          },
+                        },
+                      },
+                    },
+                    'vibe': <String, Object?>{
+                      'components': <String, Object?>{
+                        'mainLayout': <String, Object?>{
+                          'type': 'layout',
+                          'placements': <String, Object?>{
+                            'center': <Map<String, Object?>>[
+                              <String, Object?>{
+                                'id': 'kpi-ttc',
+                                'type': 'registry:Value',
+                              },
+                            ],
+                          },
+                        },
+                        'kpi-ttc': <String, Object?>{
+                          'type': 'value',
+                          'label': 'Total TTC',
+                          'text': '120',
+                        },
+                      },
+                    },
+                  });
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> pumpUntil(bool Function() condition) async {
+        await tester.runAsync(() async {
+          for (var i = 0; i < 120; i++) {
+            await tester.pump();
+            if (condition()) break;
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+          }
+          await tester.pump();
+        });
+      }
+
+      // 1) Tour normal avec « Valeur réactif » actif -> exécute automatiquement
+      // la phase finale qui ajoute @totalTtc dans le repository et lie kpi-ttc.
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Crée un écran facture',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpUntil(
+        () =>
+            callCount >= 2 &&
+            find
+                .textContaining('Calcul réactif @totalTtc configuré.')
+                .evaluate()
+                .isNotEmpty,
+      );
+      await tester.pump();
+
+      expect(callCount, 2);
+      expect(
+        capturedPrompts[1],
+        contains('PHASE FINALE — VALEURS RÉACTIVES'),
+      );
+      expect(capturedPrompts[1], contains('Factures'));
+      final catalogEntries = await tester.runAsync(repoStore.catalog);
+      expect(catalogEntries, hasLength(1));
+      final repoEntry = catalogEntries!.first;
+      expect(
+        repoStore.jsCalculatedAttributesOf(repoEntry.id).map((c) => c.path),
+        contains('@totalTtc'),
+      );
+      final kpi = appearance.value.valueComponent('kpi-ttc');
+      expect(kpi.mode, SuperValueMode.display);
+      expect(kpi.binding?.path, '@totalTtc');
+
+      // 2) Désactivation via la puce -> aucun appel LLM au clic, puis le tour
+      // suivant saute la phase finale (1 seul appel LLM).
+      final expandBtn = find.byKey(const ValueKey('vibe-chat-expand'));
+      if (expandBtn.evaluate().isNotEmpty) {
+        await tester.tap(expandBtn);
+        await tester.pump();
+      }
+      final reactiveChip = find.byKey(
+        const ValueKey('vibe-chat-reactive-values'),
+      );
+      await tester.ensureVisible(reactiveChip);
+      await tester.tap(reactiveChip);
+      await tester.pump();
+      expect(toggleChanges, [false]);
+      expect(callCount, 2);
+
+      capturedPrompts.clear();
+      callCount = 0;
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Retouche rapide',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpUntil(
+        () =>
+            callCount >= 1 &&
+            find
+                .textContaining('Écran facture créé.')
+                .evaluate()
+                .isNotEmpty,
+      );
+      await tester.pump();
+
+      expect(callCount, 1);
+      expect(
+        capturedPrompts.single,
+        isNot(contains('PHASE FINALE — VALEURS RÉACTIVES')),
+      );
+
+      // 3) Mode Plan multi-lots avec « Valeur réactif » réactivé -> la phase
+      // ne s'exécute PAS sur le Lot 1/2 mais une seule fois après le Lot 2/2.
+      if (expandBtn.evaluate().isNotEmpty) {
+        await tester.tap(expandBtn);
+        await tester.pump();
+      }
+      await tester.ensureVisible(reactiveChip);
+      await tester.tap(reactiveChip);
+      await tester.pump();
+      expect(toggleChanges, [false, true]);
+
+      final planChip = find.byKey(const ValueKey('vibe-chat-plan-mode'));
+      await tester.ensureVisible(planChip);
+      await tester.tap(planChip);
+      await tester.pump();
+
+      capturedPrompts.clear();
+      callCount = 0;
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Planifie la page facturation',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpUntil(
+        () =>
+            find.byKey(const ValueKey('vibe-plan-start')).evaluate().isNotEmpty,
+      );
+      await tester.pump();
+
+      expect(callCount, 1);
+      await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+      await pumpUntil(
+        () => find.textContaining('Plan terminé').evaluate().isNotEmpty,
+      );
+      await tester.pump();
+
+      // 1 (plan) + 1 (lot 1) + 1 (lot 2) + 1 (phase finale valeurs réactives) = 4
+      expect(callCount, 4);
+      expect(capturedPrompts[1], contains('PHASE 2 — EXÉCUTION DU LOT 1/2'));
+      expect(capturedPrompts[2], contains('PHASE 2 — EXÉCUTION DU LOT 2/2'));
+      expect(
+        capturedPrompts[3],
+        contains('PHASE FINALE — VALEURS RÉACTIVES'),
+      );
+    },
+  );
+
+  testWidgets(
+    'VibeChatDialog wraps action chips onto multiple lines when panel is narrow',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(
+        Appearance(
+          components: const <String, ComponentConfig>{
+            'mainLayout': SuperLayoutConfig(),
+          },
+        ),
+      );
+      registry.bindAppearance(appearance);
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                height: 600,
+                child: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => '{"message":"ok","vibe":null}',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final exactRect = tester.getRect(
+        find.byKey(const ValueKey('vibe-chat-reproduce-exact')),
+      );
+      final auditRect = tester.getRect(
+        find.byKey(const ValueKey('vibe-chat-audit-page')),
+      );
+      // Sur une largeur de 300 px, les puces passent à la ligne sans débordement.
+      expect(auditRect.top, greaterThanOrEqualTo(exactRect.bottom));
+      expect(tester.takeException(), isNull);
     },
   );
 }

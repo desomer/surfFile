@@ -595,24 +595,23 @@ class _SuperTextFieldState extends State<SuperTextField> {
       0.0,
       (field.radius ?? (isOutlined ? 4.0 : 0.0)) - 1.5,
     );
-    final fieldWithIndicator = tooltipValidationError == null
-        ? textField
-        : Stack(
-            fit: StackFit.passthrough,
-            children: [
-              textField,
-              Positioned(
-                top: isOutlined && config.label.isNotEmpty ? 7.0 : 1.5,
-                right: 1.5,
-                child: _ExcelErrorTriangle(
-                  key: widget.errorIndicatorKey,
-                  message: tooltipValidationError,
-                  color: error,
-                  topRightRadius: cornerRadius,
-                ),
-              ),
-            ],
-          );
+    final fieldWithIndicator = Stack(
+      fit: StackFit.passthrough,
+      children: [
+        textField,
+        if (tooltipValidationError != null)
+          Positioned(
+            top: isOutlined && config.label.isNotEmpty ? 7.0 : 1.5,
+            right: 1.5,
+            child: _ExcelErrorTriangle(
+              key: widget.errorIndicatorKey,
+              message: tooltipValidationError,
+              color: error,
+              topRightRadius: cornerRadius,
+            ),
+          ),
+      ],
+    );
     if (insideAffix) return fieldWithIndicator;
     return wrapWithOutsideSuperValueAffixes(
       child: fieldWithIndicator,

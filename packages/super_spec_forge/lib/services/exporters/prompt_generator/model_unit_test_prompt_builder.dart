@@ -28,6 +28,7 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
   final header = PromptYamlHeaderBuilder.buildFencedYamlHeader(
     kind: PromptYamlHeaderBuilder.kindFor(
       BuildDesignItemKind.model,
+      BuildTechStackSection.domain,
       BuildHexaPromptRole.unitTest,
     ),
     name: PromptYamlHeaderBuilder.buildPromptSlug(
@@ -50,6 +51,7 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
     generation: <String, String>{
       'architecture': 'hexagonal',
       if (techStack != null) 'stack': techStack.code,
+      'section': BuildTechStackSection.domain.slug,
       'layer': 'domain',
       'role': 'unit-test',
       'artifactType': dslType,
@@ -61,8 +63,9 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
   final body = _formatBody(ctx, techStack: techStack);
 
   return BuildHexaPromptSpec(
-    id: '${item.kind.name}:${item.id}:${BuildHexaPromptRole.unitTest.name}',
+    id: '${item.kind.name}:${item.id}:${BuildTechStackSection.domain.name}:${BuildHexaPromptRole.unitTest.name}',
     item: item,
+    section: BuildTechStackSection.domain,
     role: BuildHexaPromptRole.unitTest,
     title: title,
     summary: summary,
@@ -163,6 +166,7 @@ String _formatBody(ModelPromptContext ctx, {BuildTechStackProfile? techStack}) {
   PromptMarkdownSections.writeTechStackExtensionSection(
     buf,
     domain: domain,
+    section: BuildTechStackSection.domain,
     role: BuildHexaPromptRole.unitTest,
     techStack: techStack,
   );

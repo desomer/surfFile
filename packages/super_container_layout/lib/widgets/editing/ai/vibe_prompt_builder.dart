@@ -99,7 +99,6 @@ Configure les repositories et l’interface afin que les valeurs dérivées rest
 - Respecte l’atomicité stricte : un attribut métier = un seul `SuperValue`, avec ses propriétés natives `label`, `binding` et `suffix`.
 - Ne concatène jamais le libellé et la donnée dans `text`.
 - Ne stocke aucun attribut préfixé par `@` dans les données du repository ; les `@calcul` restent en lecture seule.
-- Si la page couvre plusieurs sections, propose un plan de réalisation par lots cohérents.
 
 4. GRAPHIQUES ET VISUALISATION DES VALEURS CALCULÉES :
 - N’oublie pas les graphiques pertinents : lorsqu’une évolution, une comparaison ou une répartition aide à comprendre les données, ajoute un `registry:Chart` dans les `placements` et configure son entrée `components[chartId]` avec `"type": "chart"` (`SuperChart`).
@@ -582,6 +581,75 @@ Ne propose aucune modification en dehors de ce scope ni sur les paramètres glob
       ?repositoriesSection,
       'ÉTAT ACTUEL (JSON) :\n$current',
       if (conversation.trim().isNotEmpty) 'CONVERSATION :\n$conversation',
+    ].join('\n\n');
+  }
+
+  /// Assemble le prompt de la phase finale « Valeurs réactives » exécutée
+  /// automatiquement après la génération (et avant la vérification post-rendu).
+  static String buildPostReactiveValuesPrompt({
+    required Appearance appearance,
+    required AppearanceCodec codec,
+    required VibeChatScope? scope,
+    List<String> mountedSlotSummaries = const <String>[],
+    String? repositoriesContext,
+    bool visibleOnlyMode = false,
+    String? visibleViewportContext,
+  }) {
+    final trimmedRepositories = repositoriesContext?.trim() ?? '';
+    final repositoriesSection = trimmedRepositories.isEmpty
+        ? null
+        : (trimmedRepositories.startsWith('REPOSITORIES DISPONIBLES')
+              ? trimmedRepositories
+              : 'REPOSITORIES DISPONIBLES (JSON) :\n$trimmedRepositories');
+    final mountedHint = mountedSlotSummaries.isEmpty
+        ? null
+        : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
+    final visibleOnlySection = visibleOnlyMode ? visibleOnlyDirective : null;
+    final trimmedVisibleCtx = visibleViewportContext?.trim() ?? '';
+    final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
+        ? trimmedVisibleCtx
+        : null;
+
+    String? scopeDirective;
+    final String stateSection;
+    if (scope != null) {
+      final parentIds = VibeScopeHelpers.parentIdsOfScope(appearance, scope);
+      final parentList = parentIds.map((id) => '"$id"').join(', ');
+      final targetIdsList = scope.canonicalComponentIds
+          .map((id) => '"$id"')
+          .join(', ');
+      final effectiveParent = parentIds.isNotEmpty ? parentList : targetIdsList;
+      scopeDirective =
+          '''RESTRICTION STRICTE DE SCOPE (PHASE VALEURS RÉACTIVES) :
+Le périmètre modifiable autorisé dans "vibe" couvre uniquement ${scope.isMultiTarget ? targetIdsList : '"${scope.canonicalComponentId}"'} et son/ses parent(s) ($effectiveParent).
+Ne modifie aucun composant hors de ce scope ni les paramètres globaux de thème ou pageCatalog.''';
+      stateSection =
+          'ÉTAT DU SCOPE CIBLÉ APRÈS GÉNÉRATION (JSON) :\n'
+          '${VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec)}';
+    } else {
+      final current = AppearanceTransfer.exportCompactAi(
+        appearance,
+        codec: codec,
+      );
+      stateSection = 'ÉTAT ACTUEL APRÈS GÉNÉRATION (JSON) :\n$current';
+    }
+
+    const closingRules = '''SORTIE ATTENDUE (PHASE FINALE VALEURS RÉACTIVES) :
+- Ne renvoie JAMAIS `"plan"` ni `"askUser"` durant cette phase finale.
+- Si toutes les valeurs dérivées, liaisons `@...`, modes saisie/consultation et graphiques sont déjà corrects (ou qu’aucune valeur calculée réactive n’est pertinente sur cette génération), renvoie simplement {"message":"Valeurs réactives vérifiées.","vibe":null}.
+- Sinon, renvoie uniquement un patch delta ciblé dans `"repositories"` (ex. `calculatedAttributes`) et/ou `"vibe"` (ex. `SuperValue` en `mode: "input"`/`"display"` lié à `@...`, ou `SuperChart`), avec `"verifyRender": false`.''';
+
+    return [
+      'PHASE FINALE — VALEURS RÉACTIVES (APERÇU APPLIQUÉ) :\n'
+          'La génération principale vient d’être appliquée en aperçu. Vérifie et complète maintenant la réactivité des données calculées et de leur affichage.',
+      reactiveValuesDirective,
+      ?visibleOnlySection,
+      ?scopeDirective,
+      ?visibleCtxSection,
+      ?mountedHint,
+      ?repositoriesSection,
+      stateSection,
+      closingRules,
     ].join('\n\n');
   }
 }

@@ -737,7 +737,7 @@ class _SuperTableState extends State<SuperTable> {
       editor,
       config,
       zoneId,
-      isInteractiveRegion: visualIndex == 0,
+      isInteractiveRegion: templateMode || (editor.canEdit && visualIndex == 0),
     );
     if (!showRemove) {
       return content;

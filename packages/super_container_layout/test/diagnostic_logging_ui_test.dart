@@ -426,4 +426,95 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Les erreurs de validation champ obligatoire dans debugEntries et flushBindings précisent le champ concerné',
+    (tester) async {
+      final dir = Directory.systemTemp.createTempSync('scl_diag_req_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final store = JsonRepositoryStore(dir);
+      addTearDown(store.dispose);
+      store.registerRepository(
+        RepositoryImpl(
+          id: 'client_repo',
+          json: {'tel': '0600000000'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: JsonRepositoryScope(
+            store: store,
+            child: const Scaffold(
+              body: Column(
+                children: [
+                  SizedBox(
+                    width: 260,
+                    child: SuperValue(
+                      id: 'gen-tel',
+                      config: SuperValueConfig(
+                        mode: SuperValueMode.input,
+                        label: 'Téléphone',
+                        binding: JsonTextBinding(
+                          repositoryId: 'client_repo',
+                          path: 'tel',
+                        ),
+                        field: SuperTextFieldConfig(required: true),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('super-value-input-gen-tel')),
+        '',
+      );
+      await tester.pump();
+
+      final validationEntries = debugEntries
+          .where(
+            (e) =>
+                e.category == DebugErrorCategory.userInput &&
+                e.componentId == 'gen-tel',
+          )
+          .toList();
+      expect(validationEntries, isNotEmpty);
+      expect(
+        validationEntries.last.message,
+        'Champ « Téléphone » (tel) : Ce champ est obligatoire.',
+      );
+
+      // En UI du champ, le message court reste conservé.
+      final indicator = find.byKey(
+        const ValueKey('super-value-error-indicator-gen-tel'),
+      );
+      expect(indicator, findsOneWidget);
+      final tooltip = tester.widget<Tooltip>(
+        find.descendant(of: indicator, matching: find.byType(Tooltip)),
+      );
+      expect(tooltip.message, 'Ce champ est obligatoire.');
+
+      // Lors d'un flushBindings (ex. SuperListView), l'exception précise aussi le champ et le compId.
+      await expectLater(
+        () => store.flushBindings(),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            'Champ « Téléphone » (tel, comp:gen-tel) : Ce champ est obligatoire.',
+          ),
+        ),
+      );
+    },
+  );
 }

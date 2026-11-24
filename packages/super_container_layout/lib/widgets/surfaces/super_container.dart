@@ -58,6 +58,8 @@ class SuperContainer extends StatefulWidget {
 }
 
 class _SuperContainerState extends State<SuperContainer> {
+  final GlobalKey _childKey = GlobalKey();
+
   ValueNotifier<Appearance>? get _appearance =>
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
 
@@ -109,7 +111,10 @@ class _SuperContainerState extends State<SuperContainer> {
 
   @override
   Widget build(BuildContext context) {
-    Widget content = widget.child ?? const SizedBox.expand();
+    Widget content = KeyedSubtree(
+      key: _childKey,
+      child: widget.child ?? const SizedBox.expand(),
+    );
     if (widget.padding != null) {
       content = Padding(padding: widget.padding!, child: content);
     }

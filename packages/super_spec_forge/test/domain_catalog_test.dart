@@ -482,12 +482,28 @@ void main() {
       code: 'java-spring-boot',
       name: 'Java 21 / Spring Boot 3',
       technicalStack: '- Java 21, Spring Boot 3, JPA, JUnit 5',
-      implementationFolderStructure:
+      aiDocumentation: '- Mettre à jour `docs/architecture.md` pour `{{domain}}`.',
+      domainImplementationFolderStructure:
           'src/main/java/com/acme/{{domain}}/domain/',
-      unitTestFolderStructure: 'src/test/java/com/acme/{{domain}}/domain/',
-      persistenceFolderStructure:
+      domainUnitTestFolderStructure:
+          'src/test/java/com/acme/{{domain}}/domain/',
+      useCaseSagaImplementationFolderStructure:
+          'src/main/java/com/acme/{{domain}}/application/',
+      useCaseSagaUnitTestFolderStructure:
+          'src/test/java/com/acme/{{domain}}/application/',
+      outboundImplementationFolderStructure:
+          'src/main/java/com/acme/{{domain}}/infrastructure/outbound/',
+      outboundUnitTestFolderStructure:
+          'src/test/java/com/acme/{{domain}}/infrastructure/outbound/',
+      inboundImplementationFolderStructure:
+          'src/main/java/com/acme/{{domain}}/infrastructure/inbound/',
+      inboundUnitTestFolderStructure:
+          'src/test/java/com/acme/{{domain}}/infrastructure/inbound/',
+      persistenceImplementationFolderStructure:
           'src/main/java/com/acme/{{domain}}/infrastructure/persistence/',
-      implementationExtension:
+      persistenceUnitTestFolderStructure:
+          'src/test/java/com/acme/{{domain}}/infrastructure/persistence/',
+      domainImplementationExtension:
           '- Utiliser des Java records pour les Value Objects.',
     );
 
@@ -513,16 +529,61 @@ void main() {
       equals(customStack),
     );
     expect(
-      customStack.resolveFolderStructure('billing', roleName: 'implementation'),
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.domain,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
       'src/main/java/com/acme/billing/domain/',
     );
     expect(
-      customStack.resolveFolderStructure('billing', roleName: 'unitTest'),
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.domain,
+        subRole: BuildTechStackSubRole.unitTest,
+      ),
       'src/test/java/com/acme/billing/domain/',
     );
     expect(
-      customStack.resolveFolderStructure('billing', roleName: 'persistence'),
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.persistence,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
       'src/main/java/com/acme/billing/infrastructure/persistence/',
+    );
+    expect(
+      customStack.resolveAiDocumentation('billing'),
+      '- Mettre à jour `docs/architecture.md` pour `billing`.',
+    );
+
+    // Rétrocompatibilité : un ancien JSON de stack migre `implementation*`,
+    // `unitTest*` et `persistence*` vers Domain et Persistance.
+    final migratedStack = BuildTechStackProfile.fromJson(const <String, Object?>{
+      'id': 'stack_legacy',
+      'code': 'legacy-stack',
+      'name': 'Legacy Stack',
+      'implementationFolderStructure': 'legacy/domain/{{domain}}/',
+      'implementationExtension': 'legacy-domain-ext',
+      'unitTestFolderStructure': 'legacy/test/{{domain}}/',
+      'unitTestExtension': 'legacy-test-ext',
+      'persistenceFolderStructure': 'legacy/persistence/{{domain}}/',
+      'persistenceExtension': 'legacy-persistence-ext',
+    });
+    expect(
+      migratedStack.domainImplementationFolderStructure,
+      'legacy/domain/{{domain}}/',
+    );
+    expect(migratedStack.domainImplementationExtension, 'legacy-domain-ext');
+    expect(migratedStack.domainUnitTestFolderStructure, 'legacy/test/{{domain}}/');
+    expect(migratedStack.domainUnitTestExtension, 'legacy-test-ext');
+    expect(
+      migratedStack.persistenceImplementationFolderStructure,
+      'legacy/persistence/{{domain}}/',
+    );
+    expect(
+      migratedStack.persistenceImplementationExtension,
+      'legacy-persistence-ext',
     );
 
     // Rétrocompatibilité : un ancien JSON sans `techStacks` charge la stack par défaut.

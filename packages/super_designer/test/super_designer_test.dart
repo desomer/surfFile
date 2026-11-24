@@ -56,6 +56,8 @@ void main() {
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+      await tester.pump();
       await tester.pumpWidget(const SuperDesignerApp());
       await tester.pumpAndSettle();
 
@@ -66,95 +68,49 @@ void main() {
       expect(superApp.registry, isNotNull);
       expect(superApp.registry!.registry.containsKey('Layout'), isTrue);
       expect(superApp.registry!.registry.containsKey('Chart'), isTrue);
+      expect(superApp.registry!.registry.containsKey('Code'), isTrue);
       expect(superApp.appearanceStore, isNull);
       expect(superApp.eventBus, isNotNull);
 
       final events = <SuperComponentEvent>[];
       final subscription = superApp.eventBus!
-          .on('node.click')
+          .on('designer.click')
           .listen(events.add);
       addTearDown(subscription.cancel);
-      superApp
-          .getLayoutConfigById('mainLayout')
-          .value = const SuperLayoutConfig(
-        placements: {
-          SuperLayoutZone.center: ['explorer'],
+
+      final context = tester.element(find.byType(SuperPage));
+      final appearance = AppearanceScope.controllerOf(context)!;
+      appearance.value = appearance.value.copyWith(
+        components: {
+          ...appearance.value.components,
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['clickable-label'],
+            },
+            slotTypes: {'clickable-label': 'registry:Value'},
+          ),
+          'clickable-label': const SuperValueConfig(initialText: 'Cliquer ici'),
         },
-        slotTypes: {'explorer': 'registry:panModel'},
-      );
-      await superApp.repositoryStore!.replaceArray(
-        'pan_model_repository',
-        'nodes',
-        [
-          {
-            'id': 'test-node',
-            'name': 'Test node',
-            'type': 'string',
-            'typeIcon': 'value',
-          },
-          {
-            'id': 'container-node',
-            'name': 'Container node',
-            'type': 'object',
-            'typeIcon': 'container',
-          },
-        ],
+        behaviors: {
+          ...appearance.value.behaviors,
+          'clickable-label': [
+            ComponentBehavior(
+              id: 'emit-click',
+              trigger: BehaviorTrigger.click,
+              action: EmitEventAction(eventId: 'designer.click'),
+            ),
+          ],
+        },
       );
       await tester.pumpAndSettle();
-      final indicatorIcons = tester
-          .widgetList<Icon>(
-            find.byKey(const ValueKey('super-indicator-icon-tree-node-icon')),
-          )
-          .map((icon) => icon.icon)
-          .toList();
-      expect(indicatorIcons, [
-        Icons.description_outlined,
-        Icons.folder_outlined,
-      ]);
-      final name = tester.widget<SuperValue>(
-        find
-            .byWidgetPredicate(
-              (widget) => widget is SuperValue && widget.id == 'tree-node-name',
-            )
-            .first,
-      );
-      expect(name.behaviours, hasLength(1));
-      expect(
-        AppearanceScope.of(tester.element(find.byWidget(name)))
-            .behaviorsFor('tree-node-name'),
-        isEmpty,
-      );
-      const sizeBinding = JsonTextBinding(
-        repositoryId: 'pan_model_repository',
-        path: 'estSize',
-      );
-      final tree = find.byType(SuperTreeView);
-      final initialTreeWidth = tester.getSize(tree).width;
-      expect(
-        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
-        300,
-      );
-      await tester.tap(find.text('Test node'));
+
+      await tester.tap(find.text('Cliquer ici'));
       await tester.pumpAndSettle();
 
       expect(events, hasLength(1));
-      expect(events.single.componentId, 'tree-node-name');
+      expect(events.single.componentId, 'clickable-label');
       expect(events.single.trigger, 'click');
-      expect(events.single.data['value'], 'Test node');
-      expect(
-        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
-        0,
-      );
-      expect(tester.getSize(tree).width, closeTo(initialTreeWidth + 300, 1));
-
-      await tester.tap(find.text('Test node'));
-      await tester.pumpAndSettle();
-      expect(events, hasLength(2));
-      expect(
-        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
-        300,
-      );
-      expect(tester.getSize(tree).width, closeTo(initialTreeWidth, 1));
+      expect(events.single.data['value'], 'Cliquer ici');
     },
   );
 
@@ -215,19 +171,44 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(const SuperDesignerApp());
       await tester.pumpAndSettle();
-      final superApp = tester.widget<SuperApp>(find.byType(SuperApp));
-      superApp
-          .getLayoutConfigById('mainLayout')
-          .value = const SuperLayoutConfig(
-        placements: {
-          SuperLayoutZone.center: ['explorer'],
+
+      final rootCtx = tester.element(find.byType(SuperPage));
+      final appearance = AppearanceScope.controllerOf(rootCtx)!;
+      appearance.value = appearance.value.copyWith(
+        components: {
+          ...appearance.value.components,
+          'mainLayout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['explorer'],
+            },
+            slotTypes: {'explorer': 'registry:Layout'},
+          ),
+          'explorer': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['attribut-tree', 'code-preview'],
+            },
+            slotTypes: {
+              'attribut-tree': 'registry:TreeView',
+              'code-preview': 'registry:Code',
+            },
+          ),
+          'attribut-tree': SuperTreeViewConfig(
+            placements: const {
+              'header': ['tree-label'],
+              'data': ['tree-data'],
+            },
+            slotTypes: const {
+              'tree-label': 'registry:Value',
+              'tree-data': 'registry:Value',
+            },
+          ),
+          'tree-label': const SuperValueConfig(initialText: 'Nœud'),
+          'tree-data': const SuperValueConfig(initialText: 'Détail'),
+          'code-preview': const SuperCodeConfig(),
         },
-        slotTypes: {'explorer': 'registry:panModel'},
       );
       await tester.pumpAndSettle();
-      StyleEditScope.controllerOf(tester.element(find.byType(SuperPage)))!
-              .value =
-          true;
+      StyleEditScope.controllerOf(rootCtx)!.value = true;
       await tester.pumpAndSettle();
 
       final exports = <String, EditorFragmentExport>{};

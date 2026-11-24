@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:super_designer/main.dart';
+import 'package:super_designer/super_designer.dart';
 
 void main() {
   final channels = [
@@ -84,20 +84,29 @@ void main() {
       AppearanceScope.controllerOf(contextA)!.value =
           AppearanceScope.of(contextA).copyWith(mode: ThemeMode.dark);
       await pumpReal(tester, () async {
-        await superAppA.repositoryStore!.writeAttribute(
-          const JsonTextBinding(
-            repositoryId: 'pan_model_repository',
-            path: 'estSize',
-          ),
-          '420',
-          expectedValue: 300,
-        );
         await superAppA.repositoryStore!.createWithId(
           'custom_data',
           id: customRepoId,
-          initialDocument: {'label': 'From A'},
+          initialDocument: {'label': 'Initial A'},
         );
       });
+
+      // Ajoute une saisie en attente (flusher) pour vérifier qu'elle est bien vidée avant le clonage.
+      var flushedBeforeClone = false;
+      Future<void> pendingDraftOnA() async {
+        if (flushedBeforeClone) return;
+        flushedBeforeClone = true;
+        await superAppA.repositoryStore!.writeAttribute(
+          const JsonTextBinding(
+            repositoryId: customRepoId,
+            path: 'label',
+          ),
+          'From A',
+          expectedValue: 'Initial A',
+        );
+      }
+
+      superAppA.repositoryStore!.addFlusher(pendingDraftOnA);
 
       // Ouvre le sélecteur et clone l'application A vers l'application B.
       await tester.tap(appsButton);
@@ -122,21 +131,13 @@ void main() {
           find.byKey(const ValueKey('application-create-submit')),
         );
       });
+      expect(flushedBeforeClone, isTrue);
 
       // Vérifie que App B a bien cloné l'apparence et les repositories de App A.
       final contextB = tester.element(find.byType(SuperPage));
       expect(AppearanceScope.of(contextB).mode, ThemeMode.dark);
       final superAppB = tester.widget<SuperApp>(find.byType(SuperApp));
       await tester.runAsync(() async {
-        expect(
-          (await superAppB.repositoryStore!.readAttribute(
-            const JsonTextBinding(
-              repositoryId: 'pan_model_repository',
-              path: 'estSize',
-            ),
-          )).value,
-          420,
-        );
         expect(
           (await superAppB.repositoryStore!.readAttribute(
             const JsonTextBinding(
@@ -191,15 +192,6 @@ void main() {
         CustomDesignSystemStore.tryDefaultStore()?.directory.path,
       );
       await tester.runAsync(() async {
-        expect(
-          (await superAppC.repositoryStore!.readAttribute(
-            const JsonTextBinding(
-              repositoryId: 'pan_model_repository',
-              path: 'estSize',
-            ),
-          )).value,
-          300,
-        );
         expect(
           (await superAppC.repositoryStore!.catalog()).any(
             (entry) => entry.id == customRepoId,

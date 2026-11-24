@@ -797,9 +797,11 @@ class _DomainManagementViewState extends State<DomainManagementView> {
     final active = ValueNotifier<bool>(existing?.isActive ?? true);
     final availableStacks = widget.controller.domainCatalog.techStacks;
     final selectedStackId = ValueNotifier<String?>(
-      availableStacks.any((s) => s.id == existing?.techStackId)
-          ? existing?.techStackId
-          : null,
+      existing == null
+          ? availableStacks.firstOrNull?.id
+          : (availableStacks.any((s) => s.id == existing.techStackId)
+                ? existing.techStackId
+                : null),
     );
     final result = await showDialog<FunctionalDomain>(
       context: context,

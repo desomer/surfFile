@@ -462,6 +462,16 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
     context,
     controller: widget.controller,
     initialStackId: domain.techStackId,
+    onStackSaved: (profile, {required created}) {
+      final latestDomain =
+          widget.controller.domainCatalog.domains
+              .where((d) => d.id == domain.id)
+              .firstOrNull ??
+          domain;
+      if (created || latestDomain.techStackId == null) {
+        unawaited(_updateDomainTechStack(latestDomain, profile.id));
+      }
+    },
   );
 
   Widget _buildDomainPages(BuildContext context, FunctionalDomain domain) {

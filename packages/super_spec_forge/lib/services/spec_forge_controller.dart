@@ -865,17 +865,25 @@ class SpecForgeController extends ChangeNotifier {
     required String name,
     String description = '',
     bool isActive = true,
+    String? techStackId,
+    bool assignDefaultTechStack = true,
   }) async {
     final trimmedCode = domainCode.trim();
     if (_domainCatalog.domains.any((d) => d.domainCode == trimmedCode)) {
       throw const FormatException('Ce code de domaine existe déjà.');
     }
+    final resolvedStackId = techStackId?.trim().isNotEmpty == true
+        ? techStackId!.trim()
+        : (assignDefaultTechStack
+              ? _domainCatalog.techStacks.firstOrNull?.id
+              : null);
     final domain = FunctionalDomain(
       id: 'domain_${shortid.generate()}',
       domainCode: trimmedCode,
       name: name.trim(),
       description: description.trim(),
       isActive: isActive,
+      techStackId: resolvedStackId,
     );
     domain.validate();
     final now = DateTime.now().toUtc();

@@ -25,6 +25,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     required this.binding,
     required this.controller,
     this.componentId,
+    this.fieldLabel,
     this.onChanged,
     this.asBool = false,
     this.asStringList = false,
@@ -50,7 +51,13 @@ class JsonTextControllerBinding extends ChangeNotifier {
           final validationError = _validationErrorOf(controller.text);
           if (validationError != null &&
               (_ready || controller.text.isNotEmpty)) {
-            return validationError;
+            return formatFieldValidationMessage(
+              validationError,
+              fieldLabel: fieldLabel,
+              bindingPath: binding.path,
+              componentId: componentId,
+              includeComponentId: true,
+            );
           }
           if (!dirty && (_ready || controller.text.isEmpty)) {
             return null;
@@ -71,6 +78,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
   final JsonTextBinding binding;
   final TextEditingController controller;
   final String? componentId;
+
+  /// Libellé lisible du champ affiché dans les journaux de validation.
+  String? fieldLabel;
   final ValueChanged<String>? onChanged;
   final bool asBool;
   final bool asStringList;
@@ -117,17 +127,21 @@ class JsonTextControllerBinding extends ChangeNotifier {
     }
   }
 
-  /// Met à jour dynamiquement les transformations d'affichage/stockage et le
-  /// validateur sans recréer la liaison.
+  /// Met à jour dynamiquement les transformations d'affichage/stockage, le
+  /// validateur et le libellé de champ sans recréer la liaison.
   void configureTransform({
     String Function(String displayText)? toStorageText,
     String Function(String storageText)? toDisplayText,
     String? Function(String storageText, String displayText)? validateText,
+    String? fieldLabel,
   }) {
     final hadDisplay = this.toDisplayText != null;
     this.toStorageText = toStorageText;
     this.toDisplayText = toDisplayText;
     this.validateText = validateText;
+    if (fieldLabel != null) {
+      this.fieldLabel = fieldLabel;
+    }
     if (!hadDisplay && toDisplayText != null && _ready && !dirty && !_disposed) {
       final expectedDisplay = _displayOf(_saved);
       if (controller.text != expectedDisplay) {
@@ -224,15 +238,60 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _notify();
   }
 
+  /// Préfixe [validationError] par l'identification du champ (libellé, chemin
+  /// de liaison et/ou identifiant de composant) pour les journaux de diagnostic.
+  static String formatFieldValidationMessage(
+    String validationError, {
+    String? fieldLabel,
+    String? bindingPath,
+    String? componentId,
+    bool includeComponentId = false,
+  }) {
+    final label = fieldLabel?.trim();
+    final path = bindingPath?.trim();
+    final comp = componentId?.trim();
+    final hasLabel = label != null && label.isNotEmpty;
+    final hasPath = path != null && path.isNotEmpty;
+    final hasComp = comp != null && comp.isNotEmpty;
+
+    final String prefix;
+    if (hasLabel && hasPath && label != path) {
+      prefix = includeComponentId && hasComp
+          ? 'Champ « $label » ($path, comp:$comp)'
+          : 'Champ « $label » ($path)';
+    } else if (hasLabel) {
+      prefix = includeComponentId && hasComp
+          ? 'Champ « $label » (comp:$comp)'
+          : 'Champ « $label »';
+    } else if (hasPath) {
+      prefix = includeComponentId && hasComp
+          ? 'Champ « $path » (comp:$comp)'
+          : 'Champ « $path »';
+    } else if (hasComp) {
+      prefix = 'Champ « $comp »';
+    } else {
+      return validationError;
+    }
+    return '$prefix : $validationError';
+  }
+
   void _syncInputValidationDiagnostic(String? validationError) {
     final targetId = componentId ?? binding.path;
+    final diagnosticMessage = validationError == null
+        ? null
+        : formatFieldValidationMessage(
+            validationError,
+            fieldLabel: fieldLabel,
+            bindingPath: binding.path,
+            componentId: componentId,
+          );
     VibeDebugCapture.syncComponentDiagnostic(
       componentId: targetId,
       sourceKey: 'binding_input_validation:${binding.path}',
-      active: validationError != null,
+      active: diagnosticMessage != null,
       category: DebugErrorCategory.userInput,
       severity: DebugSeverity.warning,
-      message: validationError,
+      message: diagnosticMessage,
       source: 'JsonTextControllerBinding.validation',
     );
   }
@@ -487,7 +546,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
         );
         _expected = result.value;
         _saved = text;
-        _savedDisplay = controller.text;
+        _savedDisplay = _storageOf(controller.text) == text
+            ? controller.text
+            : _displayOf(text);
         _failedText = null;
         error = null;
       } on FormatException catch (exception) {

@@ -1097,6 +1097,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
           SizedBox(width: leftSpacer, height: heightRow),
         for (int col = startCol; col < endCol; col++)
           SizedBox(
+            key: ValueKey('cw-col-$col'),
             width: getColWidth(col),
             height: heightRow,
             child: cells[col - freeze] ??= isHeader

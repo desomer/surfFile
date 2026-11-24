@@ -43,6 +43,7 @@ class CwTableRow extends StatefulWidget {
 
 /// État de [CwTableRow] gérant la notification de survol et de clic sur la ligne.
 class CwTableRowState extends State<CwTableRow> {
+  final GlobalKey _childKey = GlobalKey();
   Widget? newChild;
   Widget? cache;
 
@@ -84,7 +85,7 @@ class CwTableRowState extends State<CwTableRow> {
       widget.info.isStartCols,
       widget.info.nbColFreeze,
       widget.info.propsRow,
-      newChild ?? widget.child,
+      KeyedSubtree(key: _childKey, child: newChild ?? widget.child),
       context,
     );
     return cache!;

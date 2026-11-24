@@ -3,6 +3,7 @@
 library;
 
 import '../../../models/build_design_item.dart';
+import '../../../models/build_tech_stack_profile.dart';
 import '../../../models/domain_catalog.dart';
 import 'prompt_generator_models.dart';
 
@@ -29,26 +30,41 @@ abstract final class PromptYamlHeaderBuilder {
   static String roleSlug(BuildHexaPromptRole role) => switch (role) {
     BuildHexaPromptRole.implementation => 'implementation',
     BuildHexaPromptRole.unitTest => 'unit-test',
-    BuildHexaPromptRole.persistence => 'persistence',
   };
 
-  /// Identifiant canonique `kind` en `kebab-case` (ex. `model-implementation`).
+  /// Identifiant canonique `kind` en `kebab-case` (ex. `model-implementation`,
+  /// `model-persistence-unit-test`, `outbound-implementation`, `inbound-unit-test`).
   static String kindFor(
-    BuildDesignItemKind itemKind,
+    BuildDesignItemKind? itemKind,
+    BuildTechStackSection section,
     BuildHexaPromptRole role,
   ) {
+    final rolePart = roleSlug(role);
+    if (itemKind == null) {
+      return '${section.slug}-$rolePart';
+    }
     final prefix = switch (itemKind) {
       BuildDesignItemKind.model => 'model',
       BuildDesignItemKind.useCase => 'usecase',
       BuildDesignItemKind.saga => 'saga',
     };
-    return '$prefix-${roleSlug(role)}';
+    if (section == BuildTechStackSection.persistence) {
+      return '$prefix-persistence-$rolePart';
+    }
+    return '$prefix-$rolePart';
   }
 
-  /// Construit le slug `name` d'un prompt à partir du nom technique et du rôle.
-  static String buildPromptSlug(String rawName, BuildHexaPromptRole role) {
+  /// Construit le slug `name` d'un prompt à partir du nom technique, de la
+  /// section optionnelle et du rôle.
+  static String buildPromptSlug(
+    String rawName,
+    BuildHexaPromptRole role, {
+    BuildTechStackSection? section,
+  }) {
     final base = toKebabSlug(rawName);
-    final slugRole = roleSlug(role);
+    final slugRole = section == BuildTechStackSection.persistence
+        ? 'persistence-${roleSlug(role)}'
+        : roleSlug(role);
     return base.isEmpty ? slugRole : '$base-$slugRole';
   }
 

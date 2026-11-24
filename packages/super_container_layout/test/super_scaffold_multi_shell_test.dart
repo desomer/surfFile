@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/components/native/scaffold_page_layout.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_incremental_preview.dart';
 
 class _MemoryAppearanceStore extends AppearanceStore {
   _MemoryAppearanceStore(this.initial);
@@ -1691,6 +1692,84 @@ void main() {
           ]),
         );
         expect(reachable.contains('true-orphan'), isFalse);
+      },
+    );
+
+    test(
+      'AppearanceTransfer.applyVibeMapPartial, VibeIncrementalPreviewApplier and applyVibe accept sidebarStart and sidebarEnd incrementally',
+      () {
+        final parser = VibeIncrementalStreamParser();
+        final applier = VibeIncrementalPreviewApplier(
+          baseAppearance: Appearance(),
+        );
+
+        // Palier 1 : pageCatalog + SuperScaffold main-shell avec sidebarStart et sidebarEnd
+        var snap = parser.addChunk(
+          '{"message":"Construction live","vibe":{'
+          '"pageCatalog":{"shells":[{"id":"main-shell","name":"Shell CRM"}],'
+          '"rootShellId":"main-shell",'
+          '"pages":[{"id":"page-clients","name":"Clients","path":"/clients","shellId":"main-shell"}]},'
+          '"components":{'
+          '"main-shell":{"type":"superScaffold","sidebarStartWidth":220,"sidebarEndWidth":260,'
+          '"regions":{"appBar":true,"sidebarStart":true,"sidebarEnd":true,"body":true},'
+          '"placements":{'
+          '"appBar":[{"id":"shell-bar","type":"registry:ApplicationBar"}],'
+          '"sidebarStart":[{"id":"shell-rail","type":"registry:NavigationRail"}],'
+          '"sidebarEnd":[{"id":"shell-inspector","type":"registry:Layout"}],'
+          '"body":[{"id":"scaffold:outlet","type":"scaffold:outlet"}]'
+          '}},',
+        );
+        final step1 = applier.applyStep(snapshot: snap);
+        expect(step1, isNotNull);
+        expect(step1!.rejectedEntries, isEmpty);
+        expect(
+          step1.appearance.components['main-shell'],
+          isA<ScaffoldPageConfig>(),
+        );
+        final streamedShell =
+            step1.appearance.components['main-shell']! as ScaffoldPageConfig;
+        expect(streamedShell.slotsOf(ScaffoldPageRegion.sidebarStart), [
+          'shell-rail',
+        ]);
+        expect(streamedShell.slotsOf(ScaffoldPageRegion.sidebarEnd), [
+          'shell-inspector',
+        ]);
+
+        // Palier 2 : enfants du shell et de la page
+        snap = parser.addChunk(
+          '"shell-bar":{"type":"native","regions":{"title":true},'
+          '"placements":{"title":[{"id":"bar-title","type":"registry:Value"}]}},'
+          '"bar-title":{"type":"value","text":"CRM Temps Réel"},'
+          '"shell-rail":{"type":"native","regions":{"destinations":true},'
+          '"placements":{"destinations":[{"id":"dest-clients","type":"registry:Action"}]}},'
+          '"dest-clients":{"type":"action","label":"Clients","icon":"people"},'
+          '"shell-inspector":{"type":"layout","placements":{"center":[{"id":"insp-label","type":"registry:Value"}]}},'
+          '"insp-label":{"type":"value","text":"Détails"},'
+          '"page-clients":{"type":"layout","placements":{"center":[{"id":"clients-header","type":"registry:Value"}]}},'
+          '"clients-header":{"type":"value","text":"Annuaire Clients"}'
+          '}}}',
+        );
+        final step2 = applier.applyStep(snapshot: snap);
+        expect(step2, isNotNull);
+        expect(step2!.rejectedEntries, isEmpty);
+        expect(
+          step2.appearance.valueComponent('bar-title').initialText,
+          'CRM Temps Réel',
+        );
+
+        final rawDecoded = jsonDecode(parser.rawBuffer) as Map<String, dynamic>;
+        final finalAppearance = AppearanceTransfer.applyVibe(
+          Appearance(),
+          jsonEncode(rawDecoded['vibe']),
+        );
+        expect(
+          finalAppearance.components['main-shell'],
+          isA<ScaffoldPageConfig>(),
+        );
+        expect(
+          finalAppearance.valueComponent('clients-header').initialText,
+          'Annuaire Clients',
+        );
       },
     );
   });

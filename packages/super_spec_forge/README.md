@@ -191,14 +191,14 @@ persistance immédiate dans le domaine.
 La sélection multiple d'items (`Modèles`, `Use Cases`, `Sagas`) active le bouton
 **Sélection des Prompts IA**, qui ouvre dans le fil d'Ariane
 (*Domaine › Items de design & avancement › Sélection des Prompts IA*) la vue
-`BuildPromptsSelectionView` (`BuildHexaPromptGenerator`) regroupant par élément
-sélectionné les prompts Markdown en **Architecture Hexagonale** :
-- **Modèle** (3 prompts) : *Implémentation Couche Domain*, *Tests unitaires Couche Domain* et *Persistance (Port sortant Repository & Adaptateur Infra)*,
-- **Use Case** (2 prompts) : *Implémentation Couche Application (CQRS)* et *Tests unitaires Couche Application*,
-- **Saga** (2 prompts) : *Implémentation Saga* et *Tests unitaires Saga & Rollbacks*.
+`BuildPromptsSelectionView` (`BuildHexaPromptGenerator`) regroupant :
+- **Modèle** (4 prompts) : *Domain — Implémentation*, *Domain — Test unitaire*, *Persistance — Implémentation* et *Persistance — Test unitaire*,
+- **Use Case** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
+- **Saga** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
+- **Outbound & Inbound** (en bas de liste, sans rattachement) : *Outbound (Implémentation & Test unitaire)* et *Inbound (Implémentation & Test unitaire)*.
 
 Chaque prompt démarre par un bloc de métadonnées ```` ```yaml ... ``` ````
-normalisé (`kind` `model-*` / `usecase-*` / `saga-*`, `name`, `title`,
+normalisé (`kind` `model-*` / `usecase-*` / `saga-*` / `outbound-*` / `inbound-*`, `name`, `title`,
 `version` SemVer partagée entre Modèles, Use Cases et Sagas, `domain`,
 `description`, `owner: <domain>-team`, `status: approved`, `tags`, `security`,
 `ai`, `generation` auto-calculé — incluant `stack` lorsqu'une stack est affectée
@@ -206,9 +206,11 @@ au domaine — et `metadata` `created`/`updated` au format `YYYY-MM-DD`), embarq
 les **JSON Schemas Draft 2020-12** des modèles (références résolues) et des
 contrats `Input`/`Output` des Use Cases, et se termine par une section
 d'**extensions paramétrables par stack technique** (`BuildTechStackProfile` :
-stack technique globale, plus structure de dossiers cible avec interpolation
-`{{domain}}` et consignes spécifiques configurables par onglet de rôle
-*Implémentation*, *Tests unitaires* et *Persistance*). Le profil **TypeScript / NestJS**
+stack technique globale, **Documentation IA** ajoutée à la toute fin de chaque prompt,
+plus arborescence cible avec interpolation `{{domain}}` / `{{module}}` et consignes
+spécifiques configurables sur les 5 parties **Domain**, **UseCase / Saga**,
+**Outbound**, **Inbound** et **Persistance**, chacune dotée de 2 sous-onglets
+*Implémentation* et *Test unitaire*). Le profil **TypeScript / NestJS**
 (`ts-nestjs`) est fourni par défaut et entièrement personnalisable dans un
 éditeur quasi plein écran depuis **Design › Gestion des domaines** ou directement
 depuis **Build**.

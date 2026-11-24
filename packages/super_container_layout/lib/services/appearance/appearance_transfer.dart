@@ -504,6 +504,8 @@ class AppearanceTransfer {
       regions: {
         'appBar',
         'body',
+        'sidebarStart',
+        'sidebarEnd',
         'drawer',
         'endDrawer',
         'bottomNavigationBar',

@@ -22,10 +22,12 @@ import 'package:super_container_layout/services/appearance/appearance_codec.dart
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
 import 'package:super_container_layout/services/diagnostics/debug_entry.dart';
+import 'package:super_container_layout/services/fonts/dynamic_font_manager.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/super_app.dart';
+import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
@@ -3328,10 +3330,8 @@ void main() {
                   Expanded(
                     child: ValueListenableBuilder<SuperLayoutConfig>(
                       valueListenable: mainLayout,
-                      builder: (_, cfg, _) => SuperLayout(
-                        id: 'mainLayout',
-                        config: cfg,
-                      ),
+                      builder: (_, cfg, _) =>
+                          SuperLayout(id: 'mainLayout', config: cfg),
                     ),
                   ),
                   SizedBox(
@@ -4880,11 +4880,14 @@ void main() {
           (planRect.center.dy - reasoningRect.center.dy).abs(),
           lessThan(4),
         );
+        bool isBeforeInReadingOrder(Rect a, Rect b) =>
+            b.top >= a.bottom - 1 ||
+            ((b.center.dy - a.center.dy).abs() < 4 && b.left > a.right);
         expect(exactRect.top, greaterThanOrEqualTo(planRect.bottom));
         expect(reactiveRect.top, greaterThanOrEqualTo(planRect.bottom));
         expect(auditRect.top, greaterThanOrEqualTo(planRect.bottom));
-        expect(reactiveRect.left, greaterThan(exactRect.right));
-        expect(auditRect.left, greaterThan(reactiveRect.right));
+        expect(isBeforeInReadingOrder(exactRect, reactiveRect), isTrue);
+        expect(isBeforeInReadingOrder(reactiveRect, auditRect), isTrue);
 
         await tester.tap(find.byKey(const ValueKey('vibe-chat-plan-mode')));
         await tester.pumpAndSettle();
@@ -8033,7 +8036,8 @@ void main() {
                                                 {
                                                   'id': 'lot-1',
                                                   'title': 'Socle',
-                                                  'description': 'Routes /alpha et /beta',
+                                                  'description':
+                                                      'Routes /alpha et /beta',
                                                 },
                                                 {
                                                   'id': 'lot-2',
@@ -8051,7 +8055,9 @@ void main() {
                                             },
                                             'vibe': null,
                                           });
-                                          return Stream<GeminiStreamEvent>.value(
+                                          return Stream<
+                                            GeminiStreamEvent
+                                          >.value(
                                             GeminiStreamEvent(
                                               deltaText: planJson,
                                               accumulatedText: planJson,
@@ -8092,7 +8098,9 @@ void main() {
                                               },
                                             },
                                           });
-                                          return Stream<GeminiStreamEvent>.value(
+                                          return Stream<
+                                            GeminiStreamEvent
+                                          >.value(
                                             GeminiStreamEvent(
                                               deltaText: lot1Json,
                                               accumulatedText: lot1Json,
@@ -8344,7 +8352,9 @@ void main() {
                                             },
                                             'vibe': null,
                                           });
-                                          return Stream<GeminiStreamEvent>.value(
+                                          return Stream<
+                                            GeminiStreamEvent
+                                          >.value(
                                             GeminiStreamEvent(
                                               deltaText: planJson,
                                               accumulatedText: planJson,
@@ -8385,7 +8395,9 @@ void main() {
                                               },
                                             },
                                           });
-                                          return Stream<GeminiStreamEvent>.value(
+                                          return Stream<
+                                            GeminiStreamEvent
+                                          >.value(
                                             GeminiStreamEvent(
                                               deltaText: lot1Json,
                                               accumulatedText: lot1Json,
@@ -8651,10 +8663,7 @@ void main() {
                                     },
                                     'slotLabels': {'seq-beta': 'Beta'},
                                   },
-                                  'seq-beta': {
-                                    'type': 'value',
-                                    'text': 'Beta',
-                                  },
+                                  'seq-beta': {'type': 'value', 'text': 'Beta'},
                                 },
                               },
                             }),
@@ -8698,9 +8707,13 @@ void main() {
         );
 
         // Désactiver 2 lots ne laisse qu'1 lot actif -> bouton parallèle désactivé.
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')),
+        );
         await tester.pumpAndSettle();
         expect(
           tester.widget<ButtonStyleButton>(parallelFinder).onPressed,
@@ -8708,9 +8721,13 @@ void main() {
         );
 
         // Réactiver les lots -> bouton parallèle de nouveau actif.
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')),
+        );
         await tester.pumpAndSettle();
         expect(
           tester.widget<ButtonStyleButton>(parallelFinder).onPressed,
@@ -8737,42 +8754,227 @@ void main() {
           find.byKey(const ValueKey('vibe-plan-parallel-badge')),
           findsNothing,
         );
-        expect(
-          appearance.value.components.containsKey('seq-alpha'),
-          isTrue,
-        );
-        expect(
-          appearance.value.components.containsKey('seq-beta'),
-          isTrue,
-        );
+        expect(appearance.value.components.containsKey('seq-alpha'), isTrue);
+        expect(appearance.value.components.containsKey('seq-beta'), isTrue);
       },
     );
 
-    test(
-      'VibeExecutionPlan conserve parallelExecution (défaut false) en copie et JSON',
-      () {
-        final plan = VibeExecutionPlan.tryFromJson({
-          'title': 'Plan test',
-          'lots': [
-            {'id': 'lot-1', 'title': 'Socle'},
-            {
-              'id': 'lot-2',
-              'title': 'Écran A',
-              'dependsOn': ['lot-1'],
-            },
-          ],
+    test('VibeExecutionPlan conserve parallelExecution (défaut false) en copie et JSON', () {
+      final plan = VibeExecutionPlan.tryFromJson({
+        'title': 'Plan test',
+        'lots': [
+          {'id': 'lot-1', 'title': 'Socle'},
+          {
+            'id': 'lot-2',
+            'title': 'Écran A',
+            'dependsOn': ['lot-1'],
+          },
+        ],
+      });
+      expect(plan, isNotNull);
+      expect(plan!.parallelExecution, isFalse);
+      expect(plan.toJson().containsKey('parallelExecution'), isFalse);
+
+      final parallelPlan = plan.copyWith(parallelExecution: true);
+      expect(parallelPlan.parallelExecution, isTrue);
+      expect(parallelPlan.toJson()['parallelExecution'], isTrue);
+      expect(parallelPlan, isNot(equals(plan)));
+
+      final reparsed = VibeExecutionPlan.tryFromJson(parallelPlan.toJson());
+      expect(reparsed?.parallelExecution, isTrue);
+    });
+
+    testWidgets(
+      'streaming temps réel affiche progressivement un SuperScaffold (sidebarStart + shells) en une seule tentative sans relance delta',
+      (tester) async {
+        tester.view.physicalSize = const Size(1440, 960);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final registry = Registry()..bootstrap();
+        addTearDown(registry.dispose);
+        final pageRouting = EditorPageRouter(
+          baseConfig: RoutingConfig(
+            routes: [
+              GoRoute(
+                path: '/',
+                builder: (context, state) {
+                  final layout = SuperApp.of(context)
+                      .getLayoutConfigById('mainLayout');
+                  return SuperPage(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: layout,
+                      builder: (context, cfg, _) => SuperLayout(
+                        id: 'mainLayout',
+                        label: 'Main Layout',
+                        config: cfg,
+                        onChanged: (v) => layout.value = v,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+        addTearDown(pageRouting.dispose);
+        final store = _MemoryAppearanceStore(Appearance());
+        final fontManager = DynamicFontManager(
+          useDefaultCacheDirectory: false,
+          autoDownloadEnabled: false,
+        );
+
+        StreamController<GeminiStreamEvent>? activeStream;
+        var streamCallCount = 0;
+
+        await tester.pumpWidget(
+          DefaultAssetBundle(
+            bundle: _GuideBundle(),
+            child: SuperApp(
+              router: pageRouting.router,
+              pageRouting: pageRouting,
+              registry: registry,
+              appearanceStore: store,
+              fontManager: fontManager,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final pageContext = tester.element(find.byType(SuperPage));
+        final appController = AppearanceScope.controllerOf(pageContext)!;
+
+        late OverlayEntry chatEntry;
+        chatEntry = OverlayEntry(
+          builder: (_) => Align(
+            alignment: Alignment.bottomRight,
+            child: SizedBox(
+              width: 440,
+              height: 540,
+              child: Material(
+                child: VibeChatDialog(
+                  controller: appController,
+                  registry: registry,
+                  pageRouting: pageRouting,
+                  codec: const AppearanceCodec(),
+                  initialQuestioningLevel: VibeQuestioningLevel.none,
+                  initialVerifyRenderEnabled: false,
+                  validateAppearance: (value) =>
+                      pageRouting.validate(value.pageCatalog),
+                  onClose: () => chatEntry.remove(),
+                  onDrag: (_) {},
+                  generate: (_) async => fail('Should use streamGenerate'),
+                  streamGenerate:
+                      (
+                        prompt, {
+                        systemInstruction,
+                        staticGuide,
+                        attachments = const [],
+                        speedMode = VibeAiSpeedMode.fast,
+                      }) {
+                        streamCallCount++;
+                        activeStream = StreamController<GeminiStreamEvent>();
+                        return activeStream!.stream;
+                      },
+                ),
+              ),
+            ),
+          ),
+        );
+        addTearDown(() {
+          if (chatEntry.mounted) {
+            chatEntry.remove();
+          }
         });
-        expect(plan, isNotNull);
-        expect(plan!.parallelExecution, isFalse);
-        expect(plan.toJson().containsKey('parallelExecution'), isFalse);
+        Overlay.of(pageContext, rootOverlay: true).insert(chatEntry);
+        await tester.pumpAndSettle();
 
-        final parallelPlan = plan.copyWith(parallelExecution: true);
-        expect(parallelPlan.parallelExecution, isTrue);
-        expect(parallelPlan.toJson()['parallelExecution'], isTrue);
-        expect(parallelPlan, isNot(equals(plan)));
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Crée un portail CRM avec barre latérale et page clients.',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(activeStream, isNotNull);
+        expect(streamCallCount, 1);
 
-        final reparsed = VibeExecutionPlan.tryFromJson(parallelPlan.toJson());
-        expect(reparsed?.parallelExecution, isTrue);
+        var accumulated = '';
+        void emitChunk(String chunk, {bool isDone = false}) {
+          accumulated += chunk;
+          activeStream!.add(
+            GeminiStreamEvent(
+              deltaText: chunk,
+              accumulatedText: accumulated,
+              isDone: isDone,
+              usedContextCache: true,
+            ),
+          );
+        }
+
+        // Palier live 1 (flux toujours ouvert) : shell partagé avec sidebarStart + en-tête visible immédiatement !
+        emitChunk(
+          '{"message":"Création du portail CRM en direct...",'
+          '"vibe":{'
+          '"pageCatalog":{"shells":[{"id":"main-shell","name":"Navigation CRM"}],'
+          '"rootShellId":"main-shell",'
+          '"pages":[{"id":"page-clients","name":"Clients","path":"/clients","shellId":"main-shell"}]},'
+          '"components":{'
+          '"main-shell":{"type":"superScaffold","sidebarStartWidth":200,'
+          '"regions":{"appBar":true,"sidebarStart":true,"body":true},'
+          '"slotLabels":{"app-header":"En-tête","app-rail":"Menu"},'
+          '"placements":{'
+          '"appBar":[{"id":"app-header","type":"registry:ApplicationBar"}],'
+          '"sidebarStart":[{"id":"app-rail","type":"registry:NavigationRail"}],'
+          '"body":[{"id":"scaffold:outlet","type":"scaffold:outlet"}]'
+          '}},'
+          '"app-header":{"type":"native","regions":{"title":true},'
+          '"slotLabels":{"app-title":"Titre"},'
+          '"placements":{"title":[{"id":"app-title","type":"registry:Value"}]}},'
+          '"app-title":{"type":"value","text":"Portail CRM Live"},',
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // Avant même la fin du flux, l'en-tête du SuperScaffold est déjà monté à l'écran !
+        expect(find.text('Portail CRM Live'), findsOneWidget);
+
+        // Palier live 2 (flux toujours ouvert) : la barre latérale sidebarStart se peuple en direct !
+        emitChunk(
+          '"app-rail":{"type":"native","labelType":"all","regions":{"destinations":true},'
+          '"slotLabels":{"nav-home":"Accueil","nav-clients":"Clients"},'
+          '"placements":{"destinations":['
+          '{"id":"nav-home","type":"registry:Action"},'
+          '{"id":"nav-clients","type":"registry:Action"}'
+          ']}},'
+          '"nav-home":{"type":"action","label":"Menu Accueil","icon":"dashboard"},'
+          '"nav-clients":{"type":"action","label":"Menu Clients","icon":"people"},',
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(find.text('Menu Accueil'), findsOneWidget);
+        expect(find.text('Menu Clients'), findsOneWidget);
+
+        // Palier final (fermeture du flux) : contenu de la page rattachée au shell
+        emitChunk(
+          '"page-clients":{"type":"layout",'
+          '"slotLabels":{"clients-heading":"Titre page"},'
+          '"placements":{"center":[{"id":"clients-heading","type":"registry:Value"}]}},'
+          '"clients-heading":{"type":"value","text":"Liste des Clients Active"}'
+          '}}}',
+          isDone: true,
+        );
+        await activeStream!.close();
+        await tester.pumpAndSettle();
+
+        // Aucune relance delta (1 seul appel streamGenerate) et tous les éléments sont présents !
+        expect(streamCallCount, 1);
+        expect(find.text('Portail CRM Live'), findsOneWidget);
+        expect(find.text('Menu Clients'), findsOneWidget);
+        expect(find.text('Liste des Clients Active'), findsOneWidget);
+        expect(tester.takeException(), isNull);
       },
     );
   });

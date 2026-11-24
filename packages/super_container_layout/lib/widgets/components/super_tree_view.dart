@@ -720,7 +720,8 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     context: context,
     editor: editor,
     zoneId: zoneId,
-    isInteractiveRegion: item.isFirstRow,
+    isInteractiveRegion:
+        item.isTemplate || (editor.canEdit && item.isFirstRow),
     slotPreferredSizes: config.slotPreferredSizes,
     slotSizeConstraints: config.slotSizeConstraints,
   );

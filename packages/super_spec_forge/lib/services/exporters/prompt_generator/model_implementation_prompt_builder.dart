@@ -32,6 +32,7 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
   final header = PromptYamlHeaderBuilder.buildFencedYamlHeader(
     kind: PromptYamlHeaderBuilder.kindFor(
       BuildDesignItemKind.model,
+      BuildTechStackSection.domain,
       BuildHexaPromptRole.implementation,
     ),
     name: PromptYamlHeaderBuilder.buildPromptSlug(
@@ -55,6 +56,7 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
     generation: <String, String>{
       'architecture': 'hexagonal',
       if (techStack != null) 'stack': techStack.code,
+      'section': BuildTechStackSection.domain.slug,
       'layer': 'domain',
       'role': 'implementation',
       'artifactType': dslType,
@@ -71,8 +73,9 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
   );
 
   return BuildHexaPromptSpec(
-    id: '${item.kind.name}:${item.id}:${BuildHexaPromptRole.implementation.name}',
+    id: '${item.kind.name}:${item.id}:${BuildTechStackSection.domain.name}:${BuildHexaPromptRole.implementation.name}',
     item: item,
+    section: BuildTechStackSection.domain,
     role: BuildHexaPromptRole.implementation,
     title: title,
     summary: summary,
@@ -203,6 +206,7 @@ String _formatBody({
   PromptMarkdownSections.writeTechStackExtensionSection(
     buf,
     domain: domain,
+    section: BuildTechStackSection.domain,
     role: BuildHexaPromptRole.implementation,
     techStack: techStack,
   );

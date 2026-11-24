@@ -178,6 +178,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   /// Indique si le mode édition visuelle est actif.
   bool get editing => _editMode?.value ?? false;
 
+  /// Indique si les cibles d'édition restent actives (mode édition ou usage autonome sans [StyleEditScope]).
+  bool get canEdit => _editMode?.value ?? true;
+
   /// Chemin courant du composant dans l'arbre de sélection.
   List<String> get componentPath => _path;
 

@@ -700,6 +700,24 @@ class _SuperValueState extends State<SuperValue>
     );
   }
 
+  static String? _resolveDebugFieldLabel(
+    SuperValueConfig config,
+    String? slotLabel,
+  ) {
+    final label = config.label.trim();
+    if (label.isNotEmpty) return label;
+    final slot = slotLabel?.trim();
+    if (slot != null &&
+        slot.isNotEmpty &&
+        slot != 'Valeur' &&
+        slot != 'Value') {
+      return slot;
+    }
+    final placeholder = config.placeholder.trim();
+    if (placeholder.isNotEmpty) return placeholder;
+    return null;
+  }
+
   void _observeBinding(
     SuperValueConfig config,
     JsonListScope? scope,
@@ -709,6 +727,7 @@ class _SuperValueState extends State<SuperValue>
     Duration debounceDuration =
         JsonTextControllerBinding.defaultDebounceDuration,
     bool saveOnBlurOnly = false,
+    String? fieldLabel,
   }) {
     _requestedDebounceDuration = debounceDuration;
     _requestedSaveOnBlurOnly = saveOnBlurOnly;
@@ -721,6 +740,7 @@ class _SuperValueState extends State<SuperValue>
       toStorageText: transforms.toStorageText,
       toDisplayText: transforms.toDisplayText,
       validateText: transforms.validateText,
+      fieldLabel: fieldLabel,
     );
     final external = widget.controller != null || _controlledText != null;
     final asBool = config.kind.isBoolean;
@@ -788,7 +808,9 @@ class _SuperValueState extends State<SuperValue>
           if (_internal.text != fallback) _setText(_internal, fallback);
         } else if (resolved.error == null &&
             resolved.binding != null &&
-            store != null) {
+            store != null &&
+            !store.hasActiveMutations &&
+            _pendingBindingFlush == null) {
           final cached = store.peekAttribute(
             resolved.binding!,
             allowStringList: asStringList,
@@ -858,6 +880,7 @@ class _SuperValueState extends State<SuperValue>
             binding: resolved.binding!,
             controller: _internal,
             componentId: widget.id,
+            fieldLabel: fieldLabel,
             asBool: asBool,
             asStringList: asStringList,
             debounceDuration: _requestedDebounceDuration,
@@ -1069,6 +1092,7 @@ class _SuperValueState extends State<SuperValue>
             stateful: states != null || removedStates,
             debounceDuration: Duration(milliseconds: debounceMs),
             saveOnBlurOnly: saveOnBlurOnly,
+            fieldLabel: _resolveDebugFieldLabel(effective, slotLabel),
           );
           if (removedStates) {
             _previousConfig = effective;
@@ -1415,13 +1439,25 @@ class _SuperValueState extends State<SuperValue>
                           obscureText: config.obscureText,
                         )
                       : null;
+                  final debugValidationMessage = validationError == null
+                      ? null
+                      : JsonTextControllerBinding.formatFieldValidationMessage(
+                          validationError,
+                          fieldLabel: _resolveDebugFieldLabel(
+                            config,
+                            slotLabel,
+                          ),
+                          bindingPath:
+                              _binding?.binding.path ?? config.binding?.path,
+                          componentId: widget.id,
+                        );
                   VibeDebugCapture.syncComponentDiagnostic(
                     componentId: widget.id,
                     sourceKey: 'super-value.validationError',
-                    active: validationError != null,
+                    active: debugValidationMessage != null,
                     category: DebugErrorCategory.userInput,
                     severity: DebugSeverity.warning,
-                    message: validationError,
+                    message: debugValidationMessage,
                     source: 'SuperTextField.validation',
                     visibleInUi: true,
                   );

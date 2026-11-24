@@ -10,7 +10,7 @@ void main() {
     WindowTransparency.channel,
   ];
 
-  setUp(() {
+  setUp(() async {
     SharedPreferences.setMockInitialValues({});
     for (final channel in channels) {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -31,6 +31,8 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 900);
     addTearDown(tester.view.reset);
+    await tester.runAsync(() => DynamicFontManager.shared.loadCachedFonts());
+    await tester.pump();
     await tester.pumpWidget(const SuperDesignerApp());
     await tester.pumpAndSettle();
 

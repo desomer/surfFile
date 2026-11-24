@@ -279,7 +279,7 @@ abstract final class SpecMarkdownExporter {
       ..writeln('---')
       ..writeln()
       ..writeln(
-        '## 4. Event Storming — DSL v1.0 (Bounded Contexts, Catalogue & Flux)',
+        '## 4. Event Storming (Bounded Contexts, Catalogue & Flux)',
       )
       ..writeln();
 

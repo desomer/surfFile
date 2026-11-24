@@ -417,7 +417,7 @@ SCHÉMA "specPatch" POUR « CAS D’USAGE & ORCHESTRATION » :
       final es = activeProject.eventStorming;
       if (es.hasContent) {
         buf.writeln(
-          '- EVENT STORMING DSL v1.0 (${es.documents.length} Bounded Context(s), ${es.totalStepCount} étape(s)) :',
+          '- EVENT STORMING (${es.documents.length} Bounded Context(s), ${es.totalStepCount} étape(s)) :',
         );
         for (final doc in es.documents) {
           buf.writeln(

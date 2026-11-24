@@ -176,6 +176,7 @@ class _SuperListViewState extends State<SuperListView>
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<int?> _hoveredRowNotifier = ValueNotifier<int?>(null);
   final Map<int, GlobalKey<_RowMeasureSubtreeState>> _rowBoxKeys = {};
+  final Map<int, GlobalKey> _rowContentKeys = {};
   final GlobalKey<_RowMeasureSubtreeState> _viewportStackKey =
       GlobalKey<_RowMeasureSubtreeState>();
   final GlobalKey _scrollableHostKey = GlobalKey();
@@ -266,6 +267,8 @@ class _SuperListViewState extends State<SuperListView>
       // pas être affichées avec les nouveaux indices avant le rechargement.
       _items = null;
       _error = null;
+      _rowBoxKeys.clear();
+      _rowContentKeys.clear();
     }
     _source = source;
     if (!identical(_store, store)) {
@@ -409,10 +412,14 @@ class _SuperListViewState extends State<SuperListView>
     return local == null ? null : _toContentOffset(local);
   }
 
-  /// Rectangle de la ligne [index] dans le repère du contenu, si elle est
+  /// Rectangle de la ligne [visualIndex] dans le repère du contenu, si elle est
   /// mise en page.
-  Rect? _measuredItemRect(int index) {
-    final rowBox = _rowBoxKeys[index]?.currentState?.activeRenderBox;
+  Rect? _measuredItemRect(int visualIndex) {
+    if (visualIndex < 0 || visualIndex >= _visibleSourceIndices.length) {
+      return null;
+    }
+    final sourceIndex = _visibleSourceIndices[visualIndex];
+    final rowBox = _rowBoxKeys[sourceIndex]?.currentState?.activeRenderBox;
     if (rowBox == null) return null;
     final contentOffset = _contentOffsetOf(rowBox);
     return contentOffset == null ? null : contentOffset & rowBox.size;
@@ -771,8 +778,12 @@ class _SuperListViewState extends State<SuperListView>
     required bool editing,
     required bool animateIndicators,
   }) {
+    final editController = StyleEditScope.controllerOf(listContext);
+    final canEditList = editController?.value ?? true;
     final isSelectedRow = sourceIndex != null && _isSelected(sourceIndex);
-    final rowEditable = sourceIndex == null || visualIndex == 0 || isSelectedRow;
+    final rowEditable =
+        canEditList &&
+        (sourceIndex == null || visualIndex == 0 || isSelectedRow);
     final natural =
         config.itemSize != null ||
         (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
@@ -792,13 +803,13 @@ class _SuperListViewState extends State<SuperListView>
           resolveSelectionAndHover:
               !animateIndicators ||
               (rowStyle.states?.selected?.properties.contains(
-                    SurfaceStyleProperty.background,
-                  ) !=
-                  true &&
+                        SurfaceStyleProperty.background,
+                      ) !=
+                      true &&
                   rowStyle.states?.hover?.properties.contains(
-                    SurfaceStyleProperty.background,
-                  ) !=
-                  true),
+                        SurfaceStyleProperty.background,
+                      ) !=
+                      true),
           shrinkWrap: natural,
           sizeConstraints: dimensions,
           underlay: animateIndicators && sourceIndex != null
@@ -831,9 +842,20 @@ class _SuperListViewState extends State<SuperListView>
             child: content,
           )
         : content;
-    final row = rowEditable
+    final keyedRow = sourceIndex == null
         ? sizedRow
-        : StyleEditScope(controller: _inertEditMode, child: sizedRow);
+        : KeyedSubtree(
+            key: _rowContentKeys.putIfAbsent(sourceIndex, GlobalKey.new),
+            child: sizedRow,
+          );
+    final row = editController != null
+        ? StyleEditScope(
+            controller: rowEditable ? editController : _inertEditMode,
+            child: keyedRow,
+          )
+        : (rowEditable
+              ? keyedRow
+              : StyleEditScope(controller: _inertEditMode, child: keyedRow));
     final vertical = config.axis == Axis.vertical;
     final basis = dimensions.percentBasis == SlotPercentBasis.layout
         ? _parentLayoutSize(viewport)
@@ -922,7 +944,7 @@ class _SuperListViewState extends State<SuperListView>
                 },
                 child: _RowMeasureSubtree(
                   key: _rowBoxKeys.putIfAbsent(
-                    visualIndex,
+                    sourceIndex,
                     GlobalKey<_RowMeasureSubtreeState>.new,
                   ),
                   child: Builder(
@@ -964,7 +986,7 @@ class _SuperListViewState extends State<SuperListView>
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (!mounted) return;
                             final rowCtx =
-                                _rowBoxKeys[visualIndex]?.currentContext;
+                                _rowBoxKeys[sourceIndex]?.currentContext;
                             if (rowCtx != null && rowCtx.mounted) {
                               EditorSlotState.openMenuFromContext(rowCtx, pos);
                             }
@@ -1110,6 +1132,11 @@ class _SuperListViewState extends State<SuperListView>
           _observe(resolveJsonArraySource(config.binding, scope, store), store);
         }
         final items = placeholder ? null : _items;
+        if (items != null) {
+          final maxLen = items.length;
+          _rowBoxKeys.removeWhere((k, _) => k >= maxLen);
+          _rowContentKeys.removeWhere((k, _) => k >= maxLen);
+        }
         _visibleSourceIndices = _transformController.resolveVisibleIndices(
           context: context,
           componentId: widget.id,
@@ -1148,40 +1175,62 @@ class _SuperListViewState extends State<SuperListView>
         final vertical = config.wrap || config.axis == Axis.vertical;
         final isSliver = SliverSlotScope.isSliver(context);
 
-        Widget buildItem(BuildContext context, int visualIndex, Size viewport) =>
-            SliverSlotScope(
-              enabled: false,
-              child: visualIndex == count
-                  ? Align(
-                      widthFactor: config.wrap ? 1 : null,
-                      heightFactor: config.wrap ? 1 : null,
-                      alignment: vertical
-                          ? Alignment.centerLeft
-                          : Alignment.center,
-                      child: TextButton.icon(
-                        key: ValueKey('super-list-add-${widget.id}'),
-                        onPressed: _busy ? null : _add,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Ajouter'),
-                      ),
-                    )
-                  : _row(
-                      context,
-                      layout,
-                      style,
-                      configuration,
-                      config,
-                      scope,
-                      visualIndex,
-                      template ? null : _visibleSourceIndices[visualIndex],
-                      viewport,
-                      editing: editing,
-                      animateIndicators:
-                          config.animateSelectionAndHover &&
-                          !isSliver &&
-                          !template,
-                    ),
-            );
+        Key itemKeyFor(int visualIndex) => visualIndex == count
+            ? ValueKey('super-list-add-item-${widget.id}')
+            : ValueKey(
+                'super-list-item-${widget.id}-${template ? 'template' : _visibleSourceIndices[visualIndex]}',
+              );
+
+        int? findChildIndex(Key key) {
+          if (key is! ValueKey<String>) return null;
+          final value = key.value;
+          if (add && value == 'super-list-add-item-${widget.id}') {
+            return count;
+          }
+          final prefix = 'super-list-item-${widget.id}-';
+          if (!value.startsWith(prefix)) return null;
+          final suffix = value.substring(prefix.length);
+          if (template) return suffix == 'template' ? 0 : null;
+          final src = int.tryParse(suffix);
+          if (src == null) return null;
+          final idx = _visibleSourceIndices.indexOf(src);
+          return idx >= 0 ? idx : null;
+        }
+
+        Widget buildItem(
+          BuildContext context,
+          int visualIndex,
+          Size viewport,
+        ) => SliverSlotScope(
+          key: itemKeyFor(visualIndex),
+          enabled: false,
+          child: visualIndex == count
+              ? Align(
+                  widthFactor: config.wrap ? 1 : null,
+                  heightFactor: config.wrap ? 1 : null,
+                  alignment: vertical ? Alignment.centerLeft : Alignment.center,
+                  child: TextButton.icon(
+                    key: ValueKey('super-list-add-${widget.id}'),
+                    onPressed: _busy ? null : _add,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Ajouter'),
+                  ),
+                )
+              : _row(
+                  context,
+                  layout,
+                  style,
+                  configuration,
+                  config,
+                  scope,
+                  visualIndex,
+                  template ? null : _visibleSourceIndices[visualIndex],
+                  viewport,
+                  editing: editing,
+                  animateIndicators:
+                      config.animateSelectionAndHover && !isSliver && !template,
+                ),
+        );
 
         final error = _error != null || config.binding == null;
 
@@ -1288,11 +1337,13 @@ class _SuperListViewState extends State<SuperListView>
                                   itemExtent:
                                       config.itemExtent + config.spacing,
                                   itemCount: totalCount,
+                                  findChildIndexCallback: findChildIndex,
                                   itemBuilder: item,
                                 )
                               : SliverList.builder(
                                   key: ValueKey('super-list-${widget.id}'),
                                   itemCount: totalCount,
+                                  findChildIndexCallback: findChildIndex,
                                   itemBuilder: item,
                                 )
                         else
@@ -1314,6 +1365,7 @@ class _SuperListViewState extends State<SuperListView>
                                       ? config.itemExtent + config.spacing
                                       : null,
                                   itemCount: totalCount,
+                                  findChildIndexCallback: findChildIndex,
                                   itemBuilder: item,
                                 ),
                               ),
@@ -1384,6 +1436,7 @@ class _SuperListViewState extends State<SuperListView>
                                 ? config.itemExtent + config.spacing
                                 : null,
                             itemCount: count + (add ? 1 : 0),
+                            findChildIndexCallback: findChildIndex,
                             itemBuilder: item,
                           );
                     final scrollableList = KeyedSubtree(
