@@ -415,21 +415,34 @@ SCHÉMA "specPatch" POUR « CAS D’USAGE & ORCHESTRATION » :
       }
 
       final es = activeProject.eventStorming;
-      if (es.boundedContexts.isNotEmpty || es.flows.isNotEmpty) {
+      if (es.hasContent) {
         buf.writeln(
-          '- EVENT STORMING (${es.boundedContexts.length} contexte(s), ${es.flows.length} flux) :',
+          '- EVENT STORMING DSL v1.0 (${es.documents.length} Bounded Context(s), ${es.totalStepCount} étape(s)) :',
         );
-        for (final ctx in es.boundedContexts) {
+        for (final doc in es.documents) {
           buf.writeln(
-            '  * Contexte ${ctx.name}'
-            '${ctx.description.isEmpty ? '' : ' — ${ctx.description}'}',
+            '  * Contexte « ${doc.meta.boundedContext} » (${doc.fileName}, format: ${doc.meta.format.yamlValue}) :',
           );
-        }
-        for (final flow in es.flows) {
-          final nodesText = flow.nodes
-              .map((n) => '${n.kind.name}:${n.title}')
-              .join(' -> ');
-          buf.writeln('  * Flux ${flow.title} : $nodesText');
+          for (final step in doc.sortedSteps) {
+            final target = step.aggregate.isNotEmpty
+                ? step.aggregate
+                : step.externalSystem;
+            final eventsText = step.hasOutcomes
+                ? step.outcomes
+                      .map(
+                        (o) =>
+                            '${o.domainEvent.id}:${o.domainEvent.name}${o.isError ? ' [ERREUR]' : ''}',
+                      )
+                      .join(' | ')
+                : '${step.domainEvent!.id}:${step.domainEvent!.name}';
+            final trig = step.triggeredBy != null
+                ? ' [triggered_by: ${step.triggeredBy!.summaryLabel}]'
+                : '';
+            buf.writeln(
+              '    - Step ${step.step}$trig : ${step.command.name}'
+              '${target.isEmpty ? '' : ' -> $target'} => $eventsText',
+            );
+          }
         }
       }
 

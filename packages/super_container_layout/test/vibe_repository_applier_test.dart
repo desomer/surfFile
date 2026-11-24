@@ -1074,4 +1074,197 @@ void main() {
       expect(await store.readArray(crmId, 'clients'), hasLength(2));
     });
   });
+
+  group('Garde anti-collision de clé racine & auto-redirection', () {
+    test(
+      'VibeRepositoryPatchValidator rejette les clés UI réservées et ne crée jamais vibe.json',
+      () async {
+        for (final forbiddenKey in const <String>[
+          'vibe',
+          'components',
+          'styles',
+          'behaviors',
+          'usages',
+          'pageCatalog',
+          'responsiveLayout',
+        ]) {
+          expect(
+            () => VibeRepositoryPatchValidator.parseEntry(forbiddenKey, {
+              'data': {'foo': 'bar'},
+            }),
+            throwsA(
+              isA<FormatException>().having(
+                (e) => e.message,
+                'message',
+                contains('Clé UI racine réservée'),
+              ),
+            ),
+            reason: 'La clé "$forbiddenKey" doit être rejetée.',
+          );
+        }
+
+        final (:store, dir: _) = _createTempStore('vibe_forbidden_key_');
+        final tx = VibeRepositoryTurnTransaction(store);
+
+        await expectLater(
+          tx.applyRepositoriesPatch(<String, dynamic>{
+            'vibe': <String, Object?>{
+              'data': <String, Object?>{
+                'components': <String, Object?>{
+                  'dash-header': <String, Object?>{'type': 'value'},
+                },
+              },
+            },
+          }),
+          throwsFormatException,
+        );
+        expect(await store.catalog(), isEmpty);
+
+        // En mode streaming partiel, la clé "vibe" est rejetée sans polluer le store
+        // tandis qu'un vrai repository voisin est bien appliqué.
+        final partial = await tx.applyRepositoriesPatchPartial(<String, dynamic>{
+          'vibe': <String, Object?>{
+            'data': <String, Object?>{'components': <String, Object?>{}},
+          },
+          'crm_comptes': <String, Object?>{
+            'name': 'CRM Comptes',
+            'mode': 'merge',
+            'data': <String, Object?>{'comptes': <Object?>[]},
+          },
+        });
+        expect(partial.appliedEntries.keys, ['crm_comptes']);
+        expect(partial.rejectedEntries, hasLength(1));
+        expect(partial.rejectedEntries.single.key, 'vibe');
+        final catalog = await store.catalog();
+        expect(catalog.map((e) => e.name), ['CRM Comptes']);
+      },
+    );
+
+    test(
+      'VibeRepositoryApplier.sanitizeResponseEnvelope redirige repositories["vibe"] et repositories["components"] quand la racine vibe est absente',
+      () {
+        // Cas 1 : repositories.vibe.data -> racine vibe, repositories supprimé
+        final case1 = VibeRepositoryApplier.sanitizeResponseEnvelope({
+          'message': 'Dashboard généré.',
+          'repositories': {
+            'vibe': {
+              'data': {
+                'components': {
+                  'mainLayout': {'type': 'layout'},
+                },
+                'styles': {
+                  'card-kpi': {'radius': 12},
+                },
+              },
+            },
+          },
+        });
+        expect(case1.warnings, hasLength(1));
+        expect(case1.response.containsKey('repositories'), isFalse);
+        expect(
+          (case1.response['vibe'] as Map<String, dynamic>).keys,
+          unorderedEquals(['components', 'styles']),
+        );
+
+        // Cas 2 : repositories.vibe direct + vrai repository frère conservé
+        final case2 = VibeRepositoryApplier.sanitizeResponseEnvelope({
+          'message': 'Dashboard + CRM.',
+          'repositories': {
+            'crm_clients': {
+              'name': 'CRM',
+              'data': {'clients': []},
+            },
+            'vibe': {
+              'components': {
+                'mainLayout': {'type': 'layout'},
+              },
+            },
+          },
+        });
+        expect(case2.warnings, hasLength(1));
+        expect(
+          (case2.response['repositories'] as Map<String, dynamic>).keys,
+          ['crm_clients'],
+        );
+        expect(
+          ((case2.response['vibe'] as Map<String, dynamic>)['components']
+                  as Map)
+              .containsKey('mainLayout'),
+          isTrue,
+        );
+
+        // Cas 3 : repositories.components & repositories.styles sans racine vibe
+        final case3 = VibeRepositoryApplier.sanitizeResponseEnvelope({
+          'message': 'Clés UI à plat dans repositories.',
+          'repositories': {
+            'components': {
+              'mainLayout': {'type': 'layout'},
+            },
+            'styles': {
+              'background': {'color': 'theme:surface'},
+            },
+          },
+        });
+        expect(case3.warnings, hasLength(1));
+        expect(case3.response.containsKey('repositories'), isFalse);
+        expect(
+          (case3.response['vibe'] as Map<String, dynamic>).keys,
+          unorderedEquals(['components', 'styles']),
+        );
+
+        // Cas 4 : racine vibe déjà présente -> aucune redirection silencieuse (sera rejeté par le validateur)
+        final originalCollision = <String, dynamic>{
+          'message': 'Collision ambiguë.',
+          'repositories': {
+            'vibe': {
+              'data': {
+                'components': {'other': {'type': 'value'}},
+              },
+            },
+          },
+          'vibe': {
+            'components': {'mainLayout': {'type': 'layout'}},
+          },
+        };
+        final case4 = VibeRepositoryApplier.sanitizeResponseEnvelope(
+          originalCollision,
+        );
+        expect(case4.warnings, isEmpty);
+        expect(
+          (case4.response['repositories'] as Map).containsKey('vibe'),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'les guides IA documentent les 3 règles anti-collision, placements exhaustifs et IDs existants',
+      () {
+        final repoGuide = File('REPOSITORY_JSON_AI_GUIDE.md').existsSync()
+            ? File('REPOSITORY_JSON_AI_GUIDE.md').readAsStringSync()
+            : File(
+                'packages/super_container_layout/REPOSITORY_JSON_AI_GUIDE.md',
+              ).readAsStringSync();
+        final screenGuide = File('SCREEN_JSON_AI_GUIDE.md').existsSync()
+            ? File('SCREEN_JSON_AI_GUIDE.md').readAsStringSync()
+            : File(
+                'packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md',
+              ).readAsStringSync();
+
+        expect(repoGuide, contains('Règle d\'or anti-collision de clé racine'));
+        expect(
+          repoGuide,
+          contains('Réutilisation prioritaire des IDs de repository existants'),
+        );
+        expect(
+          screenGuide,
+          contains('Règle d\'or anti-collision de clé racine'),
+        );
+        expect(
+          screenGuide,
+          contains('Contrôle d\'exhaustivité des placements descendants'),
+        );
+      },
+    );
+  });
 }

@@ -21,6 +21,7 @@ import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
+import 'package:super_container_layout/services/diagnostics/debug_entry.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
@@ -3282,6 +3283,152 @@ void main() {
       expect(find.text('Écran corrigé et prêt.'), findsOneWidget);
       expect(find.text('Donnée validée'), findsOneWidget);
       expect(find.text('Brouillon temporaire'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'automatically redirects misplaced repositories["vibe"] UI envelope to root vibe without creating vibe.json',
+    (tester) async {
+      clearDebugEntries();
+      addTearDown(clearDebugEntries);
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('vibe_envelope_redirect_'),
+      ))!;
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        repoStore.dispose();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+
+      final registry = Registry()..bootstrap();
+      final store = _CountingAppearanceStore(Appearance());
+      final mainLayout = registry.layoutController('mainLayout');
+      addTearDown(registry.unbindAppearance);
+
+      late ValueNotifier<Appearance> appAppearance;
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (routeContext, _) {
+              appAppearance = AppearanceScope.controllerOf(routeContext)!;
+              return Row(
+                children: [
+                  Expanded(
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: mainLayout,
+                      builder: (_, cfg, _) => SuperLayout(
+                        id: 'mainLayout',
+                        config: cfg,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 400,
+                    height: 600,
+                    child: DefaultAssetBundle(
+                      bundle: _GuideBundle(),
+                      child: VibeChatDialog(
+                        controller: appAppearance,
+                        registry: registry,
+                        repositoryStore: repoStore,
+                        codec: const AppearanceCodec(),
+                        initialQuestioningLevel: VibeQuestioningLevel.none,
+                        onClose: () {},
+                        onDrag: (_) {},
+                        generate: (_) async => jsonEncode({
+                          'message': 'Tableau de bord appliqué.',
+                          'repositories': {
+                            'vibe': {
+                              'data': {
+                                'components': {
+                                  'mainLayout': {
+                                    'type': 'layout',
+                                    'placements': {
+                                      'center': [
+                                        {
+                                          'id': 'dash-header',
+                                          'type': 'registry:Value',
+                                          'label': 'En-tête',
+                                        },
+                                      ],
+                                    },
+                                  },
+                                  'dash-header': {
+                                    'type': 'value',
+                                    'text': 'Tableau de bord CRM 360',
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        }),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          appearanceStore: store,
+          registry: registry,
+          repositoryStore: repoStore,
+        ),
+      );
+      await pumpRealAsync(
+        tester,
+        until: () =>
+            find.byKey(const ValueKey('vibe-chat-input')).evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Génère un tableau de bord CRM.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await pumpRealAsync(
+        tester,
+        until: () => find.text('Tableau de bord CRM 360').evaluate().isNotEmpty,
+      );
+      await tester.pumpAndSettle();
+
+      var catalogDone = false;
+      List<JsonRepositoryEntry> catalog = const [];
+      unawaited(
+        repoStore.catalog().then((entries) {
+          catalog = entries;
+          catalogDone = true;
+        }),
+      );
+      await pumpRealAsync(tester, until: () => catalogDone);
+      expect(catalog, isEmpty);
+      expect(
+        debugEntries.any(
+          (e) =>
+              e.source == 'VibeRepositoryApplier.sanitizeEnvelope' &&
+              e.severity == DebugSeverity.warning,
+        ),
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
     },
   );

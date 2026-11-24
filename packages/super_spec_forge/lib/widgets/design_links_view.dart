@@ -59,8 +59,16 @@ class DesignLinksView extends StatefulWidget {
     this.onLinkTap,
     this.keyPrefix = 'design',
     this.header,
+    this.showDefaultHeader = true,
     super.key,
   });
+
+  /// Citation affichée par défaut en tête de la page Design.
+  static const quoteText =
+      '« Tout système complexe qui fonctionne a invariablement évolué à partir d’un système simple qui fonctionnait. »';
+
+  /// Auteur de la citation affichée par défaut en tête de la page Design.
+  static const quoteAuthor = 'John Gall';
 
   /// Sections par défaut (urbaniste & architecte, puis concepteur backend).
   static const List<DesignLinkSection> defaultSections = <DesignLinkSection>[
@@ -130,7 +138,13 @@ class DesignLinksView extends StatefulWidget {
   final String keyPrefix;
 
   /// En-tête optionnel affiché au-dessus de la première section.
+  ///
+  /// Lorsqu'il est omis et que [showDefaultHeader] vaut `true`, affiche
+  /// [DesignQuoteBanner] avec [quoteText] et [quoteAuthor].
   final Widget? header;
+
+  /// Indique s'il faut afficher la bannière de citation par défaut lorsque [header] est `null`.
+  final bool showDefaultHeader;
 
   @override
   State<DesignLinksView> createState() => _DesignLinksViewState();
@@ -169,6 +183,15 @@ class _DesignLinksViewState extends State<DesignLinksView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final effectiveHeader =
+        widget.header ??
+        (widget.showDefaultHeader
+            ? DesignQuoteBanner(
+                key: ValueKey('${widget.keyPrefix}-quote-banner'),
+                quoteText: DesignLinksView.quoteText,
+                quoteAuthor: DesignLinksView.quoteAuthor,
+              )
+            : null);
 
     return Align(
       alignment: Alignment.topLeft,
@@ -177,8 +200,8 @@ class _DesignLinksViewState extends State<DesignLinksView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.header != null) ...[
-              widget.header!,
+            if (effectiveHeader != null) ...[
+              effectiveHeader,
               const SizedBox(height: 22),
             ],
             for (var i = 0; i < widget.sections.length; i++) ...[
@@ -412,5 +435,90 @@ class _DesignLinkPillCardState extends State<_DesignLinkPillCard> {
       return Tooltip(message: tooltip, child: card);
     }
     return card;
+  }
+}
+
+/// Bannière de citation affichée en tête des pages [DesignLinksView] et [SpecLinksView].
+class DesignQuoteBanner extends StatelessWidget {
+  /// Crée une bannière de citation avec son [quoteText] et son [quoteAuthor].
+  const DesignQuoteBanner({
+    required this.quoteText,
+    required this.quoteAuthor,
+    super.key,
+  });
+
+  /// Texte de la citation à afficher.
+  final String quoteText;
+
+  /// Auteur de la citation (préfixé automatiquement par `— `).
+  final String quoteAuthor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 780),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.7),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: colors.primary),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 12,
+                  children: [
+                    Icon(
+                      Icons.format_quote_rounded,
+                      size: 24,
+                      color: colors.primary,
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 4,
+                        children: [
+                          Text(
+                            quoteText,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
+                              height: 1.4,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '— $quoteAuthor',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

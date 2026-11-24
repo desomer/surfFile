@@ -61,8 +61,9 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
      - Forme compacte recommandée : `"<repoId>:comptes[?].propriété"` ou `"<alias>:comptes[?].propriété"`
      - Forme objet : `{"repositoryId": "<repoId>", "path": "comptes[?].propriété"}`
 
-3. **Mécanisme de sélection Maître / Détail** :
+3. **Mécanisme de sélection Maître / Détail & réutilisation prioritaire des IDs existants** :
    - Le runtime synchronise automatiquement l'indice sélectionné `[?]` entre tous les composants partageant le même `repositoryId` dans le document. Préciser le préfixe du repository est ce qui permet à la vue centrale de se synchroniser avec la ligne active du volet latéral.
+   - **Réutilisation prioritaire des IDs existants** : lorsqu'un repository métier est déjà listé dans `REPOSITORIES DISPONIBLES`, réutilise systématiquement son `id` technique exact (ex. l'ID 32 hex) dans tous les bindings plutôt que d'inventer un nouvel alias. Ne référence jamais un alias non déclaré dans `"repositories"` du même tour.
 
 ---
 
@@ -87,6 +88,8 @@ les rôles sont résolus depuis le schéma généré par cet accent et la lumino
 demandée, sans boucle de dépendance avec la couleur du fond.
 
 ## 2. Architecture GenUI : Un seul format plat par ID
+
+> **Règle d'or anti-collision de clé racine** : Dans une réponse Vibe, `"vibe"` est **strictement la clé UI racine de premier niveau** (`{"message": "...", "repositories": {...}, "vibe": {"components": {...}, "styles": {...}, ...}}`). N'émets **jamais** de clé `"vibe"`, `"components"`, `"styles"`, `"behaviors"`, `"usages"`, `"pageCatalog"` ou `"responsiveLayout"` à l'intérieur de `"repositories"`.
 
 Toute l'interface est représentée par des dictionnaires plats indexés par l'`id` de chaque instance :
 1. **`components`** (`Map<String, ComponentConfig>`) : contient **tous** les composants, chacun identifié par son discriminateur `"type"` :
@@ -127,6 +130,9 @@ réel, émets les clés dans cet ordre :
 2. `styles` ;
 3. `components` de **haut en bas (Top-Down)** : d'abord la page ou le conteneur parent/racine avec ses `placements`, `slotTypes` et `slotLabels`, puis les sous-conteneurs/zones dans l'ordre visuel, et enfin les composants feuilles de chaque zone ;
 4. `behaviors` et `usages`.
+
+**Contrôle d'exhaustivité des placements descendants (zéro composant fantôme)** :
+Déclarer un composant dans `components` ne suffit **jamais** à l'afficher. Tout composant déclaré dans `components` (ex. `kpis-row`, `card-chart-container`, `tabs-360`, champs feuilles) **doit impérativement être référencé dans les `placements`** d'un conteneur parent monté, avec une chaîne continue jusqu'à un conteneur racine (`root` / `mainLayout`) ou une page déclarée dans `pageCatalog`. Vérifie toujours avant de conclure que chaque sous-section créée (en-tête, rangée de KPIs, graphiques, onglets, panneaux) figure bien dans `mainLayout.placements` (ou dans le parent cible) — sinon les composants omis restent des composants fantômes invisibles.
 
 **Règle obligatoire à la création** : dans le même patch que chaque nouveau
 composant, fournis son **nom d'édition explicite** dans les `slotLabels` de son
@@ -1661,7 +1667,7 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 
 | Contexte | Ce qui est déjà fourni par défaut | Comment le configurer (sans le recréer) |
 | :--- | :--- | :--- |
-| **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"mainLayout"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["mainLayout"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
+| **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"mainLayout"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["mainLayout"]` (`type: "layout"`) — en veillant à référencer **toutes** les sous-sections créées dans `mainLayout.placements` (aucun composant fantôme) — et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
 | **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`) — avec `"paddingInsets": [top, 38, bottom, left]` (`right >= 38`) dès que `"allowRemove": true` — et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
 | **Barre d'onglets d'un `SuperTab` (`<tabId>`)** | La `TabBar` est déjà enveloppée dans une surface stylisable via `components["<tabId>"].tabBarStyle`, et en mode `"dynamic"`, les boutons `+` (`allowAdd`) et `×` (`allowRemove`) sont générés nativement. | Configure directement `tabBarStyle` et les propriétés `indicator*` / `labelColor` dans `components["<tabId>"]`, laisse les `SuperAction` de `placements.tabs` sans couleur de fond ni bordure spécifique (pas de `backgroundColor`, `borderColor`, `borderWidth`, `style`, `styles["<tabSlotId>"]` ni `variant` plein/encadré), et active `allowAdd` / `allowRemove` en mode `"dynamic"`. |
 | **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |

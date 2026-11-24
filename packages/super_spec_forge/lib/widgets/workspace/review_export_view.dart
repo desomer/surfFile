@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
+import '../../services/exporters/event_storming_dsl_codec.dart';
 import '../../services/exporters/spec_json_exporter.dart';
 import '../../services/exporters/spec_json_schema_html_builder.dart';
 import '../../services/exporters/spec_markdown_exporter.dart';
@@ -80,12 +81,19 @@ class ReviewExportView extends StatelessWidget {
       'repositoriesSeedData': bundle.repositoriesSeedData,
     });
     final fullJson = SpecJsonExporter.export(project);
+    final eventStormingYamlPreview = project.eventStorming.documents.isEmpty
+        ? '# Aucun document Event Storming (.es.yaml) modélisé.'
+        : [
+            for (final doc in project.eventStorming.documents)
+              '# === ${doc.fileName} (${doc.meta.boundedContext}) ===\n'
+                  '${EventStormingDslCodec.toYaml(doc)}',
+          ].join('\n');
 
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
 
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -166,6 +174,10 @@ class ReviewExportView extends StatelessWidget {
             tabs: [
               Tab(text: 'Cohérence (${allIssues.length})'),
               const Tab(text: 'Cahier des charges (.md)'),
+              Tab(
+                text:
+                    'Event Storming (.es.yaml · ${project.eventStorming.documents.length})',
+              ),
               const Tab(text: 'YAML super_designer'),
               const Tab(text: 'JSON Schema & Seed'),
               const Tab(text: 'JSON Complet'),
@@ -219,6 +231,13 @@ class ReviewExportView extends StatelessWidget {
                       label: const Text('Navigateur'),
                     ),
                   ],
+                ),
+                _ExportCodeTab(
+                  content: eventStormingYamlPreview,
+                  filename: project.eventStorming.documents.length == 1
+                      ? project.eventStorming.documents.first.fileName
+                      : '${_safeName(project.name)}.es.yaml',
+                  colors: colors,
                 ),
                 _ExportCodeTab(
                   content: yamlSchema,
@@ -366,6 +385,14 @@ class ReviewExportView extends StatelessWidget {
           .writeAsString(yamlSchema, flush: true);
       await File('$dir${sep}specification_complete.json')
           .writeAsString(fullJson, flush: true);
+
+      if (project.eventStorming.hasContent) {
+        final esDir = Directory('${dir.path}${sep}event_storming');
+        await EventStormingDslCodec.writeAllToDirectory(
+          project.eventStorming,
+          esDir,
+        );
+      }
 
       if (includeSandboxedApp) {
         final appDir = Directory('${dir.path}${sep}super_designer_app');

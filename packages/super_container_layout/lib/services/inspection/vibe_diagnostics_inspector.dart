@@ -43,6 +43,7 @@ import '../../widgets/editing/overlay/editor_overlay.dart'
     show isRenderObjectOffstage;
 import '../../widgets/editing/slots/editor_context_menu.dart'
     show VibeChatScope;
+import 'vibe_ghost_component_detector.dart';
 import '../../widgets/editing/slots/editor_slot.dart'
     show EditorSlotState, StyleEditScope;
 import '../diagnostics/debug_entry.dart';
@@ -1195,6 +1196,12 @@ class VibeDiagnosticsInspector {
             for (final id in appearance.components.keys)
               if (!reachable.contains(id)) id,
           ];
+    final emptyMountedRootIds = scope == null && orphanIds.isNotEmpty
+        ? VibeGhostComponentDetector.findEmptyRootLayoutIds(
+            appearance,
+            mountedComponentIds: slotIndex.mountedComponentIds,
+          )
+        : const <String>[];
 
     final forcedStates = <Map<String, Object?>>[];
     for (final entry in slotIndex.allEntries) {
@@ -1237,6 +1244,8 @@ class VibeDiagnosticsInspector {
       'orphanComponentCount': orphanIds.length,
       if (orphanIds.isNotEmpty)
         'orphanComponentIds': orphanIds.take(30).toList(),
+      if (emptyMountedRootIds.isNotEmpty)
+        'emptyMountedRootIds': emptyMountedRootIds,
       if (forcedStates.isNotEmpty) 'forcedBehaviorStates': forcedStates,
       'activeRepositoryError': ?activeRepoError,
       if (recentErrors > 0) 'debugErrorCount': recentErrors,

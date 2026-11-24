@@ -84,6 +84,7 @@ export 'services/exporters/build_hexa_prompt_generator.dart';
 export 'services/exporters/company_glossary_codec.dart';
 export 'services/exporters/cost_csv_exporter.dart';
 export 'services/exporters/cost_markdown_exporter.dart';
+export 'services/exporters/event_storming_dsl_codec.dart';
 export 'services/exporters/gherkin_feature_exporter.dart';
 export 'services/exporters/model_dictionary_codec.dart';
 export 'services/exporters/qa_markdown_exporter.dart';

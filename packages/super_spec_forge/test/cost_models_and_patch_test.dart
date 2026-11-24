@@ -150,16 +150,37 @@ void main() {
           ],
         ),
         eventStorming: EventStormingSpec(
-          flows: [
-            EventStormBoard(
-              id: 'flow_1',
-              code: 'ES-001',
-              title: 'Flux Expédition',
-              nodes: [
-                EventStormNode(
-                  id: 'hot_1',
-                  kind: EventStormNodeKind.hotspot,
-                  title: 'Quota API transporteur',
+          documents: [
+            EventStormDocument(
+              id: 'expedition',
+              meta: const EventStormMeta(
+                domain: 'Logistique',
+                boundedContext: 'Expédition',
+                date: '2026-11-24',
+              ),
+              catalog: EventStormCatalog(
+                aggregates: const [
+                  EventStormCatalogItem(id: 'AGG-COLIS', name: 'Colis'),
+                ],
+              ),
+              flow: [
+                EventStormStep(
+                  step: 1,
+                  command: EventStormCommand(name: 'Expédier le colis'),
+                  aggregate: 'AGG-COLIS',
+                  domainEvent: EventStormDomainEvent(
+                    id: 'EVT-01',
+                    name: 'Colis expédié',
+                  ),
+                  hotspots: const [
+                    EventStormHotspot(
+                      id: 'HS-01',
+                      question: 'Quota API transporteur',
+                      severity: EventStormHotspotSeverity.high,
+                      owner: 'Architecte',
+                      status: EventStormHotspotStatus.open,
+                    ),
+                  ],
                 ),
               ],
             ),

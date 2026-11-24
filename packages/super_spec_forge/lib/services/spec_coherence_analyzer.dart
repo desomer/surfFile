@@ -9,6 +9,7 @@ import '../models/event_storming_spec.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import 'exporters/event_storming_dsl_codec.dart';
 
 /// Vérifie la cohérence référentielle et la complétude d'un [SpecForgeProject].
 abstract final class SpecCoherenceAnalyzer {
@@ -246,132 +247,96 @@ abstract final class SpecCoherenceAnalyzer {
       objectsByAnyKey[obj.name.toLowerCase()] = obj;
     }
 
-    // 2 bis. Contrôles d'Event Storming (Étape 4)
+    // 2 bis. Contrôles d'Event Storming DSL v1.0 (Étape 4)
     final es = project.eventStorming;
-    if (es.hasContent && es.flows.isEmpty) {
-      issues.add(
-        const SpecCoherenceIssue(
-          id: 'coh_es_empty',
-          severity: CoherenceSeverity.info,
-          stage: SpecForgeStage.eventStorming,
-          code: 'COH-ES-001',
-          title: 'Contextes bornés sans flux Event Storming',
-          description:
-              'Des Bounded Contexts sont déclarés, mais aucun flux chronologique d’événements, commandes et agrégats n’a encore été défini.',
-          suggestion:
-              'Amorcez l’Event Storming depuis le Cahier des charges pour faire émerger vos agrégats et politiques.',
-        ),
-      );
-    } else if (es.flows.isNotEmpty) {
-      final rulesByIdOrCode = <String, BusinessRuleSpec>{
-        for (final r in project.businessRules) ...{
-          r.id.toLowerCase(): r,
-          r.code.toLowerCase(): r,
-        },
-      };
-
-      for (final flow in es.flows) {
-        if (flow.domainEventCount == 0) {
+    if (es.documents.isNotEmpty) {
+      for (final doc in es.documents) {
+        final diagnostics = EventStormingDslCodec.validateDocument(
+          doc,
+          allDocuments: es.documents,
+        );
+        for (var i = 0; i < diagnostics.length; i++) {
+          final d = diagnostics[i];
+          final isGrammar = d.code.startsWith('GRAM-');
+          final code = d.code == 'DSL-ES-FLOW-EMPTY'
+              ? 'COH-ES-001'
+              : (isGrammar ? 'COH-ES-005' : 'COH-ES-003');
+          final severity = switch (d.severity) {
+            EventStormDslSeverity.error => CoherenceSeverity.warning,
+            EventStormDslSeverity.warning => CoherenceSeverity.warning,
+            EventStormDslSeverity.info => CoherenceSeverity.info,
+          };
           issues.add(
             SpecCoherenceIssue(
-              id: 'coh_es_no_evt_${flow.id}',
-              severity: CoherenceSeverity.info,
+              id: 'coh_es_${doc.id}_${d.code}_$i',
+              severity: severity,
               stage: SpecForgeStage.eventStorming,
-              code: 'COH-ES-003',
-              title: 'Flux sans événement domaine : ${flow.code}',
-              description:
-                  'Le flux « ${flow.title} » ne contient aucun événement domaine (carte orange).',
-              targetRef: flow.id,
-              suggestion:
-                  'Ajoutez au moins un événement métier formulé au passé pour matérialiser le résultat du flux.',
+              code: code,
+              title: '[${doc.meta.boundedContext}] ${d.code}',
+              description: d.message,
+              targetRef: doc.id,
+              suggestion: d.suggestion,
             ),
           );
         }
 
-        if (flow.openHotspotCount > 0) {
+        if (doc.openHotspotCount > 0) {
+          final openHotspots = doc.allHotspots
+              .where((h) => h.hotspot.isOpen)
+              .toList();
+          final hasBlocker = openHotspots.any(
+            (h) => h.hotspot.severity == EventStormHotspotSeverity.blocker,
+          );
+          final preview = openHotspots
+              .take(3)
+              .map(
+                (h) =>
+                    '${h.hotspot.id} (${h.hotspot.severity.yamlValue}'
+                    '${h.hotspot.owner.isEmpty ? '' : ', ${h.hotspot.owner}'})',
+              )
+              .join(', ');
           issues.add(
             SpecCoherenceIssue(
-              id: 'coh_es_open_hot_${flow.id}',
-              severity: CoherenceSeverity.warning,
+              id: 'coh_es_open_hot_${doc.id}',
+              severity: hasBlocker
+                  ? CoherenceSeverity.error
+                  : CoherenceSeverity.warning,
               stage: SpecForgeStage.eventStorming,
               code: 'COH-ES-002',
               title:
-                  '${flow.openHotspotCount} hotspot(s) ouvert(s) dans ${flow.code}',
+                  '${doc.openHotspotCount} hotspot(s) ouvert(s) dans « ${doc.meta.boundedContext} »',
               description:
-                  'Le flux « ${flow.title} » comporte encore ${flow.openHotspotCount} zone(s) d’ombre non tranchée(s).',
-              targetRef: flow.id,
+                  'Le fichier ${doc.fileName} comporte encore ${doc.openHotspotCount} question(s) ouverte(s) : $preview.',
+              targetRef: doc.id,
               suggestion:
-                  'Résolvez les hotspots rouges avec l’Event Storming Facilitator ou documentez la décision.',
+                  'Résolvez les hotspots Rose vif avec l’Event Storming Facilitator et passez leur statut à `resolved`.',
             ),
           );
         }
 
-        final nodeIds = {for (final n in flow.nodes) n.id};
-        for (final link in flow.links) {
-          if (!nodeIds.contains(link.fromNodeId) ||
-              !nodeIds.contains(link.toNodeId)) {
-            issues.add(
-              SpecCoherenceIssue(
-                id: 'coh_es_dangling_link_${flow.id}_${link.id}',
-                severity: CoherenceSeverity.warning,
-                stage: SpecForgeStage.eventStorming,
-                code: 'COH-ES-005',
-                title: 'Liaison incomplète dans ${flow.code}',
-                description:
-                    'Une liaison (${link.fromNodeId} → ${link.toNodeId}) pointe vers une carte absente du flux.',
-                targetRef: flow.id,
-                suggestion: 'Supprimez ou recâblez cette liaison.',
-              ),
-            );
-          }
-        }
-
-        for (final node in flow.nodes) {
-          if (node.kind == EventStormNodeKind.aggregate &&
-              project.businessObjects.isNotEmpty) {
-            final key = node.targetObjectId.trim().isNotEmpty
-                ? node.targetObjectId.trim().toLowerCase()
-                : node.title.trim().toLowerCase();
-            final pascalKey = node.title
+        if (project.businessObjects.isNotEmpty) {
+          for (final agg in doc.catalog.aggregates) {
+            final nameKey = agg.name.trim().toLowerCase();
+            final pascalKey = agg.name
                 .replaceAll(RegExp(r'[^A-Za-z0-9]+'), '')
                 .toLowerCase();
-            if (!objectsByAnyKey.containsKey(key) &&
+            if (!objectsByAnyKey.containsKey(nameKey) &&
                 !objectsByAnyKey.containsKey(pascalKey)) {
               issues.add(
                 SpecCoherenceIssue(
-                  id: 'coh_es_agg_unmapped_${flow.id}_${node.id}',
+                  id: 'coh_es_agg_unmapped_${doc.id}_${agg.id}',
                   severity: CoherenceSeverity.warning,
                   stage: SpecForgeStage.eventStorming,
                   code: 'COH-ES-004',
-                  title: 'Agrégat non modélisé en objet : ${node.title}',
+                  title: 'Agrégat non modélisé en objet : ${agg.name} (${agg.id})',
                   description:
-                      'L’agrégat « ${node.title} » du flux ${flow.code} ne correspond à aucun objet métier de l’étape 5.',
-                  targetRef: flow.id,
+                      'L’agrégat « ${agg.name} » (${agg.id}) du contexte « ${doc.meta.boundedContext} » ne correspond à aucun objet métier de l’étape 5.',
+                  targetRef: doc.id,
                   suggestion:
-                      'Utilisez « Générer Objets métiers » ou rattachez cet agrégat à un objet existant.',
+                      'Utilisez « Générer Objets métiers » ou modélisez cet agrégat à l’étape 5.',
                 ),
               );
             }
-          }
-
-          if (node.kind == EventStormNodeKind.policy &&
-              node.linkedRuleId.trim().isNotEmpty &&
-              !rulesByIdOrCode.containsKey(
-                node.linkedRuleId.trim().toLowerCase(),
-              )) {
-            issues.add(
-              SpecCoherenceIssue(
-                id: 'coh_es_missing_rule_${flow.id}_${node.id}',
-                severity: CoherenceSeverity.warning,
-                stage: SpecForgeStage.eventStorming,
-                code: 'COH-ES-004',
-                title: 'Lien RG cassé sur politique (${node.linkedRuleId})',
-                description:
-                    'La politique « ${node.title} » dans ${flow.code} référence la règle « ${node.linkedRuleId} », introuvable dans les règles de gestion.',
-                targetRef: flow.id,
-                suggestion: 'Promouvez à nouveau cette politique en règle RG-xxx.',
-              ),
-            );
           }
         }
       }

@@ -224,6 +224,7 @@ class SuperLayoutState extends State<SuperLayout>
   List<String> _lastParentPath = const [];
   String _lastLayoutName = '';
   bool _lastStyleEditMode = false;
+  String? _lastGhostDiagnosticLayoutId;
 
   void _invalidateSlotCache() {
     _slotLookup = null;
@@ -454,6 +455,17 @@ class SuperLayoutState extends State<SuperLayout>
 
   @override
   void dispose() {
+    if (_lastGhostDiagnosticLayoutId case final layoutId?) {
+      VibeDebugCapture.syncComponentDiagnostic(
+        componentId: layoutId,
+        sourceKey: VibeGhostComponentDetector.diagnosticSourceKey,
+        active: false,
+        category: DebugErrorCategory.rendering,
+        message: null,
+        visibleInUi: false,
+      );
+      _lastGhostDiagnosticLayoutId = null;
+    }
     _selected.removeListener(_syncReportedPathFromSelection);
     _selectedSlot.removeListener(_syncReportedPathFromSelection);
     _LayoutEditSelection.selected.removeListener(_syncReportedPathFromSelection);

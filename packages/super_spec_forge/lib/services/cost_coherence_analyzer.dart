@@ -224,30 +224,28 @@ abstract final class CostCoherenceAnalyzer {
 
     // 5. COST-HOTSPOT-UNCOVERED : Hotspots Event Storming non provisionnés dans le registre des risques
     if (cost.wbsItems.isNotEmpty) {
-      for (final flow in project.eventStorming.flows) {
-        for (final node in flow.nodes) {
-          if (node.kind != EventStormNodeKind.hotspot) continue;
-          final covered = cost.riskItems.any(
-            (r) => _matchesHotspot(node, r.linkedHotspotId),
+      for (final entry in project.eventStorming.allHotspots) {
+        final doc = entry.document;
+        final hs = entry.hotspot;
+        final covered = cost.riskItems.any(
+          (r) => _matchesHotspot(doc.id, hs, r.linkedHotspotId),
+        );
+        if (!covered) {
+          addIssue(
+            id: 'cost_hotspot_uncovered_${doc.id}_${hs.id}',
+            severity: hs.severity == EventStormHotspotSeverity.blocker
+                ? CoherenceSeverity.error
+                : CoherenceSeverity.warning,
+            stage: CostForgeStage.tcoReviewExport,
+            code: 'COST-HOTSPOT-UNCOVERED',
+            title:
+                'Hotspot Event Storming sans provision de risque : « ${hs.question} »',
+            description:
+                'Le Hotspot ${hs.id} (${hs.severity.label}, contexte « ${doc.meta.boundedContext} », étape ${entry.stepNumber}) n’est relié à aucun risque budgétaire EMV (`linkedHotspotId`).',
+            targetRef: hs.id,
+            suggestion:
+                'Créez une entrée dans le registre des risques rattachée au Hotspot ${hs.id} afin d’en chiffrer l’EMV.',
           );
-          if (!covered) {
-            final hotspotRef = node.code.trim().isNotEmpty
-                ? node.code.trim()
-                : node.id;
-            addIssue(
-              id: 'cost_hotspot_uncovered_${node.id}',
-              severity: CoherenceSeverity.warning,
-              stage: CostForgeStage.tcoReviewExport,
-              code: 'COST-HOTSPOT-UNCOVERED',
-              title:
-                  'Hotspot Event Storming sans provision de risque : « ${node.title} »',
-              description:
-                  'Le Hotspot « ${node.title} » ($hotspotRef, flux ${flow.code}) n’est relié à aucun risque budgétaire EMV (`linkedHotspotId`).',
-              targetRef: hotspotRef,
-              suggestion:
-                  'Créez une entrée dans le registre des risques rattachée au Hotspot $hotspotRef afin d’en chiffrer l’EMV.',
-            );
-          }
         }
       }
     }
@@ -282,12 +280,15 @@ abstract final class CostCoherenceAnalyzer {
         screen.name.toLowerCase() == needle;
   }
 
-  static bool _matchesHotspot(EventStormNode hotspot, String ref) {
+  static bool _matchesHotspot(
+    String docId,
+    EventStormHotspot hotspot,
+    String ref,
+  ) {
     final needle = ref.trim().toLowerCase();
     if (needle.isEmpty) return false;
     return hotspot.id.toLowerCase() == needle ||
-        (hotspot.code.trim().isNotEmpty &&
-            hotspot.code.trim().toLowerCase() == needle);
+        '$docId:${hotspot.id}'.toLowerCase() == needle;
   }
 
   static String _sanitizeId(String raw) {

@@ -33,6 +33,7 @@ import '../models/qa/tdd_suite_spec.dart';
 import '../models/ux/ux_coherence_issue.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
+import '../services/exporters/event_storming_dsl_codec.dart';
 import '../services/spec_coherence_analyzer.dart';
 import '../services/spec_schema_dsl_bridge.dart';
 
@@ -271,25 +272,21 @@ abstract final class SpecForgeToolRegistry {
     ),
     VibeToolDeclaration(
       name: 'get_event_storming',
-      description: 'Consulte les Bounded Contexts (BC-xxx) et flux chronologiques d’Event Storming (ES-xxx) avec leurs cartes (domainEvent, command, actor, aggregate, policy, readModel, hotspot) et liaisons.',
+      description: 'Consulte les documents Event Storming DSL v1.0 (1 document .es.yaml par Bounded Context : meta, catalog ACT/AGG/EXT, flow d’étapes avec triggered_by, policy, read_model, command, domain_event/outcomes, hotspots et backlog).',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{
-          'flowIdOrCode': <String, Object?>{
+          'documentIdOrContext': <String, Object?>{
             'type': 'string',
-            'description': 'Filtre optionnel par identifiant, code ES-xxx ou titre de flux.',
-          },
-          'boundedContextId': <String, Object?>{
-            'type': 'string',
-            'description': 'Filtre optionnel par identifiant, code BC-xxx ou nom de Bounded Context.',
-          },
-          'kind': <String, Object?>{
-            'type': 'string',
-            'description': 'Filtre optionnel sur le type de carte (domainEvent, command, actor, aggregate, policy, readModel, hotspot).',
+            'description': 'Filtre optionnel par identifiant, fichier .es.yaml ou nom de Bounded Context.',
           },
           'onlyOpenHotspots': <String, Object?>{
             'type': 'boolean',
-            'description': 'Retourne uniquement les flux ayant au moins un hotspot ouvert (false par défaut).',
+            'description': 'Retourne uniquement les Bounded Contexts ayant au moins un hotspot ouvert (false par défaut).',
+          },
+          'includeYaml': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut le rendu YAML .es.yaml de chaque document filtré (false par défaut).',
           },
         },
       },
@@ -979,36 +976,25 @@ abstract final class SpecForgeToolRegistry {
           );
         }
         final es = project.eventStorming;
-        final flowKey =
-            (call.arguments['flowIdOrCode'] as String?)?.trim().toLowerCase() ??
+        final docQuery =
+            ((call.arguments['documentIdOrContext'] ??
+                        call.arguments['boundedContextId'] ??
+                        call.arguments['flowIdOrCode'])
+                    as String?)
+                ?.trim()
+                .toLowerCase() ??
             '';
-        final bcKey = (call.arguments['boundedContextId'] as String?)?.trim() ?? '';
-        final resolvedBc = bcKey.isEmpty ? null : es.findBoundedContext(bcKey);
-        final kindRaw = (call.arguments['kind'] as String?)?.trim() ?? '';
-        final kindFilter = kindRaw.isEmpty
-            ? null
-            : EventStormNodeKind.fromJson(kindRaw);
         final onlyOpenHotspots = call.arguments['onlyOpenHotspots'] == true;
+        final includeYaml = call.arguments['includeYaml'] == true;
 
-        final flows = es.flows.where((f) {
-          if (flowKey.isNotEmpty &&
-              f.id.toLowerCase() != flowKey &&
-              f.code.toLowerCase() != flowKey &&
-              !f.title.toLowerCase().contains(flowKey)) {
+        final docs = es.documents.where((d) {
+          if (docQuery.isNotEmpty &&
+              d.id.toLowerCase() != docQuery &&
+              d.fileName.toLowerCase() != docQuery &&
+              !d.meta.boundedContext.toLowerCase().contains(docQuery)) {
             return false;
           }
-          if (bcKey.isNotEmpty) {
-            final bcId = resolvedBc?.id ?? bcKey;
-            final matchesBc =
-                f.boundedContextIds.contains(bcId) ||
-                f.nodes.any((n) => n.boundedContextId == bcId);
-            if (!matchesBc) return false;
-          }
-          if (onlyOpenHotspots && f.openHotspotCount == 0) {
-            return false;
-          }
-          if (kindFilter != null &&
-              !f.nodes.any((n) => n.kind == kindFilter)) {
+          if (onlyOpenHotspots && d.openHotspotCount == 0) {
             return false;
           }
           return true;
@@ -1018,25 +1004,19 @@ abstract final class SpecForgeToolRegistry {
           callId: call.id,
           name: call.name,
           data: <String, Object?>{
-            'boundedContextCount': es.boundedContexts.length,
-            'boundedContexts': [
-              for (final bc in es.boundedContexts) bc.toJson(),
-            ],
-            'flowCount': flows.length,
+            'dslVersion': EventStormDocument.currentDslVersion,
+            'documentCount': docs.length,
+            'totalStepCount': es.totalStepCount,
             'totalEventCount': es.totalEventCount,
             'openHotspotCount': es.openHotspotCount,
-            'flows': [
-              for (final f in flows)
-                if (kindFilter == null)
-                  f.toJson()
-                else
-                  f
-                      .copyWith(
-                        nodes: f.nodes
-                            .where((n) => n.kind == kindFilter)
-                            .toList(),
-                      )
-                      .toJson(),
+            'documents': [
+              for (final d in docs)
+                <String, Object?>{
+                  'id': d.id,
+                  'fileName': d.fileName,
+                  ...d.toDslJson(),
+                  if (includeYaml) 'yaml': EventStormingDslCodec.toYaml(d),
+                },
             ],
           },
         );
@@ -1498,22 +1478,15 @@ abstract final class SpecForgeToolRegistry {
             (call.arguments['eventStormFlowId'] as String?)?.trim() ?? '';
         String? resolvedFlowId;
         if (flowQuery.isNotEmpty) {
-          final needle = flowQuery.toLowerCase();
-          final foundFlow = project.eventStorming.flows
-              .where(
-                (f) =>
-                    f.id.toLowerCase() == needle ||
-                    f.code.toLowerCase() == needle,
-              )
-              .firstOrNull;
-          if (foundFlow == null) {
+          final foundDoc = project.eventStorming.findDocument(flowQuery);
+          if (foundDoc == null) {
             return VibeToolResult.error(
               callId: call.id,
               name: call.name,
-              message: 'Flux Event Storming introuvable : $flowQuery',
+              message: 'Document Event Storming introuvable : $flowQuery',
             );
           }
-          resolvedFlowId = foundFlow.id;
+          resolvedFlowId = foundDoc.id;
           onFocusEventStormFlow?.call(resolvedFlowId);
         }
         final storyQuery =

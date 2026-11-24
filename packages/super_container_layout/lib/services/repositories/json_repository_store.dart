@@ -333,6 +333,14 @@ class JsonRepositoryStore extends ChangeNotifier {
     ),
   );
 
+  /// Indique si une instance [SuperBackend] est déjà active en mémoire ou si
+  /// sa base SQLite `<directory>/super_backend.db` existe sur le disque.
+  bool get hasSuperBackendData =>
+      _superBackend != null ||
+      File(
+        '${directory.path}${Platform.pathSeparator}super_backend.db',
+      ).existsSync();
+
   /// Remplace l'instance [SuperBackend] locale de ce store (par exemple en
   /// mémoire pour les tests) et réinstalle son transport HTTP sur [providers].
   set superBackend(SuperBackend value) {
@@ -2786,20 +2794,28 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
+  /// Supprime le repository [name].
+  ///
+  /// Refuse la suppression si le repository est utilisé par une liaison,
+  /// [appearance], un provider ou une datasource, sauf lorsque [force] vaut
+  /// `true` (confirmation explicite de l'utilisateur).
   Future<void> delete(
     String name, {
     Appearance? appearance,
+    bool force = false,
   }) => _exclusive(() async {
     final validated = validateName(name);
     if (_memoryRepositories.containsKey(validated)) {
-      if (isRepositoryBound(validated) ||
-          (appearance?.usesRepository(validated) ?? false)) {
-        throw FormatException(
-          'Impossible de supprimer « $validated » : '
-          'ce repository est encore utilisé par un bind de l’application.',
-        );
+      if (!force) {
+        if (isRepositoryBound(validated) ||
+            (appearance?.usesRepository(validated) ?? false)) {
+          throw FormatException(
+            'Impossible de supprimer « $validated » : '
+            'ce repository est encore utilisé par un bind de l’application.',
+          );
+        }
+        _checkUnusedByProviders(validated, validated);
       }
-      _checkUnusedByProviders(validated, validated);
       final persistence = _persistentRepositories[validated];
       if (persistence != null) {
         final text = await _readRegisteredText(persistence.file);
@@ -2851,7 +2867,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (idType == FileSystemEntityType.file) {
       id = (await idFile.readAsString()).trim();
     }
-    if (id != null &&
+    if (!force &&
+        id != null &&
         id.isNotEmpty &&
         (isRepositoryBound(id) || (appearance?.usesRepository(id) ?? false))) {
       throw FormatException(
@@ -2859,7 +2876,9 @@ class JsonRepositoryStore extends ChangeNotifier {
         'ce repository est encore utilisé par un bind de l’application.',
       );
     }
-    if (id != null && id.isNotEmpty) _checkUnusedByProviders(validated, id);
+    if (!force && id != null && id.isNotEmpty) {
+      _checkUnusedByProviders(validated, id);
+    }
     await file.delete();
     if (idType == FileSystemEntityType.file) {
       await idFile.delete();

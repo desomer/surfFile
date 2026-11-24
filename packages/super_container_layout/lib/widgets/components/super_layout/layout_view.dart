@@ -35,6 +35,77 @@ extension _SuperLayoutView on SuperLayoutState {
     return null;
   }
 
+  void _syncGhostComponentsDiagnostic(
+    BuildContext context,
+    String? effectiveId,
+    SuperLayoutConfig config,
+  ) {
+    final parentPath = _LabelScope.pathOf(context);
+    final isRootContainer =
+        effectiveId != null &&
+        (effectiveId == 'mainLayout' || parentPath.isEmpty);
+
+    void clearPrevious([String? idToClear]) {
+      final target = idToClear ?? _lastGhostDiagnosticLayoutId;
+      if (target == null) return;
+      VibeDebugCapture.syncComponentDiagnostic(
+        componentId: target,
+        sourceKey: VibeGhostComponentDetector.diagnosticSourceKey,
+        active: false,
+        category: DebugErrorCategory.rendering,
+        message: null,
+        visibleInUi: false,
+      );
+      if (target == _lastGhostDiagnosticLayoutId) {
+        _lastGhostDiagnosticLayoutId = null;
+      }
+    }
+
+    if (!isRootContainer) {
+      clearPrevious();
+      return;
+    }
+    if (_lastGhostDiagnosticLayoutId != null &&
+        _lastGhostDiagnosticLayoutId != effectiveId) {
+      clearPrevious();
+    }
+    if (config.placedSlotIds.isNotEmpty) {
+      clearPrevious(effectiveId);
+      return;
+    }
+
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    if (appearance == null || appearance.components.isEmpty) {
+      clearPrevious(effectiveId);
+      return;
+    }
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final ghostIds = VibeGhostComponentDetector.findUnreachableComponentIds(
+      appearance,
+      extraRootIds: registry?.instantiatedComponentIds ?? const <String>[],
+      mountedRootIds: <String>[effectiveId],
+    );
+    if (ghostIds.isEmpty) {
+      clearPrevious(effectiveId);
+      return;
+    }
+
+    _lastGhostDiagnosticLayoutId = effectiveId;
+    VibeDebugCapture.syncComponentDiagnostic(
+      componentId: effectiveId,
+      sourceKey: VibeGhostComponentDetector.diagnosticSourceKey,
+      active: true,
+      category: DebugErrorCategory.rendering,
+      severity: DebugSeverity.error,
+      source: 'SuperLayout.ghostComponents',
+      visibleInUi: false,
+      message: VibeGhostComponentDetector.formatEmptyRootWarning(
+        rootLayoutId: effectiveId,
+        ghostComponentIds: ghostIds,
+      ),
+    );
+  }
+
   Widget _buildLayout(BuildContext context) {
     final effectiveId = _resolveEffectiveLayoutId(context);
     return EditorSlot(
@@ -71,6 +142,7 @@ extension _SuperLayoutView on SuperLayoutState {
             JsonRepositoryScope.maybeOf(context),
           );
           final config = _config.value;
+          _syncGhostComponentsDiagnostic(context, effectiveId, config);
           if (config.positioning == SuperLayoutPositioning.grid) {
             return _buildGrid(context);
           }

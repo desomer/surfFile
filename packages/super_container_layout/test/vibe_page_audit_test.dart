@@ -1495,4 +1495,34 @@ void main() {
       expect(llmCalls, 1);
     },
   );
+
+  testWidgets(
+    'VibePageAuditService and VibeDiagnosticsInspector detect ghost components when mounted mainLayout has 0 placements',
+    (tester) async {
+      final appearance = Appearance(
+        components: <String, ComponentConfig>{
+          'mainLayout': const SuperLayoutConfig(),
+          'dash-header': const SuperValueConfig(initialText: 'En-tête'),
+          'kpis-row': const SuperLayoutConfig(),
+          'card-chart-container': const SuperValueConfig(initialText: 'Graphe'),
+        },
+      );
+      final inspector = VibeAppInspector(readAppearance: () => appearance);
+
+      final report = await VibePageAuditService.collect(inspector);
+      final ghostFindings = report.findings
+          .where((f) => f.kind == 'ghost_components_empty_root')
+          .toList();
+      expect(ghostFindings, hasLength(1));
+      expect(ghostFindings.single.severity, VibeAuditSeverity.error);
+      expect(ghostFindings.single.componentId, 'mainLayout');
+      expect(ghostFindings.single.message, contains('3 composant(s)'));
+
+      final diag = await inspector.inspectBindingsAndDiagnostics(
+        const <String, Object?>{},
+      );
+      expect(diag['orphanComponentCount'], 3);
+      expect(diag['emptyMountedRootIds'], ['mainLayout']);
+    },
+  );
 }

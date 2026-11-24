@@ -25,6 +25,7 @@ import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../diagnostics/debug_entry.dart';
 import 'vibe_app_inspector.dart';
 import 'vibe_debug_capture.dart';
+import 'vibe_ghost_component_detector.dart';
 import 'vibe_mounted_slot_index.dart';
 
 /// Niveau de gravité d'une anomalie détectée lors du pré-audit.
@@ -490,6 +491,42 @@ abstract final class VibePageAuditService {
       }
     }
     return false;
+  }
+
+  static void _collectEmptyRootGhostComponentsFindings({
+    required Appearance appearance,
+    required Iterable<String> instantiatedIds,
+    required Iterable<String> mountedComponentIds,
+    required void Function(VibeAuditFinding finding) addFinding,
+  }) {
+    final emptyRootIds = VibeGhostComponentDetector.findEmptyRootLayoutIds(
+      appearance,
+      mountedComponentIds: mountedComponentIds,
+    );
+    if (emptyRootIds.isEmpty) return;
+
+    final ghostIds = VibeGhostComponentDetector.findUnreachableComponentIds(
+      appearance,
+      extraRootIds: instantiatedIds,
+      mountedRootIds: mountedComponentIds,
+    );
+    if (ghostIds.isEmpty) return;
+
+    for (final rootId in emptyRootIds) {
+      addFinding(
+        VibeAuditFinding(
+          category: VibeAuditCategory.layoutAndClipping,
+          severity: VibeAuditSeverity.error,
+          kind: 'ghost_components_empty_root',
+          componentId: rootId,
+          location: 'components[$rootId].placements',
+          message: VibeGhostComponentDetector.formatEmptyRootWarning(
+            rootLayoutId: rootId,
+            ghostComponentIds: ghostIds,
+          ),
+        ),
+      );
+    }
   }
 
   static void _collectMultiPageNavigationFindings({
@@ -1311,7 +1348,18 @@ abstract final class VibePageAuditService {
       }
     }
 
-    // 5. Cohérence de navigation multi-pages et intégrité des shells partagés (hors scope / visibleOnly).
+    // 5. Détection des composants fantômes lorsqu'un conteneur racine monté a 0 placement.
+    if (scope == null) {
+      _collectEmptyRootGhostComponentsFindings(
+        appearance: appearance,
+        instantiatedIds:
+            inspector.registry?.instantiatedComponentIds ?? const <String>[],
+        mountedComponentIds: inspector.slotIndex.mountedComponentIds,
+        addFinding: addFinding,
+      );
+    }
+
+    // 6. Cohérence de navigation multi-pages et intégrité des shells partagés (hors scope / visibleOnly).
     if (scope == null && !visibleOnly) {
       _collectMultiPageNavigationFindings(
         appearance: appearance,

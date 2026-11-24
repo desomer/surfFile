@@ -1,6 +1,8 @@
-/// Opérations métier déterministes pour l'Event Storming ([EventStormingOperations]) :
-/// amorçage depuis le Cahier des charges, synthèse/enrichissement des objets métiers
-/// depuis les agrégats & événements, et promotion des politiques en règles `RG-xxx`.
+/// Opérations métier déterministes pour l'Event Storming DSL v1.0
+/// ([EventStormingOperations]) : amorçage depuis le Cahier des charges,
+/// synthèse/enrichissement des objets métiers depuis les agrégats (`AGG-*`) &
+/// événements (`EVT-*` / `outcomes`), promotion des politiques en règles
+/// `RG-xxx` et import de fichiers `.es.yaml`.
 library;
 
 import 'package:shortid/shortid.dart';
@@ -10,36 +12,73 @@ import '../models/business_rule_spec.dart';
 import '../models/event_storming_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_forge_project.dart';
+import 'exporters/event_storming_dsl_codec.dart';
 
-/// Services déterministes manipulant [EventStormingSpec] et ses passerelles
-/// avec [SpecCahierDesCharges], [BusinessObjectSpec] et [BusinessRuleSpec].
+/// Services déterministes manipulant [EventStormingSpec] (DSL v1.0) et ses
+/// passerelles avec [SpecCahierDesCharges], [BusinessObjectSpec] et
+/// [BusinessRuleSpec].
 abstract final class EventStormingOperations {
-  /// Génère le prochain code séquentiel `ES-xxx` non utilisé dans [existing].
-  static String nextFlowCode(List<EventStormBoard> existing) {
-    final pattern = RegExp(r'^ES-(\d+)$', caseSensitive: false);
-    var maxIndex = existing.length;
-    for (final flow in existing) {
-      final match = pattern.firstMatch(flow.code.trim());
+  /// Génère le prochain identifiant d'événement `EVT-xx` non utilisé dans [doc].
+  static String nextEventId(EventStormDocument doc) {
+    final pattern = RegExp(r'^EVT-(\d+)[A-Z]?$', caseSensitive: false);
+    var maxIndex = 0;
+    for (final evt in doc.allDomainEvents) {
+      final match = pattern.firstMatch(evt.id.trim());
       if (match != null) {
         final parsed = int.tryParse(match.group(1)!) ?? 0;
         if (parsed > maxIndex) maxIndex = parsed;
       }
     }
-    return 'ES-${(maxIndex + 1).toString().padLeft(3, '0')}';
+    return 'EVT-${(maxIndex + 1).toString().padLeft(2, '0')}';
   }
 
-  /// Génère le prochain code séquentiel `BC-xxx` non utilisé dans [existing].
-  static String nextBoundedContextCode(List<EventStormBoundedContext> existing) {
-    final pattern = RegExp(r'^BC-(\d+)$', caseSensitive: false);
-    var maxIndex = existing.length;
-    for (final bc in existing) {
-      final match = pattern.firstMatch(bc.code.trim());
+  /// Génère le prochain identifiant de hotspot `HS-xx` non utilisé dans [doc].
+  static String nextHotspotId(EventStormDocument doc) {
+    final pattern = RegExp(r'^HS-(\d+)$', caseSensitive: false);
+    var maxIndex = 0;
+    for (final entry in doc.allHotspots) {
+      final match = pattern.firstMatch(entry.hotspot.id.trim());
       if (match != null) {
         final parsed = int.tryParse(match.group(1)!) ?? 0;
         if (parsed > maxIndex) maxIndex = parsed;
       }
     }
-    return 'BC-${(maxIndex + 1).toString().padLeft(3, '0')}';
+    return 'HS-${(maxIndex + 1).toString().padLeft(2, '0')}';
+  }
+
+  /// Génère un identifiant de catalogue canonique (`ACT-*`, `AGG-*` ou `EXT-*`)
+  /// unique dans [existingIds].
+  static String nextCatalogId(
+    String prefix,
+    String name,
+    Set<String> existingIds,
+  ) {
+    final token = _foldAccents(name)
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    final base = '$prefix-${token.isEmpty ? 'ITEM' : token}';
+    if (!existingIds.contains(base)) return base;
+    var suffix = 2;
+    while (existingIds.contains('${base}_$suffix')) {
+      suffix++;
+    }
+    return '${base}_$suffix';
+  }
+
+  /// Génère un slug de fichier unique pour un Bounded Context.
+  static String nextDocumentId(
+    String boundedContextName,
+    List<EventStormDocument> existing,
+  ) {
+    final base = _toSlug(boundedContextName);
+    final used = {for (final d in existing) d.id.toLowerCase()};
+    if (!used.contains(base)) return base;
+    var idx = 2;
+    while (used.contains('$base-$idx')) {
+      idx++;
+    }
+    return '$base-$idx';
   }
 
   /// Génère le prochain code séquentiel `RG-xxx` non utilisé dans [existing].
@@ -56,164 +95,342 @@ abstract final class EventStormingOperations {
     return 'RG-${(maxIndex + 1).toString().padLeft(3, '0')}';
   }
 
-  /// Initialise des Bounded Contexts et flux Event Storming à partir des modules,
-  /// cas d'usage et exigences du [SpecCahierDesCharges] non encore couverts.
+  /// Parse un contenu `.es.yaml` et l'ajoute ou met à jour dans [current].
+  static ({EventStormingSpec updated, EventStormDocument document, bool createdNew})
+  upsertDocumentFromYaml(
+    EventStormingSpec current,
+    String yamlContent, {
+    String? idHint,
+  }) {
+    final parsed = EventStormingDslCodec.fromYaml(yamlContent, idHint: idHint);
+    final docs = List<EventStormDocument>.from(current.documents);
+    final existingIdx = docs.indexWhere(
+      (d) =>
+          d.id.toLowerCase() == parsed.id.toLowerCase() ||
+          d.meta.boundedContext.toLowerCase() ==
+              parsed.meta.boundedContext.toLowerCase(),
+    );
+    if (existingIdx >= 0) {
+      final normalized = parsed.copyWith(id: docs[existingIdx].id);
+      docs[existingIdx] = normalized;
+      final updated = current.copyWith(documents: docs);
+      updated.validate();
+      return (updated: updated, document: normalized, createdNew: false);
+    }
+    final uniqueId = nextDocumentId(parsed.id, docs);
+    final normalized = parsed.copyWith(id: uniqueId);
+    docs.add(normalized);
+    final updated = current.copyWith(documents: docs);
+    updated.validate();
+    return (updated: updated, document: normalized, createdNew: true);
+  }
+
+  /// Initialise 1 [EventStormDocument] (`.es.yaml`) par module / Bounded Context
+  /// du [SpecCahierDesCharges] non encore couvert, avec `meta`, `catalog`
+  /// (`ACT-*`, `AGG-*`) et `flow[]` chronologique (incluant `outcomes` si des
+  /// flux alternatifs existent).
   static ({
     EventStormingSpec updated,
-    int addedFlowsCount,
-    int addedContextsCount,
+    int addedDocumentsCount,
+    int addedStepsCount,
   })
   seedFromCahierDesCharges(SpecForgeProject project) {
     final current = project.eventStorming;
     final cdc = project.cahierDesCharges;
-
-    final contexts = List<EventStormBoundedContext>.from(
-      current.boundedContexts,
-    );
-    final contextIdByModuleId = <String, String>{};
-    var addedContextsCount = 0;
-
-    for (final mod in cdc.modules) {
-      final existing = current.findBoundedContext(mod.name);
-      if (existing != null) {
-        contextIdByModuleId[mod.id] = existing.id;
-        continue;
-      }
-      final alreadyInAdded = contexts
-          .where((bc) => bc.name.toLowerCase() == mod.name.trim().toLowerCase())
-          .firstOrNull;
-      if (alreadyInAdded != null) {
-        contextIdByModuleId[mod.id] = alreadyInAdded.id;
-        continue;
-      }
-      final bc = EventStormBoundedContext(
-        id: _shortId('bc'),
-        code: nextBoundedContextCode(contexts),
-        name: mod.name,
-        description: mod.description,
-      );
-      contexts.add(bc);
-      contextIdByModuleId[mod.id] = bc.id;
-      addedContextsCount++;
+    if (!cdc.hasContent) {
+      return (updated: current, addedDocumentsCount: 0, addedStepsCount: 0);
     }
 
-    final coveredUseCases = <String>{
-      for (final f in current.flows)
-        for (final ucId in f.useCaseIds) ucId.trim().toLowerCase(),
-    };
-    final coveredReqCodes = <String>{
-      for (final f in current.flows)
-        for (final reqId in f.requirementIds) reqId.trim().toLowerCase(),
-    };
+    final docs = List<EventStormDocument>.from(current.documents);
+    final today = _todayIsoDate();
+    final domainName = project.name.trim().isEmpty
+        ? 'Domaine métier'
+        : project.name.trim();
 
-    final flows = List<EventStormBoard>.from(current.flows);
-    var addedFlowsCount = 0;
+    final modules = cdc.modules.isNotEmpty
+        ? cdc.modules
+        : <SpecModule>[
+            SpecModule(
+              id: 'mod_principal',
+              name: domainName,
+              description: 'Contexte principal du projet',
+            ),
+          ];
 
-    for (final uc in cdc.useCases) {
-      if (coveredUseCases.contains(uc.id.toLowerCase()) ||
-          coveredUseCases.contains(uc.title.toLowerCase())) {
+    var addedDocs = 0;
+    var addedSteps = 0;
+    final usedUseCaseIds = <String>{};
+    final usedReqIds = <String>{};
+
+    for (var mIdx = 0; mIdx < modules.length; mIdx++) {
+      final mod = modules[mIdx];
+      final existingDoc = current.findDocument(mod.name);
+      if (existingDoc != null && existingDoc.flow.isNotEmpty) {
         continue;
       }
-      final actorPersona = project.vision.personas
-          .where((p) => p.id == uc.actorId || p.name == uc.actorId)
-          .firstOrNull;
-      final actorName = actorPersona?.name ??
-          (uc.actorId.trim().isNotEmpty ? uc.actorId.trim() : 'Utilisateur');
-      final matchedReqs = _matchRequirementsForTitle(
-        cdc.functionalRequirements,
-        uc.title,
-      );
-      final reqCodes = [for (final r in matchedReqs) r.code];
-      final bcId = matchedReqs.isNotEmpty
-          ? (contextIdByModuleId[matchedReqs.first.moduleId] ?? '')
-          : (contexts.isNotEmpty ? contexts.first.id : '');
 
-      final flow = _buildStarterFlow(
-        code: nextFlowCode(flows),
-        title: uc.title,
-        description: uc.mainFlow.isNotEmpty
-            ? uc.mainFlow.join(' → ')
-            : 'Flux issu du cas d’usage « ${uc.title} ».',
-        actorName: actorName,
-        actorId: actorPersona?.id ?? uc.actorId,
-        commandTitle: _toCommandTitle(uc.title),
-        aggregateTitle: _guessAggregateTitle(
-          uc.title,
-          fallback: matchedReqs.isNotEmpty
-              ? _moduleNameFor(cdc.modules, matchedReqs.first.moduleId)
-              : 'Dossier',
-        ),
-        eventTitle: uc.postconditions.isNotEmpty
-            ? uc.postconditions.first
-            : _toPastEventTitle(uc.title),
-        hotspotTitle: uc.alternativeFlows.isNotEmpty
-            ? 'Cas alternatif à détailler : ${uc.alternativeFlows.first}'
-            : '',
-        boundedContextId: bcId,
-        requirementIds: reqCodes,
-        useCaseIds: [uc.id],
-      );
-      flows.add(flow);
-      addedFlowsCount++;
-      for (final r in reqCodes) {
-        coveredReqCodes.add(r.toLowerCase());
+      final modReqs = cdc.functionalRequirements
+          .where((r) => r.moduleId == mod.id || modules.length == 1)
+          .where((r) => !usedReqIds.contains(r.id))
+          .toList();
+
+      final modUseCases = cdc.useCases.where((uc) {
+        if (usedUseCaseIds.contains(uc.id)) return false;
+        if (modules.length == 1) return true;
+        final matched = _matchRequirementsForTitle(modReqs, uc.title);
+        return matched.isNotEmpty || mIdx == 0;
+      }).toList();
+
+      if (modUseCases.isEmpty && modReqs.isEmpty) {
+        continue;
       }
-    }
 
-    if (addedFlowsCount == 0 && cdc.useCases.isEmpty) {
-      for (final req in cdc.functionalRequirements) {
-        if (coveredReqCodes.contains(req.code.toLowerCase()) ||
-            coveredReqCodes.contains(req.id.toLowerCase())) {
-          continue;
+      final actors = <EventStormCatalogItem>[];
+      final aggregates = <EventStormCatalogItem>[];
+      final usedCatalogIds = <String>{};
+      final actorIdByName = <String, String>{};
+      final aggIdByName = <String, String>{};
+
+      String ensureActor(String rawName) {
+        final clean = rawName.trim().isEmpty ? 'Utilisateur' : rawName.trim();
+        final key = clean.toLowerCase();
+        return actorIdByName.putIfAbsent(key, () {
+          final id = nextCatalogId('ACT', clean, usedCatalogIds);
+          usedCatalogIds.add(id);
+          actors.add(
+            EventStormCatalogItem(
+              id: id,
+              name: clean,
+              type: EventStormActorType.human,
+            ),
+          );
+          return id;
+        });
+      }
+
+      String ensureAggregate(String rawName) {
+        final clean = rawName.trim().isEmpty ? mod.name : rawName.trim();
+        final key = clean.toLowerCase();
+        return aggIdByName.putIfAbsent(key, () {
+          final id = nextCatalogId('AGG', clean, usedCatalogIds);
+          usedCatalogIds.add(id);
+          aggregates.add(EventStormCatalogItem(id: id, name: clean));
+          return id;
+        });
+      }
+
+      final steps = <EventStormStep>[];
+      var hsCounter = 0;
+      String? previousMainEventId;
+      final epicCode = 'EPIC-${(mIdx + 1).toString().padLeft(2, '0')}';
+
+      if (modUseCases.isNotEmpty) {
+        for (final uc in modUseCases) {
+          usedUseCaseIds.add(uc.id);
+          final stepNum = steps.length + 1;
+          final actorPersona = project.vision.personas
+              .where((p) => p.id == uc.actorId || p.name == uc.actorId)
+              .firstOrNull;
+          final actorId = ensureActor(
+            actorPersona?.name ??
+                (uc.actorId.trim().isNotEmpty ? uc.actorId : 'Utilisateur'),
+          );
+          final aggId = ensureAggregate(
+            _guessAggregateTitle(uc.title, fallback: mod.name),
+          );
+          final matchedReqs = _matchRequirementsForTitle(modReqs, uc.title);
+          for (final r in matchedReqs) {
+            usedReqIds.add(r.id);
+          }
+          final storyCode = matchedReqs.isNotEmpty
+              ? matchedReqs.first.code
+              : 'US-${(mIdx + 1) * 100 + stepNum}';
+
+          final cmdName = _toInfinitiveCommand(uc.title);
+          final successEventName = uc.postconditions.isNotEmpty
+              ? _toPastEvent(uc.postconditions.first)
+              : _toPastEvent(uc.title);
+
+          final hotspots = <EventStormHotspot>[];
+          if (uc.alternativeFlows.length > 1) {
+            hsCounter++;
+            hotspots.add(
+              EventStormHotspot(
+                id: 'HS-${hsCounter.toString().padLeft(2, '0')}',
+                question:
+                    'Préciser le traitement complet des cas alternatifs : ${uc.alternativeFlows.skip(1).join(' ; ')} ?',
+                severity: EventStormHotspotSeverity.medium,
+                owner: 'Product Owner',
+                status: EventStormHotspotStatus.open,
+              ),
+            );
+          }
+
+          final hasAlternativeOutcome = uc.alternativeFlows.isNotEmpty;
+          final baseEvtNum = stepNum.toString().padLeft(2, '0');
+
+          final step = hasAlternativeOutcome
+              ? EventStormStep(
+                  step: stepNum,
+                  backlog: EventStormBacklog(epic: epicCode, story: storyCode),
+                  triggeredBy: previousMainEventId != null
+                      ? EventStormTrigger.single(previousMainEventId)
+                      : null,
+                  readModel: uc.preconditions.isNotEmpty
+                      ? EventStormReadModel(
+                          name: 'Vue ${uc.title}',
+                          fields: uc.preconditions,
+                        )
+                      : null,
+                  actor: actorId,
+                  command: EventStormCommand(
+                    name: cmdName,
+                    payload: _inferPayloadFromFlow(uc.mainFlow),
+                  ),
+                  aggregate: aggId,
+                  outcomes: <EventStormOutcome>[
+                    EventStormOutcome(
+                      condition: 'Règles métier respectées',
+                      isError: false,
+                      domainEvent: EventStormDomainEvent(
+                        id: 'EVT-${baseEvtNum}A',
+                        name: successEventName,
+                      ),
+                    ),
+                    EventStormOutcome(
+                      condition: uc.alternativeFlows.first,
+                      isError: true,
+                      domainEvent: EventStormDomainEvent(
+                        id: 'EVT-${baseEvtNum}B',
+                        name: _toErrorPastEvent(uc.title),
+                        data: const <String>['motif_rejet'],
+                      ),
+                    ),
+                  ],
+                  hotspots: hotspots,
+                )
+              : EventStormStep(
+                  step: stepNum,
+                  backlog: EventStormBacklog(epic: epicCode, story: storyCode),
+                  triggeredBy: previousMainEventId != null
+                      ? EventStormTrigger.single(previousMainEventId)
+                      : null,
+                  readModel: uc.preconditions.isNotEmpty
+                      ? EventStormReadModel(
+                          name: 'Vue ${uc.title}',
+                          fields: uc.preconditions,
+                        )
+                      : null,
+                  actor: actorId,
+                  command: EventStormCommand(
+                    name: cmdName,
+                    payload: _inferPayloadFromFlow(uc.mainFlow),
+                  ),
+                  aggregate: aggId,
+                  domainEvent: EventStormDomainEvent(
+                    id: 'EVT-$baseEvtNum',
+                    name: successEventName,
+                  ),
+                  hotspots: hotspots,
+                );
+
+          steps.add(step);
+          previousMainEventId = step.emittedEvents.first.id;
+          addedSteps++;
         }
-        final actorPersona = req.actorIds.isNotEmpty
-            ? project.vision.personas
-                  .where((p) => p.id == req.actorIds.first)
-                  .firstOrNull
-            : null;
-        final bcId = contextIdByModuleId[req.moduleId] ?? '';
-        final flow = _buildStarterFlow(
-          code: nextFlowCode(flows),
-          title: '${req.code} — ${req.title}',
-          description: req.description,
-          actorName: actorPersona?.name ?? 'Utilisateur',
-          actorId: actorPersona?.id ?? '',
-          commandTitle: _toCommandTitle(req.title),
-          aggregateTitle: _guessAggregateTitle(
-            req.title,
-            fallback: _moduleNameFor(cdc.modules, req.moduleId),
-          ),
-          eventTitle: _toPastEventTitle(req.title),
-          hotspotTitle: req.acceptanceCriteria.isEmpty
-              ? 'Critères d’acceptation et cas limites à préciser'
-              : '',
-          boundedContextId: bcId,
-          requirementIds: [req.code],
-          useCaseIds: const <String>[],
-        );
-        flows.add(flow);
-        addedFlowsCount++;
+      } else {
+        for (final req in modReqs) {
+          usedReqIds.add(req.id);
+          final stepNum = steps.length + 1;
+          final actorPersona = req.actorIds.isNotEmpty
+              ? project.vision.personas
+                    .where((p) => p.id == req.actorIds.first)
+                    .firstOrNull
+              : null;
+          final actorId = ensureActor(actorPersona?.name ?? 'Utilisateur');
+          final aggId = ensureAggregate(
+            _guessAggregateTitle(req.title, fallback: mod.name),
+          );
+          final hotspots = <EventStormHotspot>[];
+          if (req.acceptanceCriteria.isEmpty) {
+            hsCounter++;
+            hotspots.add(
+              EventStormHotspot(
+                id: 'HS-${hsCounter.toString().padLeft(2, '0')}',
+                question:
+                    'Quels sont les critères d’acceptation et cas d’erreur pour « ${req.title} » ?',
+                severity: EventStormHotspotSeverity.medium,
+                owner: 'Product Owner',
+                status: EventStormHotspotStatus.open,
+              ),
+            );
+          }
+
+          final evtId = 'EVT-${stepNum.toString().padLeft(2, '0')}';
+          steps.add(
+            EventStormStep(
+              step: stepNum,
+              backlog: EventStormBacklog(epic: epicCode, story: req.code),
+              triggeredBy: previousMainEventId != null
+                  ? EventStormTrigger.single(previousMainEventId)
+                  : null,
+              actor: actorId,
+              command: EventStormCommand(name: _toInfinitiveCommand(req.title)),
+              aggregate: aggId,
+              domainEvent: EventStormDomainEvent(
+                id: evtId,
+                name: _toPastEvent(req.title),
+              ),
+              hotspots: hotspots,
+            ),
+          );
+          previousMainEventId = evtId;
+          addedSteps++;
+        }
+      }
+
+      if (steps.isEmpty) continue;
+
+      final docId = existingDoc?.id ?? nextDocumentId(mod.name, docs);
+      final doc = EventStormDocument(
+        id: docId,
+        meta: EventStormMeta(
+          domain: domainName,
+          boundedContext: mod.name,
+          format: EventStormFormat.processModeling,
+          date: today,
+          facilitator: 'Product Owner',
+        ),
+        catalog: EventStormCatalog(actors: actors, aggregates: aggregates),
+        flow: steps,
+      );
+
+      if (existingDoc != null) {
+        final idx = docs.indexWhere((d) => d.id == existingDoc.id);
+        if (idx >= 0) docs[idx] = doc;
+      } else {
+        docs.add(doc);
+        addedDocs++;
       }
     }
 
-    if (addedFlowsCount == 0 && addedContextsCount == 0) {
-      return (updated: current, addedFlowsCount: 0, addedContextsCount: 0);
+    if (addedDocs == 0 && addedSteps == 0) {
+      return (updated: current, addedDocumentsCount: 0, addedStepsCount: 0);
     }
 
-    final updated = current.copyWith(
-      boundedContexts: contexts,
-      flows: flows,
-    );
+    final updated = current.copyWith(documents: docs);
     updated.validate();
     return (
       updated: updated,
-      addedFlowsCount: addedFlowsCount,
-      addedContextsCount: addedContextsCount,
+      addedDocumentsCount: addedDocs,
+      addedStepsCount: addedSteps,
     );
   }
 
   /// Synthétise ou enrichit les [BusinessObjectSpec] (et leurs cycles de vie)
-  /// à partir des agrégats, commandes et événements de [SpecForgeProject.eventStorming].
+  /// à partir des agrégats (`catalog.aggregates` / `step.aggregate`),
+  /// commandes (`payload`) et événements domaine (`data`, y compris dans `outcomes`)
+  /// de [SpecForgeProject.eventStorming].
   static ({
     SpecForgeProject project,
     int createdObjectsCount,
@@ -230,88 +447,44 @@ abstract final class EventStormingOperations {
     }
 
     final objects = List<BusinessObjectSpec>.from(project.businessObjects);
-    final updatedFlows = List<EventStormBoard>.from(es.flows);
-    var createdCount = 0;
-    var enrichedCount = 0;
+    final accumulators = <String, _AggregateAccumulator>{};
 
-    // Regroupe les informations observées par clé d'agrégat normalisée.
-    final aggregateAccumulators = <String, _AggregateAccumulator>{};
-
-    for (var fIdx = 0; fIdx < es.flows.length; fIdx++) {
-      final flow = es.flows[fIdx];
-      final sorted = flow.sortedNodes;
-      final aggNodes = sorted
-          .where((n) => n.kind == EventStormNodeKind.aggregate)
-          .toList();
-
-      for (final aggNode in aggNodes) {
-        final key = _normalizeKey(
-          aggNode.targetObjectId.isNotEmpty
-              ? aggNode.targetObjectId
-              : aggNode.title,
-        );
-        final acc = aggregateAccumulators.putIfAbsent(
+    for (final doc in es.documents) {
+      for (final agg in doc.catalog.aggregates) {
+        final key = _normalizeKey(agg.name);
+        accumulators.putIfAbsent(
           key,
           () => _AggregateAccumulator(
-            displayName: aggNode.title,
-            targetObjectId: aggNode.targetObjectId,
+            catalogId: agg.id,
+            displayName: agg.name,
+            boundedContext: doc.meta.boundedContext,
           ),
         );
-        acc.nodeRefs.add((flowIndex: fIdx, nodeId: aggNode.id));
-        if (aggNode.description.isNotEmpty && acc.description.isEmpty) {
-          acc.description = aggNode.description;
-        }
+      }
 
-        // Collecte les commandes entrantes et événements émis liés à cet agrégat.
-        final incomingCommands = <EventStormNode>[];
-        final outgoingEvents = <EventStormNode>[];
-        for (final link in flow.links) {
-          if (link.toNodeId == aggNode.id) {
-            final src = flow.nodes
-                .where((n) => n.id == link.fromNodeId)
-                .firstOrNull;
-            if (src != null && src.kind == EventStormNodeKind.command) {
-              incomingCommands.add(src);
-            }
-          }
-          if (link.fromNodeId == aggNode.id) {
-            final dst = flow.nodes
-                .where((n) => n.id == link.toNodeId)
-                .firstOrNull;
-            if (dst != null && dst.kind == EventStormNodeKind.domainEvent) {
-              outgoingEvents.add(dst);
-            }
-          }
-        }
-        // Fallback par proximité chronologique si aucun lien explicite.
-        if (incomingCommands.isEmpty && outgoingEvents.isEmpty) {
-          for (final n in sorted) {
-            if (n.kind == EventStormNodeKind.command &&
-                (n.targetObjectId == aggNode.targetObjectId &&
-                        aggNode.targetObjectId.isNotEmpty ||
-                    n.sequenceOrder <= aggNode.sequenceOrder + 1)) {
-              incomingCommands.add(n);
-            } else if (n.kind == EventStormNodeKind.domainEvent &&
-                (n.targetObjectId == aggNode.targetObjectId &&
-                        aggNode.targetObjectId.isNotEmpty ||
-                    n.sequenceOrder >= aggNode.sequenceOrder)) {
-              outgoingEvents.add(n);
-            }
-          }
-        }
-
-        for (final cmd in incomingCommands) {
-          acc.commands.add(cmd.title);
-          acc.payloadFields.addAll(cmd.payloadFields);
-        }
-        for (final evt in outgoingEvents) {
-          acc.events.add(evt.title);
-          acc.payloadFields.addAll(evt.payloadFields);
+      for (final step in doc.sortedSteps) {
+        if (step.aggregate.isEmpty) continue;
+        final catalogItem = doc.catalog.findAggregate(step.aggregate);
+        final displayName = catalogItem?.name ?? step.aggregate;
+        final key = _normalizeKey(displayName);
+        final acc = accumulators.putIfAbsent(
+          key,
+          () => _AggregateAccumulator(
+            catalogId: step.aggregate,
+            displayName: displayName,
+            boundedContext: doc.meta.boundedContext,
+          ),
+        );
+        acc.commands.add(step.command.name);
+        acc.payloadFields.addAll(step.command.payload);
+        for (final evt in step.emittedEvents) {
+          acc.events.add(evt.name);
+          acc.payloadFields.addAll(evt.data);
         }
       }
     }
 
-    if (aggregateAccumulators.isEmpty) {
+    if (accumulators.isEmpty) {
       return (
         project: project,
         createdObjectsCount: 0,
@@ -319,10 +492,12 @@ abstract final class EventStormingOperations {
       );
     }
 
-    for (final acc in aggregateAccumulators.values) {
+    var createdCount = 0;
+    var enrichedCount = 0;
+
+    for (final acc in accumulators.values) {
       final existingIdx = _findMatchingObjectIndex(
         objects,
-        targetObjectId: acc.targetObjectId,
         displayName: acc.displayName,
       );
 
@@ -351,7 +526,8 @@ abstract final class EventStormingOperations {
               id: _shortId('attr'),
               name: cleanName,
               type: _inferAttributeType(cleanName),
-              description: 'Attribut issu des événements/commandes Event Storming',
+              description:
+                  'Attribut issu des commandes/événements Event Storming (${acc.catalogId})',
             ),
           );
         }
@@ -370,29 +546,29 @@ abstract final class EventStormingOperations {
           var prevState = 'initial';
           final eventList = acc.events.toList();
           for (var i = 0; i < eventList.length; i++) {
-            final evtTitle = eventList[i];
-            final stateName = _toSnakeIdentifier(evtTitle);
+            final evtName = eventList[i];
+            final stateName = _toSnakeIdentifier(evtName);
             if (stateName.isEmpty || states.any((s) => s.name == stateName)) {
               continue;
             }
             states.add(
               LifecycleState(
                 name: stateName,
-                label: evtTitle,
+                label: evtName,
                 isTerminal: i == eventList.length - 1,
-                description: 'État atteint suite à l’événement $evtTitle',
+                description: 'État atteint suite à l’événement « $evtName »',
               ),
             );
             final trigger = i < acc.commands.length
                 ? acc.commands.elementAt(i)
-                : evtTitle;
+                : evtName;
             transitions.add(
               LifecycleTransition(
                 id: _shortId('tr'),
                 fromState: prevState,
                 toState: stateName,
                 trigger: trigger,
-                guardSummary: 'Émet l’événement $evtTitle',
+                guardSummary: 'Émet l’événement $evtName',
               ),
             );
             prevState = stateName;
@@ -412,24 +588,23 @@ abstract final class EventStormingOperations {
           }
         }
 
-        final newObj = BusinessObjectSpec(
-          id: objId,
-          name: acc.displayName,
-          technicalName: techName,
-          description: acc.description.isNotEmpty
-              ? acc.description
-              : 'Agrégat identifié lors de l’Event Storming.',
-          aggregateRoot: true,
-          attributes: attrs,
-          lifecycleStates: states,
-          lifecycleTransitions: transitions,
+        objects.add(
+          BusinessObjectSpec(
+            id: objId,
+            name: acc.displayName,
+            technicalName: techName,
+            description:
+                'Agrégat ${acc.catalogId} identifié dans le Bounded Context « ${acc.boundedContext} ».',
+            aggregateRoot: true,
+            attributes: attrs,
+            lifecycleStates: states,
+            lifecycleTransitions: transitions,
+          ),
         );
-        objects.add(newObj);
         createdCount++;
-        _linkNodesToObject(updatedFlows, acc.nodeRefs, objId);
       } else {
         final existing = objects[existingIdx];
-        var nextAttrs = List<BusinessAttribute>.from(existing.attributes);
+        final nextAttrs = List<BusinessAttribute>.from(existing.attributes);
         final seenNames = <String>{
           for (final a in nextAttrs) a.name.toLowerCase(),
         };
@@ -444,14 +619,15 @@ abstract final class EventStormingOperations {
               id: _shortId('attr'),
               name: cleanName,
               type: _inferAttributeType(cleanName),
-              description: 'Attribut découvert lors de l’Event Storming',
+              description:
+                  'Attribut découvert lors de l’Event Storming (${acc.catalogId})',
             ),
           );
           changed = true;
         }
 
-        var nextStates = List<LifecycleState>.from(existing.lifecycleStates);
-        var nextTransitions = List<LifecycleTransition>.from(
+        final nextStates = List<LifecycleState>.from(existing.lifecycleStates);
+        final nextTransitions = List<LifecycleTransition>.from(
           existing.lifecycleTransitions,
         );
         if (nextStates.isEmpty && acc.events.isNotEmpty) {
@@ -463,21 +639,19 @@ abstract final class EventStormingOperations {
             ),
           );
           var prev = 'initial';
-          for (final evtTitle in acc.events) {
-            final stateName = _toSnakeIdentifier(evtTitle);
+          for (final evtName in acc.events) {
+            final stateName = _toSnakeIdentifier(evtName);
             if (stateName.isEmpty ||
                 nextStates.any((s) => s.name == stateName)) {
               continue;
             }
-            nextStates.add(
-              LifecycleState(name: stateName, label: evtTitle),
-            );
+            nextStates.add(LifecycleState(name: stateName, label: evtName));
             nextTransitions.add(
               LifecycleTransition(
                 id: _shortId('tr'),
                 fromState: prev,
                 toState: stateName,
-                trigger: evtTitle,
+                trigger: evtName,
               ),
             );
             prev = stateName;
@@ -493,14 +667,18 @@ abstract final class EventStormingOperations {
           );
           enrichedCount++;
         }
-        _linkNodesToObject(updatedFlows, acc.nodeRefs, existing.id);
       }
     }
 
-    final nextProject = project.copyWith(
-      businessObjects: objects,
-      eventStorming: es.copyWith(flows: updatedFlows),
-    );
+    if (createdCount == 0 && enrichedCount == 0) {
+      return (
+        project: project,
+        createdObjectsCount: 0,
+        enrichedObjectsCount: 0,
+      );
+    }
+
+    final nextProject = project.copyWith(businessObjects: objects);
     nextProject.validate();
     return (
       project: nextProject,
@@ -509,65 +687,54 @@ abstract final class EventStormingOperations {
     );
   }
 
-  /// Promeut une carte Politique (`policy`) d'un flux Event Storming en règle de gestion
-  /// `RG-xxx` de catégorie `trigger` et lie `linkedRuleId` sur le nœud source.
+  /// Promeut la `policy` d'une étape Event Storming en règle de gestion `RG-xxx`
+  /// de catégorie [BusinessRuleCategory.trigger].
   static ({SpecForgeProject project, BusinessRuleSpec rule, bool createdNew})
   promotePolicyToBusinessRule(
     SpecForgeProject project, {
-    required String flowId,
-    required String nodeId,
+    required String documentId,
+    required int stepNumber,
   }) {
-    final flowIdx = project.eventStorming.flows.indexWhere((f) => f.id == flowId);
-    if (flowIdx < 0) {
-      throw FormatException('Flux Event Storming introuvable : $flowId');
+    final doc = project.eventStorming.findDocument(documentId);
+    if (doc == null) {
+      throw FormatException(
+        'Document Event Storming introuvable : $documentId',
+      );
     }
-    final flow = project.eventStorming.flows[flowIdx];
-    final nodeIdx = flow.nodes.indexWhere((n) => n.id == nodeId);
-    if (nodeIdx < 0) {
-      throw FormatException('Carte Event Storming introuvable : $nodeId');
+    final step = doc.findStep(stepNumber);
+    if (step == null || step.policy == null) {
+      throw FormatException(
+        'Aucune politique trouvée à l’étape $stepNumber du contexte « ${doc.meta.boundedContext} ».',
+      );
     }
-    final node = flow.nodes[nodeIdx];
+    final policy = step.policy!;
 
-    final incomingEvents = <String>[];
-    final outgoingCommands = <String>[];
-    for (final link in flow.links) {
-      if (link.toNodeId == node.id) {
-        final src = flow.nodes
-            .where((n) => n.id == link.fromNodeId)
-            .firstOrNull;
-        if (src != null) incomingEvents.add(src.title);
+    final targetObjIds = <String>[];
+    if (step.aggregate.isNotEmpty) {
+      final aggItem = doc.catalog.findAggregate(step.aggregate);
+      final aggName = aggItem?.name ?? step.aggregate;
+      final objIdx = _findMatchingObjectIndex(
+        project.businessObjects,
+        displayName: aggName,
+      );
+      if (objIdx >= 0) {
+        targetObjIds.add(project.businessObjects[objIdx].id);
       }
-      if (link.fromNodeId == node.id) {
-        final dst = flow.nodes
-            .where((n) => n.id == link.toNodeId)
-            .firstOrNull;
-        if (dst != null) outgoingCommands.add(dst.title);
-      }
     }
 
-    final targetObjIds = <String>{
-      if (node.targetObjectId.trim().isNotEmpty) node.targetObjectId.trim(),
-      for (final n in flow.nodes)
-        if (n.kind == EventStormNodeKind.aggregate &&
-            n.targetObjectId.trim().isNotEmpty)
-          n.targetObjectId.trim(),
-    }.toList();
-
-    final triggerText = incomingEvents.isNotEmpty
-        ? 'Sur événement : ${incomingEvents.join(', ')}'
-        : 'Flux ${flow.code} — ${flow.title}';
-    final effectText = outgoingCommands.isNotEmpty
-        ? 'Déclencher : ${outgoingCommands.join(', ')}'
-        : (node.description.isNotEmpty ? node.description : node.title);
+    final triggerText = step.triggeredBy != null
+        ? 'Sur ${step.triggeredBy!.summaryLabel} (${doc.meta.boundedContext})'
+        : '${doc.meta.boundedContext} — Étape ${step.step}';
+    final effectText =
+        'Commande : ${step.command.name}'
+        '${step.externalSystem.isNotEmpty ? ' via ${doc.catalog.findExternalSystem(step.externalSystem)?.name ?? step.externalSystem}' : ''}';
 
     final rules = List<BusinessRuleSpec>.from(project.businessRules);
-    final existingIdx = node.linkedRuleId.trim().isEmpty
-        ? -1
-        : rules.indexWhere(
-            (r) =>
-                r.id.toLowerCase() == node.linkedRuleId.trim().toLowerCase() ||
-                r.code.toLowerCase() == node.linkedRuleId.trim().toLowerCase(),
-          );
+    final existingIdx = rules.indexWhere(
+      (r) =>
+          r.title.trim().toLowerCase() == policy.name.trim().toLowerCase() ||
+          r.description.trim().toLowerCase() == policy.rule.trim().toLowerCase(),
+    );
 
     if (existingIdx >= 0) {
       final existing = rules[existingIdx];
@@ -588,176 +755,32 @@ abstract final class EventStormingOperations {
     final rule = BusinessRuleSpec(
       id: _shortId('rule'),
       code: code,
-      title: node.title,
+      title: policy.name,
       category: BusinessRuleCategory.trigger,
       priority: BusinessRulePriority.high,
-      description: node.description.isNotEmpty
-          ? node.description
-          : 'Règle réactive issue de la politique Event Storming (${flow.code}).',
+      description: policy.rule,
       targetObjectIds: targetObjIds,
       trigger: triggerText,
-      condition: node.notes.isNotEmpty
-          ? node.notes
-          : 'Condition vérifiée lors de l’événement déclencheur',
+      condition: step.backlog != null && step.backlog!.isNotEmpty
+          ? 'Backlog ${[if (step.backlog!.epic.isNotEmpty) step.backlog!.epic, if (step.backlog!.story.isNotEmpty) step.backlog!.story].join(' / ')}'
+          : 'Condition vérifiée sur événement déclencheur',
       effect: effectText,
     );
     rules.add(rule);
 
-    final updatedNodes = List<EventStormNode>.from(flow.nodes)
-      ..[nodeIdx] = node.copyWith(linkedRuleId: rule.code);
-    final updatedFlows = List<EventStormBoard>.from(project.eventStorming.flows)
-      ..[flowIdx] = flow.copyWith(nodes: updatedNodes);
-
-    final nextProject = project.copyWith(
-      businessRules: rules,
-      eventStorming: project.eventStorming.copyWith(flows: updatedFlows),
-    );
+    final nextProject = project.copyWith(businessRules: rules);
     nextProject.validate();
     return (project: nextProject, rule: rule, createdNew: true);
   }
 
-  static EventStormBoard _buildStarterFlow({
-    required String code,
-    required String title,
-    required String description,
-    required String actorName,
-    required String actorId,
-    required String commandTitle,
-    required String aggregateTitle,
-    required String eventTitle,
-    required String hotspotTitle,
-    required String boundedContextId,
-    required List<String> requirementIds,
-    required List<String> useCaseIds,
-  }) {
-    final actorNodeId = _shortId('esn');
-    final cmdNodeId = _shortId('esn');
-    final aggNodeId = _shortId('esn');
-    final evtNodeId = _shortId('esn');
-    final hotNodeId = _shortId('esn');
-
-    final nodes = <EventStormNode>[
-      EventStormNode(
-        id: actorNodeId,
-        code: 'ACT-01',
-        kind: EventStormNodeKind.actor,
-        title: actorName,
-        sequenceOrder: 1,
-        boundedContextId: boundedContextId,
-        actorId: actorId,
-      ),
-      EventStormNode(
-        id: cmdNodeId,
-        code: 'CMD-01',
-        kind: EventStormNodeKind.command,
-        title: commandTitle,
-        sequenceOrder: 2,
-        boundedContextId: boundedContextId,
-        actorId: actorId,
-      ),
-      EventStormNode(
-        id: aggNodeId,
-        code: 'AGG-01',
-        kind: EventStormNodeKind.aggregate,
-        title: aggregateTitle,
-        sequenceOrder: 3,
-        boundedContextId: boundedContextId,
-      ),
-      EventStormNode(
-        id: evtNodeId,
-        code: 'EVT-01',
-        kind: EventStormNodeKind.domainEvent,
-        title: eventTitle,
-        sequenceOrder: 4,
-        boundedContextId: boundedContextId,
-        isPivotal: true,
-      ),
-      if (hotspotTitle.isNotEmpty)
-        EventStormNode(
-          id: hotNodeId,
-          code: 'HOT-01',
-          kind: EventStormNodeKind.hotspot,
-          title: hotspotTitle,
-          sequenceOrder: 5,
-          boundedContextId: boundedContextId,
-        ),
-    ];
-
-    final links = <EventStormLink>[
-      EventStormLink(
-        id: _shortId('esl'),
-        fromNodeId: actorNodeId,
-        toNodeId: cmdNodeId,
-        kind: EventStormLinkKind.triggers,
-      ),
-      EventStormLink(
-        id: _shortId('esl'),
-        fromNodeId: cmdNodeId,
-        toNodeId: aggNodeId,
-        kind: EventStormLinkKind.handles,
-      ),
-      EventStormLink(
-        id: _shortId('esl'),
-        fromNodeId: aggNodeId,
-        toNodeId: evtNodeId,
-        kind: EventStormLinkKind.emits,
-      ),
-      if (hotspotTitle.isNotEmpty)
-        EventStormLink(
-          id: _shortId('esl'),
-          fromNodeId: evtNodeId,
-          toNodeId: hotNodeId,
-          kind: EventStormLinkKind.flags,
-        ),
-    ];
-
-    return EventStormBoard(
-      id: _shortId('es'),
-      code: code,
-      title: title,
-      description: description,
-      boundedContextIds: boundedContextId.isEmpty
-          ? const <String>[]
-          : <String>[boundedContextId],
-      requirementIds: requirementIds,
-      useCaseIds: useCaseIds,
-      nodes: nodes,
-      links: links,
-    );
-  }
-
-  static void _linkNodesToObject(
-    List<EventStormBoard> flows,
-    List<({int flowIndex, String nodeId})> refs,
-    String objectId,
-  ) {
-    for (final ref in refs) {
-      final flow = flows[ref.flowIndex];
-      final nIdx = flow.nodes.indexWhere((n) => n.id == ref.nodeId);
-      if (nIdx < 0) continue;
-      final node = flow.nodes[nIdx];
-      if (node.targetObjectId == objectId) continue;
-      final nextNodes = List<EventStormNode>.from(flow.nodes)
-        ..[nIdx] = node.copyWith(targetObjectId: objectId);
-      flows[ref.flowIndex] = flow.copyWith(nodes: nextNodes);
-    }
-  }
-
   static int _findMatchingObjectIndex(
     List<BusinessObjectSpec> objects, {
-    required String targetObjectId,
     required String displayName,
   }) {
-    final targetKey = targetObjectId.trim().toLowerCase();
     final nameKey = _normalizeKey(displayName);
     final pascalKey = _toPascalIdentifier(displayName).toLowerCase();
     for (var i = 0; i < objects.length; i++) {
       final obj = objects[i];
-      if (targetKey.isNotEmpty &&
-          (obj.id.toLowerCase() == targetKey ||
-              obj.technicalName.toLowerCase() == targetKey)) {
-        return i;
-      }
       if (_normalizeKey(obj.name) == nameKey ||
           obj.technicalName.toLowerCase() == pascalKey) {
         return i;
@@ -782,18 +805,40 @@ abstract final class EventStormingOperations {
     }).toList();
   }
 
-  static String _moduleNameFor(List<SpecModule> modules, String moduleId) =>
-      modules.where((m) => m.id == moduleId).firstOrNull?.name ?? 'Dossier';
-
-  static String _toCommandTitle(String raw) {
+  static String _toInfinitiveCommand(String raw) {
     final trimmed = raw.trim();
-    return trimmed.isEmpty ? 'ExecuterAction' : trimmed;
+    if (trimmed.isEmpty) return 'Exécuter l’action';
+    if (EventStormingDslCodec.looksLikeInfinitiveCommand(trimmed)) {
+      return trimmed;
+    }
+    return 'Traiter $trimmed';
   }
 
-  static String _toPastEventTitle(String raw) {
+  static String _toPastEvent(String raw) {
     final trimmed = raw.trim();
-    if (trimmed.isEmpty) return 'ActionEffectuee';
-    return '$trimmed (effectué)';
+    if (trimmed.isEmpty) return 'Action effectuée';
+    if (EventStormingDslCodec.looksLikePastDomainEvent(trimmed)) {
+      return trimmed;
+    }
+    return '$trimmed traité';
+  }
+
+  static String _toErrorPastEvent(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return 'Action refusée';
+    return '$trimmed rejeté';
+  }
+
+  static List<String> _inferPayloadFromFlow(List<String> mainFlow) {
+    if (mainFlow.isEmpty) return const <String>[];
+    final fields = <String>[];
+    for (final line in mainFlow.take(3)) {
+      final slug = _toSnakeIdentifier(line);
+      if (slug.isNotEmpty && !fields.contains(slug)) {
+        fields.add(slug);
+      }
+    }
+    return fields;
   }
 
   static String _guessAggregateTitle(String title, {required String fallback}) {
@@ -808,8 +853,23 @@ abstract final class EventStormingOperations {
     return fallback.trim().isEmpty ? 'Agrégat' : fallback.trim();
   }
 
+  static String _todayIsoDate() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
   static String _normalizeKey(String raw) =>
-      raw.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+      _foldAccents(raw).trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
+  static String _toSlug(String raw) {
+    final cleaned = _foldAccents(raw)
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    return cleaned.isEmpty ? 'bounded-context' : cleaned;
+  }
 
   static List<String> _asciiWords(String raw) {
     final folded = _foldAccents(raw);
@@ -850,7 +910,7 @@ abstract final class EventStormingOperations {
 
   static BusinessAttributeType _inferAttributeType(String name) {
     final lower = name.toLowerCase();
-    if (lower == 'id' || lower.endsWith('uuid')) {
+    if (lower == 'id' || lower.endsWith('id') || lower.endsWith('uuid')) {
       return BusinessAttributeType.uuid;
     }
     if (lower.contains('email')) return BusinessAttributeType.email;
@@ -934,15 +994,15 @@ abstract final class EventStormingOperations {
 
 class _AggregateAccumulator {
   _AggregateAccumulator({
+    required this.catalogId,
     required this.displayName,
-    required this.targetObjectId,
+    required this.boundedContext,
   });
 
+  final String catalogId;
   final String displayName;
-  final String targetObjectId;
-  String description = '';
+  final String boundedContext;
   final Set<String> commands = <String>{};
   final Set<String> events = <String>{};
   final Set<String> payloadFields = <String>{};
-  final List<({int flowIndex, String nodeId})> nodeRefs = [];
 }

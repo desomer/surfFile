@@ -317,66 +317,93 @@ Priorités EXF autorisées : must, should, could, wont.''',
     systemInstruction:
         '''
 Tu es l’« Event Storming Facilitator » (Expert DDD & Process Modeling) de SuperSpecForge.
-Ta mission pour l'étape 4 (Event Storming — Process Modeling complet) :
-1. À partir du lexique métier (étape 1), des acteurs/personas (étape 2) et du cahier des charges (étape 3 : modules, exigences EXF-xxx et cas d'usage), anime des ateliers d'Event Storming structurés par flux métier chronologiques (`ES-001`, `ES-002`...).
-2. Utilise rigoureusement les 7 types de cartes Event Storming (ordonnées de gauche à droite via `sequenceOrder`) :
-   - `domainEvent` (Orange) : fait métier immuable formulé AU PASSÉ (ex. `CommandeValidee`, `PaiementRefuse`). Marque `isPivotal: true` sur les événements charnières séparant deux phases ou deux Bounded Contexts. Renseigne `payloadFields` avec les données clés de l'événement.
-   - `command` (Bleu) : intention ou action métier formulée à L'IMPÉRATIF (ex. `ValiderCommande`).
-   - `actor` (Jaune) : persona ou système externe initiateur (lie `actorId` vers `SpecPersona.id` si existant).
-   - `aggregate` (Ambre) : agrégat ou entité/système recevant les commandes, garantissant les invariants et émettant les événements (prépare directement l'étape 5 Objets métiers).
-   - `policy` (Lilas) : règle réactive automatique formulée « Quand [Événement], alors [Commande] » (prépare les règles `RG-xxx` de type `trigger`).
-   - `readModel` (Vert) : projection, tableau ou vue d'information nécessaire à l'acteur pour prendre sa décision avant d'émettre une commande.
-   - `hotspot` (Rouge) : zone d'ombre, goulot, risque ou question métier ouverte (`resolved: false`). Dès que l'utilisateur tranche une question, passe `resolved: true` et renseigne `answer`.
-3. Regroupe les cartes et flux par `boundedContexts` (`BC-001`, `BC-002`...) lorsque plusieurs sous-domaines apparaissent, et explicite les enchaînements dans `links` (`triggers`, `handles`, `emits`, `reactsTo`, `informs`, `flags`).
-4. Pose des questions ciblées via "askUser" (ou matérialise-les en `hotspot` rouges) sur les déclencheurs asynchrones, les cas d'échec/compensation, les frontières d'agrégats et les besoins d'information (Read Models).
+Ta mission pour l'étape 4 (Event Storming — DSL v1.0) :
+1. À partir du lexique métier (étape 1), des acteurs/personas (étape 2) et du cahier des charges (étape 3 : modules, exigences EXF-xxx et cas d'usage), modélise **1 document par Bounded Context** (`<slug>.es.yaml`) strictement conforme au **Event Storming DSL v1.0** (`dsl_version: "1.0"`).
+2. Respecte les 4 blocs racines de chaque document (`dsl_version`, `meta`, `catalog`, `flow`) :
+   - `meta` : `domain`, `bounded_context`, `format` (`big_picture` | `process_modeling` | `design_level`), `date` (`YYYY-MM-DD`), `facilitator`.
+   - `catalog` (Légende du mur — référentiel unique anti-doublons) :
+     * `actors[]` (Petit Jaune) : `{id: "ACT-*", name, type: "human" | "timer" | "system"}`
+     * `aggregates[]` (Grand Jaune) : `{id: "AGG-*", name}` (préparent les Objets métiers de l'étape 5)
+     * `external_systems[]` (Rose pâle) : `{id: "EXT-*", name}` (services tiers : Stripe, Email, etc.)
+   - `flow[]` (Colonne chronologique ordonnée de gauche à droite, `step: 1, 2, ...`) :
+     * `backlog` (Découpage PO) : `{epic: "EPIC-01", story: "US-101"}`
+     * `triggered_by` (Lien causal entrant) : identifiant simple `"EVT-01"` (ou référence inter-contexte `"CMD:EVT-02A"`), synchronisation **ET** `{"all_of": ["EVT-03A", "EVT-04"]}` (min 2), ou convergence **OU** `{"any_of": ["EVT-02B", "EVT-03B"]}` (min 2). Deux étapes partageant le même `triggered_by` expriment une exécution **ET** parallèle.
+     * `policy` (Violet) : `{name, rule}` impérativement formulé en « Quand [événement], alors [commande] » (prépare les règles `RG-xxx`).
+     * `read_model` (Vert) : `{name, source_events: ["EVT-..."], fields: [...]}`.
+     * `actor` (Petit Jaune) : référence catalogue `"ACT-*"`.
+     * `command` (Bleu, obligatoire) : `{name, payload: [...]}` — **CONVENTION GRAMMATICALE STRICTE** : `command.name` DOIT commencer par un verbe à l'**infinitif** (ex. « Valider le panier », « Réserver le stock », « Demander le paiement »).
+     * `aggregate` (Grand Jaune) : référence catalogue `"AGG-*"` ; et/ou `external_system` (Rose pâle) : référence catalogue `"EXT-*"`.
+     * Sortie (**EXACTEMENT L'UN DES DEUX**, mutuellement exclusifs) :
+       - `domain_event` (Orange) : `{id: "EVT-01", name, data: [...]}` — **CONVENTION GRAMMATICALE STRICTE** : `domain_event.name` DOIT être formulé au **passé composé** (ex. « Panier validé », « Confirmation envoyée »).
+       - `outcomes[]` (Orange + embranchement **OU exclusif**, min 2 branches) : liste de `{condition, is_error: bool, domain_event: {id: "EVT-02A", name, data: [...]}}`.
+     * `hotspots[]` (Rose vif) : `{id: "HS-01", question, severity: "low"|"medium"|"high"|"blocker", owner, status: "open"|"resolved"}`.
+3. Règles d'intégrité impératives :
+   - **Un document par Bounded Context** : si un événement d'un contexte déclenche une étape dans un autre contexte, utilise une référence préfixée (ex. `triggered_by: "CMD:EVT-02A"`).
+   - Tout `actor`, `aggregate` ou `external_system` cité dans `flow[]` DOIT exister dans `catalog`.
+4. Pose des questions ciblées via "askUser" (ou matérialise-les en `hotspots` Rose vif) sur les branches d'erreur (`outcomes`), les traitements parallèles, les synchronisations (`all_of`/`any_of`), les systèmes externes (`EXT-*`) et les frontières entre Bounded Contexts.
 $_commonJsonRules''',
     patchSchemaGuide: '''
-SCHÉMA "specPatch" POUR L'ÉTAPE 4 (Event Storming) :
+SCHÉMA "specPatch" POUR L'ÉTAPE 4 (Event Storming DSL v1.0) :
 {
   "eventStorming": {
-    "boundedContexts": [
+    "documents": [
       {
-        "id": "bc_ventes",
-        "code": "BC-001",
-        "name": "Gestion des commandes",
-        "description": "Prise de commande, validation et calcul des remises",
-        "notes": "Émet CommandeValidee vers Facturation"
+        "id": "gestion-commandes",
+        "event_storming": {
+          "dsl_version": "1.0",
+          "meta": {
+            "domain": "E-Commerce",
+            "bounded_context": "Gestion des commandes",
+            "format": "process_modeling",
+            "date": "2026-11-24",
+            "facilitator": "Product Owner"
+          },
+          "catalog": {
+            "actors": [{"id": "ACT-CLIENT", "name": "Client", "type": "human"}],
+            "aggregates": [{"id": "AGG-COMMANDE", "name": "Commande"}],
+            "external_systems": [{"id": "EXT-STRIPE", "name": "Stripe"}]
+          },
+          "flow": [
+            {
+              "step": 1,
+              "backlog": {"epic": "EPIC-01", "story": "US-101"},
+              "read_model": {"name": "Écran récapitulatif panier", "source_events": ["EVT-00"], "fields": ["lignes_panier", "montant_ttc"]},
+              "actor": "ACT-CLIENT",
+              "command": {"name": "Valider le panier", "payload": ["panier_id", "mode_paiement_id"]},
+              "aggregate": "AGG-COMMANDE",
+              "domain_event": {"id": "EVT-01", "name": "Panier validé", "data": ["commande_id", "montant_ttc"]},
+              "hotspots": [{"id": "HS-01", "question": "Appliquer le code promo avant les frais de port ?", "severity": "high", "owner": "PO", "status": "open"}]
+            },
+            {
+              "step": 2,
+              "backlog": {"epic": "EPIC-01", "story": "US-102"},
+              "triggered_by": "EVT-01",
+              "policy": {"name": "Déclencher l'encaissement", "rule": "Quand Panier validé, alors Demander le paiement"},
+              "command": {"name": "Demander le paiement", "payload": ["commande_id", "montant_ttc"]},
+              "external_system": "EXT-STRIPE",
+              "outcomes": [
+                {"condition": "Autorisation bancaire accordée", "is_error": false, "domain_event": {"id": "EVT-02A", "name": "Commande payée", "data": ["commande_id", "transaction_id"]}},
+                {"condition": "Fonds insuffisants", "is_error": true, "domain_event": {"id": "EVT-02B", "name": "Paiement refusé", "data": ["commande_id", "motif_refus"]}}
+              ]
+            },
+            {
+              "step": 3,
+              "triggered_by": {"all_of": ["EVT-02A", "EVT-03"]},
+              "policy": {"name": "Libérer expédition", "rule": "Quand Commande payée ET Stock réservé, alors Créer le bon d'expédition"},
+              "command": {"name": "Créer le bon d'expédition", "payload": ["commande_id"]},
+              "aggregate": "AGG-COMMANDE",
+              "domain_event": {"id": "EVT-04", "name": "Bon d'expédition créé", "data": ["commande_id", "bon_id"]}
+            }
+          ]
+        }
       }
     ],
-    "removeBoundedContextIds": [],
-    "flows": [
-      {
-        "id": "es_validation_commande",
-        "code": "ES-001",
-        "title": "Cycle de validation d'une commande",
-        "description": "De la soumission panier jusqu'à la confirmation ou rejet stock",
-        "boundedContextIds": ["bc_ventes"],
-        "requirementIds": ["EXF-001"],
-        "useCaseIds": ["uc_validate_order"],
-        "nodes": [
-          {"id": "n_act_1", "code": "ACT-01", "kind": "actor", "title": "Gestionnaire", "sequenceOrder": 1, "boundedContextId": "bc_ventes", "actorId": "persona_gestionnaire"},
-          {"id": "n_rmd_1", "code": "RMD-01", "kind": "readModel", "title": "Disponibilité stock & panier", "sequenceOrder": 2, "boundedContextId": "bc_ventes", "payloadFields": ["lignes", "stockDisponible"]},
-          {"id": "n_cmd_1", "code": "CMD-01", "kind": "command", "title": "ValiderCommande", "sequenceOrder": 3, "boundedContextId": "bc_ventes", "payloadFields": ["commandeId", "validePar"]},
-          {"id": "n_agg_1", "code": "AGG-01", "kind": "aggregate", "title": "CommandeClient", "sequenceOrder": 4, "boundedContextId": "bc_ventes"},
-          {"id": "n_evt_1", "code": "EVT-01", "kind": "domainEvent", "title": "CommandeValidee", "sequenceOrder": 5, "boundedContextId": "bc_ventes", "isPivotal": true, "payloadFields": ["commandeId", "montantHt", "valideeLe"]},
-          {"id": "n_pol_1", "code": "POL-01", "kind": "policy", "title": "Quand CommandeValidee -> RéserverStock", "sequenceOrder": 6, "boundedContextId": "bc_ventes"},
-          {"id": "n_hot_1", "code": "HOT-01", "kind": "hotspot", "title": "Délai maximal de réservation du stock ?", "sequenceOrder": 7, "boundedContextId": "bc_ventes", "resolved": false, "answer": ""}
-        ],
-        "links": [
-          {"id": "l_1", "fromNodeId": "n_act_1", "toNodeId": "n_cmd_1", "kind": "triggers"},
-          {"id": "l_2", "fromNodeId": "n_rmd_1", "toNodeId": "n_act_1", "kind": "informs"},
-          {"id": "l_3", "fromNodeId": "n_cmd_1", "toNodeId": "n_agg_1", "kind": "handles"},
-          {"id": "l_4", "fromNodeId": "n_agg_1", "toNodeId": "n_evt_1", "kind": "emits"},
-          {"id": "l_5", "fromNodeId": "n_evt_1", "toNodeId": "n_pol_1", "kind": "reactsTo"}
-        ],
-        "refinementNotes": ["CommandeClient identifié comme agrégat racine pivot"]
-      }
-    ],
-    "removeFlowIds": []
+    "removeDocumentIds": []
   }
 }
-Types de cartes ("kind") autorisés : domainEvent, command, actor, aggregate, policy, readModel, hotspot.
-Types de liens ("kind") autorisés : triggers, handles, emits, reactsTo, informs, flags.''',
+Formats autorisés : big_picture, process_modeling, design_level.
+Types d'acteurs : human, timer, system. Sévérités hotspot : low, medium, high, blocker. Statuts hotspot : open, resolved.
+Dans chaque étape : `domain_event` et `outcomes` (>= 2) sont MUTUELLEMENT EXCLUSIFS. `triggered_by` accepte `"EVT-xx"`, `"CTX:EVT-xx"`, `{"all_of": [...]}` (>= 2) ou `{"any_of": [...]}` (>= 2).''',
   );
 
   static final SpecStageAgent _businessObjectsAgent = SpecStageAgent(

@@ -279,158 +279,298 @@ abstract final class SpecMarkdownExporter {
       ..writeln('---')
       ..writeln()
       ..writeln(
-        '## 4. Event Storming (Flux, Événements, Commandes, Politiques & Contextes)',
+        '## 4. Event Storming — DSL v1.0 (Bounded Contexts, Catalogue & Flux)',
       )
       ..writeln();
 
     if (!es.hasContent) {
       buf
-        ..writeln('_Aucun flux Event Storming formalisé._')
+        ..writeln('_Aucun document Event Storming formalisé._')
         ..writeln();
       return;
     }
 
-    if (es.boundedContexts.isNotEmpty) {
+    for (var docIdx = 0; docIdx < es.documents.length; docIdx++) {
+      final doc = es.documents[docIdx];
       buf
-        ..writeln('### 4.1 Bounded Contexts')
+        ..writeln(
+          '### 4.${docIdx + 1} ${doc.meta.boundedContext} (`${doc.fileName}`)',
+        )
         ..writeln()
-        ..writeln('| Code | Contexte borné | Responsabilité | Notes |')
-        ..writeln('|---|---|---|---|');
-      for (final bc in es.boundedContexts) {
+        ..writeln(
+          '- **Domaine** : ${_esc(doc.meta.domain)} · **Format** : `${doc.meta.format.yamlValue}` · **Date** : `${doc.meta.date}`'
+          '${doc.meta.facilitator.isNotEmpty ? ' · **Facilitateur** : ${_esc(doc.meta.facilitator)}' : ''} · **DSL** : `v${doc.dslVersion}`',
+        )
+        ..writeln();
+
+      if (doc.catalog.isNotEmpty) {
+        buf
+          ..writeln('#### Légende du mur (`catalog`)')
+          ..writeln()
+          ..writeln('| Catégorie | ID | Nom | Type |')
+          ..writeln('|---|---|---|---|');
+        for (final a in doc.catalog.actors) {
+          buf.writeln(
+            '| Acteur (Petit Jaune) | `${a.id}` | ${_esc(a.name)} | `${a.type?.yamlValue ?? 'human'}` |',
+          );
+        }
+        for (final a in doc.catalog.aggregates) {
+          buf.writeln(
+            '| Agrégat (Grand Jaune) | `${a.id}` | ${_esc(a.name)} | — |',
+          );
+        }
+        for (final e in doc.catalog.externalSystems) {
+          buf.writeln(
+            '| Système externe (Rose pâle) | `${e.id}` | ${_esc(e.name)} | — |',
+          );
+        }
+        buf.writeln();
+      }
+
+      final steps = doc.sortedSteps;
+      if (steps.isEmpty) {
+        buf
+          ..writeln('_Aucune étape modélisée dans ce Bounded Context._')
+          ..writeln();
+        continue;
+      }
+
+      // Diagramme Mermaid flowchart LR fidèle aux couleurs et passerelles DSL v1.0
+      buf
+        ..writeln('```mermaid')
+        ..writeln('flowchart LR')
+        ..writeln(
+          '  classDef domainEvent fill:#FF9800,stroke:#E65100,color:#111;',
+        )
+        ..writeln(
+          '  classDef errorEvent fill:#FF7043,stroke:#BF360C,color:#fff;',
+        )
+        ..writeln(
+          '  classDef extEvent fill:#FFE0B2,stroke:#E65100,stroke-dasharray: 5 5,color:#111;',
+        )
+        ..writeln(
+          '  classDef command fill:#2196F3,stroke:#0D47A1,color:#fff;',
+        )
+        ..writeln(
+          '  classDef actor fill:#FFEB3B,stroke:#F57F17,color:#111;',
+        )
+        ..writeln(
+          '  classDef aggregate fill:#FFC107,stroke:#FF6F00,color:#111;',
+        )
+        ..writeln(
+          '  classDef externalSystem fill:#F8BBD0,stroke:#AD1457,color:#111;',
+        )
+        ..writeln(
+          '  classDef policy fill:#BA68C8,stroke:#4A148C,color:#fff;',
+        )
+        ..writeln(
+          '  classDef readModel fill:#66BB6A,stroke:#1B5E20,color:#111;',
+        )
+        ..writeln(
+          '  classDef hotspot fill:#EC407A,stroke:#880E4F,color:#fff;',
+        )
+        ..writeln(
+          '  classDef gateway fill:#ECEFF1,stroke:#455A64,color:#111;',
+        );
+
+      final localEventNodeId = <String, String>{};
+      for (final step in steps) {
+        for (final evt in step.emittedEvents) {
+          localEventNodeId[evt.id] = _mermaidNodeId('EVT_${evt.id}');
+        }
+      }
+      final declaredExternalNodes = <String>{};
+
+      String ensureEventNode(String eventRef) {
+        final existing = localEventNodeId[eventRef];
+        if (existing != null) return existing;
+        final nodeId = _mermaidNodeId('XEVT_$eventRef');
+        if (declaredExternalNodes.add(nodeId)) {
+          buf.writeln(
+            '  $nodeId["${_mermaidEsc('[EXT-EVT] $eventRef')}"]:::extEvent',
+          );
+        }
+        return nodeId;
+      }
+
+      for (final step in steps) {
+        final s = step.step;
+        final cmdId = 'S${s}_CMD';
         buf.writeln(
-          '| `${bc.code}` | **${_esc(bc.name)}** | ${_esc(bc.description.isEmpty ? '—' : bc.description)} | ${_esc(bc.notes.isEmpty ? '—' : bc.notes)} |',
+          '  $cmdId["${_mermaidEsc('[CMD #$s] ${step.command.name}')}"]:::command',
+        );
+
+        String entryTarget = cmdId;
+        if (step.policy != null) {
+          final polId = 'S${s}_POL';
+          buf.writeln(
+            '  $polId["${_mermaidEsc('[POL] ${step.policy!.name}')}"]:::policy',
+          );
+          buf.writeln('  $polId --> $cmdId');
+          entryTarget = polId;
+        }
+
+        if (step.actor.isNotEmpty) {
+          final actName = doc.catalog.findActor(step.actor)?.name ?? step.actor;
+          final actId = 'S${s}_ACT';
+          buf.writeln(
+            '  $actId["${_mermaidEsc('[ACT] $actName')}"]:::actor',
+          );
+          buf.writeln('  $actId --> $cmdId');
+          if (step.readModel != null) {
+            final rmId = 'S${s}_RM';
+            buf.writeln(
+              '  $rmId["${_mermaidEsc('[RM] ${step.readModel!.name}')}"]:::readModel',
+            );
+            buf.writeln('  $rmId --> $actId');
+          }
+        } else if (step.readModel != null) {
+          final rmId = 'S${s}_RM';
+          buf.writeln(
+            '  $rmId["${_mermaidEsc('[RM] ${step.readModel!.name}')}"]:::readModel',
+          );
+          buf.writeln('  $rmId --> $entryTarget');
+        }
+
+        if (step.triggeredBy != null) {
+          final trig = step.triggeredBy!;
+          switch (trig.mode) {
+            case EventStormTriggerMode.single:
+              final srcNode = ensureEventNode(trig.eventIds.first);
+              buf.writeln('  $srcNode --> $entryTarget');
+            case EventStormTriggerMode.allOf:
+              final gwId = 'S${s}_AND';
+              buf.writeln('  $gwId{"ET (all_of)"}:::gateway');
+              for (final ref in trig.eventIds) {
+                buf.writeln('  ${ensureEventNode(ref)} --> $gwId');
+              }
+              buf.writeln('  $gwId --> $entryTarget');
+            case EventStormTriggerMode.anyOf:
+              final gwId = 'S${s}_OR';
+              buf.writeln('  $gwId{"OU (any_of)"}:::gateway');
+              for (final ref in trig.eventIds) {
+                buf.writeln('  ${ensureEventNode(ref)} --> $gwId');
+              }
+              buf.writeln('  $gwId --> $entryTarget');
+          }
+        }
+
+        String emitterNode = cmdId;
+        if (step.aggregate.isNotEmpty) {
+          final aggName =
+              doc.catalog.findAggregate(step.aggregate)?.name ?? step.aggregate;
+          final aggId = 'S${s}_AGG';
+          buf.writeln(
+            '  $aggId["${_mermaidEsc('[AGG] $aggName')}"]:::aggregate',
+          );
+          buf.writeln('  $cmdId --> $aggId');
+          emitterNode = aggId;
+        }
+        if (step.externalSystem.isNotEmpty) {
+          final extName =
+              doc.catalog.findExternalSystem(step.externalSystem)?.name ??
+              step.externalSystem;
+          final extId = 'S${s}_EXT';
+          buf.writeln(
+            '  $extId["${_mermaidEsc('[EXT] $extName')}"]:::externalSystem',
+          );
+          buf.writeln('  $emitterNode --> $extId');
+          emitterNode = extId;
+        }
+
+        if (step.domainEvent != null) {
+          final evt = step.domainEvent!;
+          final evtNode = localEventNodeId[evt.id]!;
+          buf.writeln(
+            '  $evtNode["${_mermaidEsc('[${evt.id}] ${evt.name}')}"]:::domainEvent',
+          );
+          buf.writeln('  $emitterNode --> $evtNode');
+        } else if (step.outcomes.isNotEmpty) {
+          for (final outcome in step.outcomes) {
+            final evt = outcome.domainEvent;
+            final evtNode = localEventNodeId[evt.id]!;
+            final style = outcome.isError ? 'errorEvent' : 'domainEvent';
+            buf.writeln(
+              '  $evtNode["${_mermaidEsc('[${evt.id}] ${evt.name}')}"]:::$style',
+            );
+            buf.writeln(
+              '  $emitterNode -->|"${_mermaidEsc(outcome.condition)}"| $evtNode',
+            );
+          }
+        }
+
+        for (final hs in step.hotspots) {
+          final hsId = _mermaidNodeId('S${s}_${hs.id}');
+          final statusTag = hs.isResolved ? '✓' : '!';
+          buf.writeln(
+            '  $hsId["${_mermaidEsc('[$statusTag ${hs.id}] ${hs.question}')}"]:::hotspot',
+          );
+          buf.writeln('  $cmdId -.-> $hsId');
+        }
+      }
+
+      buf
+        ..writeln('```')
+        ..writeln()
+        ..writeln(
+          '| Étape | Backlog | Déclencheur (`triggered_by`) | Read Model / Acteur / Politique | Commande | Cible | Événement(s) / Outcomes | Hotspots |',
+        )
+        ..writeln('|---|---|---|---|---|---|---|---|');
+
+      for (final step in steps) {
+        final backlogText = (step.backlog != null && step.backlog!.isNotEmpty)
+            ? [
+                if (step.backlog!.epic.isNotEmpty) step.backlog!.epic,
+                if (step.backlog!.story.isNotEmpty) step.backlog!.story,
+              ].join(' / ')
+            : '—';
+        final trigText = step.triggeredBy?.summaryLabel ?? '—';
+        final leftParts = <String>[
+          if (step.readModel != null)
+            '**RM** ${step.readModel!.name}'
+                '${step.readModel!.fields.isEmpty ? '' : ' (${step.readModel!.fields.join(', ')})'}',
+          if (step.actor.isNotEmpty)
+            '**ACT** ${doc.catalog.findActor(step.actor)?.name ?? step.actor}',
+          if (step.policy != null)
+            '**POL** ${step.policy!.name} _(${step.policy!.rule})_',
+        ];
+        final cmdText =
+            '**${step.command.name}**'
+            '${step.command.payload.isEmpty ? '' : ' (${step.command.payload.join(', ')})'}';
+        final targetParts = <String>[
+          if (step.aggregate.isNotEmpty)
+            'AGG: ${doc.catalog.findAggregate(step.aggregate)?.name ?? step.aggregate}',
+          if (step.externalSystem.isNotEmpty)
+            'EXT: ${doc.catalog.findExternalSystem(step.externalSystem)?.name ?? step.externalSystem}',
+        ];
+        final evtText = step.domainEvent != null
+            ? '`${step.domainEvent!.id}` **${step.domainEvent!.name}**'
+                '${step.domainEvent!.data.isEmpty ? '' : ' (${step.domainEvent!.data.join(', ')})'}'
+            : step.outcomes
+                  .map(
+                    (o) =>
+                        '${o.isError ? '⚠ ' : ''}_Si ${o.condition}_ → `${o.domainEvent.id}` **${o.domainEvent.name}**',
+                  )
+                  .join('<br>');
+        final hsText = step.hotspots.isEmpty
+            ? '—'
+            : step.hotspots
+                  .map(
+                    (h) =>
+                        '`${h.id}` [${h.severity.yamlValue}/${h.status.yamlValue}] ${h.question}',
+                  )
+                  .join('<br>');
+
+        buf.writeln(
+          '| ${step.step} | ${_esc(backlogText)} | ${_esc(trigText)} | ${_esc(leftParts.isEmpty ? '—' : leftParts.join(' ; '))} | ${_esc(cmdText)} | ${_esc(targetParts.isEmpty ? '—' : targetParts.join(' / '))} | ${_esc(evtText)} | ${_esc(hsText)} |',
         );
       }
       buf.writeln();
     }
-
-    for (final flow in es.flows) {
-      buf.writeln('### ${flow.code} — ${flow.title}');
-      if (flow.description.isNotEmpty) {
-        buf.writeln(flow.description);
-      }
-      if (flow.requirementIds.isNotEmpty) {
-        buf.writeln(
-          '- **Exigences liées** : `${flow.requirementIds.join('`, `')}`',
-        );
-      }
-      final sorted = flow.sortedNodes;
-      if (sorted.isNotEmpty) {
-        buf
-          ..writeln()
-          ..writeln('```mermaid')
-          ..writeln('flowchart LR')
-          ..writeln(
-            '  classDef domainEvent fill:#FF9800,stroke:#E65100,color:#111;',
-          )
-          ..writeln(
-            '  classDef command fill:#2196F3,stroke:#0D47A1,color:#fff;',
-          )
-          ..writeln(
-            '  classDef actor fill:#FFEB3B,stroke:#F57F17,color:#111;',
-          )
-          ..writeln(
-            '  classDef aggregate fill:#FFC107,stroke:#FF6F00,color:#111;',
-          )
-          ..writeln(
-            '  classDef policy fill:#BA68C8,stroke:#4A148C,color:#fff;',
-          )
-          ..writeln(
-            '  classDef readModel fill:#66BB6A,stroke:#1B5E20,color:#111;',
-          )
-          ..writeln(
-            '  classDef hotspot fill:#EF5350,stroke:#B71C1C,color:#fff;',
-          );
-
-        final nodeAlias = <String, String>{};
-        for (var i = 0; i < sorted.length; i++) {
-          nodeAlias[sorted[i].id] = 'N$i';
-        }
-
-        final groupedByBc = <String, List<EventStormNode>>{};
-        for (final node in sorted) {
-          groupedByBc
-              .putIfAbsent(node.boundedContextId, () => <EventStormNode>[])
-              .add(node);
-        }
-
-        for (final entry in groupedByBc.entries) {
-          final bc = entry.key.isEmpty
-              ? null
-              : es.findBoundedContext(entry.key);
-          if (bc != null) {
-            final safeSubId = bc.id.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
-            buf.writeln(
-              '  subgraph $safeSubId ["${_mermaidEsc('${bc.code} · ${bc.name}')}"]',
-            );
-          }
-          for (final node in entry.value) {
-            final alias = nodeAlias[node.id]!;
-            final pivotFlag = node.isPivotal ? ' ★' : '';
-            final label = _mermaidEsc(
-              '[${node.kind.shortCode}] ${node.title}$pivotFlag',
-            );
-            final indent = bc != null ? '    ' : '  ';
-            buf.writeln('$indent$alias["$label"]:::${node.kind.name}');
-          }
-          if (bc != null) {
-            buf.writeln('  end');
-          }
-        }
-
-        if (flow.links.isNotEmpty) {
-          for (final link in flow.links) {
-            final fromAlias = nodeAlias[link.fromNodeId];
-            final toAlias = nodeAlias[link.toNodeId];
-            if (fromAlias == null || toAlias == null) continue;
-            final edgeLabel = _mermaidEsc(
-              link.label.isNotEmpty ? link.label : link.kind.label,
-            );
-            buf.writeln('  $fromAlias -->|"$edgeLabel"| $toAlias');
-          }
-        } else {
-          for (var i = 0; i + 1 < sorted.length; i++) {
-            final fromAlias = nodeAlias[sorted[i].id]!;
-            final toAlias = nodeAlias[sorted[i + 1].id]!;
-            buf.writeln('  $fromAlias --> $toAlias');
-          }
-        }
-
-        buf
-          ..writeln('```')
-          ..writeln()
-          ..writeln('| Ordre | Type | Carte | Contexte | Détails / Données |')
-          ..writeln('|---|---|---|---|---|');
-        for (final node in sorted) {
-          final bcName = node.boundedContextId.isEmpty
-              ? '—'
-              : (es.findBoundedContext(node.boundedContextId)?.name ??
-                    node.boundedContextId);
-          final details = <String>[
-            if (node.isPivotal) 'Événement pivot',
-            if (node.description.isNotEmpty) node.description,
-            if (node.payloadFields.isNotEmpty)
-              'Données: ${node.payloadFields.join(', ')}',
-            if (node.linkedRuleId.isNotEmpty) 'Règle: ${node.linkedRuleId}',
-            if (node.kind == EventStormNodeKind.hotspot)
-              node.resolved
-                  ? 'Résolu${node.answer.isNotEmpty ? ' → ${node.answer}' : ''}'
-                  : 'Ouvert',
-          ].join(' ; ');
-          buf.writeln(
-            '| ${node.sequenceOrder} | **${node.kind.label}** | ${_esc(node.title)} | ${_esc(bcName)} | ${_esc(details.isEmpty ? '—' : details)} |',
-          );
-        }
-        buf.writeln();
-      }
-      if (flow.refinementNotes.isNotEmpty) {
-        buf.writeln(
-          '- **Notes de synthèse** : ${flow.refinementNotes.join(' ; ')}',
-        );
-        buf.writeln();
-      }
-    }
   }
+
+  static String _mermaidNodeId(String raw) =>
+      raw.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
 
   static void _writeBusinessObjects(
     StringBuffer buf,

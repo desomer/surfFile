@@ -134,26 +134,29 @@ abstract final class SpecPatchApplier {
     }
 
     if (patch['eventStorming'] is Map ||
+        patch['event_storming'] is Map ||
+        patch['removeDocumentIds'] is List ||
         patch['removeBoundedContextIds'] is List ||
         patch['removeFlowIds'] is List) {
-      final rawEs = patch['eventStorming'];
+      final rawEs = patch['eventStorming'] ?? patch['event_storming'];
       final esMap = rawEs is Map ? rawEs : const <Object?, Object?>{};
       final updatedEs = _applyEventStormingPatch(
         next.eventStorming,
         rawEs,
-        removeContextIds: {
+        removeDocumentIds: {
+          ..._stringSet(patch['removeDocumentIds']),
+          ..._stringSet(esMap['removeDocumentIds']),
           ..._stringSet(patch['removeBoundedContextIds']),
           ..._stringSet(esMap['removeBoundedContextIds']),
-        },
-        removeFlowIds: {
           ..._stringSet(patch['removeFlowIds']),
           ..._stringSet(esMap['removeFlowIds']),
         },
+        fallbackDomain: next.name,
       );
       if (updatedEs != next.eventStorming) {
         next = next.copyWith(eventStorming: updatedEs);
         summaries.add(
-          'event storming (${updatedEs.flows.length} flux, ${updatedEs.totalEventCount} événement(s))',
+          'event storming (${updatedEs.documents.length} contexte(s), ${updatedEs.totalStepCount} étape(s), ${updatedEs.totalEventCount} événement(s))',
         );
       }
     }
@@ -416,20 +419,22 @@ abstract final class SpecPatchApplier {
     }
 
     if (patch['eventStorming'] is Map ||
+        patch['event_storming'] is Map ||
+        patch['removeDocumentIds'] is List ||
         patch['removeBoundedContextIds'] is List ||
         patch['removeFlowIds'] is List) {
-      final rawEs = patch['eventStorming'];
+      final rawEs = patch['eventStorming'] ?? patch['event_storming'];
       final esMap = rawEs is Map ? rawEs : const <Object?, Object?>{};
 
-      final rawContexts = esMap['boundedContexts'];
-      if (rawContexts is List) {
+      final rawDocs = esMap['documents'];
+      if (rawDocs is List) {
         var count = 0;
-        for (var i = 0; i < rawContexts.length; i++) {
-          final item = rawContexts[i];
+        for (var i = 0; i < rawDocs.length; i++) {
+          final item = rawDocs[i];
           try {
             final res = apply(current, {
               'eventStorming': {
-                'boundedContexts': [item],
+                'documents': [item],
               },
             });
             current = res.project;
@@ -437,59 +442,49 @@ abstract final class SpecPatchApplier {
           } catch (e) {
             rejected.add(
               SpecPatchRejectedEntry(
-                section: 'eventStorming.boundedContexts',
+                section: 'eventStorming.documents',
                 key: _labelForItem(item, fallback: '#$i'),
                 reason: _reasonOf(e),
               ),
             );
           }
         }
-        if (count > 0) appliedSummaries.add('$count contexte(s) borné(s)');
-      }
-
-      final rawFlows = esMap['flows'] ?? esMap['boards'];
-      if (rawFlows is List) {
-        var count = 0;
-        for (var i = 0; i < rawFlows.length; i++) {
-          final item = rawFlows[i];
-          try {
-            final res = apply(current, {
-              'eventStorming': {
-                'flows': [item],
-              },
-            });
-            current = res.project;
-            count++;
-          } catch (e) {
-            rejected.add(
-              SpecPatchRejectedEntry(
-                section: 'eventStorming.flows',
-                key: _labelForItem(item, fallback: '#$i'),
-                reason: _reasonOf(e),
-              ),
-            );
-          }
+        if (count > 0) appliedSummaries.add('$count document(s) Event Storming');
+      } else if (esMap.containsKey('event_storming') ||
+          esMap.containsKey('dsl_version') ||
+          esMap.containsKey('flow') ||
+          esMap.containsKey('flows') ||
+          esMap.containsKey('boundedContexts')) {
+        try {
+          final res = apply(current, {'eventStorming': esMap});
+          current = res.project;
+          appliedSummaries.add('event storming');
+        } catch (e) {
+          rejected.add(
+            SpecPatchRejectedEntry(
+              section: 'eventStorming',
+              key: 'document',
+              reason: _reasonOf(e),
+            ),
+          );
         }
-        if (count > 0) appliedSummaries.add('$count flux Event Storming');
       }
 
-      final removeContexts = [
+      final removeDocs = [
+        if (patch['removeDocumentIds'] is List)
+          ...patch['removeDocumentIds'] as List,
+        if (esMap['removeDocumentIds'] is List)
+          ...esMap['removeDocumentIds'] as List,
         if (patch['removeBoundedContextIds'] is List)
           ...patch['removeBoundedContextIds'] as List,
         if (esMap['removeBoundedContextIds'] is List)
           ...esMap['removeBoundedContextIds'] as List,
-      ];
-      final removeFlows = [
         if (patch['removeFlowIds'] is List) ...patch['removeFlowIds'] as List,
         if (esMap['removeFlowIds'] is List) ...esMap['removeFlowIds'] as List,
       ];
-      if (removeContexts.isNotEmpty || removeFlows.isNotEmpty) {
+      if (removeDocs.isNotEmpty) {
         try {
-          final res = apply(current, {
-            if (removeContexts.isNotEmpty)
-              'removeBoundedContextIds': removeContexts,
-            if (removeFlows.isNotEmpty) 'removeFlowIds': removeFlows,
-          });
+          final res = apply(current, {'removeDocumentIds': removeDocs});
           current = res.project;
         } catch (e) {
           rejected.add(
@@ -762,35 +757,52 @@ abstract final class SpecPatchApplier {
   static EventStormingSpec _applyEventStormingPatch(
     EventStormingSpec current,
     Object? rawEs, {
-    required Set<String> removeContextIds,
-    required Set<String> removeFlowIds,
+    required Set<String> removeDocumentIds,
+    String fallbackDomain = 'Domaine métier',
   }) {
     final map = rawEs is Map ? rawEs : const <Object?, Object?>{};
-    final incomingContexts = map['boundedContexts'] is List
-        ? [
-            for (final item in map['boundedContexts'] as List)
-              EventStormBoundedContext.fromJson(item),
-          ]
-        : const <EventStormBoundedContext>[];
-    final contexts = _mergeById<EventStormBoundedContext>(
-      existing: current.boundedContexts,
-      incoming: incomingContexts,
-      removeIds: removeContextIds,
-      idOf: (c) => c.id,
-    );
+    final incomingDocs = <EventStormDocument>[];
+    if (map['documents'] is List) {
+      for (final item in map['documents'] as List) {
+        incomingDocs.add(
+          EventStormDocument.fromJson(item, fallbackDomain: fallbackDomain),
+        );
+      }
+    } else if (map.containsKey('event_storming') ||
+        map.containsKey('dsl_version') ||
+        map.containsKey('flow')) {
+      incomingDocs.add(
+        EventStormDocument.fromJson(map, fallbackDomain: fallbackDomain),
+      );
+    } else if (map['boundedContexts'] is List ||
+        map['flows'] is List ||
+        map['boards'] is List) {
+      incomingDocs.addAll(EventStormingSpec.fromJson(map).documents);
+    }
 
-    final rawFlows = map['flows'] ?? map['boards'];
-    final incomingFlows = rawFlows is List
-        ? [for (final item in rawFlows) EventStormBoard.fromJson(item)]
-        : const <EventStormBoard>[];
-    final flows = _mergeById<EventStormBoard>(
-      existing: current.flows,
-      incoming: incomingFlows,
-      removeIds: removeFlowIds,
-      idOf: (f) => f.id,
-    );
+    final removeLower = {for (final id in removeDocumentIds) id.toLowerCase()};
+    final result = <EventStormDocument>[
+      for (final doc in current.documents)
+        if (!removeLower.contains(doc.id.toLowerCase()) &&
+            !removeLower.contains(doc.meta.boundedContext.toLowerCase()))
+          doc,
+    ];
+    for (final doc in incomingDocs) {
+      if (removeLower.contains(doc.id.toLowerCase())) continue;
+      final index = result.indexWhere(
+        (existing) =>
+            existing.id.toLowerCase() == doc.id.toLowerCase() ||
+            existing.meta.boundedContext.toLowerCase() ==
+                doc.meta.boundedContext.toLowerCase(),
+      );
+      if (index >= 0) {
+        result[index] = doc;
+      } else {
+        result.add(doc);
+      }
+    }
 
-    return current.copyWith(boundedContexts: contexts, flows: flows);
+    return current.copyWith(documents: result);
   }
 
   static List<T> _mergeById<T>({

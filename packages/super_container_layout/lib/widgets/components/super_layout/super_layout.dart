@@ -41,6 +41,10 @@ import '../../../models/component_behavior.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/component_tag_filter.dart';
+import '../../../services/diagnostics/debug_entry.dart'
+    show DebugErrorCategory, DebugSeverity;
+import '../../../services/inspection/vibe_debug_capture.dart';
+import '../../../services/inspection/vibe_ghost_component_detector.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';

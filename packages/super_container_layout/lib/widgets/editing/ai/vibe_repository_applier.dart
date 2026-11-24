@@ -236,6 +236,22 @@ abstract final class VibeRepositoryPromptFormatter {
 
 /// Validateur syntaxique et structurel des patches `"repositories"` produits par l'IA.
 abstract final class VibeRepositoryPatchValidator {
+  /// Clés réservées de l'enveloppe UI racine `"vibe"` interdites comme identifiants
+  /// ou alias dans `"repositories"` (comparées en minuscules).
+  static const Set<String> reservedUiRootKeys = <String>{
+    'vibe',
+    'components',
+    'styles',
+    'behaviors',
+    'usages',
+    'pagecatalog',
+    'responsivelayout',
+  };
+
+  /// Indique si [repoKey] entre en collision avec une clé réservée de l'enveloppe UI racine `"vibe"`.
+  static bool isReservedUiRootKey(String repoKey) =>
+      reservedUiRootKeys.contains(repoKey.trim().toLowerCase());
+
   static const Set<String> _envelopeKeys = <String>{
     'name',
     'mode',
@@ -279,6 +295,13 @@ abstract final class VibeRepositoryPatchValidator {
 
   /// Valide et décode une entrée individuelle `(repoKey, rawValue)` du patch `"repositories"`.
   static VibeRepositoryPatchEntry parseEntry(String repoKey, Object? rawValue) {
+    if (isReservedUiRootKey(repoKey)) {
+      throw FormatException(
+        'Clé UI racine réservée "$repoKey" interdite dans "repositories" : '
+        '"vibe" (contenant "components", "styles", "behaviors", "usages", "pageCatalog") '
+        'doit être émis comme clé racine de premier niveau, jamais à l’intérieur de "repositories".',
+      );
+    }
     if (!_repoKeyOrIdPattern.hasMatch(repoKey)) {
       throw FormatException(
         'Identifiant ou alias de repository invalide "$repoKey" '
@@ -558,8 +581,161 @@ Map<String, dynamic> rewriteVibePatchRepositoryAliases(
   Map<String, String> aliasToActualId,
 ) => VibeRepositoryApplier.rewriteVibePatchBindings(vibePatch, aliasToActualId);
 
-/// Utilitaires statiques de réécriture des liaisons `"vibe"` et de fusion JSON des repositories.
+/// Utilitaires statiques de réécriture des liaisons `"vibe"`, de normalisation d'enveloppe
+/// et de fusion JSON des repositories.
 abstract final class VibeRepositoryApplier {
+  static const Map<String, String> _canonicalUiSectionKeys = <String, String>{
+    'components': 'components',
+    'styles': 'styles',
+    'behaviors': 'behaviors',
+    'usages': 'usages',
+    'pagecatalog': 'pageCatalog',
+    'responsivelayout': 'responsiveLayout',
+  };
+
+  static const Set<String> _repoEnvelopeHintKeys = <String>{
+    'name',
+    'mode',
+    'data',
+  };
+
+  static bool _looksLikeVibeUiPatch(Map<Object?, Object?> map) {
+    if (map.isEmpty) return false;
+    for (final key in map.keys) {
+      if (key is String &&
+          _canonicalUiSectionKeys.containsKey(key.toLowerCase())) {
+        return true;
+      }
+    }
+    final nestedData = map['data'];
+    if (nestedData is Map) {
+      for (final key in nestedData.keys) {
+        if (key is String &&
+            _canonicalUiSectionKeys.containsKey(key.toLowerCase())) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static Map<String, dynamic>? _extractUiPatchFromMisplacedVibeEntry(
+    Object? rawEntry,
+  ) {
+    if (rawEntry is! Map) return null;
+    final entryMap = Map<String, dynamic>.from(
+      rawEntry.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    final rawData = entryMap['data'];
+    if (rawData is Map &&
+        entryMap.keys.every(
+          (k) =>
+              _repoEnvelopeHintKeys.contains(k) ||
+              k == 'calculatedAttributes' ||
+              k == 'jsonSchema',
+        ) &&
+        _looksLikeVibeUiPatch(rawData)) {
+      return Map<String, dynamic>.from(
+        rawData.map((k, v) => MapEntry(k.toString(), v)),
+      );
+    }
+    if (_looksLikeVibeUiPatch(entryMap)) {
+      return entryMap;
+    }
+    return null;
+  }
+
+  static Object? _unwrapMisplacedUiSectionValue(Object? rawValue) {
+    if (rawValue is! Map) return rawValue;
+    final map = Map<String, dynamic>.from(
+      rawValue.map((k, v) => MapEntry(k.toString(), v)),
+    );
+    if (map.containsKey('data') &&
+        map['data'] is Map &&
+        map.keys.every(_repoEnvelopeHintKeys.contains)) {
+      return Map<String, dynamic>.from(
+        (map['data'] as Map).map((k, v) => MapEntry(k.toString(), v)),
+      );
+    }
+    return map;
+  }
+
+  /// Normalise l'enveloppe d'une réponse IA pour corriger automatiquement une inversion
+  /// structurelle où un patch UI (`"vibe"`, `"components"`, `"styles"`, `"behaviors"`, …)
+  /// a été placé sous `"repositories"` alors que la clé racine `"vibe"` est absente.
+  ///
+  /// Retourne la réponse corrigée (ou inchangée) ainsi que les avertissements de
+  /// redirection effectués. Lorsque la clé racine `"vibe"` est déjà non nulle, aucune
+  /// redirection silencieuse n'est faite afin que [VibeRepositoryPatchValidator] rejette
+  /// explicitement la collision.
+  static ({Map<String, dynamic> response, List<String> warnings})
+  sanitizeResponseEnvelope(Map<String, dynamic> response) {
+    final rawRepos = response['repositories'];
+    if (rawRepos is! Map || rawRepos.isEmpty) {
+      return (response: response, warnings: const <String>[]);
+    }
+    final hasRootVibe = response.containsKey('vibe') && response['vibe'] != null;
+    if (hasRootVibe) {
+      return (response: response, warnings: const <String>[]);
+    }
+
+    final remainingRepos = <String, dynamic>{};
+    final warnings = <String>[];
+    Map<String, dynamic>? recoveredVibe;
+    final movedDirectSections = <String>[];
+
+    for (final entry in rawRepos.entries) {
+      final key = entry.key.toString();
+      final lowerKey = key.toLowerCase();
+      if (lowerKey == 'vibe') {
+        final extracted = _extractUiPatchFromMisplacedVibeEntry(entry.value);
+        if (extracted != null) {
+          recoveredVibe = <String, dynamic>{...?recoveredVibe, ...extracted};
+          warnings.add(
+            '[Vibe IA] Inversion d’enveloppe corrigée automatiquement : '
+            '"repositories.$key" a été redirigé vers la clé racine "vibe".',
+          );
+          continue;
+        }
+      } else if (_canonicalUiSectionKeys.containsKey(lowerKey) &&
+          entry.value is Map) {
+        final canonicalSection = _canonicalUiSectionKeys[lowerKey]!;
+        recoveredVibe ??= <String, dynamic>{};
+        recoveredVibe.putIfAbsent(
+          canonicalSection,
+          () => _unwrapMisplacedUiSectionValue(entry.value),
+        );
+        movedDirectSections.add(key);
+        continue;
+      }
+      remainingRepos[key] = entry.value;
+    }
+
+    if (movedDirectSections.isNotEmpty) {
+      warnings.add(
+        '[Vibe IA] Inversion d’enveloppe corrigée automatiquement : les clés UI '
+        '${movedDirectSections.map((k) => '"repositories.$k"').join(', ')} '
+        'ont été redirigées vers la clé racine "vibe".',
+      );
+    }
+
+    if (recoveredVibe == null) {
+      return (response: response, warnings: const <String>[]);
+    }
+
+    final nextResponse = Map<String, dynamic>.of(response);
+    nextResponse['vibe'] = recoveredVibe;
+    if (remainingRepos.isEmpty) {
+      nextResponse.remove('repositories');
+    } else {
+      nextResponse['repositories'] = remainingRepos;
+    }
+    return (
+      response: nextResponse,
+      warnings: List<String>.unmodifiable(warnings),
+    );
+  }
+
   static const Set<String> _protectedPrefixes = <String>{
     'theme',
     'registry',

@@ -12,6 +12,8 @@ Il complète [`SCREEN_JSON_AI_GUIDE.md`](SCREEN_JSON_AI_GUIDE.md) (grammaire des
 
 ### 1.1. Enveloppe de réponse JSON du Chat Vibe
 
+> **Règle d'or anti-collision de clé racine** : `"message"`, `"repositories"` et `"vibe"` sont **strictement trois clés sœurs de premier niveau** de la réponse JSON. Il est **formellement interdit** d'émettre une clé nommée `"vibe"`, `"components"`, `"styles"`, `"behaviors"`, `"usages"`, `"pageCatalog"` ou `"responsiveLayout"` à l'intérieur de `"repositories"` (ex. **JAMAIS** `{"repositories": {"vibe": {"data": {"components": ...}}}}` ni `{"repositories": {"components": ...}}`). `"vibe"` est exclusivement le conteneur UI racine transmis à `AppearanceTransfer.applyVibe`, jamais un repository de données.
+
 Lorsqu'une demande nécessite de créer un repository, d'enrichir son schéma ou de modifier ses données (avec ou sans mise à jour de l'écran), renvoie un unique objet JSON conforme à la structure suivante :
 
 ```json
@@ -138,11 +140,14 @@ Le parseur incrémental (`VibeIncrementalStreamParser`) décode et applique le f
 
 Consulte toujours la section **`REPOSITORIES DISPONIBLES`** présente dans le contexte du tour courant :
 
-1. **Réutiliser un repository existant pertinent** :
-   - Si `REPOSITORIES DISPONIBLES` contient déjà un repository correspondant au domaine métier demandé, **réutilise son `id` exact** tel qu'indiqué dans le contexte :
-     - soit l'identifiant technique de **32 caractères hexadécimaux** (`^[0-9a-f]{32}$`, ex. `"4f8a2c91e0b347d6a1c58e920b4f7d13"`) d'un repository fichier existant ;
+1. **Réutilisation prioritaire des IDs de repository existants (règle impérative)** :
+   - Avant d'inventer le moindre alias, vérifie si `REPOSITORIES DISPONIBLES` contient déjà un repository correspondant au domaine métier demandé. Si c'est le cas, **réutilise systématiquement son `id` technique exact** (tel qu'indiqué dans `REPOSITORIES DISPONIBLES`) à la fois comme clé dans `"repositories"` (si tu enrichis ses données) **et** comme préfixe `<id>:chemin` (ou `{"repositoryId": "<id>", ...}`) dans tous les bindings de `"vibe"` :
+     - soit l'identifiant technique de **32 caractères hexadécimaux** (`^[0-9a-f]{32}$`, ex. `"b58753b2bf3197f3e791d9ae1c3c3305"`) d'un repository fichier existant ;
      - soit l'identifiant `snake_case` (`^[a-z0-9_]{1,32}$`, ex. `"pan_model_repository"`) d'un `RepositoryImpl` fourni par l'application hôte (note : le `"name"` d'un repository applicatif en mémoire est immuable ; en `"merge"`, tu peux omettre `"name"` ou répéter son nom courant).
-2. **Créer un nouveau repository fichier via un alias symbolique** :
+   - **Anti-pattern interdit** : ne crée pas un nouvel alias (ex. `"crm_avantages"`) en doublon d'un repository métier déjà présent dans `REPOSITORIES DISPONIBLES`, et ne référence **jamais** dans `"vibe"` un alias qui n'est ni un `id` présent dans `REPOSITORIES DISPONIBLES`, ni une clé déclarée dans `"repositories"` du même tour (sinon tous les bindings restent non résolus).
+2. **Clés réservées UI strictement interdites dans `"repositories"`** :
+   - Ne nomme **jamais** une clé de `"repositories"` `"vibe"`, `"components"`, `"styles"`, `"behaviors"`, `"usages"`, `"pageCatalog"` ou `"responsiveLayout"` (insensible à la casse) : ces clés appartiennent exclusivement à l'enveloppe UI racine `"vibe"` et sont rejetées par `VibeRepositoryApplier`.
+3. **Créer un nouveau repository fichier via un alias symbolique (uniquement si aucun repository existant ne couvre le domaine)** :
    - Choisis un **alias symbolique lisible en `snake_case`** respectant `^[a-z0-9_]{1,32}$` (ex. `"crm_clients"`, `"catalogue_produits"`, `"suivi_chantiers"`).
    - Fournis un `"name"` lisible pour l'utilisateur (ex. `"CRM Clients"`).
    - Référence **directement cet alias** dans toutes les liaisons du patch `"vibe"` du même tour :
@@ -150,7 +155,7 @@ Consulte toujours la section **`REPOSITORIES DISPONIBLES`** présente dans le co
      - ou forme objet : `{"repositoryId": "crm_clients", "path": "clients[?].nom"}`.
    - **Réécriture automatique par le moteur** : `VibeRepositoryApplier` crée le fichier `<name>.json` et son fichier compagnon `<name>.json.id` contenant un véritable identifiant aléatoire de 32 caractères hexadécimaux, puis **réécrit automatiquement toutes les occurrences de l'alias** dans `"vibe"` (`components`, `styles`, `behaviors`, `states`, `propertyBindings`, `optionsBinding`) vers cet ID 32 hex réel avant d'appeler `AppearanceTransfer.applyVibe`.
    - **Interdiction absolue** : ne tente **jamais** d'inventer ou de générer à la main une chaîne de 32 caractères hexadécimaux pour un repository qui ne figure pas déjà dans `REPOSITORIES DISPONIBLES`.
-3. **Absence de `JsonRepositoryStore` actif** :
+4. **Absence de `JsonRepositoryStore` actif** :
    - Si aucune section `REPOSITORIES DISPONIBLES` ne figure dans le prompt (l'application hôte n'a monté aucun `JsonRepositoryStore`), **n'émets pas** la clé `"repositories"`, ne crée aucun `binding`, et renseigne des valeurs statiques réalistes (`text` / `value` / `options`) accompagnées de `"usages": { "<id>": { "kind": "dynamicData" } }`.
 
 ---

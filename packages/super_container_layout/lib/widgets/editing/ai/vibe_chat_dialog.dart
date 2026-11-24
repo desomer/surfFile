@@ -218,7 +218,8 @@ Formatage compact & ordre d'émission obligatoire dans "vibe" pour le streaming 
 Règles pour "repositories" (création et mise à jour des repositories JSON) :
 - Lorsqu'une section REPOSITORIES DISPONIBLES (JSON) est fournie dans le contexte du tour, tu peux créer de nouveaux repositories ou mettre à jour/peupler des repositories existants via la clé optionnelle "repositories" placée après "message" et avant "vibe" : {"message":"...","repositories":{"<idOuAlias>":{"name":"...","mode":"merge","data":{...},"jsonSchema":{...}}},"vibe":{...}} (ou "vibe": null si la demande ne modifie que les données des repositories sans changer l'écran). Si aucune section REPOSITORIES DISPONIBLES (JSON) n'est présente dans le contexte, n'émets pas la clé "repositories".
 - Respecte impérativement l'ordre d'émission live : "message" -> "repositories" -> "vibe", afin que les repositories soient créés et peuplés avant l'instanciation des composants liés.
-- Réutilise systématiquement les identifiants ("id") existants de REPOSITORIES DISPONIBLES lorsqu'un repository correspond au domaine métier. Pour tout nouveau repository, choisis un alias snake_case (^[a-z0-9_]{1,32}\$, sans inventer d'ID de 32 caractères hexadécimaux) et utilise directement cet alias dans les bindings "<alias>:chemin" (ou {"repositoryId":"<alias>","path":"chemin"}) de "vibe".
+- Règle d'or anti-collision de clé racine : "vibe" est STRICTEMENT une clé racine de premier niveau (frère de "message" et "repositories"), JAMAIS imbriquée dans "repositories". Il est formellement interdit d'émettre une clé nommée "vibe", "components", "styles", "behaviors", "usages", "pageCatalog" ou "responsiveLayout" à l'intérieur de "repositories".
+- Réutilisation prioritaire des IDs de repository existants : lorsqu'un repository métier est déjà listé dans REPOSITORIES DISPONIBLES, réutilise SYSTÉMATIQUEMENT son "id" technique exact (ex. ID 32 hex ou ID applicatif) dans "repositories" ET dans tous les bindings "<id>:chemin" de "vibe", plutôt que d'inventer un nouvel alias. Ne crée un alias snake_case (^[a-z0-9_]{1,32}\$, sans inventer d'ID de 32 caractères hexadécimaux) que pour un repository réellement nouveau déclaré dans "repositories" du même tour.
 - Chemins de liaison dans une liste/table/onglet dynamique (mode « hérité de la liste englobante ») : écris TOUJOURS le chemin complet depuis la racine du repository avec joker(s) [?] (ex: "deals[?].title", "clients[?].nom", "clients[?].commandes[?].ref"), même si repositoryId est omis ; n'écris JAMAIS un nom de champ nu comme "title" ou "nom" (sauf dans un SuperTreeView), sinon il est lu à la racine du document et affiche vide.
 - Héritage strictement descendant (Pattern Maître / Détail) : l'héritage de repositoryId ne se propage JAMAIS horizontalement vers une branche sœur (ex: du panneau west vers la fiche détaillée en center). Tout composant hors de la liste source (SuperValue, KPI, sous-liste, Chart) DOIT déclarer explicitement son préfixe "<repoId>:..." ou "<alias>:..." (ou {"repositoryId":"...","path":"..."}) afin que le runtime synchronise sa sélection [?].
 - Dans chaque entrée de "repositories", "data" doit être un objet JSON {...} à la racine, et aucune clé JSON stockée ne doit jamais débuter par "@" (préfixe strictement réservé aux attributs calculés en lecture seule) ni contenir ".", "[", "]", "?" ou espace.
@@ -239,7 +240,7 @@ Lorsque "allowRemove": true sur une SuperListView, le bouton supprimer natif flo
 Pour les SuperAction placées dans placements.tabs d'un SuperTab (onglets), ne définis JAMAIS de style de fond ni de bordure spécifique (pas de backgroundColor, borderColor, borderWidth, elevation, style, styles["<tabSlotId>"], ni de variant plein/encadré — omets variant) ; l'habillage de la barre et de l'onglet actif se règle uniquement sur le SuperTab (tabBarStyle, indicator*, labelColor, unselectedLabelColor).
 Ne mets JAMAIS d'entrée dans "styles" pour un composant placé en "registry:Layout" (ni pour "mainLayout") : SuperLayout est purement structurel et n'a pas de surface (styles[id] est sans effet). Pour styliser un conteneur de zones (couleur, bordure, arrondi, paddingInsets), passe son placement parent en "registry:IterableContent" (en gardant components[id] en "type": "layout") ou enveloppe-le dans une "registry:Card".
 Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
-Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
+Contrôle d'exhaustivité des placements descendants : tout composant déclaré dans "components" (conteneurs, rangées de KPIs, graphiques, onglets, champs feuilles) doit OBLIGATOIREMENT être référencé dans les "placements" d'un conteneur parent monté (chaîne continue jusqu'à "root"/"mainLayout" ou une page de "pageCatalog"), sinon il reste un composant fantôme invisible. Créer un layout ou composant isolé ne l'affiche pas.
 La route "/" existe déjà côté hôte (page racine "root" / "mainLayout") : ne déclare JAMAIS une page avec "path": "/" dans "pageCatalog" (configure directement "root" / "mainLayout" pour "/", ou utilise un chemin distinct comme "/accueil" avec éventuellement "homePageId"). Tout chemin de "pageCatalog" doit commencer par un seul "/", être différent de "/", ne pas se terminer par "/", et ne contenir ni espace, ni "?", ni "#".
 Si la conversation mentionne une erreur sur une réponse précédente, identifie la cause indiquée et corrige-la sans reproduire la même erreur.
 Ne renvoie aucun Markdown ni texte hors du JSON. Utilise systématiquement le niveau du slider de questionnement ("NIVEAU DE QUESTIONNEMENT") à chaque étape pour déterminer le recours à "askUser".''';
@@ -6447,10 +6448,26 @@ class _VibeChatDialogState extends State<VibeChatDialog>
       if (decoded == null) {
         return (correctedAppearance: null, summaryMessage: null);
       }
-      final summary = decoded['message'] is String
-          ? (decoded['message'] as String).trim()
+      final sanitizedVerify = VibeRepositoryApplier.sanitizeResponseEnvelope(
+        decoded,
+      );
+      final effectiveDecoded = sanitizedVerify.response;
+      for (final warning in sanitizedVerify.warnings) {
+        debugPrint(
+          '[Vibe IA][$traceScopeLabel][PostVerify] ${warning.replaceFirst('[Vibe IA] ', '')}',
+        );
+        VibeDebugCapture.recordTypedError(
+          message: warning,
+          category: DebugErrorCategory.binding,
+          severity: DebugSeverity.warning,
+          source: 'VibeRepositoryApplier.sanitizeEnvelope',
+          visibleInUi: false,
+        );
+      }
+      final summary = effectiveDecoded['message'] is String
+          ? (effectiveDecoded['message'] as String).trim()
           : null;
-      final patch = _extractPatch(decoded);
+      final patch = _extractPatch(effectiveDecoded);
       if (patch == null) {
         debugPrint(
           '[Vibe IA][$traceScopeLabel][PostVerify] Rendu conforme — aucun patch correctif '
@@ -7447,8 +7464,25 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             plan: null,
           );
         }
-        final repositoriesPatch = _extractRepositoriesPatch(result);
-        final patch = _extractPatch(result);
+        final sanitizedEnvelope = VibeRepositoryApplier.sanitizeResponseEnvelope(
+          result,
+        );
+        final effectiveResult = sanitizedEnvelope.response;
+        decodedMap = effectiveResult;
+        for (final warning in sanitizedEnvelope.warnings) {
+          debugPrint(
+            '[Vibe IA][$traceScopeLabel] ${warning.replaceFirst('[Vibe IA] ', '')}',
+          );
+          VibeDebugCapture.recordTypedError(
+            message: warning,
+            category: DebugErrorCategory.binding,
+            severity: DebugSeverity.warning,
+            source: 'VibeRepositoryApplier.sanitizeEnvelope',
+            visibleInUi: false,
+          );
+        }
+        final repositoriesPatch = _extractRepositoriesPatch(effectiveResult);
+        final patch = _extractPatch(effectiveResult);
         final hasToolRepoChanges = session.repoTransaction?.hasChanges ?? false;
         if (repositoriesPatch == null &&
             patch == null &&
@@ -7693,7 +7727,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
         );
 
         _lastFailedResponse = null;
-        var finalResult = result;
+        var finalResult = effectiveResult;
         var detectedPostErrors = const <DebugEntry>[];
         if (appearance != null &&
             toolRegistry.isNotEmpty &&
@@ -7722,9 +7756,9 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           );
         }
         final explicitVerifyRender =
-            result['verifyRender'] == true ||
-            (result['vibe'] is Map &&
-                (result['vibe'] as Map)['verifyRender'] == true);
+            effectiveResult['verifyRender'] == true ||
+            (effectiveResult['vibe'] is Map &&
+                (effectiveResult['vibe'] as Map)['verifyRender'] == true);
         final hasRuntimeErrorTrigger =
             !isIntermediatePlanLot && detectedPostErrors.isNotEmpty;
         final hasExactModeTrigger =
@@ -7802,7 +7836,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
             if (verified.summaryMessage != null &&
                 verified.summaryMessage!.isNotEmpty) {
               finalResult = <String, dynamic>{
-                ...result,
+                ...effectiveResult,
                 'message': verified.summaryMessage,
               };
             }
@@ -8214,7 +8248,7 @@ ${priorCauses.length == 1 ? causesSummary : '- $causesSummary'}
 $toolResultsSection
 Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
-Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte). Pour tout nouveau repository, fournis son "jsonSchema" conforme à "data" (sans clés "@..." et sans "x-mask"/"pattern" redondant sur "format": "date").
+Si tu utilises "repositories", chaque "data" doit être un objet JSON {...} à la racine sans aucune clé débutant par "@" ni contenant ".", "[", "]", "?" ou espace, placé après "message" et avant "vibe" (uniquement si REPOSITORIES DISPONIBLES figure dans le contexte). N'émets JAMAIS de clé "vibe", "components", "styles", "behaviors", "usages", "pageCatalog" ou "responsiveLayout" à l'intérieur de "repositories" ("vibe" est strictement une clé racine). Réutilise prioritairement les IDs techniques exacts présents dans REPOSITORIES DISPONIBLES plutôt que d'inventer un alias. Pour tout nouveau repository, fournis son "jsonSchema" conforme à "data" (sans clés "@..." et sans "x-mask"/"pattern" redondant sur "format": "date").
 Si tu crées une page dans "pageCatalog", son chemin doit commencer par un seul "/", être différent de "/" (car "/" est déjà réservé par la page racine "root" / "mainLayout"), ne contenir ni espace, ni "?", ni "#", et ne pas se terminer par "/".
 Pour modifier la page d’accueil "/" existante, configure directement "root" et "mainLayout" sans ajouter de page "/" dans "pageCatalog" (ou utilise un chemin distinct comme "/accueil" avec "homePageId").
 Réponse précédente invalide :

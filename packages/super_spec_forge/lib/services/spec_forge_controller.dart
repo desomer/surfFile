@@ -1218,26 +1218,46 @@ class SpecForgeController extends ChangeNotifier {
     return added.length;
   }
 
-  /// Initialise des Bounded Contexts et flux Event Storming depuis le Cahier des charges
-  /// et retourne le nombre de flux et contextes ajoutés.
-  Future<({int addedFlowsCount, int addedContextsCount})>
+  /// Initialise des documents Event Storming DSL v1.0 (1 par Bounded Context)
+  /// depuis le Cahier des charges et retourne le nombre de documents et d'étapes ajoutés.
+  Future<({int addedDocumentsCount, int addedStepsCount})>
   seedEventStormingFromSpecifications() async {
     final current = _project;
     if (current == null) {
-      return (addedFlowsCount: 0, addedContextsCount: 0);
+      return (addedDocumentsCount: 0, addedStepsCount: 0);
     }
     final res = EventStormingOperations.seedFromCahierDesCharges(current);
-    if (res.addedFlowsCount == 0 && res.addedContextsCount == 0) {
-      return (addedFlowsCount: 0, addedContextsCount: 0);
+    if (res.addedDocumentsCount == 0 && res.addedStepsCount == 0) {
+      return (addedDocumentsCount: 0, addedStepsCount: 0);
     }
     final next = current.copyWith(eventStorming: res.updated);
     await updateProject(next);
-    if (_focusedEventStormFlowId == null && res.updated.flows.isNotEmpty) {
-      focusEventStormFlow(res.updated.flows.first.id);
+    if (_focusedEventStormFlowId == null && res.updated.documents.isNotEmpty) {
+      focusEventStormFlow(res.updated.documents.first.id);
     }
     return (
-      addedFlowsCount: res.addedFlowsCount,
-      addedContextsCount: res.addedContextsCount,
+      addedDocumentsCount: res.addedDocumentsCount,
+      addedStepsCount: res.addedStepsCount,
+    );
+  }
+
+  /// Importe ou met à jour un document Event Storming depuis du YAML `.es.yaml`.
+  Future<({String documentId, String boundedContext, bool createdNew})?>
+  importEventStormingYaml(String yamlContent, {String? idHint}) async {
+    final current = _project;
+    if (current == null) return null;
+    final res = EventStormingOperations.upsertDocumentFromYaml(
+      current.eventStorming,
+      yamlContent,
+      idHint: idHint,
+    );
+    final next = current.copyWith(eventStorming: res.updated);
+    await updateProject(next);
+    focusEventStormFlow(res.document.id);
+    return (
+      documentId: res.document.id,
+      boundedContext: res.document.meta.boundedContext,
+      createdNew: res.createdNew,
     );
   }
 
@@ -1263,18 +1283,18 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
-  /// Promeut une carte Politique Event Storming en règle de gestion `RG-xxx`.
+  /// Promeut la politique d'une étape Event Storming en règle de gestion `RG-xxx`.
   Future<({BusinessRuleSpec rule, bool createdNew})?>
   promoteEventStormPolicyToBusinessRule({
-    required String flowId,
-    required String nodeId,
+    required String documentId,
+    required int stepNumber,
   }) async {
     final current = _project;
     if (current == null) return null;
     final res = EventStormingOperations.promotePolicyToBusinessRule(
       current,
-      flowId: flowId,
-      nodeId: nodeId,
+      documentId: documentId,
+      stepNumber: stepNumber,
     );
     await updateProject(res.project);
     return (rule: res.rule, createdNew: res.createdNew);

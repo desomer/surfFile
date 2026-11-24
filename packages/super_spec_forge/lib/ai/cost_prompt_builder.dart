@@ -127,54 +127,48 @@ abstract final class CostPromptBuilder {
     };
   }
 
-  /// Construit un résumé JSON compact de l'Event Storming (contextes bornés, métriques de flux et hotspots)
-  /// destiné à l'estimation WBS et à l'identification des risques.
+  /// Construit un résumé JSON compact de l'Event Storming DSL v1.0 (Bounded Contexts,
+  /// catalogue, métriques d'étapes et hotspots) destiné à l'estimation WBS et aux risques.
   static Map<String, Object?> buildCompactEventStormingSummaryJson(
     SpecForgeProject project,
   ) {
     final es = project.eventStorming;
     return <String, Object?>{
-      'boundedContextCount': es.boundedContexts.length,
-      'flowCount': es.flows.length,
+      'dslVersion': EventStormDocument.currentDslVersion,
+      'boundedContextCount': es.documents.length,
+      'totalStepCount': es.totalStepCount,
       'totalEventCount': es.totalEventCount,
       'totalCommandCount': es.totalCommandCount,
       'totalPolicyCount': es.totalPolicyCount,
       'openHotspotCount': es.openHotspotCount,
       'eventStormingHint':
-          'Résumé compact : appelle `get_event_storming` pour inspecter l’intégralité des commandes, événements, agrégats et politiques d’un flux.',
-      'boundedContexts': [
-        for (final bc in es.boundedContexts)
+          'Résumé compact : appelle `get_event_storming` pour inspecter l’intégralité des documents .es.yaml (catalog, étapes, outcomes, politiques et synchronisations).',
+      'documents': [
+        for (final doc in es.documents)
           <String, Object?>{
-            'id': bc.id,
-            'code': bc.code,
-            'name': bc.name,
-            if (bc.description.isNotEmpty) 'description': bc.description,
-          },
-      ],
-      'flows': [
-        for (final f in es.flows)
-          <String, Object?>{
-            'id': f.id,
-            'code': f.code,
-            'title': f.title,
-            'domainEventCount': f.domainEventCount,
-            'commandCount': f.commandCount,
-            'policyCount': f.policyCount,
-            'openHotspotCount': f.openHotspotCount,
-            if (f.requirementIds.isNotEmpty) 'requirementIds': f.requirementIds,
+            'id': doc.id,
+            'fileName': doc.fileName,
+            'domain': doc.meta.domain,
+            'boundedContext': doc.meta.boundedContext,
+            'format': doc.meta.format.yamlValue,
+            'stepCount': doc.flow.length,
+            'domainEventCount': doc.domainEventCount,
+            'policyCount': doc.policyCount,
+            'externalSystems': [
+              for (final ext in doc.catalog.externalSystems) ext.name,
+            ],
+            'openHotspotCount': doc.openHotspotCount,
             'hotspots': [
-              for (final n in f.nodes)
-                if (n.kind == EventStormNodeKind.hotspot)
-                  <String, Object?>{
-                    'id': n.id,
-                    if (n.code.isNotEmpty) 'code': n.code,
-                    'title': n.title,
-                    if (n.description.isNotEmpty) 'description': n.description,
-                    'resolved': n.resolved,
-                    if (n.answer.isNotEmpty) 'answer': n.answer,
-                    if (n.targetObjectId.isNotEmpty)
-                      'targetObjectId': n.targetObjectId,
-                  },
+              for (final entry in doc.allHotspots)
+                <String, Object?>{
+                  'id': entry.hotspot.id,
+                  'step': entry.stepNumber,
+                  'question': entry.hotspot.question,
+                  'severity': entry.hotspot.severity.yamlValue,
+                  if (entry.hotspot.owner.isNotEmpty)
+                    'owner': entry.hotspot.owner,
+                  'status': entry.hotspot.status.yamlValue,
+                },
             ],
           },
       ],

@@ -367,16 +367,21 @@ class DatasourceRegistry extends ChangeNotifier
 
   /// Supprime la datasource de l'éditeur [id].
   ///
-  /// Refuse une datasource du code et, si [appearance] est fournie, une
-  /// datasource encore utilisée par un comportement.
-  Future<void> delete(String id, {Appearance? appearance}) async {
+  /// Refuse toujours une datasource du code. Sauf lorsque [force] vaut
+  /// `true`, refuse également une datasource encore utilisée par un
+  /// comportement si [appearance] est fournie.
+  Future<void> delete(
+    String id, {
+    Appearance? appearance,
+    bool force = false,
+  }) async {
     if (_code.containsKey(id)) {
       throw FormatException(
         'La datasource « $id » est définie par le code de l’application : '
         'elle ne peut pas être supprimée.',
       );
     }
-    if (appearance?.usesDatasource(id) ?? false) {
+    if (!force && (appearance?.usesDatasource(id) ?? false)) {
       throw FormatException(
         'Impossible de supprimer « $id » : '
         'cette datasource est encore utilisée par un comportement.',

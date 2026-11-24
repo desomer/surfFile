@@ -3,6 +3,7 @@
 /// Chaque projet est persisté sous `<rootDirectory>/projects/<project-slug>/` :
 /// - `project.json` : métadonnées légères du projet ;
 /// - `spec/*.json` : domaines (lexique, cadrage, cahier des charges, préférences, cohérence) ;
+/// - `spec/event_storming/<slug>.es.yaml` : 1 fichier Event Storming DSL v1.0 par Bounded Context (+ `es-dsl.schema.json` et `_order.json`) ;
 /// - `spec/business_objects/<slug>.json` : 1 fichier par objet métier (+ `_order.json`) ;
 /// - `spec/business_rules/<slug>.json` : 1 fichier par règle de gestion (+ `_order.json`) ;
 /// - `ux/navigation.json` : étape UX courante, architecture de navigation et thème visuel ;
@@ -42,6 +43,7 @@ import '../models/cost/cost_forge_stage.dart';
 import '../models/cost/cost_risk_item_spec.dart';
 import '../models/cost/cost_run_item_spec.dart';
 import '../models/cost/cost_wbs_item_spec.dart';
+import '../models/event_storming_spec.dart';
 import '../models/example_mapping_spec.dart';
 import '../models/qa/gherkin_feature_spec.dart';
 import '../models/qa/qa_coherence_issue.dart';
@@ -62,6 +64,7 @@ import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_journey_spec.dart';
 import '../models/ux/ux_navigation_spec.dart';
 import '../models/ux/ux_screen_spec.dart';
+import 'exporters/event_storming_dsl_codec.dart';
 import 'spec_storage_slug.dart';
 import 'spec_workspace_store.dart';
 
@@ -258,6 +261,10 @@ class SpecProjectStore {
 
   Directory _specDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}spec');
+
+  Directory _eventStormingDir(Directory projectDir) => Directory(
+    '${_specDir(projectDir).path}${Platform.pathSeparator}event_storming',
+  );
 
   Directory _businessObjectsDir(Directory projectDir) => Directory(
     '${_specDir(projectDir).path}${Platform.pathSeparator}business_objects',
@@ -585,6 +592,10 @@ class SpecProjectStore {
             'data': project.cahierDesCharges.toJson(),
           }),
         );
+      }
+
+      if (prev == null || prev.eventStorming != project.eventStorming) {
+        writes.add(_syncEventStorming(projectDir, project.eventStorming));
       }
 
       if (prev == null ||
@@ -1010,6 +1021,150 @@ class SpecProjectStore {
     });
   }
 
+  Future<void> _syncEventStorming(
+    Directory projectDir,
+    EventStormingSpec spec,
+  ) async {
+    final dir = _eventStormingDir(projectDir);
+    final sep = Platform.pathSeparator;
+    final orderFile = File('${dir.path}${sep}_order.json');
+    final schemaFile = File(
+      '${dir.path}$sep${EventStormingDslCodec.schemaFileName}',
+    );
+
+    if (spec.documents.isEmpty) {
+      if (await dir.exists()) {
+        await SpecStorageIo.pruneUnexpectedFiles(
+          dir,
+          const <String>{},
+          extension: '.es.yaml',
+        );
+        if (await orderFile.exists()) {
+          try {
+            await orderFile.delete();
+          } catch (_) {}
+        }
+        if (await schemaFile.exists()) {
+          try {
+            await schemaFile.delete();
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+
+    await dir.create(recursive: true);
+
+    final fileMap = <String, EventStormDocument>{};
+    final usedLower = <String>{};
+    for (final doc in spec.documents) {
+      final base = SpecStorageSlug.slugify(
+        doc.id.trim().isNotEmpty ? doc.id : doc.meta.boundedContext,
+        fallback: 'bounded-context',
+        separator: '-',
+      );
+      var candidate = '$base.es.yaml';
+      if (!usedLower.add(candidate.toLowerCase())) {
+        var idx = 2;
+        while (!usedLower.add('$base-$idx.es.yaml'.toLowerCase())) {
+          idx++;
+        }
+        candidate = '$base-$idx.es.yaml';
+      }
+      fileMap[candidate] = doc;
+    }
+
+    await SpecStorageIo.pruneUnexpectedFiles(
+      dir,
+      fileMap.keys.toSet(),
+      extension: '.es.yaml',
+    );
+
+    final writes = <Future<bool>>[
+      SpecStorageIo.writeTextAtomicallyIfChanged(
+        schemaFile,
+        SpecStorageIo.normalizeLf(EventStormingDslCodec.esDslSchemaJson),
+        nextTmpId: () => _tmpCounter++,
+      ),
+      _writeJson(orderFile, <String, Object?>{
+        'format': orderFormat,
+        'version': storageVersion,
+        'ids': [for (final doc in spec.documents) doc.id],
+      }),
+      for (final entry in fileMap.entries)
+        SpecStorageIo.writeTextAtomicallyIfChanged(
+          File('${dir.path}$sep${entry.key}'),
+          SpecStorageIo.normalizeLf(EventStormingDslCodec.toYaml(entry.value)),
+          nextTmpId: () => _tmpCounter++,
+        ),
+    ];
+    await Future.wait(writes);
+  }
+
+  Future<EventStormingSpec> _loadEventStorming(Directory projectDir) async {
+    final dir = _eventStormingDir(projectDir);
+    if (!await dir.exists()) return EventStormingSpec.empty;
+
+    final yamlFiles = <File>[];
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = SpecStorageIo.fileNameOf(entity.path);
+      if (name.contains('.tmp.')) continue;
+      if (name.toLowerCase().endsWith('.es.yaml')) {
+        yamlFiles.add(entity);
+      }
+    }
+    if (yamlFiles.isEmpty) return EventStormingSpec.empty;
+
+    yamlFiles.sort(
+      (a, b) => SpecStorageIo.fileNameOf(
+        a.path,
+      ).toLowerCase().compareTo(SpecStorageIo.fileNameOf(b.path).toLowerCase()),
+    );
+
+    final docs = <EventStormDocument>[];
+    final usedIds = <String>{};
+    for (final file in yamlFiles) {
+      final name = SpecStorageIo.fileNameOf(file.path);
+      final idHint = name.substring(0, name.length - '.es.yaml'.length);
+      final rawText = await file.readAsString();
+      var doc = EventStormingDslCodec.fromYaml(rawText, idHint: idHint);
+      if (!usedIds.add(doc.id)) {
+        var suffix = 2;
+        while (!usedIds.add('${doc.id}-$suffix')) {
+          suffix++;
+        }
+        doc = doc.copyWith(id: '${doc.id}-$suffix');
+      }
+      docs.add(doc);
+    }
+
+    final orderFile = File(
+      '${dir.path}${Platform.pathSeparator}_order.json',
+    );
+    final orderMap = await _readOptionalJsonMap(orderFile);
+    final orderIds = <String>[
+      if (orderMap?['ids'] is List)
+        for (final item in orderMap!['ids'] as List)
+          if (item is String && item.trim().isNotEmpty) item.trim(),
+    ];
+    if (orderIds.isNotEmpty) {
+      final orderIndex = <String, int>{
+        for (var i = 0; i < orderIds.length; i++) orderIds[i]: i,
+      };
+      docs.sort((a, b) {
+        final ia = orderIndex[a.id] ?? 1 << 20;
+        final ib = orderIndex[b.id] ?? 1 << 20;
+        if (ia != ib) return ia.compareTo(ib);
+        return a.id.compareTo(b.id);
+      });
+    }
+
+    final spec = EventStormingSpec(documents: docs);
+    spec.validate();
+    return spec;
+  }
+
   Future<void> _syncBusinessObjects(
     Directory projectDir,
     List<BusinessObjectSpec> objects,
@@ -1289,6 +1444,7 @@ class SpecProjectStore {
       final lexiconFuture = _readOptionalJsonMap(_lexiconFile(projectDir));
       final visionFuture = _readOptionalJsonMap(_visionFile(projectDir));
       final cdcFuture = _readOptionalJsonMap(_cahierDesChargesFile(projectDir));
+      final eventStormingFuture = _loadEventStorming(projectDir);
       final objectsFuture = _loadSplitEntities<BusinessObjectSpec>(
         _businessObjectsDir(projectDir),
         parseItem: BusinessObjectSpec.fromJson,
@@ -1391,6 +1547,7 @@ class SpecProjectStore {
         lexiconFuture,
         visionFuture,
         cdcFuture,
+        eventStormingFuture,
         objectsFuture,
         exampleMapsFuture,
         rulesFuture,
@@ -1420,6 +1577,7 @@ class SpecProjectStore {
       final lexiconMap = await lexiconFuture;
       final visionMap = await visionFuture;
       final cdcMap = await cdcFuture;
+      final eventStorming = await eventStormingFuture;
       final businessObjects = await objectsFuture;
       final exampleMappings = await exampleMapsFuture;
       final businessRules = await rulesFuture;
@@ -1676,6 +1834,7 @@ class SpecProjectStore {
         lexicon: SpecLexicon.fromJson(lexiconMap?['data']),
         vision: SpecVision.fromJson(visionMap?['data']),
         cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
+        eventStorming: eventStorming,
         businessObjects: businessObjects,
         exampleMappings: exampleMappings,
         businessRules: businessRules,

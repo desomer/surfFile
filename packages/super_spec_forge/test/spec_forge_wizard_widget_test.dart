@@ -1338,6 +1338,23 @@ Facture:
       );
       expect(find.text('Nouvelle forge à partir d’une idée'), findsNothing);
 
+      // Bannière de citation de John Gall en tête de Design.
+      expect(find.byKey(const ValueKey('design-quote-banner')), findsOneWidget);
+      expect(find.text(DesignLinksView.quoteText), findsOneWidget);
+      expect(find.text('— John Gall'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('design-quote-banner'))).dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(
+                  const ValueKey('design-section-header-urban_planner_architect'),
+                ),
+              )
+              .dy,
+        ),
+      );
+
       // Vérifie les deux sections (urbaniste & architecte en premier) et les 9 liens de Design.
       expect(find.text('Pour l’urbaniste & architecte'), findsOneWidget);
       expect(find.text('Pour le concepteur backend'), findsOneWidget);

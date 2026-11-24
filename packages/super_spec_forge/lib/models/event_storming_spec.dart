@@ -1,972 +1,2043 @@
-/// Modèles immuables d'Event Storming (Process Modeling DDD) :
-/// [EventStormingSpec], [EventStormBoard], [EventStormNode],
-/// [EventStormLink] et [EventStormBoundedContext].
+/// Modèles immuables d'Event Storming conformes au **Event Storming DSL v1.0** :
+/// [EventStormingSpec], [EventStormDocument] (1 document = 1 Bounded Context =
+/// 1 fichier `<slug>.es.yaml`), [EventStormMeta], [EventStormCatalog],
+/// [EventStormCatalogItem], [EventStormStep], [EventStormTrigger],
+/// [EventStormPolicy], [EventStormReadModel], [EventStormCommand],
+/// [EventStormDomainEvent], [EventStormOutcome], [EventStormHotspot] et
+/// [EventStormBacklog].
 library;
 
 import 'package:flutter/foundation.dart';
 
-/// Catégorie d'un post-it Event Storming (7 couleurs du Process Modeling).
-enum EventStormNodeKind {
-  /// Orange : fait métier immuable survenu dans le passé (ex. `CommandeValidee`).
-  domainEvent(
-    'Événement',
-    'EVT',
-    'Fait métier accompli formulé au passé (Orange)',
-  ),
+/// Format d'atelier Event Storming (`meta.format`).
+enum EventStormFormat {
+  /// Vue d'ensemble macroscopique d'un domaine.
+  bigPicture('big_picture', 'Big Picture'),
 
-  /// Bleu : intention ou action déclenchée par un acteur ou une politique (ex. `ValiderCommande`).
-  command(
-    'Commande',
-    'CMD',
-    'Intention ou action métier déclenchée (Bleu)',
-  ),
+  /// Modélisation détaillée des processus métier (par défaut).
+  processModeling('process_modeling', 'Process Modeling'),
 
-  /// Jaune (petit) : persona, rôle ou système externe initiant une commande.
-  actor(
-    'Acteur',
-    'ACT',
-    'Persona ou système externe initiateur (Jaune)',
-  ),
+  /// Modélisation fine au niveau conception logicielle / agrégats.
+  designLevel('design_level', 'Design Level');
 
-  /// Ambre / Jaune (grand) : agrégat ou système recevant les commandes et émettant les événements.
-  aggregate(
-    'Agrégat',
-    'AGG',
-    'Agrégat, entité ou système portant les invariants (Ambre)',
-  ),
+  /// Construit un format d'atelier.
+  const EventStormFormat(this.yamlValue, this.label);
 
-  /// Lilas / Violet : règle réactive automatique (« Quand Événement, alors Commande »).
-  policy(
-    'Politique',
-    'POL',
-    'Réaction automatique « Quand…, alors… » (Lilas)',
-  ),
+  /// Valeur exacte dans le schéma YAML/JSON DSL v1.0.
+  final String yamlValue;
 
-  /// Vert : projection, vue ou modèle de lecture nécessaire à la prise de décision.
-  readModel(
-    'Read Model',
-    'RMD',
-    'Vue ou projection d’aide à la décision (Vert)',
-  ),
+  /// Libellé lisible dans l'interface.
+  final String label;
 
-  /// Rouge / Rose : zone d'ombre, goulot d'étranglement, risque ou question ouverte.
-  hotspot(
-    'Hotspot',
-    'HOT',
-    'Zone d’ombre, blocage ou question à lever (Rouge)',
-  );
+  /// Résout un format depuis JSON/YAML.
+  static EventStormFormat fromJson(Object? raw) {
+    if (raw is String) {
+      final norm = raw.trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_');
+      for (final value in EventStormFormat.values) {
+        if (value.yamlValue == norm || value.name.toLowerCase() == norm) {
+          return value;
+        }
+      }
+    }
+    return EventStormFormat.processModeling;
+  }
+}
 
-  /// Construit une catégorie de carte Event Storming.
-  const EventStormNodeKind(this.label, this.shortCode, this.description);
+/// Nature d'un acteur du catalogue (`catalog.actors[].type`).
+enum EventStormActorType {
+  /// Acteur humain / persona.
+  human('human', 'Humain'),
+
+  /// Déclencheur temporel / planifié (CRON, échéance).
+  timer('timer', 'Temporel'),
+
+  /// Système interne ou automate.
+  system('system', 'Système');
+
+  /// Construit un type d'acteur.
+  const EventStormActorType(this.yamlValue, this.label);
+
+  /// Valeur exacte dans le schéma DSL v1.0.
+  final String yamlValue;
 
   /// Libellé lisible en français.
   final String label;
 
-  /// Trigamme compact (`EVT`, `CMD`, `ACT`, `AGG`, `POL`, `RMD`, `HOT`).
-  final String shortCode;
-
-  /// Description explicative de la sémantique Event Storming.
-  final String description;
-
-  /// Résout une catégorie depuis JSON ou un alias courant généré par un LLM.
-  static EventStormNodeKind fromJson(Object? raw) {
+  /// Résout un type d'acteur depuis JSON/YAML.
+  static EventStormActorType fromJson(Object? raw) {
     if (raw is String) {
-      final norm = raw.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
-      switch (norm) {
-        case 'domainevent':
-        case 'event':
-        case 'evenement':
-        case 'evt':
-        case 'pivot':
-        case 'pivotalevent':
-          return EventStormNodeKind.domainEvent;
-        case 'command':
-        case 'cmd':
-        case 'commande':
-        case 'action':
-          return EventStormNodeKind.command;
-        case 'actor':
-        case 'act':
-        case 'acteur':
-        case 'persona':
-        case 'user':
-        case 'utilisateur':
-          return EventStormNodeKind.actor;
-        case 'aggregate':
-        case 'agg':
-        case 'agregat':
-        case 'system':
-        case 'systeme':
-        case 'entity':
-        case 'entite':
-          return EventStormNodeKind.aggregate;
-        case 'policy':
-        case 'pol':
-        case 'politique':
-        case 'reactor':
-        case 'processmanager':
-        case 'automation':
-          return EventStormNodeKind.policy;
-        case 'readmodel':
-        case 'rmd':
-        case 'view':
-        case 'vue':
-        case 'projection':
-        case 'query':
-          return EventStormNodeKind.readModel;
-        case 'hotspot':
-        case 'hot':
-        case 'question':
-        case 'risk':
-        case 'risque':
-        case 'issue':
-        case 'blocker':
-          return EventStormNodeKind.hotspot;
+      final norm = raw.trim().toLowerCase();
+      for (final value in EventStormActorType.values) {
+        if (value.yamlValue == norm) return value;
+      }
+      if (norm == 'utilisateur' || norm == 'user' || norm == 'persona') {
+        return EventStormActorType.human;
+      }
+      if (norm == 'cron' || norm == 'schedule' || norm == 'temps') {
+        return EventStormActorType.timer;
+      }
+      if (norm == 'systeme' || norm == 'bot' || norm == 'automate') {
+        return EventStormActorType.system;
       }
     }
-    return EventStormNodeKind.domainEvent;
+    return EventStormActorType.human;
   }
 }
 
-/// Nature d'une liaison orientée entre deux cartes d'un flux Event Storming.
-enum EventStormLinkKind {
-  /// Un acteur ou une politique déclenche une commande.
-  triggers('Déclenche'),
+/// Sévérité d'un hotspot (`hotspots[].severity`).
+enum EventStormHotspotSeverity {
+  /// Risque ou question mineure.
+  low('low', 'Faible'),
 
-  /// Une commande est traitée par un agrégat ou système.
-  handles('Traite'),
+  /// Risque ou question modérée.
+  medium('medium', 'Moyenne'),
 
-  /// Un agrégat ou une commande émet un événement domaine.
-  emits('Émet'),
+  /// Risque ou question majeure.
+  high('high', 'Élevée'),
 
-  /// Une politique réagit à un événement domaine.
-  reactsTo('Réagit à'),
+  /// Blocage critique empêchant la suite.
+  blocker('blocker', 'Bloquant');
 
-  /// Un événement alimente un Read Model ou un Read Model éclaire un acteur.
-  informs('Alimente'),
+  /// Construit une sévérité de hotspot.
+  const EventStormHotspotSeverity(this.yamlValue, this.label);
 
-  /// Lien vers ou depuis un Hotspot / zone d'ombre.
-  flags('Signale');
-
-  /// Construit un type de liaison.
-  const EventStormLinkKind(this.label);
+  /// Valeur exacte dans le schéma DSL v1.0.
+  final String yamlValue;
 
   /// Libellé lisible en français.
   final String label;
 
-  /// Résout un type de liaison depuis JSON.
-  static EventStormLinkKind fromJson(Object? raw) {
+  /// Résout une sévérité depuis JSON/YAML.
+  static EventStormHotspotSeverity fromJson(Object? raw) {
     if (raw is String) {
-      final norm = raw.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), '');
-      switch (norm) {
-        case 'triggers':
-        case 'trigger':
-        case 'declenche':
-          return EventStormLinkKind.triggers;
-        case 'handles':
-        case 'handle':
-        case 'traite':
-          return EventStormLinkKind.handles;
-        case 'emits':
-        case 'emit':
-        case 'emet':
-        case 'produces':
-          return EventStormLinkKind.emits;
-        case 'reactsto':
-        case 'reacts':
-        case 'reagit':
-        case 'listens':
-          return EventStormLinkKind.reactsTo;
-        case 'informs':
-        case 'inform':
-        case 'alimente':
-        case 'updates':
-        case 'projects':
-          return EventStormLinkKind.informs;
-        case 'flags':
-        case 'flag':
-        case 'signale':
-        case 'question':
-          return EventStormLinkKind.flags;
+      final norm = raw.trim().toLowerCase();
+      for (final value in EventStormHotspotSeverity.values) {
+        if (value.yamlValue == norm) return value;
+      }
+      if (norm == 'critical' || norm == 'critique' || norm == 'bloquant') {
+        return EventStormHotspotSeverity.blocker;
+      }
+      if (norm == 'elevee' || norm == 'élevée' || norm == 'haute') {
+        return EventStormHotspotSeverity.high;
+      }
+      if (norm == 'faible' || norm == 'basse') {
+        return EventStormHotspotSeverity.low;
       }
     }
-    return EventStormLinkKind.triggers;
+    return EventStormHotspotSeverity.medium;
   }
 }
 
-/// Bounded Context (contexte borné DDD) regroupant des cartes et flux cohérents.
+/// Statut d'un hotspot (`hotspots[].status`).
+enum EventStormHotspotStatus {
+  /// Question ouverte ou blocage actif.
+  open('open', 'Ouvert'),
+
+  /// Question tranchée / blocage levé.
+  resolved('resolved', 'Résolu');
+
+  /// Construit un statut de hotspot.
+  const EventStormHotspotStatus(this.yamlValue, this.label);
+
+  /// Valeur exacte dans le schéma DSL v1.0.
+  final String yamlValue;
+
+  /// Libellé lisible en français.
+  final String label;
+
+  /// Résout un statut depuis JSON/YAML.
+  static EventStormHotspotStatus fromJson(Object? raw) {
+    if (raw is bool) {
+      return raw
+          ? EventStormHotspotStatus.resolved
+          : EventStormHotspotStatus.open;
+    }
+    if (raw is String) {
+      final norm = raw.trim().toLowerCase();
+      if (norm == 'resolved' ||
+          norm == 'resolu' ||
+          norm == 'résolu' ||
+          norm == 'closed' ||
+          norm == 'done') {
+        return EventStormHotspotStatus.resolved;
+      }
+    }
+    return EventStormHotspotStatus.open;
+  }
+}
+
+/// Mode de déclenchement causal entrant (`triggered_by`).
+enum EventStormTriggerMode {
+  /// Déclenchement par un événement unique (`"EVT-01"` ou `"CMD:EVT-02A"`).
+  single('single', 'Événement simple'),
+
+  /// Synchronisation **ET** en entrée (`all_of: [...]`, min 2 événements).
+  allOf('all_of', 'Synchronisation ET (all_of)'),
+
+  /// Convergence **OU** en entrée (`any_of: [...]`, min 2 événements).
+  anyOf('any_of', 'Convergence OU (any_of)');
+
+  /// Construit un mode de déclenchement.
+  const EventStormTriggerMode(this.yamlKey, this.label);
+
+  /// Clé YAML correspondante.
+  final String yamlKey;
+
+  /// Libellé lisible en français.
+  final String label;
+}
+
+/// Bloc `meta` d'un document Event Storming DSL v1.0 (cadre de l'atelier).
 @immutable
-class EventStormBoundedContext {
-  /// Construit un Bounded Context immuable.
-  const EventStormBoundedContext({
-    required this.id,
-    required this.code,
-    required this.name,
-    this.description = '',
-    this.notes = '',
+class EventStormMeta {
+  /// Construit le bloc de métadonnées d'atelier.
+  const EventStormMeta({
+    required this.domain,
+    required this.boundedContext,
+    this.format = EventStormFormat.processModeling,
+    required this.date,
+    this.facilitator = '',
   });
 
-  /// Identifiant technique unique.
+  /// Nom du domaine métier global (ex. `"E-Commerce"`).
+  final String domain;
+
+  /// Nom du Bounded Context couvert par ce fichier (ex. `"Gestion des commandes"`).
+  final String boundedContext;
+
+  /// Format de l'atelier (`big_picture`, `process_modeling`, `design_level`).
+  final EventStormFormat format;
+
+  /// Date de l'atelier au format ISO `YYYY-MM-DD`.
+  final String date;
+
+  /// Facilitateur optionnel (ex. `"Product Owner"`).
+  final String facilitator;
+
+  /// Vérifie les invariants du bloc `meta`.
+  void validate() {
+    if (domain.trim().isEmpty) {
+      throw const FormatException('EventStormMeta.domain ne peut pas être vide.');
+    }
+    if (boundedContext.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormMeta.boundedContext ne peut pas être vide.',
+      );
+    }
+    if (date.trim().isEmpty) {
+      throw const FormatException('EventStormMeta.date ne peut pas être vide.');
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormMeta copyWith({
+    String? domain,
+    String? boundedContext,
+    EventStormFormat? format,
+    String? date,
+    String? facilitator,
+  }) => EventStormMeta(
+    domain: domain ?? this.domain,
+    boundedContext: boundedContext ?? this.boundedContext,
+    format: format ?? this.format,
+    date: date ?? this.date,
+    facilitator: facilitator ?? this.facilitator,
+  );
+
+  /// Sérialise `meta` au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'domain': domain,
+    'bounded_context': boundedContext,
+    'format': format.yamlValue,
+    'date': date,
+    if (facilitator.isNotEmpty) 'facilitator': facilitator,
+  };
+
+  /// Désérialise `meta` depuis JSON/YAML.
+  factory EventStormMeta.fromJson(
+    Object? raw, {
+    String fallbackDomain = 'Domaine métier',
+    String fallbackContext = 'Contexte métier',
+  }) {
+    final map = raw is Map ? raw : const <Object?, Object?>{};
+    final domain = _str(map['domain']).isNotEmpty
+        ? _str(map['domain'])
+        : fallbackDomain;
+    final boundedContext =
+        _str(map['bounded_context'] ?? map['boundedContext'] ?? map['context'])
+            .isNotEmpty
+        ? _str(map['bounded_context'] ?? map['boundedContext'] ?? map['context'])
+        : fallbackContext;
+    final date = _str(map['date']).isNotEmpty
+        ? _str(map['date'])
+        : _todayIsoDate();
+    final meta = EventStormMeta(
+      domain: domain,
+      boundedContext: boundedContext,
+      format: EventStormFormat.fromJson(map['format']),
+      date: date,
+      facilitator: _str(map['facilitator']),
+    );
+    meta.validate();
+    return meta;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormMeta &&
+          other.domain == domain &&
+          other.boundedContext == boundedContext &&
+          other.format == format &&
+          other.date == date &&
+          other.facilitator == facilitator;
+
+  @override
+  int get hashCode =>
+      Object.hash(domain, boundedContext, format, date, facilitator);
+}
+
+/// Entrée du référentiel `catalog` (`ACT-*`, `AGG-*` ou `EXT-*`).
+@immutable
+class EventStormCatalogItem {
+  /// Construit une entrée de catalogue immuable.
+  const EventStormCatalogItem({
+    required this.id,
+    required this.name,
+    this.type,
+  });
+
+  /// Identifiant canonique (`ACT-*`, `AGG-*` ou `EXT-*`).
   final String id;
 
-  /// Code court séquentiel (`BC-001`, `BC-002`...).
-  final String code;
-
-  /// Nom métier du contexte borné (ex. `Facturation`, `Logistique`).
+  /// Nom métier affiché.
   final String name;
 
-  /// Responsabilité métier principale du contexte borné.
-  final String description;
+  /// Type optionnel (utilisé pour les acteurs : `human`, `timer`, `system`).
+  final EventStormActorType? type;
 
-  /// Notes de frontières ou d'intégration avec d'autres contextes.
-  final String notes;
-
-  /// Vérifie les invariants du contexte borné.
+  /// Vérifie les invariants de l'entrée.
   void validate() {
     if (id.trim().isEmpty) {
       throw const FormatException(
-        'EventStormBoundedContext.id ne peut pas être vide.',
-      );
-    }
-    if (code.trim().isEmpty) {
-      throw const FormatException(
-        'EventStormBoundedContext.code ne peut pas être vide.',
+        'EventStormCatalogItem.id ne peut pas être vide.',
       );
     }
     if (name.trim().isEmpty) {
       throw const FormatException(
-        'EventStormBoundedContext.name ne peut pas être vide.',
+        'EventStormCatalogItem.name ne peut pas être vide.',
       );
     }
   }
 
   /// Retourne une copie modifiée.
-  EventStormBoundedContext copyWith({
+  EventStormCatalogItem copyWith({
     String? id,
-    String? code,
     String? name,
-    String? description,
-    String? notes,
-  }) => EventStormBoundedContext(
+    EventStormActorType? type,
+    bool clearType = false,
+  }) => EventStormCatalogItem(
     id: id ?? this.id,
-    code: code ?? this.code,
     name: name ?? this.name,
-    description: description ?? this.description,
-    notes: notes ?? this.notes,
+    type: clearType ? null : (type ?? this.type),
   );
 
-  /// Sérialise le contexte borné en JSON.
+  /// Sérialise l'entrée au format DSL v1.0.
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
-    'code': code,
     'name': name,
-    if (description.isNotEmpty) 'description': description,
-    if (notes.isNotEmpty) 'notes': notes,
+    if (type != null) 'type': type!.yamlValue,
   };
 
-  /// Désérialise un contexte borné depuis JSON.
-  factory EventStormBoundedContext.fromJson(Object? raw) {
+  /// Désérialise une entrée depuis JSON/YAML.
+  factory EventStormCatalogItem.fromJson(
+    Object? raw, {
+    required String defaultPrefix,
+    bool includeDefaultActorType = false,
+  }) {
     if (raw is! Map) {
       throw const FormatException(
-        'EventStormBoundedContext doit être un objet JSON.',
+        'EventStormCatalogItem doit être un objet JSON/YAML.',
       );
     }
-    final name =
-        ((raw['name'] ?? raw['title'] ?? raw['label']) as String?)?.trim() ??
-        '';
-    final effectiveName = name.isEmpty ? 'Contexte métier' : name;
-    final rawId = (raw['id'] as String?)?.trim() ?? '';
-    final rawCode = (raw['code'] as String?)?.trim() ?? '';
-    final ctx = EventStormBoundedContext(
-      id: rawId.isEmpty ? 'bc_${effectiveName.hashCode.abs()}' : rawId,
-      code: rawCode.isEmpty ? 'BC-001' : rawCode,
+    final name = _str(raw['name'] ?? raw['title'] ?? raw['label']);
+    final effectiveName = name.isEmpty ? 'Élément' : name;
+    final rawId = _str(raw['id']);
+    final effectiveId = rawId.isEmpty
+        ? _makeCatalogId(defaultPrefix, effectiveName)
+        : rawId;
+    final hasType = raw['type'] != null && _str(raw['type']).isNotEmpty;
+    final item = EventStormCatalogItem(
+      id: effectiveId,
       name: effectiveName,
-      description: (raw['description'] as String?)?.trim() ?? '',
-      notes: (raw['notes'] as String?)?.trim() ?? '',
+      type: hasType
+          ? EventStormActorType.fromJson(raw['type'])
+          : (includeDefaultActorType ? EventStormActorType.human : null),
     );
-    ctx.validate();
-    return ctx;
+    item.validate();
+    return item;
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is EventStormBoundedContext &&
+      other is EventStormCatalogItem &&
           other.id == id &&
-          other.code == code &&
           other.name == name &&
-          other.description == description &&
-          other.notes == notes;
+          other.type == type;
 
   @override
-  int get hashCode => Object.hash(id, code, name, description, notes);
+  int get hashCode => Object.hash(id, name, type);
 }
 
-/// Carte post-it unitaire sur la frise chronologique d'un flux Event Storming.
+/// Bloc `catalog` (légende du mur) : référentiel unique des `actors`,
+/// `aggregates` et `external_systems`.
 @immutable
-class EventStormNode {
-  /// Construit une carte Event Storming immuable.
-  EventStormNode({
-    required this.id,
-    required this.kind,
-    required this.title,
-    this.code = '',
-    this.description = '',
-    this.sequenceOrder = 0,
-    this.boundedContextId = '',
-    this.isPivotal = false,
-    this.actorId = '',
-    this.targetObjectId = '',
-    this.linkedRuleId = '',
-    List<String> payloadFields = const <String>[],
-    this.resolved = false,
-    this.answer = '',
-    this.notes = '',
-  }) : payloadFields = List<String>.unmodifiable(payloadFields);
+class EventStormCatalog {
+  /// Construit un catalogue immuable.
+  EventStormCatalog({
+    List<EventStormCatalogItem> actors = const <EventStormCatalogItem>[],
+    List<EventStormCatalogItem> aggregates = const <EventStormCatalogItem>[],
+    List<EventStormCatalogItem> externalSystems =
+        const <EventStormCatalogItem>[],
+  }) : actors = List<EventStormCatalogItem>.unmodifiable(actors),
+       aggregates = List<EventStormCatalogItem>.unmodifiable(aggregates),
+       externalSystems = List<EventStormCatalogItem>.unmodifiable(
+         externalSystems,
+       );
 
-  /// Identifiant technique unique du nœud dans le flux.
-  final String id;
+  /// Catalogue vide.
+  static final EventStormCatalog empty = EventStormCatalog();
 
-  /// Code optionnel (ex. `EVT-01`, `CMD-01`).
-  final String code;
+  /// Acteurs humains, temporels ou systèmes (`ACT-*`).
+  final List<EventStormCatalogItem> actors;
 
-  /// Couleur / type de post-it Event Storming.
-  final EventStormNodeKind kind;
+  /// Agrégats métier internes (`AGG-*`).
+  final List<EventStormCatalogItem> aggregates;
 
-  /// Libellé principal du post-it (au passé pour un événement, à l'impératif pour une commande).
-  final String title;
+  /// Services ou systèmes externes (`EXT-*`, post-it Rose pâle).
+  final List<EventStormCatalogItem> externalSystems;
 
-  /// Détail métier, précondition ou description de la carte.
-  final String description;
+  /// Vrai si le catalogue ne contient aucune entrée.
+  bool get isEmpty =>
+      actors.isEmpty && aggregates.isEmpty && externalSystems.isEmpty;
 
-  /// Position chronologique sur la frise (de gauche à droite).
-  final int sequenceOrder;
+  /// Vrai si au moins une entrée existe.
+  bool get isNotEmpty => !isEmpty;
 
-  /// Identifiant éventuel du [EventStormBoundedContext] auquel appartient cette carte.
-  final String boundedContextId;
+  /// Recherche un acteur par identifiant ou nom.
+  EventStormCatalogItem? findActor(String idOrName) =>
+      _findCatalogItem(actors, idOrName);
 
-  /// Indique un événement pivot structurant (frontière de phase ou de contexte).
-  final bool isPivotal;
+  /// Recherche un agrégat par identifiant ou nom.
+  EventStormCatalogItem? findAggregate(String idOrName) =>
+      _findCatalogItem(aggregates, idOrName);
 
-  /// Identifiant éventuel du persona (`SpecPersona.id`) lié à un acteur ou une commande.
-  final String actorId;
+  /// Recherche un système externe par identifiant ou nom.
+  EventStormCatalogItem? findExternalSystem(String idOrName) =>
+      _findCatalogItem(externalSystems, idOrName);
 
-  /// Identifiant ou nom technique éventuel de l'objet métier (`BusinessObjectSpec`) cible.
-  final String targetObjectId;
-
-  /// Identifiant ou code éventuel de la règle de gestion `RG-xxx` issue d'une politique.
-  final String linkedRuleId;
-
-  /// Attributs ou données clés transportés (pour Événement, Commande ou Read Model).
-  final List<String> payloadFields;
-
-  /// Pour un `hotspot` : indique si la zone d'ombre est résolue.
-  final bool resolved;
-
-  /// Pour un `hotspot` : décision ou réponse retenue.
-  final String answer;
-
-  /// Notes complémentaires.
-  final String notes;
-
-  /// Vérifie les invariants de la carte.
+  /// Vérifie les invariants et l'unicité des identifiants du catalogue.
   void validate() {
-    if (id.trim().isEmpty) {
-      throw const FormatException('EventStormNode.id ne peut pas être vide.');
-    }
-    if (title.trim().isEmpty) {
-      throw const FormatException(
-        'EventStormNode.title ne peut pas être vide.',
-      );
+    final seenIds = <String>{};
+    for (final list in [actors, aggregates, externalSystems]) {
+      for (final item in list) {
+        item.validate();
+        if (!seenIds.add(item.id)) {
+          throw FormatException(
+            'Identifiant dupliqué dans le catalogue Event Storming : ${item.id}',
+          );
+        }
+      }
     }
   }
 
   /// Retourne une copie modifiée.
-  EventStormNode copyWith({
-    String? id,
-    String? code,
-    EventStormNodeKind? kind,
-    String? title,
-    String? description,
-    int? sequenceOrder,
-    String? boundedContextId,
-    bool? isPivotal,
-    String? actorId,
-    String? targetObjectId,
-    String? linkedRuleId,
-    List<String>? payloadFields,
-    bool? resolved,
-    String? answer,
-    String? notes,
-  }) => EventStormNode(
-    id: id ?? this.id,
-    code: code ?? this.code,
-    kind: kind ?? this.kind,
-    title: title ?? this.title,
-    description: description ?? this.description,
-    sequenceOrder: sequenceOrder ?? this.sequenceOrder,
-    boundedContextId: boundedContextId ?? this.boundedContextId,
-    isPivotal: isPivotal ?? this.isPivotal,
-    actorId: actorId ?? this.actorId,
-    targetObjectId: targetObjectId ?? this.targetObjectId,
-    linkedRuleId: linkedRuleId ?? this.linkedRuleId,
-    payloadFields: payloadFields ?? this.payloadFields,
-    resolved: resolved ?? this.resolved,
-    answer: answer ?? this.answer,
-    notes: notes ?? this.notes,
+  EventStormCatalog copyWith({
+    List<EventStormCatalogItem>? actors,
+    List<EventStormCatalogItem>? aggregates,
+    List<EventStormCatalogItem>? externalSystems,
+  }) => EventStormCatalog(
+    actors: actors ?? this.actors,
+    aggregates: aggregates ?? this.aggregates,
+    externalSystems: externalSystems ?? this.externalSystems,
   );
 
-  /// Sérialise la carte en JSON.
+  /// Sérialise le catalogue au format DSL v1.0.
   Map<String, Object?> toJson() => <String, Object?>{
-    'id': id,
-    if (code.isNotEmpty) 'code': code,
-    'kind': kind.name,
-    'title': title,
-    if (description.isNotEmpty) 'description': description,
-    'sequenceOrder': sequenceOrder,
-    if (boundedContextId.isNotEmpty) 'boundedContextId': boundedContextId,
-    if (isPivotal) 'isPivotal': isPivotal,
-    if (actorId.isNotEmpty) 'actorId': actorId,
-    if (targetObjectId.isNotEmpty) 'targetObjectId': targetObjectId,
-    if (linkedRuleId.isNotEmpty) 'linkedRuleId': linkedRuleId,
-    if (payloadFields.isNotEmpty) 'payloadFields': payloadFields,
-    if (resolved) 'resolved': resolved,
-    if (answer.isNotEmpty) 'answer': answer,
-    if (notes.isNotEmpty) 'notes': notes,
+    if (actors.isNotEmpty) 'actors': [for (final a in actors) a.toJson()],
+    if (aggregates.isNotEmpty)
+      'aggregates': [for (final a in aggregates) a.toJson()],
+    if (externalSystems.isNotEmpty)
+      'external_systems': [for (final e in externalSystems) e.toJson()],
   };
 
-  /// Désérialise une carte depuis JSON.
-  factory EventStormNode.fromJson(Object? raw) {
-    if (raw is! Map) {
-      throw const FormatException('EventStormNode doit être un objet JSON.');
-    }
-    final kind = EventStormNodeKind.fromJson(raw['kind'] ?? raw['type']);
-    final title =
-        ((raw['title'] ?? raw['name'] ?? raw['label'] ?? raw['question'])
-                as String?)
-            ?.trim() ??
-        '';
-    final effectiveTitle = title.isEmpty ? kind.label : title;
-    final rawId = (raw['id'] as String?)?.trim() ?? '';
-    final answer = (raw['answer'] as String?)?.trim() ?? '';
-    final rawResolved = raw['resolved'];
-    final resolved = rawResolved is bool ? rawResolved : answer.isNotEmpty;
-    final rawSeq = raw['sequenceOrder'] ?? raw['order'] ?? raw['step'];
-    final sequenceOrder = rawSeq is int
-        ? rawSeq
-        : (rawSeq is num ? rawSeq.toInt() : 0);
-
-    final node = EventStormNode(
-      id: rawId.isEmpty
-          ? 'esn_${kind.shortCode.toLowerCase()}_${effectiveTitle.hashCode.abs()}'
-          : rawId,
-      code: (raw['code'] as String?)?.trim() ?? '',
-      kind: kind,
-      title: effectiveTitle,
-      description: (raw['description'] as String?)?.trim() ?? '',
-      sequenceOrder: sequenceOrder < 0 ? 0 : sequenceOrder,
-      boundedContextId:
-          (raw['boundedContextId'] as String?)?.trim() ??
-          (raw['contextId'] as String?)?.trim() ??
-          '',
-      isPivotal: raw['isPivotal'] == true || raw['pivotal'] == true,
-      actorId: (raw['actorId'] as String?)?.trim() ?? '',
-      targetObjectId: (raw['targetObjectId'] as String?)?.trim() ?? '',
-      linkedRuleId: (raw['linkedRuleId'] as String?)?.trim() ?? '',
-      payloadFields: _stringList(raw['payloadFields'] ?? raw['fields']),
-      resolved: resolved,
-      answer: answer,
-      notes: (raw['notes'] as String?)?.trim() ?? '',
+  /// Désérialise un catalogue depuis JSON/YAML.
+  factory EventStormCatalog.fromJson(Object? raw) {
+    if (raw is! Map) return EventStormCatalog.empty;
+    final rawActors = raw['actors'];
+    final rawAggregates = raw['aggregates'];
+    final rawExternal = raw['external_systems'] ?? raw['externalSystems'];
+    final catalog = EventStormCatalog(
+      actors: [
+        if (rawActors is List)
+          for (final item in rawActors)
+            EventStormCatalogItem.fromJson(
+              item,
+              defaultPrefix: 'ACT',
+              includeDefaultActorType: true,
+            ),
+      ],
+      aggregates: [
+        if (rawAggregates is List)
+          for (final item in rawAggregates)
+            EventStormCatalogItem.fromJson(item, defaultPrefix: 'AGG'),
+      ],
+      externalSystems: [
+        if (rawExternal is List)
+          for (final item in rawExternal)
+            EventStormCatalogItem.fromJson(item, defaultPrefix: 'EXT'),
+      ],
     );
-    node.validate();
-    return node;
+    catalog.validate();
+    return catalog;
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is EventStormNode &&
-          other.id == id &&
-          other.code == code &&
-          other.kind == kind &&
-          other.title == title &&
-          other.description == description &&
-          other.sequenceOrder == sequenceOrder &&
-          other.boundedContextId == boundedContextId &&
-          other.isPivotal == isPivotal &&
-          other.actorId == actorId &&
-          other.targetObjectId == targetObjectId &&
-          other.linkedRuleId == linkedRuleId &&
-          listEquals(other.payloadFields, payloadFields) &&
-          other.resolved == resolved &&
-          other.answer == answer &&
-          other.notes == notes;
+      other is EventStormCatalog &&
+          listEquals(other.actors, actors) &&
+          listEquals(other.aggregates, aggregates) &&
+          listEquals(other.externalSystems, externalSystems);
 
   @override
   int get hashCode => Object.hash(
-    id,
-    code,
-    kind,
-    title,
-    description,
-    sequenceOrder,
-    boundedContextId,
-    isPivotal,
-    actorId,
-    targetObjectId,
-    linkedRuleId,
-    Object.hashAll(payloadFields),
-    resolved,
-    answer,
-    notes,
+    Object.hashAll(actors),
+    Object.hashAll(aggregates),
+    Object.hashAll(externalSystems),
   );
 }
 
-/// Liaison orientée entre deux cartes [EventStormNode] d'un flux.
+/// Rattachement backlog PO d'une étape (`step.backlog`).
 @immutable
-class EventStormLink {
-  /// Construit une liaison immuable.
-  const EventStormLink({
+class EventStormBacklog {
+  /// Construit un rattachement backlog immuable.
+  const EventStormBacklog({this.epic = '', this.story = ''});
+
+  /// Identifiant d'Epic (ex. `"EPIC-01"`).
+  final String epic;
+
+  /// Identifiant de User Story (ex. `"US-101"`).
+  final String story;
+
+  /// Vrai si ni epic ni story ne sont renseignés.
+  bool get isEmpty => epic.trim().isEmpty && story.trim().isEmpty;
+
+  /// Vrai si au moins epic ou story est renseigné.
+  bool get isNotEmpty => !isEmpty;
+
+  /// Retourne une copie modifiée.
+  EventStormBacklog copyWith({String? epic, String? story}) =>
+      EventStormBacklog(epic: epic ?? this.epic, story: story ?? this.story);
+
+  /// Sérialise au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (epic.isNotEmpty) 'epic': epic,
+    if (story.isNotEmpty) 'story': story,
+  };
+
+  /// Désérialise depuis JSON/YAML.
+  static EventStormBacklog? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final b = EventStormBacklog(
+      epic: _str(raw['epic']),
+      story: _str(raw['story']),
+    );
+    return b.isEmpty ? null : b;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormBacklog && other.epic == epic && other.story == story;
+
+  @override
+  int get hashCode => Object.hash(epic, story);
+}
+
+/// Lien causal entrant (`triggered_by`) : événement simple, `all_of` (ET) ou `any_of` (OU).
+@immutable
+class EventStormTrigger {
+  /// Construit un déclencheur simple sur un événement unique (local ou `CTX:EVT-*`).
+  EventStormTrigger.single(String eventId)
+    : mode = EventStormTriggerMode.single,
+      eventIds = List<String>.unmodifiable(<String>[eventId.trim()]);
+
+  /// Construit une synchronisation **ET** (`all_of: [...]`, min 2 événements).
+  EventStormTrigger.allOf(List<String> eventIds)
+    : mode = EventStormTriggerMode.allOf,
+      eventIds = List<String>.unmodifiable([
+        for (final id in eventIds)
+          if (id.trim().isNotEmpty) id.trim(),
+      ]);
+
+  /// Construit une convergence **OU** (`any_of: [...]`, min 2 événements).
+  EventStormTrigger.anyOf(List<String> eventIds)
+    : mode = EventStormTriggerMode.anyOf,
+      eventIds = List<String>.unmodifiable([
+        for (final id in eventIds)
+          if (id.trim().isNotEmpty) id.trim(),
+      ]);
+
+  /// Mode du déclencheur (`single`, `allOf`, `anyOf`).
+  final EventStormTriggerMode mode;
+
+  /// Liste des identifiants d'événements déclencheurs (1 pour `single`, >= 2 pour `allOf`/`anyOf`).
+  final List<String> eventIds;
+
+  /// Identifiant unique si [mode] est [EventStormTriggerMode.single].
+  String? get singleEventId =>
+      mode == EventStormTriggerMode.single && eventIds.isNotEmpty
+      ? eventIds.first
+      : null;
+
+  /// Résumé lisible (ex. `"EVT-01"`, `"ET (EVT-03A, EVT-04)"`, `"OU (EVT-02B, EVT-03B)"`).
+  String get summaryLabel => switch (mode) {
+    EventStormTriggerMode.single => eventIds.isEmpty ? '' : eventIds.first,
+    EventStormTriggerMode.allOf => 'ET (${eventIds.join(' + ')})',
+    EventStormTriggerMode.anyOf => 'OU (${eventIds.join(' | ')})',
+  };
+
+  /// Vérifie les invariants du déclencheur.
+  void validate() {
+    if (mode == EventStormTriggerMode.single) {
+      if (eventIds.length != 1 || eventIds.first.isEmpty) {
+        throw const FormatException(
+          'EventStormTrigger.single requiert exactement 1 identifiant d’événement.',
+        );
+      }
+    } else if (eventIds.length < 2) {
+      throw FormatException(
+        'EventStormTrigger.${mode.yamlKey} requiert au moins 2 identifiants d’événements.',
+      );
+    }
+  }
+
+  /// Sérialise au format exact du DSL v1.0 (`String` ou `{"all_of": [...]}` ou `{"any_of": [...]}`).
+  Object toJson() => switch (mode) {
+    EventStormTriggerMode.single => eventIds.first,
+    EventStormTriggerMode.allOf => <String, Object?>{'all_of': eventIds},
+    EventStormTriggerMode.anyOf => <String, Object?>{'any_of': eventIds},
+  };
+
+  /// Désérialise depuis JSON/YAML (`String` ou `Map` `all_of` / `any_of`).
+  static EventStormTrigger? fromJson(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return null;
+      return EventStormTrigger.single(trimmed);
+    }
+    if (raw is Map) {
+      final allOf = _stringList(raw['all_of'] ?? raw['allOf']);
+      if (allOf.isNotEmpty) {
+        final trigger = EventStormTrigger.allOf(allOf);
+        trigger.validate();
+        return trigger;
+      }
+      final anyOf = _stringList(raw['any_of'] ?? raw['anyOf']);
+      if (anyOf.isNotEmpty) {
+        final trigger = EventStormTrigger.anyOf(anyOf);
+        trigger.validate();
+        return trigger;
+      }
+    }
+    throw const FormatException(
+      'triggered_by doit être un identifiant EVT-* ou un objet all_of / any_of.',
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormTrigger &&
+          other.mode == mode &&
+          listEquals(other.eventIds, eventIds);
+
+  @override
+  int get hashCode => Object.hash(mode, Object.hashAll(eventIds));
+}
+
+/// Politique réactive automatique (`step.policy`, post-it Violet).
+@immutable
+class EventStormPolicy {
+  /// Construit une politique réactive immuable.
+  const EventStormPolicy({required this.name, required this.rule});
+
+  /// Nom court de la politique (ex. `"Déclencher l'encaissement"`).
+  final String name;
+
+  /// Règle métier formulée `Quand [événement], alors [commande]`.
+  final String rule;
+
+  /// Vérifie les invariants de la politique.
+  void validate() {
+    if (name.trim().isEmpty) {
+      throw const FormatException('EventStormPolicy.name ne peut pas être vide.');
+    }
+    if (rule.trim().isEmpty) {
+      throw const FormatException('EventStormPolicy.rule ne peut pas être vide.');
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormPolicy copyWith({String? name, String? rule}) =>
+      EventStormPolicy(name: name ?? this.name, rule: rule ?? this.rule);
+
+  /// Sérialise au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    'rule': rule,
+  };
+
+  /// Désérialise depuis JSON/YAML.
+  static EventStormPolicy? fromJson(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String && raw.trim().isNotEmpty) {
+      return EventStormPolicy(name: raw.trim(), rule: raw.trim());
+    }
+    if (raw is! Map) return null;
+    final name = _str(raw['name'] ?? raw['title']);
+    final rule = _str(raw['rule'] ?? raw['description']);
+    if (name.isEmpty && rule.isEmpty) return null;
+    final p = EventStormPolicy(
+      name: name.isNotEmpty ? name : rule,
+      rule: rule.isNotEmpty ? rule : name,
+    );
+    p.validate();
+    return p;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormPolicy && other.name == name && other.rule == rule;
+
+  @override
+  int get hashCode => Object.hash(name, rule);
+}
+
+/// Modèle de lecture / écran (`step.read_model`, post-it Vert).
+@immutable
+class EventStormReadModel {
+  /// Construit un Read Model immuable.
+  EventStormReadModel({
+    required this.name,
+    List<String> sourceEvents = const <String>[],
+    List<String> fields = const <String>[],
+  }) : sourceEvents = List<String>.unmodifiable(sourceEvents),
+       fields = List<String>.unmodifiable(fields);
+
+  /// Nom de l'écran ou de la projection (ex. `"Écran récapitulatif panier"`).
+  final String name;
+
+  /// Identifiants d'événements sources alimentant cette vue (ex. `["EVT-00"]`).
+  final List<String> sourceEvents;
+
+  /// Champs affichés à l'acteur (ex. `["lignes_panier", "montant_ttc"]`).
+  final List<String> fields;
+
+  /// Vérifie les invariants du Read Model.
+  void validate() {
+    if (name.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormReadModel.name ne peut pas être vide.',
+      );
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormReadModel copyWith({
+    String? name,
+    List<String>? sourceEvents,
+    List<String>? fields,
+  }) => EventStormReadModel(
+    name: name ?? this.name,
+    sourceEvents: sourceEvents ?? this.sourceEvents,
+    fields: fields ?? this.fields,
+  );
+
+  /// Sérialise au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    if (sourceEvents.isNotEmpty) 'source_events': sourceEvents,
+    if (fields.isNotEmpty) 'fields': fields,
+  };
+
+  /// Désérialise depuis JSON/YAML.
+  static EventStormReadModel? fromJson(Object? raw) {
+    if (raw == null) return null;
+    if (raw is String && raw.trim().isNotEmpty) {
+      return EventStormReadModel(name: raw.trim());
+    }
+    if (raw is! Map) return null;
+    final name = _str(raw['name'] ?? raw['title']);
+    if (name.isEmpty) return null;
+    final rm = EventStormReadModel(
+      name: name,
+      sourceEvents: _stringList(raw['source_events'] ?? raw['sourceEvents']),
+      fields: _stringList(raw['fields'] ?? raw['payloadFields']),
+    );
+    rm.validate();
+    return rm;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormReadModel &&
+          other.name == name &&
+          listEquals(other.sourceEvents, sourceEvents) &&
+          listEquals(other.fields, fields);
+
+  @override
+  int get hashCode => Object.hash(
+    name,
+    Object.hashAll(sourceEvents),
+    Object.hashAll(fields),
+  );
+}
+
+/// Commande métier (`step.command`, post-it Bleu) formulée à l'infinitif.
+@immutable
+class EventStormCommand {
+  /// Construit une commande immuable.
+  EventStormCommand({
+    required this.name,
+    List<String> payload = const <String>[],
+  }) : payload = List<String>.unmodifiable(payload);
+
+  /// Intention d'action formulée à l'infinitif (ex. `"Valider le panier"`).
+  final String name;
+
+  /// Paramètres d'entrée de la commande.
+  final List<String> payload;
+
+  /// Vérifie les invariants de la commande.
+  void validate() {
+    if (name.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormCommand.name ne peut pas être vide.',
+      );
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormCommand copyWith({String? name, List<String>? payload}) =>
+      EventStormCommand(
+        name: name ?? this.name,
+        payload: payload ?? this.payload,
+      );
+
+  /// Sérialise au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'name': name,
+    if (payload.isNotEmpty) 'payload': payload,
+  };
+
+  /// Désérialise depuis JSON/YAML.
+  factory EventStormCommand.fromJson(Object? raw) {
+    if (raw is String && raw.trim().isNotEmpty) {
+      return EventStormCommand(name: raw.trim());
+    }
+    if (raw is! Map) {
+      throw const FormatException(
+        'EventStormCommand doit être un objet JSON/YAML.',
+      );
+    }
+    final name = _str(raw['name'] ?? raw['title']);
+    final cmd = EventStormCommand(
+      name: name.isEmpty ? 'Exécuter la commande' : name,
+      payload: _stringList(raw['payload'] ?? raw['payloadFields']),
+    );
+    cmd.validate();
+    return cmd;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormCommand &&
+          other.name == name &&
+          listEquals(other.payload, payload);
+
+  @override
+  int get hashCode => Object.hash(name, Object.hashAll(payload));
+}
+
+/// Événement domaine (`domain_event`, post-it Orange) formulé au passé composé.
+@immutable
+class EventStormDomainEvent {
+  /// Construit un événement domaine immuable.
+  EventStormDomainEvent({
     required this.id,
-    required this.fromNodeId,
-    required this.toNodeId,
-    this.kind = EventStormLinkKind.triggers,
-    this.label = '',
+    required this.name,
+    List<String> data = const <String>[],
+  }) : data = List<String>.unmodifiable(data);
+
+  /// Identifiant canonique de l'événement (`EVT-01`, `EVT-02A`, ...).
+  final String id;
+
+  /// Fait accompli formulé au passé composé (ex. `"Panier validé"`).
+  final String name;
+
+  /// Données émises par l'événement.
+  final List<String> data;
+
+  /// Vérifie les invariants de l'événement domaine.
+  void validate() {
+    if (id.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormDomainEvent.id ne peut pas être vide.',
+      );
+    }
+    if (name.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormDomainEvent.name ne peut pas être vide.',
+      );
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormDomainEvent copyWith({
+    String? id,
+    String? name,
+    List<String>? data,
+  }) => EventStormDomainEvent(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    data: data ?? this.data,
+  );
+
+  /// Sérialise au format DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'name': name,
+    if (data.isNotEmpty) 'data': data,
+  };
+
+  /// Désérialise depuis JSON/YAML.
+  factory EventStormDomainEvent.fromJson(
+    Object? raw, {
+    String fallbackId = 'EVT-01',
+  }) {
+    if (raw is! Map) {
+      throw const FormatException(
+        'EventStormDomainEvent doit être un objet JSON/YAML.',
+      );
+    }
+    final id = _str(raw['id']);
+    final name = _str(raw['name'] ?? raw['title']);
+    final evt = EventStormDomainEvent(
+      id: id.isEmpty ? fallbackId : id,
+      name: name.isEmpty ? 'Événement émis' : name,
+      data: _stringList(raw['data'] ?? raw['payloadFields']),
+    );
+    evt.validate();
+    return evt;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormDomainEvent &&
+          other.id == id &&
+          other.name == name &&
+          listEquals(other.data, data);
+
+  @override
+  int get hashCode => Object.hash(id, name, Object.hashAll(data));
+}
+
+/// Branche d'alternative exclusive en sortie (`step.outcomes[]`, OU exclusif).
+@immutable
+class EventStormOutcome {
+  /// Construit une branche d'issue immuable.
+  const EventStormOutcome({
+    required this.condition,
+    this.isError = false,
+    required this.domainEvent,
   });
 
-  /// Identifiant unique de la liaison.
-  final String id;
+  /// Condition métier déclenchant cette issue.
+  final String condition;
 
-  /// Identifiant du nœud source.
-  final String fromNodeId;
+  /// Indique si cette branche correspond à un cas d'erreur / échec métier.
+  final bool isError;
 
-  /// Identifiant du nœud cible.
-  final String toNodeId;
+  /// Événement domaine émis sur cette branche.
+  final EventStormDomainEvent domainEvent;
 
-  /// Nature sémantique de la liaison.
-  final EventStormLinkKind kind;
-
-  /// Libellé optionnel affiché sur le diagramme Mermaid.
-  final String label;
-
-  /// Vérifie les invariants de la liaison.
+  /// Vérifie les invariants de l'issue.
   void validate() {
-    if (id.trim().isEmpty) {
-      throw const FormatException('EventStormLink.id ne peut pas être vide.');
-    }
-    if (fromNodeId.trim().isEmpty || toNodeId.trim().isEmpty) {
+    if (condition.trim().isEmpty) {
       throw const FormatException(
-        'EventStormLink.fromNodeId et toNodeId ne peuvent pas être vides.',
+        'EventStormOutcome.condition ne peut pas être vide.',
       );
     }
+    domainEvent.validate();
   }
 
   /// Retourne une copie modifiée.
-  EventStormLink copyWith({
-    String? id,
-    String? fromNodeId,
-    String? toNodeId,
-    EventStormLinkKind? kind,
-    String? label,
-  }) => EventStormLink(
-    id: id ?? this.id,
-    fromNodeId: fromNodeId ?? this.fromNodeId,
-    toNodeId: toNodeId ?? this.toNodeId,
-    kind: kind ?? this.kind,
-    label: label ?? this.label,
+  EventStormOutcome copyWith({
+    String? condition,
+    bool? isError,
+    EventStormDomainEvent? domainEvent,
+  }) => EventStormOutcome(
+    condition: condition ?? this.condition,
+    isError: isError ?? this.isError,
+    domainEvent: domainEvent ?? this.domainEvent,
   );
 
-  /// Sérialise la liaison en JSON.
+  /// Sérialise au format DSL v1.0.
   Map<String, Object?> toJson() => <String, Object?>{
-    'id': id,
-    'fromNodeId': fromNodeId,
-    'toNodeId': toNodeId,
-    'kind': kind.name,
-    if (label.isNotEmpty) 'label': label,
+    'condition': condition,
+    'is_error': isError,
+    'domain_event': domainEvent.toJson(),
   };
 
-  /// Désérialise une liaison depuis JSON.
-  factory EventStormLink.fromJson(Object? raw) {
+  /// Désérialise depuis JSON/YAML.
+  factory EventStormOutcome.fromJson(
+    Object? raw, {
+    String fallbackEventId = 'EVT-01A',
+  }) {
     if (raw is! Map) {
-      throw const FormatException('EventStormLink doit être un objet JSON.');
+      throw const FormatException(
+        'EventStormOutcome doit être un objet JSON/YAML.',
+      );
     }
-    final fromId =
-        ((raw['fromNodeId'] ?? raw['from'] ?? raw['source']) as String?)
-            ?.trim() ??
-        '';
-    final toId =
-        ((raw['toNodeId'] ?? raw['to'] ?? raw['target']) as String?)?.trim() ??
-        '';
-    final rawId = (raw['id'] as String?)?.trim() ?? '';
-    final link = EventStormLink(
-      id: rawId.isEmpty ? 'esl_${fromId}_$toId'.hashCode.abs().toString() : rawId,
-      fromNodeId: fromId,
-      toNodeId: toId,
-      kind: EventStormLinkKind.fromJson(raw['kind']),
-      label: (raw['label'] as String?)?.trim() ?? '',
+    final condition = _str(raw['condition']);
+    final isError = raw['is_error'] == true || raw['isError'] == true;
+    final evt = EventStormDomainEvent.fromJson(
+      raw['domain_event'] ?? raw['domainEvent'],
+      fallbackId: fallbackEventId,
     );
-    link.validate();
-    return link;
+    final outcome = EventStormOutcome(
+      condition: condition.isEmpty ? 'Condition métier' : condition,
+      isError: isError,
+      domainEvent: evt,
+    );
+    outcome.validate();
+    return outcome;
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is EventStormLink &&
-          other.id == id &&
-          other.fromNodeId == fromNodeId &&
-          other.toNodeId == toNodeId &&
-          other.kind == kind &&
-          other.label == label;
+      other is EventStormOutcome &&
+          other.condition == condition &&
+          other.isError == isError &&
+          other.domainEvent == domainEvent;
 
   @override
-  int get hashCode => Object.hash(id, fromNodeId, toNodeId, kind, label);
+  int get hashCode => Object.hash(condition, isError, domainEvent);
 }
 
-/// Tableau / flux chronologique d'Event Storming (`ES-001`, `ES-002`...).
+/// Question ouverte, blocage ou risque (`step.hotspots[]`, post-it Rose vif).
 @immutable
-class EventStormBoard {
-  /// Construit un flux chronologique immuable.
-  EventStormBoard({
+class EventStormHotspot {
+  /// Construit un hotspot immuable.
+  const EventStormHotspot({
     required this.id,
-    required this.code,
-    required this.title,
-    this.description = '',
-    List<String> boundedContextIds = const <String>[],
-    List<String> requirementIds = const <String>[],
-    List<String> useCaseIds = const <String>[],
-    List<EventStormNode> nodes = const <EventStormNode>[],
-    List<EventStormLink> links = const <EventStormLink>[],
-    List<String> refinementNotes = const <String>[],
-  }) : boundedContextIds = List<String>.unmodifiable(boundedContextIds),
-       requirementIds = List<String>.unmodifiable(requirementIds),
-       useCaseIds = List<String>.unmodifiable(useCaseIds),
-       nodes = List<EventStormNode>.unmodifiable(nodes),
-       links = List<EventStormLink>.unmodifiable(links),
-       refinementNotes = List<String>.unmodifiable(refinementNotes);
+    required this.question,
+    this.severity = EventStormHotspotSeverity.medium,
+    this.owner = '',
+    this.status = EventStormHotspotStatus.open,
+  });
 
-  /// Identifiant unique du flux.
+  /// Identifiant canonique (`HS-01`, `HS-02`, ...).
   final String id;
 
-  /// Code séquentiel (`ES-001`, `ES-002`...).
-  final String code;
+  /// Question ouverte ou risque identifié.
+  final String question;
 
-  /// Nom du processus métier ou scénario exploré.
-  final String title;
+  /// Niveau de sévérité (`low`, `medium`, `high`, `blocker`).
+  final EventStormHotspotSeverity severity;
 
-  /// Contexte ou objectif du flux.
-  final String description;
+  /// Responsable de la résolution (ex. `"PO + Métier Pricing"`).
+  final String owner;
 
-  /// Bounded Contexts traversés par ce flux.
-  final List<String> boundedContextIds;
+  /// Statut (`open` ou `resolved`).
+  final EventStormHotspotStatus status;
 
-  /// Codes ou identifiants des exigences (`EXF-xxx`) couvertes.
-  final List<String> requirementIds;
+  /// Raccourci vrai si le hotspot est résolu.
+  bool get isResolved => status == EventStormHotspotStatus.resolved;
 
-  /// Identifiants ou titres des cas d'usage (`SpecUseCase`) associés.
-  final List<String> useCaseIds;
+  /// Raccourci vrai si le hotspot est ouvert.
+  bool get isOpen => status == EventStormHotspotStatus.open;
 
-  /// Cartes post-its composant la frise chronologique.
-  final List<EventStormNode> nodes;
-
-  /// Liaisons orientées entre les cartes du flux.
-  final List<EventStormLink> links;
-
-  /// Notes de synthèse ou découvertes issues de l'atelier.
-  final List<String> refinementNotes;
-
-  /// Cartes triées par [EventStormNode.sequenceOrder] croissant en préservant l'ordre d'insertion.
-  List<EventStormNode> get sortedNodes {
-    final indexed = nodes.indexed.toList()
-      ..sort((a, b) {
-        final cmp = a.$2.sequenceOrder.compareTo(b.$2.sequenceOrder);
-        return cmp != 0 ? cmp : a.$1.compareTo(b.$1);
-      });
-    return [for (final entry in indexed) entry.$2];
-  }
-
-  /// Nombre d'événements domaine du flux.
-  int get domainEventCount =>
-      nodes.where((n) => n.kind == EventStormNodeKind.domainEvent).length;
-
-  /// Nombre de commandes du flux.
-  int get commandCount =>
-      nodes.where((n) => n.kind == EventStormNodeKind.command).length;
-
-  /// Nombre de politiques réactives du flux.
-  int get policyCount =>
-      nodes.where((n) => n.kind == EventStormNodeKind.policy).length;
-
-  /// Nombre de hotspots encore ouverts.
-  int get openHotspotCount => nodes
-      .where((n) => n.kind == EventStormNodeKind.hotspot && !n.resolved)
-      .length;
-
-  /// Vérifie les invariants du flux et de ses cartes/liaisons.
+  /// Vérifie les invariants du hotspot.
   void validate() {
     if (id.trim().isEmpty) {
-      throw const FormatException('EventStormBoard.id ne peut pas être vide.');
+      throw const FormatException('EventStormHotspot.id ne peut pas être vide.');
     }
-    if (code.trim().isEmpty) {
+    if (question.trim().isEmpty) {
       throw const FormatException(
-        'EventStormBoard.code ne peut pas être vide.',
+        'EventStormHotspot.question ne peut pas être vide.',
       );
-    }
-    if (title.trim().isEmpty) {
-      throw const FormatException(
-        'EventStormBoard.title ne peut pas être vide.',
-      );
-    }
-    final nodeIds = <String>{};
-    for (final node in nodes) {
-      node.validate();
-      if (!nodeIds.add(node.id)) {
-        throw FormatException('Carte Event Storming dupliquée : ${node.id}');
-      }
-    }
-    final linkIds = <String>{};
-    for (final link in links) {
-      link.validate();
-      if (!linkIds.add(link.id)) {
-        throw FormatException('Liaison Event Storming dupliquée : ${link.id}');
-      }
     }
   }
 
   /// Retourne une copie modifiée.
-  EventStormBoard copyWith({
+  EventStormHotspot copyWith({
     String? id,
-    String? code,
-    String? title,
-    String? description,
-    List<String>? boundedContextIds,
-    List<String>? requirementIds,
-    List<String>? useCaseIds,
-    List<EventStormNode>? nodes,
-    List<EventStormLink>? links,
-    List<String>? refinementNotes,
-  }) => EventStormBoard(
+    String? question,
+    EventStormHotspotSeverity? severity,
+    String? owner,
+    EventStormHotspotStatus? status,
+  }) => EventStormHotspot(
     id: id ?? this.id,
-    code: code ?? this.code,
-    title: title ?? this.title,
-    description: description ?? this.description,
-    boundedContextIds: boundedContextIds ?? this.boundedContextIds,
-    requirementIds: requirementIds ?? this.requirementIds,
-    useCaseIds: useCaseIds ?? this.useCaseIds,
-    nodes: nodes ?? this.nodes,
-    links: links ?? this.links,
-    refinementNotes: refinementNotes ?? this.refinementNotes,
+    question: question ?? this.question,
+    severity: severity ?? this.severity,
+    owner: owner ?? this.owner,
+    status: status ?? this.status,
   );
 
-  /// Sérialise le flux en JSON.
+  /// Sérialise au format DSL v1.0.
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
-    'code': code,
-    'title': title,
-    if (description.isNotEmpty) 'description': description,
-    if (boundedContextIds.isNotEmpty) 'boundedContextIds': boundedContextIds,
-    if (requirementIds.isNotEmpty) 'requirementIds': requirementIds,
-    if (useCaseIds.isNotEmpty) 'useCaseIds': useCaseIds,
-    if (nodes.isNotEmpty) 'nodes': [for (final n in nodes) n.toJson()],
-    if (links.isNotEmpty) 'links': [for (final l in links) l.toJson()],
-    if (refinementNotes.isNotEmpty) 'refinementNotes': refinementNotes,
+    'question': question,
+    'severity': severity.yamlValue,
+    if (owner.isNotEmpty) 'owner': owner,
+    'status': status.yamlValue,
   };
 
-  /// Désérialise un flux depuis JSON.
-  factory EventStormBoard.fromJson(Object? raw) {
+  /// Désérialise depuis JSON/YAML.
+  factory EventStormHotspot.fromJson(
+    Object? raw, {
+    String fallbackId = 'HS-01',
+  }) {
     if (raw is! Map) {
-      throw const FormatException('EventStormBoard doit être un objet JSON.');
+      throw const FormatException(
+        'EventStormHotspot doit être un objet JSON/YAML.',
+      );
     }
-    final title =
-        ((raw['title'] ?? raw['name'] ?? raw['flow']) as String?)?.trim() ?? '';
-    final effectiveTitle = title.isEmpty ? 'Flux Event Storming' : title;
-    final rawId = (raw['id'] as String?)?.trim() ?? '';
-    final rawCode = (raw['code'] as String?)?.trim() ?? '';
-    final board = EventStormBoard(
-      id: rawId.isEmpty ? 'es_${effectiveTitle.hashCode.abs()}' : rawId,
-      code: rawCode.isEmpty ? 'ES-001' : rawCode,
-      title: effectiveTitle,
-      description: (raw['description'] as String?)?.trim() ?? '',
-      boundedContextIds: _stringList(raw['boundedContextIds']),
-      requirementIds: _stringList(raw['requirementIds']),
-      useCaseIds: _stringList(raw['useCaseIds']),
-      nodes: [
-        if (raw['nodes'] is List)
-          for (final item in raw['nodes'] as List) EventStormNode.fromJson(item),
-      ],
-      links: [
-        if (raw['links'] is List)
-          for (final item in raw['links'] as List) EventStormLink.fromJson(item),
-      ],
-      refinementNotes: _stringList(raw['refinementNotes']),
+    final id = _str(raw['id']);
+    final question = _str(raw['question'] ?? raw['title']);
+    final hotspot = EventStormHotspot(
+      id: id.isEmpty ? fallbackId : id,
+      question: question.isEmpty ? 'Question ouverte à clarifier' : question,
+      severity: EventStormHotspotSeverity.fromJson(raw['severity']),
+      owner: _str(raw['owner']),
+      status: EventStormHotspotStatus.fromJson(
+        raw['status'] ?? raw['resolved'],
+      ),
     );
-    board.validate();
-    return board;
+    hotspot.validate();
+    return hotspot;
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is EventStormBoard &&
+      other is EventStormHotspot &&
           other.id == id &&
-          other.code == code &&
-          other.title == title &&
-          other.description == description &&
-          listEquals(other.boundedContextIds, boundedContextIds) &&
-          listEquals(other.requirementIds, requirementIds) &&
-          listEquals(other.useCaseIds, useCaseIds) &&
-          listEquals(other.nodes, nodes) &&
-          listEquals(other.links, links) &&
-          listEquals(other.refinementNotes, refinementNotes);
+          other.question == question &&
+          other.severity == severity &&
+          other.owner == owner &&
+          other.status == status;
+
+  @override
+  int get hashCode => Object.hash(id, question, severity, owner, status);
+}
+
+/// Étape chronologique (`flow[]`) d'un document Event Storming DSL v1.0.
+@immutable
+class EventStormStep {
+  /// Construit une étape immuable.
+  EventStormStep({
+    required this.step,
+    this.backlog,
+    this.triggeredBy,
+    this.policy,
+    this.readModel,
+    this.actor = '',
+    required this.command,
+    this.aggregate = '',
+    this.externalSystem = '',
+    this.domainEvent,
+    List<EventStormOutcome> outcomes = const <EventStormOutcome>[],
+    List<EventStormHotspot> hotspots = const <EventStormHotspot>[],
+  }) : outcomes = List<EventStormOutcome>.unmodifiable(outcomes),
+       hotspots = List<EventStormHotspot>.unmodifiable(hotspots);
+
+  /// Numéro d'ordre chronologique (>= 1).
+  final int step;
+
+  /// Rattachement backlog optionnel (`epic`, `story`).
+  final EventStormBacklog? backlog;
+
+  /// Lien causal entrant (`EVT-*`, `all_of`, `any_of` ou `CTX:EVT-*`).
+  final EventStormTrigger? triggeredBy;
+
+  /// Politique réactive automatique (post-it Violet).
+  final EventStormPolicy? policy;
+
+  /// Écran / données consultées (post-it Vert).
+  final EventStormReadModel? readModel;
+
+  /// Identifiant catalogue de l'acteur déclencheur (`ACT-*`, Petit Jaune).
+  final String actor;
+
+  /// Commande métier (post-it Bleu, obligatoire).
+  final EventStormCommand command;
+
+  /// Identifiant catalogue de l'agrégat cible (`AGG-*`, Grand Jaune).
+  final String aggregate;
+
+  /// Identifiant catalogue du système externe cible (`EXT-*`, Rose pâle).
+  final String externalSystem;
+
+  /// Événement domaine unique (mutuellement exclusif avec [outcomes]).
+  final EventStormDomainEvent? domainEvent;
+
+  /// Alternative exclusive en sortie (min 2 items, mutuellement exclusif avec [domainEvent]).
+  final List<EventStormOutcome> outcomes;
+
+  /// Hotspots rattachés à cette étape (Rose vif).
+  final List<EventStormHotspot> hotspots;
+
+  /// Vrai si cette étape utilise un embranchement exclusif `outcomes[]`.
+  bool get hasOutcomes => outcomes.isNotEmpty;
+
+  /// Liste de tous les événements émis par cette étape (1 ou plusieurs via `outcomes`).
+  List<EventStormDomainEvent> get emittedEvents => [
+    ?domainEvent,
+    for (final o in outcomes) o.domainEvent,
+  ];
+
+  /// Nombre de hotspots ouverts sur cette étape.
+  int get openHotspotCount => hotspots.where((h) => h.isOpen).length;
+
+  /// Vérifie les invariants structurels de l'étape conformes au schéma DSL v1.0.
+  void validate() {
+    if (step < 1) {
+      throw const FormatException('EventStormStep.step doit être >= 1.');
+    }
+    triggeredBy?.validate();
+    policy?.validate();
+    readModel?.validate();
+    command.validate();
+
+    final hasEvent = domainEvent != null;
+    final hasOut = outcomes.isNotEmpty;
+    if (hasEvent == hasOut) {
+      throw FormatException(
+        'L’étape $step doit définir exactement l’un de `domain_event` ou `outcomes` (mutuellement exclusifs).',
+      );
+    }
+    if (hasEvent) {
+      domainEvent!.validate();
+    } else {
+      if (outcomes.length < 2) {
+        throw FormatException(
+          'L’étape $step : `outcomes` doit contenir au moins 2 branches exclusives.',
+        );
+      }
+      for (final outcome in outcomes) {
+        outcome.validate();
+      }
+    }
+    for (final hotspot in hotspots) {
+      hotspot.validate();
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormStep copyWith({
+    int? step,
+    EventStormBacklog? backlog,
+    bool clearBacklog = false,
+    EventStormTrigger? triggeredBy,
+    bool clearTriggeredBy = false,
+    EventStormPolicy? policy,
+    bool clearPolicy = false,
+    EventStormReadModel? readModel,
+    bool clearReadModel = false,
+    String? actor,
+    EventStormCommand? command,
+    String? aggregate,
+    String? externalSystem,
+    EventStormDomainEvent? domainEvent,
+    bool clearDomainEvent = false,
+    List<EventStormOutcome>? outcomes,
+    List<EventStormHotspot>? hotspots,
+  }) => EventStormStep(
+    step: step ?? this.step,
+    backlog: clearBacklog ? null : (backlog ?? this.backlog),
+    triggeredBy: clearTriggeredBy ? null : (triggeredBy ?? this.triggeredBy),
+    policy: clearPolicy ? null : (policy ?? this.policy),
+    readModel: clearReadModel ? null : (readModel ?? this.readModel),
+    actor: actor ?? this.actor,
+    command: command ?? this.command,
+    aggregate: aggregate ?? this.aggregate,
+    externalSystem: externalSystem ?? this.externalSystem,
+    domainEvent: clearDomainEvent ? null : (domainEvent ?? this.domainEvent),
+    outcomes: outcomes ?? this.outcomes,
+    hotspots: hotspots ?? this.hotspots,
+  );
+
+  /// Sérialise l'étape au format exact du DSL v1.0.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'step': step,
+    if (backlog != null && backlog!.isNotEmpty) 'backlog': backlog!.toJson(),
+    if (triggeredBy != null) 'triggered_by': triggeredBy!.toJson(),
+    if (policy != null) 'policy': policy!.toJson(),
+    if (readModel != null) 'read_model': readModel!.toJson(),
+    if (actor.isNotEmpty) 'actor': actor,
+    'command': command.toJson(),
+    if (aggregate.isNotEmpty) 'aggregate': aggregate,
+    if (externalSystem.isNotEmpty) 'external_system': externalSystem,
+    if (domainEvent != null) 'domain_event': domainEvent!.toJson(),
+    if (outcomes.isNotEmpty)
+      'outcomes': [for (final o in outcomes) o.toJson()],
+    if (hotspots.isNotEmpty)
+      'hotspots': [for (final h in hotspots) h.toJson()],
+  };
+
+  /// Désérialise une étape depuis JSON/YAML.
+  factory EventStormStep.fromJson(Object? raw, {int fallbackStep = 1}) {
+    if (raw is! Map) {
+      throw const FormatException('EventStormStep doit être un objet JSON/YAML.');
+    }
+    final rawStep = raw['step'];
+    final stepNum = rawStep is int
+        ? rawStep
+        : (rawStep is num ? rawStep.toInt() : fallbackStep);
+    final rawOutcomes = raw['outcomes'];
+    final outcomes = <EventStormOutcome>[
+      if (rawOutcomes is List)
+        for (var i = 0; i < rawOutcomes.length; i++)
+          EventStormOutcome.fromJson(
+            rawOutcomes[i],
+            fallbackEventId:
+                'EVT-${stepNum.toString().padLeft(2, '0')}${String.fromCharCode(65 + (i % 26))}',
+          ),
+    ];
+    final rawEvent = raw['domain_event'] ?? raw['domainEvent'];
+    final domainEvent = outcomes.isEmpty && rawEvent != null
+        ? EventStormDomainEvent.fromJson(
+            rawEvent,
+            fallbackId: 'EVT-${stepNum.toString().padLeft(2, '0')}',
+          )
+        : null;
+    final rawHotspots = raw['hotspots'];
+    final hotspots = <EventStormHotspot>[
+      if (rawHotspots is List)
+        for (var i = 0; i < rawHotspots.length; i++)
+          EventStormHotspot.fromJson(
+            rawHotspots[i],
+            fallbackId: 'HS-${(i + 1).toString().padLeft(2, '0')}',
+          ),
+    ];
+
+    final stepObj = EventStormStep(
+      step: stepNum < 1 ? fallbackStep : stepNum,
+      backlog: EventStormBacklog.fromJson(raw['backlog']),
+      triggeredBy: EventStormTrigger.fromJson(
+        raw['triggered_by'] ?? raw['triggeredBy'],
+      ),
+      policy: EventStormPolicy.fromJson(raw['policy']),
+      readModel: EventStormReadModel.fromJson(
+        raw['read_model'] ?? raw['readModel'],
+      ),
+      actor: _str(raw['actor']),
+      command: EventStormCommand.fromJson(raw['command']),
+      aggregate: _str(raw['aggregate']),
+      externalSystem: _str(raw['external_system'] ?? raw['externalSystem']),
+      domainEvent: domainEvent,
+      outcomes: outcomes,
+      hotspots: hotspots,
+    );
+    stepObj.validate();
+    return stepObj;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormStep &&
+          other.step == step &&
+          other.backlog == backlog &&
+          other.triggeredBy == triggeredBy &&
+          other.policy == policy &&
+          other.readModel == readModel &&
+          other.actor == actor &&
+          other.command == command &&
+          other.aggregate == aggregate &&
+          other.externalSystem == externalSystem &&
+          other.domainEvent == domainEvent &&
+          listEquals(other.outcomes, outcomes) &&
+          listEquals(other.hotspots, hotspots);
 
   @override
   int get hashCode => Object.hash(
-    id,
-    code,
-    title,
-    description,
-    Object.hashAll(boundedContextIds),
-    Object.hashAll(requirementIds),
-    Object.hashAll(useCaseIds),
-    Object.hashAll(nodes),
-    Object.hashAll(links),
-    Object.hashAll(refinementNotes),
+    step,
+    backlog,
+    triggeredBy,
+    policy,
+    readModel,
+    actor,
+    command,
+    aggregate,
+    externalSystem,
+    domainEvent,
+    Object.hashAll(outcomes),
+    Object.hashAll(hotspots),
   );
 }
 
-/// Conteneur racine immuable de l'étape Event Storming d'un [SpecForgeProject].
+/// Document Event Storming DSL v1.0 correspondant à **un Bounded Context**
+/// (persisté en 1 fichier `<id>.es.yaml`).
 @immutable
-class EventStormingSpec {
-  /// Construit un modèle complet d'Event Storming.
-  EventStormingSpec({
-    List<EventStormBoundedContext> boundedContexts =
-        const <EventStormBoundedContext>[],
-    List<EventStormBoard> flows = const <EventStormBoard>[],
-  }) : boundedContexts = List<EventStormBoundedContext>.unmodifiable(
-         boundedContexts,
-       ),
-       flows = List<EventStormBoard>.unmodifiable(flows);
+class EventStormDocument {
+  /// Construit un document Event Storming immuable.
+  EventStormDocument({
+    required this.id,
+    this.dslVersion = currentDslVersion,
+    required this.meta,
+    EventStormCatalog? catalog,
+    List<EventStormStep> flow = const <EventStormStep>[],
+  }) : catalog = catalog ?? EventStormCatalog.empty,
+       flow = List<EventStormStep>.unmodifiable(flow);
 
-  /// Instance vide par défaut (projets sans Event Storming).
-  static final EventStormingSpec empty = EventStormingSpec();
+  /// Version de la grammaire Event Storming DSL supportée.
+  static const String currentDslVersion = '1.0';
 
-  /// Contextes bornés (Bounded Contexts DDD) identifiés pour le projet.
-  final List<EventStormBoundedContext> boundedContexts;
+  /// Identifiant / slug de fichier du Bounded Context (ex. `"gestion-commandes"`).
+  final String id;
 
-  /// Flux chronologiques Event Storming (`ES-001`, `ES-002`...).
-  final List<EventStormBoard> flows;
+  /// Version de la grammaire (`"1.0"`).
+  final String dslVersion;
 
-  /// Vrai si au moins un contexte borné ou un flux est renseigné.
-  bool get hasContent => boundedContexts.isNotEmpty || flows.isNotEmpty;
+  /// Cadre de l'atelier (`meta`).
+  final EventStormMeta meta;
 
-  /// Nombre total de cartes across tous les flux.
-  int get totalNodeCount =>
-      flows.fold<int>(0, (sum, flow) => sum + flow.nodes.length);
+  /// Légende du mur (`catalog` : `actors`, `aggregates`, `external_systems`).
+  final EventStormCatalog catalog;
 
-  /// Nombre total d'événements domaine.
-  int get totalEventCount =>
-      flows.fold<int>(0, (sum, flow) => sum + flow.domainEventCount);
+  /// Colonne chronologique ordonnée des étapes (`flow[]`).
+  final List<EventStormStep> flow;
 
-  /// Nombre total de commandes.
-  int get totalCommandCount =>
-      flows.fold<int>(0, (sum, flow) => sum + flow.commandCount);
+  /// Nom de fichier YAML canonique (ex. `gestion-commandes.es.yaml`).
+  String get fileName => '${_slugify(id)}.es.yaml';
+
+  /// Étapes triées par numéro `step` croissant.
+  List<EventStormStep> get sortedSteps {
+    final copy = List<EventStormStep>.from(flow)
+      ..sort((a, b) => a.step.compareTo(b.step));
+    return copy;
+  }
+
+  /// Tous les événements domaine émis dans ce Bounded Context (directs + `outcomes`).
+  List<EventStormDomainEvent> get allDomainEvents => [
+    for (final s in sortedSteps) ...s.emittedEvents,
+  ];
+
+  /// Tous les hotspots de ce document avec leur numéro d'étape associé.
+  List<({int stepNumber, EventStormHotspot hotspot})> get allHotspots => [
+    for (final s in sortedSteps)
+      for (final h in s.hotspots) (stepNumber: s.step, hotspot: h),
+  ];
+
+  /// Nombre total d'événements domaine émis.
+  int get domainEventCount => allDomainEvents.length;
+
+  /// Nombre total de commandes (= nombre d'étapes).
+  int get commandCount => flow.length;
 
   /// Nombre total de politiques réactives.
-  int get totalPolicyCount =>
-      flows.fold<int>(0, (sum, flow) => sum + flow.policyCount);
+  int get policyCount => flow.where((s) => s.policy != null).length;
 
   /// Nombre total de hotspots encore ouverts.
   int get openHotspotCount =>
-      flows.fold<int>(0, (sum, flow) => sum + flow.openHotspotCount);
+      flow.fold<int>(0, (sum, s) => sum + s.openHotspotCount);
 
-  /// Recherche un contexte borné par id, code ou nom (insensible à la casse).
-  EventStormBoundedContext? findBoundedContext(String idOrCodeOrName) {
-    final needle = idOrCodeOrName.trim().toLowerCase();
+  /// Recherche une étape par son numéro `step`.
+  EventStormStep? findStep(int stepNumber) {
+    for (final s in flow) {
+      if (s.step == stepNumber) return s;
+    }
+    return null;
+  }
+
+  /// Vérifie les invariants du document Event Storming.
+  void validate() {
+    if (id.trim().isEmpty) {
+      throw const FormatException(
+        'EventStormDocument.id ne peut pas être vide.',
+      );
+    }
+    if (dslVersion.trim() != currentDslVersion) {
+      throw FormatException(
+        'Version DSL Event Storming non supportée : "$dslVersion" (attendu "$currentDslVersion").',
+      );
+    }
+    meta.validate();
+    catalog.validate();
+    final stepNumbers = <int>{};
+    for (final s in flow) {
+      s.validate();
+      if (!stepNumbers.add(s.step)) {
+        throw FormatException(
+          'Numéro d’étape dupliqué (${s.step}) dans le Bounded Context "${meta.boundedContext}".',
+        );
+      }
+    }
+  }
+
+  /// Retourne une copie modifiée.
+  EventStormDocument copyWith({
+    String? id,
+    String? dslVersion,
+    EventStormMeta? meta,
+    EventStormCatalog? catalog,
+    List<EventStormStep>? flow,
+  }) => EventStormDocument(
+    id: id ?? this.id,
+    dslVersion: dslVersion ?? this.dslVersion,
+    meta: meta ?? this.meta,
+    catalog: catalog ?? this.catalog,
+    flow: flow ?? this.flow,
+  );
+
+  /// Sérialise le document au format **strict** du schéma `es-dsl.schema.json`
+  /// (`{"event_storming": {...}}`, sans aucune propriété supplémentaire).
+  Map<String, Object?> toDslJson() => <String, Object?>{
+    'event_storming': <String, Object?>{
+      'dsl_version': dslVersion,
+      'meta': meta.toJson(),
+      if (catalog.isNotEmpty) 'catalog': catalog.toJson(),
+      'flow': [for (final s in sortedSteps) s.toJson()],
+    },
+  };
+
+  /// Sérialise le document pour le stockage JSON interne / contexte IA.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    ...toDslJson(),
+  };
+
+  /// Désérialise un document depuis JSON/YAML (accepte `{id?, event_storming: {...}}`
+  /// ou la forme aplatie `{id?, dsl_version, meta, catalog, flow}`).
+  factory EventStormDocument.fromJson(
+    Object? raw, {
+    String? idHint,
+    String fallbackDomain = 'Domaine métier',
+  }) {
+    if (raw is! Map) {
+      throw const FormatException(
+        'EventStormDocument doit être un objet JSON/YAML.',
+      );
+    }
+    final inner = raw['event_storming'] is Map
+        ? raw['event_storming'] as Map
+        : (raw['eventStorming'] is Map ? raw['eventStorming'] as Map : raw);
+    final dslVersion = _str(inner['dsl_version'] ?? inner['dslVersion']);
+    final meta = EventStormMeta.fromJson(
+      inner['meta'],
+      fallbackDomain: fallbackDomain,
+      fallbackContext:
+          _str(raw['bounded_context'] ?? raw['title'] ?? raw['name']).isNotEmpty
+          ? _str(raw['bounded_context'] ?? raw['title'] ?? raw['name'])
+          : (idHint ?? 'Contexte métier'),
+    );
+    final rawId = _str(raw['id']).isNotEmpty
+        ? _str(raw['id'])
+        : ((idHint != null && idHint.trim().isNotEmpty)
+              ? idHint.trim()
+              : _slugify(meta.boundedContext));
+    final catalog = EventStormCatalog.fromJson(inner['catalog']);
+    final rawFlow = inner['flow'];
+    final steps = <EventStormStep>[
+      if (rawFlow is List)
+        for (var i = 0; i < rawFlow.length; i++)
+          EventStormStep.fromJson(rawFlow[i], fallbackStep: i + 1),
+    ];
+    final doc = EventStormDocument(
+      id: rawId.isEmpty ? 'contexte-metier' : rawId,
+      dslVersion: dslVersion.isEmpty
+          ? EventStormDocument.currentDslVersion
+          : dslVersion,
+      meta: meta,
+      catalog: catalog,
+      flow: steps,
+    );
+    doc.validate();
+    return doc;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EventStormDocument &&
+          other.id == id &&
+          other.dslVersion == dslVersion &&
+          other.meta == meta &&
+          other.catalog == catalog &&
+          listEquals(other.flow, flow);
+
+  @override
+  int get hashCode =>
+      Object.hash(id, dslVersion, meta, catalog, Object.hashAll(flow));
+}
+
+/// Conteneur racine immuable de l'étape Event Storming d'un [SpecForgeProject] :
+/// regroupe 1 [EventStormDocument] (`.es.yaml`) par Bounded Context.
+@immutable
+class EventStormingSpec {
+  /// Construit un conteneur d'Event Storming multi-Bounded-Contexts.
+  EventStormingSpec({
+    List<EventStormDocument> documents = const <EventStormDocument>[],
+  }) : documents = List<EventStormDocument>.unmodifiable(documents);
+
+  /// Instance vide par défaut.
+  static final EventStormingSpec empty = EventStormingSpec();
+
+  /// Documents Event Storming DSL v1.0 (1 document par Bounded Context).
+  final List<EventStormDocument> documents;
+
+  /// Vrai si au moins un Bounded Context est modélisé.
+  bool get hasContent => documents.isNotEmpty;
+
+  /// Nombre total d'étapes sur l'ensemble des Bounded Contexts.
+  int get totalStepCount =>
+      documents.fold<int>(0, (sum, d) => sum + d.flow.length);
+
+  /// Nombre total d'événements domaine émis.
+  int get totalEventCount =>
+      documents.fold<int>(0, (sum, d) => sum + d.domainEventCount);
+
+  /// Nombre total de commandes (= nombre d'étapes).
+  int get totalCommandCount => totalStepCount;
+
+  /// Nombre total de politiques réactives.
+  int get totalPolicyCount =>
+      documents.fold<int>(0, (sum, d) => sum + d.policyCount);
+
+  /// Nombre total de hotspots (ouverts + résolus).
+  int get totalHotspotCount =>
+      documents.fold<int>(0, (sum, d) => sum + d.allHotspots.length);
+
+  /// Nombre total de hotspots encore ouverts.
+  int get openHotspotCount =>
+      documents.fold<int>(0, (sum, d) => sum + d.openHotspotCount);
+
+  /// Tous les hotspots de tous les documents avec contexte et étape.
+  List<
+    ({
+      EventStormDocument document,
+      int stepNumber,
+      EventStormHotspot hotspot,
+    })
+  >
+  get allHotspots => [
+    for (final doc in documents)
+      for (final entry in doc.allHotspots)
+        (
+          document: doc,
+          stepNumber: entry.stepNumber,
+          hotspot: entry.hotspot,
+        ),
+  ];
+
+  /// Recherche un document par identifiant, nom de fichier ou nom de Bounded Context.
+  EventStormDocument? findDocument(String query) {
+    final needle = query.trim().toLowerCase();
     if (needle.isEmpty) return null;
-    for (final bc in boundedContexts) {
-      if (bc.id.toLowerCase() == needle ||
-          bc.code.toLowerCase() == needle ||
-          bc.name.toLowerCase() == needle) {
-        return bc;
+    for (final doc in documents) {
+      if (doc.id.toLowerCase() == needle ||
+          doc.fileName.toLowerCase() == needle ||
+          doc.meta.boundedContext.toLowerCase() == needle) {
+        return doc;
       }
     }
     return null;
   }
 
-  /// Vérifie les invariants de l'ensemble de l'Event Storming.
+  /// Vérifie les invariants de l'ensemble des documents Event Storming.
   void validate() {
-    final bcIds = <String>{};
-    for (final bc in boundedContexts) {
-      bc.validate();
-      if (!bcIds.add(bc.id)) {
-        throw FormatException('Bounded Context dupliqué : ${bc.id}');
-      }
-    }
-    final flowIds = <String>{};
-    for (final flow in flows) {
-      flow.validate();
-      if (!flowIds.add(flow.id)) {
-        throw FormatException('Flux Event Storming dupliqué : ${flow.id}');
+    final ids = <String>{};
+    for (final doc in documents) {
+      doc.validate();
+      if (!ids.add(doc.id)) {
+        throw FormatException(
+          'Document Event Storming dupliqué (id: ${doc.id}).',
+        );
       }
     }
   }
 
   /// Retourne une copie modifiée.
-  EventStormingSpec copyWith({
-    List<EventStormBoundedContext>? boundedContexts,
-    List<EventStormBoard>? flows,
-  }) => EventStormingSpec(
-    boundedContexts: boundedContexts ?? this.boundedContexts,
-    flows: flows ?? this.flows,
-  );
+  EventStormingSpec copyWith({List<EventStormDocument>? documents}) =>
+      EventStormingSpec(documents: documents ?? this.documents);
 
   /// Sérialise l'Event Storming en JSON.
   Map<String, Object?> toJson() => <String, Object?>{
-    if (boundedContexts.isNotEmpty)
-      'boundedContexts': [for (final bc in boundedContexts) bc.toJson()],
-    if (flows.isNotEmpty) 'flows': [for (final f in flows) f.toJson()],
+    if (documents.isNotEmpty)
+      'documents': [for (final doc in documents) doc.toJson()],
   };
 
   /// Désérialise un [EventStormingSpec] depuis JSON (`null` -> [empty]).
+  ///
+  /// Supporte :
+  /// 1. Le format natif DSL v1.0 (`{"documents": [...]}` ou `{"event_storming": {...}}`) ;
+  /// 2. La migration transparente de l'ancien format (`{"boundedContexts": [...], "flows": [...]}`).
   factory EventStormingSpec.fromJson(Object? raw) {
     if (raw == null) return EventStormingSpec.empty;
     if (raw is List) {
-      return EventStormingSpec(
-        flows: [for (final item in raw) EventStormBoard.fromJson(item)],
-      );
+      final docs = [
+        for (final item in raw)
+          if (item is Map &&
+              (item.containsKey('event_storming') ||
+                  item.containsKey('dsl_version') ||
+                  item.containsKey('flow')))
+            EventStormDocument.fromJson(item)
+          else
+            _migrateLegacyBoardToDocument(item, const <String, String>{}),
+      ];
+      final spec = EventStormingSpec(documents: docs);
+      spec.validate();
+      return spec;
     }
     if (raw is! Map) {
-      throw const FormatException(
-        'EventStormingSpec doit être un objet JSON.',
-      );
+      throw const FormatException('EventStormingSpec doit être un objet JSON.');
     }
-    final rawFlows = raw['flows'] ?? raw['boards'];
-    final spec = EventStormingSpec(
-      boundedContexts: [
-        if (raw['boundedContexts'] is List)
-          for (final item in raw['boundedContexts'] as List)
-            EventStormBoundedContext.fromJson(item),
-      ],
-      flows: [
-        if (rawFlows is List)
-          for (final item in rawFlows) EventStormBoard.fromJson(item),
-      ],
-    );
-    spec.validate();
-    return spec;
+
+    // Cas 1 : document DSL v1.0 unique à la racine (`{"event_storming": {...}}`).
+    if (raw.containsKey('event_storming') ||
+        raw.containsKey('dsl_version') ||
+        raw.containsKey('flow')) {
+      final doc = EventStormDocument.fromJson(raw);
+      final spec = EventStormingSpec(documents: [doc]);
+      spec.validate();
+      return spec;
+    }
+
+    // Cas 2 : conteneur natif multi-documents (`{"documents": [...]}`).
+    if (raw['documents'] is List) {
+      final docs = <EventStormDocument>[];
+      final usedIds = <String>{};
+      for (final item in raw['documents'] as List) {
+        var doc = EventStormDocument.fromJson(item);
+        if (!usedIds.add(doc.id)) {
+          var suffix = 2;
+          while (!usedIds.add('${doc.id}-$suffix')) {
+            suffix++;
+          }
+          doc = doc.copyWith(id: '${doc.id}-$suffix');
+        }
+        docs.add(doc);
+      }
+      final spec = EventStormingSpec(documents: docs);
+      spec.validate();
+      return spec;
+    }
+
+    // Cas 3 : migration transparente de l'ancien format (`boundedContexts` + `flows`).
+    if (raw['boundedContexts'] is List ||
+        raw['flows'] is List ||
+        raw['boards'] is List) {
+      return _migrateLegacySpec(raw);
+    }
+
+    return EventStormingSpec.empty;
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is EventStormingSpec &&
-          listEquals(other.boundedContexts, boundedContexts) &&
-          listEquals(other.flows, flows);
+      other is EventStormingSpec && listEquals(other.documents, documents);
 
   @override
-  int get hashCode =>
-      Object.hash(Object.hashAll(boundedContexts), Object.hashAll(flows));
+  int get hashCode => Object.hashAll(documents);
 }
+
+// ---------------------------------------------------------------------------
+// Migration rétrocompatible de l'ancien modèle graphe (nodes/links) -> DSL v1.0
+// ---------------------------------------------------------------------------
+
+EventStormingSpec _migrateLegacySpec(Map<Object?, Object?> raw) {
+  final bcNamesById = <String, String>{};
+  final rawBcs = raw['boundedContexts'];
+  if (rawBcs is List) {
+    for (final item in rawBcs) {
+      if (item is Map) {
+        final id = _str(item['id']);
+        final name = _str(item['name'] ?? item['title']);
+        if (id.isNotEmpty && name.isNotEmpty) {
+          bcNamesById[id] = name;
+        }
+      }
+    }
+  }
+
+  final rawFlows = raw['flows'] ?? raw['boards'];
+  final docs = <EventStormDocument>[];
+  final usedIds = <String>{};
+
+  if (rawFlows is List && rawFlows.isNotEmpty) {
+    for (final item in rawFlows) {
+      var doc = _migrateLegacyBoardToDocument(item, bcNamesById);
+      if (!usedIds.add(doc.id)) {
+        var suffix = 2;
+        while (!usedIds.add('${doc.id}-$suffix')) {
+          suffix++;
+        }
+        doc = doc.copyWith(id: '${doc.id}-$suffix');
+      }
+      docs.add(doc);
+    }
+  } else if (bcNamesById.isNotEmpty) {
+    for (final entry in bcNamesById.entries) {
+      final slug = _slugify(entry.value);
+      final id = usedIds.add(slug) ? slug : _slugify(entry.key);
+      docs.add(
+        EventStormDocument(
+          id: id.isEmpty ? 'contexte-metier' : id,
+          meta: EventStormMeta(
+            domain: 'Domaine métier',
+            boundedContext: entry.value,
+            date: _todayIsoDate(),
+          ),
+        ),
+      );
+    }
+  }
+
+  final spec = EventStormingSpec(documents: docs);
+  spec.validate();
+  return spec;
+}
+
+EventStormDocument _migrateLegacyBoardToDocument(
+  Object? rawBoard,
+  Map<String, String> bcNamesById,
+) {
+  final map = rawBoard is Map ? rawBoard : const <Object?, Object?>{};
+  final title = _str(map['title'] ?? map['name']).isNotEmpty
+      ? _str(map['title'] ?? map['name'])
+      : 'Contexte métier';
+  final bcIds = _stringList(map['boundedContextIds']);
+  final bcName = bcIds.isNotEmpty && bcNamesById.containsKey(bcIds.first)
+      ? bcNamesById[bcIds.first]!
+      : title;
+  final rawNodes = map['nodes'] is List ? map['nodes'] as List : const [];
+
+  final sortedNodes = <Map<Object?, Object?>>[
+    for (final n in rawNodes)
+      if (n is Map) n,
+  ]..sort((a, b) {
+      final sa = (a['sequenceOrder'] as num?)?.toInt() ?? 0;
+      final sb = (b['sequenceOrder'] as num?)?.toInt() ?? 0;
+      return sa.compareTo(sb);
+    });
+
+  final actors = <EventStormCatalogItem>[];
+  final aggregates = <EventStormCatalogItem>[];
+  final actorIdByTitle = <String, String>{};
+  final aggIdByTitle = <String, String>{};
+
+  String registerActor(String name) {
+    final key = name.trim().toLowerCase();
+    return actorIdByTitle.putIfAbsent(key, () {
+      final id = _uniqueCatalogId(
+        'ACT',
+        name,
+        {for (final a in actors) a.id},
+      );
+      actors.add(
+        EventStormCatalogItem(
+          id: id,
+          name: name.trim(),
+          type: EventStormActorType.human,
+        ),
+      );
+      return id;
+    });
+  }
+
+  String registerAggregate(String name) {
+    final key = name.trim().toLowerCase();
+    return aggIdByTitle.putIfAbsent(key, () {
+      final id = _uniqueCatalogId(
+        'AGG',
+        name,
+        {for (final a in aggregates) a.id},
+      );
+      aggregates.add(EventStormCatalogItem(id: id, name: name.trim()));
+      return id;
+    });
+  }
+
+  final reqs = _stringList(map['requirementIds']);
+  final storyRef = reqs.isNotEmpty ? reqs.first : '';
+  final epicRef = _str(map['code']);
+
+  String pendingActor = '';
+  EventStormReadModel? pendingReadModel;
+  EventStormPolicy? pendingPolicy;
+  EventStormCommand? pendingCommand;
+  String pendingAggregate = '';
+  final pendingHotspots = <EventStormHotspot>[];
+  final steps = <EventStormStep>[];
+  String? lastEventId;
+  var evtCounter = 0;
+  var hsCounter = 0;
+
+  void flushStep({EventStormDomainEvent? explicitEvent}) {
+    evtCounter++;
+    final stepNum = steps.length + 1;
+    final evt =
+        explicitEvent ??
+        EventStormDomainEvent(
+          id: 'EVT-${evtCounter.toString().padLeft(2, '0')}',
+          name: pendingCommand != null
+              ? '${pendingCommand!.name} (effectué)'
+              : 'Événement métier produit',
+        );
+    final cmd =
+        pendingCommand ??
+        EventStormCommand(name: 'Exécuter ${evt.name}');
+    steps.add(
+      EventStormStep(
+        step: stepNum,
+        backlog: (epicRef.isNotEmpty || storyRef.isNotEmpty) && stepNum == 1
+            ? EventStormBacklog(epic: epicRef, story: storyRef)
+            : null,
+        triggeredBy: lastEventId != null && pendingPolicy != null
+            ? EventStormTrigger.single(lastEventId!)
+            : null,
+        policy: pendingPolicy,
+        readModel: pendingReadModel,
+        actor: pendingActor,
+        command: cmd,
+        aggregate: pendingAggregate,
+        domainEvent: evt,
+        hotspots: List<EventStormHotspot>.from(pendingHotspots),
+      ),
+    );
+    lastEventId = evt.id;
+    pendingActor = '';
+    pendingReadModel = null;
+    pendingPolicy = null;
+    pendingCommand = null;
+    pendingAggregate = '';
+    pendingHotspots.clear();
+  }
+
+  for (final n in sortedNodes) {
+    final kind = _str(n['kind'] ?? n['type']).toLowerCase();
+    final nodeTitle = _str(n['title'] ?? n['name']);
+    if (nodeTitle.isEmpty) continue;
+    final fields = _stringList(n['payloadFields'] ?? n['fields']);
+
+    if (kind == 'actor') {
+      pendingActor = registerActor(nodeTitle);
+    } else if (kind == 'readmodel' || kind == 'read_model') {
+      pendingReadModel = EventStormReadModel(name: nodeTitle, fields: fields);
+    } else if (kind == 'policy') {
+      if (pendingCommand != null) flushStep();
+      final desc = _str(n['description']);
+      pendingPolicy = EventStormPolicy(
+        name: nodeTitle,
+        rule: desc.isNotEmpty ? desc : nodeTitle,
+      );
+    } else if (kind == 'command') {
+      if (pendingCommand != null) flushStep();
+      pendingCommand = EventStormCommand(name: nodeTitle, payload: fields);
+    } else if (kind == 'aggregate') {
+      pendingAggregate = registerAggregate(nodeTitle);
+    } else if (kind == 'domainevent' || kind == 'domain_event') {
+      evtCounter++;
+      final code = _str(n['code']);
+      final validEvtId = RegExp(r'^EVT-[0-9]+[A-Z]?$').hasMatch(code)
+          ? code
+          : 'EVT-${evtCounter.toString().padLeft(2, '0')}';
+      flushStep(
+        explicitEvent: EventStormDomainEvent(
+          id: validEvtId,
+          name: nodeTitle,
+          data: fields,
+        ),
+      );
+    } else if (kind == 'hotspot') {
+      hsCounter++;
+      final code = _str(n['code']);
+      final validHsId = RegExp(r'^HS-[0-9]+$').hasMatch(code)
+          ? code
+          : 'HS-${hsCounter.toString().padLeft(2, '0')}';
+      final hs = EventStormHotspot(
+        id: validHsId,
+        question: nodeTitle,
+        severity: EventStormHotspotSeverity.medium,
+        status: n['resolved'] == true
+            ? EventStormHotspotStatus.resolved
+            : EventStormHotspotStatus.open,
+      );
+      if (steps.isNotEmpty && pendingCommand == null) {
+        final last = steps.removeLast();
+        steps.add(last.copyWith(hotspots: [...last.hotspots, hs]));
+      } else {
+        pendingHotspots.add(hs);
+      }
+    }
+  }
+
+  if (pendingCommand != null ||
+      pendingPolicy != null ||
+      pendingHotspots.isNotEmpty) {
+    flushStep();
+  }
+
+  final rawId = _str(map['id']);
+  final docId = _slugify(bcName).isNotEmpty
+      ? _slugify(bcName)
+      : (rawId.isNotEmpty ? _slugify(rawId) : 'contexte-metier');
+
+  return EventStormDocument(
+    id: docId,
+    meta: EventStormMeta(
+      domain: title,
+      boundedContext: bcName,
+      format: EventStormFormat.processModeling,
+      date: _todayIsoDate(),
+    ),
+    catalog: EventStormCatalog(actors: actors, aggregates: aggregates),
+    flow: steps,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers internes
+// ---------------------------------------------------------------------------
+
+EventStormCatalogItem? _findCatalogItem(
+  List<EventStormCatalogItem> items,
+  String query,
+) {
+  final needle = query.trim().toLowerCase();
+  if (needle.isEmpty) return null;
+  for (final item in items) {
+    if (item.id.toLowerCase() == needle || item.name.toLowerCase() == needle) {
+      return item;
+    }
+  }
+  return null;
+}
+
+String _str(Object? raw) => raw == null ? '' : '$raw'.trim();
 
 List<String> _stringList(Object? raw) {
   if (raw is! List) return const <String>[];
@@ -974,4 +2045,83 @@ List<String> _stringList(Object? raw) {
     for (final item in raw)
       if (item != null && '$item'.trim().isNotEmpty) '$item'.trim(),
   ];
+}
+
+String _todayIsoDate() {
+  final now = DateTime.now();
+  final y = now.year.toString().padLeft(4, '0');
+  final m = now.month.toString().padLeft(2, '0');
+  final d = now.day.toString().padLeft(2, '0');
+  return '$y-$m-$d';
+}
+
+String _foldAccents(String input) {
+  const map = <String, String>{
+    'à': 'a',
+    'â': 'a',
+    'ä': 'a',
+    'á': 'a',
+    'é': 'e',
+    'è': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'î': 'i',
+    'ï': 'i',
+    'í': 'i',
+    'ô': 'o',
+    'ö': 'o',
+    'ó': 'o',
+    'ù': 'u',
+    'û': 'u',
+    'ü': 'u',
+    'ú': 'u',
+    'ç': 'c',
+    'À': 'A',
+    'Â': 'A',
+    'Ä': 'A',
+    'É': 'E',
+    'È': 'E',
+    'Ê': 'E',
+    'Ë': 'E',
+    'Î': 'I',
+    'Ï': 'I',
+    'Ô': 'O',
+    'Ö': 'O',
+    'Ù': 'U',
+    'Û': 'U',
+    'Ü': 'U',
+    'Ç': 'C',
+  };
+  final buf = StringBuffer();
+  for (var i = 0; i < input.length; i++) {
+    final ch = input[i];
+    buf.write(map[ch] ?? ch);
+  }
+  return buf.toString();
+}
+
+String _slugify(String raw) {
+  final folded = _foldAccents(raw).toLowerCase();
+  final cleaned = folded
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  return cleaned.isEmpty ? 'contexte-metier' : cleaned;
+}
+
+String _makeCatalogId(String prefix, String name) {
+  final token = _foldAccents(name)
+      .toUpperCase()
+      .replaceAll(RegExp(r'[^A-Z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
+  return '$prefix-${token.isEmpty ? 'ITEM' : token}';
+}
+
+String _uniqueCatalogId(String prefix, String name, Set<String> usedIds) {
+  final base = _makeCatalogId(prefix, name);
+  if (!usedIds.contains(base)) return base;
+  var idx = 2;
+  while (usedIds.contains('${base}_$idx')) {
+    idx++;
+  }
+  return '${base}_$idx';
 }

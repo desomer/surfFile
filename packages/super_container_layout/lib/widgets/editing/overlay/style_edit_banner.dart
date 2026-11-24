@@ -12,12 +12,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/models/responsive_layout_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
+import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_task_completion_alert.dart';
 import 'package:super_container_layout/widgets/editing/diagnostics/diagnostic_log_panel.dart';
+import 'package:super_container_layout/widgets/editing/dialogs/bulk_delete_dialog.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/repositories/binding_save_timing_controls.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
@@ -596,6 +598,21 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                           } else {
                             setState(() => _saveTimingOpen = !_saveTimingOpen);
                           }
+                        },
+                        onOpenDeleteAll: () {
+                          final target =
+                              widget.navigatorKey?.currentContext ?? context;
+                          if (Navigator.maybeOf(target) == null) return;
+                          final app = SuperApp.maybeOf(context);
+                          BulkDeleteDialog.show(
+                            target,
+                            appearance: appearance,
+                            codec: codec,
+                            registry: app?.registry,
+                            pageRouting: app?.pageRouting,
+                            repositoryStore: JsonRepositoryScope.maybeOf(context),
+                            history: EditorHistoryScope.controllerOf(context),
+                          );
                         },
                       ),
 
@@ -1516,11 +1533,13 @@ class _BannerSettingsButton extends StatelessWidget {
     required this.foregroundColor,
     required this.onOpenTransfer,
     required this.onOpenSaveTiming,
+    required this.onOpenDeleteAll,
   });
 
   final Color foregroundColor;
   final VoidCallback onOpenTransfer;
   final VoidCallback onOpenSaveTiming;
+  final VoidCallback onOpenDeleteAll;
 
   @override
   Widget build(BuildContext context) {
@@ -1546,6 +1565,20 @@ class _BannerSettingsButton extends StatelessWidget {
           ),
           onPressed: onOpenSaveTiming,
           child: const Text('Délai d’enregistrement des saisies'),
+        ),
+        const Divider(height: 1),
+        MenuItemButton(
+          key: const ValueKey('style-edit-banner-delete-all'),
+          leadingIcon: Icon(
+            Icons.delete_sweep_outlined,
+            size: 18,
+            color: scheme.error,
+          ),
+          onPressed: onOpenDeleteAll,
+          child: Text(
+            'Tout supprimer…',
+            style: TextStyle(color: scheme.error),
+          ),
         ),
       ],
       builder: (context, menuController, child) => IconButton(

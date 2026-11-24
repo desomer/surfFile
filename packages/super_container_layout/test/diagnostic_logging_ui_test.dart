@@ -327,4 +327,103 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'SuperLayout racine vide lève une alerte explicite dans debugEntries si des composants fantômes existent, sans faux positif sur écran vierge',
+    (tester) async {
+      // 1. Écran vierge (seuls root & mainLayout configurés) -> aucune alerte fantôme.
+      final blankAppearance = ValueNotifier<Appearance>(
+        Appearance(
+          components: <String, ComponentConfig>{
+            'mainLayout': const SuperLayoutConfig(),
+          },
+        ),
+      );
+      addTearDown(blankAppearance.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppearanceScope(
+            controller: blankAppearance,
+            child: ValueListenableBuilder<Appearance>(
+              valueListenable: blankAppearance,
+              builder: (_, app, _) => SuperLayout(
+                id: 'mainLayout',
+                config: app.components['mainLayout']! as SuperLayoutConfig,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        debugEntries.where((e) => e.source == 'SuperLayout.ghostComponents'),
+        isEmpty,
+      );
+
+      // 2. Composants configurés non placés dans mainLayout -> alerte explicite dans debugEntries.
+      blankAppearance.value = Appearance(
+        components: <String, ComponentConfig>{
+          'mainLayout': const SuperLayoutConfig(),
+          'dash-header': const SuperValueConfig(initialText: 'En-tête'),
+          'kpis-row': const SuperLayoutConfig(),
+          'card-chart-container': const SuperValueConfig(initialText: 'Graphe'),
+        },
+      );
+      await tester.pump();
+      // Deuxième pump pour vérifier la déduplication.
+      await tester.pump();
+
+      final ghostErrors = debugEntries
+          .where((e) => e.source == 'SuperLayout.ghostComponents')
+          .toList();
+      expect(ghostErrors, hasLength(1));
+      expect(ghostErrors.single.category, DebugErrorCategory.rendering);
+      expect(ghostErrors.single.severity, DebugSeverity.error);
+      expect(ghostErrors.single.componentId, 'mainLayout');
+      expect(ghostErrors.single.message, contains('mainLayout'));
+      expect(ghostErrors.single.message, contains('0 slot placé'));
+      expect(ghostErrors.single.message, contains('3 composant(s)'));
+      expect(ghostErrors.single.message, contains('dash-header'));
+
+      // 3. Dès que mainLayout reçoit des placements, le diagnostic est libéré
+      //    (et peut se redéclencher si les placements sont retirés à nouveau).
+      blankAppearance.value = Appearance(
+        components: <String, ComponentConfig>{
+          'mainLayout': const SuperLayoutConfig(
+            placements: <SuperLayoutZone, List<String>>{
+              SuperLayoutZone.center: <String>[
+                'dash-header',
+                'kpis-row',
+                'card-chart-container',
+              ],
+            },
+            slotTypes: <String, String>{
+              'dash-header': 'registry:Value',
+              'kpis-row': 'registry:Layout',
+              'card-chart-container': 'registry:Value',
+            },
+          ),
+          'dash-header': const SuperValueConfig(initialText: 'En-tête'),
+          'kpis-row': const SuperLayoutConfig(),
+          'card-chart-container': const SuperValueConfig(initialText: 'Graphe'),
+        },
+      );
+      await tester.pump();
+
+      // Re-vider mainLayout doit pouvoir réémettre l'alerte car la clé a été libérée.
+      clearDebugEntries();
+      blankAppearance.value = Appearance(
+        components: <String, ComponentConfig>{
+          'mainLayout': const SuperLayoutConfig(),
+          'dash-header': const SuperValueConfig(initialText: 'En-tête'),
+        },
+      );
+      await tester.pump();
+      expect(
+        debugEntries.where((e) => e.source == 'SuperLayout.ghostComponents'),
+        hasLength(1),
+      );
+    },
+  );
 }

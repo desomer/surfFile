@@ -83,8 +83,9 @@ abstract final class SpecPromptBuilder {
       'Nous passons à l’étape 3 (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
           'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
     SpecForgeStage.eventStorming =>
-      'Nous passons à l’étape 4 (Event Storming). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
-          'cartographie chronologiquement les flux métier : événements domaine (orange), commandes (bleues), acteurs (jaunes), agrégats (ambre), politiques réactives (lilas), read models (verts) et hotspots (rouges), ainsi que les Bounded Contexts.',
+      'Nous passons à l’étape 4 (Event Storming — DSL v1.0). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
+          'modélise un document par Bounded Context (`dsl_version: "1.0"`, `meta`, `catalog` avec `ACT-*`/`AGG-*`/`EXT-*`, `flow[]` chronologique) : '
+          'commandes à l’infinitif (bleu), événements au passé composé (orange) ou `outcomes` exclusifs, politiques « Quand…, alors… » (violet), read models (vert), systèmes externes (rose pâle), synchronisations `all_of` / `any_of`, `backlog` et `hotspots` (rose vif).',
     SpecForgeStage.businessObjects =>
       'Nous passons à l’étape 5 (Objets métiers). En t’appuyant sur le lexique, le cadrage, le cahier des charges et les agrégats/événements de l’Event Storming, '
           'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
@@ -246,44 +247,40 @@ abstract final class SpecPromptBuilder {
     final focusedObj = (focusedObjectId != null && focusedObjectId.isNotEmpty)
         ? project.findBusinessObject(focusedObjectId)
         : null;
-    final focusedFlow =
+    final focusedDoc =
         (focusedEventStormFlowId != null && focusedEventStormFlowId.isNotEmpty)
-            ? project.eventStorming.flows
-                  .where((f) => f.id == focusedEventStormFlowId)
-                  .firstOrNull
-            : null;
-    final focusedNode =
-        (focusedFlow != null &&
-                focusedEventStormNodeId != null &&
-                focusedEventStormNodeId.isNotEmpty)
-            ? focusedFlow.nodes
-                  .where((n) => n.id == focusedEventStormNodeId)
-                  .firstOrNull
-            : null;
+        ? project.eventStorming.findDocument(focusedEventStormFlowId)
+        : null;
+    final focusedStepNum = focusedEventStormNodeId != null
+        ? int.tryParse(focusedEventStormNodeId)
+        : null;
+    final focusedStep = (focusedDoc != null && focusedStepNum != null)
+        ? focusedDoc.findStep(focusedStepNum)
+        : null;
     final focusedStory =
         (focusedExampleStoryId != null && focusedExampleStoryId.isNotEmpty)
-            ? project.exampleMappings
-                  .where((s) => s.id == focusedExampleStoryId)
-                  .firstOrNull
-            : null;
+        ? project.exampleMappings
+              .where((s) => s.id == focusedExampleStoryId)
+              .firstOrNull
+        : null;
 
     if (focusedObj == null &&
-        focusedFlow == null &&
+        focusedDoc == null &&
         focusedStory == null &&
         trimmedFilter.isEmpty) {
       return '';
     }
 
     buf.writeln('FOCUS COURANT DANS L’ATELIER (SCOPE DE SÉLECTION) :');
-    if (focusedFlow != null) {
+    if (focusedDoc != null) {
       buf.writeln(
-        '- Flux Event Storming sélectionné : ${focusedFlow.code} « ${focusedFlow.title} » '
-        '(id: ${focusedFlow.id}, ${focusedFlow.nodes.length} carte(s), ${focusedFlow.openHotspotCount} hotspot(s) ouvert(s))',
+        '- Bounded Context Event Storming sélectionné : « ${focusedDoc.meta.boundedContext} » '
+        '(${focusedDoc.fileName}, id: ${focusedDoc.id}, ${focusedDoc.flow.length} étape(s), ${focusedDoc.openHotspotCount} hotspot(s) ouvert(s))',
       );
-      if (focusedNode != null) {
+      if (focusedStep != null) {
         buf.writeln(
-          '- Carte Event Storming sélectionnée : [${focusedNode.kind.label}] « ${focusedNode.title} » '
-          '(id: ${focusedNode.id}, ordre: ${focusedNode.sequenceOrder})',
+          '- Étape sélectionnée : step ${focusedStep.step} — Commande « ${focusedStep.command.name} » '
+          '(événements émis: ${focusedStep.emittedEvents.map((e) => '${e.id}:${e.name}').join(', ')})',
         );
       }
     }

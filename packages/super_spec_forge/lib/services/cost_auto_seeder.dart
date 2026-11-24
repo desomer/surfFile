@@ -506,46 +506,58 @@ abstract final class CostAutoSeeder {
         .resolveProfileForDiscipline(CostDiscipline.backend)
         .id;
 
-    for (final flow in project.eventStorming.flows) {
-      for (final node in flow.nodes) {
-        if (node.kind != EventStormNodeKind.hotspot) continue;
-        final idLower = node.id.trim().toLowerCase();
-        final codeLower = node.code.trim().toLowerCase();
-        if (coveredHotspots.contains(idLower) ||
-            (codeLower.isNotEmpty && coveredHotspots.contains(codeLower))) {
-          continue;
-        }
-
-        String code;
-        do {
-          riskCounter++;
-          code = 'RSK-${riskCounter.toString().padLeft(3, '0')}';
-        } while (!usedRiskCodes.add(code.toUpperCase()));
-
-        final id = _uniqueId('rsk_${_cleanToken(node.id)}', usedRiskIds);
-        nextRiskList.add(
-          CostRiskItemSpec(
-            id: id,
-            code: code,
-            title: node.title,
-            description: node.description.isNotEmpty
-                ? node.description
-                : 'Zone d’ombre Event Storming issue du flux « ${flow.title} ».',
-            probabilityPct: 40.0,
-            impactDays: 5.0,
-            fixedCostImpact: 0.0,
-            profileId: defaultRiskProfileId,
-            mitigation: node.answer.isNotEmpty
-                ? node.answer
-                : 'Atelier de cadrage technique et spike d’architecture ciblé.',
-            linkedHotspotId: node.id,
-            linkedRequirementIds: flow.requirementIds,
-          ),
-        );
-        coveredHotspots.add(idLower);
-        if (codeLower.isNotEmpty) coveredHotspots.add(codeLower);
-        addedRisk++;
+    for (final entry in project.eventStorming.allHotspots) {
+      final doc = entry.document;
+      final hs = entry.hotspot;
+      final idLower = hs.id.trim().toLowerCase();
+      final qualifiedLower = '${doc.id}:${hs.id}'.toLowerCase();
+      if (coveredHotspots.contains(idLower) ||
+          coveredHotspots.contains(qualifiedLower)) {
+        continue;
       }
+
+      String code;
+      do {
+        riskCounter++;
+        code = 'RSK-${riskCounter.toString().padLeft(3, '0')}';
+      } while (!usedRiskCodes.add(code.toUpperCase()));
+
+      final (probPct, impactDays) = switch (hs.severity) {
+        EventStormHotspotSeverity.blocker => (70.0, 10.0),
+        EventStormHotspotSeverity.high => (55.0, 7.0),
+        EventStormHotspotSeverity.medium => (40.0, 5.0),
+        EventStormHotspotSeverity.low => (20.0, 2.0),
+      };
+
+      final step = doc.findStep(entry.stepNumber);
+      final reqRefs = <String>[
+        if (step?.backlog?.story.isNotEmpty == true) step!.backlog!.story,
+      ];
+
+      final id = _uniqueId('rsk_${_cleanToken('${doc.id}_${hs.id}')}', usedRiskIds);
+      nextRiskList.add(
+        CostRiskItemSpec(
+          id: id,
+          code: code,
+          title: hs.question,
+          description:
+              'Hotspot ${hs.id} (${hs.severity.label}, statut: ${hs.status.label}'
+              '${hs.owner.isEmpty ? '' : ', owner: ${hs.owner}'}) '
+              'issu du Bounded Context « ${doc.meta.boundedContext} » (étape ${entry.stepNumber}).',
+          probabilityPct: probPct,
+          impactDays: impactDays,
+          fixedCostImpact: 0.0,
+          profileId: defaultRiskProfileId,
+          mitigation: hs.isResolved
+              ? 'Hotspot résolu (${hs.owner.isEmpty ? 'atelier' : hs.owner}).'
+              : 'Atelier de cadrage ciblé${hs.owner.isEmpty ? '' : ' avec ${hs.owner}'}.',
+          linkedHotspotId: hs.id,
+          linkedRequirementIds: reqRefs,
+        ),
+      );
+      coveredHotspots.add(idLower);
+      coveredHotspots.add(qualifiedLower);
+      addedRisk++;
     }
 
     final seededSpec = workingSpec.copyWith(

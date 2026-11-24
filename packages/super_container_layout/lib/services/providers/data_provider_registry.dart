@@ -314,29 +314,35 @@ class DataProviderRegistry extends ChangeNotifier {
 
   /// Supprime le provider de l'éditeur [id].
   ///
-  /// Refuse un provider du code, un provider utilisé par une datasource et,
-  /// si [appearance] est fournie, un provider encore lancé par un
-  /// comportement.
-  Future<void> delete(String id, {Appearance? appearance}) async {
+  /// Refuse toujours un provider du code. Sauf lorsque [force] vaut `true`,
+  /// refuse également un provider utilisé par une datasource ou, si
+  /// [appearance] est fournie, encore lancé par un comportement.
+  Future<void> delete(
+    String id, {
+    Appearance? appearance,
+    bool force = false,
+  }) async {
     if (_code.containsKey(id)) {
       throw FormatException(
         'Le provider « $id » est défini par le code de l’application : '
         'il ne peut pas être supprimé.',
       );
     }
-    if (appearance?.usesProvider(id) ?? false) {
+    if (!force && (appearance?.usesProvider(id) ?? false)) {
       throw FormatException(
         'Impossible de supprimer « $id » : '
         'ce provider est encore utilisé par un comportement.',
       );
     }
     await ensureLoaded();
-    final datasource = coordinator?.datasourceUsing(id);
-    if (datasource != null) {
-      throw FormatException(
-        'Impossible de supprimer « $id » : '
-        'ce provider est utilisé par la datasource « $datasource ».',
-      );
+    if (!force) {
+      final datasource = coordinator?.datasourceUsing(id);
+      if (datasource != null) {
+        throw FormatException(
+          'Impossible de supprimer « $id » : '
+          'ce provider est utilisé par la datasource « $datasource ».',
+        );
+      }
     }
     await _folder.serial(() async {
       if (!_configs.containsKey(id)) return;
