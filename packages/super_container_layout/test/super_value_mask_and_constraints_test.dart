@@ -879,5 +879,161 @@ void main() {
       expect(saved!.field.required, isTrue);
       expect(saved!.field.minLength, 10);
     });
+
+    testWidgets(
+      'typing across validation error transitions and parent surface state saves preserves focus and EditableTextState',
+      (tester) async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'sv_focus_validation_',
+        );
+        addTearDown(() async {
+          if (tempDir.existsSync()) await tempDir.delete(recursive: true);
+        });
+        final store = JsonRepositoryStore(tempDir);
+        addTearDown(store.dispose);
+        store.registerRepository(
+          RepositoryImpl(
+            id: 'focus_repo',
+            json: <String, Object?>{'code': '', 'surfaceState': 'idle'},
+          ),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: JsonRepositoryScope(
+              store: store,
+              child: Scaffold(
+                body: EditableSurface(
+                  id: 'card',
+                  style: ContainerStyle(
+                    states: SurfaceStyleStates(
+                      binding: const JsonTextBinding(
+                        repositoryId: 'focus_repo',
+                        path: 'surfaceState',
+                      ),
+                      named: const {
+                        'saved': ContainerStyle(
+                          opacity: 0.92,
+                          shadow: ShadowSpec(blur: 8),
+                        ),
+                      },
+                      namedProperties: const {
+                        'saved': {
+                          SurfaceStyleProperty.opacity,
+                          SurfaceStyleProperty.shadow,
+                        },
+                      },
+                    ),
+                  ),
+                  child: const SizedBox(
+                    width: 260,
+                    child: SuperValue(
+                      id: 'code',
+                      config: SuperValueConfig(
+                        mode: SuperValueMode.input,
+                        binding: JsonTextBinding(
+                          repositoryId: 'focus_repo',
+                          path: 'code',
+                        ),
+                        bindingDebounceMs: 100,
+                        field: SuperTextFieldConfig(
+                          required: true,
+                          minLength: 3,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final inputFinder = find.byKey(const ValueKey('super-value-input-code'));
+        await tester.tap(inputFinder);
+        await tester.pump();
+
+        final initialEditable = tester.state<EditableTextState>(
+          find.descendant(of: inputFinder, matching: find.byType(EditableText)),
+        );
+        final focusNode = tester.widget<TextField>(inputFinder).focusNode!;
+        expect(focusNode.hasFocus, isTrue);
+        expect(
+          find.byKey(const ValueKey('super-value-error-indicator-code')),
+          findsNothing,
+        );
+
+        // 1st char: transitions from no indicator -> error triangle (minLength: 3).
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'A',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('super-value-error-indicator-code')),
+          findsOneWidget,
+        );
+        expect(focusNode.hasFocus, isTrue);
+        expect(
+          tester.state<EditableTextState>(
+            find.descendant(
+              of: inputFinder,
+              matching: find.byType(EditableText),
+            ),
+          ),
+          same(initialEditable),
+        );
+
+        // 3rd char: transitions from error triangle -> valid, then saves and flips surface shadow/opacity.
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'ABC',
+            selection: TextSelection.collapsed(offset: 3),
+          ),
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('super-value-error-indicator-code')),
+          findsNothing,
+        );
+        expect(focusNode.hasFocus, isTrue);
+
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 180));
+          await store.writeAttribute(
+            const JsonTextBinding(
+              repositoryId: 'focus_repo',
+              path: 'surfaceState',
+            ),
+            'saved',
+            expectedValue: 'idle',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.pumpAndSettle();
+
+        expect(focusNode.hasFocus, isTrue);
+        expect(
+          tester.state<EditableTextState>(
+            find.descendant(
+              of: inputFinder,
+              matching: find.byType(EditableText),
+            ),
+          ),
+          same(initialEditable),
+        );
+        expect(
+          (await tester.runAsync(
+            () => store.readAttribute(
+              const JsonTextBinding(repositoryId: 'focus_repo', path: 'code'),
+            ),
+          ))!.value,
+          'ABC',
+        );
+      },
+    );
   });
 }

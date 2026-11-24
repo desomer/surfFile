@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1260,4 +1261,91 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'typing while an async repository write is in flight keeps dirty state, focus, and saves trailing characters',
+    (tester) async {
+      final slowStore = _SlowWriteRepositoryStore(directory);
+      addTearDown(slowStore.dispose);
+      final writeBlocked = Completer<void>();
+      slowStore.nextWriteGate = writeBlocked;
+
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      final controllerBinding = JsonTextControllerBinding(
+        store: slowStore,
+        binding: binding,
+        controller: controller,
+        debounceDuration: const Duration(milliseconds: 100),
+      );
+      addTearDown(controllerBinding.dispose);
+
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+      });
+      expect(controller.text, 'Alice');
+
+      // User types 'Bon' and triggers flush(), which pauses inside writeAttribute.
+      controller.value = const TextEditingValue(
+        text: 'Bon',
+        selection: TextSelection.collapsed(offset: 3),
+      );
+      final firstFlush = controllerBinding.flush();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+
+      // While 'Bon' is still writing to disk, user continues typing 'Bonjour'.
+      controller.value = const TextEditingValue(
+        text: 'Bonjour',
+        selection: TextSelection.collapsed(offset: 7),
+      );
+
+      // Complete the in-flight write of 'Bon'.
+      await tester.runAsync(() async {
+        writeBlocked.complete();
+        await firstFlush;
+      });
+
+      // Trailing 'jour' was not saved yet: binding must stay dirty with 'Bonjour' intact.
+      expect(controller.text, 'Bonjour');
+      expect(controllerBinding.dirty, isTrue);
+      expect(controllerBinding.hasPendingWrite, isTrue);
+
+      await tester.runAsync(() => controllerBinding.flush());
+      expect(controllerBinding.dirty, isFalse);
+      expect(
+        (await tester.runAsync(() => slowStore.readAttribute(binding)))?.text,
+        'Bonjour',
+      );
+    },
+  );
+}
+
+class _SlowWriteRepositoryStore extends JsonRepositoryStore {
+  _SlowWriteRepositoryStore(super.directory);
+
+  Completer<void>? nextWriteGate;
+
+  @override
+  Future<JsonAttributeValue> writeAttribute(
+    JsonTextBinding binding,
+    String text, {
+    required Object? expectedValue,
+    bool asBool = false,
+    bool asStringList = false,
+    String? componentId,
+  }) async {
+    final gate = nextWriteGate;
+    nextWriteGate = null;
+    if (gate != null) await gate.future;
+    return super.writeAttribute(
+      binding,
+      text,
+      expectedValue: expectedValue,
+      asBool: asBool,
+      asStringList: asStringList,
+      componentId: componentId,
+    );
+  }
 }

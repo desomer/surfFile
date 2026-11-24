@@ -93,8 +93,7 @@ class BuildTechStackProfile {
     id: defaultTsNestJsId,
     code: 'ts-nestjs',
     name: 'TypeScript / NestJS',
-    description:
-        'Backend TypeScript 5 / Node.js LTS avec NestJS, domaine pur DDD (Neverthrow), persistance MongoDB/Mongoose et tests Vitest/Jest.',
+    description: 'Backend TypeScript 5 / Node.js LTS avec NestJS, domaine pur DDD (Neverthrow), persistance MongoDB/Mongoose et tests Vitest/Jest.',
     technicalStack:
         '- Langage : TypeScript 5 (mode `strict: true`, `noUncheckedIndexedAccess: true`)\n'
         '- Runtime & Framework : Node.js 22 LTS · NestJS 10+ (uniquement en infrastructure, aucun décorateur dans `core/`)\n'
@@ -137,8 +136,7 @@ class BuildTechStackProfile {
         '            ├── services/          # services métier stateless\n'
         '            ├── events/            # domain events\n'
         '            └── errors/            # domain errors',
-    domainUnitTestFolderStructure:
-        'identique au domaine principal\n',
+    domainUnitTestFolderStructure: 'identique au domaine principal\n',
     useCaseSagaImplementationFolderStructure:
         'src/\n'
         '└── application/\n'
@@ -147,10 +145,7 @@ class BuildTechStackProfile {
         '        │   └── inbound/           # Interfaces Driving Ports (Use Cases)\n'
         '        ├── use-cases/             # Commands / Queries & Handlers CQRS\n'
         '        └── sagas/                 # Coordinateurs / Handlers de Sagas',
-    useCaseSagaUnitTestFolderStructure:
-        'test/\n'
-        '└── {{domain}}/\n'
-        '    └── application/               # Tests unitaires Use Cases & Sagas avec fakes (*.spec.ts)',
+    useCaseSagaUnitTestFolderStructure: 'identique au domaine principal\n',
     outboundImplementationFolderStructure:
         'src/\n'
         '└── infrastructure/\n'
@@ -160,11 +155,7 @@ class BuildTechStackProfile {
         '            ├── messaging/         # Adaptateurs Event Bus / Message Queue\n'
         '            ├── logging/           # Adaptateur Logger (Pino)\n'
         '            └── clients/           # Adaptateurs HTTP / APIs externes',
-    outboundUnitTestFolderStructure:
-        'test/\n'
-        '└── {{domain}}/\n'
-        '    └── infrastructure/\n'
-        '        └── outbound/              # Tests unitaires des adaptateurs sortants & mappers (*.spec.ts)',
+    outboundUnitTestFolderStructure: 'identique au domaine principal\n',
     inboundImplementationFolderStructure:
         'src/\n'
         '└── infrastructure/\n'
@@ -189,11 +180,7 @@ class BuildTechStackProfile {
         '                ├── read-model/     # Lecture complexe multi-agrégats optimisée (si port existe)\n'
         '                ├── schemas/        # Schémas Mongoose (@Schema())\n'
         '                └── mappers/        # Mappers purs Domain <-> Persistence',
-    persistenceUnitTestFolderStructure:
-        'test/\n'
-        '└── {{domain}}/\n'
-        '    └── infrastructure/\n'
-        '        └── persistence/           # Tests unitaires mappers, schémas & contrats repositories (*.spec.ts)',
+    persistenceUnitTestFolderStructure: 'identique au domaine principal\n',
     domainImplementationExtension:
         '# Contraintes techniques :\n'
         '- Aucun décorateur NestJS.\n'
@@ -566,10 +553,7 @@ class BuildTechStackProfile {
       domainImplementationExtension,
     (BuildTechStackSection.domain, BuildTechStackSubRole.unitTest) =>
       domainUnitTestExtension,
-    (
-      BuildTechStackSection.useCaseSaga,
-      BuildTechStackSubRole.implementation,
-    ) =>
+    (BuildTechStackSection.useCaseSaga, BuildTechStackSubRole.implementation) =>
       useCaseSagaImplementationExtension,
     (BuildTechStackSection.useCaseSaga, BuildTechStackSubRole.unitTest) =>
       useCaseSagaUnitTestExtension,
@@ -581,10 +565,7 @@ class BuildTechStackProfile {
       inboundImplementationExtension,
     (BuildTechStackSection.inbound, BuildTechStackSubRole.unitTest) =>
       inboundUnitTestExtension,
-    (
-      BuildTechStackSection.persistence,
-      BuildTechStackSubRole.implementation,
-    ) =>
+    (BuildTechStackSection.persistence, BuildTechStackSubRole.implementation) =>
       persistenceImplementationExtension,
     (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
       persistenceUnitTestExtension,
@@ -604,10 +585,8 @@ class BuildTechStackProfile {
     String domainCode, {
     required BuildTechStackSection section,
     required BuildTechStackSubRole subRole,
-  }) => resolvePlaceholders(
-    rawFolderStructureFor(section, subRole),
-    domainCode,
-  );
+  }) =>
+      resolvePlaceholders(rawFolderStructureFor(section, subRole), domainCode);
 
   /// Résout la section « Documentation IA » en remplaçant `{{domain}}` et `{{module}}`.
   String resolveAiDocumentation(String domainCode) =>
@@ -618,7 +597,9 @@ class BuildTechStackProfile {
     if (id.trim().isEmpty) {
       throw const FormatException('BuildTechStackProfile.id requis.');
     }
-    if (code.length < 2 || code.length > 64 || !_stackCodePattern.hasMatch(code)) {
+    if (code.length < 2 ||
+        code.length > 64 ||
+        !_stackCodePattern.hasMatch(code)) {
       throw const FormatException(
         'Le code de stack doit être en kebab-case (2 à 64 caractères).',
       );
@@ -876,9 +857,7 @@ class BuildTechStackProfile {
       useCaseSagaImplementationExtension: readFirst(
         'useCaseSagaImplementationExtension',
       ),
-      useCaseSagaUnitTestExtension: readFirst(
-        'useCaseSagaUnitTestExtension',
-      ),
+      useCaseSagaUnitTestExtension: readFirst('useCaseSagaUnitTestExtension'),
       outboundImplementationExtension: readFirst(
         'outboundImplementationExtension',
       ),
@@ -891,9 +870,7 @@ class BuildTechStackProfile {
         'persistenceImplementationExtension',
         'persistenceExtension',
       ),
-      persistenceUnitTestExtension: readFirst(
-        'persistenceUnitTestExtension',
-      ),
+      persistenceUnitTestExtension: readFirst('persistenceUnitTestExtension'),
     );
     profile.validate();
     return profile;
@@ -935,8 +912,7 @@ class BuildTechStackProfile {
           other.domainUnitTestExtension == domainUnitTestExtension &&
           other.useCaseSagaImplementationExtension ==
               useCaseSagaImplementationExtension &&
-          other.useCaseSagaUnitTestExtension ==
-              useCaseSagaUnitTestExtension &&
+          other.useCaseSagaUnitTestExtension == useCaseSagaUnitTestExtension &&
           other.outboundImplementationExtension ==
               outboundImplementationExtension &&
           other.outboundUnitTestExtension == outboundUnitTestExtension &&

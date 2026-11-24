@@ -248,90 +248,96 @@ void main() {
   });
 
   group('SortCollectionAction & FilterCollectionAction models & codegen', () {
-    test('SortCollectionAction serialization, validation and remapComponentIds', () {
-      final declarativeSort = ComponentBehavior(
-        id: 'sort-decl',
-        event: BehaviorEvent.onBinding,
-        validator: const ValueBehaviorValidator.otherEquals('sort-mode', 'prix'),
-        action: SortCollectionAction(
-          criteria: const [
-            CollectionSortCriterion(
-              path: 'prix',
-              direction: CollectionSortDirection.desc,
-            ),
-            CollectionSortCriterion(
-              path: 'nom',
-              direction: CollectionSortDirection.asc,
-            ),
-          ],
-        ),
-      );
-      expect(
-        ComponentBehavior.fromJson(declarativeSort.toJson()),
-        declarativeSort,
-      );
-      expect(
-        ComponentBehavior.fromJson(declarativeSort.toCompactJson()),
-        declarativeSort,
-      );
-
-      // Single-criterion compact shorthand roundtrip.
-      final singleSort = ComponentBehavior(
-        id: 'sort-imp',
-        event: BehaviorEvent.onTap,
-        action: SortCollectionAction.single(
-          path: 'nom',
-          direction: CollectionSortDirection.toggle,
-          targetComponentId: 'clients-table',
-        ),
-      );
-      final compact = singleSort.toCompactJson();
-      final actionJson = compact['action']! as Map<String, Object?>;
-      expect(actionJson['path'], 'nom');
-      expect(actionJson['direction'], 'toggle');
-      expect(actionJson['targetComponentId'], 'clients-table');
-      expect(ComponentBehavior.fromJson(compact), singleSort);
-
-      final remapped = singleSort.remapComponentIds({
-        'clients-table': 'clients-table-2',
-      });
-      expect(
-        (remapped.action as SortCollectionAction).targetComponentId,
-        'clients-table-2',
-      );
-
-      // Validation guards for declarative mode.
-      expect(
-        () => ComponentBehavior(
-          id: 'bad-toggle',
+    test(
+      'SortCollectionAction serialization, validation and remapComponentIds',
+      () {
+        final declarativeSort = ComponentBehavior(
+          id: 'sort-decl',
           event: BehaviorEvent.onBinding,
+          validator: const ValueBehaviorValidator.otherEquals(
+            'sort-mode',
+            'prix',
+          ),
+          action: SortCollectionAction(
+            criteria: const [
+              CollectionSortCriterion(
+                path: 'prix',
+                direction: CollectionSortDirection.desc,
+              ),
+              CollectionSortCriterion(
+                path: 'nom',
+                direction: CollectionSortDirection.asc,
+              ),
+            ],
+          ),
+        );
+        expect(
+          ComponentBehavior.fromJson(declarativeSort.toJson()),
+          declarativeSort,
+        );
+        expect(
+          ComponentBehavior.fromJson(declarativeSort.toCompactJson()),
+          declarativeSort,
+        );
+
+        // Single-criterion compact shorthand roundtrip.
+        final singleSort = ComponentBehavior(
+          id: 'sort-imp',
+          event: BehaviorEvent.onTap,
           action: SortCollectionAction.single(
             path: 'nom',
             direction: CollectionSortDirection.toggle,
+            targetComponentId: 'clients-table',
           ),
-        ).validate(),
-        throwsFormatException,
-      );
-      expect(
-        () => ComponentBehavior(
-          id: 'bad-clear',
-          event: BehaviorEvent.onBinding,
-          action: const SortCollectionAction.clear(),
-        ).validate(),
-        throwsFormatException,
-      );
-      expect(
-        () => ComponentBehavior(
-          id: 'bad-target',
-          event: BehaviorEvent.onBinding,
-          action: SortCollectionAction.single(
-            path: 'nom',
-            targetComponentId: 'list-1',
-          ),
-        ).validate(),
-        throwsFormatException,
-      );
-    });
+        );
+        final compact = singleSort.toCompactJson();
+        final actionJson = compact['action']! as Map<String, Object?>;
+        expect(actionJson['path'], 'nom');
+        expect(actionJson['direction'], 'toggle');
+        expect(actionJson['targetComponentId'], 'clients-table');
+        expect(ComponentBehavior.fromJson(compact), singleSort);
+
+        final remapped = singleSort.remapComponentIds({
+          'clients-table': 'clients-table-2',
+        });
+        expect(
+          (remapped.action as SortCollectionAction).targetComponentId,
+          'clients-table-2',
+        );
+
+        // Validation guards for declarative mode.
+        expect(
+          () => ComponentBehavior(
+            id: 'bad-toggle',
+            event: BehaviorEvent.onBinding,
+            action: SortCollectionAction.single(
+              path: 'nom',
+              direction: CollectionSortDirection.toggle,
+            ),
+          ).validate(),
+          throwsFormatException,
+        );
+        expect(
+          () => ComponentBehavior(
+            id: 'bad-clear',
+            event: BehaviorEvent.onBinding,
+            action: const SortCollectionAction.clear(),
+          ).validate(),
+          throwsFormatException,
+        );
+        expect(
+          () => ComponentBehavior(
+            id: 'bad-target',
+            event: BehaviorEvent.onBinding,
+            action: SortCollectionAction.single(
+              path: 'nom',
+              targetComponentId: 'list-1',
+            ),
+          ).validate(),
+          throwsFormatException,
+        );
+      },
+    );
 
     test('FilterCollectionAction serialization, validation and remapComponentIds', () {
       // Declarative filter using behavior.validator directly as row predicate.
@@ -417,42 +423,45 @@ void main() {
       );
     });
 
-    test('DartCodegenContext formats sort/filter actions and dynamic validators', () {
-      final ctx = DartCodegenContext(
-        appearance: Appearance(),
-        registry: Registry(),
-      );
-      final sortCode = ctx.formatBehaviorAction(
-        SortCollectionAction.single(
-          path: 'prix',
-          direction: CollectionSortDirection.desc,
-          targetComponentId: 'clients-table',
-        ),
-      );
-      expect(sortCode, contains('SortCollectionAction'));
-      expect(sortCode, contains('CollectionSortCriterion'));
-      expect(sortCode, contains('CollectionSortDirection.desc'));
-      expect(sortCode, contains("'clients-table'"));
-
-      final filterCode = ctx.formatBehaviorAction(
-        const FilterCollectionAction(
-          mode: CollectionFilterMode.toggle,
-          targetComponentId: 'clients-list',
-          filterKey: 'search',
-          predicate: ValueBehaviorValidator(
-            source: BehaviorValueSource.binding,
-            operator: BehaviorValidatorOperator.contains,
-            binding: JsonTextBinding(path: 'clients[?].nom'),
-            expectedComponentId: 'search-input',
-            caseSensitive: false,
+    test(
+      'DartCodegenContext formats sort/filter actions and dynamic validators',
+      () {
+        final ctx = DartCodegenContext(
+          appearance: Appearance(),
+          registry: Registry(),
+        );
+        final sortCode = ctx.formatBehaviorAction(
+          SortCollectionAction.single(
+            path: 'prix',
+            direction: CollectionSortDirection.desc,
+            targetComponentId: 'clients-table',
           ),
-        ),
-      );
-      expect(filterCode, contains('FilterCollectionAction'));
-      expect(filterCode, contains('CollectionFilterMode.toggle'));
-      expect(filterCode, contains("expectedComponentId: 'search-input'"));
-      expect(filterCode, contains('caseSensitive: false'));
-    });
+        );
+        expect(sortCode, contains('SortCollectionAction'));
+        expect(sortCode, contains('CollectionSortCriterion'));
+        expect(sortCode, contains('CollectionSortDirection.desc'));
+        expect(sortCode, contains("'clients-table'"));
+
+        final filterCode = ctx.formatBehaviorAction(
+          const FilterCollectionAction(
+            mode: CollectionFilterMode.toggle,
+            targetComponentId: 'clients-list',
+            filterKey: 'search',
+            predicate: ValueBehaviorValidator(
+              source: BehaviorValueSource.binding,
+              operator: BehaviorValidatorOperator.contains,
+              binding: JsonTextBinding(path: 'clients[?].nom'),
+              expectedComponentId: 'search-input',
+              caseSensitive: false,
+            ),
+          ),
+        );
+        expect(filterCode, contains('FilterCollectionAction'));
+        expect(filterCode, contains('CollectionFilterMode.toggle'));
+        expect(filterCode, contains("expectedComponentId: 'search-input'"));
+        expect(filterCode, contains('caseSensitive: false'));
+      },
+    );
   });
 
   group('SuperListView sorting & filtering via behaviors & validators', () {
@@ -739,7 +748,9 @@ void main() {
         expect(renderedRowNames(tester), ['Bob', 'Charlie']);
 
         // Tap first visual row ('Bob', which has sourceIndex = 2!).
-        final listFinder = find.byKey(const ValueKey('super-list-clients-list'));
+        final listFinder = find.byKey(
+          const ValueKey('super-list-clients-list'),
+        );
         await tester.tap(
           find.descendant(of: listFinder, matching: find.text('Bob')),
         );
@@ -753,10 +764,7 @@ void main() {
           find.descendant(of: detailFinder, matching: find.text('Bob')),
           findsOneWidget,
         );
-        expect(
-          store.bindingOf(repoId).array('clients').indexFor(const []),
-          2,
-        );
+        expect(store.bindingOf(repoId).array('clients').indexFor(const []), 2);
 
         // Imperative button toggles sort on 'nom': 1st tap -> asc, 2nd tap -> desc.
         final actionBtn = find.byWidgetPredicate(
@@ -794,10 +802,10 @@ void main() {
         final remaining = (await tester.runAsync(
           () => store.readArray(repoId, 'clients'),
         ))!;
-        expect(
-          remaining.map((e) => (e! as Map)['nom']).toList(),
-          ['Charlie', 'Alice'],
-        );
+        expect(remaining.map((e) => (e! as Map)['nom']).toList(), [
+          'Charlie',
+          'Alice',
+        ]);
       },
     );
   });
@@ -982,10 +990,7 @@ void main() {
         // Tap Alice (visual row 0, sourceIndex 3) -> Master/Detail shows 'Alice'.
         await tester.tap(tableText('Alice'));
         await tester.pumpAndSettle();
-        expect(
-          store.bindingOf(repoId).array('rows').indexFor(const []),
-          3,
-        );
+        expect(store.bindingOf(repoId).array('rows').indexFor(const []), 3);
         final detailFinder = find.byWidgetPredicate(
           (w) => w is SuperValue && w.id == 'table-detail',
         );
@@ -1175,10 +1180,11 @@ void main() {
         final rowsAfterEdit = (await tester.runAsync(
           () => store.readArray(repoId, 'rows'),
         ))!;
-        expect(
-          rowsAfterEdit.map((e) => (e! as Map)['nom']).toList(),
-          ['Zoe', 'Alice', 'Bernard'],
-        );
+        expect(rowsAfterEdit.map((e) => (e! as Map)['nom']).toList(), [
+          'Zoe',
+          'Alice',
+          'Bernard',
+        ]);
 
         // Clear all imperative filters -> Zoe reappears.
         await tester.tap(find.text('Effacer filtres'));
@@ -1355,10 +1361,234 @@ void main() {
         final saved = appearance.value.behaviorsFor('clients-list');
         expect(saved, hasLength(1));
         expect(saved.single.event, BehaviorEvent.onBinding);
-        expect(
-          saved.single.action,
-          SortCollectionAction.single(path: 'nom'),
+        expect(saved.single.action, SortCollectionAction.single(path: 'nom'));
+      },
+    );
+
+    testWidgets(
+      'SuperListView and SuperTable preserve SuperValue focus on unselected row tap and across live sort reorder on save',
+      (tester) async {
+        final created = (await tester.runAsync(
+          () => createStore('focus_sort', {
+            'clients': [
+              {'nom': 'Charlie'},
+              {'nom': 'Bob'},
+              {'nom': 'Alice'},
+            ],
+          }),
+        ))!;
+        final store = created.store;
+        final repoId = created.repoId;
+        final editMode = ValueNotifier<bool>(false);
+        addTearDown(editMode.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: StyleEditScope(
+                controller: editMode,
+                child: JsonRepositoryScope(
+                  store: store,
+                  child: SizedBox(
+                    width: 600,
+                    height: 500,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 220,
+                          child: SuperListView(
+                            id: 'sorted-list',
+                            behaviours: [
+                              ComponentBehavior(
+                                id: 'sort-asc',
+                                event: BehaviorEvent.onBinding,
+                                action: SortCollectionAction.single(
+                                  path: 'nom',
+                                  direction: CollectionSortDirection.asc,
+                                ),
+                              ),
+                            ],
+                            config: SuperListViewConfig(
+                              binding: JsonTextBinding(
+                                repositoryId: repoId,
+                                path: 'clients',
+                              ),
+                              itemExtent: 52,
+                            ),
+                            template: const SuperLayoutConfig(
+                              placements: {
+                                SuperLayoutZone.center: ['row-input'],
+                              },
+                            ),
+                            slots: [
+                              BuilderSlot(
+                                id: 'row-input',
+                                label: 'Nom',
+                                builder: (_) => const SuperValue(
+                                  id: 'list-nom',
+                                  config: SuperValueConfig(
+                                    mode: SuperValueMode.input,
+                                    bindingDebounceMs: 100,
+                                    binding: JsonTextBinding(
+                                      path: 'clients[?].nom',
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: SuperTable(
+                            id: 'sorted-table',
+                            behaviours: [
+                              ComponentBehavior(
+                                id: 'table-sort-asc',
+                                event: BehaviorEvent.onBinding,
+                                action: SortCollectionAction.single(
+                                  path: 'nom',
+                                  direction: CollectionSortDirection.asc,
+                                ),
+                              ),
+                            ],
+                            templateStyle: ContainerStyle(
+                              states: SurfaceStyleStates(
+                                selected: SelectedSurfaceStyle(
+                                  style: const ContainerStyle(elevation: 3),
+                                  properties: const {
+                                    SurfaceStyleProperty.shadow,
+                                  },
+                                ),
+                              ),
+                            ),
+                            config: SuperTableConfig(
+                              binding: JsonTextBinding(
+                                repositoryId: repoId,
+                                path: 'clients',
+                              ),
+                              columns: const [
+                                SuperTableColumnConfig(
+                                  id: 'nom',
+                                  title: 'Nom',
+                                  width: 240,
+                                ),
+                              ],
+                              placements: const {
+                                'cell:nom': ['cell:nom'],
+                              },
+                            ),
+                            cells: const {
+                              'nom': SuperValue(
+                                id: 'table-nom',
+                                config: SuperValueConfig(
+                                  mode: SuperValueMode.input,
+                                  bindingDebounceMs: 100,
+                                  binding: JsonTextBinding(
+                                    path: 'clients[?].nom',
+                                  ),
+                                ),
+                              ),
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         );
+        await flushReal(tester);
+
+        // Sorted asc: visual 0 = Alice (src 2), visual 1 = Bob (src 1), visual 2 = Charlie (src 0).
+        // 1) Tap directly into unselected visual row 1 ('Bob') in SuperListView: focus must stick on first tap!
+        final bobListField = find.descendant(
+          of: find.byKey(const ValueKey('super-list-row-sorted-list-1')),
+          matching: find.byType(TextField),
+        );
+        await tester.tap(bobListField);
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<TextField>(bobListField).focusNode!.hasFocus,
+          isTrue,
+        );
+
+        // 2) Tap visual row 0 ('Alice', src 2) in SuperListView and rename to 'Zoe' -> saves & moves to visual row 2.
+        final aliceListRow = find.byKey(
+          const ValueKey('super-list-row-sorted-list-2'),
+        );
+        final aliceListField = find.descendant(
+          of: aliceListRow,
+          matching: find.byType(TextField),
+        );
+        await tester.tap(aliceListField);
+        await tester.pumpAndSettle();
+        final aliceFocus = tester.widget<TextField>(aliceListField).focusNode!;
+        expect(aliceFocus.hasFocus, isTrue);
+
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'Zoe',
+            selection: TextSelection.collapsed(offset: 3),
+          ),
+        );
+        await tester.runAsync(() async {
+          await tester.pump();
+          await Future<void>.delayed(const Duration(milliseconds: 220));
+          for (var i = 0; i < 4; i++) {
+            await tester.pump();
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+          }
+        });
+        await tester.pumpAndSettle();
+
+        expect(aliceFocus.hasFocus, isTrue);
+        expect(
+          tester.widget<TextField>(aliceListField).controller!.text,
+          'Zoe',
+        );
+
+        // 3) In SuperTable, tap visual row 0 ('Bob', src 1) and rename to 'Zara' -> crosses visualIndex 0 on save.
+        final bobTableRow = find.byKey(
+          const ValueKey('super-table-row-sorted-table-R-1'),
+        );
+        final bobTableField = find.descendant(
+          of: bobTableRow,
+          matching: find.byType(TextField),
+        );
+        await tester.tap(bobTableField);
+        await tester.pumpAndSettle();
+        final bobTableFocus = tester
+            .widget<TextField>(bobTableField)
+            .focusNode!;
+        expect(bobTableFocus.hasFocus, isTrue);
+
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'Zara',
+            selection: TextSelection.collapsed(offset: 4),
+          ),
+        );
+        await tester.runAsync(() async {
+          await tester.pump();
+          await Future<void>.delayed(const Duration(milliseconds: 220));
+          for (var i = 0; i < 4; i++) {
+            await tester.pump();
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+          }
+        });
+        await tester.pumpAndSettle();
+
+        expect(bobTableFocus.hasFocus, isTrue);
+        final finalItems = (await tester.runAsync(
+          () => store.readArray(repoId, 'clients'),
+        ))!;
+        expect(finalItems.map((e) => (e! as Map)['nom']).toList(), [
+          'Charlie',
+          'Zara',
+          'Zoe',
+        ]);
       },
     );
   });
