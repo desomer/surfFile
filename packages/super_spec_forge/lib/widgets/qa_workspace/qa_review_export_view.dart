@@ -27,6 +27,7 @@ class QaReviewExportView extends StatelessWidget {
   /// Crée la vue d'audit et d'export QA connectée au [controller].
   const QaReviewExportView({
     required this.controller,
+    this.onContinueToCostWizard,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
     super.key,
@@ -34,6 +35,9 @@ class QaReviewExportView extends StatelessWidget {
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Callback optionnel permettant d'enchaîner directement vers l'Estimation de coût IT.
+  final VoidCallback? onContinueToCostWizard;
 
   /// Constructeur optionnel pour remplacer la WebView dans le visualisateur Markdown (tests).
   final SpecMarkdownViewerSurfaceBuilder? markdownViewerSurfaceBuilder;
@@ -92,19 +96,33 @@ class QaReviewExportView extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                FilledButton.icon(
-                  key: const ValueKey('qa-export-all-btn'),
-                  onPressed: () => _exportAllDialog(
-                    context,
-                    project: project,
-                    defaultExportDir: exportDirPath,
-                  ),
-                  icon: const Icon(Icons.save_alt_rounded, size: 16),
-                  label: const Text(
-                    'Exporter BDD / Gherkin & TDD',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (onContinueToCostWizard != null)
+                      OutlinedButton.icon(
+                        key: const ValueKey('qa-continue-to-cost-wizard-btn'),
+                        onPressed: onContinueToCostWizard,
+                        icon: const Icon(Icons.calculate_outlined, size: 16),
+                        label: const Text('Estimation de coût IT'),
+                      ),
+                    FilledButton.icon(
+                      key: const ValueKey('qa-export-all-btn'),
+                      onPressed: () => _exportAllDialog(
+                        context,
+                        project: project,
+                        defaultExportDir: exportDirPath,
+                      ),
+                      icon: const Icon(Icons.save_alt_rounded, size: 16),
+                      label: const Text(
+                        'Exporter BDD / Gherkin & TDD',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

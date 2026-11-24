@@ -41,7 +41,6 @@ class ContractDomainLayerView extends StatefulWidget {
     required this.domainId,
     required this.document,
     required this.entry,
-    required this.onBackToModel,
     this.pickAttachments,
     this.pasteAttachments,
     this.hasClipboardMedia,
@@ -60,9 +59,6 @@ class ContractDomainLayerView extends StatefulWidget {
 
   /// Entrée DSL ciblée.
   final JsonNode entry;
-
-  /// Retourne à la fiche principale de l'objet métier (niveau 1).
-  final VoidCallback onBackToModel;
 
   /// Sélecteurs optionnels pour le chat IA (tests).
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
@@ -386,12 +382,6 @@ class _ContractDomainLayerViewState extends State<ContractDomainLayerView>
                 ),
               ],
             ),
-          ),
-          OutlinedButton.icon(
-            key: const ValueKey('domain-layer-back-to-model-btn'),
-            onPressed: widget.onBackToModel,
-            icon: const Icon(Icons.arrow_back_rounded, size: 16),
-            label: const Text('Fiche modèle'),
           ),
         ],
       ),

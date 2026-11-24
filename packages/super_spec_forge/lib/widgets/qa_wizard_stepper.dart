@@ -13,7 +13,6 @@ class QaWizardStepper extends StatelessWidget {
   const QaWizardStepper({
     required this.project,
     required this.onSelectStage,
-    this.onBack,
     this.onSwitchToSpecWizard,
     this.onSwitchToUxWizard,
     this.disabled = false,
@@ -25,9 +24,6 @@ class QaWizardStepper extends StatelessWidget {
 
   /// Callback appelé lors du clic sur une étape QA.
   final ValueChanged<QaForgeStage> onSelectStage;
-
-  /// Callback optionnel de retour vers le menu Spec.
-  final VoidCallback? onBack;
 
   /// Callback optionnel permettant de basculer vers le Wizard de spécification métier.
   final VoidCallback? onSwitchToSpecWizard;
@@ -43,9 +39,7 @@ class QaWizardStepper extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final hasNavButtons =
-        onBack != null ||
-        onSwitchToSpecWizard != null ||
-        onSwitchToUxWizard != null;
+        onSwitchToSpecWizard != null || onSwitchToUxWizard != null;
 
     return Container(
       key: const ValueKey('qa-wizard-stepper'),
@@ -61,16 +55,6 @@ class QaWizardStepper extends StatelessWidget {
           final horizontalPadding = maxWidth < 440 ? 8.0 : 16.0;
 
           final navButtons = <Widget>[
-            if (onBack != null)
-              OutlinedButton.icon(
-                key: const ValueKey('qa-subview-back-btn'),
-                onPressed: onBack,
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Spec'),
-              ),
             if (onSwitchToSpecWizard != null)
               Tooltip(
                 message: 'Basculer vers le Wizard de spécification métier',

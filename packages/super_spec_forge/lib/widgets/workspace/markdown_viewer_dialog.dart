@@ -83,6 +83,8 @@ Future<void> showSpecMarkdownViewerDialog(
   Directory? exportDirectory,
   SpecMarkdownBrowserLauncher? openInBrowser,
   SpecMarkdownViewerSurfaceBuilder? surfaceBuilder,
+  bool initialShowToc = true,
+  bool initialFullscreen = false,
 }) => showDialog<void>(
   context: context,
   builder: (_) => _SpecMarkdownViewerDialog(
@@ -92,6 +94,8 @@ Future<void> showSpecMarkdownViewerDialog(
     exportDirectory: exportDirectory,
     openInBrowser: openInBrowser,
     surfaceBuilder: surfaceBuilder,
+    initialShowToc: initialShowToc,
+    initialFullscreen: initialFullscreen,
   ),
 );
 
@@ -103,6 +107,8 @@ class _SpecMarkdownViewerDialog extends StatefulWidget {
     this.exportDirectory,
     this.openInBrowser,
     this.surfaceBuilder,
+    this.initialShowToc = true,
+    this.initialFullscreen = false,
   });
 
   final String markdown;
@@ -111,6 +117,8 @@ class _SpecMarkdownViewerDialog extends StatefulWidget {
   final Directory? exportDirectory;
   final SpecMarkdownBrowserLauncher? openInBrowser;
   final SpecMarkdownViewerSurfaceBuilder? surfaceBuilder;
+  final bool initialShowToc;
+  final bool initialFullscreen;
 
   @override
   State<_SpecMarkdownViewerDialog> createState() =>
@@ -120,7 +128,8 @@ class _SpecMarkdownViewerDialog extends StatefulWidget {
 class _SpecMarkdownViewerDialogState extends State<_SpecMarkdownViewerDialog> {
   bool _initializedTheme = false;
   bool _darkMode = false;
-  bool _showToc = true;
+  late bool _showToc = widget.initialShowToc;
+  late bool _fullscreen = widget.initialFullscreen;
   bool _loading = true;
   String? _error;
   File? _htmlFile;
@@ -345,12 +354,18 @@ class _SpecMarkdownViewerDialogState extends State<_SpecMarkdownViewerDialog> {
     final screen = MediaQuery.sizeOf(context);
 
     return Dialog(
-      insetPadding: const EdgeInsets.all(20),
+      key: const ValueKey('spec-md-viewer-dialog'),
+      insetPadding: EdgeInsets.all(_fullscreen ? 10 : 20),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: SizedBox(
-        width: (screen.width * 0.92).clamp(640.0, 1400.0),
-        height: (screen.height * 0.92).clamp(480.0, 960.0),
+        key: const ValueKey('spec-md-viewer-container'),
+        width: _fullscreen
+            ? (screen.width - 20).clamp(640.0, double.infinity)
+            : (screen.width * 0.92).clamp(640.0, 1400.0),
+        height: _fullscreen
+            ? (screen.height - 20).clamp(480.0, double.infinity)
+            : (screen.height * 0.92).clamp(480.0, 960.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -455,6 +470,19 @@ class _SpecMarkdownViewerDialogState extends State<_SpecMarkdownViewerDialog> {
                         onPressed: _printOrPdf,
                         icon: const Icon(Icons.print_outlined, size: 16),
                         label: const Text('Imprimer / PDF'),
+                      ),
+                      IconButton(
+                        key: const ValueKey('spec-md-viewer-toggle-fullscreen'),
+                        tooltip: _fullscreen
+                            ? 'Revenir à la taille normale'
+                            : 'Agrandir (presque plein écran)',
+                        onPressed: () =>
+                            setState(() => _fullscreen = !_fullscreen),
+                        icon: Icon(
+                          _fullscreen
+                              ? Icons.fullscreen_exit_rounded
+                              : Icons.fullscreen_rounded,
+                        ),
                       ),
                       IconButton(
                         key: const ValueKey('spec-md-viewer-close'),

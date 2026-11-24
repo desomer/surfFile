@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show immutable;
 
 import '../models/spec_forge_project.dart';
+import 'cost_patch_applier.dart';
 import 'spec_patch_applier.dart';
 
 /// Résultat immuable d'une tentative de récupération partielle après échec IA.
@@ -80,6 +81,20 @@ abstract final class SpecDeltaRecovery {
     );
   }
 
+  /// Récupère le maximum d'éléments valides d'un `"costPatch"` (et d'un éventuel
+  /// `"specPatch"` additif) depuis une réponse FinOps échouée ou tronquée.
+  static SpecSalvageOutcome salvageCostFailedAttempt({
+    required SpecForgeProject workingProject,
+    required String rawResponse,
+    Map<String, Object?>? decodedCostPatch,
+    Map<String, Object?>? decodedSpecPatch,
+  }) => CostPatchApplier.salvageFailedAttempt(
+    workingProject: workingProject,
+    rawResponse: rawResponse,
+    decodedCostPatch: decodedCostPatch,
+    decodedSpecPatch: decodedSpecPatch,
+  );
+
   /// Construit le prompt de relance delta incluant le contexte actualisé,
   /// les causes précédentes et les entrées à corriger ou compléter.
   static String buildDeltaRetryPrompt({
@@ -137,10 +152,14 @@ abstract final class SpecDeltaRecovery {
     return buf.toString();
   }
 
-  /// Tente d'extraire les objets complets fermés d'un `"specPatch"` même si le flux
-  /// JSON global a été coupé avant la fin.
-  static Map<String, Object?>? _trySalvagePatchFromTruncatedJson(String raw) {
-    final match = RegExp(r'"specPatch"\s*:\s*\{').firstMatch(raw);
+  /// Tente d'extraire et équilibrer un champ objet JSON racine (`"specPatch"`,
+  /// `"uxPatch"`, `"qaPatch"`, `"costPatch"`) même si le flux global a été tronqué.
+  static Map<String, Object?>? trySalvageObjectField(
+    String raw,
+    String fieldName,
+  ) {
+    final match = RegExp('"${RegExp.escape(fieldName)}"\\s*:\\s*\\{')
+        .firstMatch(raw);
     if (match == null) return null;
     final startBrace = match.end - 1;
     final slice = raw.substring(startBrace);
@@ -161,6 +180,11 @@ abstract final class SpecDeltaRecovery {
     }
     return null;
   }
+
+  /// Tente d'extraire les objets complets fermés d'un `"specPatch"` même si le flux
+  /// JSON global a été coupé avant la fin.
+  static Map<String, Object?>? _trySalvagePatchFromTruncatedJson(String raw) =>
+      trySalvageObjectField(raw, 'specPatch');
 
   static String? _closeOpenJsonContainers(String input) {
     final stack = <String>[];

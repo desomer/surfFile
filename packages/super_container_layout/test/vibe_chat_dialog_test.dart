@@ -7614,11 +7614,21 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        expect(
+          find.byKey(const ValueKey('vibe-plan-start-parallel')),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-start-parallel')),
+        );
         await tester.pump();
         await tester.pump();
         await tester.pump();
 
+        expect(
+          find.byKey(const ValueKey('vibe-plan-parallel-badge')),
+          findsOneWidget,
+        );
         expect(waveStarted.isCompleted, isTrue);
         // Les Lots 2 et 3 ont bien été lancés simultanément après la fin du Lot 1 !
         expect(maxConcurrentCalls, 2);
@@ -7986,7 +7996,9 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-start-parallel')),
+        );
         await tester.pump();
         await tester.pump();
         await tester.pump();
@@ -8272,7 +8284,9 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.tap(
+          find.byKey(const ValueKey('vibe-plan-start-parallel')),
+        );
         await tester.pump();
         await tester.pump();
         await tester.pump();
@@ -8327,6 +8341,291 @@ void main() {
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'affiche le bouton « Exécution en parallèle » uniquement si le mode Plan est sélectionné et exécute en séquentiel par défaut',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 960);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final registry = Registry()..bootstrap();
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(registry.unbindAppearance);
+        addTearDown(appearance.dispose);
+
+        var activeCalls = 0;
+        var maxConcurrentCalls = 0;
+        final executedLots = <int>[];
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: MaterialApp(
+              home: Scaffold(
+                body: DefaultAssetBundle(
+                  bundle: _GuideBundle(),
+                  child: VibeChatDialog(
+                    controller: appearance,
+                    registry: registry,
+                    codec: const AppearanceCodec(),
+                    initialPlanMode: true,
+                    initialQuestioningLevel: VibeQuestioningLevel.none,
+                    onClose: () {},
+                    onDrag: (_) {},
+                    generate: (_) async => fail('Should use streamGenerate'),
+                    streamGenerate:
+                        (
+                          prompt, {
+                          systemInstruction,
+                          staticGuide,
+                          attachments = const [],
+                          speedMode = VibeAiSpeedMode.fast,
+                        }) {
+                          if (prompt.contains('PHASE 1 — PLANIFICATION')) {
+                            final planJson = jsonEncode({
+                              'message': 'Plan prêt.',
+                              'plan': {
+                                'title': 'Plan séquentiel ou parallèle',
+                                'lots': [
+                                  {
+                                    'id': 'lot-1',
+                                    'title': 'Socle',
+                                    'description': 'Routes /alpha et /beta',
+                                  },
+                                  {
+                                    'id': 'lot-2',
+                                    'title': 'Page Alpha',
+                                    'description': 'Remplit /alpha',
+                                    'dependsOn': ['lot-1'],
+                                  },
+                                  {
+                                    'id': 'lot-3',
+                                    'title': 'Page Beta',
+                                    'description': 'Remplit /beta',
+                                    'dependsOn': ['lot-1'],
+                                  },
+                                ],
+                              },
+                              'vibe': null,
+                            });
+                            return Stream<GeminiStreamEvent>.value(
+                              GeminiStreamEvent(
+                                deltaText: planJson,
+                                accumulatedText: planJson,
+                                isDone: true,
+                                usedContextCache: true,
+                              ),
+                            );
+                          }
+
+                          final lotNumber =
+                              prompt.contains('LOT CIBLE OBLIGATOIRE (1/3)')
+                              ? 1
+                              : prompt.contains('LOT CIBLE OBLIGATOIRE (2/3)')
+                              ? 2
+                              : 3;
+                          executedLots.add(lotNumber);
+                          activeCalls++;
+                          if (activeCalls > maxConcurrentCalls) {
+                            maxConcurrentCalls = activeCalls;
+                          }
+                          final payload = switch (lotNumber) {
+                            1 => jsonEncode({
+                              'message': 'Socle prêt.',
+                              'vibe': {
+                                'pageCatalog': {
+                                  'pages': [
+                                    {
+                                      'id': 'route_alpha',
+                                      'name': 'Alpha',
+                                      'path': '/alpha',
+                                    },
+                                    {
+                                      'id': 'route_beta',
+                                      'name': 'Beta',
+                                      'path': '/beta',
+                                    },
+                                  ],
+                                },
+                                'components': {
+                                  'route_alpha': {
+                                    'type': 'scaffold',
+                                    'placements': {'body': []},
+                                  },
+                                  'route_beta': {
+                                    'type': 'scaffold',
+                                    'placements': {'body': []},
+                                  },
+                                },
+                              },
+                            }),
+                            2 => jsonEncode({
+                              'message': 'Alpha prêt.',
+                              'vibe': {
+                                'components': {
+                                  'route_alpha': {
+                                    'type': 'scaffold',
+                                    'placements': {
+                                      'body': [
+                                        {
+                                          'id': 'seq-alpha',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                    'slotLabels': {'seq-alpha': 'Alpha'},
+                                  },
+                                  'seq-alpha': {
+                                    'type': 'value',
+                                    'text': 'Alpha',
+                                  },
+                                },
+                              },
+                            }),
+                            _ => jsonEncode({
+                              'message': 'Beta prêt.',
+                              'vibe': {
+                                'components': {
+                                  'route_beta': {
+                                    'type': 'scaffold',
+                                    'placements': {
+                                      'body': [
+                                        {
+                                          'id': 'seq-beta',
+                                          'type': 'registry:Value',
+                                        },
+                                      ],
+                                    },
+                                    'slotLabels': {'seq-beta': 'Beta'},
+                                  },
+                                  'seq-beta': {
+                                    'type': 'value',
+                                    'text': 'Beta',
+                                  },
+                                },
+                              },
+                            }),
+                          };
+                          return (() async* {
+                            await Future<void>.delayed(
+                              const Duration(milliseconds: 20),
+                            );
+                            activeCalls--;
+                            yield GeminiStreamEvent(
+                              deltaText: payload,
+                              accumulatedText: payload,
+                              isDone: true,
+                              usedContextCache: true,
+                            );
+                          })();
+                        },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Construis Alpha et Beta',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        final parallelFinder = find.byKey(
+          const ValueKey('vibe-plan-start-parallel'),
+        );
+        expect(parallelFinder, findsOneWidget);
+        expect(find.text('Exécution en parallèle'), findsOneWidget);
+        expect(
+          tester.widget<ButtonStyleButton>(parallelFinder).onPressed,
+          isNotNull,
+        );
+
+        // Désactiver 2 lots ne laisse qu'1 lot actif -> bouton parallèle désactivé.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<ButtonStyleButton>(parallelFinder).onPressed,
+          isNull,
+        );
+
+        // Réactiver les lots -> bouton parallèle de nouveau actif.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-2')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-lot-toggle-lot-3')));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<ButtonStyleButton>(parallelFinder).onPressed,
+          isNotNull,
+        );
+
+        // Désactiver le mode Plan masque immédiatement le bouton « Exécution en parallèle ».
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-plan-mode')));
+        await tester.pumpAndSettle();
+        expect(parallelFinder, findsNothing);
+
+        // Réactiver le mode Plan rend le bouton de nouveau accessible.
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-plan-mode')));
+        await tester.pumpAndSettle();
+        expect(parallelFinder, findsOneWidget);
+
+        // Clic sur « Exécuter les 3 lots » -> exécution strictement séquentielle par défaut.
+        await tester.tap(find.byKey(const ValueKey('vibe-plan-start')));
+        await tester.pumpAndSettle();
+
+        expect(executedLots, [1, 2, 3]);
+        expect(maxConcurrentCalls, 1);
+        expect(
+          find.byKey(const ValueKey('vibe-plan-parallel-badge')),
+          findsNothing,
+        );
+        expect(
+          appearance.value.components.containsKey('seq-alpha'),
+          isTrue,
+        );
+        expect(
+          appearance.value.components.containsKey('seq-beta'),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'VibeExecutionPlan conserve parallelExecution (défaut false) en copie et JSON',
+      () {
+        final plan = VibeExecutionPlan.tryFromJson({
+          'title': 'Plan test',
+          'lots': [
+            {'id': 'lot-1', 'title': 'Socle'},
+            {
+              'id': 'lot-2',
+              'title': 'Écran A',
+              'dependsOn': ['lot-1'],
+            },
+          ],
+        });
+        expect(plan, isNotNull);
+        expect(plan!.parallelExecution, isFalse);
+        expect(plan.toJson().containsKey('parallelExecution'), isFalse);
+
+        final parallelPlan = plan.copyWith(parallelExecution: true);
+        expect(parallelPlan.parallelExecution, isTrue);
+        expect(parallelPlan.toJson()['parallelExecution'], isTrue);
+        expect(parallelPlan, isNot(equals(plan)));
+
+        final reparsed = VibeExecutionPlan.tryFromJson(parallelPlan.toJson());
+        expect(reparsed?.parallelExecution, isTrue);
       },
     );
   });

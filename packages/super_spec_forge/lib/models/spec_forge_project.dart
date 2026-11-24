@@ -7,6 +7,7 @@ import 'package:shortid/shortid.dart';
 import 'business_object_model_preferences.dart';
 import 'business_object_spec.dart';
 import 'business_rule_spec.dart';
+import 'cost/cost_forge_spec.dart';
 import 'event_storming_spec.dart';
 import 'example_mapping_spec.dart';
 import 'qa/qa_forge_spec.dart';
@@ -43,6 +44,7 @@ class SpecForgeProject {
     List<SpecChatMessage> globalChatMessages = const <SpecChatMessage>[],
     UxForgeSpec? uxSpec,
     QaForgeSpec? qaSpec,
+    CostForgeSpec? costSpec,
   }) : lexicon = lexicon ?? SpecLexicon.empty,
        vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
@@ -62,7 +64,8 @@ class SpecForgeProject {
          globalChatMessages,
        ),
        uxSpec = uxSpec ?? UxForgeSpec.empty,
-       qaSpec = qaSpec ?? QaForgeSpec.empty;
+       qaSpec = qaSpec ?? QaForgeSpec.empty,
+       costSpec = costSpec ?? CostForgeSpec.empty;
 
   /// Crée un nouveau projet à partir d'une idée initiale saisie par l'utilisateur.
   factory SpecForgeProject.fromIdea({
@@ -166,6 +169,9 @@ class SpecForgeProject {
   /// Spécification QA BDD/Gherkin & TDD en 4 étapes (jeux d'essais, features Gherkin, suites TDD et couverture 360°).
   final QaForgeSpec qaSpec;
 
+  /// Spécification FinOps & Chiffrage en 4 étapes (grille TJM, Build WBS, Run OPEX et TCO/Risques).
+  final CostForgeSpec costSpec;
+
   /// Retourne l'état d'une étape donnée (garanti non nul).
   SpecStageState stageStateFor(SpecForgeStage stage) =>
       stageStates[stage] ?? SpecStageState(stage: stage);
@@ -262,6 +268,7 @@ class SpecForgeProject {
 
     uxSpec.validate();
     qaSpec.validate();
+    costSpec.validate();
   }
 
   /// Produit un instantané JSON concis adapté à l'injection dans le prompt de [stage].
@@ -372,6 +379,52 @@ class SpecForgeProject {
                   },
               ],
           },
+        if (costSpec.hasContent)
+          'costSummary': <String, Object?>{
+            'currentStage': costSpec.currentStage.name,
+            'currency': costSpec.currency.code,
+            'deliveryMode': costSpec.deliveryMode.name,
+            'hoursPerDay': costSpec.hoursPerDay,
+            'targetUsersCount': costSpec.targetUsersCount,
+            'aiProductivityEnabled': costSpec.aiProductivity.enabled,
+            'wbsItemCount': costSpec.wbsItems.length,
+            'runItemCount': costSpec.runItems.length,
+            'riskItemCount': costSpec.riskItems.length,
+            if (costSpec.wbsItems.isNotEmpty)
+              'wbsItems': [
+                for (final w in costSpec.wbsItems)
+                  <String, Object?>{
+                    'id': w.id,
+                    'code': w.code,
+                    'title': w.title,
+                    'discipline': w.discipline.name,
+                    'priority': w.priority.name,
+                    'expectedDays': w.expectedDays,
+                  },
+              ],
+            if (costSpec.runItems.isNotEmpty)
+              'runItems': [
+                for (final r in costSpec.runItems)
+                  <String, Object?>{
+                    'id': r.id,
+                    'code': r.code,
+                    'name': r.name,
+                    'category': r.category.name,
+                    'yearlyCost': r.yearlyCost,
+                  },
+              ],
+            if (costSpec.riskItems.isNotEmpty)
+              'riskItems': [
+                for (final r in costSpec.riskItems)
+                  <String, Object?>{
+                    'id': r.id,
+                    'code': r.code,
+                    'title': r.title,
+                    'probabilityPct': r.probabilityPct,
+                    'expectedDays': r.expectedDays,
+                  },
+              ],
+          },
       };
 
   /// Copie modifiée (met à jour [updatedAt] automatiquement si non fourni).
@@ -396,6 +449,7 @@ class SpecForgeProject {
     List<SpecChatMessage>? globalChatMessages,
     UxForgeSpec? uxSpec,
     QaForgeSpec? qaSpec,
+    CostForgeSpec? costSpec,
   }) => SpecForgeProject(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -419,6 +473,7 @@ class SpecForgeProject {
     globalChatMessages: globalChatMessages ?? this.globalChatMessages,
     uxSpec: uxSpec ?? this.uxSpec,
     qaSpec: qaSpec ?? this.qaSpec,
+    costSpec: costSpec ?? this.costSpec,
   );
 
   /// Sérialise le projet complet en JSON.
@@ -450,6 +505,7 @@ class SpecForgeProject {
       'globalChatMessages': [for (final m in globalChatMessages) m.toJson()],
     if (uxSpec.hasContent) 'uxSpec': uxSpec.toJson(),
     if (qaSpec.hasContent) 'qaSpec': qaSpec.toJson(),
+    if (costSpec.hasContent) 'costSpec': costSpec.toJson(),
   };
 
   /// Désérialise et valide un projet depuis JSON.
@@ -522,6 +578,7 @@ class SpecForgeProject {
       ],
       uxSpec: UxForgeSpec.fromJson(raw['uxSpec']),
       qaSpec: QaForgeSpec.fromJson(raw['qaSpec']),
+      costSpec: CostForgeSpec.fromJson(raw['costSpec']),
     );
     project.validate();
     return project;
@@ -568,10 +625,11 @@ class SpecForgeProject {
           listEquals(other.coherenceIssues, coherenceIssues) &&
           listEquals(other.globalChatMessages, globalChatMessages) &&
           other.uxSpec == uxSpec &&
-          other.qaSpec == qaSpec;
+          other.qaSpec == qaSpec &&
+          other.costSpec == costSpec;
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll(<Object?>[
     id,
     name,
     initialIdea,
@@ -591,5 +649,6 @@ class SpecForgeProject {
     Object.hashAll(globalChatMessages),
     uxSpec,
     qaSpec,
-  );
+    costSpec,
+  ]);
 }

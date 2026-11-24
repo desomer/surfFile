@@ -12,7 +12,6 @@ class IdeaLauncherView extends StatefulWidget {
   /// Crée l'écran d'accueil connecté au [controller].
   const IdeaLauncherView({
     required this.controller,
-    this.onBack,
     this.onProjectActivated,
     this.onSelectWorkspace,
     super.key,
@@ -20,9 +19,6 @@ class IdeaLauncherView extends StatefulWidget {
 
   /// Contrôleur principal de forge.
   final SpecForgeController controller;
-
-  /// Callback optionnel de retour vers le menu Spec.
-  final VoidCallback? onBack;
 
   /// Callback optionnel appelé après création ou ouverture d'un projet.
   final VoidCallback? onProjectActivated;
@@ -303,40 +299,9 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
       ),
     );
 
-    if (widget.onBack == null) {
-      return body;
-    }
-
-    return Column(
+    return KeyedSubtree(
       key: const ValueKey('spec-projects-view'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          color: colors.surfaceContainerLow,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('spec-subview-back-btn'),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Spec'),
-              ),
-              const SizedBox(width: 14),
-              Icon(Icons.folder_open_rounded, size: 22, color: colors.primary),
-              const SizedBox(width: 10),
-              Text(
-                'Projets',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1, thickness: 1),
-        Expanded(child: body),
-      ],
+      child: body,
     );
   }
 }

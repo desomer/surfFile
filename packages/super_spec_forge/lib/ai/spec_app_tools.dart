@@ -4,6 +4,8 @@
 /// [VibeToolCall] et [VibeToolResult] de `super_container_layout`.
 library;
 
+import 'dart:math' as math;
+
 import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
@@ -12,6 +14,12 @@ import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/cost/cost_coherence_issue.dart';
+import '../models/cost/cost_forge_spec.dart';
+import '../models/cost/cost_forge_stage.dart';
+import '../models/cost/cost_run_item_spec.dart';
+import '../models/cost/cost_wbs_item_spec.dart';
+import '../models/enterprise_rate_card.dart';
 import '../models/event_storming_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
@@ -90,6 +98,31 @@ abstract final class SpecForgeToolRegistry {
     'inspect_business_object',
     'get_example_mapping',
     'get_business_rules',
+    'run_coherence_audit',
+    'get_debug_entries',
+  };
+
+  /// Ensemble des 3 outils dédiés au volet FinOps & Chiffrage.
+  static const Set<String> costToolNames = <String>{
+    'get_cost_overview',
+    'inspect_cost_item',
+    'focus_cost_item',
+  };
+
+  /// Ensemble recommandé d'outils pour les 4 agents du wizard FinOps & Chiffrage (outils Coûts + introspection Spec/UX/QA en lecture/audit).
+  static const Set<String> costStageToolNames = <String>{
+    'get_cost_overview',
+    'inspect_cost_item',
+    'focus_cost_item',
+    'get_lexicon_and_synonyms',
+    'get_requirements_summary',
+    'get_event_storming',
+    'inspect_business_object',
+    'get_business_rules',
+    'get_ux_overview',
+    'inspect_ux_screen',
+    'get_qa_overview',
+    'inspect_qa_artifact',
     'run_coherence_audit',
     'get_debug_entries',
   };
@@ -176,6 +209,18 @@ abstract final class SpecForgeToolRegistry {
       'focus_qa_item',
       'positionne l\'atelier QA sur une étape (`stage`), une fixture (`fixtureId`), une feature (`featureId`), un scénario (`scenarioId`) et/ou une suite TDD (`tddSuiteId`).',
     ),
+    (
+      'get_cost_overview',
+      'synthétise le volet FinOps & Chiffrage : hypothèses TJM, Build WBS CAPEX (MVP / V1 / Cible, PERT & P80, Classique vs IA), Run OPEX sur 1/3/5 ans, provision risques EMV, TCO 1/3/5 ans et diagnostics de cohérence.',
+    ),
+    (
+      'inspect_cost_item',
+      'lit le détail complet d\'un profil TJM (`PRF-xxx`), d\'un lot Build WBS (`WBS-xxx`), d\'un poste Run OPEX (`RUN-xxx`) ou d\'un risque budgétaire (`RSK-xxx`) par identifiant, code ou nom/titre.',
+    ),
+    (
+      'focus_cost_item',
+      'positionne l\'atelier FinOps & Chiffrage sur une étape (`stage`), un profil TJM (`profileId`), un lot WBS (`wbsItemId`), un poste Run (`runItemId`) et/ou un risque (`riskItemId`).',
+    ),
   ];
 
   /// Guide succinct injecté dans le guide statique des agents, restreint aux
@@ -192,7 +237,7 @@ abstract final class SpecForgeToolRegistry {
     ].join('\n');
   }
 
-  /// Déclarations statiques des 18 outils (10 Spec + 4 UX + 4 QA) exposés au modèle Gemini.
+  /// Déclarations statiques des outils (Spec, UX, QA et FinOps/Coûts) exposés au modèle Gemini.
   static const List<VibeToolDeclaration> declarations = <VibeToolDeclaration>[
     VibeToolDeclaration(
       name: 'get_lexicon_and_synonyms',
@@ -594,6 +639,97 @@ abstract final class SpecForgeToolRegistry {
         },
       },
     ),
+    VibeToolDeclaration(
+      name: 'get_cost_overview',
+      description: 'Retourne la synthèse complète du volet FinOps & Chiffrage : hypothèses TJM, totaux Build WBS CAPEX (MVP / V1 / Cible, PERT espéré & P80, Classique vs IA), coûts Run OPEX (mensuel, années 1..3, cumul 3/5 ans), provision risques EMV, TCO 1/3/5 ans et diagnostics de cohérence.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'priority': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel des lots WBS listés par priorité MoSCoW (must, should, could, wont).',
+          },
+          'discipline': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel des lots WBS par discipline (backend, frontendUx, dataModel, integration, qaTesting, devSecOps, projectManagement).',
+          },
+          'category': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel des postes Run par catégorie OPEX (cloudInfra, databaseStorage, thirdPartyApi, aiTokensLlm, saasLicenses, supportTma, securityCompliance).',
+          },
+          'moduleId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel des lots WBS par identifiant de module fonctionnel.',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'inspect_cost_item',
+      description: 'Inspecte le détail complet et les métriques calculées d’un profil TJM (CostProfileRate), d’un lot Build WBS (CostWbsItemSpec), d’un poste Run OPEX (CostRunItemSpec) ou d’un risque budgétaire (CostRiskItemSpec) par identifiant, code (PRF-xxx, WBS-001, RUN-001, RSK-001) ou nom/titre.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'idOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant, code (PRF-xxx, WBS-001, RUN-001, RSK-001) ou nom/titre de l’élément FinOps à inspecter.',
+          },
+          'profileId': <String, Object?>{
+            'type': 'string',
+            'description': 'Alias optionnel de idOrCode pour cibler un profil TJM.',
+          },
+          'wbsItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Alias optionnel de idOrCode pour cibler un lot Build WBS.',
+          },
+          'runItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Alias optionnel de idOrCode pour cibler un poste Run OPEX.',
+          },
+          'riskItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Alias optionnel de idOrCode pour cibler un risque budgétaire.',
+          },
+          'kind': <String, Object?>{
+            'type': 'string',
+            'description': 'Indice optionnel du type d’élément (profile, wbs, run, risk).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'focus_cost_item',
+      description: 'Bascule l’atelier FinOps & Chiffrage sur une étape donnée et sélectionne éventuellement un profil TJM (profileId), un lot WBS (wbsItemId), un poste Run OPEX (runItemId) ou un risque budgétaire (riskItemId).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Étape Coûts cible (rateCardAssumptions, buildWbs, runOpex, tcoReviewExport).',
+          },
+          'idOrCode': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code générique (PRF-xxx, WBS-xxx, RUN-xxx, RSK-xxx) de l’élément à sélectionner (optionnel).',
+          },
+          'profileId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code PRF-xxx du profil TJM à sélectionner (optionnel).',
+          },
+          'wbsItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code WBS-xxx du lot Build WBS à sélectionner (optionnel).',
+          },
+          'runItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code RUN-xxx du poste Run OPEX à sélectionner (optionnel).',
+          },
+          'riskItemId': <String, Object?>{
+            'type': 'string',
+            'description': 'Identifiant ou code RSK-xxx du risque budgétaire à sélectionner (optionnel).',
+          },
+        },
+      },
+    ),
   ];
 
   /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec, UX et QA.
@@ -629,9 +765,20 @@ abstract final class SpecForgeToolRegistry {
       String? tddSuiteId,
     })?
     onFocusQaItem,
+    List<CostCoherenceIssue> Function(SpecForgeProject project)?
+    onRunCostCoherenceAudit,
+    void Function({
+      CostForgeStage? stage,
+      String? profileId,
+      String? wbsItemId,
+      String? runItemId,
+      String? riskItemId,
+    })?
+    onFocusCostItem,
     Set<String>? toolNames,
     bool includeUxTools = true,
     bool includeQaTools = true,
+    bool includeCostTools = true,
     bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) => build(
     readProject: readProject,
@@ -648,17 +795,21 @@ abstract final class SpecForgeToolRegistry {
     onFocusUxItem: onFocusUxItem,
     onRunQaCoherenceAudit: onRunQaCoherenceAudit,
     onFocusQaItem: onFocusQaItem,
+    onRunCostCoherenceAudit: onRunCostCoherenceAudit,
+    onFocusCostItem: onFocusCostItem,
     toolNames: toolNames,
     includeUxTools: includeUxTools,
     includeQaTools: includeQaTools,
+    includeCostTools: includeCostTools,
     coherenceIssueFilter: coherenceIssueFilter,
   );
 
   /// Construit un [VibeAppToolRegistry] connecté au projet courant et aux callbacks de mutation/navigation.
   ///
-  /// [toolNames] restreint les outils enregistrés ; lorsqu'il est omis, les 4
-  /// outils UX et/ou les 4 outils QA sont activés dès que [includeUxTools] /
-  /// [includeQaTools] vaut `true` ou qu'un callback UX / QA correspondant est fourni.
+  /// [toolNames] restreint les outils enregistrés ; lorsqu'il est omis, les
+  /// outils UX, QA et/ou Coûts sont activés dès que [includeUxTools],
+  /// [includeQaTools] ou [includeCostTools] vaut `true` ou qu'un callback
+  /// correspondant est fourni.
   static VibeAppToolRegistry build({
     required SpecForgeProject? Function() readProject,
     Future<void> Function(SpecForgeProject updated)? onUpdateProject,
@@ -691,9 +842,20 @@ abstract final class SpecForgeToolRegistry {
       String? tddSuiteId,
     })?
     onFocusQaItem,
+    List<CostCoherenceIssue> Function(SpecForgeProject project)?
+    onRunCostCoherenceAudit,
+    void Function({
+      CostForgeStage? stage,
+      String? profileId,
+      String? wbsItemId,
+      String? runItemId,
+      String? riskItemId,
+    })?
+    onFocusCostItem,
     Set<String>? toolNames,
     bool? includeUxTools,
     bool? includeQaTools,
+    bool? includeCostTools,
     bool Function(SpecCoherenceIssue issue)? coherenceIssueFilter,
   }) {
     final handlers = <String, VibeToolHandler>{
@@ -728,7 +890,23 @@ abstract final class SpecForgeToolRegistry {
           name: call.name,
           data: <String, Object?>{
             'termCount': terms.length,
-            'terms': [for (final t in terms) t.toJson()],
+            'terms': [
+              for (final t in terms)
+                () {
+                  final match = companyGlossary?.matchLexiconTerm(t);
+                  return <String, Object?>{
+                    ...t.toJson(),
+                    'existsInCompanyGlossary': match != null,
+                    if (match != null)
+                      'companyGlossaryMatch': <String, Object?>{
+                        'kind': match.kind.name,
+                        'id': match.term.id,
+                        'term': match.term.term,
+                        'status': match.term.status.name,
+                      },
+                  };
+                }(),
+            ],
             'ambiguousTerms': project.lexicon.ambiguousTerms,
             'conventions': project.lexicon.conventions,
             if (companyGlossary != null && companyGlossary.hasContent)
@@ -2173,6 +2351,470 @@ abstract final class SpecForgeToolRegistry {
           },
         );
       },
+      'get_cost_overview': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final cost = project.costSpec;
+        final priorityRaw =
+            (call.arguments['priority'] as String?)?.trim() ?? '';
+        final disciplineRaw =
+            (call.arguments['discipline'] as String?)?.trim() ?? '';
+        final categoryRaw =
+            (call.arguments['category'] as String?)?.trim() ?? '';
+        final moduleRaw =
+            (call.arguments['moduleId'] as String?)?.trim() ?? '';
+
+        final priorityFilter = priorityRaw.isEmpty
+            ? null
+            : RequirementPriority.fromJson(priorityRaw);
+        final disciplineFilter = disciplineRaw.isEmpty
+            ? null
+            : CostDiscipline.fromJson(disciplineRaw);
+        final categoryFilter = categoryRaw.isEmpty
+            ? null
+            : CostRunCategory.fromJson(categoryRaw);
+
+        final filteredWbs = cost.wbsItems.where((w) {
+          if (priorityFilter != null && w.priority != priorityFilter) {
+            return false;
+          }
+          if (disciplineFilter != null && w.discipline != disciplineFilter) {
+            return false;
+          }
+          if (moduleRaw.isNotEmpty && w.moduleId != moduleRaw) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        final filteredRuns = cost.runItems.where((r) {
+          if (categoryFilter != null && r.category != categoryFilter) {
+            return false;
+          }
+          return true;
+        }).toList();
+
+        final issues = onRunCostCoherenceAudit != null
+            ? onRunCostCoherenceAudit(project)
+            : cost.coherenceIssues;
+        final summary = buildCostSummaryJson(cost);
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'currentCostStage': cost.currentStage.name,
+            'currency': cost.currency.code,
+            'hoursPerDay': cost.hoursPerDay,
+            'deliveryMode': cost.deliveryMode.name,
+            'targetUsersCount': cost.targetUsersCount,
+            'profileCount': cost.profiles.length,
+            'wbsItemCount': filteredWbs.length,
+            'totalWbsItemCount': cost.wbsItems.length,
+            'runItemCount': filteredRuns.length,
+            'totalRunItemCount': cost.runItems.length,
+            'riskItemCount': cost.riskItems.length,
+            'coherenceIssueCount': issues.length,
+            'summary': summary,
+            'transverseRatios': cost.transverseRatios.toJson(),
+            'aiProductivity': cost.aiProductivity.toJson(),
+            if (cost.assumptionsNotes.isNotEmpty)
+              'assumptionsNotes': cost.assumptionsNotes,
+            'profiles': [
+              for (final p in cost.profiles)
+                <String, Object?>{
+                  'id': p.id,
+                  'code': p.code,
+                  'name': p.name,
+                  'seniority': p.seniority,
+                  'discipline': p.discipline.name,
+                  'internalDailyRate': p.internalDailyRate,
+                  'externalDailyRate': p.externalDailyRate,
+                  'effectiveDailyRate': _round2(
+                    p.effectiveDailyRate(cost.deliveryMode),
+                  ),
+                },
+            ],
+            'wbsItems': [
+              for (final w in filteredWbs)
+                <String, Object?>{
+                  'id': w.id,
+                  'code': w.code,
+                  'title': w.title,
+                  'discipline': w.discipline.name,
+                  'priority': w.priority.name,
+                  'profileId': w.profileId,
+                  'tshirtSize': w.tshirtSize.name,
+                  'expectedDays': _round2(w.expectedDays),
+                  'aiEligible': w.aiEligible,
+                  if (w.moduleId.isNotEmpty) 'moduleId': w.moduleId,
+                },
+            ],
+            'runItems': [
+              for (final r in filteredRuns)
+                <String, Object?>{
+                  'id': r.id,
+                  'code': r.code,
+                  'name': r.name,
+                  'category': r.category.name,
+                  'environment': r.environment.name,
+                  'billingCycle': r.billingCycle.name,
+                  'monthlyCost': _round2(r.monthlyCost),
+                  'yearlyCost': _round2(r.yearlyCost),
+                  'annualGrowthPct': r.annualGrowthPct,
+                  'enabled': r.enabled,
+                },
+            ],
+            'riskItems': [
+              for (final r in cost.riskItems)
+                <String, Object?>{
+                  'id': r.id,
+                  'code': r.code,
+                  'title': r.title,
+                  'probabilityPct': r.probabilityPct,
+                  'expectedDays': _round2(r.expectedDays),
+                  'expectedFixedCost': _round2(r.expectedFixedCost),
+                  'profileId': r.profileId,
+                  if (r.linkedHotspotId.isNotEmpty)
+                    'linkedHotspotId': r.linkedHotspotId,
+                },
+            ],
+            'coherenceIssues': [for (final i in issues) i.toJson()],
+          },
+        );
+      },
+      'inspect_cost_item': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final cost = project.costSpec;
+
+        String readArg(List<String> keys) {
+          for (final key in keys) {
+            final v = call.arguments[key];
+            if (v is String && v.trim().isNotEmpty) return v.trim();
+          }
+          return '';
+        }
+
+        final needle = readArg(const <String>[
+          'idOrCode',
+          'wbsItemId',
+          'runItemId',
+          'riskItemId',
+          'profileId',
+          'target',
+          'id',
+          'code',
+          'name',
+          'title',
+        ]);
+
+        if (needle.isEmpty) {
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'currency': cost.currency.code,
+              'profileCount': cost.profiles.length,
+              'wbsItemCount': cost.wbsItems.length,
+              'runItemCount': cost.runItems.length,
+              'riskItemCount': cost.riskItems.length,
+              'profiles': [
+                for (final p in cost.profiles)
+                  <String, Object?>{
+                    'id': p.id,
+                    'code': p.code,
+                    'name': p.name,
+                    'discipline': p.discipline.name,
+                  },
+              ],
+              'wbsItems': [
+                for (final w in cost.wbsItems)
+                  <String, Object?>{
+                    'id': w.id,
+                    'code': w.code,
+                    'title': w.title,
+                    'priority': w.priority.name,
+                  },
+              ],
+              'runItems': [
+                for (final r in cost.runItems)
+                  <String, Object?>{
+                    'id': r.id,
+                    'code': r.code,
+                    'name': r.name,
+                    'category': r.category.name,
+                  },
+              ],
+              'riskItems': [
+                for (final r in cost.riskItems)
+                  <String, Object?>{
+                    'id': r.id,
+                    'code': r.code,
+                    'title': r.title,
+                  },
+              ],
+            },
+          );
+        }
+
+        final kindHint =
+            (call.arguments['kind'] as String?)?.trim().toLowerCase() ?? '';
+        final preferProfile =
+            kindHint == 'profile' ||
+            kindHint == 'rate' ||
+            (call.arguments['profileId'] is String &&
+                (call.arguments['profileId'] as String).trim().isNotEmpty);
+        final preferWbs =
+            kindHint == 'wbs' ||
+            kindHint == 'wbsitem' ||
+            kindHint == 'build' ||
+            (call.arguments['wbsItemId'] is String &&
+                (call.arguments['wbsItemId'] as String).trim().isNotEmpty);
+        final preferRun =
+            kindHint == 'run' ||
+            kindHint == 'runitem' ||
+            kindHint == 'opex' ||
+            (call.arguments['runItemId'] is String &&
+                (call.arguments['runItemId'] as String).trim().isNotEmpty);
+        final preferRisk =
+            kindHint == 'risk' ||
+            kindHint == 'riskitem' ||
+            (call.arguments['riskItemId'] is String &&
+                (call.arguments['riskItemId'] as String).trim().isNotEmpty);
+
+        VibeToolResult? tryWbs() {
+          final wbs = cost.findWbsItem(needle);
+          if (wbs == null) return null;
+          final profile =
+              cost.findProfile(wbs.profileId) ??
+              cost.resolveProfileForDiscipline(wbs.discipline);
+          final dailyRate = profile.effectiveDailyRate(cost.deliveryMode);
+          final gainPct = (cost.aiProductivity.enabled && wbs.aiEligible)
+              ? cost.aiProductivity.gainPctFor(wbs.discipline)
+              : 0.0;
+          final aiExpectedDays = wbs.expectedDays * (1.0 - gainPct / 100.0);
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'wbs',
+              'currency': cost.currency.code,
+              'wbsItem': wbs.toJson(),
+              'computed': <String, Object?>{
+                'profileName': profile.name,
+                'effectiveDailyRate': _round2(dailyRate),
+                'expectedDays': _round2(wbs.expectedDays),
+                'stdDevDays': _round2(wbs.stdDevDays),
+                'classicExpectedCost': _round2(wbs.expectedDays * dailyRate),
+                'aiGainPct': gainPct,
+                'aiExpectedDays': _round2(aiExpectedDays),
+                'aiExpectedCost': _round2(aiExpectedDays * dailyRate),
+              },
+            },
+          );
+        }
+
+        VibeToolResult? tryRun() {
+          final run = cost.findRunItem(needle);
+          if (run == null) return null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'run',
+              'currency': cost.currency.code,
+              'runItem': run.toJson(),
+              'computed': <String, Object?>{
+                'monthlyCostYear1': _round2(run.monthlyCost),
+                'yearlyCostYear1': _round2(run.yearlyCostForYear(1)),
+                'yearlyCostYear2': _round2(run.yearlyCostForYear(2)),
+                'yearlyCostYear3': _round2(run.yearlyCostForYear(3)),
+                'cumulative3Years': _round2(
+                  run.yearlyCostForYear(1) +
+                      run.yearlyCostForYear(2) +
+                      run.yearlyCostForYear(3),
+                ),
+                'cumulative5Years': _round2(
+                  run.yearlyCostForYear(1) +
+                      run.yearlyCostForYear(2) +
+                      run.yearlyCostForYear(3) +
+                      run.yearlyCostForYear(4) +
+                      run.yearlyCostForYear(5),
+                ),
+              },
+            },
+          );
+        }
+
+        VibeToolResult? tryRisk() {
+          final risk = cost.findRiskItem(needle);
+          if (risk == null) return null;
+          final profile =
+              cost.findProfile(risk.profileId) ??
+              cost.resolveProfileForDiscipline(CostDiscipline.backend);
+          final dailyRate = profile.effectiveDailyRate(cost.deliveryMode);
+          final emvCost =
+              risk.expectedDays * dailyRate + risk.expectedFixedCost;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'risk',
+              'currency': cost.currency.code,
+              'riskItem': risk.toJson(),
+              'computed': <String, Object?>{
+                'profileName': profile.name,
+                'effectiveDailyRate': _round2(dailyRate),
+                'expectedDays': _round2(risk.expectedDays),
+                'expectedFixedCost': _round2(risk.expectedFixedCost),
+                'emvTotalCost': _round2(emvCost),
+              },
+            },
+          );
+        }
+
+        VibeToolResult? tryProfile() {
+          final profile = cost.findProfile(needle);
+          if (profile == null) return null;
+          return VibeToolResult(
+            callId: call.id,
+            name: call.name,
+            data: <String, Object?>{
+              'kind': 'profile',
+              'currency': cost.currency.code,
+              'profile': profile.toJson(),
+              'effectiveDailyRate': _round2(
+                profile.effectiveDailyRate(cost.deliveryMode),
+              ),
+            },
+          );
+        }
+
+        final resolvers = <VibeToolResult? Function()>[
+          if (preferWbs) tryWbs,
+          if (preferRun) tryRun,
+          if (preferRisk) tryRisk,
+          if (preferProfile) tryProfile,
+          tryWbs,
+          tryRun,
+          tryRisk,
+          tryProfile,
+        ];
+
+        for (final resolve in resolvers) {
+          final found = resolve();
+          if (found != null) return found;
+        }
+
+        return VibeToolResult.error(
+          callId: call.id,
+          name: call.name,
+          message: 'Élément FinOps introuvable : $needle',
+        );
+      },
+      'focus_cost_item': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final cost = project.costSpec;
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final genericRaw =
+            (call.arguments['idOrCode'] as String?)?.trim() ?? '';
+        final profileRaw =
+            (call.arguments['profileId'] as String?)?.trim() ?? '';
+        final wbsRaw = (call.arguments['wbsItemId'] as String?)?.trim() ?? '';
+        final runRaw = (call.arguments['runItemId'] as String?)?.trim() ?? '';
+        final riskRaw = (call.arguments['riskItemId'] as String?)?.trim() ?? '';
+
+        CostForgeStage? resolvedStage = stageRaw.isEmpty
+            ? null
+            : CostForgeStage.fromJson(stageRaw);
+        String? resolvedProfileId = profileRaw.isEmpty
+            ? null
+            : (cost.findProfile(profileRaw)?.id ?? profileRaw);
+        String? resolvedWbsItemId = wbsRaw.isEmpty
+            ? null
+            : (cost.findWbsItem(wbsRaw)?.id ?? wbsRaw);
+        String? resolvedRunItemId = runRaw.isEmpty
+            ? null
+            : (cost.findRunItem(runRaw)?.id ?? runRaw);
+        String? resolvedRiskItemId = riskRaw.isEmpty
+            ? null
+            : (cost.findRiskItem(riskRaw)?.id ?? riskRaw);
+
+        if (genericRaw.isNotEmpty) {
+          final matchedWbs = cost.findWbsItem(genericRaw);
+          final matchedRun = matchedWbs == null
+              ? cost.findRunItem(genericRaw)
+              : null;
+          final matchedRisk = (matchedWbs == null && matchedRun == null)
+              ? cost.findRiskItem(genericRaw)
+              : null;
+          final matchedProfile =
+              (matchedWbs == null && matchedRun == null && matchedRisk == null)
+              ? cost.findProfile(genericRaw)
+              : null;
+          if (matchedWbs != null) {
+            resolvedWbsItemId ??= matchedWbs.id;
+          } else if (matchedRun != null) {
+            resolvedRunItemId ??= matchedRun.id;
+          } else if (matchedRisk != null) {
+            resolvedRiskItemId ??= matchedRisk.id;
+          } else if (matchedProfile != null) {
+            resolvedProfileId ??= matchedProfile.id;
+          }
+        }
+
+        if (resolvedStage == null) {
+          if (resolvedRiskItemId != null) {
+            resolvedStage = CostForgeStage.tcoReviewExport;
+          } else if (resolvedRunItemId != null) {
+            resolvedStage = CostForgeStage.runOpex;
+          } else if (resolvedWbsItemId != null) {
+            resolvedStage = CostForgeStage.buildWbs;
+          } else if (resolvedProfileId != null) {
+            resolvedStage = CostForgeStage.rateCardAssumptions;
+          }
+        }
+
+        onFocusCostItem?.call(
+          stage: resolvedStage,
+          profileId: resolvedProfileId,
+          wbsItemId: resolvedWbsItemId,
+          runItemId: resolvedRunItemId,
+          riskItemId: resolvedRiskItemId,
+        );
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            if (resolvedStage != null) 'stage': resolvedStage.name,
+            'focusedProfileId': ?resolvedProfileId,
+            'focusedWbsItemId': ?resolvedWbsItemId,
+            'focusedRunItemId': ?resolvedRunItemId,
+            'focusedRiskItemId': ?resolvedRiskItemId,
+          },
+        );
+      },
     };
 
     final enableUx =
@@ -2181,12 +2823,16 @@ abstract final class SpecForgeToolRegistry {
     final enableQa =
         includeQaTools ??
         (onRunQaCoherenceAudit != null || onFocusQaItem != null);
+    final enableCost =
+        includeCostTools ??
+        (onRunCostCoherenceAudit != null || onFocusCostItem != null);
     final effectiveNames =
         toolNames ??
         <String>{
           ...specToolNames,
           if (enableUx) ...uxToolNames,
           if (enableQa) ...qaToolNames,
+          if (enableCost) ...costToolNames,
         };
 
     return VibeAppToolRegistry([
@@ -2300,9 +2946,243 @@ abstract final class SpecForgeToolRegistry {
           return 'Focus fixture ${data['focusedFixtureId']}';
         }
         return 'Focus QA ${data['stage'] ?? 'atelier'}';
+      case 'get_cost_overview':
+        return '${data['wbsItemCount'] ?? 0} lot(s) WBS, ${data['runItemCount'] ?? 0} poste(s) Run, ${data['riskItemCount'] ?? 0} risque(s)';
+      case 'inspect_cost_item':
+        if (data['wbsItem'] is Map) {
+          final wbs = data['wbsItem'] as Map;
+          return 'Lot ${wbs['code'] ?? ''} — ${wbs['title'] ?? ''}'.trim();
+        }
+        if (data['runItem'] is Map) {
+          final run = data['runItem'] as Map;
+          return 'Poste ${run['code'] ?? ''} — ${run['name'] ?? ''}'.trim();
+        }
+        if (data['riskItem'] is Map) {
+          final rsk = data['riskItem'] as Map;
+          return 'Risque ${rsk['code'] ?? ''} — ${rsk['title'] ?? ''}'.trim();
+        }
+        if (data['profile'] is Map) {
+          final prf = data['profile'] as Map;
+          return 'Profil ${prf['code'] ?? ''} — ${prf['name'] ?? ''}'.trim();
+        }
+        return '${data['wbsItemCount'] ?? 0} WBS, ${data['runItemCount'] ?? 0} Run, ${data['riskItemCount'] ?? 0} risque(s)';
+      case 'focus_cost_item':
+        if (data['focusedWbsItemId'] is String) {
+          return 'Focus lot WBS ${data['focusedWbsItemId']}';
+        }
+        if (data['focusedRunItemId'] is String) {
+          return 'Focus poste Run ${data['focusedRunItemId']}';
+        }
+        if (data['focusedRiskItemId'] is String) {
+          return 'Focus risque ${data['focusedRiskItemId']}';
+        }
+        if (data['focusedProfileId'] is String) {
+          return 'Focus profil ${data['focusedProfileId']}';
+        }
+        return 'Focus Coûts ${data['stage'] ?? 'atelier'}';
     }
     return 'OK';
   }
+
+  /// Calcule de manière autonome un résumé financier JSON complet ([CostForgeSpec])
+  /// couvrant les lots Build (MVP, V1, Cible, Total), le Run 1/3/5 ans, les risques EMV et le TCO 1/3/5 ans.
+  static Map<String, Object?> buildCostSummaryJson(CostForgeSpec cost) {
+    final mvpLot = _computeLotSummaryJson(
+      cost,
+      cost.wbsItems.where((w) => w.priority == RequirementPriority.must).toList(),
+    );
+    final v1Lot = _computeLotSummaryJson(
+      cost,
+      cost.wbsItems
+          .where(
+            (w) =>
+                w.priority == RequirementPriority.must ||
+                w.priority == RequirementPriority.should,
+          )
+          .toList(),
+    );
+    final fullLot = _computeLotSummaryJson(
+      cost,
+      cost.wbsItems
+          .where((w) => w.priority != RequirementPriority.wont)
+          .toList(),
+    );
+    final allLot = _computeLotSummaryJson(cost, cost.wbsItems);
+
+    var monthlyRunY1 = 0.0;
+    var yearlyRunY1 = 0.0;
+    var yearlyRunY2 = 0.0;
+    var yearlyRunY3 = 0.0;
+    var yearlyRunY4 = 0.0;
+    var yearlyRunY5 = 0.0;
+    for (final run in cost.runItems) {
+      monthlyRunY1 += run.monthlyCost;
+      yearlyRunY1 += run.yearlyCostForYear(1);
+      yearlyRunY2 += run.yearlyCostForYear(2);
+      yearlyRunY3 += run.yearlyCostForYear(3);
+      yearlyRunY4 += run.yearlyCostForYear(4);
+      yearlyRunY5 += run.yearlyCostForYear(5);
+    }
+    final cumulativeRun3Y = yearlyRunY1 + yearlyRunY2 + yearlyRunY3;
+    final cumulativeRun5Y = cumulativeRun3Y + yearlyRunY4 + yearlyRunY5;
+
+    var riskEmvDays = 0.0;
+    var riskEmvCost = 0.0;
+    for (final risk in cost.riskItems) {
+      final profile =
+          cost.findProfile(risk.profileId) ??
+          cost.resolveProfileForDiscipline(CostDiscipline.backend);
+      final dailyRate = profile.effectiveDailyRate(cost.deliveryMode);
+      riskEmvDays += risk.expectedDays;
+      riskEmvCost += risk.expectedDays * dailyRate + risk.expectedFixedCost;
+    }
+
+    final effectiveBuild = (fullLot['effectiveTotalCost'] as num).toDouble();
+    final tco1Y = effectiveBuild + riskEmvCost + yearlyRunY1;
+    final tco3Y = effectiveBuild + riskEmvCost + cumulativeRun3Y;
+    final tco5Y = effectiveBuild + riskEmvCost + cumulativeRun5Y;
+
+    return <String, Object?>{
+      'currency': cost.currency.code,
+      'mvpLot': mvpLot,
+      'v1Lot': v1Lot,
+      'fullLot': fullLot,
+      'allLot': allLot,
+      'monthlyRunYear1': _round2(monthlyRunY1),
+      'yearlyRunYear1': _round2(yearlyRunY1),
+      'yearlyRunYear2': _round2(yearlyRunY2),
+      'yearlyRunYear3': _round2(yearlyRunY3),
+      'cumulativeRun3Years': _round2(cumulativeRun3Y),
+      'cumulativeRun5Years': _round2(cumulativeRun5Y),
+      'riskEmvDays': _round2(riskEmvDays),
+      'riskEmvCost': _round2(riskEmvCost),
+      'tco1Year': _round2(tco1Y),
+      'tco3Years': _round2(tco3Y),
+      'tco5Years': _round2(tco5Y),
+    };
+  }
+
+  static Map<String, Object?> _computeLotSummaryJson(
+    CostForgeSpec cost,
+    List<CostWbsItemSpec> items,
+  ) {
+    var optDays = 0.0;
+    var expDays = 0.0;
+    var pessDays = 0.0;
+    var varianceSum = 0.0;
+    var classicWbsCost = 0.0;
+    var aiWbsDays = 0.0;
+    var aiWbsCost = 0.0;
+
+    for (final item in items) {
+      final profile =
+          cost.findProfile(item.profileId) ??
+          cost.resolveProfileForDiscipline(item.discipline);
+      final rate = profile.effectiveDailyRate(cost.deliveryMode);
+      final itemExp = item.expectedDays;
+      optDays += item.optimisticDays;
+      expDays += itemExp;
+      pessDays += item.pessimisticDays;
+      varianceSum += item.varianceDays;
+      classicWbsCost += itemExp * rate;
+
+      final gainPct = (cost.aiProductivity.enabled && item.aiEligible)
+          ? cost.aiProductivity.gainPctFor(item.discipline)
+          : 0.0;
+      final itemAiDays = itemExp * (1.0 - gainPct / 100.0);
+      aiWbsDays += itemAiDays;
+      aiWbsCost += itemAiDays * rate;
+    }
+
+    final p80Days = expDays + 0.8416212335729143 * math.sqrt(varianceSum);
+    final ratios = cost.transverseRatios;
+    final pmRate = cost
+        .resolveProfileForDiscipline(CostDiscipline.projectManagement)
+        .effectiveDailyRate(cost.deliveryMode);
+    final archRate = cost
+        .resolveProfileForDiscipline(CostDiscipline.devSecOps)
+        .effectiveDailyRate(cost.deliveryMode);
+    final qaRate = cost
+        .resolveProfileForDiscipline(CostDiscipline.qaTesting)
+        .effectiveDailyRate(cost.deliveryMode);
+    final weightedBaseRate = expDays > 0.0
+        ? classicWbsCost / expDays
+        : cost.toEnterpriseRateCard().averageDailyRate(cost.deliveryMode);
+
+    final classicPmDays = expDays * (ratios.projectManagementPct / 100.0);
+    final classicArchDays = expDays * (ratios.architectureDevOpsPct / 100.0);
+    final classicQaDays = expDays * (ratios.transverseQaPct / 100.0);
+    final classicSubDays =
+        expDays + classicPmDays + classicArchDays + classicQaDays;
+    final classicSubCost =
+        classicWbsCost +
+        classicPmDays * pmRate +
+        classicArchDays * archRate +
+        classicQaDays * qaRate;
+    final classicContDays = classicSubDays * (ratios.contingencyPct / 100.0);
+    final classicContCost = classicSubCost * (ratios.contingencyPct / 100.0);
+    final classicTotalDays = classicSubDays + classicContDays;
+    final classicTotalCost = classicSubCost + classicContCost;
+
+    final aiPmGain = cost.aiProductivity.gainPctFor(
+      CostDiscipline.projectManagement,
+    );
+    final aiArchGain = cost.aiProductivity.gainPctFor(CostDiscipline.devSecOps);
+    final aiQaGain = cost.aiProductivity.gainPctFor(CostDiscipline.qaTesting);
+    final aiPmDays =
+        aiWbsDays *
+        (ratios.projectManagementPct / 100.0) *
+        (1.0 - aiPmGain / 100.0);
+    final aiArchDays =
+        aiWbsDays *
+        (ratios.architectureDevOpsPct / 100.0) *
+        (1.0 - aiArchGain / 100.0);
+    final aiQaDays =
+        aiWbsDays *
+        (ratios.transverseQaPct / 100.0) *
+        (1.0 - aiQaGain / 100.0);
+    final aiSubDays = aiWbsDays + aiPmDays + aiArchDays + aiQaDays;
+    final aiSubCost =
+        aiWbsCost +
+        aiPmDays * pmRate +
+        aiArchDays * archRate +
+        aiQaDays * qaRate;
+    final aiContDays = aiSubDays * (ratios.contingencyPct / 100.0);
+    final aiContCost = aiSubCost * (ratios.contingencyPct / 100.0);
+    final aiTotalDays = aiSubDays + aiContDays;
+    final aiTotalCost = aiSubCost + aiContCost;
+
+    final effectiveTotalDays = cost.aiProductivity.enabled
+        ? aiTotalDays
+        : classicTotalDays;
+    final effectiveTotalCost = cost.aiProductivity.enabled
+        ? aiTotalCost
+        : classicTotalCost;
+    final p80Factor = expDays > 0.0 ? (p80Days / expDays) : 1.0;
+    final effectiveP80Cost = expDays > 0.0
+        ? effectiveTotalCost * p80Factor
+        : p80Days * weightedBaseRate;
+
+    return <String, Object?>{
+      'itemCount': items.length,
+      'wbsOptimisticDays': _round2(optDays),
+      'wbsExpectedDays': _round2(expDays),
+      'wbsPessimisticDays': _round2(pessDays),
+      'wbsP80Days': _round2(p80Days),
+      'classicTotalDays': _round2(classicTotalDays),
+      'classicTotalCost': _round2(classicTotalCost),
+      'aiTotalDays': _round2(aiTotalDays),
+      'aiTotalCost': _round2(aiTotalCost),
+      'effectiveTotalDays': _round2(effectiveTotalDays),
+      'effectiveTotalCost': _round2(effectiveTotalCost),
+      'effectiveP80Cost': _round2(effectiveP80Cost),
+      'aiSavedDays': _round2(classicTotalDays - aiTotalDays),
+      'aiSavedCost': _round2(classicTotalCost - aiTotalCost),
+    };
+  }
+
+  static double _round2(double value) =>
+      value.isFinite ? (value * 100.0).roundToDouble() / 100.0 : 0.0;
 
   static ({GherkinFeatureSpec feature, GherkinScenarioSpec scenario})?
   _findScenarioInQa(QaForgeSpec qa, String idOrCodeOrTitle) {

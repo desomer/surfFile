@@ -334,6 +334,7 @@ class VibeExecutionPlan {
     required List<VibePlanLot> lots,
     this.status = VibePlanStatus.awaitingConfirmation,
     this.reproduceExact = false,
+    this.parallelExecution = false,
     this.planningDurationMs,
     this.executionDurationMs,
     List<VibeTimedTrace> planningTraces = const <VibeTimedTrace>[],
@@ -351,6 +352,9 @@ class VibeExecutionPlan {
 
   /// Indique si ce plan a été généré en mode « À l’identique » (pixel-perfect).
   final bool reproduceExact;
+
+  /// Indique si l'exécution par vagues parallèles des lots indépendants a été choisie.
+  final bool parallelExecution;
 
   /// Durée de la Phase 1 (analyse et découpage du plan) en millisecondes.
   final int? planningDurationMs;
@@ -460,6 +464,7 @@ class VibeExecutionPlan {
   static VibeExecutionPlan? tryFromJson(
     Object? raw, {
     bool reproduceExact = false,
+    bool parallelExecution = false,
   }) {
     if (raw is! Map) return null;
     final rawLots = raw['lots'] ?? raw['steps'];
@@ -484,6 +489,10 @@ class VibeExecutionPlan {
 
     final rawExact = raw['reproduceExact'];
     final effectiveExact = rawExact is bool ? rawExact : reproduceExact;
+    final rawParallel = raw['parallelExecution'];
+    final effectiveParallel = rawParallel is bool
+        ? rawParallel
+        : parallelExecution;
     final rawTitle = raw['title'] ?? raw['name'];
     final title = rawTitle is String && rawTitle.trim().isNotEmpty
         ? rawTitle.trim()
@@ -494,6 +503,7 @@ class VibeExecutionPlan {
       title: title,
       lots: parsedLots,
       reproduceExact: effectiveExact,
+      parallelExecution: effectiveParallel,
     );
   }
 
@@ -502,6 +512,7 @@ class VibeExecutionPlan {
     'title': title,
     'status': status.name,
     if (reproduceExact) 'reproduceExact': true,
+    if (parallelExecution) 'parallelExecution': true,
     if (planningDurationMs != null) 'planningDurationMs': planningDurationMs,
     if (executionDurationMs != null) 'executionDurationMs': executionDurationMs,
     if (planningTraces.isNotEmpty)
@@ -515,6 +526,7 @@ class VibeExecutionPlan {
     List<VibePlanLot>? lots,
     VibePlanStatus? status,
     bool? reproduceExact,
+    bool? parallelExecution,
     int? planningDurationMs,
     int? executionDurationMs,
     bool clearExecutionDuration = false,
@@ -524,6 +536,7 @@ class VibeExecutionPlan {
     lots: lots ?? this.lots,
     status: status ?? this.status,
     reproduceExact: reproduceExact ?? this.reproduceExact,
+    parallelExecution: parallelExecution ?? this.parallelExecution,
     planningDurationMs: planningDurationMs ?? this.planningDurationMs,
     executionDurationMs: clearExecutionDuration
         ? null
@@ -577,6 +590,7 @@ class VibeExecutionPlan {
           other.title == title &&
           other.status == status &&
           other.reproduceExact == reproduceExact &&
+          other.parallelExecution == parallelExecution &&
           other.planningDurationMs == planningDurationMs &&
           other.executionDurationMs == executionDurationMs &&
           listEquals(other.planningTraces, planningTraces) &&
@@ -587,6 +601,7 @@ class VibeExecutionPlan {
     title,
     status,
     reproduceExact,
+    parallelExecution,
     planningDurationMs,
     executionDurationMs,
     Object.hashAll(planningTraces),

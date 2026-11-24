@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_spec_forge/main.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
 
 class _MemorySpecProjectStore extends SpecProjectStore {
@@ -420,13 +422,261 @@ void main() {
       expect(find.text('Index de recherche'), findsOneWidget);
       expect(find.text('Règle sans méthode associée'), findsOneWidget);
 
-      // 6. Retour vers la fiche modèle : le badge du bouton indique les éléments créés
-      await tester.tap(
+      // 6. Retour vers la fiche modèle via le fil d'Ariane (aucun bouton retour local dans la vue) :
+      // le badge du bouton indique les éléments créés.
+      expect(
         find.byKey(const ValueKey('domain-layer-back-to-model-btn')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('contracts-entry-crumb')),
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('contract-entry-page')), findsOneWidget);
       expect(find.text('Couche Domain (9)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'AppBar centralise les retours entre écrans : Couche Domain -> Fiche -> Liste -> Menu Design',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1480, 940));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final contracts = DomainContracts.parse(
+        'models:\n  CommandeClient: model\n',
+      );
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        domainCatalogStore: _MemoryDomainCatalogStore(
+          DomainCatalog(
+            domains: [
+              FunctionalDomain(
+                id: 'dom_sales',
+                domainCode: 'sales',
+                name: 'Ventes',
+                contracts: contracts,
+              ),
+            ],
+          ),
+        ),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeDomainLayerAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      final backBtn = find.byKey(const ValueKey('spec-forge-appbar-back-btn'));
+      expect(backBtn, findsNothing);
+
+      // Design (menu racine) : aucun bouton retour dans l'AppBar
+      await tester.tap(find.text('Design'));
+      await tester.pumpAndSettle();
+      expect(backBtn, findsNothing);
+      expect(find.byType(DesignLinksView), findsOneWidget);
+
+      // Liste des modèles et contrats (niveau 0)
+      await tester.tap(find.byKey(const ValueKey('design-link-models_contracts')));
+      await tester.pumpAndSettle();
+      expect(backBtn, findsOneWidget);
+      expect(find.byTooltip('Retour au menu Design'), findsOneWidget);
+
+      // Fiche modèle (niveau 1)
+      await tester.tap(
+        find.byKey(const ValueKey('open-models.CommandeClient')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('contract-entry-page')), findsOneWidget);
+      expect(
+        find.byTooltip('Retour à la liste des modèles et contrats'),
+        findsOneWidget,
+      );
+
+      // Couche Domain (niveau 2) : pas de bouton retour local, retour via AppBar
+      await tester.tap(
+        find.byKey(const ValueKey('contract-open-domain-layer-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('contract-domain-layer-page')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('domain-layer-back-to-model-btn')),
+        findsNothing,
+      );
+      expect(find.byTooltip('Retour à la fiche du modèle'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.text('Modèles & Contrats › CommandeClient › Couche Domain'),
+        ),
+        findsOneWidget,
+      );
+
+      // Retour 1 : Couche Domain -> Fiche modèle
+      await tester.tap(backBtn);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('contract-entry-page')), findsOneWidget);
+      expect(
+        find.byTooltip('Retour à la liste des modèles et contrats'),
+        findsOneWidget,
+      );
+
+      // Retour 2 : Fiche modèle -> Liste des modèles et contrats
+      await tester.tap(backBtn);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('contract-entry-page')), findsNothing);
+      expect(find.byTooltip('Retour au menu Design'), findsOneWidget);
+
+      // Retour 3 : Liste -> Menu Design (bouton retour masqué à nouveau)
+      await tester.tap(backBtn);
+      await tester.pumpAndSettle();
+      expect(find.byType(DesignLinksView), findsOneWidget);
+      expect(backBtn, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Treeview des modèles : hauteur de ligne 28 et bouton Couche Domain au survol après le titre',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1480, 940));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      var contracts = DomainContracts.parse(
+        'models:\n  CommandeClient: model\ndto:\n  CommandeDto: xresponsedto\n',
+      );
+      final cmdEntry = SpecDesignPromoter.findExistingEntry(
+        contracts,
+        'CommandeClient',
+      )!;
+      contracts = contracts
+          .edit(
+            cmdEntry,
+            'model',
+            ContractDetails(
+              title: 'Commande client',
+              version: '1.2.0',
+              states: const {
+                ContractStage.design: ContractStatus.done,
+                ContractStage.validation: ContractStatus.inProgress,
+              },
+            ),
+          )
+          .withModel(
+            cmdEntry.id,
+            object: BusinessObjectSpec(
+              id: cmdEntry.id,
+              name: 'Commande client',
+              technicalName: 'CommandeClient',
+              description: 'Agrégat principal de prise de commande.',
+              attributes: [
+                BusinessAttribute(
+                  id: 'attr_montant',
+                  name: 'montantHt',
+                  type: BusinessAttributeType.number,
+                  required: true,
+                ),
+              ],
+            ),
+          );
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        domainCatalogStore: _MemoryDomainCatalogStore(
+          DomainCatalog(
+            domains: [
+              FunctionalDomain(
+                id: 'dom_sales',
+                domainCode: 'sales',
+                name: 'Ventes',
+                contracts: contracts,
+              ),
+            ],
+          ),
+        ),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeDomainLayerAiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ModelsContractsView(
+              controller: controller,
+              onBack: () {},
+              onManageDomains: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final tree = tester.widget<SuperTreeView>(
+        find.byWidgetPredicate(
+          (w) => w is SuperTreeView && w.id == 'domain-contracts-tree',
+        ),
+      );
+      expect(tree.config?.rowHeight, 28);
+
+      final modelHoverBtn = find.byKey(
+        const ValueKey('domain-layer-models.CommandeClient'),
+      );
+      final dtoHoverBtn = find.byKey(
+        const ValueKey('domain-layer-dto.CommandeDto'),
+      );
+      final titleTooltipCard = find.byKey(
+        const ValueKey('contract-title-tooltip-models.CommandeClient'),
+      );
+      expect(modelHoverBtn, findsNothing);
+      expect(dtoHoverBtn, findsNothing);
+      expect(titleTooltipCard, findsNothing);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      // Survol sur un DTO non éligible : aucun bouton Couche Domain affiché.
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('edit-dto.CommandeDto'))),
+      );
+      await tester.pumpAndSettle();
+      expect(dtoHoverBtn, findsNothing);
+      expect(modelHoverBtn, findsNothing);
+
+      // Survol sur le titre du modèle éligible : bouton après le titre + beau tooltip riche.
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('title-models.CommandeClient')),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      expect(modelHoverBtn, findsOneWidget);
+      expect(titleTooltipCard, findsOneWidget);
+      expect(
+        find.text('Agrégat principal de prise de commande.'),
+        findsOneWidget,
+      );
+      expect(find.text('v1.2.0'), findsOneWidget);
+      expect(find.text('1 attribut(s)'), findsOneWidget);
+      expect(find.text('Conception : Terminé'), findsOneWidget);
+
+      // Clic sur le bouton : ouvre directement la page Couche Domain.
+      await tester.tap(modelHoverBtn);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('contract-domain-layer-page')),
+        findsOneWidget,
+      );
+      expect(find.byType(AlertDialog), findsNothing);
     },
   );
 }

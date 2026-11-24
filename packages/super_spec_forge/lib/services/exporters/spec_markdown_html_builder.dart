@@ -465,6 +465,72 @@ abstract final class SpecMarkdownHtmlBuilder {
       font-size: 12.5px;
       padding: 8px;
     }
+    body.ssf-mermaid-lightbox-open {
+      overflow: hidden;
+    }
+    .ssf-mermaid-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+    }
+    .ssf-mermaid-lightbox.open {
+      display: flex;
+    }
+    .ssf-mermaid-lightbox-dialog {
+      width: calc(100vw - 28px);
+      height: calc(100vh - 28px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .ssf-mermaid-lightbox-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text);
+    }
+    .ssf-mermaid-lightbox-stage {
+      flex: 1 1 auto;
+      overflow: auto;
+      padding: 20px;
+      background: var(--surface-alt);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .ssf-mermaid-lightbox-inner {
+      display: inline-block;
+      transform-origin: top center;
+      transition: transform 120ms ease;
+    }
+    .ssf-mermaid-lightbox-inner svg {
+      max-width: none;
+      height: auto;
+    }
+    .ssf-mermaid-lightbox-inner.fit-width {
+      width: 100%;
+      text-align: center;
+    }
+    .ssf-mermaid-lightbox-inner.fit-width svg {
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+    }
     @media (max-width: 900px) {
       .ssf-sidebar { display: none; }
       .ssf-main { padding: 14px; }
@@ -472,7 +538,7 @@ abstract final class SpecMarkdownHtmlBuilder {
     }
     @media print {
       body { background: #ffffff; color: #000000; }
-      .ssf-sidebar, .ssf-browser-bar, .ssf-mermaid-bar, .ssf-code-lang {
+      .ssf-sidebar, .ssf-browser-bar, .ssf-mermaid-bar, .ssf-code-lang, .ssf-mermaid-lightbox {
         display: none !important;
       }
       .ssf-main { padding: 0; }
@@ -506,6 +572,24 @@ abstract final class SpecMarkdownHtmlBuilder {
     </main>
   </div>
 
+  <div id="ssf-mermaid-lightbox" class="ssf-mermaid-lightbox" role="dialog" aria-modal="true" aria-label="Diagramme Mermaid agrandi">
+    <div class="ssf-mermaid-lightbox-dialog">
+      <div class="ssf-mermaid-lightbox-bar">
+        <span id="ssf-mermaid-lightbox-title"><strong>Mermaid</strong></span>
+        <div class="ssf-mermaid-actions">
+          <button id="ssf-mermaid-lb-minus" type="button" class="ssf-btn" title="Zoom arrière">−</button>
+          <button id="ssf-mermaid-lb-reset" type="button" class="ssf-btn" title="Taille réelle 100%">100%</button>
+          <button id="ssf-mermaid-lb-plus" type="button" class="ssf-btn" title="Zoom avant">+</button>
+          <button id="ssf-mermaid-lb-fit" type="button" class="ssf-btn" title="Ajuster à la largeur">Ajuster</button>
+          <button id="ssf-mermaid-lb-close" type="button" class="ssf-btn" title="Fermer (Échap)">Fermer</button>
+        </div>
+      </div>
+      <div id="ssf-mermaid-lightbox-stage" class="ssf-mermaid-lightbox-stage">
+        <div id="ssf-mermaid-lightbox-inner" class="ssf-mermaid-lightbox-inner"></div>
+      </div>
+    </div>
+  </div>
+
   <script id="ssf-markdown-source" type="application/json">__SSF_MARKDOWN_JSON__</script>
   <script>__SSF_MARKED_JS__</script>
   <script>__SSF_HLJS_JS__</script>
@@ -518,6 +602,108 @@ abstract final class SpecMarkdownHtmlBuilder {
       const targetEl = document.getElementById('ssf-markdown-target');
       const tocEl = document.getElementById('ssf-toc-list');
       const markdownText = sourceEl ? JSON.parse(sourceEl.textContent || '""') : '';
+
+      const lightboxEl = document.getElementById('ssf-mermaid-lightbox');
+      const lightboxTitleEl = document.getElementById('ssf-mermaid-lightbox-title');
+      const lightboxInnerEl = document.getElementById('ssf-mermaid-lightbox-inner');
+      const lightboxMinusBtn = document.getElementById('ssf-mermaid-lb-minus');
+      const lightboxResetBtn = document.getElementById('ssf-mermaid-lb-reset');
+      const lightboxPlusBtn = document.getElementById('ssf-mermaid-lb-plus');
+      const lightboxFitBtn = document.getElementById('ssf-mermaid-lb-fit');
+      const lightboxCloseBtn = document.getElementById('ssf-mermaid-lb-close');
+      let lightboxZoom = 1.0;
+      let lightboxFit = true;
+      let activeLightboxDiagram = null;
+
+      function updateLightboxTransform() {
+        if (!lightboxInnerEl) return;
+        if (lightboxFit) {
+          lightboxInnerEl.classList.add('fit-width');
+          lightboxInnerEl.style.transform = 'none';
+          if (lightboxResetBtn) lightboxResetBtn.textContent = '100%';
+          if (lightboxFitBtn) lightboxFitBtn.style.borderColor = 'var(--accent)';
+        } else {
+          lightboxInnerEl.classList.remove('fit-width');
+          lightboxInnerEl.style.transform = 'scale(' + lightboxZoom.toFixed(2) + ')';
+          if (lightboxResetBtn) lightboxResetBtn.textContent = Math.round(lightboxZoom * 100) + '%';
+          if (lightboxFitBtn) lightboxFitBtn.style.borderColor = '';
+        }
+      }
+
+      function syncLightboxContent() {
+        if (!lightboxInnerEl || !activeLightboxDiagram) return;
+        const svg = activeLightboxDiagram.querySelector('svg');
+        lightboxInnerEl.innerHTML = '';
+        if (svg) {
+          lightboxInnerEl.appendChild(svg.cloneNode(true));
+        } else {
+          const pre = document.createElement('pre');
+          pre.textContent = activeLightboxDiagram.getAttribute('data-mermaid-source') || '';
+          lightboxInnerEl.appendChild(pre);
+        }
+        updateLightboxTransform();
+      }
+
+      function openMermaidLightbox(diagramEl, title) {
+        if (!lightboxEl) return;
+        activeLightboxDiagram = diagramEl;
+        lightboxZoom = 1.0;
+        lightboxFit = true;
+        if (lightboxTitleEl) {
+          lightboxTitleEl.innerHTML = '<strong>Mermaid</strong> · ' + title;
+        }
+        syncLightboxContent();
+        lightboxEl.classList.add('open');
+        document.body.classList.add('ssf-mermaid-lightbox-open');
+      }
+
+      function closeMermaidLightbox() {
+        if (!lightboxEl) return;
+        lightboxEl.classList.remove('open');
+        document.body.classList.remove('ssf-mermaid-lightbox-open');
+        activeLightboxDiagram = null;
+      }
+
+      if (lightboxMinusBtn) {
+        lightboxMinusBtn.onclick = function () {
+          lightboxFit = false;
+          lightboxZoom = Math.max(0.4, lightboxZoom - 0.2);
+          updateLightboxTransform();
+        };
+      }
+      if (lightboxResetBtn) {
+        lightboxResetBtn.onclick = function () {
+          lightboxFit = false;
+          lightboxZoom = 1.0;
+          updateLightboxTransform();
+        };
+      }
+      if (lightboxPlusBtn) {
+        lightboxPlusBtn.onclick = function () {
+          lightboxFit = false;
+          lightboxZoom = Math.min(3.5, lightboxZoom + 0.2);
+          updateLightboxTransform();
+        };
+      }
+      if (lightboxFitBtn) {
+        lightboxFitBtn.onclick = function () {
+          lightboxFit = !lightboxFit;
+          updateLightboxTransform();
+        };
+      }
+      if (lightboxCloseBtn) {
+        lightboxCloseBtn.onclick = closeMermaidLightbox;
+      }
+      if (lightboxEl) {
+        lightboxEl.addEventListener('click', function (e) {
+          if (e.target === lightboxEl) closeMermaidLightbox();
+        });
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && lightboxEl && lightboxEl.classList.contains('open')) {
+          closeMermaidLightbox();
+        }
+      });
 
       function slugify(text) {
         return (text || '')
@@ -607,9 +793,23 @@ abstract final class SpecMarkdownHtmlBuilder {
           plusBtn.textContent = '+';
           plusBtn.onclick = function () { applyZoom(zoom + 0.15); };
 
+          const diagramTitle = 'Diagramme ' + mermaidIndex;
+          const expandBtn = document.createElement('button');
+          expandBtn.type = 'button';
+          expandBtn.className = 'ssf-btn ssf-mermaid-expand-btn';
+          expandBtn.title = 'Agrandir le diagramme Mermaid';
+          expandBtn.textContent = '⛶ Agrandir';
+          expandBtn.onclick = function () {
+            openMermaidLightbox(diagramDiv, diagramTitle);
+          };
+          stage.ondblclick = function () {
+            openMermaidLightbox(diagramDiv, diagramTitle);
+          };
+
           actions.appendChild(minusBtn);
           actions.appendChild(resetBtn);
           actions.appendChild(plusBtn);
+          actions.appendChild(expandBtn);
           bar.appendChild(actions);
           card.appendChild(bar);
           card.appendChild(stage);
@@ -703,6 +903,7 @@ abstract final class SpecMarkdownHtmlBuilder {
             securityLevel: 'strict'
           });
           await window.mermaid.run({ nodes: Array.from(nodes) });
+          if (activeLightboxDiagram) syncLightboxContent();
         } catch (err) {
           nodes.forEach(function (el) {
             if (!el.querySelector('svg')) {
@@ -733,7 +934,15 @@ abstract final class SpecMarkdownHtmlBuilder {
         },
         toggleToc: function () {
           document.body.classList.toggle('ssf-toc-hidden');
-        }
+        },
+        openMermaidFullscreen: function (index) {
+          const nodes = targetEl.querySelectorAll('.mermaid[data-mermaid-source]');
+          const idx = typeof index === 'number' ? index : 0;
+          if (nodes[idx]) {
+            openMermaidLightbox(nodes[idx], 'Diagramme ' + (idx + 1));
+          }
+        },
+        closeMermaidFullscreen: closeMermaidLightbox
       };
 
       renderMarkdown();

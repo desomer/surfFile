@@ -3,15 +3,23 @@ library;
 
 import '../../models/business_object_spec.dart';
 import '../../models/business_rule_spec.dart';
+import '../../models/company_glossary.dart';
 import '../../models/event_storming_spec.dart';
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
+import '../cost_calculator.dart';
 import '../spec_coherence_analyzer.dart';
 
 /// Génère un document Markdown structuré (avec diagrammes Mermaid) depuis un [SpecForgeProject].
 abstract final class SpecMarkdownExporter {
   /// Exporte [project] en cahier des charges Markdown complet.
-  static String export(SpecForgeProject project) {
+  ///
+  /// Lorsque [companyGlossary] est fourni, le tableau du lexique métier indique
+  /// également pour chaque terme s'il existe déjà dans le lexique d'entreprise.
+  static String export(
+    SpecForgeProject project, {
+    CompanyGlossary? companyGlossary,
+  }) {
     final buf = StringBuffer()
       ..writeln('# Cahier des charges — ${project.name}')
       ..writeln()
@@ -23,7 +31,7 @@ abstract final class SpecMarkdownExporter {
       ..writeln(project.initialIdea)
       ..writeln();
 
-    _writeLexicon(buf, project);
+    _writeLexicon(buf, project, companyGlossary: companyGlossary);
     _writeVision(buf, project);
     _writeCahierDesCharges(buf, project);
     _writeEventStorming(buf, project);
@@ -31,11 +39,16 @@ abstract final class SpecMarkdownExporter {
     _writeExampleMapping(buf, project);
     _writeBusinessRules(buf, project);
     _writeCoherenceReport(buf, project);
+    _writeCostSummary(buf, project);
 
     return buf.toString();
   }
 
-  static void _writeLexicon(StringBuffer buf, SpecForgeProject project) {
+  static void _writeLexicon(
+    StringBuffer buf,
+    SpecForgeProject project, {
+    CompanyGlossary? companyGlossary,
+  }) {
     final lex = project.lexicon;
     buf
       ..writeln('---')
@@ -49,13 +62,45 @@ abstract final class SpecMarkdownExporter {
       return;
     }
     if (lex.terms.isNotEmpty) {
-      buf
-        ..writeln('| Terme | Définition | Synonymes / Variantes | Domaine |')
-        ..writeln('|---|---|---|---|');
-      for (final t in lex.terms) {
-        buf.writeln(
-          '| **${_esc(t.term)}** | ${_esc(t.definition.isEmpty ? '—' : t.definition)} | ${_esc(t.synonyms.isEmpty ? '—' : t.synonyms.join(', '))} | ${_esc(t.domain.isEmpty ? '—' : t.domain)} |',
-        );
+      if (companyGlossary != null) {
+        buf
+          ..writeln(
+            '| Terme | Définition | Synonymes / Variantes | Domaine | Lexique entreprise |',
+          )
+          ..writeln('|---|---|---|---|---|');
+        for (final t in lex.terms) {
+          final match = companyGlossary.matchLexiconTerm(t);
+          final companyStatus = switch (match) {
+            null => 'Non (absent)',
+            CompanyGlossaryMatch(
+              kind: CompanyGlossaryMatchKind.exact,
+              term: final cgTerm,
+            ) =>
+              'Oui (${cgTerm.status.label})',
+            CompanyGlossaryMatch(
+              kind: CompanyGlossaryMatchKind.synonym,
+              term: final cgTerm,
+            ) =>
+              'Oui (synonyme de « ${cgTerm.term} »)',
+            CompanyGlossaryMatch(
+              kind: CompanyGlossaryMatchKind.forbidden,
+              term: final cgTerm,
+            ) =>
+              'Proscrit → « ${cgTerm.term} »',
+          };
+          buf.writeln(
+            '| **${_esc(t.term)}** | ${_esc(t.definition.isEmpty ? '—' : t.definition)} | ${_esc(t.synonyms.isEmpty ? '—' : t.synonyms.join(', '))} | ${_esc(t.domain.isEmpty ? '—' : t.domain)} | ${_esc(companyStatus)} |',
+          );
+        }
+      } else {
+        buf
+          ..writeln('| Terme | Définition | Synonymes / Variantes | Domaine |')
+          ..writeln('|---|---|---|---|');
+        for (final t in lex.terms) {
+          buf.writeln(
+            '| **${_esc(t.term)}** | ${_esc(t.definition.isEmpty ? '—' : t.definition)} | ${_esc(t.synonyms.isEmpty ? '—' : t.synonyms.join(', '))} | ${_esc(t.domain.isEmpty ? '—' : t.domain)} |',
+          );
+        }
       }
       buf.writeln();
     }
@@ -665,6 +710,44 @@ abstract final class SpecMarkdownExporter {
       buf.writeln('- **$prefix ${issue.code} — ${issue.title}** : ${issue.description}');
     }
     buf.writeln();
+  }
+
+  static void _writeCostSummary(
+    StringBuffer buf,
+    SpecForgeProject project,
+  ) {
+    final cost = project.costSpec;
+    if (!cost.hasContent) return;
+
+    final summary = CostCalculator.compute(cost);
+    final cur = summary.currency;
+    buf
+      ..writeln('---')
+      ..writeln()
+      ..writeln('## Synthèse FinOps — Estimation Build, Run & TCO')
+      ..writeln()
+      ..writeln(
+        '- **Mode contractuel** : ${cost.deliveryMode.label} · **Ingénierie assistée par IA** : ${cost.aiProductivity.enabled ? 'Activée' : 'Désactivée'}',
+      )
+      ..writeln(
+        '- **Build MVP (`Must`)** : ${CostCalculator.formatDays(summary.mvpLot.effectiveTotalDays)} — **${CostCalculator.formatAmount(summary.mvpLot.effectiveTotalCost, cur)}**',
+      )
+      ..writeln(
+        '- **Build Cible (`Must + Should + Could`)** : ${CostCalculator.formatDays(summary.fullLot.effectiveTotalDays)} — **${CostCalculator.formatAmount(summary.fullLot.effectiveTotalCost, cur)}** _(P80 : ${CostCalculator.formatAmount(summary.fullLot.effectiveP80Cost, cur)})_',
+      )
+      ..writeln(
+        '- **Run OPEX Année 1** : ${CostCalculator.formatAmount(summary.yearlyRunYear1, cur)} _(${CostCalculator.formatAmount(summary.monthlyRunYear1, cur)} / mois)_',
+      );
+    if (summary.riskEmvCost > 0.0) {
+      buf.writeln(
+        '- **Provision Risques (EMV)** : ${CostCalculator.formatAmount(summary.riskEmvCost, cur)} _(${CostCalculator.formatDays(summary.riskEmvDays)})_',
+      );
+    }
+    buf
+      ..writeln(
+        '- **TCO 3 ans** : **${CostCalculator.formatAmount(summary.tco3Years, cur)}** _(1 an : ${CostCalculator.formatAmount(summary.tco1Year, cur)} · 5 ans : ${CostCalculator.formatAmount(summary.tco5Years, cur)})_',
+      )
+      ..writeln();
   }
 
   static String _esc(String value) =>

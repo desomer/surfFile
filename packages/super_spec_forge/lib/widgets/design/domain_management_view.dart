@@ -16,16 +16,12 @@ class DomainManagementView extends StatefulWidget {
   /// Crée la vue connectée au [controller].
   const DomainManagementView({
     required this.controller,
-    required this.onBack,
     this.onDomainSelected,
     super.key,
   });
 
   /// Contrôleur principal.
   final SpecForgeController controller;
-
-  /// Callback de retour au menu Design.
-  final VoidCallback onBack;
 
   /// Signale au shell le domaine affiché dans le panneau de détail.
   final ValueChanged<String?>? onDomainSelected;
@@ -40,6 +36,7 @@ class _DomainManagementViewState extends State<DomainManagementView> {
 
   void _selectDomain(String? id) {
     setState(() => _selectedDomainId = id);
+    widget.controller.setActiveDesignDomainId(id);
     widget.onDomainSelected?.call(id);
   }
 
@@ -137,13 +134,6 @@ class _DomainManagementViewState extends State<DomainManagementView> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                key: const ValueKey('domain-management-back-btn'),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Design'),
-              ),
-              const SizedBox(width: 14),
               Icon(Icons.domain_rounded, size: 22, color: colors.primary),
               const SizedBox(width: 10),
               Column(
@@ -866,6 +856,7 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                     description: description.text.trim(),
                     isActive: active.value,
                     contracts: existing?.contracts,
+                    useCaseOrchestration: existing?.useCaseOrchestration,
                   ),
                 );
               },

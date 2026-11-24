@@ -163,6 +163,16 @@ de la couche Domain avec édition manuelle complète : **Invariants**,
 et **Persistence policy** (port sortant Repository, frontière transactionnelle,
 concurrence, suppression et méthodes du port).
 
+L'onglet **Design → Cas d’usage & orchestration** reprend le même fil d’Ariane
+contextualisé par le domaine en cours (partagé avec **Gestion des domaines**
+et **Modèles & Contrats**) et combine un chat IA dédié à gauche
+(`UseCaseOrchestrationAiAgent` — DDD, CQRS & Saga, nourri automatiquement par
+les cas d’usage, exigences, règles `RG-xxx`, flux Event Storming du projet actif
+et les contrats/couches Domain du domaine) avec un atelier à 3 onglets à droite :
+**Cartographie** (par Bounded Context), **Use Cases** (10 sections, ports,
+événements et scénarios `Given / When / Then`) et **Sagas & Compensations**
+(diagrammes Mermaid, matrice de rollback à 8 colonnes et aperçu Markdown/Mermaid).
+
 ## Lancement & Validation
 
 ```powershell

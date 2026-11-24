@@ -116,6 +116,7 @@ class VibeMessageBubble extends StatelessWidget {
     this.onRequestMoreQuestions,
     this.onRetryTurn,
     this.onStartPlan,
+    this.onStartPlanParallel,
     this.onCancelPlan,
     this.onStopPlan,
     this.onRetryPlanLot,
@@ -156,8 +157,11 @@ class VibeMessageBubble extends StatelessWidget {
   /// Relance ce tour lorsqu'il a échoué.
   final VoidCallback? onRetryTurn;
 
-  /// Déclenche l'exécution automatique du plan.
+  /// Déclenche l'exécution automatique du plan (séquentielle par défaut).
   final VoidCallback? onStartPlan;
+
+  /// Déclenche l'exécution automatique du plan en parallèle (accessible si le mode Plan est sélectionné).
+  final VoidCallback? onStartPlanParallel;
 
   /// Annule le plan avant démarrage.
   final VoidCallback? onCancelPlan;
@@ -371,6 +375,7 @@ class VibeMessageBubble extends StatelessWidget {
                     isActivePlan: isActivePlan,
                     canRetryFinishedPlan: canRetryFinishedPlan,
                     onStart: onStartPlan,
+                    onStartParallel: onStartPlanParallel,
                     onCancel: onCancelPlan,
                     onStop: onStopPlan,
                     onRetryLot: onRetryPlanLot,

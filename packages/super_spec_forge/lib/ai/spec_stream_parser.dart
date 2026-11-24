@@ -17,6 +17,7 @@ class SpecStreamSnapshot {
     this.hasSpecPatch = false,
     this.hasUxPatch = false,
     this.hasQaPatch = false,
+    this.hasCostPatch = false,
     this.receivedChars = 0,
   });
 
@@ -41,6 +42,9 @@ class SpecStreamSnapshot {
   /// Vrai si une clé `"qaPatch": {` a été détectée dans le flux.
   final bool hasQaPatch;
 
+  /// Vrai si une clé `"costPatch": {` a été détectée dans le flux.
+  final bool hasCostPatch;
+
   /// Nombre total de caractères reçus.
   final int receivedChars;
 }
@@ -55,6 +59,7 @@ class SpecAgentResponse {
     this.specPatch,
     this.uxPatch,
     this.qaPatch,
+    this.costPatch,
     this.toolCalls = const <VibeToolCall>[],
     this.stageSummary = '',
     this.stageReadyToAdvance = false,
@@ -75,6 +80,9 @@ class SpecAgentResponse {
 
   /// Patch structuré à appliquer sur le volet QA du [SpecForgeProject].
   final Map<String, Object?>? qaPatch;
+
+  /// Patch structuré à appliquer sur le volet Coûts / FinOps du [SpecForgeProject].
+  final Map<String, Object?>? costPatch;
 
   /// Appels d'outils éventuels émis via le repli JSON `"toolCalls"`.
   final List<VibeToolCall> toolCalls;
@@ -136,6 +144,14 @@ class SpecAgentResponse {
           }
         : null;
 
+    final rawCostPatch = map['costPatch'];
+    final Map<String, Object?>? costPatch = rawCostPatch is Map
+        ? <String, Object?>{
+            for (final entry in rawCostPatch.entries)
+              if (entry.key is String) entry.key as String: entry.value,
+          }
+        : null;
+
     final toolCalls = VibeToolCall.tryListFromJson(map['toolCalls']);
 
     final rawSummary = map['stageSummary'];
@@ -147,6 +163,7 @@ class SpecAgentResponse {
       specPatch: specPatch,
       uxPatch: uxPatch,
       qaPatch: qaPatch,
+      costPatch: costPatch,
       toolCalls: toolCalls,
       stageSummary: stageSummary,
       stageReadyToAdvance: map['stageReadyToAdvance'] == true,
@@ -198,6 +215,7 @@ class SpecStreamParser {
     final hasSpecPatch = RegExp(r'"specPatch"\s*:\s*\{').hasMatch(text);
     final hasUxPatch = RegExp(r'"uxPatch"\s*:\s*\{').hasMatch(text);
     final hasQaPatch = RegExp(r'"qaPatch"\s*:\s*\{').hasMatch(text);
+    final hasCostPatch = RegExp(r'"costPatch"\s*:\s*\{').hasMatch(text);
 
     return SpecStreamSnapshot(
       message: extracted?.value,
@@ -206,6 +224,7 @@ class SpecStreamParser {
       hasSpecPatch: hasSpecPatch,
       hasUxPatch: hasUxPatch,
       hasQaPatch: hasQaPatch,
+      hasCostPatch: hasCostPatch,
       receivedChars: text.length,
     );
   }

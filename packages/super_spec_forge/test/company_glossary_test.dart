@@ -332,5 +332,58 @@ void main() {
       expect(res.glossary.conventions, ['Dates ISO 8601']);
       expect(res.summary, contains('+1 terme(s)'));
     });
+
+    test('matchLexiconTerm et SpecMarkdownExporter indiquent la présence au lexique entreprise', () {
+      final glossary = CompanyGlossary(
+        terms: [
+          CompanyGlossaryTerm(
+            id: 'cg_bl',
+            term: 'Bon de livraison',
+            synonyms: const ['BL'],
+            forbiddenTerms: const ['Ticket sortie'],
+            status: CompanyGlossaryStatus.approved,
+          ),
+        ],
+      );
+
+      final exactByTerm = LexiconTerm(id: 'l_1', term: 'bon de livraison');
+      final exactById = LexiconTerm(id: 'cg_bl', term: 'Autre libellé');
+      final bySynonym = LexiconTerm(id: 'l_2', term: 'BL');
+      final byForbidden = LexiconTerm(id: 'l_3', term: 'Ticket sortie');
+      final absent = LexiconTerm(id: 'l_4', term: 'Palette Europe');
+
+      expect(
+        glossary.matchLexiconTerm(exactByTerm)?.kind,
+        CompanyGlossaryMatchKind.exact,
+      );
+      expect(
+        glossary.matchLexiconTerm(exactById)?.kind,
+        CompanyGlossaryMatchKind.exact,
+      );
+      expect(
+        glossary.matchLexiconTerm(bySynonym)?.kind,
+        CompanyGlossaryMatchKind.synonym,
+      );
+      expect(
+        glossary.matchLexiconTerm(byForbidden)?.kind,
+        CompanyGlossaryMatchKind.forbidden,
+      );
+      expect(glossary.matchLexiconTerm(absent), isNull);
+
+      final project = SpecForgeProject.fromIdea(idea: 'Logistique').copyWith(
+        lexicon: SpecLexicon(
+          terms: [exactByTerm, bySynonym, byForbidden, absent],
+        ),
+      );
+      final md = SpecMarkdownExporter.export(
+        project,
+        companyGlossary: glossary,
+      );
+      expect(md, contains('| Terme | Définition | Synonymes / Variantes | Domaine | Lexique entreprise |'));
+      expect(md, contains('Oui (Validé)'));
+      expect(md, contains('Oui (synonyme de « Bon de livraison »)'));
+      expect(md, contains('Proscrit → « Bon de livraison »'));
+      expect(md, contains('Non (absent)'));
+    });
   });
 }

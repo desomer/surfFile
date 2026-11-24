@@ -5,6 +5,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'domain_contracts.dart';
+import 'usecase_orchestration_spec.dart';
 
 /// Statut du cycle de vie d'un environnement logique.
 enum LogicalEnvironmentStatus {
@@ -88,6 +89,7 @@ class FunctionalDomain {
     this.description = '',
     this.isActive = true,
     this.contracts,
+    this.useCaseOrchestration,
   });
 
   /// Identifiant technique.
@@ -108,6 +110,9 @@ class FunctionalDomain {
   /// Catalogue de modèles et contrats, absent pour un domaine encore vierge.
   final DomainContracts? contracts;
 
+  /// Spécification « Cas d’usage & orchestration » du domaine, absente si vierge.
+  final UseCaseOrchestrationSpec? useCaseOrchestration;
+
   /// Vérifie les invariants du domaine.
   void validate() {
     if (id.trim().isEmpty) throw const FormatException('Domaine.id requis.');
@@ -118,6 +123,7 @@ class FunctionalDomain {
     if (description.length > 2000) {
       throw const FormatException('La description du domaine dépasse 2000 caractères.');
     }
+    useCaseOrchestration?.validate();
   }
 
   /// Copie modifiée.
@@ -128,6 +134,7 @@ class FunctionalDomain {
     String? description,
     bool? isActive,
     DomainContracts? contracts,
+    UseCaseOrchestrationSpec? useCaseOrchestration,
   }) => FunctionalDomain(
     id: id ?? this.id,
     domainCode: domainCode ?? this.domainCode,
@@ -135,6 +142,7 @@ class FunctionalDomain {
     description: description ?? this.description,
     isActive: isActive ?? this.isActive,
     contracts: contracts ?? this.contracts,
+    useCaseOrchestration: useCaseOrchestration ?? this.useCaseOrchestration,
   );
 
   /// Sérialise le domaine.
@@ -145,6 +153,8 @@ class FunctionalDomain {
     'description': description,
     'isActive': isActive,
     if (contracts != null) 'contracts': contracts!.toJson(),
+    if (useCaseOrchestration != null && !useCaseOrchestration!.isEmpty)
+      'useCaseOrchestration': useCaseOrchestration!.toJson(),
   };
 
   /// Désérialise un domaine.
@@ -157,6 +167,9 @@ class FunctionalDomain {
       description: raw['description'] as String? ?? '',
       isActive: raw['isActive'] as bool? ?? true,
       contracts: raw.containsKey('contracts') ? DomainContracts.fromJson(raw['contracts']) : null,
+      useCaseOrchestration: raw['useCaseOrchestration'] != null
+          ? UseCaseOrchestrationSpec.fromJson(raw['useCaseOrchestration'])
+          : null,
     );
     item.validate();
     return item;

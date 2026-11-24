@@ -12,6 +12,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
 import '../../models/domain_contracts.dart';
+import '../../models/domain_layer_spec.dart';
 import '../spec_split_handle.dart';
 import 'contract_entry_view.dart';
 
@@ -25,6 +26,7 @@ class DomainContractsEditor extends StatefulWidget {
     required this.onOpen,
     required this.codeFraction,
     required this.onCodeFractionChanged,
+    this.onOpenDomainLayer,
     super.key,
   });
 
@@ -42,6 +44,9 @@ class DomainContractsEditor extends StatefulWidget {
   /// Ouvre la fiche de l'entrée d'ID donné (clic sur son nom souligné).
   final ValueChanged<String> onOpen;
 
+  /// Ouvre directement la couche Domain (Architecture Hexagonale) d'une entrée éligible.
+  final ValueChanged<String>? onOpenDomainLayer;
+
   @override
   State<DomainContractsEditor> createState() => _DomainContractsEditorState();
 }
@@ -57,6 +62,11 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
   bool _saving = false;
   final _splitRowKey = GlobalKey();
   double _dragOffset = SpecSplitHandle.width / 2;
+  final ValueNotifier<({String? header, String? data})> _hoveredRow =
+      ValueNotifier<({String? header, String? data})>((
+        header: null,
+        data: null,
+      ));
 
   double? _splitX(Offset global) {
     final box = _splitRowKey.currentContext?.findRenderObject() as RenderBox?;
@@ -111,6 +121,7 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
   @override
   void dispose() {
     _sourceSyncTimer?.cancel();
+    _hoveredRow.dispose();
     _store.dispose();
     super.dispose();
   }
@@ -266,7 +277,7 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
                     headerSize: (bounds.maxWidth * 0.42)
                         .clamp(340.0, 460.0)
                         .toDouble(),
-                    rowHeight: 38,
+                    rowHeight: 28,
                     emptyText: 'Ajoutez une rubrique dans le DSL.',
                     placements: const {
                       'header': ['header'],
@@ -278,38 +289,54 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
                       final node =
                           _byPath[JsonListScope.maybeOf(context)?.nodePath];
                       if (node == null) return const SizedBox.shrink();
-                      return Row(
-                        spacing: 6,
-                        children: [
-                          Icon(
-                            node.parent == null
-                                ? Icons.folder
-                                : Icons.data_object,
-                            size: 17,
-                          ),
-                          Expanded(
-                            child: node.parent == null
-                                ? Text(
-                                    node.name,
-                                    overflow: TextOverflow.ellipsis,
-                                  )
-                                : Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: InkWell(
-                                      key: ValueKey('open-${node.path}'),
-                                      onTap: () => widget.onOpen(node.id),
-                                      child: Text(
-                                        node.name,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          decoration: TextDecoration.underline,
+                      return MouseRegion(
+                        opaque: false,
+                        onEnter: (_) => _hoveredRow.value = (
+                          header: node.path,
+                          data: _hoveredRow.value.data,
+                        ),
+                        onExit: (_) {
+                          if (_hoveredRow.value.header == node.path) {
+                            _hoveredRow.value = (
+                              header: null,
+                              data: _hoveredRow.value.data,
+                            );
+                          }
+                        },
+                        child: Row(
+                          spacing: 6,
+                          children: [
+                            Icon(
+                              node.parent == null
+                                  ? Icons.folder
+                                  : Icons.data_object,
+                              size: 15,
+                            ),
+                            Expanded(
+                              child: node.parent == null
+                                  ? Text(
+                                      node.name,
+                                      overflow: TextOverflow.ellipsis,
+                                    )
+                                  : Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: InkWell(
+                                        key: ValueKey('open-${node.path}'),
+                                        onTap: () => widget.onOpen(node.id),
+                                        child: Text(
+                                          node.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                          ),
-                          if (node.parent != null) _typeBadge(node),
-                        ],
+                            ),
+                            if (node.parent != null) _typeBadge(node),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -330,34 +357,121 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
                       final detail =
                           widget.document.details[node.id] ??
                           ContractDetails.defaults;
-                      return InkWell(
-                        key: ValueKey('edit-${node.path}'),
-                        onTap: _saving ? null : () => _edit(node),
-                        child: Row(
-                          spacing: 8,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                detail.title.isEmpty ? 'Titre…' : detail.title,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            for (final stage in ContractStage.values)
-                              Tooltip(
-                                message:
-                                    '${contractStageLabels[stage]} : ${contractStatusLabels[detail.states[stage] ?? ContractStatus.pending]}',
-                                child: Icon(
-                                  contractStageIcons[stage],
-                                  size: 16,
-                                  color: contractStatusColor(
-                                    detail.states[stage],
-                                    theme.colorScheme,
-                                  ),
+                      final canOpenDomainLayer =
+                          widget.onOpenDomainLayer != null &&
+                          HexagonalDomainLayerSpec.isEligibleType(node.type);
+                      return MouseRegion(
+                        opaque: false,
+                        onEnter: (_) => _hoveredRow.value = (
+                          header: _hoveredRow.value.header,
+                          data: node.path,
+                        ),
+                        onExit: (_) {
+                          if (_hoveredRow.value.data == node.path) {
+                            _hoveredRow.value = (
+                              header: _hoveredRow.value.header,
+                              data: null,
+                            );
+                          }
+                        },
+                        child: InkWell(
+                          key: ValueKey('edit-${node.path}'),
+                          onTap: _saving ? null : () => _edit(node),
+                          child: Row(
+                            spacing: 8,
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Tooltip(
+                                        waitDuration: const Duration(
+                                          milliseconds: 450,
+                                        ),
+                                        showDuration: const Duration(
+                                          seconds: 10,
+                                        ),
+                                        preferBelow: false,
+                                        padding: EdgeInsets.zero,
+                                        decoration: const BoxDecoration(
+                                          color: Colors.transparent,
+                                        ),
+                                        richMessage: WidgetSpan(
+                                          child: _ContractTitleTooltipCard(
+                                            node: node,
+                                            documentProvider: () =>
+                                                widget.document,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          key: ValueKey('title-${node.path}'),
+                                          detail.title.isEmpty
+                                              ? 'Titre…'
+                                              : detail.title,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                    if (canOpenDomainLayer)
+                                      ValueListenableBuilder<
+                                        ({String? header, String? data})
+                                      >(
+                                        valueListenable: _hoveredRow,
+                                        builder: (context, hovered, _) {
+                                          final isHovered =
+                                              hovered.header == node.path ||
+                                              hovered.data == node.path;
+                                          if (!isHovered) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          final domainLayerCount = widget
+                                              .document
+                                              .domainLayerFor(node)
+                                              .totalItemsCount;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 8,
+                                            ),
+                                            child: _DomainLayerHoverButton(
+                                              key: ValueKey(
+                                                'domain-layer-${node.path}',
+                                              ),
+                                              count: domainLayerCount,
+                                              onPressed: _saving
+                                                  ? null
+                                                  : () {
+                                                      _hoveredRow.value = (
+                                                        header: null,
+                                                        data: null,
+                                                      );
+                                                      widget.onOpenDomainLayer!(
+                                                        node.id,
+                                                      );
+                                                    },
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                  ],
                                 ),
                               ),
-                            Text(detail.version),
-                            const Icon(Icons.edit_outlined, size: 14),
-                          ],
+                              for (final stage in ContractStage.values)
+                                Tooltip(
+                                  message:
+                                      '${contractStageLabels[stage]} : ${contractStatusLabels[detail.states[stage] ?? ContractStatus.pending]}',
+                                  child: Icon(
+                                    contractStageIcons[stage],
+                                    size: 15,
+                                    color: contractStatusColor(
+                                      detail.states[stage],
+                                      theme.colorScheme,
+                                    ),
+                                  ),
+                                ),
+                              Text(detail.version),
+                              const Icon(Icons.edit_outlined, size: 14),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -449,14 +563,325 @@ class _DomainContractsEditorState extends State<DomainContractsEditor> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(node.type, style: const TextStyle(color: Colors.white)),
-              const Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+              Text(
+                node.type,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              const Icon(Icons.arrow_drop_down, color: Colors.white, size: 14),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DomainLayerHoverButton extends StatelessWidget {
+  const _DomainLayerHoverButton({
+    required this.count,
+    required this.onPressed,
+    super.key,
+  });
+
+  final int count;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Ouvrir la Couche Domain',
+      child: Material(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 4,
+              children: [
+                Icon(
+                  Icons.hexagon_outlined,
+                  size: 13,
+                  color: colors.onSecondaryContainer,
+                ),
+                Text(
+                  count > 0 ? 'Couche Domain ($count)' : 'Couche Domain',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContractTitleTooltipCard extends StatelessWidget {
+  const _ContractTitleTooltipCard({
+    required this.node,
+    required this.documentProvider,
+  });
+
+  final JsonNode node;
+  final DomainContracts Function() documentProvider;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final document = documentProvider();
+    final liveNode = document.entryById(node.id) ?? node;
+    final detail = document.details[liveNode.id] ?? ContractDetails.defaults;
+    final spec = document.objects[liveNode.id];
+    final description = spec?.description.trim() ?? '';
+    final attrCount = spec?.totalAttributeCount ?? 0;
+    final relCount = spec?.relations.length ?? 0;
+    final isDomainEligible = HexagonalDomainLayerSpec.isEligibleType(
+      liveNode.type,
+    );
+    final domainLayerCount = document.domainLayerFor(liveNode).totalItemsCount;
+    final typeColor = contractTypeColor(liveNode.type);
+    final titleText = detail.title.trim().isEmpty
+        ? 'Sans titre'
+        : detail.title.trim();
+
+    return Material(
+      type: MaterialType.transparency,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 270, maxWidth: 400),
+        child: Card(
+          key: ValueKey('contract-title-tooltip-${liveNode.path}'),
+          elevation: 8,
+          shadowColor: colors.shadow.withValues(alpha: 0.35),
+          color: colors.surfaceContainerHighest,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: typeColor.withValues(alpha: 0.55),
+              width: 1.2,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: DefaultTextStyle(
+              style:
+                  theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurface,
+                  ) ??
+                  const TextStyle(fontSize: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: typeColor.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: typeColor.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.data_object_rounded,
+                          size: 16,
+                          color: typeColor,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              titleText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: detail.title.trim().isEmpty
+                                    ? colors.onSurfaceVariant
+                                    : colors.onSurface,
+                              ),
+                            ),
+                            Text(
+                              liveNode.path,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        spacing: 4,
+                        children: [
+                          _ContractTooltipPill(
+                            label: liveNode.type,
+                            bgColor: typeColor,
+                            fgColor: Colors.white,
+                            borderColor: typeColor,
+                          ),
+                          _ContractTooltipPill(
+                            label: 'v${detail.version}',
+                            bgColor: colors.surfaceContainerLow,
+                            fgColor: colors.onSurfaceVariant,
+                            borderColor: colors.outlineVariant,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      description,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 9),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 5,
+                    children: [
+                      for (final stage in ContractStage.values)
+                        Builder(
+                          builder: (_) {
+                            final status =
+                                detail.states[stage] ?? ContractStatus.pending;
+                            final statusColor = contractStatusColor(
+                              status,
+                              colors,
+                            );
+                            return _ContractTooltipPill(
+                              icon: contractStageIcons[stage],
+                              label:
+                                  '${contractStageLabels[stage]} : ${contractStatusLabels[status]}',
+                              bgColor: statusColor.withValues(alpha: 0.12),
+                              fgColor: status == ContractStatus.pending
+                                  ? colors.onSurfaceVariant
+                                  : statusColor,
+                              borderColor: statusColor.withValues(alpha: 0.35),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      _ContractTooltipPill(
+                        icon: Icons.list_alt_rounded,
+                        label: '$attrCount attribut(s)',
+                        bgColor: colors.surfaceContainerLow,
+                        fgColor: colors.onSurface,
+                        borderColor: colors.outlineVariant,
+                      ),
+                      if (relCount > 0)
+                        _ContractTooltipPill(
+                          icon: Icons.hub_outlined,
+                          label: '$relCount relation(s)',
+                          bgColor: colors.surfaceContainerLow,
+                          fgColor: colors.onSurface,
+                          borderColor: colors.outlineVariant,
+                        ),
+                      if (isDomainEligible)
+                        _ContractTooltipPill(
+                          icon: Icons.hexagon_outlined,
+                          label: domainLayerCount > 0
+                              ? 'Couche Domain : $domainLayerCount'
+                              : 'Couche Domain : vide',
+                          bgColor: colors.secondaryContainer.withValues(
+                            alpha: 0.6,
+                          ),
+                          fgColor: colors.onSecondaryContainer,
+                          borderColor: colors.secondary.withValues(alpha: 0.35),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Cliquer pour modifier le titre, la version ou les statuts',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContractTooltipPill extends StatelessWidget {
+  const _ContractTooltipPill({
+    required this.label,
+    required this.bgColor,
+    required this.fgColor,
+    required this.borderColor,
+    this.icon,
+  });
+
+  final String label;
+  final Color bgColor;
+  final Color fgColor;
+  final Color borderColor;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: [
+            if (icon != null) Icon(icon, size: 12, color: fgColor),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: fgColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

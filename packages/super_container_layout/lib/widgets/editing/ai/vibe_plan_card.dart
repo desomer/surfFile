@@ -15,6 +15,7 @@ class VibePlanCard extends StatelessWidget {
     this.isActivePlan = true,
     this.canRetryFinishedPlan = false,
     this.onStart,
+    this.onStartParallel,
     this.onCancel,
     this.onStop,
     this.onRetryLot,
@@ -38,8 +39,11 @@ class VibePlanCard extends StatelessWidget {
   /// Autorise les actions de relance / reprise sur un plan arrêté ou terminé.
   final bool canRetryFinishedPlan;
 
-  /// Déclenché au clic sur « Exécuter les lots ».
+  /// Déclenché au clic sur « Exécuter les lots » (exécution séquentielle par défaut).
   final VoidCallback? onStart;
+
+  /// Déclenché au clic sur « Exécution en parallèle » (affiché uniquement lorsque le mode Plan est sélectionné).
+  final VoidCallback? onStartParallel;
 
   /// Déclenché au clic sur « Annuler » avant le démarrage du plan.
   final VoidCallback? onCancel;
@@ -192,6 +196,39 @@ class VibePlanCard extends StatelessWidget {
               ),
             ],
           ),
+          if (plan.parallelExecution) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                key: const ValueKey('vibe-plan-parallel-badge'),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.alt_route_rounded,
+                      size: 11.5,
+                      color: scheme.onTertiaryContainer,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Exécution en parallèle',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onTertiaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (plan.planningTraces.isNotEmpty) ...[
             const SizedBox(height: 6),
             _TimedTracesToggle(
@@ -225,15 +262,32 @@ class VibePlanCard extends StatelessWidget {
           if (isActivePlan) ...[
             if (plan.status == VibePlanStatus.awaitingConfirmation) ...[
               const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   TextButton(
                     key: const ValueKey('vibe-plan-cancel'),
                     onPressed: busy ? null : onCancel,
                     child: const Text('Annuler'),
                   ),
-                  const SizedBox(width: 8),
+                  if (onStartParallel != null)
+                    Tooltip(
+                      message: actionable < 2
+                          ? 'Active au moins 2 lots pour lancer une exécution en parallèle'
+                          : plan.hasExplicitDependencies
+                          ? 'Exécuter les lots indépendants en parallèle'
+                          : 'Lancer le plan en mode parallèle (lots indépendants)',
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('vibe-plan-start-parallel'),
+                        onPressed: busy || actionable < 2
+                            ? null
+                            : onStartParallel,
+                        icon: const Icon(Icons.alt_route_rounded, size: 17),
+                        label: const Text('Exécution en parallèle'),
+                      ),
+                    ),
                   FilledButton.icon(
                     key: const ValueKey('vibe-plan-start'),
                     onPressed: busy || actionable == 0 ? null : onStart,
@@ -605,12 +659,15 @@ class _TimedTracesToggleState extends State<_TimedTracesToggle> {
                   color: hasError ? scheme.error : scheme.primary,
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  widget.title,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: scheme.onSurfaceVariant,
+                Flexible(
+                  child: Text(
+                    widget.title,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 2),

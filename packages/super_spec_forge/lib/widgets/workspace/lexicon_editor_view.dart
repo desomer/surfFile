@@ -21,28 +21,50 @@ class LexiconEditorView extends StatefulWidget {
   State<LexiconEditorView> createState() => _LexiconEditorViewState();
 }
 
+enum _LexiconCompanyFilter { all, inCompany, absent }
+
 class _LexiconEditorViewState extends State<LexiconEditorView> {
   String _search = '';
+  _LexiconCompanyFilter _companyFilter = _LexiconCompanyFilter.all;
 
   @override
   Widget build(BuildContext context) {
-    final project = widget.controller.project;
-    if (project == null) return const SizedBox.shrink();
-    final lexicon = project.lexicon;
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final project = widget.controller.project;
+        if (project == null) return const SizedBox.shrink();
+        final lexicon = project.lexicon;
+        final glossary = widget.controller.companyGlossary;
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
 
-    final query = _search.trim().toLowerCase();
-    final filteredTerms = query.isEmpty
-        ? lexicon.terms
-        : lexicon.terms.where((t) {
-            return t.term.toLowerCase().contains(query) ||
-                t.definition.toLowerCase().contains(query) ||
-                t.domain.toLowerCase().contains(query) ||
-                t.synonyms.any((s) => s.toLowerCase().contains(query));
-          }).toList();
+        final matchesByTerm = <LexiconTerm, CompanyGlossaryMatch?>{
+          for (final t in lexicon.terms) t: glossary.matchLexiconTerm(t),
+        };
+        final inCompanyCount =
+            matchesByTerm.values.where((m) => m != null).length;
+        final absentCount = lexicon.terms.length - inCompanyCount;
 
-    return ListView(
+        final query = _search.trim().toLowerCase();
+        final filteredTerms = lexicon.terms.where((t) {
+          final match = matchesByTerm[t];
+          if (_companyFilter == _LexiconCompanyFilter.inCompany &&
+              match == null) {
+            return false;
+          }
+          if (_companyFilter == _LexiconCompanyFilter.absent && match != null) {
+            return false;
+          }
+          if (query.isEmpty) return true;
+          return t.term.toLowerCase().contains(query) ||
+              t.definition.toLowerCase().contains(query) ||
+              t.domain.toLowerCase().contains(query) ||
+              t.synonyms.any((s) => s.toLowerCase().contains(query)) ||
+              (match?.term.term.toLowerCase().contains(query) ?? false);
+        }).toList();
+
+        return ListView(
       padding: const EdgeInsets.all(20),
       children: [
         Wrap(
@@ -98,6 +120,44 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
           ),
           onChanged: (v) => setState(() => _search = v),
         ),
+        if (lexicon.terms.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilterChip(
+                key: const ValueKey('spec-lexicon-filter-all'),
+                label: Text('Tous (${lexicon.terms.length})'),
+                selected: _companyFilter == _LexiconCompanyFilter.all,
+                onSelected: (_) =>
+                    setState(() => _companyFilter = _LexiconCompanyFilter.all),
+              ),
+              FilterChip(
+                key: const ValueKey('spec-lexicon-filter-in-company'),
+                label: Text('Dans le lexique entreprise ($inCompanyCount)'),
+                selected: _companyFilter == _LexiconCompanyFilter.inCompany,
+                onSelected: (_) => setState(
+                  () => _companyFilter =
+                      _companyFilter == _LexiconCompanyFilter.inCompany
+                      ? _LexiconCompanyFilter.all
+                      : _LexiconCompanyFilter.inCompany,
+                ),
+              ),
+              FilterChip(
+                key: const ValueKey('spec-lexicon-filter-absent'),
+                label: Text('Absents du lexique entreprise ($absentCount)'),
+                selected: _companyFilter == _LexiconCompanyFilter.absent,
+                onSelected: (_) => setState(
+                  () => _companyFilter =
+                      _companyFilter == _LexiconCompanyFilter.absent
+                      ? _LexiconCompanyFilter.all
+                      : _LexiconCompanyFilter.absent,
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 14),
         if (filteredTerms.isEmpty)
           Card(
@@ -111,7 +171,9 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
               child: Text(
                 lexicon.terms.isEmpty
                     ? 'Aucun terme défini pour le moment.\nDiscutez avec l’agent Ubiquitous Language Expert à gauche ou cliquez sur « Nouveau terme ».'
-                    : 'Aucun terme ne correspond à « $_search ».',
+                    : _search.trim().isNotEmpty
+                    ? 'Aucun terme ne correspond à « $_search ».'
+                    : 'Aucun terme ne correspond au filtre sélectionné.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
@@ -120,125 +182,139 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
             ),
           )
         else
-          for (final term in filteredTerms)
-            Card(
-              elevation: 0,
-              margin: const EdgeInsets.only(bottom: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: colors.outlineVariant),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+          for (final term in filteredTerms) ...[
+            Builder(
+              builder: (context) {
+                final glossaryMatch = matchesByTerm[term];
+                return Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: colors.outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Wrap(
-                            spacing: 8,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    term.term,
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  _CompanyGlossaryStatusBadge(
+                                    term: term,
+                                    match: glossaryMatch,
+                                  ),
+                                  if (term.domain.isNotEmpty)
+                                    Chip(
+                                      label: Text(term.domain),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              key: ValueKey('spec-lexicon-promote-${term.id}'),
+                              tooltip: glossaryMatch == null
+                                  ? 'Promouvoir vers le glossaire d’entreprise'
+                                  : 'Mettre à jour dans le glossaire d’entreprise',
+                              icon: const Icon(Icons.publish_rounded, size: 18),
+                              onPressed: () async {
+                                final res = await widget.controller
+                                    .promoteLexiconTermToCompanyGlossary(term);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.maybeOf(context)
+                                  ?..hideCurrentSnackBar()
+                                  ..showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        res.created
+                                            ? '« ${term.term} » ajouté au glossaire d’entreprise.'
+                                            : '« ${term.term} » mis à jour dans le glossaire d’entreprise.',
+                                      ),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 18),
+                              onPressed: () => _editTermDialog(
+                                context,
+                                project,
+                                existing: term,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                final next = lexicon.terms
+                                    .where((t) => t.id != term.id)
+                                    .toList();
+                                widget.controller.updateProject(
+                                  project.copyWith(
+                                    lexicon: lexicon.copyWith(terms: next),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                        if (term.definition.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(term.definition),
+                        ],
+                        if (term.synonyms.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
                             runSpacing: 4,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text(
-                                term.term,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
+                                'Synonymes unifiés :',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
                                 ),
                               ),
-                              if (term.domain.isNotEmpty)
+                              for (final s in term.synonyms)
                                 Chip(
-                                  label: Text(term.domain),
+                                  label: Text(s),
                                   visualDensity: VisualDensity.compact,
                                 ),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          key: ValueKey('spec-lexicon-promote-${term.id}'),
-                          tooltip: 'Promouvoir vers le glossaire d’entreprise',
-                          icon: const Icon(Icons.publish_rounded, size: 18),
-                          onPressed: () async {
-                            final res = await widget.controller
-                                .promoteLexiconTermToCompanyGlossary(term);
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.maybeOf(context)
-                              ?..hideCurrentSnackBar()
-                              ..showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    res.created
-                                        ? '« ${term.term} » ajouté au glossaire d’entreprise.'
-                                        : '« ${term.term} » mis à jour dans le glossaire d’entreprise.',
-                                  ),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          onPressed: () =>
-                              _editTermDialog(context, project, existing: term),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline_rounded,
-                            size: 18,
-                          ),
-                          onPressed: () {
-                            final next = lexicon.terms
-                                .where((t) => t.id != term.id)
-                                .toList();
-                            widget.controller.updateProject(
-                              project.copyWith(
-                                lexicon: lexicon.copyWith(terms: next),
+                        ],
+                        if (term.examples.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          for (final ex in term.examples)
+                            Text(
+                              '• $ex',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
                               ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    if (term.definition.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(term.definition),
-                    ],
-                    if (term.synonyms.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          Text(
-                            'Synonymes unifiés :',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                          for (final s in term.synonyms)
-                            Chip(
-                              label: Text(s),
-                              visualDensity: VisualDensity.compact,
                             ),
                         ],
-                      ),
-                    ],
-                    if (term.examples.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      for (final ex in term.examples)
-                        Text(
-                          '• $ex',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
-              ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
+          ],
         const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,6 +377,8 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
           ],
         ),
       ],
+    );
+      },
     );
   }
 
@@ -505,6 +583,32 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: termCtrl,
+                  builder: (ctx, value, _) {
+                    final raw = value.text.trim();
+                    if (raw.isEmpty) return const SizedBox.shrink();
+                    final probe = LexiconTerm(
+                      id: existing?.id ?? 'probe',
+                      term: raw,
+                    );
+                    final match = widget.controller.companyGlossary
+                        .matchLexiconTerm(probe);
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _CompanyGlossaryStatusBadge(
+                          badgeKey: const ValueKey(
+                            'spec-lexicon-dialog-company-status',
+                          ),
+                          term: probe,
+                          match: match,
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 10),
                 TextField(
                   controller: domainCtrl,
@@ -590,6 +694,121 @@ class _LexiconEditorViewState extends State<LexiconEditorView> {
     defCtrl.dispose();
     synCtrl.dispose();
     exCtrl.dispose();
+  }
+}
+
+class _CompanyGlossaryStatusBadge extends StatelessWidget {
+  const _CompanyGlossaryStatusBadge({
+    required this.term,
+    required this.match,
+    this.badgeKey,
+  });
+
+  final LexiconTerm term;
+  final CompanyGlossaryMatch? match;
+  final Key? badgeKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final currentMatch = match;
+
+    final (
+      String label,
+      String tooltip,
+      IconData icon,
+      Color bgColor,
+      Color fgColor,
+      Color? borderColor,
+    ) = switch (currentMatch) {
+      null => (
+        'Absent du lexique entreprise',
+        'Cette notion n’existe pas encore dans le lexique d’entreprise. Utilisez « Promouvoir » pour l’y ajouter.',
+        Icons.public_off_outlined,
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+        colors.outlineVariant,
+      ),
+      CompanyGlossaryMatch(
+        kind: CompanyGlossaryMatchKind.exact,
+        term: final cgTerm,
+      ) =>
+        (
+          'Dans le lexique entreprise · ${cgTerm.status.label}',
+          'Notion déjà présente dans le lexique d’entreprise (« ${cgTerm.term} » — ${cgTerm.status.label})'
+              '${cgTerm.domain.isNotEmpty ? ' · Domaine : ${cgTerm.domain}' : ''}.',
+          cgTerm.status == CompanyGlossaryStatus.deprecated
+              ? Icons.warning_amber_rounded
+              : Icons.language_rounded,
+          switch (cgTerm.status) {
+            CompanyGlossaryStatus.approved => colors.primaryContainer,
+            CompanyGlossaryStatus.draft => colors.secondaryContainer,
+            CompanyGlossaryStatus.deprecated => colors.errorContainer,
+          },
+          switch (cgTerm.status) {
+            CompanyGlossaryStatus.approved => colors.onPrimaryContainer,
+            CompanyGlossaryStatus.draft => colors.onSecondaryContainer,
+            CompanyGlossaryStatus.deprecated => colors.onErrorContainer,
+          },
+          null,
+        ),
+      CompanyGlossaryMatch(
+        kind: CompanyGlossaryMatchKind.synonym,
+        term: final cgTerm,
+      ) =>
+        (
+          'Dans le lexique entreprise · Synonyme de « ${cgTerm.term} »',
+          '« ${term.term} » existe déjà dans le lexique d’entreprise comme synonyme toléré de « ${cgTerm.term} » (${cgTerm.status.label}).',
+          Icons.compare_arrows_rounded,
+          colors.secondaryContainer,
+          colors.onSecondaryContainer,
+          null,
+        ),
+      CompanyGlossaryMatch(
+        kind: CompanyGlossaryMatchKind.forbidden,
+        term: final cgTerm,
+      ) =>
+        (
+          'Proscrit dans le lexique entreprise → « ${cgTerm.term} »',
+          '« ${term.term} » existe dans le lexique d’entreprise comme terme proscrit au profit de « ${cgTerm.term} ».',
+          Icons.block_rounded,
+          colors.errorContainer,
+          colors.onErrorContainer,
+          null,
+        ),
+    };
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        key: badgeKey ?? ValueKey('spec-lexicon-company-status-${term.id}'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(999),
+          border: borderColor == null ? null : Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: fgColor),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: fgColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

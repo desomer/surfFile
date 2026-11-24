@@ -471,8 +471,12 @@ void main() {
       );
       expect(find.byKey(const ValueKey('qa-wizard-stepper')), findsOneWidget);
 
-      // Retour au menu Spec puis ouverture de l'étape 4 du Wizard UX.
-      await tester.tap(find.byKey(const ValueKey('qa-subview-back-btn')));
+      // Retour au menu Spec via l'AppBar puis ouverture de l'étape 4 du Wizard UX.
+      expect(
+        find.byKey(const ValueKey('qa-subview-back-btn')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
@@ -1427,7 +1431,6 @@ void main() {
           children: [
             QaWizardStepper(
               project: controller.project!,
-              onBack: () {},
               onSwitchToSpecWizard: () {},
               onSwitchToUxWizard: () {},
               onSelectStage: (_) {},
@@ -1476,6 +1479,42 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 360,
+                height: 820,
+                child: ListenableBuilder(
+                  listenable: controller,
+                  builder: (context, _) => QaStageAiChatPane(
+                    controller: controller,
+                    chatWidthFraction: 0.3,
+                    onCycleChatSize: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final clearQaBtn = find.byKey(const ValueKey('qa-chat-clear-btn'));
+      expect(clearQaBtn, findsOneWidget);
+      await tester.tap(clearQaBtn);
+      await tester.pumpAndSettle();
+
+      final qaStageState = controller.project!.qaSpec.stageStateFor(
+        QaForgeStage.testFixtures,
+      );
+      expect(qaStageState.messages, isEmpty);
+      expect(qaStageState.readyToAdvance, isFalse);
+      expect(clearQaBtn, findsNothing);
     },
   );
 }

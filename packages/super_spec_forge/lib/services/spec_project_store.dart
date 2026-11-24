@@ -14,7 +14,12 @@
 /// - `qa/fixtures/<slug>.json` : 1 fichier par jeu d'essai QA (+ `_order.json`) ;
 /// - `qa/features/<slug>.json` : 1 fichier par fonctionnalité Gherkin BDD (+ `_order.json`) ;
 /// - `qa/tdd_suites/<slug>.json` : 1 fichier par suite de tests TDD (+ `_order.json`) ;
-/// - `chats/*.json` : historique des conversations par étape (`stage_*.json`, `ux_*.json`, `qa_*.json`) et chat global ;
+/// - `cost/assumptions.json` : étape Coûts courante, devise, TJM, calibres T-shirt, ratios transverses, gains IA et notes d'hypothèses ;
+/// - `cost/coherence_issues.json` : diagnostics de cohérence financière et couverture WBS/Run/Risques ;
+/// - `cost/wbs/<slug>.json` : 1 fichier par lot de travaux Build WBS (+ `_order.json`) ;
+/// - `cost/run/<slug>.json` : 1 fichier par poste récurrent d'exploitation Run / OPEX (+ `_order.json`) ;
+/// - `cost/risks/<slug>.json` : 1 fichier par risque budgétaire EMV (+ `_order.json`) ;
+/// - `chats/*.json` : historique des conversations par étape (`stage_*.json`, `ux_*.json`, `qa_*.json`, `cost_*.json`) et chat global ;
 /// - `attachments/*` : contenu texte ou binaire des pièces jointes externalisées.
 ///
 /// L'état local machine (dernier projet actif) est stocké dans
@@ -31,6 +36,12 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
+import '../models/cost/cost_coherence_issue.dart';
+import '../models/cost/cost_forge_spec.dart';
+import '../models/cost/cost_forge_stage.dart';
+import '../models/cost/cost_risk_item_spec.dart';
+import '../models/cost/cost_run_item_spec.dart';
+import '../models/cost/cost_wbs_item_spec.dart';
 import '../models/example_mapping_spec.dart';
 import '../models/qa/gherkin_feature_spec.dart';
 import '../models/qa/qa_coherence_issue.dart';
@@ -73,6 +84,9 @@ class SpecProjectSummary {
     this.featureCount = 0,
     this.tddCaseCount = 0,
     this.currentQaStage = QaForgeStage.testFixtures,
+    this.wbsItemCount = 0,
+    this.runItemCount = 0,
+    this.currentCostStage = CostForgeStage.rateCardAssumptions,
     this.folderName,
   });
 
@@ -117,6 +131,15 @@ class SpecProjectSummary {
 
   /// Étape QA active lors de la dernière sauvegarde.
   final QaForgeStage currentQaStage;
+
+  /// Nombre de lots de travaux Build WBS chiffrés.
+  final int wbsItemCount;
+
+  /// Nombre de postes récurrents d'exploitation Run / OPEX.
+  final int runItemCount;
+
+  /// Étape Coûts active lors de la dernière sauvegarde.
+  final CostForgeStage currentCostStage;
 
   /// Nom du dossier slug sous `projects/`, si disponible sur disque.
   final String? folderName;
@@ -178,6 +201,26 @@ class SpecProjectStore {
 
   /// Identifiant de format d'un fichier de conversation d'étape QA (`chats/qa_*.json`).
   static const String qaStageChatFormat = 'super_spec_forge.qa_stage_chat';
+
+  /// Identifiant de format des hypothèses et TJM Coûts (`cost/assumptions.json`).
+  static const String costAssumptionsFormat =
+      'super_spec_forge.cost_assumptions';
+
+  /// Identifiant de format des diagnostics de cohérence Coûts (`cost/coherence_issues.json`).
+  static const String costCoherenceIssuesFormat =
+      'super_spec_forge.cost_coherence_issues';
+
+  /// Identifiant de format d'un fichier lot Build WBS unitaire (`cost/wbs/*.json`).
+  static const String costWbsItemFormat = 'super_spec_forge.cost_wbs_item';
+
+  /// Identifiant de format d'un fichier poste Run / OPEX unitaire (`cost/run/*.json`).
+  static const String costRunItemFormat = 'super_spec_forge.cost_run_item';
+
+  /// Identifiant de format d'un fichier risque budgétaire unitaire (`cost/risks/*.json`).
+  static const String costRiskItemFormat = 'super_spec_forge.cost_risk_item';
+
+  /// Identifiant de format d'un fichier de conversation d'étape Coûts (`chats/cost_*.json`).
+  static const String costStageChatFormat = 'super_spec_forge.cost_stage_chat';
 
   /// Identifiant de format d'un fichier d'ordre `_order.json`.
   static const String orderFormat = 'super_spec_forge.order';
@@ -265,6 +308,26 @@ class SpecProjectStore {
     '${_qaDir(projectDir).path}${Platform.pathSeparator}tdd_suites',
   );
 
+  Directory _costDir(Directory projectDir) =>
+      Directory('${projectDir.path}${Platform.pathSeparator}cost');
+
+  File _costAssumptionsFile(Directory projectDir) => File(
+    '${_costDir(projectDir).path}${Platform.pathSeparator}assumptions.json',
+  );
+
+  File _costCoherenceIssuesFile(Directory projectDir) => File(
+    '${_costDir(projectDir).path}${Platform.pathSeparator}coherence_issues.json',
+  );
+
+  Directory _costWbsDir(Directory projectDir) =>
+      Directory('${_costDir(projectDir).path}${Platform.pathSeparator}wbs');
+
+  Directory _costRunDir(Directory projectDir) =>
+      Directory('${_costDir(projectDir).path}${Platform.pathSeparator}run');
+
+  Directory _costRisksDir(Directory projectDir) =>
+      Directory('${_costDir(projectDir).path}${Platform.pathSeparator}risks');
+
   Directory _chatsDir(Directory projectDir) =>
       Directory('${projectDir.path}${Platform.pathSeparator}chats');
 
@@ -299,6 +362,10 @@ class SpecProjectStore {
 
   File _qaStageChatFile(Directory projectDir, QaForgeStage stage) => File(
     '${_chatsDir(projectDir).path}${Platform.pathSeparator}qa_${stage.name}.json',
+  );
+
+  File _costStageChatFile(Directory projectDir, CostForgeStage stage) => File(
+    '${_chatsDir(projectDir).path}${Platform.pathSeparator}cost_${stage.name}.json',
   );
 
   File _globalChatFile(Directory projectDir) => File(
@@ -400,6 +467,21 @@ class SpecProjectStore {
     };
   }
 
+  Future<Set<CostForgeStage>> _findExistingCostChatStages(
+    Directory projectDir,
+  ) async {
+    final chatsDir = _chatsDir(projectDir);
+    if (!await chatsDir.exists()) return const <CostForgeStage>{};
+    final checks = await Future.wait<bool>([
+      for (final stage in CostForgeStage.values)
+        _costStageChatFile(projectDir, stage).exists(),
+    ]);
+    return <CostForgeStage>{
+      for (var i = 0; i < CostForgeStage.values.length; i++)
+        if (checks[i]) CostForgeStage.values[i],
+    };
+  }
+
   Future<Directory> _resolveOrAllocateProjectDir(
     SpecForgeProject project,
   ) async {
@@ -462,7 +544,10 @@ class SpecProjectStore {
           prev.uxSpec.screens.length != project.uxSpec.screens.length ||
           prev.qaSpec.currentStage != project.qaSpec.currentStage ||
           prev.qaSpec.features.length != project.qaSpec.features.length ||
-          prev.qaSpec.totalTddCaseCount != project.qaSpec.totalTddCaseCount;
+          prev.qaSpec.totalTddCaseCount != project.qaSpec.totalTddCaseCount ||
+          prev.costSpec.currentStage != project.costSpec.currentStage ||
+          prev.costSpec.wbsItems.length != project.costSpec.wbsItems.length ||
+          prev.costSpec.runItems.length != project.costSpec.runItems.length;
       if (manifestChanged) {
         writes.add(
           _writeJson(
@@ -669,6 +754,71 @@ class SpecProjectStore {
         }
       }
 
+      final costHasState = project.costSpec.hasContent;
+      final prevHadCostState = prev != null && prev.costSpec.hasContent;
+      final costDirExisted =
+          prevHadCostState || await _costDir(projectDir).exists();
+      final existingCostChatStages =
+          (!costHasState && !costDirExisted && prev == null)
+          ? await _findExistingCostChatStages(projectDir)
+          : const <CostForgeStage>{};
+      final forceInitCost =
+          costHasState &&
+          (prev == null || !prevHadCostState || !costDirExisted);
+      final shouldPruneEmptyCost =
+          !costHasState &&
+          (costDirExisted || existingCostChatStages.isNotEmpty);
+
+      if (costHasState) {
+        if (forceInitCost ||
+            prev == null ||
+            !_hasSameCostAssumptions(prev.costSpec, project.costSpec)) {
+          writes.add(
+            _writeJson(
+              _costAssumptionsFile(projectDir),
+              _costAssumptionsToJson(project.costSpec),
+            ),
+          );
+        }
+
+        if (forceInitCost ||
+            prev == null ||
+            !listEquals(
+              prev.costSpec.coherenceIssues,
+              project.costSpec.coherenceIssues,
+            )) {
+          writes.add(
+            _writeJson(_costCoherenceIssuesFile(projectDir), <String, Object?>{
+              'format': costCoherenceIssuesFormat,
+              'version': storageVersion,
+              'items': [
+                for (final i in project.costSpec.coherenceIssues) i.toJson(),
+              ],
+            }),
+          );
+        }
+
+        if ((forceInitCost && project.costSpec.wbsItems.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.costSpec.wbsItems, project.costSpec.wbsItems)) {
+          writes.add(_syncCostWbs(projectDir, project.costSpec.wbsItems));
+        }
+
+        if ((forceInitCost && project.costSpec.runItems.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.costSpec.runItems, project.costSpec.runItems)) {
+          writes.add(_syncCostRun(projectDir, project.costSpec.runItems));
+        }
+
+        if ((forceInitCost && project.costSpec.riskItems.isNotEmpty) ||
+            prev == null ||
+            !listEquals(prev.costSpec.riskItems, project.costSpec.riskItems)) {
+          writes.add(_syncCostRisks(projectDir, project.costSpec.riskItems));
+        }
+      } else if (shouldPruneEmptyCost) {
+        writes.add(_pruneEmptyCostArtifacts(projectDir));
+      }
+
       final changedStages = <SpecForgeStage>[
         for (final stage in SpecForgeStage.values)
           if (prev == null ||
@@ -709,6 +859,16 @@ class SpecProjectStore {
                                 project.qaSpec.stageStateFor(stage))
                               stage,
                         ]));
+      final changedCostStages = !costHasState
+          ? const <CostForgeStage>[]
+          : ((forceInitCost || prev == null)
+                ? CostForgeStage.values
+                : <CostForgeStage>[
+                    for (final stage in CostForgeStage.values)
+                      if (prev.costSpec.stageStateFor(stage) !=
+                          project.costSpec.stageStateFor(stage))
+                        stage,
+                  ]);
       final globalChatChanged =
           prev == null ||
           !listEquals(prev.globalChatMessages, project.globalChatMessages);
@@ -716,6 +876,8 @@ class SpecProjectStore {
       if (changedStages.isNotEmpty ||
           changedUxStages.isNotEmpty ||
           changedQaStages.isNotEmpty ||
+          changedCostStages.isNotEmpty ||
+          shouldPruneEmptyCost ||
           globalChatChanged) {
         final attachmentsToWrite = <String, _PendingAttachmentWrite>{};
         for (final stage in changedStages) {
@@ -769,6 +931,27 @@ class SpecProjectStore {
           writes.add(
             _writeJson(_qaStageChatFile(projectDir, stage), <String, Object?>{
               'format': qaStageChatFormat,
+              'version': storageVersion,
+              'data': <String, Object?>{
+                'stage': state.stage.name,
+                'status': state.status.name,
+                'messages': serializedMessages,
+                'stageSummary': state.stageSummary,
+                'readyToAdvance': state.readyToAdvance,
+              },
+            }),
+          );
+        }
+
+        for (final stage in changedCostStages) {
+          final state = project.costSpec.stageStateFor(stage);
+          final serializedMessages = <Map<String, Object?>>[
+            for (final msg in state.messages)
+              _serializeChatMessage(msg, attachmentsToWrite),
+          ];
+          writes.add(
+            _writeJson(_costStageChatFile(projectDir, stage), <String, Object?>{
+              'format': costStageChatFormat,
               'version': storageVersion,
               'data': <String, Object?>{
                 'stage': state.stage.name,
@@ -943,6 +1126,73 @@ class SpecProjectStore {
     separator: '-',
   );
 
+  Future<void> _syncCostWbs(
+    Directory projectDir,
+    List<CostWbsItemSpec> items,
+  ) => _syncSplitEntities<CostWbsItemSpec>(
+    _costWbsDir(projectDir),
+    items,
+    format: costWbsItemFormat,
+    labelFor: (w) =>
+        w.code.trim().isNotEmpty ? '${w.code} ${w.title}' : w.title,
+    idFor: (w) => w.id,
+    toJson: (w) => w.toJson(),
+    fallback: 'wbs',
+    separator: '-',
+  );
+
+  Future<void> _syncCostRun(
+    Directory projectDir,
+    List<CostRunItemSpec> items,
+  ) => _syncSplitEntities<CostRunItemSpec>(
+    _costRunDir(projectDir),
+    items,
+    format: costRunItemFormat,
+    labelFor: (r) => r.code.trim().isNotEmpty ? '${r.code} ${r.name}' : r.name,
+    idFor: (r) => r.id,
+    toJson: (r) => r.toJson(),
+    fallback: 'run',
+    separator: '-',
+  );
+
+  Future<void> _syncCostRisks(
+    Directory projectDir,
+    List<CostRiskItemSpec> items,
+  ) => _syncSplitEntities<CostRiskItemSpec>(
+    _costRisksDir(projectDir),
+    items,
+    format: costRiskItemFormat,
+    labelFor: (r) =>
+        r.code.trim().isNotEmpty ? '${r.code} ${r.title}' : r.title,
+    idFor: (r) => r.id,
+    toJson: (r) => r.toJson(),
+    fallback: 'risk',
+    separator: '-',
+  );
+
+  Future<void> _pruneEmptyCostArtifacts(Directory projectDir) async {
+    final costDir = _costDir(projectDir);
+    if (await costDir.exists()) {
+      try {
+        await costDir.delete(recursive: true);
+      } catch (_) {}
+    }
+    final chatsDir = _chatsDir(projectDir);
+    if (await chatsDir.exists()) {
+      await Future.wait<void>([
+        for (final stage in CostForgeStage.values)
+          () async {
+            final chatFile = _costStageChatFile(projectDir, stage);
+            if (await chatFile.exists()) {
+              try {
+                await chatFile.delete();
+              } catch (_) {}
+            }
+          }(),
+      ]);
+    }
+  }
+
   Future<void> _syncSplitEntities<T>(
     Directory dir,
     List<T> items, {
@@ -1015,9 +1265,11 @@ class SpecProjectStore {
       final specDirExists = await _specDir(projectDir).exists();
       final uxDirExists = await _uxDir(projectDir).exists();
       final qaDirExists = await _qaDir(projectDir).exists();
+      final costDirExists = await _costDir(projectDir).exists();
       if (!specDirExists &&
           !uxDirExists &&
           !qaDirExists &&
+          !costDirExists &&
           (manifestRaw['format'] == legacyProjectFormat ||
               manifestRaw.containsKey('lexicon') ||
               manifestRaw.containsKey('businessObjects'))) {
@@ -1109,6 +1361,32 @@ class SpecProjectStore {
           stage: _readOptionalJsonMap(_qaStageChatFile(projectDir, stage)),
       };
 
+      final costAssumptionsFuture = _readOptionalJsonMap(
+        _costAssumptionsFile(projectDir),
+      );
+      final costIssuesFuture = _readOptionalJsonValue(
+        _costCoherenceIssuesFile(projectDir),
+      );
+      final costWbsFuture = _loadSplitEntities<CostWbsItemSpec>(
+        _costWbsDir(projectDir),
+        parseItem: CostWbsItemSpec.fromJson,
+        idOf: (w) => w.id,
+      );
+      final costRunFuture = _loadSplitEntities<CostRunItemSpec>(
+        _costRunDir(projectDir),
+        parseItem: CostRunItemSpec.fromJson,
+        idOf: (r) => r.id,
+      );
+      final costRisksFuture = _loadSplitEntities<CostRiskItemSpec>(
+        _costRisksDir(projectDir),
+        parseItem: CostRiskItemSpec.fromJson,
+        idOf: (r) => r.id,
+      );
+      final costStageFutures = <CostForgeStage, Future<Map<dynamic, dynamic>?>>{
+        for (final stage in CostForgeStage.values)
+          stage: _readOptionalJsonMap(_costStageChatFile(projectDir, stage)),
+      };
+
       await Future.wait<Object?>([
         lexiconFuture,
         visionFuture,
@@ -1128,9 +1406,15 @@ class SpecProjectStore {
         qaFixturesFuture,
         qaFeaturesFuture,
         qaTddSuitesFuture,
+        costAssumptionsFuture,
+        costIssuesFuture,
+        costWbsFuture,
+        costRunFuture,
+        costRisksFuture,
         for (final stage in SpecForgeStage.values) stageFutures[stage]!,
         for (final stage in UxForgeStage.values) uxStageFutures[stage]!,
         for (final stage in QaForgeStage.values) qaStageFutures[stage]!,
+        for (final stage in CostForgeStage.values) costStageFutures[stage]!,
       ]);
 
       final lexiconMap = await lexiconFuture;
@@ -1151,10 +1435,16 @@ class SpecProjectStore {
       final qaFixtures = await qaFixturesFuture;
       final qaFeatures = await qaFeaturesFuture;
       final qaTddSuites = await qaTddSuitesFuture;
+      final costAssumptionsMap = await costAssumptionsFuture;
+      final costIssuesRaw = await costIssuesFuture;
+      final costWbsItems = await costWbsFuture;
+      final costRunItems = await costRunFuture;
+      final costRiskItems = await costRisksFuture;
 
       final stageStates = <SpecForgeStage, SpecStageState>{};
       final uxStageStates = <UxForgeStage, UxStageState>{};
       final qaStageStates = <QaForgeStage, QaStageState>{};
+      final costStageStates = <CostForgeStage, CostStageState>{};
       final hydrationFutures = <Future<void>>[];
       for (final stage in SpecForgeStage.values) {
         final rawStageWrapper = await stageFutures[stage]!;
@@ -1198,6 +1488,22 @@ class SpecProjectStore {
               fallbackStage: stage,
               attachmentsDir: attachmentsDir,
             ).then((state) => qaStageStates[stage] = state),
+          );
+        }
+      }
+
+      for (final stage in CostForgeStage.values) {
+        final rawCostWrapper = await costStageFutures[stage]!;
+        if (rawCostWrapper != null) {
+          final rawCostData = rawCostWrapper['data'] is Map
+              ? rawCostWrapper['data']
+              : rawCostWrapper;
+          hydrationFutures.add(
+            _deserializeCostStageState(
+              rawCostData,
+              fallbackStage: stage,
+              attachmentsDir: attachmentsDir,
+            ).then((state) => costStageStates[stage] = state),
           );
         }
       }
@@ -1307,6 +1613,57 @@ class SpecProjectStore {
         qaSpec = QaForgeSpec.empty;
       }
 
+      final hasModularCost =
+          costDirExists ||
+          costAssumptionsMap != null ||
+          costIssuesRaw != null ||
+          costWbsItems.isNotEmpty ||
+          costRunItems.isNotEmpty ||
+          costRiskItems.isNotEmpty ||
+          costStageStates.isNotEmpty;
+
+      final CostForgeSpec costSpec;
+      var loadedFromLegacyInlineCost = false;
+      if (hasModularCost) {
+        final baseCostSpec = CostForgeSpec.fromJson(
+          _extractCostAssumptionsPayload(
+            costAssumptionsMap,
+            fallbackStage: manifestRaw['currentCostStage'],
+          ),
+        );
+        costSpec = baseCostSpec.copyWith(
+          wbsItems: _deduplicateById(
+            costWbsItems,
+            idOf: (w) => w.id,
+            withId: (w, id) => w.copyWith(id: id),
+          ),
+          runItems: _deduplicateById(
+            costRunItems,
+            idOf: (r) => r.id,
+            withId: (r, id) => r.copyWith(id: id),
+          ),
+          riskItems: _deduplicateById(
+            costRiskItems,
+            idOf: (r) => r.id,
+            withId: (r, id) => r.copyWith(id: id),
+          ),
+          stageStates: costStageStates,
+          coherenceIssues: _parseCostCoherenceIssues(costIssuesRaw),
+        );
+      } else if (manifestRaw['costSpec'] != null) {
+        costSpec = CostForgeSpec.fromJson(manifestRaw['costSpec']);
+        loadedFromLegacyInlineCost = costSpec.hasContent;
+      } else if (manifestRaw['currentCostStage'] != null) {
+        costSpec = CostForgeSpec(
+          currentStage: CostForgeStage.fromJson(
+            manifestRaw['currentCostStage'],
+          ),
+        );
+        loadedFromLegacyInlineCost = costSpec.hasContent;
+      } else {
+        costSpec = CostForgeSpec.empty;
+      }
+
       final rawIssues = issuesMap?['items'];
 
       final project = SpecForgeProject(
@@ -1333,11 +1690,13 @@ class SpecProjectStore {
         globalChatMessages: globalChatMessages,
         uxSpec: uxSpec,
         qaSpec: qaSpec,
+        costSpec: costSpec,
       );
       project.validate();
       if (specDirExists &&
           !loadedFromLegacyInlineUx &&
-          !loadedFromLegacyInlineQa) {
+          !loadedFromLegacyInlineQa &&
+          !loadedFromLegacyInlineCost) {
         _persistedSnapshots[project.id] = project;
       }
       return project;
@@ -1430,7 +1789,7 @@ class SpecProjectStore {
   }
 
   /// Liste tous les projets valides présents sur disque en lisant `project.json`
-  /// et en comptant les fichiers sous `spec/`, `ux/` et `qa/` (avec repli sur le manifeste),
+  /// et en comptant les fichiers sous `spec/`, `ux/`, `qa/` et `cost/` (avec repli sur le manifeste),
   /// triés du plus récent au plus ancien.
   Future<List<SpecProjectSummary>> listProjects() async {
     if (!await _projectsDir.exists()) return const <SpecProjectSummary>[];
@@ -1468,6 +1827,9 @@ class SpecProjectStore {
             : null;
         final rawQaSpec = decoded['qaSpec'] is Map
             ? decoded['qaSpec'] as Map
+            : null;
+        final rawCostSpec = decoded['costSpec'] is Map
+            ? decoded['costSpec'] as Map
             : null;
         final resolvedMeta = await Future.wait<Object>([
           _resolveSummaryCount(
@@ -1507,6 +1869,17 @@ class SpecProjectStore {
             decoded['exampleMapCount'],
             fallbackList: decoded['exampleMappings'],
           ),
+          _resolveSummaryCount(
+            _costWbsDir(entity),
+            decoded['wbsItemCount'],
+            fallbackList: rawCostSpec?['wbsItems'],
+          ),
+          _resolveSummaryCount(
+            _costRunDir(entity),
+            decoded['runItemCount'],
+            fallbackList: rawCostSpec?['runItems'],
+          ),
+          _resolveSummaryCostStage(entity, decoded),
         ]);
         summaries.add(
           SpecProjectSummary(
@@ -1524,6 +1897,9 @@ class SpecProjectStore {
             featureCount: resolvedMeta[5] as int,
             tddCaseCount: resolvedMeta[6] as int,
             currentQaStage: resolvedMeta[7] as QaForgeStage,
+            wbsItemCount: resolvedMeta[9] as int,
+            runItemCount: resolvedMeta[10] as int,
+            currentCostStage: resolvedMeta[11] as CostForgeStage,
             folderName: SpecStorageIo.fileNameOf(entity.path),
           ),
         );
@@ -1554,6 +1930,9 @@ class SpecProjectStore {
             : null;
         final rawQaSpec = decoded['qaSpec'] is Map
             ? decoded['qaSpec'] as Map
+            : null;
+        final rawCostSpec = decoded['costSpec'] is Map
+            ? decoded['costSpec'] as Map
             : null;
         summaries.add(
           SpecProjectSummary(
@@ -1591,6 +1970,17 @@ class SpecProjectStore {
             ),
             currentQaStage: QaForgeStage.fromJson(
               decoded['currentQaStage'] ?? rawQaSpec?['currentStage'],
+            ),
+            wbsItemCount: _parseManifestCount(
+              decoded['wbsItemCount'],
+              fallbackList: rawCostSpec?['wbsItems'],
+            ),
+            runItemCount: _parseManifestCount(
+              decoded['runItemCount'],
+              fallbackList: rawCostSpec?['runItems'],
+            ),
+            currentCostStage: CostForgeStage.fromJson(
+              decoded['currentCostStage'] ?? rawCostSpec?['currentStage'],
             ),
           ),
         );
@@ -1665,6 +2055,34 @@ class SpecProjectStore {
         : null;
     return QaForgeStage.fromJson(
       manifest['currentQaStage'] ?? rawQaSpec?['currentStage'],
+    );
+  }
+
+  Future<CostForgeStage> _resolveSummaryCostStage(
+    Directory projectDir,
+    Map<dynamic, dynamic> manifest,
+  ) async {
+    final assumptionsFile = _costAssumptionsFile(projectDir);
+    if (await assumptionsFile.exists()) {
+      try {
+        final assumptionsRaw = jsonDecode(await assumptionsFile.readAsString());
+        if (assumptionsRaw is Map) {
+          final rawStage =
+              assumptionsRaw['currentStage'] ??
+              (assumptionsRaw['data'] is Map
+                  ? (assumptionsRaw['data'] as Map)['currentStage']
+                  : null);
+          if (rawStage != null) {
+            return CostForgeStage.fromJson(rawStage);
+          }
+        }
+      } catch (_) {}
+    }
+    final rawCostSpec = manifest['costSpec'] is Map
+        ? manifest['costSpec'] as Map
+        : null;
+    return CostForgeStage.fromJson(
+      manifest['currentCostStage'] ?? rawCostSpec?['currentStage'],
     );
   }
 
@@ -1803,7 +2221,57 @@ class SpecProjectStore {
         'currentQaStage': project.qaSpec.currentStage.name,
         'featureCount': project.qaSpec.features.length,
         'tddCaseCount': project.qaSpec.totalTddCaseCount,
+        'currentCostStage': project.costSpec.currentStage.name,
+        'wbsItemCount': project.costSpec.wbsItems.length,
+        'runItemCount': project.costSpec.runItems.length,
       };
+
+  Map<String, Object?> _costAssumptionsToJson(CostForgeSpec costSpec) =>
+      <String, Object?>{
+        'format': costAssumptionsFormat,
+        'version': storageVersion,
+        'currentStage': costSpec.currentStage.name,
+        'currency': costSpec.currency.name,
+        'hoursPerDay': costSpec.hoursPerDay,
+        'deliveryMode': costSpec.deliveryMode.name,
+        'targetUsersCount': costSpec.targetUsersCount,
+        'profiles': [for (final p in costSpec.profiles) p.toJson()],
+        'tshirtPresets': [for (final t in costSpec.tshirtPresets) t.toJson()],
+        'transverseRatios': costSpec.transverseRatios.toJson(),
+        'aiProductivity': costSpec.aiProductivity.toJson(),
+        'assumptionsNotes': costSpec.assumptionsNotes,
+      };
+
+  static bool _hasSameCostAssumptions(CostForgeSpec a, CostForgeSpec b) =>
+      a.currentStage == b.currentStage &&
+      a.currency == b.currency &&
+      a.hoursPerDay == b.hoursPerDay &&
+      a.deliveryMode == b.deliveryMode &&
+      a.targetUsersCount == b.targetUsersCount &&
+      listEquals(a.profiles, b.profiles) &&
+      listEquals(a.tshirtPresets, b.tshirtPresets) &&
+      a.transverseRatios == b.transverseRatios &&
+      a.aiProductivity == b.aiProductivity &&
+      a.assumptionsNotes == b.assumptionsNotes;
+
+  static Map<String, Object?> _extractCostAssumptionsPayload(
+    Map<dynamic, dynamic>? raw, {
+    Object? fallbackStage,
+  }) {
+    if (raw == null) {
+      return <String, Object?>{
+        if (fallbackStage != null) 'currentStage': fallbackStage,
+      };
+    }
+    final source = raw['data'] is Map ? raw['data'] as Map : raw;
+    final resolvedStage =
+        source['currentStage'] ?? raw['currentStage'] ?? fallbackStage;
+    return <String, Object?>{
+      for (final entry in source.entries)
+        if (entry.key is String) entry.key as String: entry.value,
+      if (resolvedStage != null) 'currentStage': resolvedStage,
+    };
+  }
 
   Future<Map<dynamic, dynamic>?> _readOptionalJsonMap(File file) async {
     final decoded = await _readOptionalJsonValue(file);
@@ -1871,6 +2339,32 @@ class SpecProjectStore {
     final seenIds = <String>{};
     for (final item in items) {
       var issue = QaCoherenceIssue.fromJson(item);
+      if (!seenIds.add(issue.id)) {
+        var suffix = 2;
+        while (!seenIds.add('${issue.id}_$suffix')) {
+          suffix++;
+        }
+        issue = issue.copyWith(id: '${issue.id}_$suffix');
+      }
+      parsed.add(issue);
+    }
+    return parsed;
+  }
+
+  static List<CostCoherenceIssue> _parseCostCoherenceIssues(Object? raw) {
+    final Object? items = switch (raw) {
+      final List<dynamic> list => list,
+      final Map<dynamic, dynamic> map =>
+        map['items'] ?? map['coherenceIssues'] ?? map['data'],
+      _ => null,
+    };
+    if (items is! List || items.isEmpty) {
+      return const <CostCoherenceIssue>[];
+    }
+    final parsed = <CostCoherenceIssue>[];
+    final seenIds = <String>{};
+    for (final item in items) {
+      var issue = CostCoherenceIssue.fromJson(item);
       if (!seenIds.add(issue.id)) {
         var suffix = 2;
         while (!seenIds.add('${issue.id}_$suffix')) {
@@ -2005,6 +2499,31 @@ class SpecProjectStore {
     final state = QaStageState(
       stage: raw['stage'] != null
           ? QaForgeStage.fromJson(raw['stage'])
+          : fallbackStage,
+      status: SpecStageStatus.fromJson(raw['status']),
+      messages: messages,
+      stageSummary: (raw['stageSummary'] as String?) ?? '',
+      readyToAdvance: raw['readyToAdvance'] == true,
+    );
+    state.validate();
+    return state;
+  }
+
+  Future<CostStageState> _deserializeCostStageState(
+    Object? raw, {
+    required CostForgeStage fallbackStage,
+    required Directory attachmentsDir,
+  }) async {
+    if (raw is! Map) {
+      return CostStageState(stage: fallbackStage);
+    }
+    final messages = await _deserializeChatMessages(
+      raw['messages'],
+      attachmentsDir: attachmentsDir,
+    );
+    final state = CostStageState(
+      stage: raw['stage'] != null
+          ? CostForgeStage.fromJson(raw['stage'])
           : fallbackStage,
       status: SpecStageStatus.fromJson(raw['status']),
       messages: messages,
@@ -2152,6 +2671,16 @@ class SpecProjectStore {
     }
     for (final qaStageState in project.qaSpec.stageStates.values) {
       for (final msg in qaStageState.messages) {
+        for (final att in msg.attachments) {
+          final desc = _describeAttachment(att);
+          if (desc.bytes.isNotEmpty || desc.isText) {
+            files.add(desc.fileName);
+          }
+        }
+      }
+    }
+    for (final costStageState in project.costSpec.stageStates.values) {
+      for (final msg in costStageState.messages) {
         for (final att in msg.attachments) {
           final desc = _describeAttachment(att);
           if (desc.bytes.isNotEmpty || desc.isText) {

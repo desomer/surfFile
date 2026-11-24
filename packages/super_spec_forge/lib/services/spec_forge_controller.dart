@@ -11,6 +11,9 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart' show JsonNode;
 
 import '../ai/company_glossary_ai.dart';
+import '../ai/cost_patch_applier.dart';
+import '../ai/cost_prompt_builder.dart';
+import '../ai/cost_stage_agent.dart';
 import '../ai/domain_layer_ai.dart';
 import '../ai/domain_model_ai.dart';
 import '../ai/qa_patch_applier.dart';
@@ -23,6 +26,7 @@ import '../ai/spec_patch_applier.dart';
 import '../ai/spec_prompt_builder.dart';
 import '../ai/spec_stage_agent.dart';
 import '../ai/spec_stream_parser.dart';
+import '../ai/usecase_orchestration_ai.dart';
 import '../ai/ux_patch_applier.dart';
 import '../ai/ux_prompt_builder.dart';
 import '../ai/ux_stage_agent.dart';
@@ -30,9 +34,12 @@ import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/cost/cost_forge_spec.dart';
+import '../models/cost/cost_forge_stage.dart';
 import '../models/domain_catalog.dart';
 import '../models/domain_contracts.dart';
 import '../models/domain_layer_spec.dart';
+import '../models/enterprise_rate_card.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_forge_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
@@ -42,13 +49,17 @@ import '../models/spec_forge_stage.dart';
 import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/technical_modeling_rule.dart';
+import '../models/usecase_orchestration_spec.dart';
 import '../models/ux/ux_coherence_issue.dart';
 import '../models/ux/ux_forge_spec.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
 import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
+import 'cost_auto_seeder.dart';
+import 'cost_coherence_analyzer.dart';
 import 'domain_catalog_store.dart';
+import 'enterprise_rate_card_store.dart';
 import 'event_storming_operations.dart';
 import 'example_mapping_operations.dart';
 import 'exporters/qa_tdd_prompt_exporter.dart';
@@ -74,6 +85,7 @@ class SpecForgeController extends ChangeNotifier {
     CompanyGlossaryStore? glossaryStore,
     ModelDictionaryStore? modelDictionaryStore,
     DomainCatalogStore? domainCatalogStore,
+    EnterpriseRateCardStore? enterpriseRateCardStore,
     SpecWorkspaceStore? workspaceStore,
     SpecAiService? aiService,
     VibeAppToolRegistry? toolRegistry,
@@ -84,7 +96,8 @@ class SpecForgeController extends ChangeNotifier {
            store != null ||
            glossaryStore != null ||
            modelDictionaryStore != null ||
-           domainCatalogStore != null,
+           domainCatalogStore != null ||
+           enterpriseRateCardStore != null,
        _workspaceStore = workspaceStore ?? SpecWorkspaceStore(),
        _store = store ?? SpecProjectStore(),
        _glossaryStore =
@@ -96,6 +109,11 @@ class SpecForgeController extends ChangeNotifier {
        _domainCatalogStore =
            domainCatalogStore ??
            DomainCatalogStore((store ?? SpecProjectStore()).rootDirectory),
+       _enterpriseRateCardStore =
+           enterpriseRateCardStore ??
+           EnterpriseRateCardStore(
+             (store ?? SpecProjectStore()).rootDirectory,
+           ),
        _aiService = aiService ?? const GeminiSpecAiService(),
        _customToolRegistry = toolRegistry,
        _speedMode = initialSpeedMode,
@@ -107,6 +125,7 @@ class SpecForgeController extends ChangeNotifier {
   CompanyGlossaryStore _glossaryStore;
   ModelDictionaryStore _modelDictionaryStore;
   DomainCatalogStore _domainCatalogStore;
+  EnterpriseRateCardStore _enterpriseRateCardStore;
   final SpecAiService _aiService;
   final VibeAppToolRegistry? _customToolRegistry;
 
@@ -125,11 +144,15 @@ class SpecForgeController extends ChangeNotifier {
 
   BusinessObjectModelPreferences _modelPreferences =
       BusinessObjectModelPreferences.defaults;
+  EnterpriseRateCard _enterpriseRateCard = EnterpriseRateCard.defaults;
   DomainCatalog _domainCatalog = DomainCatalog.empty;
+  String? _activeDesignDomainId;
   final List<BusinessObjectModelPreferences> _modelPrefsUndoStack =
       <BusinessObjectModelPreferences>[];
   final List<BusinessObjectModelPreferences> _modelPrefsRedoStack =
       <BusinessObjectModelPreferences>[];
+  final List<EnterpriseRateCard> _rateCardUndoStack = <EnterpriseRateCard>[];
+  final List<EnterpriseRateCard> _rateCardRedoStack = <EnterpriseRateCard>[];
 
   VibeAiSpeedMode _speedMode;
   VibeQuestioningLevel _questioningLevel;
@@ -143,6 +166,7 @@ class SpecForgeController extends ChangeNotifier {
   SpecForgeStage? _sendingStage;
   UxForgeStage? _sendingUxStage;
   QaForgeStage? _sendingQaStage;
+  CostForgeStage? _sendingCostStage;
   String? _streamingMessage;
   String _streamingStatus = '';
   List<VibeToolTrace> _streamingToolTraces = const <VibeToolTrace>[];
@@ -160,6 +184,10 @@ class SpecForgeController extends ChangeNotifier {
   String? _focusedFeatureId;
   String? _focusedScenarioId;
   String? _focusedTddSuiteId;
+  String? _focusedCostProfileId;
+  String? _focusedWbsItemId;
+  String? _focusedRunItemId;
+  String? _focusedRiskItemId;
 
   /// Sélection et filtre de l'arbre de chaque fiche, indexés par `domaine/entrée`.
   final Map<String, ({List<String> attributePath, String filter})>
@@ -170,6 +198,12 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Onglet actif de la page Couche Domain, indexé par `domaine/entrée`.
   final Map<String, DomainLayerTab> _domainLayerActiveTab = {};
+
+  /// `domainId` dont le tour IA « Cas d’usage & orchestration » est en cours.
+  String? _sendingUseCaseDomainId;
+
+  /// Onglet actif de la page « Cas d’usage & orchestration », indexé par `domainId`.
+  final Map<String, UseCaseOrchestrationTab> _useCaseActiveTab = {};
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -252,6 +286,36 @@ class SpecForgeController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Spécification « Cas d’usage & orchestration » du domaine [domainId].
+  UseCaseOrchestrationSpec useCaseOrchestrationOf(String domainId) =>
+      _domainCatalog.domains
+          .where((d) => d.id == domainId)
+          .firstOrNull
+          ?.useCaseOrchestration ??
+      UseCaseOrchestrationSpec.empty;
+
+  /// Historique du chat IA « Cas d’usage & orchestration » du domaine [domainId].
+  List<SpecChatMessage> useCaseOrchestrationChat(String domainId) =>
+      useCaseOrchestrationOf(domainId).chatMessages;
+
+  /// Vrai lorsqu'un tour IA « Cas d’usage & orchestration » est en cours pour [domainId].
+  bool isSendingUseCaseOrchestration(String domainId) =>
+      _isSending && _sendingUseCaseDomainId == domainId;
+
+  /// Onglet actif consulté sur la page « Cas d’usage & orchestration » de [domainId].
+  UseCaseOrchestrationTab useCaseOrchestrationActiveTab(String domainId) =>
+      _useCaseActiveTab[domainId] ?? UseCaseOrchestrationTab.cartography;
+
+  /// Mémorise l'onglet actif de « Cas d’usage & orchestration » pour [domainId].
+  void setUseCaseOrchestrationActiveTab(
+    String domainId,
+    UseCaseOrchestrationTab tab,
+  ) {
+    if (_useCaseActiveTab[domainId] == tab) return;
+    _useCaseActiveTab[domainId] = tab;
+    notifyListeners();
+  }
+
   /// Chemin d'IDs de l'attribut sélectionné dans la fiche du modèle [entryId]
   /// (vide = objet entier), piloté par l'arbre ou l'outil `focus_stage_or_object`.
   List<String> domainModelAttributePath(String domainId, String entryId) =>
@@ -313,6 +377,35 @@ class SpecForgeController extends ChangeNotifier {
   /// Catalogue partagé des domaines fonctionnels du workspace actif.
   DomainCatalog get domainCatalog => _domainCatalog;
 
+  /// Identifiant du domaine fonctionnel actif dans l'espace Design, s'il
+  /// existe toujours dans [domainCatalog], sinon `null`.
+  String? get activeDesignDomainId {
+    final id = _activeDesignDomainId;
+    if (id == null) return null;
+    return _domainCatalog.domains.any((d) => d.id == id) ? id : null;
+  }
+
+  /// Domaine fonctionnel actif dans l'espace Design (ou premier domaine du
+  /// catalogue par défaut).
+  FunctionalDomain? get activeDesignDomain {
+    final id = activeDesignDomainId;
+    if (id != null) {
+      return _domainCatalog.domains.where((d) => d.id == id).firstOrNull;
+    }
+    return _domainCatalog.domains.firstOrNull;
+  }
+
+  /// Définit le domaine fonctionnel actif dans l'espace Design.
+  void setActiveDesignDomainId(String? domainId) {
+    final normalized =
+        domainId != null && _domainCatalog.domains.any((d) => d.id == domainId)
+        ? domainId
+        : null;
+    if (_activeDesignDomainId == normalized) return;
+    _activeDesignDomainId = normalized;
+    notifyListeners();
+  }
+
   /// Magasin disque du catalogue de domaines.
   DomainCatalogStore get domainCatalogStore => _domainCatalogStore;
 
@@ -321,6 +414,19 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Indique si un Redo est disponible sur le dictionnaire technique.
   bool get canRedoModelPreferences => _modelPrefsRedoStack.isNotEmpty;
+
+  /// Magasin disque de la grille tarifaire TJM d'entreprise.
+  EnterpriseRateCardStore get enterpriseRateCardStore =>
+      _enterpriseRateCardStore;
+
+  /// Grille tarifaire et abaques TJM d'entreprise partagés entre tous les projets.
+  EnterpriseRateCard get enterpriseRateCard => _enterpriseRateCard;
+
+  /// Indique si un Undo est disponible sur la grille tarifaire d'entreprise.
+  bool get canUndoEnterpriseRateCard => _rateCardUndoStack.isNotEmpty;
+
+  /// Indique si un Redo est disponible sur la grille tarifaire d'entreprise.
+  bool get canRedoEnterpriseRateCard => _rateCardRedoStack.isNotEmpty;
 
   /// Projet actuellement ouvert, ou `null` sur l'écran d'accueil.
   SpecForgeProject? get project => _project;
@@ -354,6 +460,12 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Vrai lorsqu'un tour IA de l'atelier QA est en cours.
   bool get isSendingQa => _isSending && _sendingQaStage != null;
+
+  /// Étape FinOps / Coûts en cours de génération IA.
+  CostForgeStage? get sendingCostStage => _sendingCostStage;
+
+  /// Vrai lorsqu'un tour IA de l'atelier FinOps / Coûts est en cours.
+  bool get isSendingCost => _isSending && _sendingCostStage != null;
 
   /// Texte streaming reçu jusqu'ici pour le message en cours.
   String? get streamingMessage => _streamingMessage;
@@ -443,6 +555,38 @@ class SpecForgeController extends ChangeNotifier {
     _focusedFeatureId = featureId;
     _focusedScenarioId = scenarioId;
     _focusedTddSuiteId = tddSuiteId;
+    notifyListeners();
+  }
+
+  /// Identifiant du profil TJM focalisé dans l'atelier Coûts.
+  String? get focusedCostProfileId => _focusedCostProfileId;
+
+  /// Identifiant du lot WBS focalisé dans l'atelier Coûts.
+  String? get focusedWbsItemId => _focusedWbsItemId;
+
+  /// Identifiant du poste Run OPEX focalisé dans l'atelier Coûts.
+  String? get focusedRunItemId => _focusedRunItemId;
+
+  /// Identifiant du risque budgétaire focalisé dans l'atelier Coûts.
+  String? get focusedRiskItemId => _focusedRiskItemId;
+
+  /// Met à jour la sélection courante dans l'atelier FinOps / Coûts.
+  void focusCostItem({
+    String? profileId,
+    String? wbsItemId,
+    String? runItemId,
+    String? riskItemId,
+  }) {
+    if (_focusedCostProfileId == profileId &&
+        _focusedWbsItemId == wbsItemId &&
+        _focusedRunItemId == runItemId &&
+        _focusedRiskItemId == riskItemId) {
+      return;
+    }
+    _focusedCostProfileId = profileId;
+    _focusedWbsItemId = wbsItemId;
+    _focusedRunItemId = runItemId;
+    _focusedRiskItemId = riskItemId;
     notifyListeners();
   }
 
@@ -584,6 +728,7 @@ class SpecForgeController extends ChangeNotifier {
     _glossaryStore = CompanyGlossaryStore(directory);
     _modelDictionaryStore = ModelDictionaryStore(directory);
     _domainCatalogStore = DomainCatalogStore(directory);
+    _enterpriseRateCardStore = EnterpriseRateCardStore(directory);
   }
 
   void _clearProjectFocusState() {
@@ -601,6 +746,10 @@ class SpecForgeController extends ChangeNotifier {
     _focusedFeatureId = null;
     _focusedScenarioId = null;
     _focusedTddSuiteId = null;
+    _focusedCostProfileId = null;
+    _focusedWbsItemId = null;
+    _focusedRunItemId = null;
+    _focusedRiskItemId = null;
   }
 
   void _resetInMemoryState() {
@@ -613,13 +762,19 @@ class SpecForgeController extends ChangeNotifier {
     _glossaryUndoStack.clear();
     _glossaryRedoStack.clear();
     _modelPreferences = BusinessObjectModelPreferences.defaults;
+    _enterpriseRateCard = EnterpriseRateCard.defaults;
     _domainCatalog = DomainCatalog.empty;
+    _activeDesignDomainId = null;
     _modelPrefsUndoStack.clear();
     _modelPrefsRedoStack.clear();
+    _rateCardUndoStack.clear();
+    _rateCardRedoStack.clear();
     _clearProjectFocusState();
     _domainModelFocus.clear();
     _domainLayerActiveTab.clear();
     _sendingDomainLayerKey = null;
+    _useCaseActiveTab.clear();
+    _sendingUseCaseDomainId = null;
     _lastError = null;
   }
 
@@ -636,6 +791,11 @@ class SpecForgeController extends ChangeNotifier {
       _modelPreferences = await _modelDictionaryStore.load();
     } catch (_) {
       _modelPreferences = BusinessObjectModelPreferences.defaults;
+    }
+    try {
+      _enterpriseRateCard = await _enterpriseRateCardStore.load();
+    } catch (_) {
+      _enterpriseRateCard = EnterpriseRateCard.defaults;
     }
     _domainCatalog = await _domainCatalogStore.load();
     if (restoreLastProject) {
@@ -670,6 +830,10 @@ class SpecForgeController extends ChangeNotifier {
     }
     await _domainCatalogStore.save(updated);
     _domainCatalog = updated;
+    if (_activeDesignDomainId != null &&
+        !updated.domains.any((d) => d.id == _activeDesignDomainId)) {
+      _activeDesignDomainId = null;
+    }
     notifyListeners();
   }
 
@@ -954,6 +1118,55 @@ class SpecForgeController extends ChangeNotifier {
     final next = current.copyWith(qaSpec: updatedQa);
     next.validate();
     await updateProject(next, recordUndo: recordUndo);
+  }
+
+  /// Valide et met à jour le volet FinOps / Estimation de coût IT du projet actif (avec Undo/Redo et sauvegarde).
+  Future<void> updateCostSpec(
+    CostForgeSpec updatedCost, {
+    bool recordUndo = true,
+  }) async {
+    updatedCost.validate();
+    final current = _project;
+    if (current == null || current.costSpec == updatedCost) return;
+    final next = current.copyWith(costSpec: updatedCost);
+    next.validate();
+    await updateProject(next, recordUndo: recordUndo);
+  }
+
+  /// Pré-remplit en 1 clic de manière non destructive les lots WBS, le socle Run et les risques depuis les artefacts du projet.
+  Future<CostSeedResult> seedCostFromProject() async {
+    final current = _project;
+    if (current == null) {
+      return CostSeedResult(spec: CostForgeSpec.empty);
+    }
+    final seeded = CostAutoSeeder.seedFromProject(
+      current,
+      enterpriseRateCard: _enterpriseRateCard,
+    );
+    if (seeded.spec != current.costSpec) {
+      await updateCostSpec(seeded.spec);
+    }
+    return seeded;
+  }
+
+  /// Applique la grille tarifaire d'entreprise ([enterpriseRateCard] ou [overrideCard]) au projet actif.
+  Future<bool> applyEnterpriseRateCardToProject([
+    EnterpriseRateCard? overrideCard,
+  ]) async {
+    final current = _project;
+    if (current == null) return false;
+    final targetCard = overrideCard ?? _enterpriseRateCard;
+    final nextCost = current.costSpec.applyEnterpriseRateCard(targetCard);
+    if (nextCost == current.costSpec) return false;
+    await updateCostSpec(nextCost);
+    return true;
+  }
+
+  /// Promeut la grille TJM et les abaques du projet actif vers la grille tarifaire d'entreprise partagée.
+  Future<void> promoteProjectRateCardToEnterprise() async {
+    final current = _project;
+    if (current == null) return;
+    await updateEnterpriseRateCard(current.costSpec.toEnterpriseRateCard());
   }
 
   /// Définit la langue officielle des mots-clés Gherkin (`fr` / `en`) du projet actif (annulable via Undo/Redo).
@@ -1453,6 +1666,24 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
+  /// Efface l'historique conversationnel de l'étape active (ou de [stage]) du wizard Spec.
+  Future<void> clearStageChat([SpecForgeStage? stage]) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final targetStage = stage ?? current.currentStage;
+    final stageState = current.stageStateFor(targetStage);
+    if (stageState.messages.isEmpty && !stageState.readyToAdvance) return;
+    final cleared = current.withStageState(
+      stageState.copyWith(
+        messages: const <SpecChatMessage>[],
+        readyToAdvance: false,
+      ),
+    );
+    _project = cleared;
+    notifyListeners();
+    await _persistProject(cleared);
+  }
+
   /// Pose une question libre portant sur la globalité du projet dans l'onglet « Question ».
   Future<void> sendGlobalQuestion(
     String text, {
@@ -1650,6 +1881,7 @@ class SpecForgeController extends ChangeNotifier {
               roundParsed = SpecAgentResponse.parse(parser.rawText);
               if (roundParsed.uxPatch == null &&
                   roundParsed.qaPatch == null &&
+                  roundParsed.costPatch == null &&
                   roundParsed.specPatch == null &&
                   roundParsed.toolCalls.isNotEmpty) {
                 callsToRun = roundParsed.toolCalls;
@@ -2005,6 +2237,26 @@ class SpecForgeController extends ChangeNotifier {
       afterAskUserReply: false,
       forceFollowUpQuestions: false,
     );
+  }
+
+  /// Efface l'historique conversationnel de l'étape UX active (ou de [stage]) du wizard UX.
+  Future<void> clearUxStageChat([UxForgeStage? stage]) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final targetStage = stage ?? current.uxSpec.currentStage;
+    final stageState = current.uxSpec.stageStateFor(targetStage);
+    if (stageState.messages.isEmpty && !stageState.readyToAdvance) return;
+    final cleared = current.copyWith(
+      uxSpec: current.uxSpec.withStageState(
+        stageState.copyWith(
+          messages: const <SpecChatMessage>[],
+          readyToAdvance: false,
+        ),
+      ),
+    );
+    _project = cleared;
+    notifyListeners();
+    await _persistProject(cleared);
   }
 
   Future<void> _runUxAgentTurn({
@@ -2514,6 +2766,26 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
+  /// Efface l'historique conversationnel de l'étape QA active (ou de [stage]) du wizard QA.
+  Future<void> clearQaStageChat([QaForgeStage? stage]) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final targetStage = stage ?? current.qaSpec.currentStage;
+    final stageState = current.qaSpec.stageStateFor(targetStage);
+    if (stageState.messages.isEmpty && !stageState.readyToAdvance) return;
+    final cleared = current.copyWith(
+      qaSpec: current.qaSpec.withStageState(
+        stageState.copyWith(
+          messages: const <SpecChatMessage>[],
+          readyToAdvance: false,
+        ),
+      ),
+    );
+    _project = cleared;
+    notifyListeners();
+    await _persistProject(cleared);
+  }
+
   Future<void> _runQaAgentTurn({
     required QaForgeStage stage,
     required String userDisplayText,
@@ -2818,6 +3090,534 @@ class SpecForgeController extends ChangeNotifier {
       _activeStreamCompleter = null;
       _stopRequested = false;
       _isSending = false;
+      _sendingQaStage = null;
+      _sendingCostStage = null;
+      _sendingUxStage = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  /// Navigue vers l'étape Coûts [targetStage], valide optionnellement l'étape courante
+  /// et amorce l'agent spécialisé de [targetStage] si [autoKickoffIfEmpty] vaut `true`.
+  Future<void> goToCostStage(
+    CostForgeStage targetStage, {
+    bool validateCurrent = false,
+    bool autoKickoffIfEmpty = false,
+  }) async {
+    final current = _project;
+    if (current == null) return;
+    final movedCost = current.costSpec.moveToStage(
+      targetStage,
+      validateCurrentStage: validateCurrent,
+    );
+    var effectiveProject = current;
+    if (movedCost != current.costSpec) {
+      effectiveProject = current.copyWith(costSpec: movedCost);
+      await updateProject(effectiveProject, recordUndo: false);
+    }
+    if (autoKickoffIfEmpty &&
+        !_isSending &&
+        effectiveProject.costSpec.stageStateFor(targetStage).messages.isEmpty) {
+      await kickoffCostStageIfEmpty(targetStage);
+    }
+  }
+
+  /// Déclenche le message initial de l'agent FinOps spécialisé si l'étape [stage] n'a aucun échange.
+  Future<void> kickoffCostStageIfEmpty(CostForgeStage stage) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    if (current.costSpec.stageStateFor(stage).messages.isNotEmpty) return;
+    final kickoffPrompt = CostPromptBuilder.buildStageKickoffPrompt(
+      current,
+      stage,
+      enterpriseRateCard: _enterpriseRateCard,
+      modelPreferencesOverride: _modelPreferences,
+    );
+    await _runCostAgentTurn(
+      stage: stage,
+      userDisplayText: switch (stage) {
+        CostForgeStage.rateCardAssumptions =>
+          'Calibrer les hypothèses, la grille TJM, le mode de réalisation et les gains IA du projet.',
+        CostForgeStage.buildWbs =>
+          'Chiffrer la structure de découpage Build (WBS) en jours/homme PERT et par lot MoSCoW.',
+        CostForgeStage.runOpex =>
+          'Dimensionner les coûts récurrents Run, Cloud, APIs/LLM, licences et TMA/MCO.',
+        CostForgeStage.tcoReviewExport =>
+          'Auditer les risques financiers (EMV), la cohérence du chiffrage et la synthèse TCO à 1, 3 et 5 ans.',
+      },
+      promptInput: kickoffPrompt,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  /// Envoie un message utilisateur libre (avec pièces jointes éventuelles) à l'agent de l'étape Coûts courante.
+  Future<void> sendCostUserMessage(
+    String text, {
+    bool requestsMoreQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && !requestsMoreQuestions && attachments.isEmpty) {
+      return;
+    }
+    final stage = current.costSpec.currentStage;
+    final effectiveDisplay = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour affiner cette étape de chiffrage IT.'
+              : 'Analyse les pièces jointes et mets à jour le chiffrage IT correspondant.');
+    await _runCostAgentTurn(
+      stage: stage,
+      userDisplayText: effectiveDisplay,
+      promptInput: effectiveDisplay,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` à l'agent de l'étape Coûts courante.
+  Future<void> submitCostAskUserAnswers(
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.costSpec.currentStage;
+    final stageState = current.costSpec.stageStateFor(stage);
+    final idx = stageState.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = stageState.messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final updatedMsg = targetMsg.copyWith(
+      askUserAnswers: answers,
+      askUserUsedDefaults: usedDefaults,
+      askUserRequestedMore: askMore,
+    );
+    final updatedMessages = List<SpecChatMessage>.from(stageState.messages)
+      ..[idx] = updatedMsg;
+    _project = current.copyWith(
+      costSpec: current.costSpec.withStageState(
+        stageState.copyWith(messages: updatedMessages),
+      ),
+    );
+    notifyListeners();
+
+    final formattedSummary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    final displaySummary = askMore
+        ? '$formattedSummary\n(+ questions complémentaires demandées)'
+        : formattedSummary;
+
+    await _runCostAgentTurn(
+      stage: stage,
+      userDisplayText: displaySummary,
+      promptInput: formattedSummary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+    );
+  }
+
+  /// Ignore un questionnaire Coûts en appliquant ses valeurs par défaut pour passer à la génération.
+  Future<void> skipCostAskUser(String messageId) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.costSpec.currentStage;
+    final stageState = current.costSpec.stageStateFor(stage);
+    final idx = stageState.messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = stageState.messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final defaults = askUser.defaultAnswers();
+    final updatedMessages = List<SpecChatMessage>.from(stageState.messages)
+      ..[idx] = targetMsg.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      );
+    _project = current.copyWith(
+      costSpec: current.costSpec.withStageState(
+        stageState.copyWith(messages: updatedMessages),
+      ),
+    );
+    notifyListeners();
+
+    final formatted =
+        'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}';
+    await _runCostAgentTurn(
+      stage: stage,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput: formatted,
+      afterAskUserReply: true,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  /// Relance manuellement le dernier tour en erreur sur l'étape Coûts active avec contexte de correction.
+  Future<void> retryLastFailedCostTurn() async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final stage = current.costSpec.currentStage;
+    final messages = current.costSpec.stageStateFor(stage).messages;
+    String retryInput =
+        'La tentative précédente a échoué. Corrige le format JSON et applique la mise à jour du chiffrage IT demandée.';
+    List<VibeChatAttachment> lastAttachments = const <VibeChatAttachment>[];
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final msg = messages[i];
+      if (msg.isUser) {
+        retryInput = (msg.promptText ?? msg.text).trim();
+        lastAttachments = msg.attachments;
+        break;
+      }
+    }
+    await _runCostAgentTurn(
+      stage: stage,
+      userDisplayText: 'Reprise de la génération FinOps suite à erreur…',
+      promptInput:
+          '$retryInput\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastAttachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+    );
+  }
+
+  /// Efface l'historique conversationnel de l'étape Coûts active (ou de [stage]) du wizard Coûts.
+  Future<void> clearCostStageChat([CostForgeStage? stage]) async {
+    final current = _project;
+    if (current == null || _isSending) return;
+    final targetStage = stage ?? current.costSpec.currentStage;
+    final stageState = current.costSpec.stageStateFor(targetStage);
+    if (stageState.messages.isEmpty && !stageState.readyToAdvance) return;
+    final cleared = current.copyWith(
+      costSpec: current.costSpec.withStageState(
+        stageState.copyWith(
+          messages: const <SpecChatMessage>[],
+          readyToAdvance: false,
+        ),
+      ),
+    );
+    _project = cleared;
+    notifyListeners();
+    await _persistProject(cleared);
+  }
+
+  Future<void> _runCostAgentTurn({
+    required CostForgeStage stage,
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    required bool forceFollowUpQuestions,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final initialProject = _project;
+    if (initialProject == null) return;
+
+    final userMessage = SpecChatMessage(
+      id: 'costmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+
+    final initialStageState = initialProject.costSpec.stageStateFor(stage);
+    final withUserMsg = initialProject.copyWith(
+      costSpec: initialProject.costSpec.withStageState(
+        initialStageState.copyWith(
+          status: initialStageState.status == SpecStageStatus.notStarted
+              ? SpecStageStatus.inProgress
+              : initialStageState.status,
+          messages: [...initialStageState.messages, userMessage],
+        ),
+      ),
+    );
+    _project = withUserMsg;
+    _isSending = true;
+    _stopRequested = false;
+    _sendingCostStage = stage;
+    _sendingQaStage = null;
+    _sendingUxStage = null;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Analyse par ${stage.agentTitle}…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    final costAgent = CostStageAgent.forStage(stage);
+    final staticGuide = CostPromptBuilder.buildStaticGuide(stage);
+
+    var workingProject = withUserMsg;
+    final baseSnapshotBeforeTurn = initialProject;
+    var currentPrompt = CostPromptBuilder.buildTurnPrompt(
+      project: initialProject,
+      stage: stage,
+      userInput: promptInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterAskUserReply,
+      forceFollowUpQuestions: forceFollowUpQuestions,
+      enterpriseRateCard: _enterpriseRateCard,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
+      focusedProfileId: _focusedCostProfileId,
+      focusedWbsItemId: _focusedWbsItemId,
+      focusedRunItemId: _focusedRunItemId,
+      focusedRiskItemId: _focusedRiskItemId,
+      toolNames: SpecForgeToolRegistry.costStageToolNames,
+    );
+
+    final priorCauses = <String>[];
+    final checkpointSummaries = <String>[];
+    final turnToolTraces = <VibeToolTrace>[];
+    var recovered = false;
+
+    final registry = _buildProjectToolRegistry(
+      readWorkingProject: () => workingProject,
+      writeWorkingProject: (next) => workingProject = next,
+      toolNames: SpecForgeToolRegistry.costStageToolNames,
+    );
+
+    try {
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        debugPrint(
+          '[SpecForge Cost IA] Tentative ${attempt + 1}/$maxRecoveryAttempts '
+          '(${stage.agentTitle}) — prompt ${currentPrompt.length} car., '
+          'pièces jointes: ${attachments.length}…',
+        );
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.reviewExport,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour du chiffrage FinOps…',
+            writingStatus: 'Rédaction de la réponse…',
+            systemInstructionOverride: costAgent.systemInstruction,
+            staticGuideOverride: staticGuide,
+            allowedToolNames: SpecForgeToolRegistry.costStageToolNames,
+          );
+          if (response == null) {
+            final partialText = parser.snapshot().message?.trim() ?? '';
+            if (checkpointSummaries.isNotEmpty) {
+              _pushUndo(baseSnapshotBeforeTurn);
+            }
+            final stoppedMessage = SpecChatMessage(
+              id: 'costmsg_${shortid.generate()}',
+              isUser: false,
+              text: partialText.isNotEmpty
+                  ? '$partialText\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                  : 'Réflexion IA interrompue par l’utilisateur.',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              appliedPatchSummary: checkpointSummaries.join(', '),
+            );
+            final currentStageState = workingProject.costSpec.stageStateFor(
+              stage,
+            );
+            _project = workingProject.copyWith(
+              costSpec: workingProject.costSpec.withStageState(
+                currentStageState.copyWith(
+                  messages: [...currentStageState.messages, stoppedMessage],
+                ),
+              ),
+            );
+            await _persistProject(_project!);
+            recovered = true;
+            break;
+          }
+          parsedResponse = response;
+
+          var updatedProject = workingProject;
+          var patchSummary = '';
+          final hasCostPatch =
+              response.costPatch != null && response.costPatch!.isNotEmpty;
+          final hasSpecPatch =
+              response.specPatch != null && response.specPatch!.isNotEmpty;
+
+          if (hasCostPatch || hasSpecPatch) {
+            final applied = CostPatchApplier.apply(
+              workingProject,
+              costPatch: response.costPatch,
+              specPatch: response.specPatch,
+            );
+            final didMutate = applied.project != workingProject;
+            if (didMutate || checkpointSummaries.isNotEmpty) {
+              _pushUndo(baseSnapshotBeforeTurn);
+            }
+            updatedProject = applied.project;
+            patchSummary = [
+              ...checkpointSummaries,
+              if (didMutate && applied.summary.isNotEmpty) applied.summary,
+            ].join(', ');
+          } else if (checkpointSummaries.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+            patchSummary = checkpointSummaries.join(', ');
+          }
+
+          final assistantMessage = SpecChatMessage(
+            id: 'costmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+            stageReadyToAdvance: response.stageReadyToAdvance,
+          );
+
+          final currentStageState = updatedProject.costSpec.stageStateFor(
+            stage,
+          );
+          updatedProject = updatedProject.copyWith(
+            costSpec: updatedProject.costSpec.withStageState(
+              currentStageState.copyWith(
+                messages: [...currentStageState.messages, assistantMessage],
+                stageSummary: response.stageSummary.isNotEmpty
+                    ? response.stageSummary
+                    : currentStageState.stageSummary,
+                readyToAdvance:
+                    response.stageReadyToAdvance ||
+                    currentStageState.readyToAdvance,
+              ),
+            ),
+          );
+
+          _project = updatedProject;
+          await _persistProject(updatedProject);
+          recovered = true;
+          break;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+
+          debugPrint(
+            '[SpecForge Cost IA] Échec tentative ${attempt + 1}/$maxRecoveryAttempts '
+            '(${stage.agentTitle}) : $cause',
+          );
+          saveError(
+            '[SpecForge Cost IA] Tentative ${attempt + 1}/$maxRecoveryAttempts '
+            '(${stage.name}) : $cause',
+            stack,
+          );
+
+          final salvage = CostPatchApplier.salvageFailedAttempt(
+            workingProject: workingProject,
+            rawResponse: parser.rawText,
+            decodedCostPatch: parsedResponse?.costPatch,
+            decodedSpecPatch: parsedResponse?.specPatch,
+          );
+          if (salvage.hasCheckpoint) {
+            workingProject = salvage.checkpointProject;
+            if (salvage.appliedSummary.isNotEmpty) {
+              checkpointSummaries.add(salvage.appliedSummary);
+            }
+            _project = workingProject;
+            notifyListeners();
+          }
+
+          if (attempt < maxRecoveryAttempts - 1 && isValidationError) {
+            final refreshedTurnPrompt = CostPromptBuilder.buildTurnPrompt(
+              project: workingProject,
+              stage: stage,
+              userInput: promptInput,
+              questioningLevel: _questioningLevel,
+              afterAskUserReply: afterAskUserReply || salvage.hasCheckpoint,
+              forceFollowUpQuestions: forceFollowUpQuestions,
+              enterpriseRateCard: _enterpriseRateCard,
+              companyGlossary: _companyGlossary,
+              modelPreferencesOverride: _modelPreferences,
+              focusedProfileId: _focusedCostProfileId,
+              focusedWbsItemId: _focusedWbsItemId,
+              focusedRunItemId: _focusedRunItemId,
+              focusedRiskItemId: _focusedRiskItemId,
+              toolNames: SpecForgeToolRegistry.costStageToolNames,
+            );
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: refreshedTurnPrompt,
+              priorCauses: priorCauses,
+              salvage: salvage,
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+
+          if (checkpointSummaries.isNotEmpty) {
+            _pushUndo(baseSnapshotBeforeTurn);
+          }
+
+          final failedDetail = priorCauses.length > 1
+              ? priorCauses.join('\n')
+              : cause;
+          final errMessage = SpecChatMessage(
+            id: 'costmsg_${shortid.generate()}',
+            isUser: false,
+            text:
+                'Erreur lors de l’appel à ${stage.agentTitle} '
+                '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n$failedDetail',
+            toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+            appliedPatchSummary: checkpointSummaries.join(', '),
+            failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+          );
+          final currentStageState = workingProject.costSpec.stageStateFor(
+            stage,
+          );
+          _project = workingProject.copyWith(
+            costSpec: workingProject.costSpec.withStageState(
+              currentStageState.copyWith(
+                messages: [...currentStageState.messages, errMessage],
+              ),
+            ),
+          );
+          _lastError = cause;
+          await _persistProject(_project!);
+          break;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+
+      if (!recovered && _lastError != null) {
+        debugPrint(
+          '[SpecForge Cost IA] Fin du tour en erreur (${stage.agentTitle}) : $_lastError',
+        );
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingCostStage = null;
       _sendingQaStage = null;
       _sendingUxStage = null;
       _sendingStage = null;
@@ -3218,6 +4018,41 @@ class SpecForgeController extends ChangeNotifier {
           notifyListeners();
         }
       },
+      onRunCostCoherenceAudit: CostCoherenceAnalyzer.analyze,
+      onFocusCostItem: ({
+        stage,
+        profileId,
+        wbsItemId,
+        runItemId,
+        riskItemId,
+      }) {
+        var stageChanged = false;
+        final currentWorking = readWorkingProject();
+        if (stage != null) {
+          final movedCost = currentWorking.costSpec.moveToStage(stage);
+          if (movedCost != currentWorking.costSpec) {
+            final nextProject = currentWorking.copyWith(costSpec: movedCost);
+            writeWorkingProject(nextProject);
+            _project = nextProject;
+            stageChanged = true;
+          }
+        }
+        final hadFocusChange =
+            _focusedCostProfileId != profileId ||
+            _focusedWbsItemId != wbsItemId ||
+            _focusedRunItemId != runItemId ||
+            _focusedRiskItemId != riskItemId;
+        if (hadFocusChange) {
+          focusCostItem(
+            profileId: profileId,
+            wbsItemId: wbsItemId,
+            runItemId: runItemId,
+            riskItemId: riskItemId,
+          );
+        } else if (stageChanged) {
+          notifyListeners();
+        }
+      },
       toolNames: toolNames,
     );
   }
@@ -3249,7 +4084,10 @@ class SpecForgeController extends ChangeNotifier {
               if (allowedToolNames.contains(decl.name) ||
                   (!SpecForgeToolRegistry.specToolNames.contains(decl.name) &&
                       !SpecForgeToolRegistry.uxToolNames.contains(decl.name) &&
-                      !SpecForgeToolRegistry.qaToolNames.contains(decl.name)))
+                      !SpecForgeToolRegistry.qaToolNames.contains(decl.name) &&
+                      !SpecForgeToolRegistry.costToolNames.contains(
+                        decl.name,
+                      )))
                 decl,
           ];
     final conversationContents = <Map<String, Object?>>[
@@ -3294,6 +4132,8 @@ class SpecForgeController extends ChangeNotifier {
                 _streamingMessage = snap.message;
                 if (snap.hasAskUser) {
                   _streamingStatus = 'Préparation des questions…';
+                } else if (snap.hasCostPatch) {
+                  _streamingStatus = 'Mise à jour du chiffrage FinOps…';
                 } else if (snap.hasQaPatch) {
                   _streamingStatus = 'Mise à jour des tests BDD / TDD…';
                 } else if (snap.hasUxPatch || snap.hasSpecPatch) {
@@ -3330,6 +4170,7 @@ class SpecForgeController extends ChangeNotifier {
         roundParsed = SpecAgentResponse.parse(parser.rawText);
         if (roundParsed.uxPatch == null &&
             roundParsed.qaPatch == null &&
+            roundParsed.costPatch == null &&
             roundParsed.specPatch == null &&
             roundParsed.toolCalls.isNotEmpty) {
           callsToRun = roundParsed.toolCalls;
@@ -4610,6 +5451,394 @@ class SpecForgeController extends ChangeNotifier {
     }
   }
 
+  /// Enregistre la spécification « Cas d’usage & orchestration » du domaine [domainId].
+  Future<void> updateUseCaseOrchestration(
+    String domainId,
+    UseCaseOrchestrationSpec spec,
+  ) {
+    if (!_domainCatalog.domains.any((d) => d.id == domainId)) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    spec.validate();
+    return updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final domain in _domainCatalog.domains)
+            if (domain.id == domainId)
+              domain.copyWith(useCaseOrchestration: spec)
+            else
+              domain,
+        ],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  Future<bool> _updateUseCaseOrchestrationChat(
+    String domainId,
+    List<SpecChatMessage> Function(List<SpecChatMessage> chat) update,
+  ) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) return false;
+    final current =
+        domain.useCaseOrchestration ?? UseCaseOrchestrationSpec.empty;
+    await updateUseCaseOrchestration(
+      domainId,
+      current.copyWith(chatMessages: update(current.chatMessages)),
+    );
+    return true;
+  }
+
+  /// Envoie un message à l'agent IA « Cas d’usage & orchestration » pour [domainId].
+  Future<void> sendUseCaseOrchestrationMessage(
+    String domainId,
+    String text, {
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    bool requestsMoreQuestions = false,
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty && !requestsMoreQuestions) {
+      return;
+    }
+    final activeTab = useCaseOrchestrationActiveTab(domainId);
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour affiner « ${activeTab.label} ».'
+              : 'Analyse les pièces jointes et complète les cas d’usage et Sagas.');
+    await _runUseCaseOrchestrationTurn(
+      domainId,
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire du chat « Cas d’usage & orchestration ».
+  Future<void> submitUseCaseOrchestrationAskUserAnswers(
+    String domainId,
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    if (_isSending) return;
+    final target = useCaseOrchestrationChat(
+      domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final summary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runUseCaseOrchestrationTurn(
+      domainId,
+      userDisplayText: askMore
+          ? '$summary\n(+ questions complémentaires demandées)'
+          : summary,
+      promptInput: summary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+      answered: target.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+        askUserRequestedMore: askMore,
+      ),
+    );
+  }
+
+  /// Ignore un questionnaire du chat « Cas d’usage & orchestration » avec les valeurs par défaut.
+  Future<void> skipUseCaseOrchestrationAskUser(
+    String domainId,
+    String messageId,
+  ) async {
+    if (_isSending) return;
+    final target = useCaseOrchestrationChat(
+      domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final defaults = askUser.defaultAnswers();
+    await _runUseCaseOrchestrationTurn(
+      domainId,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput:
+          'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}',
+      afterAskUserReply: true,
+      answered: target.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      ),
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat « Cas d’usage & orchestration ».
+  Future<void> retryLastUseCaseOrchestrationTurn(String domainId) async {
+    if (_isSending) return;
+    final lastUser = useCaseOrchestrationChat(domainId).lastWhere(
+      (m) => m.isUser,
+      orElse: () => SpecChatMessage(
+        id: '',
+        isUser: true,
+        text:
+            'La tentative précédente a échoué. Corrige le format JSON et complète les cas d’usage et Sagas.',
+      ),
+    );
+    await _runUseCaseOrchestrationTurn(
+      domainId,
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '${(lastUser.promptText ?? lastUser.text).trim()}\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastUser.attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA « Cas d’usage & orchestration » d'un domaine.
+  Future<void> clearUseCaseOrchestrationChat(String domainId) async {
+    if (_isSending) return;
+    await _updateUseCaseOrchestrationChat(domainId, (_) => const []);
+  }
+
+  Future<void> _runUseCaseOrchestrationTurn(
+    String domainId, {
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecChatMessage? answered,
+  }) async {
+    final initialDomain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (initialDomain == null) return;
+
+    String buildPrompt(FunctionalDomain domain, {required bool afterReply}) =>
+        UseCaseOrchestrationAiAgent.buildTurnPrompt(
+          domain: domain,
+          catalog: _domainCatalog,
+          activeTab: useCaseOrchestrationActiveTab(domainId),
+          history:
+              domain.useCaseOrchestration?.chatMessages ??
+              const <SpecChatMessage>[],
+          userInput: promptInput,
+          modelPreferences: _modelPreferences,
+          questioningLevel: _questioningLevel,
+          afterAskUserReply: afterReply,
+          forceFollowUpQuestions: forceFollowUpQuestions,
+          activeProject: _project,
+          companyGlossary: _companyGlossary,
+        );
+
+    var currentPrompt = buildPrompt(
+      initialDomain,
+      afterReply: afterAskUserReply,
+    );
+    final userMessage = SpecChatMessage(
+      id: 'ucmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+    final turnToolTraces = <VibeToolTrace>[];
+    final priorCauses = <String>[];
+    Future<bool> append(SpecChatMessage message) =>
+        _updateUseCaseOrchestrationChat(
+          domainId,
+          (chat) => [...chat, message],
+        );
+
+    final activeProject = _project;
+    final registry =
+        _customToolRegistry ??
+        (activeProject != null
+            ? SpecForgeToolRegistry.build(
+                readProject: () => _project,
+                readCompanyGlossary: () => _companyGlossary,
+                readModelPreferences: () => _modelPreferences,
+                onUpdateProject: (_) async {},
+                onNavigateStage: (_) async {},
+                toolNames: UseCaseOrchestrationAiAgent.toolNames,
+              )
+            : VibeAppToolRegistry(const []));
+
+    _isSending = true;
+    _sendingUseCaseDomainId = domainId;
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus =
+        'Conception des Use Cases & Sagas (${initialDomain.name})…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final started = await _updateUseCaseOrchestrationChat(
+        domainId,
+        (chat) => [
+          for (final message in chat)
+            if (message.id == answered?.id) answered! else message,
+          userMessage,
+        ],
+      );
+      if (!started) return;
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.specifications,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour des Use Cases & Sagas…',
+            systemInstructionOverride:
+                UseCaseOrchestrationAiAgent.systemInstruction,
+            staticGuideOverride: UseCaseOrchestrationAiAgent.staticGuide,
+            allowedToolNames: activeProject != null
+                ? UseCaseOrchestrationAiAgent.toolNames
+                : const <String>{},
+          );
+          final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
+          if (response == null) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            await append(
+              SpecChatMessage(
+                id: 'ucmsg_${shortid.generate()}',
+                isUser: false,
+                text: partial.isNotEmpty
+                    ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                    : 'Réflexion IA interrompue par l’utilisateur.',
+                toolTraces: traces,
+              ),
+            );
+            return;
+          }
+          parsedResponse = response;
+
+          final currentDomain = _domainCatalog.domains
+              .where((d) => d.id == domainId)
+              .firstOrNull;
+          if (currentDomain == null) return;
+          var nextSpec =
+              currentDomain.useCaseOrchestration ??
+              UseCaseOrchestrationSpec.empty;
+          var patchSummary = '';
+          final patch = response.specPatch;
+          if (patch != null && patch.isNotEmpty) {
+            final applied = UseCaseOrchestrationAiAgent.applyPatch(
+              nextSpec,
+              patch,
+            );
+            nextSpec = applied.spec;
+            patchSummary = applied.summary;
+          }
+          final assistantMessage = SpecChatMessage(
+            id: 'ucmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: traces,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          await updateUseCaseOrchestration(
+            domainId,
+            nextSpec.copyWith(
+              chatMessages: [...nextSpec.chatMessages, assistantMessage],
+            ),
+          );
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+          saveError(
+            '[SpecForge UseCase Orchestration IA] Tentative ${attempt + 1}/$maxRecoveryAttempts : $cause',
+            stack,
+          );
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          final latestDomain = _domainCatalog.domains
+              .where((d) => d.id == domainId)
+              .firstOrNull;
+          if (attempt < maxRecoveryAttempts - 1 &&
+              isValidationError &&
+              latestDomain != null) {
+            final retryProject =
+                _project ??
+                SpecForgeProject.fromIdea(
+                  idea: latestDomain.name,
+                  name: latestDomain.name,
+                  id: 'uc_retry_$domainId',
+                );
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: buildPrompt(
+                latestDomain,
+                afterReply: afterAskUserReply,
+              ),
+              priorCauses: priorCauses,
+              salvage: SpecSalvageOutcome.none(
+                retryProject,
+                wasTruncated: parsedResponse == null,
+              ),
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+          _lastError = cause;
+          await append(
+            SpecChatMessage(
+              id: 'ucmsg_${shortid.generate()}',
+              isUser: false,
+              text:
+                  'Erreur lors de l’appel à l’assistant Cas d’usage & orchestration '
+                  '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n'
+                  '${priorCauses.length > 1 ? priorCauses.join('\n') : cause}',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            ),
+          );
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingUseCaseDomainId = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
   void _pushGlossaryUndo(CompanyGlossary snapshot) {
     _glossaryUndoStack.add(snapshot);
     if (_glossaryUndoStack.length > 40) {
@@ -4785,6 +6014,63 @@ class SpecForgeController extends ChangeNotifier {
     notifyListeners();
     try {
       await _modelDictionaryStore.save(prefs);
+    } finally {
+      if (gen == _saveGeneration) {
+        _isSaving = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Met à jour la grille tarifaire TJM d'entreprise et la persiste sur disque.
+  Future<void> updateEnterpriseRateCard(
+    EnterpriseRateCard updated, {
+    bool recordUndo = true,
+  }) async {
+    updated.validate();
+    if (updated == _enterpriseRateCard) return;
+    if (recordUndo) {
+      _rateCardUndoStack.add(_enterpriseRateCard);
+      if (_rateCardUndoStack.length > 40) {
+        _rateCardUndoStack.removeAt(0);
+      }
+      _rateCardRedoStack.clear();
+    }
+    _enterpriseRateCard = updated;
+    notifyListeners();
+    await _persistEnterpriseRateCard(updated);
+  }
+
+  /// Réinitialise la grille tarifaire TJM d'entreprise aux valeurs par défaut.
+  Future<void> resetEnterpriseRateCardToDefaults() =>
+      updateEnterpriseRateCard(EnterpriseRateCard.defaults);
+
+  /// Annule la dernière modification de la grille tarifaire d'entreprise.
+  Future<void> undoEnterpriseRateCard() async {
+    if (_rateCardUndoStack.isEmpty) return;
+    final previous = _rateCardUndoStack.removeLast();
+    _rateCardRedoStack.add(_enterpriseRateCard);
+    _enterpriseRateCard = previous;
+    notifyListeners();
+    await _persistEnterpriseRateCard(previous);
+  }
+
+  /// Rétablit la dernière modification annulée de la grille tarifaire d'entreprise.
+  Future<void> redoEnterpriseRateCard() async {
+    if (_rateCardRedoStack.isEmpty) return;
+    final next = _rateCardRedoStack.removeLast();
+    _rateCardUndoStack.add(_enterpriseRateCard);
+    _enterpriseRateCard = next;
+    notifyListeners();
+    await _persistEnterpriseRateCard(next);
+  }
+
+  Future<void> _persistEnterpriseRateCard(EnterpriseRateCard card) async {
+    final gen = ++_saveGeneration;
+    _isSaving = true;
+    notifyListeners();
+    try {
+      await _enterpriseRateCardStore.save(card);
     } finally {
       if (gen == _saveGeneration) {
         _isSaving = false;

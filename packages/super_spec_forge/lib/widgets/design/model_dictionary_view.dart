@@ -77,16 +77,12 @@ class ModelDictionaryView extends StatefulWidget {
   /// Crée la vue connectée au [controller].
   const ModelDictionaryView({
     required this.controller,
-    required this.onBack,
     this.pickAttachments,
     super.key,
   });
 
   /// Contrôleur principal.
   final SpecForgeController controller;
-
-  /// Callback de retour vers le menu Spec.
-  final VoidCallback onBack;
 
   /// Sélecteur optionnel de fichiers pour l'import JSON.
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
@@ -258,13 +254,6 @@ class _ModelDictionaryViewState extends State<ModelDictionaryView> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                key: const ValueKey('spec-subview-back-btn'),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Design'),
-              ),
-              const SizedBox(width: 14),
               Icon(Icons.rule_folder_outlined, size: 22, color: colors.primary),
               const SizedBox(width: 10),
               Column(

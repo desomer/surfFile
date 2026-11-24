@@ -289,6 +289,47 @@ class CompanyGlossaryTerm {
   );
 }
 
+/// Nature de la correspondance entre un terme du lexique projet et le glossaire d'entreprise.
+enum CompanyGlossaryMatchKind {
+  /// Correspondance directe par identifiant ou libellé canonique.
+  exact('Dans le lexique entreprise'),
+
+  /// Le terme projet correspond à un synonyme toléré d'une notion d'entreprise.
+  synonym('Synonyme dans le lexique entreprise'),
+
+  /// Le terme projet figure parmi les termes proscrits d'une notion d'entreprise.
+  forbidden('Proscrit dans le lexique entreprise');
+
+  /// Construit une nature de correspondance.
+  const CompanyGlossaryMatchKind(this.label);
+
+  /// Libellé lisible en français.
+  final String label;
+}
+
+/// Résultat de la recherche d'un terme de lexique projet dans le [CompanyGlossary].
+@immutable
+class CompanyGlossaryMatch {
+  /// Construit une correspondance entre un terme projet et un terme d'entreprise.
+  const CompanyGlossaryMatch({required this.term, required this.kind});
+
+  /// Terme du glossaire d'entreprise correspondant.
+  final CompanyGlossaryTerm term;
+
+  /// Nature de la correspondance constatée.
+  final CompanyGlossaryMatchKind kind;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CompanyGlossaryMatch &&
+          other.term == term &&
+          other.kind == kind;
+
+  @override
+  int get hashCode => Object.hash(term, kind);
+}
+
 /// Glossaire terminologique complet d'entreprise partagé entre tous les projets.
 @immutable
 class CompanyGlossary {
@@ -352,6 +393,53 @@ class CompanyGlossary {
       if (term.synonyms.any((s) => s.toLowerCase() == normalized) ||
           term.forbiddenTerms.any((f) => f.toLowerCase() == normalized)) {
         return term;
+      }
+    }
+    return null;
+  }
+
+  /// Indique si la notion représentée par [lexiconTerm] existe déjà dans ce
+  /// glossaire d'entreprise (et sous quelle forme : exacte, synonyme ou terme
+  /// proscrit), ou retourne `null` si elle en est absente.
+  CompanyGlossaryMatch? matchLexiconTerm(LexiconTerm lexiconTerm) {
+    final normTerm = lexiconTerm.term.trim().toLowerCase();
+    final normId = lexiconTerm.id.trim().toLowerCase();
+    if (normTerm.isNotEmpty) {
+      for (final cgTerm in terms) {
+        if (cgTerm.term.trim().toLowerCase() == normTerm) {
+          return CompanyGlossaryMatch(
+            term: cgTerm,
+            kind: CompanyGlossaryMatchKind.exact,
+          );
+        }
+      }
+      for (final cgTerm in terms) {
+        if (cgTerm.forbiddenTerms.any(
+          (f) => f.trim().toLowerCase() == normTerm,
+        )) {
+          return CompanyGlossaryMatch(
+            term: cgTerm,
+            kind: CompanyGlossaryMatchKind.forbidden,
+          );
+        }
+      }
+      for (final cgTerm in terms) {
+        if (cgTerm.synonyms.any((s) => s.trim().toLowerCase() == normTerm)) {
+          return CompanyGlossaryMatch(
+            term: cgTerm,
+            kind: CompanyGlossaryMatchKind.synonym,
+          );
+        }
+      }
+    }
+    if (normId.isNotEmpty) {
+      for (final cgTerm in terms) {
+        if (cgTerm.id.trim().toLowerCase() == normId) {
+          return CompanyGlossaryMatch(
+            term: cgTerm,
+            kind: CompanyGlossaryMatchKind.exact,
+          );
+        }
       }
     }
     return null;

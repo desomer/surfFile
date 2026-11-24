@@ -2907,6 +2907,7 @@ class _VibeChatDialogState extends State<VibeChatDialog>
           mountedSlotSummaries: VibeMountedSlotIndex.instance
               .mountedSlotSummaries(),
           repositoriesContext: repositoriesContext,
+          planMode: _planMode,
           visibleOnlyMode: _visibleOnlyMode,
           visibleViewportContext: session.visibleViewportSnapshot
               ?.toPromptContext(),
@@ -3386,7 +3387,10 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
   }
 
-  Future<void> _startPlanExecution(int messageIndex) async {
+  Future<void> _startPlanExecution(
+    int messageIndex, {
+    bool parallel = false,
+  }) async {
     if (_isBusy || messageIndex != _activePlanMessageIndex) return;
     final plan = _messages[messageIndex].plan;
     if (plan == null || plan.status != VibePlanStatus.awaitingConfirmation) {
@@ -3394,6 +3398,10 @@ class _VibeChatDialogState extends State<VibeChatDialog>
     }
     final startIdx = plan.nextActionableIndex;
     if (startIdx < 0) return;
+    _updatePlanAt(
+      messageIndex,
+      (p) => p.copyWith(parallelExecution: parallel),
+    );
     _planPreRunAppearances.putIfAbsent(
       messageIndex,
       () => widget.controller.value,
@@ -3738,9 +3746,12 @@ class _VibeChatDialogState extends State<VibeChatDialog>
                     VibeLotStatus.failed)) {
           waveIndices = <int>[initialCheckpointLotIndex];
         } else {
+          final maxWaveCount = currentPlan.parallelExecution
+              ? VibeChatDialog.maxParallelPlanLots
+              : 1;
           waveIndices = currentPlan.nextReadyActionableIndices(
             minIndex: startLotIndex,
-            maxCount: VibeChatDialog.maxParallelPlanLots,
+            maxCount: maxWaveCount,
           );
         }
         if (waveIndices.isEmpty) break;
@@ -8839,7 +8850,11 @@ $response
                               onRetryTurn: _messages[i].retryTurn != null
                                   ? () => _retryFailedTurn(i)
                                   : null,
-                              onStartPlan: () => _startPlanExecution(i),
+                              onStartPlan: () =>
+                                  _startPlanExecution(i, parallel: false),
+                              onStartPlanParallel: _planMode
+                                  ? () => _startPlanExecution(i, parallel: true)
+                                  : null,
                               onCancelPlan: () => _cancelPlan(i),
                               onStopPlan: () => _stopPlan(i),
                               onRetryPlanLot: () =>

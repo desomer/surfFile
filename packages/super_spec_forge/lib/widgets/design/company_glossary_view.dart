@@ -21,7 +21,6 @@ class CompanyGlossaryView extends StatefulWidget {
   /// Crée la sous-vue connectée au [controller].
   const CompanyGlossaryView({
     required this.controller,
-    required this.onBack,
     this.pickAttachments,
     this.pasteAttachments,
     this.hasClipboardMedia,
@@ -31,9 +30,6 @@ class CompanyGlossaryView extends StatefulWidget {
 
   /// Contrôleur principal.
   final SpecForgeController controller;
-
-  /// Callback de retour vers le menu Spec.
-  final VoidCallback onBack;
 
   /// Sélecteur optionnel de pièces jointes pour le chat IA.
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
@@ -310,13 +306,6 @@ class _CompanyGlossaryViewState extends State<CompanyGlossaryView> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              OutlinedButton.icon(
-                key: const ValueKey('spec-subview-back-btn'),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Spec'),
-              ),
-              const SizedBox(width: 14),
               Icon(Icons.language_rounded, size: 22, color: colors.primary),
               const SizedBox(width: 10),
               Flexible(

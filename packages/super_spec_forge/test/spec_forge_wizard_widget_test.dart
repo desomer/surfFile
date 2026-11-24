@@ -729,7 +729,11 @@ Facture:
     );
     await tester.pumpAndSettle();
     expect(find.byType(DomainManagementView), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('domain-management-back-btn')));
+    expect(
+      find.byKey(const ValueKey('domain-management-back-btn')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
     await tester.pumpAndSettle();
 
     await controller.updateDomainCatalog(
@@ -1045,17 +1049,26 @@ Facture:
     await tester.tap(find.widgetWithText(ChoiceChip, 'OMS'));
     await tester.pumpAndSettle();
     expect(_appBarText('Design › Modèles & Contrats'), findsOneWidget);
-    // Depuis la fiche, l’icône de grille revient directement au menu Design.
+    // Depuis la fiche, un clic sur Design dans le rail revient directement au menu Design.
     await tester.tap(find.byTooltip('Choisir un domaine'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, 'RH'));
     await tester.pumpAndSettle();
     await tester.tap(link);
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Menu Design'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Design'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(DesignLinksView), findsOneWidget);
-    // Depuis la liste, la flèche remonte au menu Design.
+    expect(
+      find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      findsNothing,
+    );
+    // Depuis la liste, le bouton retour de l'AppBar remonte au menu Design.
     await tester.tap(find.text('Modèles & Contrats'));
     await tester.pumpAndSettle();
     expect(find.byType(SuperTreeView), findsOneWidget);
@@ -1096,7 +1109,7 @@ Facture:
         findsOneWidget,
       );
       expect(find.text('Entreprise'), findsOneWidget);
-      expect(find.text('Spécification & Projets'), findsOneWidget);
+      expect(find.text('Projets & Spécification'), findsOneWidget);
       expect(
         tester
             .getTopLeft(
@@ -1159,7 +1172,7 @@ Facture:
       await tester.pumpAndSettle();
       expect(find.text('Glossaire d’entreprise'), findsOneWidget);
 
-      // Clic sur Glossaire d'entreprise depuis Spec -> sous-vue puis retour via spec-subview-back-btn.
+      // Clic sur Glossaire d'entreprise depuis Spec -> sous-vue puis retour via spec-forge-appbar-back-btn.
       await tester.tap(
         find.byKey(const ValueKey('spec-link-company_glossary')),
       );
@@ -1168,11 +1181,19 @@ Facture:
         find.byKey(const ValueKey('company-glossary-view')),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      expect(
+        find.byKey(const ValueKey('spec-subview-back-btn')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
         findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+        findsNothing,
       );
       await tester.tap(
         find.byKey(const ValueKey('spec-link-modeling_dictionary')),
@@ -1186,7 +1207,7 @@ Facture:
         _appBarText('Spec › Dictionnaire technique & Modèle'),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
@@ -1212,12 +1233,12 @@ Facture:
         findsOneWidget,
       );
 
-      // Clic sur Projets -> ouvre IdeaLauncherView avec bouton retour, puis retour au menu Spec.
+      // Clic sur Projets -> ouvre IdeaLauncherView, puis retour au menu Spec via l'AppBar.
       await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
       await tester.pumpAndSettle();
       expect(_appBarText('Spec › Projets'), findsOneWidget);
       expect(find.text('Nouvelle forge à partir d’une idée'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
@@ -1244,7 +1265,7 @@ Facture:
       );
       expect(find.text('DevisApp'), findsOneWidget);
 
-      // Ouverture du Wizard -> bouton retour Spec présent et fonctionnel.
+      // Ouverture du Wizard -> bouton retour centralisé dans l'AppBar présent et fonctionnel.
       await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
       expect(
@@ -1252,7 +1273,7 @@ Facture:
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('spec-subview-back-btn')),
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
         findsOneWidget,
       );
 
@@ -1274,17 +1295,17 @@ Facture:
       );
       await tester.pumpAndSettle();
       expect(_appBarText('Spec › Glossaire d’entreprise'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-link-projects')));
       await tester.pumpAndSettle();
       expect(controller.project?.name, 'DevisApp');
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('spec-subview-back-btn')),
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
         findsOneWidget,
       );
 
@@ -1342,7 +1363,6 @@ Facture:
       expect(find.text('Adaptateurs d’infrastructure'), findsOneWidget);
       expect(find.text('Systèmes & Services'), findsOneWidget);
       expect(find.text('Cartes des flux système'), findsOneWidget);
-      expect(find.text('Discuter avec l’IA experte'), findsOneWidget);
 
       // Gestion des domaines : ouvre le catalogue puis revient au menu Design.
       await tester.tap(
@@ -1398,7 +1418,7 @@ Facture:
       expect(find.text('Revue 12'), findsOneWidget);
       expect(find.textContaining('review-pr-12'), findsOneWidget);
       await tester.tap(
-        find.byKey(const ValueKey('domain-management-back-btn')),
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
       );
       await tester.pumpAndSettle();
       expect(
@@ -1426,6 +1446,10 @@ Facture:
         find.byKey(const ValueKey('spec-forge-build-empty')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+        findsNothing,
+      );
 
       await tester.tap(
         find.descendant(
@@ -1439,7 +1463,7 @@ Facture:
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('spec-subview-back-btn')),
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
         findsOneWidget,
       );
     },
@@ -2642,7 +2666,7 @@ Facture:
       );
 
       // Retour dans Spec > Objets métiers et lancement de l'IA -> reçoit les règles globales.
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
@@ -3064,7 +3088,7 @@ Facture:
         idea: 'Gestion commerciale',
         autoKickoff: false,
       );
-      await tester.tap(find.byKey(const ValueKey('spec-subview-back-btn')));
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
       await tester.pumpAndSettle();
@@ -3096,6 +3120,118 @@ Facture:
       expect(
         find.text(
           '« Bon de livraison » mis à jour dans le glossaire d’entreprise.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'LexiconEditorView indique si chaque notion existe ou non dans le lexique entreprise et permet de filtrer',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.upsertCompanyGlossaryTerm(
+        CompanyGlossaryTerm(
+          id: 'cg_bl',
+          term: 'Bon de livraison',
+          synonyms: const ['BL'],
+          forbiddenTerms: const ['Ticket sortie'],
+          status: CompanyGlossaryStatus.approved,
+        ),
+      );
+
+      await controller.createProjectFromIdea(
+        idea: 'Suivi des expéditions',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          lexicon: SpecLexicon(
+            terms: [
+              LexiconTerm(id: 'l_exact', term: 'Bon de livraison'),
+              LexiconTerm(id: 'l_syn', term: 'BL'),
+              LexiconTerm(id: 'l_forb', term: 'Ticket sortie'),
+              LexiconTerm(id: 'l_absent', term: 'Palette Europe'),
+            ],
+          ),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: LexiconEditorView(controller: controller)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('spec-lexicon-company-status-l_exact')),
+          matching: find.text('Dans le lexique entreprise · Validé'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('spec-lexicon-company-status-l_syn')),
+          matching: find.text(
+            'Dans le lexique entreprise · Synonyme de « Bon de livraison »',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('spec-lexicon-company-status-l_forb')),
+          matching: find.text(
+            'Proscrit dans le lexique entreprise → « Bon de livraison »',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('spec-lexicon-company-status-l_absent')),
+          matching: find.text('Absent du lexique entreprise'),
+        ),
+        findsOneWidget,
+      );
+
+      // Filtrer sur les notions absentes du lexique entreprise.
+      await tester.tap(find.byKey(const ValueKey('spec-lexicon-filter-absent')));
+      await tester.pumpAndSettle();
+      expect(find.text('Palette Europe'), findsOneWidget);
+      expect(find.text('Bon de livraison'), findsNothing);
+
+      // Filtrer sur les notions présentes dans le lexique entreprise.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-lexicon-filter-in-company')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Bon de livraison'), findsOneWidget);
+      expect(find.text('Palette Europe'), findsNothing);
+
+      // Revenir à tous et promouvoir la notion absente -> statut mis à jour.
+      await tester.tap(find.byKey(const ValueKey('spec-lexicon-filter-all')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-lexicon-promote-l_absent')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('spec-lexicon-company-status-l_absent')),
+          matching: find.text('Dans le lexique entreprise · Validé'),
         ),
         findsOneWidget,
       );
@@ -3860,6 +3996,141 @@ Facture:
         find.byKey(const ValueKey('spec-objects-repo-tile-obj_article')),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    'StageAiChatPane : le bouton Effacer la conversation vide les échanges de l’étape active',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 860));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final store = _MemorySpecProjectStore();
+      final controller = SpecForgeController(
+        store: store,
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        domainCatalogStore: _MemoryDomainCatalogStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion des commandes clients',
+        autoKickoff: false,
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          currentStage: SpecForgeStage.lexicon,
+          stageStates: <SpecForgeStage, SpecStageState>{
+            SpecForgeStage.lexicon: SpecStageState(
+              stage: SpecForgeStage.lexicon,
+              status: SpecStageStatus.inProgress,
+              readyToAdvance: true,
+              messages: [
+                SpecChatMessage(
+                  id: 'm1',
+                  isUser: true,
+                  text: 'Ajoute le terme Commande.',
+                ),
+                SpecChatMessage(
+                  id: 'm2',
+                  isUser: false,
+                  text: 'Terme Commande ajouté.',
+                ),
+              ],
+            ),
+            SpecForgeStage.vision: SpecStageState(
+              stage: SpecForgeStage.vision,
+              status: SpecStageStatus.inProgress,
+              messages: [
+                SpecChatMessage(
+                  id: 'm_vision',
+                  isUser: true,
+                  text: 'Vision conservée.',
+                ),
+              ],
+            ),
+          },
+        ),
+        recordUndo: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 520,
+              height: 760,
+              child: ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => StageAiChatPane(
+                  controller: controller,
+                  onCycleChatSize: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final clearBtn = find.byKey(const ValueKey('spec-chat-clear-btn'));
+      expect(clearBtn, findsOneWidget);
+
+      await tester.tap(clearBtn);
+      await tester.pumpAndSettle();
+
+      final lexiconState = controller.project!.stageStateFor(
+        SpecForgeStage.lexicon,
+      );
+      expect(lexiconState.messages, isEmpty);
+      expect(lexiconState.readyToAdvance, isFalse);
+      expect(
+        controller.project!.stageStateFor(SpecForgeStage.vision).messages,
+        hasLength(1),
+      );
+      expect(clearBtn, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'SuperSpecForgeApp & SpecForgeShell : hauteur réduite des AppBar (clair et sombre)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final store = _MemorySpecProjectStore();
+      final controller = SpecForgeController(
+        store: store,
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        domainCatalogStore: _MemoryDomainCatalogStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        idea: 'Gestion de commandes',
+        name: 'Orders',
+        autoKickoff: false,
+      );
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(
+          controller: controller,
+          restoreLastProject: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+      expect(materialApp.theme?.appBarTheme.toolbarHeight, 40.0);
+      expect(materialApp.darkTheme?.appBarTheme.toolbarHeight, 40.0);
+
+      final appBarBox = tester.getSize(find.byType(AppBar));
+      expect(appBarBox.height, 40.0);
+      expect(appBarBox.height, lessThan(kToolbarHeight));
     },
   );
 }

@@ -394,8 +394,12 @@ void main() {
       );
       expect(find.byKey(const ValueKey('ux-wizard-stepper')), findsOneWidget);
 
-      // Retour au menu Spec puis ouverture de l'étape 6 du Wizard Métier.
-      await tester.tap(find.byKey(const ValueKey('ux-subview-back-btn')));
+      // Retour au menu Spec via l'AppBar puis ouverture de l'étape 6 du Wizard Métier.
+      expect(
+        find.byKey(const ValueKey('ux-subview-back-btn')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
@@ -1262,6 +1266,42 @@ void main() {
         ),
       );
       await pumpConstrained(UxReviewExportView(controller: controller));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 360,
+                height: 820,
+                child: ListenableBuilder(
+                  listenable: controller,
+                  builder: (context, _) => UxStageAiChatPane(
+                    controller: controller,
+                    chatWidthFraction: 0.3,
+                    onCycleChatSize: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final clearUxBtn = find.byKey(const ValueKey('ux-chat-clear-btn'));
+      expect(clearUxBtn, findsOneWidget);
+      await tester.tap(clearUxBtn);
+      await tester.pumpAndSettle();
+
+      final uxStageState = controller.project!.uxSpec.stageStateFor(
+        UxForgeStage.userJourneys,
+      );
+      expect(uxStageState.messages, isEmpty);
+      expect(uxStageState.readyToAdvance, isFalse);
+      expect(clearUxBtn, findsNothing);
     },
   );
 }

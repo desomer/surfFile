@@ -120,11 +120,13 @@ class _SuperSpecForgeAppState extends State<SuperSpecForgeApp> {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF3F51B5),
         brightness: Brightness.light,
+        appBarTheme: const AppBarTheme(toolbarHeight: 40),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF5C6BC0),
         brightness: Brightness.dark,
+        appBarTheme: const AppBarTheme(toolbarHeight: 40),
       ),
       themeMode: ThemeMode.system,
       home: SpecForgeShell(

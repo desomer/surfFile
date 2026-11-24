@@ -66,7 +66,10 @@ class ReviewExportView extends StatelessWidget {
         .toList();
     final allIssues = [...localIssues, ...aiIssues];
 
-    final markdown = SpecMarkdownExporter.export(project);
+    final markdown = SpecMarkdownExporter.export(
+      project,
+      companyGlossary: controller.companyGlossary,
+    );
     final yamlSchema = SpecSuperDesignerExporter.toYamlLightSchema(project);
     final bundle = SpecSuperDesignerExporter.toBundle(
       project,

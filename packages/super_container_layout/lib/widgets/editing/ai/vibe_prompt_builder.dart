@@ -55,9 +55,9 @@ Reproduis le plus fidèlement possible (pixel-perfect) la page décrite dans la 
   /// Consigne de planification automatique en lots (Phase 1 du mode « Plan »).
   static const String planModePlanningDirective = '''
 PHASE 1 — PLANIFICATION EN LOTS OBLIGATOIRE (MODE « PLAN ») :
-- Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents, calibrés et autonomes afin de structurer la construction et d’accélérer l’exécution parallèle :
+- Avant de générer des modifications "vibe" ou "repositories", découpe la demande complète en un plan ordonné de lots cohérents, calibrés et autonomes (exécutables en séquentiel par défaut ou via le bouton « Exécution en parallèle ») :
   - Lot 1 (`"id": "lot-1"`) : Thème global ("mode", "accent", styles principaux), repositories JSON éventuels si le besoin manipule des données, architecture globale de navigation/shell/en-tête (`root`, `app-bar`, `nav-rail`...) ET déclaration initiale dans `"pageCatalog"` de TOUTES les routes secondaires prévues (avec un `Scaffold` racine minimal par route) afin que les lots suivants puissent construire chaque route indépendamment (rappel : la route "/" existe déjà côté hôte via "root" / "mainLayout" — ne prévois jamais une page "pageCatalog" avec "path": "/").
-  - Lots d’écrans (`"lot-2"`, `"lot-3"`, ...) : calibre chaque lot à 1 écran riche ou 2 écrans simples maximum (≤ 45–50 composants par lot) pour éviter les flux JSON géants. Pour chaque lot construisant une ou plusieurs routes dédiées déjà déclarées au Lot 1 (sans modifier le shell global), renseigne `"dependsOn": ["lot-1"]` afin que le moteur exécute ces lots en parallèle ! Si un lot dépend d’un autre lot (ex. lot final de finitions/cohérence), renseigne `"dependsOn"` avec les identifiants exacts des lots prérequis.
+  - Lots d’écrans (`"lot-2"`, `"lot-3"`, ...) : calibre chaque lot à 1 écran riche ou 2 écrans simples maximum (≤ 45–50 composants par lot) pour éviter les flux JSON géants. Pour chaque lot construisant une ou plusieurs routes dédiées déjà déclarées au Lot 1 (sans modifier le shell global), renseigne `"dependsOn": ["lot-1"]` afin de permettre son lancement via « Exécution en parallèle » ! Si un lot dépend d’un autre lot (ex. lot final de finitions/cohérence), renseigne `"dependsOn"` avec les identifiants exacts des lots prérequis.
   - (Si la demande est courte/simple, un plan à 1 seul lot sans `dependsOn` suffit.)
 - Si le NIVEAU DE QUESTIONNEMENT autorise "askUser" sur ce tour et que des choix structurants restent ambigus, pose d’abord tes questions via {"message":"...","askUser":{...},"vibe":null} (sans "plan").
 - Sinon (ou dès que les réponses sont fournies), renvoie UNIQUEMENT un objet JSON de la forme :
@@ -494,6 +494,13 @@ BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE) :
 - Le pré-audit déterministe ci-dessus a déjà balayé chaque onglet monté (voir `ONGLETS BALAYÉS`), mais dès qu’une mesure géométrique (`get_component_geometry` sur `zoneAxes: 'row'`, tailles, débordements) ou une capture isolée (`capture_element_screenshot`) est utile sur un onglet non affiché, bascule d’abord dessus via `preview_navigation_or_selection` (`{"tabComponentId": "<idDuSuperTab>", "tabIndex": <0..N-1>}` ou `"tabId": "<idOuLabel>"`) afin de monter réellement cet onglet à l’écran avant de l’inspecter.
 - Mentionne explicitement l’onglet concerné dans la description des lots de correction.''';
 
+  /// Consigne complémentaire injectée sur un audit lorsque le mode « Plan » est sélectionné,
+  /// afin de déclarer `dependsOn` sur les lots indépendants pour l'option « Exécution en parallèle ».
+  static const String auditParallelDependenciesDirective = '''
+DÉPENDANCES ENTRE LOTS D’AUDIT (MODE « PLAN » ACTIF) :
+- Le mode « Plan » est sélectionné : l’utilisateur pourra lancer ce plan soit en séquentiel par défaut, soit via le bouton « Exécution en parallèle ».
+- Lorsque plusieurs lots d’audit corrigent des périmètres disjoints (ex. onglets/sections distincts ou styles vs repositories indépendants), renseigne explicitement `"dependsOn"` avec les identifiants exacts des lots prérequis (ou `"dependsOn": ["lot-1"]` pour les lots exécutables en parallèle après un lot socle).''';
+
   /// Assemble le prompt spécialisé d'audit de la page active (ou du [scope] actif).
   static String buildAuditTurnPrompt({
     required VibePageAuditReport report,
@@ -504,6 +511,7 @@ BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE) :
     Iterable<String>? instantiatedComponentIds,
     List<String> mountedSlotSummaries = const <String>[],
     String? repositoriesContext,
+    bool planMode = false,
     bool visibleOnlyMode = false,
     String? visibleViewportContext,
   }) {
@@ -518,6 +526,9 @@ BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE) :
         : 'Slots montés actuellement à l’écran : ${jsonEncode(mountedSlotSummaries)}.';
     final reportSection =
         'RAPPORT DE PRÉ-AUDIT DÉTERMINISTE :\n${report.toPromptSummary()}';
+    final parallelAuditSection = planMode
+        ? auditParallelDependenciesDirective
+        : null;
     final visibleOnlySection = visibleOnlyMode ? visibleOnlyDirective : null;
     final trimmedVisibleCtx = visibleViewportContext?.trim() ?? '';
     final visibleCtxSection = visibleOnlyMode && trimmedVisibleCtx.isNotEmpty
@@ -537,6 +548,7 @@ Le périmètre modifiable autorisé couvre uniquement ${scope.isMultiTarget ? ta
 Ne propose aucune modification en dehors de ce scope ni sur les paramètres globaux de thème ou pageCatalog.''';
       return [
         auditPlanDirective,
+        ?parallelAuditSection,
         ?visibleOnlySection,
         scopeDirective,
         ?visibleCtxSection,
@@ -554,6 +566,7 @@ Ne propose aucune modification en dehors de ce scope ni sur les paramètres glob
     );
     return [
       auditPlanDirective,
+      ?parallelAuditSection,
       if (visibleOnlyMode) visibleOnlyDirective else auditTabSweepDirective,
       ?visibleCtxSection,
       if (instantiatedComponentIds != null)

@@ -82,11 +82,6 @@ class DesignLinksView extends StatefulWidget {
           label: 'Cartes des flux système',
           icon: Icons.account_tree_outlined,
         ),
-        DesignLinkItem(
-          id: 'expert_ai_chat',
-          label: 'Discuter avec l’IA experte',
-          icon: Icons.chat_bubble_outline_rounded,
-        ),
       ],
     ),
     DesignLinkSection(

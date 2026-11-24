@@ -103,6 +103,7 @@ class _UxStageAiChatPaneState extends State<UxStageAiChatPane> {
           isSending: widget.controller.isSending,
           chatWidthFraction: widget.chatWidthFraction,
           onCycleChatSize: widget.onCycleChatSize,
+          onClearChat: widget.controller.clearUxStageChat,
           onAskMore: () => widget.controller.sendUxUserMessage(
             '',
             requestsMoreQuestions: true,
@@ -230,6 +231,7 @@ class _UxAgentHeader extends StatelessWidget {
     required this.isSending,
     required this.chatWidthFraction,
     required this.onCycleChatSize,
+    required this.onClearChat,
     required this.onAskMore,
     required this.onAdvanceStage,
   });
@@ -239,6 +241,7 @@ class _UxAgentHeader extends StatelessWidget {
   final bool isSending;
   final double? chatWidthFraction;
   final VoidCallback? onCycleChatSize;
+  final VoidCallback onClearChat;
   final VoidCallback onAskMore;
   final VoidCallback? onAdvanceStage;
 
@@ -293,6 +296,14 @@ class _UxAgentHeader extends StatelessWidget {
                   ],
                 ),
               ),
+              if (stageState.messages.isNotEmpty)
+                IconButton(
+                  key: const ValueKey('ux-chat-clear-btn'),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Effacer la conversation',
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                  onPressed: isSending ? null : onClearChat,
+                ),
               if (onCycleChatSize != null)
                 IconButton(
                   key: const ValueKey('ux-chat-cycle-size-btn'),

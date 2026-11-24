@@ -525,6 +525,16 @@ void main() {
       );
       expect(find.text('Plan d’audit et correction'), findsOneWidget);
       expect(find.textContaining('Corriger les marges du KPI'), findsOneWidget);
+      // Hors mode Plan, le bouton « Exécution en parallèle » n'est pas affiché
+      // et la directive de dépendances parallèles d'audit n'est pas injectée.
+      expect(
+        capturedPrompts[1],
+        isNot(contains('DÉPENDANCES ENTRE LOTS D’AUDIT')),
+      );
+      expect(
+        find.byKey(const ValueKey('vibe-plan-start-parallel')),
+        findsNothing,
+      );
 
       // Exécute le lot proposé par le plan d'audit.
       final startButton = find.byKey(const ValueKey('vibe-plan-start'));
@@ -771,6 +781,14 @@ void main() {
         codec: const AppearanceCodec(),
         scope: null,
       );
+      final unscopedPlanPrompt = VibePromptBuilder.buildAuditTurnPrompt(
+        report: unscopedReport,
+        conversation: '',
+        appearance: appAppearance.value,
+        codec: const AppearanceCodec(),
+        scope: null,
+        planMode: true,
+      );
       final scopedPrompt = VibePromptBuilder.buildAuditTurnPrompt(
         report: scopedReport,
         conversation: '',
@@ -778,13 +796,31 @@ void main() {
         codec: const AppearanceCodec(),
         scope: currentScope,
       );
+      final scopedPlanPrompt = VibePromptBuilder.buildAuditTurnPrompt(
+        report: scopedReport,
+        conversation: '',
+        appearance: appAppearance.value,
+        codec: const AppearanceCodec(),
+        scope: currentScope,
+        planMode: true,
+      );
       expect(
         unscopedPrompt,
         contains('BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE)'),
       );
+      expect(unscopedPrompt, isNot(contains('DÉPENDANCES ENTRE LOTS D’AUDIT')));
+      expect(
+        unscopedPlanPrompt,
+        contains('DÉPENDANCES ENTRE LOTS D’AUDIT (MODE « PLAN » ACTIF)'),
+      );
       expect(
         scopedPrompt,
         isNot(contains('BALAYAGE COMPLET DES ONGLETS DE LA PAGE (HORS SCOPE)')),
+      );
+      expect(scopedPrompt, isNot(contains('DÉPENDANCES ENTRE LOTS D’AUDIT')));
+      expect(
+        scopedPlanPrompt,
+        contains('DÉPENDANCES ENTRE LOTS D’AUDIT (MODE « PLAN » ACTIF)'),
       );
 
       // Sous scope restreint hors SuperTab, preview_navigation_or_selection refuse de changer d'onglet.

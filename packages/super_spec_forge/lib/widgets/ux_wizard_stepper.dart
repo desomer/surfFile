@@ -13,7 +13,6 @@ class UxWizardStepper extends StatelessWidget {
   const UxWizardStepper({
     required this.project,
     required this.onSelectStage,
-    this.onBack,
     this.onSwitchToSpecWizard,
     this.onSwitchToQaWizard,
     this.disabled = false,
@@ -25,9 +24,6 @@ class UxWizardStepper extends StatelessWidget {
 
   /// Callback appelé lors du clic sur une étape UX.
   final ValueChanged<UxForgeStage> onSelectStage;
-
-  /// Callback optionnel de retour vers le menu Spec.
-  final VoidCallback? onBack;
 
   /// Callback optionnel permettant de basculer vers le Wizard de spécification métier.
   final VoidCallback? onSwitchToSpecWizard;
@@ -52,15 +48,6 @@ class UxWizardStepper extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          if (onBack != null) ...[
-            OutlinedButton.icon(
-              key: const ValueKey('ux-subview-back-btn'),
-              onPressed: onBack,
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Spec'),
-            ),
-            SizedBox(width: onSwitchToSpecWizard != null ? 8 : 12),
-          ],
           if (onSwitchToSpecWizard != null) ...[
             Tooltip(
               message: 'Basculer vers le Wizard de spécification métier',
