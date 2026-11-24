@@ -1103,10 +1103,23 @@ Facture:
       expect(find.text('Design'), findsOneWidget);
       expect(find.text('Build'), findsOneWidget);
 
-      // Onglet Spec : affiche d'abord la section « Entreprise » puis « Spécification & Projets ».
+      // Onglet Spec : affiche le dicton d'Alberto Brandolini en haut, puis « Entreprise » et « Projets & Spécification ».
       expect(
         find.byKey(const ValueKey('spec-forge-spec-menu-view')),
         findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('spec-quote-banner')), findsOneWidget);
+      expect(find.text(SpecLinksView.quoteText), findsOneWidget);
+      expect(find.text('— Alberto Brandolini'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('spec-quote-banner'))).dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey('spec-section-header-enterprise')),
+              )
+              .dy,
+        ),
       );
       expect(find.text('Entreprise'), findsOneWidget);
       expect(find.text('Projets & Spécification'), findsOneWidget);

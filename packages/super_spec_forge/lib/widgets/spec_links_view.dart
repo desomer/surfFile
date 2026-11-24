@@ -33,6 +33,13 @@ class SpecLinksView extends StatelessWidget {
   static const qaWizardLabel = 'Wizard BDD / Gherkin & TDD';
   static const costWizardLabel = 'Estimation de coût IT';
 
+  /// Citation affichée en tête de la page Spec.
+  static const quoteText =
+      '« Ce n’est pas le code qui est compliqué. C’est ce qu’on croit savoir sur le métier qui l’est. »';
+
+  /// Auteur de la citation affichée en tête de la page Spec.
+  static const quoteAuthor = 'Alberto Brandolini';
+
   /// Nombre de projets récents enregistrés.
   final int recentProjectsCount;
 
@@ -167,7 +174,82 @@ class SpecLinksView extends StatelessWidget {
     return DesignLinksView(
       sections: sections,
       keyPrefix: 'spec',
+      header: const _SpecQuoteBanner(),
       onLinkTap: onLinkTap,
+    );
+  }
+}
+
+class _SpecQuoteBanner extends StatelessWidget {
+  const _SpecQuoteBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      key: const ValueKey('spec-quote-banner'),
+      constraints: const BoxConstraints(maxWidth: 780),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: colors.outlineVariant.withValues(alpha: 0.7),
+        ),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: colors.primary),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 12,
+                  children: [
+                    Icon(
+                      Icons.format_quote_rounded,
+                      size: 24,
+                      color: colors.primary,
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        spacing: 4,
+                        children: [
+                          Text(
+                            SpecLinksView.quoteText,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
+                              height: 1.4,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '— ${SpecLinksView.quoteAuthor}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

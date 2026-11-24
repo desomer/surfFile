@@ -58,6 +58,7 @@ class DesignLinksView extends StatefulWidget {
     this.sections = defaultSections,
     this.onLinkTap,
     this.keyPrefix = 'design',
+    this.header,
     super.key,
   });
 
@@ -128,6 +129,9 @@ class DesignLinksView extends StatefulWidget {
   /// Préfixe utilisé pour les [ValueKey] des en-têtes de section et cartes.
   final String keyPrefix;
 
+  /// En-tête optionnel affiché au-dessus de la première section.
+  final Widget? header;
+
   @override
   State<DesignLinksView> createState() => _DesignLinksViewState();
 }
@@ -173,6 +177,10 @@ class _DesignLinksViewState extends State<DesignLinksView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.header != null) ...[
+              widget.header!,
+              const SizedBox(height: 22),
+            ],
             for (var i = 0; i < widget.sections.length; i++) ...[
               if (i > 0) const SizedBox(height: 28),
               _buildSection(context, theme, colors, widget.sections[i]),
