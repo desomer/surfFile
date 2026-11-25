@@ -195,10 +195,10 @@ La sélection multiple d'items (`Modèles`, `Use Cases`, `Sagas`) active le bout
 - **Modèle** (4 prompts) : *Domain — Implémentation*, *Domain — Test unitaire*, *Persistance — Implémentation* et *Persistance — Test unitaire*,
 - **Use Case** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
 - **Saga** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
-- **Outbound & Inbound** (en bas de liste, sans rattachement) : *Outbound (Implémentation & Test unitaire)* et *Inbound (Implémentation & Test unitaire)*.
+- **Outbound, Inbound, Boilerplate, Dev Tools & Check Integration** (en bas de liste, sans rattachement) : 2 prompts chacun (*Implémentation* & *Test unitaire*).
 
 Chaque prompt démarre par un bloc de métadonnées ```` ```yaml ... ``` ````
-normalisé (`kind` `model-*` / `usecase-*` / `saga-*` / `outbound-*` / `inbound-*`, `name`, `title`,
+normalisé (`kind` `model-*` / `usecase-*` / `saga-*` / `outbound-*` / `inbound-*` / `boilerplate-*` / `dev-tools-*` / `check-integration-*`, `name`, `title`,
 `version` SemVer partagée entre Modèles, Use Cases et Sagas, `domain`,
 `description`, `owner: <domain>-team`, `status: approved`, `tags`, `security`,
 `ai`, `generation` auto-calculé — incluant `stack` lorsqu'une stack est affectée
@@ -208,8 +208,9 @@ contrats `Input`/`Output` des Use Cases, et se termine par une section
 d'**extensions paramétrables par stack technique** (`BuildTechStackProfile` :
 stack technique globale, **Documentation IA** ajoutée à la toute fin de chaque prompt,
 plus arborescence cible avec interpolation `{{domain}}` / `{{module}}` et consignes
-spécifiques configurables sur les 5 parties **Domain**, **UseCase / Saga**,
-**Outbound**, **Inbound** et **Persistance**, chacune dotée de 2 sous-onglets
+spécifiques configurables sur les 8 parties **Domain**, **UseCase / Saga**,
+**Outbound**, **Inbound**, **Persistance**, **Boilerplate**, **Dev Tools** et
+**Check Integration**, chacune dotée de 2 sous-onglets
 *Implémentation* et *Test unitaire*). Le profil **TypeScript / NestJS**
 (`ts-nestjs`) est fourni par défaut et entièrement personnalisable dans un
 éditeur quasi plein écran depuis **Design › Gestion des domaines** ou directement

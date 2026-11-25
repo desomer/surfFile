@@ -2419,7 +2419,7 @@ class SpecProjectStore {
   }) {
     if (raw == null) {
       return <String, Object?>{
-        if (fallbackStage != null) 'currentStage': fallbackStage,
+        'currentStage': ?fallbackStage,
       };
     }
     final source = raw['data'] is Map ? raw['data'] as Map : raw;
@@ -2428,7 +2428,7 @@ class SpecProjectStore {
     return <String, Object?>{
       for (final entry in source.entries)
         if (entry.key is String) entry.key as String: entry.value,
-      if (resolvedStage != null) 'currentStage': resolvedStage,
+      'currentStage': ?resolvedStage,
     };
   }
 

@@ -503,8 +503,19 @@ void main() {
           'src/main/java/com/acme/{{domain}}/infrastructure/persistence/',
       persistenceUnitTestFolderStructure:
           'src/test/java/com/acme/{{domain}}/infrastructure/persistence/',
+      boilerplateImplementationFolderStructure: 'src/main/java/com/acme/shared/',
+      boilerplateUnitTestFolderStructure: 'src/test/java/com/acme/shared/',
+      devToolsImplementationFolderStructure: 'build-tools/',
+      devToolsUnitTestFolderStructure: 'src/test/java/com/acme/architecture/',
+      checkIntegrationImplementationFolderStructure:
+          'src/it/java/com/acme/{{domain}}/',
+      checkIntegrationUnitTestFolderStructure:
+          'src/e2e/java/com/acme/{{domain}}/',
       domainImplementationExtension:
           '- Utiliser des Java records pour les Value Objects.',
+      boilerplateImplementationExtension: '- Config Spring Boot + Actuator.',
+      devToolsImplementationExtension: '- Checkstyle + ArchUnit.',
+      checkIntegrationImplementationExtension: '- Testcontainers MongoDB.',
     );
 
     final catalog = DomainCatalog(
@@ -551,6 +562,30 @@ void main() {
         subRole: BuildTechStackSubRole.implementation,
       ),
       'src/main/java/com/acme/billing/infrastructure/persistence/',
+    );
+    expect(
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.boilerplate,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
+      'src/main/java/com/acme/shared/',
+    );
+    expect(
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.devTools,
+        subRole: BuildTechStackSubRole.unitTest,
+      ),
+      'src/test/java/com/acme/architecture/',
+    );
+    expect(
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.checkIntegration,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
+      'src/it/java/com/acme/billing/',
     );
     expect(
       customStack.resolveAiDocumentation('billing'),

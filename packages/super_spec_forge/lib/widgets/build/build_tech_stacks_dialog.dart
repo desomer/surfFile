@@ -265,6 +265,27 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
           profile.persistenceImplementationFolderStructure,
         (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
           profile.persistenceUnitTestFolderStructure,
+        (
+          BuildTechStackSection.boilerplate,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.boilerplateImplementationFolderStructure,
+        (BuildTechStackSection.boilerplate, BuildTechStackSubRole.unitTest) =>
+          profile.boilerplateUnitTestFolderStructure,
+        (BuildTechStackSection.devTools, BuildTechStackSubRole.implementation) =>
+          profile.devToolsImplementationFolderStructure,
+        (BuildTechStackSection.devTools, BuildTechStackSubRole.unitTest) =>
+          profile.devToolsUnitTestFolderStructure,
+        (
+          BuildTechStackSection.checkIntegration,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.checkIntegrationImplementationFolderStructure,
+        (
+          BuildTechStackSection.checkIntegration,
+          BuildTechStackSubRole.unitTest,
+        ) =>
+          profile.checkIntegrationUnitTestFolderStructure,
       };
       extCtrl.text = profile.extensionFor(section, subRole);
     }
@@ -326,6 +347,24 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       'src/infrastructure/{{domain}}/outbound/persistence/',
     (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
       'test/{{domain}}/infrastructure/persistence/',
+    (
+      BuildTechStackSection.boilerplate,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'src/shared/',
+    (BuildTechStackSection.boilerplate, BuildTechStackSubRole.unitTest) =>
+      'test/shared/',
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.implementation) =>
+      '.github/workflows/',
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.unitTest) =>
+      'test/architecture/',
+    (
+      BuildTechStackSection.checkIntegration,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'test/{{domain}}/integration/',
+    (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/e2e/',
   };
 
   String _foldersText(
@@ -402,6 +441,30 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
         BuildTechStackSection.persistence,
         BuildTechStackSubRole.unitTest,
       ),
+      boilerplateImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSubRole.implementation,
+      ),
+      boilerplateUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSubRole.unitTest,
+      ),
+      devToolsImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.devTools,
+        BuildTechStackSubRole.implementation,
+      ),
+      devToolsUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.devTools,
+        BuildTechStackSubRole.unitTest,
+      ),
+      checkIntegrationImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.implementation,
+      ),
+      checkIntegrationUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.unitTest,
+      ),
       domainImplementationExtension: _extText(
         BuildTechStackSection.domain,
         BuildTechStackSubRole.implementation,
@@ -440,6 +503,30 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       ),
       persistenceUnitTestExtension: _extText(
         BuildTechStackSection.persistence,
+        BuildTechStackSubRole.unitTest,
+      ),
+      boilerplateImplementationExtension: _extText(
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSubRole.implementation,
+      ),
+      boilerplateUnitTestExtension: _extText(
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSubRole.unitTest,
+      ),
+      devToolsImplementationExtension: _extText(
+        BuildTechStackSection.devTools,
+        BuildTechStackSubRole.implementation,
+      ),
+      devToolsUnitTestExtension: _extText(
+        BuildTechStackSection.devTools,
+        BuildTechStackSubRole.unitTest,
+      ),
+      checkIntegrationImplementationExtension: _extText(
+        BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.implementation,
+      ),
+      checkIntegrationUnitTestExtension: _extText(
+        BuildTechStackSection.checkIntegration,
         BuildTechStackSubRole.unitTest,
       ),
     );
@@ -888,6 +975,9 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
         BuildTechStackSection.outbound => Icons.call_made_rounded,
         BuildTechStackSection.inbound => Icons.call_received_rounded,
         BuildTechStackSection.persistence => Icons.storage_rounded,
+        BuildTechStackSection.boilerplate => Icons.foundation_rounded,
+        BuildTechStackSection.devTools => Icons.build_circle_outlined,
+        BuildTechStackSection.checkIntegration => Icons.fact_check_outlined,
       };
 
   static String _subtitleFor(
@@ -920,6 +1010,24 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       'Arborescence et consignes ajoutées en fin des prompts Persistance — Implémentation (schémas, mappers, repositories).',
     (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
       'Arborescence et consignes ajoutées en fin des prompts Persistance — Test unitaire.',
+    (
+      BuildTechStackSection.boilerplate,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'Arborescence et consignes ajoutées en fin des prompts Boilerplate — Implémentation (bootstrap, config, logger, socle partagé).',
+    (BuildTechStackSection.boilerplate, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Boilerplate — Test unitaire.',
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.implementation) =>
+      'Arborescence et consignes ajoutées en fin des prompts Dev Tools — Implémentation (tsconfig, linter, runner de tests, scripts CI).',
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Dev Tools — Test unitaire (tests d’architecture & conformité tooling).',
+    (
+      BuildTechStackSection.checkIntegration,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'Arborescence et consignes ajoutées en fin des prompts Check Integration — Implémentation (câblage module DI, harnesses d’intégration).',
+    (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Check Integration — Test unitaire (vérification bout-en-bout & suite complète).',
   };
 
   Widget _buildGeneralTab(ThemeData theme, ColorScheme colors) {

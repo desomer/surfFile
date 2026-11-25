@@ -10,6 +10,9 @@ import '../../models/company_glossary.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/usecase_orchestration_spec.dart';
 import '../spec_storage_slug.dart';
+import 'prompt_generator/domain_boilerplate_prompt_builders.dart';
+import 'prompt_generator/domain_check_integration_prompt_builders.dart';
+import 'prompt_generator/domain_dev_tools_prompt_builders.dart';
 import 'prompt_generator/domain_inbound_prompt_builders.dart';
 import 'prompt_generator/domain_outbound_prompt_builders.dart';
 import 'prompt_generator/model_implementation_prompt_builder.dart';
@@ -136,6 +139,72 @@ abstract final class BuildHexaPromptGenerator {
               modelPreferences: modelPreferences,
             ),
             buildDomainInboundUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.boilerplate,
+          kindLabel: 'Socle & Outillage',
+          subtitle: 'Bootstrap applicatif, configuration, logger et helpers partagés',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainBoilerplateImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainBoilerplateUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.devTools,
+          kindLabel: 'Socle & Outillage',
+          subtitle: 'Compilateur strict, linter, frontières hexagonales, runner et CI',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainDevToolsImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainDevToolsUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.checkIntegration,
+          kindLabel: 'Validation',
+          subtitle: 'Câblage DI complet, harnesses et vérification d’intégration globale',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainCheckIntegrationImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainCheckIntegrationUnitTestPrompt(
               domain: domain,
               dates: dates,
               techStack: effectiveStack,

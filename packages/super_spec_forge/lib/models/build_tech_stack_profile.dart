@@ -21,7 +21,16 @@ enum BuildTechStackSection {
   inbound(label: 'Inbound', slug: 'inbound'),
 
   /// Persistance (schémas, mappers, repositories et read-models).
-  persistence(label: 'Persistance', slug: 'persistence');
+  persistence(label: 'Persistance', slug: 'persistence'),
+
+  /// Socle applicatif, configuration initiale et squelette technique partagé.
+  boilerplate(label: 'Boilerplate', slug: 'boilerplate'),
+
+  /// Outillage de développement, linters, scripts et configuration de build/test.
+  devTools(label: 'Dev Tools', slug: 'dev-tools'),
+
+  /// Vérification d'intégration bout-en-bout, câblage DI et conformité globale.
+  checkIntegration(label: 'Check Integration', slug: 'check-integration');
 
   const BuildTechStackSection({required this.label, required this.slug});
 
@@ -73,6 +82,12 @@ class BuildTechStackProfile {
     this.inboundUnitTestFolderStructure = '',
     this.persistenceImplementationFolderStructure = '',
     this.persistenceUnitTestFolderStructure = '',
+    this.boilerplateImplementationFolderStructure = '',
+    this.boilerplateUnitTestFolderStructure = '',
+    this.devToolsImplementationFolderStructure = '',
+    this.devToolsUnitTestFolderStructure = '',
+    this.checkIntegrationImplementationFolderStructure = '',
+    this.checkIntegrationUnitTestFolderStructure = '',
     this.domainImplementationExtension = '',
     this.domainUnitTestExtension = '',
     this.useCaseSagaImplementationExtension = '',
@@ -83,6 +98,12 @@ class BuildTechStackProfile {
     this.inboundUnitTestExtension = '',
     this.persistenceImplementationExtension = '',
     this.persistenceUnitTestExtension = '',
+    this.boilerplateImplementationExtension = '',
+    this.boilerplateUnitTestExtension = '',
+    this.devToolsImplementationExtension = '',
+    this.devToolsUnitTestExtension = '',
+    this.checkIntegrationImplementationExtension = '',
+    this.checkIntegrationUnitTestExtension = '',
   });
 
   /// Identifiant stable du profil par défaut TypeScript / NestJS.
@@ -191,6 +212,35 @@ class BuildTechStackProfile {
         '                ├── schemas/        # Schémas Mongoose (@Schema())\n'
         '                └── mappers/        # Mappers purs Domain <-> Persistence',
     persistenceUnitTestFolderStructure: 'identique au domaine principal\n',
+    boilerplateImplementationFolderStructure:
+        'src/\n'
+        '├── main.ts                  # Bootstrap NestJS & configuration globale\n'
+        '├── app.module.ts            # Module racine assemblant les domaines\n'
+        '└── shared/\n'
+        '    ├── config/              # Chargement & validation env\n'
+        '    ├── logging/             # Configuration Pino Logger\n'
+        '    └── result/              # Helpers Neverthrow partagés',
+    boilerplateUnitTestFolderStructure:
+        'test/\n'
+        '└── shared/                  # Tests unitaires configuration, helpers & bootstrap (*.spec.ts)',
+    devToolsImplementationFolderStructure:
+        '.\n'
+        '├── package.json             # Scripts build/lint/test & dépendances\n'
+        '├── tsconfig.json            # strict: true, noUncheckedIndexedAccess: true\n'
+        '├── eslint.config.mjs        # Règles lint & frontières hexagonales\n'
+        '├── vitest.config.ts         # Configuration runner de tests\n'
+        '└── .github/workflows/       # Pipeline CI (typecheck, lint, tests)',
+    devToolsUnitTestFolderStructure:
+        'test/\n'
+        '└── architecture/            # Tests d’architecture & isolation de core/ (*.spec.ts)',
+    checkIntegrationImplementationFolderStructure:
+        'test/\n'
+        '└── {{domain}}/\n'
+        '    └── integration/           # Tests d’intégration & câblage module NestJS (*.int-spec.ts)',
+    checkIntegrationUnitTestFolderStructure:
+        'test/\n'
+        '└── {{domain}}/\n'
+        '    └── e2e/                   # Scénarios bout-en-bout & contrats API (*.e2e-spec.ts)',
     domainImplementationExtension:
         '# Contraintes techniques :\n'
         '- Aucun décorateur NestJS.\n'
@@ -494,6 +544,21 @@ class BuildTechStackProfile {
     persistenceUnitTestExtension:
         '- Teste unitairement le Mapper (`toDomain()` / `toPersistence()` avec `reconstitute()`) sur tous les champs, Value Objects, sous-objets et enums sans connexion MongoDB.\n'
         '- Teste le Repository avec un Modèle Mongoose simulé (`.lean()` vérifié, gestion du verrouillage optimiste `__v` / `matchedCount === 0` -> `ConcurrencyException`, et traduction des codes MongoDB `11000` par `keyPattern`/`keyValue`, `121`, `112`, `50` via `Neverthrow`).',
+    boilerplateImplementationExtension:
+        '- Configure le bootstrap NestJS (`src/main.ts`), `app.module.ts`, la validation des variables d’environnement et le module global `Logger` (Pino) + helpers `Neverthrow`.\n'
+        '- Expose un endpoint de santé (`/health`) et une gestion centralisée des exceptions HTTP sans coupler `core/` au framework.',
+    boilerplateUnitTestExtension:
+        '- Teste la validation des schémas de configuration au démarrage, les helpers `Neverthrow` partagés et l’adaptateur Logger (Pino) en mémoire.',
+    devToolsImplementationExtension:
+        '- Configure TypeScript (`strict: true`, `noUncheckedIndexedAccess: true`), ESLint (règles interdisant tout import NestJS/Mongoose dans `src/core/`), Prettier et Vitest/Jest.\n'
+        '- Ajoute les scripts `typecheck`, `lint`, `test`, `test:int` et `build` dans `package.json` et le workflow CI.',
+    devToolsUnitTestExtension:
+        '- Ajoute et exécute les tests de frontières architecturales vérifiant l’absence de dépendances d’infrastructure/framework dans `src/core/{{domain}}/` et la couverture minimale.',
+    checkIntegrationImplementationExtension:
+        '- Vérifie l’assemblage complet du module `{{domain}}.module.ts` (ports Inbound → Use Cases / Sagas → Ports Outbound / Repositories MongoDB) et prépare les harnesses d’intégration (MongoDB mémoire / Testcontainers).\n'
+        '- Valide les bindings DI et l’injection de tous les tokens de ports.',
+    checkIntegrationUnitTestExtension:
+        '- Exécute la batterie de vérification complète (`typecheck`, `lint`, `build`, tests unitaires et tests d’intégration/contrats) et corrige toute erreur de câblage.',
   );
 
   /// Catalogue initial des stacks prédéfinies fournies par défaut.
@@ -552,6 +617,24 @@ class BuildTechStackProfile {
   /// Arborescence cible dédiée à *Persistance > Test unitaire* (`{{domain}}`).
   final String persistenceUnitTestFolderStructure;
 
+  /// Arborescence cible dédiée à *Boilerplate > Implémentation* (`{{domain}}`).
+  final String boilerplateImplementationFolderStructure;
+
+  /// Arborescence cible dédiée à *Boilerplate > Test unitaire* (`{{domain}}`).
+  final String boilerplateUnitTestFolderStructure;
+
+  /// Arborescence cible dédiée à *Dev Tools > Implémentation* (`{{domain}}`).
+  final String devToolsImplementationFolderStructure;
+
+  /// Arborescence cible dédiée à *Dev Tools > Test unitaire* (`{{domain}}`).
+  final String devToolsUnitTestFolderStructure;
+
+  /// Arborescence cible dédiée à *Check Integration > Implémentation* (`{{domain}}`).
+  final String checkIntegrationImplementationFolderStructure;
+
+  /// Arborescence cible dédiée à *Check Integration > Test unitaire* (`{{domain}}`).
+  final String checkIntegrationUnitTestFolderStructure;
+
   /// Consignes spécifiques à *Domain > Implémentation*.
   final String domainImplementationExtension;
 
@@ -581,6 +664,24 @@ class BuildTechStackProfile {
 
   /// Consignes spécifiques à *Persistance > Test unitaire*.
   final String persistenceUnitTestExtension;
+
+  /// Consignes spécifiques à *Boilerplate > Implémentation*.
+  final String boilerplateImplementationExtension;
+
+  /// Consignes spécifiques à *Boilerplate > Test unitaire*.
+  final String boilerplateUnitTestExtension;
+
+  /// Consignes spécifiques à *Dev Tools > Implémentation*.
+  final String devToolsImplementationExtension;
+
+  /// Consignes spécifiques à *Dev Tools > Test unitaire*.
+  final String devToolsUnitTestExtension;
+
+  /// Consignes spécifiques à *Check Integration > Implémentation*.
+  final String checkIntegrationImplementationExtension;
+
+  /// Consignes spécifiques à *Check Integration > Test unitaire*.
+  final String checkIntegrationUnitTestExtension;
 
   /// Indique si ce profil contient au moins un bloc d'extension à injecter
   /// pour le couple ([section], [subRole]).
@@ -626,6 +727,27 @@ class BuildTechStackProfile {
         persistenceImplementationFolderStructure,
       (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
         persistenceUnitTestFolderStructure,
+      (
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSubRole.implementation,
+      ) =>
+        boilerplateImplementationFolderStructure,
+      (BuildTechStackSection.boilerplate, BuildTechStackSubRole.unitTest) =>
+        boilerplateUnitTestFolderStructure,
+      (BuildTechStackSection.devTools, BuildTechStackSubRole.implementation) =>
+        devToolsImplementationFolderStructure,
+      (BuildTechStackSection.devTools, BuildTechStackSubRole.unitTest) =>
+        devToolsUnitTestFolderStructure,
+      (
+        BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.implementation,
+      ) =>
+        checkIntegrationImplementationFolderStructure,
+      (
+        BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.unitTest,
+      ) =>
+        checkIntegrationUnitTestFolderStructure,
     }.trim();
     return specific.isNotEmpty ? specific : folderStructure.trim();
   }
@@ -655,6 +777,21 @@ class BuildTechStackProfile {
       persistenceImplementationExtension,
     (BuildTechStackSection.persistence, BuildTechStackSubRole.unitTest) =>
       persistenceUnitTestExtension,
+    (BuildTechStackSection.boilerplate, BuildTechStackSubRole.implementation) =>
+      boilerplateImplementationExtension,
+    (BuildTechStackSection.boilerplate, BuildTechStackSubRole.unitTest) =>
+      boilerplateUnitTestExtension,
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.implementation) =>
+      devToolsImplementationExtension,
+    (BuildTechStackSection.devTools, BuildTechStackSubRole.unitTest) =>
+      devToolsUnitTestExtension,
+    (
+      BuildTechStackSection.checkIntegration,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      checkIntegrationImplementationExtension,
+    (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
+      checkIntegrationUnitTestExtension,
   }.trim();
 
   /// Interpole les variables `{{domain}}` et `{{module}}` avec [domainCode].
@@ -714,6 +851,12 @@ class BuildTechStackProfile {
       inboundUnitTestFolderStructure,
       persistenceImplementationFolderStructure,
       persistenceUnitTestFolderStructure,
+      boilerplateImplementationFolderStructure,
+      boilerplateUnitTestFolderStructure,
+      devToolsImplementationFolderStructure,
+      devToolsUnitTestFolderStructure,
+      checkIntegrationImplementationFolderStructure,
+      checkIntegrationUnitTestFolderStructure,
       domainImplementationExtension,
       domainUnitTestExtension,
       useCaseSagaImplementationExtension,
@@ -724,6 +867,12 @@ class BuildTechStackProfile {
       inboundUnitTestExtension,
       persistenceImplementationExtension,
       persistenceUnitTestExtension,
+      boilerplateImplementationExtension,
+      boilerplateUnitTestExtension,
+      devToolsImplementationExtension,
+      devToolsUnitTestExtension,
+      checkIntegrationImplementationExtension,
+      checkIntegrationUnitTestExtension,
     ];
     for (final field in textFields) {
       if (field.length > 32000) {
@@ -753,6 +902,12 @@ class BuildTechStackProfile {
     String? inboundUnitTestFolderStructure,
     String? persistenceImplementationFolderStructure,
     String? persistenceUnitTestFolderStructure,
+    String? boilerplateImplementationFolderStructure,
+    String? boilerplateUnitTestFolderStructure,
+    String? devToolsImplementationFolderStructure,
+    String? devToolsUnitTestFolderStructure,
+    String? checkIntegrationImplementationFolderStructure,
+    String? checkIntegrationUnitTestFolderStructure,
     String? domainImplementationExtension,
     String? domainUnitTestExtension,
     String? useCaseSagaImplementationExtension,
@@ -763,6 +918,12 @@ class BuildTechStackProfile {
     String? inboundUnitTestExtension,
     String? persistenceImplementationExtension,
     String? persistenceUnitTestExtension,
+    String? boilerplateImplementationExtension,
+    String? boilerplateUnitTestExtension,
+    String? devToolsImplementationExtension,
+    String? devToolsUnitTestExtension,
+    String? checkIntegrationImplementationExtension,
+    String? checkIntegrationUnitTestExtension,
   }) => BuildTechStackProfile(
     id: id ?? this.id,
     code: code ?? this.code,
@@ -798,6 +959,23 @@ class BuildTechStackProfile {
     persistenceUnitTestFolderStructure:
         persistenceUnitTestFolderStructure ??
         this.persistenceUnitTestFolderStructure,
+    boilerplateImplementationFolderStructure:
+        boilerplateImplementationFolderStructure ??
+        this.boilerplateImplementationFolderStructure,
+    boilerplateUnitTestFolderStructure:
+        boilerplateUnitTestFolderStructure ??
+        this.boilerplateUnitTestFolderStructure,
+    devToolsImplementationFolderStructure:
+        devToolsImplementationFolderStructure ??
+        this.devToolsImplementationFolderStructure,
+    devToolsUnitTestFolderStructure:
+        devToolsUnitTestFolderStructure ?? this.devToolsUnitTestFolderStructure,
+    checkIntegrationImplementationFolderStructure:
+        checkIntegrationImplementationFolderStructure ??
+        this.checkIntegrationImplementationFolderStructure,
+    checkIntegrationUnitTestFolderStructure:
+        checkIntegrationUnitTestFolderStructure ??
+        this.checkIntegrationUnitTestFolderStructure,
     domainImplementationExtension:
         domainImplementationExtension ?? this.domainImplementationExtension,
     domainUnitTestExtension:
@@ -820,6 +998,21 @@ class BuildTechStackProfile {
         this.persistenceImplementationExtension,
     persistenceUnitTestExtension:
         persistenceUnitTestExtension ?? this.persistenceUnitTestExtension,
+    boilerplateImplementationExtension:
+        boilerplateImplementationExtension ??
+        this.boilerplateImplementationExtension,
+    boilerplateUnitTestExtension:
+        boilerplateUnitTestExtension ?? this.boilerplateUnitTestExtension,
+    devToolsImplementationExtension:
+        devToolsImplementationExtension ?? this.devToolsImplementationExtension,
+    devToolsUnitTestExtension:
+        devToolsUnitTestExtension ?? this.devToolsUnitTestExtension,
+    checkIntegrationImplementationExtension:
+        checkIntegrationImplementationExtension ??
+        this.checkIntegrationImplementationExtension,
+    checkIntegrationUnitTestExtension:
+        checkIntegrationUnitTestExtension ??
+        this.checkIntegrationUnitTestExtension,
   );
 
   /// Sérialise le profil en JSON.
@@ -856,6 +1049,22 @@ class BuildTechStackProfile {
           persistenceImplementationFolderStructure,
     if (persistenceUnitTestFolderStructure.isNotEmpty)
       'persistenceUnitTestFolderStructure': persistenceUnitTestFolderStructure,
+    if (boilerplateImplementationFolderStructure.isNotEmpty)
+      'boilerplateImplementationFolderStructure':
+          boilerplateImplementationFolderStructure,
+    if (boilerplateUnitTestFolderStructure.isNotEmpty)
+      'boilerplateUnitTestFolderStructure': boilerplateUnitTestFolderStructure,
+    if (devToolsImplementationFolderStructure.isNotEmpty)
+      'devToolsImplementationFolderStructure':
+          devToolsImplementationFolderStructure,
+    if (devToolsUnitTestFolderStructure.isNotEmpty)
+      'devToolsUnitTestFolderStructure': devToolsUnitTestFolderStructure,
+    if (checkIntegrationImplementationFolderStructure.isNotEmpty)
+      'checkIntegrationImplementationFolderStructure':
+          checkIntegrationImplementationFolderStructure,
+    if (checkIntegrationUnitTestFolderStructure.isNotEmpty)
+      'checkIntegrationUnitTestFolderStructure':
+          checkIntegrationUnitTestFolderStructure,
     if (domainImplementationExtension.isNotEmpty)
       'domainImplementationExtension': domainImplementationExtension,
     if (domainUnitTestExtension.isNotEmpty)
@@ -876,6 +1085,19 @@ class BuildTechStackProfile {
       'persistenceImplementationExtension': persistenceImplementationExtension,
     if (persistenceUnitTestExtension.isNotEmpty)
       'persistenceUnitTestExtension': persistenceUnitTestExtension,
+    if (boilerplateImplementationExtension.isNotEmpty)
+      'boilerplateImplementationExtension': boilerplateImplementationExtension,
+    if (boilerplateUnitTestExtension.isNotEmpty)
+      'boilerplateUnitTestExtension': boilerplateUnitTestExtension,
+    if (devToolsImplementationExtension.isNotEmpty)
+      'devToolsImplementationExtension': devToolsImplementationExtension,
+    if (devToolsUnitTestExtension.isNotEmpty)
+      'devToolsUnitTestExtension': devToolsUnitTestExtension,
+    if (checkIntegrationImplementationExtension.isNotEmpty)
+      'checkIntegrationImplementationExtension':
+          checkIntegrationImplementationExtension,
+    if (checkIntegrationUnitTestExtension.isNotEmpty)
+      'checkIntegrationUnitTestExtension': checkIntegrationUnitTestExtension,
   };
 
   /// Désérialise un profil depuis JSON en assurant la rétrocompatibilité des
@@ -932,6 +1154,24 @@ class BuildTechStackProfile {
       persistenceUnitTestFolderStructure: readFirst(
         'persistenceUnitTestFolderStructure',
       ),
+      boilerplateImplementationFolderStructure: readFirst(
+        'boilerplateImplementationFolderStructure',
+      ),
+      boilerplateUnitTestFolderStructure: readFirst(
+        'boilerplateUnitTestFolderStructure',
+      ),
+      devToolsImplementationFolderStructure: readFirst(
+        'devToolsImplementationFolderStructure',
+      ),
+      devToolsUnitTestFolderStructure: readFirst(
+        'devToolsUnitTestFolderStructure',
+      ),
+      checkIntegrationImplementationFolderStructure: readFirst(
+        'checkIntegrationImplementationFolderStructure',
+      ),
+      checkIntegrationUnitTestFolderStructure: readFirst(
+        'checkIntegrationUnitTestFolderStructure',
+      ),
       domainImplementationExtension: readFirst(
         'domainImplementationExtension',
         'implementationExtension',
@@ -957,6 +1197,20 @@ class BuildTechStackProfile {
         'persistenceExtension',
       ),
       persistenceUnitTestExtension: readFirst('persistenceUnitTestExtension'),
+      boilerplateImplementationExtension: readFirst(
+        'boilerplateImplementationExtension',
+      ),
+      boilerplateUnitTestExtension: readFirst('boilerplateUnitTestExtension'),
+      devToolsImplementationExtension: readFirst(
+        'devToolsImplementationExtension',
+      ),
+      devToolsUnitTestExtension: readFirst('devToolsUnitTestExtension'),
+      checkIntegrationImplementationExtension: readFirst(
+        'checkIntegrationImplementationExtension',
+      ),
+      checkIntegrationUnitTestExtension: readFirst(
+        'checkIntegrationUnitTestExtension',
+      ),
     );
     profile.validate();
     return profile;
@@ -993,6 +1247,18 @@ class BuildTechStackProfile {
               persistenceImplementationFolderStructure &&
           other.persistenceUnitTestFolderStructure ==
               persistenceUnitTestFolderStructure &&
+          other.boilerplateImplementationFolderStructure ==
+              boilerplateImplementationFolderStructure &&
+          other.boilerplateUnitTestFolderStructure ==
+              boilerplateUnitTestFolderStructure &&
+          other.devToolsImplementationFolderStructure ==
+              devToolsImplementationFolderStructure &&
+          other.devToolsUnitTestFolderStructure ==
+              devToolsUnitTestFolderStructure &&
+          other.checkIntegrationImplementationFolderStructure ==
+              checkIntegrationImplementationFolderStructure &&
+          other.checkIntegrationUnitTestFolderStructure ==
+              checkIntegrationUnitTestFolderStructure &&
           other.domainImplementationExtension ==
               domainImplementationExtension &&
           other.domainUnitTestExtension == domainUnitTestExtension &&
@@ -1007,7 +1273,17 @@ class BuildTechStackProfile {
           other.inboundUnitTestExtension == inboundUnitTestExtension &&
           other.persistenceImplementationExtension ==
               persistenceImplementationExtension &&
-          other.persistenceUnitTestExtension == persistenceUnitTestExtension;
+          other.persistenceUnitTestExtension == persistenceUnitTestExtension &&
+          other.boilerplateImplementationExtension ==
+              boilerplateImplementationExtension &&
+          other.boilerplateUnitTestExtension == boilerplateUnitTestExtension &&
+          other.devToolsImplementationExtension ==
+              devToolsImplementationExtension &&
+          other.devToolsUnitTestExtension == devToolsUnitTestExtension &&
+          other.checkIntegrationImplementationExtension ==
+              checkIntegrationImplementationExtension &&
+          other.checkIntegrationUnitTestExtension ==
+              checkIntegrationUnitTestExtension;
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
@@ -1028,6 +1304,12 @@ class BuildTechStackProfile {
     inboundUnitTestFolderStructure,
     persistenceImplementationFolderStructure,
     persistenceUnitTestFolderStructure,
+    boilerplateImplementationFolderStructure,
+    boilerplateUnitTestFolderStructure,
+    devToolsImplementationFolderStructure,
+    devToolsUnitTestFolderStructure,
+    checkIntegrationImplementationFolderStructure,
+    checkIntegrationUnitTestFolderStructure,
     domainImplementationExtension,
     domainUnitTestExtension,
     useCaseSagaImplementationExtension,
@@ -1038,5 +1320,11 @@ class BuildTechStackProfile {
     inboundUnitTestExtension,
     persistenceImplementationExtension,
     persistenceUnitTestExtension,
+    boilerplateImplementationExtension,
+    boilerplateUnitTestExtension,
+    devToolsImplementationExtension,
+    devToolsUnitTestExtension,
+    checkIntegrationImplementationExtension,
+    checkIntegrationUnitTestExtension,
   ]);
 }

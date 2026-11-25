@@ -107,18 +107,19 @@ class BuildItemPromptGroup {
        primaryBadge = item.primaryBadge,
        prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
 
-  /// Crée un groupe autonome sans rattachement à un item (ex. `Outbound`, `Inbound`).
+  /// Crée un groupe autonome sans rattachement à un item (ex. `Outbound`,
+  /// `Inbound`, `Boilerplate`, `Dev Tools`, `Check Integration`).
   BuildItemPromptGroup.standalone({
     required BuildTechStackSection section,
     required String subtitle,
     required String domainCode,
     required List<BuildHexaPromptSpec> prompts,
+    this.kindLabel = 'Ports & Adaptateurs',
   }) : item = null,
        standaloneSection = section,
        groupId = 'standalone:${section.name}',
        groupTitle = section.label,
        groupSubtitle = subtitle,
-       kindLabel = 'Ports & Adaptateurs',
        primaryBadge = domainCode,
        prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
 

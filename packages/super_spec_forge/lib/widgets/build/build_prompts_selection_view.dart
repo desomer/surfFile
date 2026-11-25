@@ -21,7 +21,7 @@ import 'build_tech_stacks_dialog.dart';
 /// Vue « Sélection des Prompts IA » regroupant :
 /// - pour chaque **Modèle** sélectionné : 4 prompts (`Domain Impl/TU`, `Persistance Impl/TU`),
 /// - pour chaque **Use Case** ou **Saga** sélectionné : 2 prompts (`UseCase / Saga Impl/TU`),
-/// - en bas de la liste (sans rattachement) : les groupes autonomes **Outbound** et **Inbound** (`Impl/TU`).
+/// - en bas de la liste (sans rattachement) : les groupes autonomes **Outbound**, **Inbound**, **Boilerplate**, **Dev Tools** et **Check Integration** (`Impl/TU`).
 class BuildPromptsSelectionView extends StatefulWidget {
   /// Crée la vue de sélection et copie des prompts IA.
   const BuildPromptsSelectionView({
@@ -78,11 +78,48 @@ class BuildPromptsSelectionView extends StatefulWidget {
 }
 
 class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
+  static const Set<BuildTechStackSection> _defaultDisabledSections =
+      <BuildTechStackSection>{
+        BuildTechStackSection.outbound,
+        BuildTechStackSection.inbound,
+        BuildTechStackSection.boilerplate,
+        BuildTechStackSection.devTools,
+        BuildTechStackSection.checkIntegration,
+      };
+
   final Set<String> _deselectedPromptIds = <String>{};
+  final Set<String> _initializedPromptIds = <String>{};
   final Set<String> _collapsedGroupKeys = <String>{};
   final Set<String> _expandedPromptIds = <String>{};
   BuildHexaPromptRole? _roleFilter;
   BuildTechStackSection? _sectionFilter;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeDefaultSelections(widget.groups);
+  }
+
+  @override
+  void didUpdateWidget(BuildPromptsSelectionView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.domain.id != widget.domain.id) {
+      _deselectedPromptIds.clear();
+      _initializedPromptIds.clear();
+    }
+    _initializeDefaultSelections(widget.groups);
+  }
+
+  void _initializeDefaultSelections(List<BuildItemPromptGroup> groups) {
+    for (final group in groups) {
+      for (final prompt in group.prompts) {
+        if (_initializedPromptIds.add(prompt.id) &&
+            _defaultDisabledSections.contains(prompt.section)) {
+          _deselectedPromptIds.add(prompt.id);
+        }
+      }
+    }
+  }
 
   bool _isPromptSelected(BuildHexaPromptSpec prompt) =>
       !_deselectedPromptIds.contains(prompt.id);
@@ -694,6 +731,18 @@ class _BuildPromptGroupCard extends StatelessWidget {
           colors.secondaryContainer,
           colors.onSecondaryContainer,
         ),
+        BuildTechStackSection.boilerplate => (
+          Colors.blueGrey.withValues(alpha: 0.16),
+          Colors.blueGrey.shade800,
+        ),
+        BuildTechStackSection.devTools => (
+          Colors.cyan.withValues(alpha: 0.16),
+          Colors.cyan.shade900,
+        ),
+        BuildTechStackSection.checkIntegration => (
+          Colors.green.withValues(alpha: 0.16),
+          Colors.green.shade800,
+        ),
         _ => (colors.surfaceContainerHighest, colors.onSurfaceVariant),
       };
     }
@@ -904,6 +953,18 @@ class _BuildPromptTile extends StatelessWidget {
       Colors.deepOrange.withValues(alpha: 0.14),
       Colors.deepOrange.shade800,
     ),
+    BuildTechStackSection.boilerplate => (
+      Colors.blueGrey.withValues(alpha: 0.16),
+      Colors.blueGrey.shade800,
+    ),
+    BuildTechStackSection.devTools => (
+      Colors.cyan.withValues(alpha: 0.16),
+      Colors.cyan.shade900,
+    ),
+    BuildTechStackSection.checkIntegration => (
+      Colors.green.withValues(alpha: 0.16),
+      Colors.green.shade800,
+    ),
   };
 }
 
@@ -959,6 +1020,9 @@ IconData _iconForSection(BuildTechStackSection section) => switch (section) {
   BuildTechStackSection.outbound => Icons.call_made_rounded,
   BuildTechStackSection.inbound => Icons.call_received_rounded,
   BuildTechStackSection.persistence => Icons.storage_rounded,
+  BuildTechStackSection.boilerplate => Icons.foundation_rounded,
+  BuildTechStackSection.devTools => Icons.build_circle_outlined,
+  BuildTechStackSection.checkIntegration => Icons.fact_check_outlined,
 };
 
 IconData _iconForRole(BuildHexaPromptRole role) => switch (role) {

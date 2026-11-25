@@ -428,7 +428,7 @@ void main() {
       );
     });
 
-    test('BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2+2 autonomes Outbound / Inbound', () {
+    test('BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2x5 autonomes Outbound / Inbound / Boilerplate / Dev Tools / Check Integration', () {
       final domain = _buildBillingDomain();
       final projection = BuildDomainDesignItems.fromDomain(domain);
       final invoiceItem = projection.models.firstWhere(
@@ -458,15 +458,21 @@ void main() {
         catalog: catalog,
       );
 
-      expect(groups, hasLength(5));
+      expect(groups, hasLength(8));
       expect(groups[3].standaloneSection, BuildTechStackSection.outbound);
       expect(groups[3].item, isNull);
       expect(groups[4].standaloneSection, BuildTechStackSection.inbound);
       expect(groups[4].item, isNull);
+      expect(groups[5].standaloneSection, BuildTechStackSection.boilerplate);
+      expect(groups[5].item, isNull);
+      expect(groups[6].standaloneSection, BuildTechStackSection.devTools);
+      expect(groups[6].item, isNull);
+      expect(groups[7].standaloneSection, BuildTechStackSection.checkIntegration);
+      expect(groups[7].item, isNull);
 
-      // Vérifie la validité YAML et le schéma d'en-tête sur les 12 variantes de prompts.
+      // Vérifie la validité YAML et le schéma d'en-tête sur les 18 variantes de prompts.
       final allGenerated = groups.expand((g) => g.prompts).toList();
-      expect(allGenerated, hasLength(12));
+      expect(allGenerated, hasLength(18));
       expect(
         allGenerated.map((p) {
           final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -502,6 +508,12 @@ void main() {
           'outbound-unit-test@1.0.0',
           'inbound-implementation@1.0.0',
           'inbound-unit-test@1.0.0',
+          'boilerplate-implementation@1.0.0',
+          'boilerplate-unit-test@1.0.0',
+          'dev-tools-implementation@1.0.0',
+          'dev-tools-unit-test@1.0.0',
+          'check-integration-implementation@1.0.0',
+          'check-integration-unit-test@1.0.0',
         ]),
       );
 
@@ -695,14 +707,45 @@ void main() {
         groups[4].prompts[0].promptMarkdown,
         allOf(contains('IssueInvoiceUseCase'), contains('CreateInvoiceRequest')),
       );
+      expect(
+        groups[5].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.boilerplate, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.boilerplate, BuildHexaPromptRole.unitTest),
+        ]),
+      );
+      expect(
+        groups[6].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.devTools, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.devTools, BuildHexaPromptRole.unitTest),
+        ]),
+      );
+      expect(
+        groups[7].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (
+            BuildTechStackSection.checkIntegration,
+            BuildHexaPromptRole.implementation,
+          ),
+          (
+            BuildTechStackSection.checkIntegration,
+            BuildHexaPromptRole.unitTest,
+          ),
+        ]),
+      );
+      expect(
+        groups[7].prompts[0].promptMarkdown,
+        contains('4 modèle(s)/contrat(s), 1 cas d’usage et 1 saga(s)'),
+      );
 
       final combined = BuildHexaPromptGenerator.combinePromptsMarkdown(
         domain: domain,
         prompts: groups.expand((g) => g.prompts),
       );
-      expect(combined, contains('12 prompts'));
-      expect(combined, contains('Étape 1/12'));
-      expect(combined, contains('Étape 12/12'));
+      expect(combined, contains('18 prompts'));
+      expect(combined, contains('Étape 1/18'));
+      expect(combined, contains('Étape 18/18'));
     });
   });
 
@@ -924,8 +967,8 @@ void main() {
       );
 
       // Regroupement par élément sélectionné : 4 prompts pour Invoice, 2 pour IssueInvoice,
-      // 2 pour Saga + 2 Outbound + 2 Inbound autonomes en bas = 12 prompts.
-      expect(find.text('12 / 12 prompt(s) · 5 groupe(s)'), findsOneWidget);
+      // 2 pour Saga (cochés par défaut = 8) + 2x5 groupes autonomes décochés par défaut = 18 prompts.
+      expect(find.text('8 / 18 prompt(s) · 8 groupe(s)'), findsOneWidget);
       expect(
         find.byKey(
           ValueKey(
@@ -973,49 +1016,59 @@ void main() {
         findsNothing,
       );
 
-      // Décoche 1 prompt puis copie les 11 prompts sélectionnés.
+      // Décoche 1 prompt puis copie les 7 prompts sélectionnés.
       await tester.tap(
         find.byKey(
           ValueKey('build-prompt-check-model:$invoiceNodeId:domain:unitTest'),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('11 / 12 prompt(s) · 5 groupe(s)'), findsOneWidget);
+      expect(find.text('7 / 18 prompt(s) · 8 groupe(s)'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('11 prompt(s) copié(s)'), findsOneWidget);
+      expect(find.text('7 prompt(s) copié(s)'), findsOneWidget);
       expect(lastClipboardText, isNotNull);
-      expect(lastClipboardText, contains('11 prompts'));
+      expect(lastClipboardText, contains('7 prompts'));
       expect(lastClipboardText, contains('InvoiceRepository'));
 
-      // Vérifie les groupes autonomes Outbound et Inbound en bas de la liste.
+      // Vérifie que les groupes autonomes Outbound, Inbound, Boilerplate, Dev Tools et
+      // Check Integration sont présents en bas de la liste et désactivés par défaut.
       final promptsScrollable = find.descendant(
         of: find.byKey(const ValueKey('build-prompts-selection-page')),
         matching: find.byType(Scrollable),
       );
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('build-prompt-group-standalone-outbound')),
-        400,
-        scrollable: promptsScrollable,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('build-prompt-group-standalone-outbound')),
-        findsOneWidget,
-      );
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('build-prompt-group-standalone-inbound')),
-        400,
-        scrollable: promptsScrollable,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('build-prompt-group-standalone-inbound')),
-        findsOneWidget,
-      );
+      for (final sectionName in const <String>[
+        'outbound',
+        'inbound',
+        'boilerplate',
+        'devTools',
+        'checkIntegration',
+      ]) {
+        final groupKey = ValueKey('build-prompt-group-standalone-$sectionName');
+        await tester.scrollUntilVisible(
+          find.byKey(groupKey),
+          400,
+          scrollable: promptsScrollable,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(groupKey), findsOneWidget);
+
+        for (final roleName in const <String>['implementation', 'unitTest']) {
+          final checkFinder = find.byKey(
+            ValueKey('build-prompt-check-standalone:$sectionName:$roleName'),
+          );
+          await tester.scrollUntilVisible(
+            checkFinder,
+            200,
+            scrollable: promptsScrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(tester.widget<Checkbox>(checkFinder).value, isFalse);
+        }
+      }
 
       // Retour au niveau 0 via le segment parent du fil d'Ariane -> conserve la sélection (3).
       await tester.tap(find.byKey(const ValueKey('build-items-crumb')));
@@ -1059,7 +1112,7 @@ void main() {
     );
 
     final allPrompts = groups.expand((g) => g.prompts).toList();
-    expect(allPrompts, hasLength(12));
+    expect(allPrompts, hasLength(18));
 
     for (final prompt in allPrompts) {
       final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -1177,6 +1230,28 @@ void main() {
             prompt.promptMarkdown,
             contains('identique au domaine principal'),
           );
+        case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.implementation):
+          expect(prompt.promptMarkdown, contains('├── main.ts'));
+          expect(prompt.promptMarkdown, contains('endpoint de santé (`/health`)'));
+        case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('└── shared/'));
+        case (BuildTechStackSection.devTools, BuildHexaPromptRole.implementation):
+          expect(prompt.promptMarkdown, contains('eslint.config.mjs'));
+          expect(prompt.promptMarkdown, contains('`typecheck`, `lint`'));
+        case (BuildTechStackSection.devTools, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('└── architecture/'));
+        case (
+          BuildTechStackSection.checkIntegration,
+          BuildHexaPromptRole.implementation,
+        ):
+          expect(prompt.promptMarkdown, contains('└── integration/'));
+          expect(prompt.promptMarkdown, contains('billing.module.ts'));
+        case (
+          BuildTechStackSection.checkIntegration,
+          BuildHexaPromptRole.unitTest,
+        ):
+          expect(prompt.promptMarkdown, contains('└── e2e/'));
+          expect(prompt.promptMarkdown, contains('batterie de vérification complète'));
       }
     }
 
@@ -1187,7 +1262,7 @@ void main() {
       selectedItems: <BuildDesignItem>[invoiceItem],
       catalog: DomainCatalog(domains: <FunctionalDomain>[withoutStack]),
     );
-    expect(noStackGroups, hasLength(3));
+    expect(noStackGroups, hasLength(6));
     final noStackPrompt = noStackGroups.first.prompts.first;
     final noStackYaml = loadYaml(
       BuildHexaPromptGenerator.extractYamlHeader(noStackPrompt.promptMarkdown)!,
@@ -1292,6 +1367,18 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('tech-stack-tab-persistence')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-boilerplate')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-devTools')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-checkIntegration')),
         findsOneWidget,
       );
 
