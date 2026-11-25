@@ -114,7 +114,17 @@ Respecte systématiquement la géométrie Desktop et les contraintes Flutter du 
      2. **Jamais d'`autoSides`** sur un `layout` feuille dont une zone a `scrollable: true` $\rightarrow$ définir `"autoSides": []`.
      3. **`Card` enveloppante sans contrainte zéro** : une `Card` mono-enfant principale dans `mainLayout` doit pouvoir s'étirer naturellement (`expandSlots: true` dans le parent `mainLayout`) pour offrir toute la hauteur du viewport à son contenu.
 
-### Règle d'or : Maîtrise du budget de largeur et prévention de la troncature silencieuse
+### Règle d'or : Théorème de conservation du budget spatial (Horizontal ET Vertical) & prévention de la troncature silencieuse
+
+> **Règle universelle de budget spatial (Horizontal ET Vertical)** :
+> Tout conteneur ou gabarit répété dont une dimension $D$ est contrainte ou bornée (hauteur fixe `itemExtent`, `preferredHeight`, `maxHeight`, `toolbarHeight`, `rowHeight`, `headerRowHeight`, `bottomRowHeight`, `northSize`, `southSize`, ou largeur fixe `preferredWidth`, `maxWidth`, `westSize`, `eastSize`, `columns.width`) impose la vérification déterministe suivante sur l'axe d'empilement principal :
+>
+> $$\sum_{i} \text{tailleNaturelle}(C_i) + \sum \text{spacings} + \text{paddingsBords} \le D_\text{utile}$$
+>
+> **Principes directeurs d'architecture de placement** :
+> 1. **Dédoublement d'axe (`column` vs `row`)** : dès qu'une zone héberge $\ge 2$ éléments hétérogènes (ex. texte + contrôle/bouton, ou plusieurs actions) dans un conteneur à hauteur restreinte ($< 68\text{ dp}$), l'empilement vertical par défaut (`column`) est **interdit**. La zone doit obligatoirement basculer sur l'axe orthogonal (`zoneAxes: "row"` avec `crossAxisAlignment: "center"`).
+> 2. **Invariance du Tap-Target Desktop / Material** : tout composant interactif (`SuperAction`, bouton d'icône, sélecteur) possède une boîte minimale incompressible d'ergonomie tactile ($36$ à $48\text{ dp}$). Il ne doit **jamais** être empilé verticalement avec un autre élément textuel ou interactif dans une hauteur utile inférieure à $64\text{ dp}$.
+> 3. **Priorité de calibrage compact** : dans les environnements denses (lignes de liste, cellules de tableau, barres d'outils), configurer systématiquement des contraintes compactes explicites (`preferredHeight: "32px"`, `preferredWidth: "32px"`, `iconSize: 18`–`20`, `padding: 0`).
 
 1. **Sanctuarisation des colonnes et panneaux latéraux (interdiction d'`autoSides` sur données variables)** :
    - N'utilise **jamais** `autoSides: ["east"]` ou `autoSides: ["west"]` sur un layout ou un gabarit de liste (`template`) dès que ce côté héberge des données textuelles dynamiques (email, téléphone, dates), des badges ou des groupes d'actions.

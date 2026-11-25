@@ -233,13 +233,19 @@ class SuperLayoutConfig extends ComponentConfig {
   ({double min, double max}) resizeBounds(
     SuperLayoutZone side,
     Iterable<String> visibleSlotIds,
-    double layoutExtent,
-  ) {
+    double layoutExtent, {
+    bool inCompactRowTemplate = false,
+  }) {
     if (!side.isSide) throw ArgumentError.value(side, 'side', 'Pas un cote');
+    final visibleList = visibleSlotIds.toList(growable: false);
     final vertical =
         side == SuperLayoutZone.north || side == SuperLayoutZone.south;
-    final stacked =
-        axisOf(side) == (vertical ? Axis.vertical : Axis.horizontal);
+    final effectiveAxis = effectiveAxisOf(
+      side,
+      inCompactRowTemplate: inCompactRowTemplate,
+      childCount: visibleList.length,
+    );
+    final stacked = effectiveAxis == (vertical ? Axis.vertical : Axis.horizontal);
     var lower = minSize;
     var upper = math.max(
       maxSize,
@@ -274,7 +280,7 @@ class SuperLayoutConfig extends ComponentConfig {
     var maxConstant = 0.0;
     var boundedMax = true;
     var count = 0;
-    for (final id in visibleSlotIds) {
+    for (final id in visibleList) {
       count++;
       final constraints = slotSizeConstraints[id];
       final minimum = vertical ? constraints?.minHeight : constraints?.minWidth;
@@ -330,14 +336,55 @@ class SuperLayoutConfig extends ComponentConfig {
   /// contenu.
   final Map<SuperLayoutZone, ZoneFlowConfig> zoneFlows;
 
+  /// Seuil maximal de hauteur totale (64 dp) d'un gabarit de ligne (`ListView.template`
+  /// ou `Table.cell`) sous lequel les zones périphériques `east` et `west`
+  /// multi-enfants basculent automatiquement en `"row"` sans `zoneAxes` explicite.
+  static const double compactRowTemplateMaxHeight = 64.0;
+
+  /// Indique si un axe explicite est configuré dans [zoneAxes] pour [zone].
+  bool hasExplicitAxis(SuperLayoutZone zone) =>
+      zoneAxes.containsKey(contentZone(zone)) || zoneAxes.containsKey(zone);
+
   Axis axisOf(SuperLayoutZone zone) =>
-      zoneAxes[contentZone(zone)] ?? Axis.vertical;
+      zoneAxes[contentZone(zone)] ?? zoneAxes[zone] ?? Axis.vertical;
+
+  /// Résout l'axe effectif de [zone] en tenant compte du contexte de gabarit de ligne compact.
+  ///
+  /// Dans un gabarit de ligne (`ListView.template`, `Table.cell`) de hauteur totale ≤ 64 dp,
+  /// une zone périphérique (`east` ou `west`) contenant au moins 2 enfants sans `zoneAxes`
+  /// explicite bascule automatiquement en [Axis.horizontal] (`"row"`).
+  Axis effectiveAxisOf(
+    SuperLayoutZone zone, {
+    bool inCompactRowTemplate = false,
+    int? childCount,
+  }) {
+    final content = contentZone(zone);
+    final explicit = zoneAxes[content] ?? zoneAxes[zone];
+    if (explicit != null) return explicit;
+    if (inCompactRowTemplate &&
+        (zone == SuperLayoutZone.east ||
+            zone == SuperLayoutZone.west ||
+            content == SuperLayoutZone.east ||
+            content == SuperLayoutZone.west)) {
+      final count = childCount ?? placementsOf(content).length;
+      if (count >= 2) {
+        return Axis.horizontal;
+      }
+    }
+    return Axis.vertical;
+  }
 
   SuperLayoutConfig withAxis(SuperLayoutZone zone, Axis axis) =>
       copyWith(zoneAxes: {...zoneAxes, contentZone(zone): axis});
 
+  /// Indique si un flux explicite est configuré dans [zoneFlows] pour [zone].
+  bool hasExplicitFlow(SuperLayoutZone zone) =>
+      zoneFlows.containsKey(contentZone(zone)) || zoneFlows.containsKey(zone);
+
   ZoneFlowConfig flowOf(SuperLayoutZone zone) =>
-      zoneFlows[contentZone(zone)] ?? const ZoneFlowConfig();
+      zoneFlows[contentZone(zone)] ??
+      zoneFlows[zone] ??
+      const ZoneFlowConfig();
 
   SuperLayoutConfig withZoneFlow(SuperLayoutZone zone, ZoneFlowConfig flow) {
     final target = contentZone(zone);

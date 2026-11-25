@@ -1120,15 +1120,38 @@ void main() {
             ),
           );
         case (BuildTechStackSection.domain, BuildHexaPromptRole.unitTest):
-          expect(prompt.promptMarkdown, contains('test/\n└── billing/\n    └── domain/'));
+          expect(
+            prompt.promptMarkdown,
+            contains('identique au domaine principal'),
+          );
         case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.implementation):
-          expect(prompt.promptMarkdown, contains('src/\n└── application/\n    └── billing/'));
+          expect(
+            prompt.promptMarkdown,
+            contains('src/\n└── core/\n    └── billing/\n        ├── ports/\n'),
+          );
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('src/core/billing/application/'),
+              contains('UnitOfWorkPort.runInTransaction()'),
+              contains('ApplicationEventPublisherPort.publish()'),
+              contains('CommandDispatcherPort.dispatch()'),
+              contains('application/commands/'),
+              contains('@collaborators'),
+            ),
+          );
         case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.unitTest):
-          expect(prompt.promptMarkdown, contains('test/\n└── billing/\n    └── application/'));
+          expect(
+            prompt.promptMarkdown,
+            contains('identique au domaine principal'),
+          );
         case (BuildTechStackSection.outbound, BuildHexaPromptRole.implementation):
           expect(prompt.promptMarkdown, contains('└── outbound/'));
         case (BuildTechStackSection.outbound, BuildHexaPromptRole.unitTest):
-          expect(prompt.promptMarkdown, contains('└── outbound/'));
+          expect(
+            prompt.promptMarkdown,
+            contains('identique au domaine principal'),
+          );
         case (BuildTechStackSection.inbound, BuildHexaPromptRole.implementation):
           expect(prompt.promptMarkdown, contains('└── inbound/'));
         case (BuildTechStackSection.inbound, BuildHexaPromptRole.unitTest):
@@ -1150,7 +1173,10 @@ void main() {
             ),
           );
         case (BuildTechStackSection.persistence, BuildHexaPromptRole.unitTest):
-          expect(prompt.promptMarkdown, contains('└── persistence/'));
+          expect(
+            prompt.promptMarkdown,
+            contains('identique au domaine principal'),
+          );
       }
     }
 

@@ -1023,6 +1023,8 @@ class _SuperListViewState extends State<SuperListView>
     final rowHeight =
         height ??
         (!config.wrap && config.axis == Axis.horizontal ? maxHeight : null);
+    final effectiveBoundedRowHeight =
+        rowHeight ?? (maxHeight.isFinite ? maxHeight : null);
     final sized = ConstrainedBox(
       constraints: BoxConstraints(
         minWidth: minWidth,
@@ -1037,24 +1039,27 @@ class _SuperListViewState extends State<SuperListView>
         height: rowHeight,
         child: Padding(
           padding: dimensions.contentPadding,
-          child: SlotContentFitScope(
-            fitWidth: rowWidth == null,
-            fitHeight: rowHeight == null,
-            child: Column(
-              mainAxisSize: rowHeight == null
-                  ? MainAxisSize.min
-                  : MainAxisSize.max,
-              crossAxisAlignment: rowWidth != null
-                  ? CrossAxisAlignment.stretch
-                  : CrossAxisAlignment.start,
-              children: [
-                Flexible(
-                  fit: natural && rowHeight == null
-                      ? FlexFit.loose
-                      : FlexFit.tight,
-                  child: item,
-                ),
-              ],
+          child: BoundedRowTemplateScope(
+            rowHeight: effectiveBoundedRowHeight,
+            child: SlotContentFitScope(
+              fitWidth: rowWidth == null,
+              fitHeight: rowHeight == null,
+              child: Column(
+                mainAxisSize: rowHeight == null
+                    ? MainAxisSize.min
+                    : MainAxisSize.max,
+                crossAxisAlignment: rowWidth != null
+                    ? CrossAxisAlignment.stretch
+                    : CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    fit: natural && rowHeight == null
+                        ? FlexFit.loose
+                        : FlexFit.tight,
+                    child: item,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

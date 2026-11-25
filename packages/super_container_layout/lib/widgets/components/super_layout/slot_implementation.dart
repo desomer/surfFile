@@ -9,6 +9,7 @@ export 'slot_core.dart'
         isSliverWidget,
         SlotSizing,
         SlotContentFitScope,
+        BoundedRowTemplateScope,
         SlotImplementation,
         BuilderSlot,
         InstanceSlot;

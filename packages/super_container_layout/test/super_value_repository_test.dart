@@ -1262,26 +1262,25 @@ void main() {
     },
   );
 
-  testWidgets(
-    'typing while an async repository write is in flight keeps dirty state, focus, and saves trailing characters',
-    (tester) async {
+  test(
+    'typing while an async repository write is in flight keeps dirty state and saves trailing characters',
+    () async {
       final slowStore = _SlowWriteRepositoryStore(directory);
-      addTearDown(slowStore.dispose);
       final writeBlocked = Completer<void>();
       slowStore.nextWriteGate = writeBlocked;
 
       final controller = TextEditingController();
-      addTearDown(controller.dispose);
+      await slowStore.preload();
       final controllerBinding = JsonTextControllerBinding(
         store: slowStore,
         binding: binding,
         controller: controller,
-        debounceDuration: const Duration(milliseconds: 100),
+        debounceDuration: const Duration(seconds: 10),
       );
-      addTearDown(controllerBinding.dispose);
-
-      await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+      addTearDown(() {
+        controllerBinding.dispose();
+        controller.dispose();
+        slowStore.dispose();
       });
       expect(controller.text, 'Alice');
 
@@ -1291,9 +1290,7 @@ void main() {
         selection: TextSelection.collapsed(offset: 3),
       );
       final firstFlush = controllerBinding.flush();
-      await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 30));
-      });
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
       // While 'Bon' is still writing to disk, user continues typing 'Bonjour'.
       controller.value = const TextEditingValue(
@@ -1302,22 +1299,17 @@ void main() {
       );
 
       // Complete the in-flight write of 'Bon'.
-      await tester.runAsync(() async {
-        writeBlocked.complete();
-        await firstFlush;
-      });
+      writeBlocked.complete();
+      await firstFlush;
 
       // Trailing 'jour' was not saved yet: binding must stay dirty with 'Bonjour' intact.
       expect(controller.text, 'Bonjour');
       expect(controllerBinding.dirty, isTrue);
       expect(controllerBinding.hasPendingWrite, isTrue);
 
-      await tester.runAsync(() => controllerBinding.flush());
+      await controllerBinding.flush();
       expect(controllerBinding.dirty, isFalse);
-      expect(
-        (await tester.runAsync(() => slowStore.readAttribute(binding)))?.text,
-        'Bonjour',
-      );
+      expect((await slowStore.readAttribute(binding)).text, 'Bonjour');
     },
   );
 }

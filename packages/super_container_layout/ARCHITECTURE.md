@@ -495,6 +495,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/overlay/editor_lasso.dart` | `EditorLassoResolver`, `EditorLassoController`, `EditorLassoPainter` : sélection au lasso (`Ctrl` + clic gauche, multi-tracés) en mode édition, résolution géométrique hiérarchique sur `VibeMountedSlotIndex` et définition du `VibeChatScope` Vibe IA. |
 | `widgets/editing/overlay/editor_overlay.dart` | Superposition globale du mode édition coordonnant les cadres de sélection, les badges et les poignées. |
 | `widgets/editing/overlay/editor_resize_handle.dart` | Poignées carrées de 8 px (zone de saisie de 32 px) aux coins et côtés pour redimensionner un slot à la souris. |
+| `widgets/editing/overlay/editor_silent_clip_indicator.dart` | `EditorSilentClipIndicator`, `RenderEditorSilentClipIndicator`, `EditorSilentClipWarningPainter` : détection sans impact géométrique et contour hachuré d'avertissement en mode édition lorsqu'un `RenderBox` enfant déborde d'un parent ayant `clipBehavior != Clip.none`. |
 | `widgets/editing/overlay/editor_zone_badge.dart` | `EditorZoneBadge`, `EditorZoneHighlight`, `EditorSelectionBorder` : badges déplaçables et contours de survol/sélection des zones et composants. |
 | `widgets/editing/overlay/editor_zoom.dart` | Moteur animé, contrôleur, portée, raccourcis de zoom/panoramique et interception du lasso `Ctrl` + clic gauche du canevas en mode édition. |
 | `widgets/editing/overlay/editor_zoom_options.dart` | Options immuables du zoom, seuil de grande cible et constantes par défaut partagées. |

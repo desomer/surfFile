@@ -349,8 +349,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
           slotSizeConstraints: {
             for (final id in childIds) id: ?config.slotSizeConstraints[id],
           },
-          axis: config.axisOf(zone),
-          flow: config.flowOf(zone),
+          axis: _effectiveAxisOf(config, zone, childCount: children.length),
+          flow: _effectiveFlowOf(config, zone, childCount: children.length),
           occupiedIds: {
             ...config.placedSlotIds,
             ...widget.slots.map((s) => s.id),
@@ -412,7 +412,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     return EditorSlotInsertion(
       label: slot.label,
       host: InsertionHost(
-        axis: config.axisOf(zone),
+        axis: _effectiveAxisOf(config, zone),
         stacked: !grid,
         axisMutable:
             !grid &&
@@ -440,7 +440,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       containerContext: () => mounted ? context : null,
       axis: () => _config.value.positioning == SuperLayoutPositioning.grid
           ? null
-          : _config.value.axisOf(zone),
+          : _effectiveAxisOf(_config.value, zone),
       inactiveEdge: switch (zone) {
         SuperLayoutZone.north ||
         SuperLayoutZone.nw ||
@@ -722,7 +722,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     final slots = _slotsOf(config, content);
     if (slots.isEmpty) {
       final flow = config.flowOf(zone);
-      final axis = config.axisOf(zone);
+      final axis = _effectiveAxisOf(config, zone, childCount: 0);
       final hasFlow =
           config.zoneFlows.containsKey(content) ||
           config.zoneFlows.containsKey(zone);
@@ -743,7 +743,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
       );
     }
     final auto = autoSides.contains(zone);
-    final axis = config.axisOf(zone);
+    final axis = _effectiveAxisOf(config, zone, childCount: slots.length);
+    final flow = _effectiveFlowOf(config, zone, childCount: slots.length);
     final autoHeight =
         auto &&
         (zone == SuperLayoutZone.north || zone == SuperLayoutZone.south);
@@ -756,7 +757,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       slots: slots,
       focusKeys: _slotFocusKeys,
       axis: axis,
-      flow: config.flowOf(zone),
+      flow: flow,
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,

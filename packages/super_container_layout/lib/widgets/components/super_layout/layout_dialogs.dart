@@ -129,8 +129,8 @@ extension _SuperLayoutDialogs on SuperLayoutState {
         final current = _config.value;
         return ZoneFlowSettingsEditor(
           keyPrefix: 'zone-flow-dialog-${zone.name}',
-          axis: current.axisOf(zone),
-          flow: current.flowOf(zone),
+          axis: _effectiveAxisOf(current, zone),
+          flow: _effectiveFlowOf(current, zone),
           showProperties: showProperties,
           showDimensions: showDimensions,
           isSide: zone.isSide,

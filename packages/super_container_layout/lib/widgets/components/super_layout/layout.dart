@@ -224,7 +224,35 @@ class SuperLayoutState extends State<SuperLayout>
   List<String> _lastParentPath = const [];
   String _lastLayoutName = '';
   bool _lastStyleEditMode = false;
+  bool _lastCompactRowTemplate = false;
   String? _lastGhostDiagnosticLayoutId;
+
+  bool get _inCompactRowTemplate => _lastCompactRowTemplate;
+
+  Axis _effectiveAxisOf(
+    SuperLayoutConfig config,
+    SuperLayoutZone zone, {
+    int? childCount,
+  }) => config.effectiveAxisOf(
+    zone,
+    inCompactRowTemplate: _inCompactRowTemplate,
+    childCount: childCount ?? _slotsOf(config, config.contentZone(zone)).length,
+  );
+
+  ZoneFlowConfig _effectiveFlowOf(
+    SuperLayoutConfig config,
+    SuperLayoutZone zone, {
+    int? childCount,
+  }) {
+    final baseFlow = config.flowOf(zone);
+    if (!config.hasExplicitAxis(zone) &&
+        !config.hasExplicitFlow(zone) &&
+        _effectiveAxisOf(config, zone, childCount: childCount) ==
+            Axis.horizontal) {
+      return baseFlow.copyWith(crossAxisAlignment: CrossAxisAlignment.center);
+    }
+    return baseFlow;
+  }
 
   void _invalidateSlotCache() {
     _slotLookup = null;
@@ -343,8 +371,8 @@ class SuperLayoutState extends State<SuperLayout>
   LayoutAxisAction _axisAction(SuperLayoutZone zone) {
     final current = _config.value;
     final label = widget.zoneLabel(zone);
-    final axis = current.axisOf(zone);
-    final flow = current.flowOf(zone);
+    final axis = _effectiveAxisOf(current, zone);
+    final flow = _effectiveFlowOf(current, zone);
     final fixedSide = zone.isSide && !current.isAuto(zone);
     final isVerticalSide =
         zone == SuperLayoutZone.north || zone == SuperLayoutZone.south;
@@ -360,7 +388,7 @@ class SuperLayoutState extends State<SuperLayout>
         _update(
           config.withAxis(
             zone,
-            config.axisOf(zone) == Axis.horizontal
+            _effectiveAxisOf(config, zone) == Axis.horizontal
                 ? Axis.vertical
                 : Axis.horizontal,
           ),

@@ -215,6 +215,7 @@ export 'widgets/editing/styles/style_extras_controls.dart';
 export 'widgets/surfaces/styled_surface.dart';
 export 'widgets/surfaces/super_container.dart';
 export 'widgets/editing/overlay/editor_lasso.dart';
+export 'widgets/editing/overlay/editor_silent_clip_indicator.dart';
 export 'widgets/editing/slots/editor_slot.dart';
 export 'widgets/editing/overlay/editor_zone_badge.dart'
     show EditorSelectionBorder, EditorZoneBadge, EditorZoneHighlight;

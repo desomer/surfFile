@@ -161,6 +161,9 @@ extension _SuperLayoutView on SuperLayoutState {
           _lastParentPath = parentPath;
           _lastLayoutName = name;
           _lastStyleEditMode = styleEditMode;
+          _lastCompactRowTemplate = BoundedRowTemplateScope.isCompactRowOf(
+            context,
+          );
           LayoutSelection.register(
             this,
             [...parentPath, name],
@@ -574,6 +577,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                       side == SuperLayoutZone.south
                                   ? size.height
                                   : size.width,
+                              inCompactRowTemplate: _inCompactRowTemplate,
                             ),
                             onResize: (extent) {
                               if (!mounted || !widget.editable) return;

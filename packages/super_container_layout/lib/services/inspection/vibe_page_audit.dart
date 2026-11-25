@@ -9,8 +9,10 @@
 /// - les défauts de contraste WCAG AA (`get_theme_and_contrast`).
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show immutable, listEquals;
-import 'package:material_ui/material_ui.dart' show Axis;
+import 'package:material_ui/material_ui.dart' show Axis, EdgeInsets, Size;
 
 import '../../models/behaviours/go_back_action.dart';
 import '../../models/behaviours/go_to_page_action.dart';
@@ -19,7 +21,10 @@ import '../../models/editor_page_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../models/super_layout_config.dart';
+import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
+import '../../models/super_table_config.dart';
+import '../../models/super_tree_view_config.dart';
 import '../../theme/appearance.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../diagnostics/debug_entry.dart';
@@ -582,8 +587,7 @@ abstract final class VibePageAuditService {
         : null;
 
     for (final page in catalog.pages) {
-      if (page.pageType.isModal ||
-          page.pageType == EditorPageType.a4Document) {
+      if (page.pageType.isModal || page.pageType == EditorPageType.a4Document) {
         continue;
       }
       if (page.shellId != null) continue;
@@ -726,6 +730,241 @@ abstract final class VibePageAuditService {
     );
   }
 
+  static Set<String> _collectFixedHeightSlotIds(Appearance appearance) {
+    final fixedIds = <String>{};
+    void inspectSlots(
+      Map<String, Size?> preferredSizes,
+      Map<String, SlotSizeConstraints> constraints,
+    ) {
+      for (final entry in preferredSizes.entries) {
+        final sz = entry.value;
+        if (sz != null && sz.height.isFinite && sz.height > 0) {
+          fixedIds.add(entry.key);
+        }
+      }
+      for (final entry in constraints.entries) {
+        final c = entry.value;
+        if (c.preferredHeight != null || c.maxHeight != null) {
+          fixedIds.add(entry.key);
+        }
+      }
+    }
+
+    for (final cfg in appearance.components.values) {
+      switch (cfg) {
+        case final SuperLayoutConfig l:
+          inspectSlots(l.slotPreferredSizes, l.slotSizeConstraints);
+        case final SuperListViewConfig list:
+          inspectSlots(
+            list.template.slotPreferredSizes,
+            list.template.slotSizeConstraints,
+          );
+        case final SuperTableConfig t:
+          inspectSlots(t.slotPreferredSizes, t.slotSizeConstraints);
+        case final SuperTreeViewConfig tree:
+          inspectSlots(tree.slotPreferredSizes, tree.slotSizeConstraints);
+        case final SuperTabConfig tab:
+          inspectSlots(tab.slotPreferredSizes, tab.slotSizeConstraints);
+        case final NativeComponentConfig n:
+          inspectSlots(n.slotPreferredSizes, n.slotSizeConstraints);
+        case final ScaffoldPageConfig s:
+          inspectSlots(
+            s.native.slotPreferredSizes,
+            s.native.slotSizeConstraints,
+          );
+        default:
+          break;
+      }
+    }
+    return fixedIds;
+  }
+
+  static String _listTemplateMountedLayoutId(
+    String listId,
+    SuperListViewConfig cfg,
+  ) {
+    final itemId = cfg.itemId ?? '$listId:item';
+    return itemId.endsWith(':item')
+        ? '${itemId.substring(0, itemId.length - 5)}:layout'
+        : '$itemId:layout';
+  }
+
+  static double? _boundedListRowHeight(SuperListViewConfig cfg) {
+    final itemSize = cfg.itemSize;
+    if (itemSize != null) {
+      if (itemSize.preferredHeight?.unit == SlotSizeUnit.pixels) {
+        return itemSize.preferredHeight!.value;
+      }
+      if (itemSize.maxHeight?.unit == SlotSizeUnit.pixels) {
+        return itemSize.maxHeight!.value;
+      }
+      return null;
+    }
+    if (cfg.wrap) {
+      return cfg.wrapSizing == ListWrapSizing.automatic ? null : cfg.itemExtent;
+    }
+    return cfg.axis == Axis.vertical ? cfg.itemExtent : null;
+  }
+
+  static Map<Object?, Object?>? _findVisibleZoneOccurrence(
+    Object? compData, {
+    required String? zoneId,
+  }) {
+    if (compData is! Map) return null;
+    final occs = compData['occurrences'];
+    if (occs is! List) return null;
+    for (final occ in occs) {
+      if (occ is! Map || occ['zoneId'] != zoneId) continue;
+      final diag = occ['diagnostics'];
+      if (diag is Map && diag['isOffscreen'] == true) continue;
+      return occ;
+    }
+    return null;
+  }
+
+  static void _auditZoneSpatialBudget({
+    required Map<Object?, Object?> comps,
+    required Set<String> queriedSet,
+    required String componentId,
+    required String zoneName,
+    required String location,
+    required Axis axis,
+    required ZoneFlowConfig flow,
+    required List<String> childIds,
+    required Map<Object?, Object?>? parentOcc,
+    required bool hasExplicitBoundedHeight,
+    required void Function(VibeAuditFinding finding) addFinding,
+    EdgeInsets extraPadding = EdgeInsets.zero,
+    String? tabContext,
+  }) {
+    if (flow.scrollable || childIds.isEmpty || parentOcc == null) return;
+    if (!childIds.every(queriedSet.contains)) return;
+
+    final sz = parentOcc['size'];
+    if (sz is! Map) return;
+    final parentWidth = sz['width'] is num
+        ? (sz['width'] as num).toDouble()
+        : null;
+    final parentHeight = sz['height'] is num
+        ? (sz['height'] as num).toDouble()
+        : null;
+    final constraints = parentOcc['constraints'];
+    final hasBoundedHeight =
+        hasExplicitBoundedHeight ||
+        (constraints is Map && constraints['hasBoundedHeight'] == true) ||
+        parentOcc['fixedHeight'] == true;
+
+    final pad = flow.contentPadding + extraPadding;
+    final availableWidth = parentWidth != null
+        ? parentWidth - pad.left - pad.right
+        : null;
+    final availableHeight = parentHeight != null
+        ? parentHeight - pad.top - pad.bottom
+        : null;
+
+    var measuredWidths = 0;
+    var childrenWidthSum = 0.0;
+    var measuredHeights = 0;
+    var childrenHeightSum = 0.0;
+    var maxChildHeight = 0.0;
+
+    for (final childId in childIds) {
+      final childOcc = _findVisibleZoneOccurrence(comps[childId], zoneId: null);
+      if (childOcc == null) continue;
+      final childSz = childOcc['size'];
+      if (childSz is! Map) continue;
+      if (childSz['width'] is num) {
+        final w = (childSz['width'] as num).toDouble();
+        if (w > 0) {
+          childrenWidthSum += w;
+          measuredWidths++;
+        }
+      }
+      if (childSz['height'] is num) {
+        final rawH = (childSz['height'] as num).toDouble();
+        final unclippedH = childSz['unclippedHeight'] is num
+            ? (childSz['unclippedHeight'] as num).toDouble()
+            : rawH;
+        final effectiveH = math.max(rawH, unclippedH);
+        if (effectiveH > 0) {
+          childrenHeightSum += effectiveH;
+          if (effectiveH > maxChildHeight) maxChildHeight = effectiveH;
+          measuredHeights++;
+        }
+      }
+    }
+
+    if (axis == Axis.horizontal) {
+      if (availableWidth != null && availableWidth > 0 && measuredWidths >= 2) {
+        final totalRequiredWidth =
+            childrenWidthSum + flow.spacing * (measuredWidths - 1);
+        if (totalRequiredWidth > availableWidth + 1.5) {
+          addFinding(
+            VibeAuditFinding(
+              category: VibeAuditCategory.layoutAndClipping,
+              severity: VibeAuditSeverity.error,
+              kind: 'row_width_budget_exceeded',
+              componentId: componentId,
+              zoneId: zoneName,
+              location: location,
+              tabContext: tabContext,
+              message:
+                  'Budget de largeur en ligne dépassé (${totalRequiredWidth.round()} dp mesurés [enfants + espacements] pour ${availableWidth.round()} dp disponibles = ${parentWidth!.round()} dp - padding horizontal ${(pad.left + pad.right).round()} dp).',
+            ),
+          );
+        }
+      }
+
+      if (hasExplicitBoundedHeight &&
+          availableHeight != null &&
+          availableHeight > 0 &&
+          measuredHeights >= 1 &&
+          maxChildHeight > availableHeight + 1.5) {
+        addFinding(
+          VibeAuditFinding(
+            category: VibeAuditCategory.layoutAndClipping,
+            severity: VibeAuditSeverity.error,
+            kind: 'vertical_budget_overflow',
+            componentId: componentId,
+            zoneId: zoneName,
+            location: location,
+            tabContext: tabContext,
+            message:
+                'Budget de hauteur dépassé dans un conteneur borné (${maxChildHeight.round()} dp requis par un enfant pour ${availableHeight.round()} dp disponibles = ${parentHeight!.round()} dp - padding vertical ${(pad.top + pad.bottom).round()} dp) : appliquer un calibrage compact (preferredHeight: "32px", padding: 0) ou augmenter la hauteur du conteneur.',
+          ),
+        );
+      }
+      return;
+    }
+
+    if (hasBoundedHeight &&
+        availableHeight != null &&
+        availableHeight > 0 &&
+        measuredHeights >= 1) {
+      final totalRequiredHeight =
+          childrenHeightSum +
+          (measuredHeights > 1 ? flow.spacing * (measuredHeights - 1) : 0.0);
+      if (totalRequiredHeight > availableHeight + 1.5) {
+        final advice = measuredHeights >= 2 && parentHeight! < 68
+            ? 'basculer zoneAxes en "row" avec crossAxisAlignment: "center", calibrer les contrôles en compact (preferredHeight: "32px") ou augmenter la hauteur utile.'
+            : 'activer scrollable: true, basculer zoneAxes en "row", compacter les enfants ou augmenter la hauteur bornée du conteneur.';
+        addFinding(
+          VibeAuditFinding(
+            category: VibeAuditCategory.layoutAndClipping,
+            severity: VibeAuditSeverity.error,
+            kind: 'vertical_budget_overflow',
+            componentId: componentId,
+            zoneId: zoneName,
+            location: location,
+            tabContext: tabContext,
+            message:
+                'Budget vertical dépassé (${totalRequiredHeight.round()} dp mesurés [enfants + espacements] pour ${availableHeight.round()} dp disponibles = ${parentHeight!.round()} dp - padding vertical ${(pad.top + pad.bottom).round()} dp) : $advice',
+          ),
+        );
+      }
+    }
+  }
+
   static Future<void> _collectGeometryPass({
     required VibeAppInspector inspector,
     required Appearance appearance,
@@ -744,8 +983,18 @@ abstract final class VibePageAuditService {
     ].take(_maxGeometryIds).toList(growable: false);
     if (geometryIds.isEmpty) return;
 
+    final geometryIdSet = geometryIds.toSet();
+    final companionMountIds = <String>[
+      for (final id in geometryIds)
+        if (appearance.components[id] case final SuperListViewConfig listCfg)
+          if (_listTemplateMountedLayoutId(id, listCfg) case final mountId
+              when mountedSet.contains(mountId) &&
+                  !geometryIdSet.contains(mountId))
+            mountId,
+    ];
+
     final geo = await inspector.getComponentGeometry(<String, Object?>{
-      'ids': geometryIds,
+      'ids': <String>[...geometryIds, ...companionMountIds],
       'zoneId': ?onlyZoneFilter,
       'includeZones': true,
       'includeScroll': true,
@@ -755,6 +1004,7 @@ abstract final class VibePageAuditService {
 
     for (final entry in comps.entries) {
       final id = entry.key is String ? entry.key as String : '${entry.key}';
+      if (!geometryIdSet.contains(id)) continue;
       final compData = entry.value;
       if (compData is! Map) continue;
       final occurrences = compData['occurrences'];
@@ -796,8 +1046,7 @@ abstract final class VibePageAuditService {
                 componentId: id,
                 zoneId: zoneId,
                 tabContext: tabContext,
-                message:
-                    'Le composant ou sa zone a une taille rendue nulle (0 px), ce qui le rend invisible ou écrasé.',
+                message: 'Le composant ou sa zone a une taille rendue nulle (0 px), ce qui le rend invisible ou écrasé.',
               ),
             );
           }
@@ -847,8 +1096,7 @@ abstract final class VibePageAuditService {
                 componentId: id,
                 zoneId: zoneId,
                 tabContext: tabContext,
-                message:
-                    'Un ou plusieurs enfants dépassent la boîte rendue de ce conteneur (marge/padding ou contrainte fixe trop serrée).',
+                message: 'Un ou plusieurs enfants dépassent la boîte rendue de ce conteneur (marge/padding ou contrainte fixe trop serrée).',
               ),
             );
           }
@@ -862,8 +1110,7 @@ abstract final class VibePageAuditService {
                 componentId: id,
                 zoneId: zoneId,
                 tabContext: tabContext,
-                message:
-                    'Dépasse les limites visibles du viewport (horizontalement ou verticalement sans scroll adapté).',
+                message: 'Dépasse les limites visibles du viewport (horizontalement ou verticalement sans scroll adapté).',
               ),
             );
           }
@@ -896,95 +1143,257 @@ abstract final class VibePageAuditService {
               componentId: id,
               zoneId: zoneId,
               tabContext: tabContext,
-              message:
-                  'Sliver présentant un débordement visuel dans sa zone de défilement.',
+              message: 'Sliver présentant un débordement visuel dans sa zone de défilement.',
             ),
           );
         }
       }
     }
 
-    // Contrôle budgétaire de largeur sur les zones horizontales (`zoneAxes: 'row'`).
+    // Contrôle budgétaire bidirectionnel (largeur en `row` et hauteur verticale bornée).
     if (onlyZoneFilter == null) {
-      final queriedSet = geometryIds.toSet();
-      for (final layoutId in geometryIds) {
-        final cfg = appearance.components[layoutId];
-        if (cfg is! SuperLayoutConfig) continue;
-        final layoutData = comps[layoutId];
-        if (layoutData is! Map) continue;
-        final layoutOccs = layoutData['occurrences'];
-        if (layoutOccs is! List) continue;
+      final queriedSet = geometryIdSet;
+      final fixedHeightIds = _collectFixedHeightSlotIds(appearance);
 
-        for (final placementEntry in cfg.placements.entries) {
+      void auditSuperLayoutZones({
+        required String ownerId,
+        required String mountedLayoutId,
+        required String locationPrefix,
+        required SuperLayoutConfig layoutCfg,
+        required bool hasExplicitContainerHeight,
+        required bool inCompactRowTemplate,
+      }) {
+        final layoutData = comps[mountedLayoutId];
+        if (layoutData is! Map) return;
+        for (final placementEntry in layoutCfg.placements.entries) {
           final zone = placementEntry.key;
           final childIds = placementEntry.value;
           if (childIds.isEmpty) continue;
-          final contentZone = cfg.contentZone(zone);
-          if (cfg.axisOf(contentZone) != Axis.horizontal) continue;
-          final flow = cfg.flowOf(contentZone);
-          if (flow.scrollable) continue;
-          if (!childIds.every(queriedSet.contains)) continue;
+          final contentZone = layoutCfg.contentZone(zone);
+          final axis = layoutCfg.effectiveAxisOf(
+            contentZone,
+            inCompactRowTemplate: inCompactRowTemplate,
+            childCount: childIds.length,
+          );
+          final flow = layoutCfg.flowOf(contentZone);
+          final fixedVerticalSide =
+              (zone == SuperLayoutZone.north ||
+                  zone == SuperLayoutZone.south) &&
+              !layoutCfg.isAuto(zone);
+          _auditZoneSpatialBudget(
+            comps: comps,
+            queriedSet: queriedSet,
+            componentId: ownerId,
+            zoneName: contentZone.name,
+            location: '$locationPrefix.zoneFlows.${contentZone.name}',
+            axis: axis,
+            flow: flow,
+            childIds: childIds,
+            parentOcc: _findVisibleZoneOccurrence(
+              layoutData,
+              zoneId: contentZone.name,
+            ),
+            hasExplicitBoundedHeight:
+                hasExplicitContainerHeight || fixedVerticalSide,
+            addFinding: addFinding,
+            tabContext: tabContext,
+          );
+        }
+      }
 
-          double? parentWidth;
-          for (final occ in layoutOccs) {
-            if (occ is! Map || occ['zoneId'] != contentZone.name) continue;
-            final diag = occ['diagnostics'];
-            if (diag is Map && diag['isOffscreen'] == true) continue;
-            final sz = occ['size'];
-            if (sz is Map && sz['width'] is num) {
-              final w = (sz['width'] as num).toDouble();
-              if (w > 0) {
-                parentWidth = w;
-                break;
-              }
-            }
-          }
-          if (parentWidth == null) continue;
-
-          final pad = flow.contentPadding;
-          final availableWidth = parentWidth - pad.left - pad.right;
-          if (availableWidth <= 0) continue;
-
-          var measuredChildren = 0;
-          var childrenWidthSum = 0.0;
-          for (final childId in childIds) {
-            final childData = comps[childId];
-            if (childData is! Map) continue;
-            final childOccs = childData['occurrences'];
-            if (childOccs is! List) continue;
-            for (final childOcc in childOccs) {
-              if (childOcc is! Map || childOcc['zoneId'] != null) continue;
-              final diag = childOcc['diagnostics'];
-              if (diag is Map && diag['isOffscreen'] == true) continue;
-              final sz = childOcc['size'];
-              if (sz is Map && sz['width'] is num) {
-                final w = (sz['width'] as num).toDouble();
-                if (w > 0) {
-                  childrenWidthSum += w;
-                  measuredChildren++;
-                  break;
-                }
-              }
-            }
-          }
-          if (measuredChildren < 2) continue;
-          final totalRequired =
-              childrenWidthSum + flow.spacing * (measuredChildren - 1);
-          if (totalRequired > availableWidth + 1.5) {
-            addFinding(
-              VibeAuditFinding(
-                category: VibeAuditCategory.layoutAndClipping,
-                severity: VibeAuditSeverity.error,
-                kind: 'row_width_budget_exceeded',
-                componentId: layoutId,
-                zoneId: contentZone.name,
-                location: 'components[$layoutId].zoneFlows.${contentZone.name}',
-                tabContext: tabContext,
-                message:
-                    'Budget de largeur en ligne dépassé (${totalRequired.round()} dp mesurés [enfants + espacements] pour ${availableWidth.round()} dp disponibles = ${parentWidth.round()} dp - padding horizontal ${(pad.left + pad.right).round()} dp).',
-              ),
+      for (final ownerId in geometryIds) {
+        final cfg = appearance.components[ownerId];
+        switch (cfg) {
+          case final SuperLayoutConfig layoutCfg:
+            auditSuperLayoutZones(
+              ownerId: ownerId,
+              mountedLayoutId: ownerId,
+              locationPrefix: 'components[$ownerId]',
+              layoutCfg: layoutCfg,
+              hasExplicitContainerHeight: fixedHeightIds.contains(ownerId),
+              inCompactRowTemplate: false,
             );
-          }
+
+          case final SuperListViewConfig listCfg:
+            final boundedRowHeight = _boundedListRowHeight(listCfg);
+            auditSuperLayoutZones(
+              ownerId: ownerId,
+              mountedLayoutId: _listTemplateMountedLayoutId(ownerId, listCfg),
+              locationPrefix: 'components[$ownerId].template',
+              layoutCfg: listCfg.template,
+              hasExplicitContainerHeight: boundedRowHeight != null,
+              inCompactRowTemplate:
+                  boundedRowHeight != null &&
+                  boundedRowHeight <=
+                      SuperLayoutConfig.compactRowTemplateMaxHeight,
+            );
+
+          case final SuperTableConfig tableCfg:
+            final tableData = comps[ownerId];
+            final tableRootOcc = _findVisibleZoneOccurrence(
+              tableData,
+              zoneId: null,
+            );
+            final zoneSpecs =
+                <
+                  ({
+                    String zoneId,
+                    double rowHeight,
+                    SuperTableColumnConfig col,
+                  })
+                >[
+                  for (final col in tableCfg.columns) ...[
+                    if (tableCfg.showHeaderRow)
+                      (
+                        zoneId: SuperTableConfig.headerZoneFor(col.id),
+                        rowHeight: tableCfg.headerRowHeight,
+                        col: col,
+                      ),
+                    (
+                      zoneId: SuperTableConfig.cellZoneFor(col.id),
+                      rowHeight: tableCfg.rowHeight,
+                      col: col,
+                    ),
+                    if (tableCfg.showBottomRow)
+                      (
+                        zoneId: SuperTableConfig.bottomZoneFor(col.id),
+                        rowHeight: tableCfg.bottomRowHeight,
+                        col: col,
+                      ),
+                  ],
+                ];
+            for (final spec in zoneSpecs) {
+              final zoneId = spec.zoneId;
+              final childIds = tableCfg.slotsOf(zoneId);
+              if (childIds.isEmpty) continue;
+              final measuredZoneOcc = _findVisibleZoneOccurrence(
+                tableData,
+                zoneId: zoneId,
+              );
+              final fallbackZoneOcc =
+                  measuredZoneOcc == null && tableRootOcc != null
+                  ? <Object?, Object?>{
+                      'size': <String, Object?>{
+                        if (!spec.col.isFill) 'width': spec.col.width,
+                        'height': spec.rowHeight,
+                      },
+                      'constraints': const <String, Object?>{
+                        'hasBoundedHeight': true,
+                      },
+                    }
+                  : null;
+              final extraPad = fallbackZoneOcc != null
+                  ? tableCfg.zoneStyleOf(zoneId).contentPadding
+                  : EdgeInsets.zero;
+              _auditZoneSpatialBudget(
+                comps: comps,
+                queriedSet: queriedSet,
+                componentId: ownerId,
+                zoneName: zoneId,
+                location: 'components[$ownerId].zoneFlows.$zoneId',
+                axis: tableCfg.zoneAxisOf(zoneId) ?? Axis.horizontal,
+                flow: tableCfg.zoneFlowOf(zoneId),
+                childIds: childIds,
+                parentOcc: measuredZoneOcc ?? fallbackZoneOcc,
+                hasExplicitBoundedHeight: true,
+                extraPadding: extraPad,
+                addFinding: addFinding,
+                tabContext: tabContext,
+              );
+            }
+
+          case final SuperTreeViewConfig treeCfg:
+            final treeData = comps[ownerId];
+            final treeRootOcc = _findVisibleZoneOccurrence(
+              treeData,
+              zoneId: null,
+            );
+            for (final zoneId in const <String>[
+              SuperTreeViewConfig.headerZone,
+              SuperTreeViewConfig.dataZone,
+            ]) {
+              final childIds = treeCfg.slotsOf(zoneId);
+              if (childIds.isEmpty) continue;
+              final measuredZoneOcc = _findVisibleZoneOccurrence(
+                treeData,
+                zoneId: zoneId,
+              );
+              final fallbackZoneOcc =
+                  measuredZoneOcc == null && treeRootOcc != null
+                  ? <Object?, Object?>{
+                      'size': <String, Object?>{
+                        if (zoneId == SuperTreeViewConfig.headerZone)
+                          'width': treeCfg.headerSize,
+                        'height': treeCfg.rowHeight,
+                      },
+                      'constraints': const <String, Object?>{
+                        'hasBoundedHeight': true,
+                      },
+                    }
+                  : null;
+              _auditZoneSpatialBudget(
+                comps: comps,
+                queriedSet: queriedSet,
+                componentId: ownerId,
+                zoneName: zoneId,
+                location: 'components[$ownerId].zoneFlows.$zoneId',
+                axis: treeCfg.zoneAxisOf(zoneId) ?? Axis.horizontal,
+                flow: treeCfg.zoneFlowOf(zoneId),
+                childIds: childIds,
+                parentOcc: measuredZoneOcc ?? fallbackZoneOcc,
+                hasExplicitBoundedHeight: true,
+                addFinding: addFinding,
+                tabContext: tabContext,
+              );
+            }
+
+          case final NativeComponentConfig nativeCfg:
+            final nativeData = comps[ownerId];
+            final ownerStyle = appearance.styles[ownerId];
+            final hasFixedOwnerHeight =
+                fixedHeightIds.contains(ownerId) ||
+                nativeCfg.doubleProperty('toolbarHeight') != null;
+            for (final entry in nativeCfg.placements.entries) {
+              final regionId = entry.key;
+              final childIds = entry.value;
+              if (childIds.isEmpty || !nativeCfg.isEnabled(regionId)) continue;
+              final regionOcc = _findVisibleZoneOccurrence(
+                nativeData,
+                zoneId: regionId,
+              );
+              final fallbackRootOcc = regionOcc == null && regionId == 'child'
+                  ? _findVisibleZoneOccurrence(nativeData, zoneId: null)
+                  : null;
+              final extraPad = fallbackRootOcc != null && ownerStyle != null
+                  ? ownerStyle.outerMargin + ownerStyle.contentPadding
+                  : EdgeInsets.zero;
+              final defaultHorizontalBar =
+                  regionId == 'actions' ||
+                  regionId == 'leading' ||
+                  regionId == 'left' ||
+                  regionId == 'right';
+              final axis =
+                  nativeCfg.regionAxisOf(regionId) ??
+                  (defaultHorizontalBar ? Axis.horizontal : Axis.vertical);
+              _auditZoneSpatialBudget(
+                comps: comps,
+                queriedSet: queriedSet,
+                componentId: ownerId,
+                zoneName: regionId,
+                location: 'components[$ownerId].zoneFlows.$regionId',
+                axis: axis,
+                flow: nativeCfg.regionFlowOf(regionId),
+                childIds: childIds,
+                parentOcc: regionOcc ?? fallbackRootOcc,
+                hasExplicitBoundedHeight: hasFixedOwnerHeight,
+                extraPadding: extraPad,
+                addFinding: addFinding,
+                tabContext: tabContext,
+              );
+            }
+
+          default:
+            break;
         }
       }
     }
@@ -1225,7 +1634,8 @@ abstract final class VibePageAuditService {
         final message = raw['message'] as String? ?? kind;
         final category = switch (kind) {
           'undeclared_calculated_attribute' ||
-          'suspected_missing_calculation' => VibeAuditCategory.missingCalculation,
+          'suspected_missing_calculation' =>
+            VibeAuditCategory.missingCalculation,
           'list_remove_button_overlap_risk' ||
           'excessive_margin_or_padding_for_fixed_size' =>
             VibeAuditCategory.layoutAndClipping,

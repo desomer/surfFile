@@ -10,6 +10,13 @@ import '../../editing/dialogs/editor_dialog_header.dart';
 /// Marqueur des composants capables de produire un sliver dans un slot.
 abstract interface class SliverCapableWidget implements Widget {}
 
+/// Cible de notification permettant à un layout enfant de redemander la peinture
+/// d'un indicateur parent de clipping silencieux lors d'un recalcul de taille.
+abstract interface class SilentClipRelayoutTarget implements RenderObject {
+  /// Signale qu'un descendant a recalculé sa géométrie durant cette passe de layout.
+  void notifyDescendantLayoutChanged();
+}
+
 /// Indique si [widget] est un sliver natif ou un composant compatible.
 bool isSliverWidget(Widget widget) => switch (widget) {
   SliverCapableWidget() => true,
@@ -65,6 +72,39 @@ class SlotContentFitScope extends InheritedWidget {
   @override
   bool updateShouldNotify(SlotContentFitScope oldWidget) =>
       fitWidth != oldWidget.fitWidth || fitHeight != oldWidget.fitHeight;
+}
+
+/// Portée signalant qu'un sous-arbre est rendu dans un gabarit de ligne borné
+/// (`ListView.template` ou `Table.cell`) et exposant sa hauteur totale en dp.
+class BoundedRowTemplateScope extends InheritedWidget {
+  /// Crée une portée de gabarit de ligne borné.
+  const BoundedRowTemplateScope({
+    required this.rowHeight,
+    required super.child,
+    super.key,
+  });
+
+  /// Hauteur maximale définissant un gabarit de ligne compact (64 dp).
+  static const double compactMaxHeight = 64.0;
+
+  /// Hauteur totale de la ligne en dp (`null` si non bornée / naturelle).
+  final double? rowHeight;
+
+  /// Indique si la ligne possède une hauteur totale bornée inférieure ou égale à [compactMaxHeight].
+  bool get isCompactRow =>
+      rowHeight != null && rowHeight!.isFinite && rowHeight! <= compactMaxHeight;
+
+  /// Retourne la portée héritée, si elle existe.
+  static BoundedRowTemplateScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<BoundedRowTemplateScope>();
+
+  /// Indique si [context] se trouve dans un gabarit de ligne compact (≤ 64 dp).
+  static bool isCompactRowOf(BuildContext context) =>
+      maybeOf(context)?.isCompactRow ?? false;
+
+  @override
+  bool updateShouldNotify(BoundedRowTemplateScope oldWidget) =>
+      rowHeight != oldWidget.rowHeight;
 }
 
 /// Bloc majeur d'une page, rangé dans une zone grâce à son [id].

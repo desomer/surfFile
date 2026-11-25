@@ -732,12 +732,16 @@ class _SuperTableState extends State<SuperTable> {
         config.allowRemove &&
         isLastCol &&
         !_collectionReadOnly;
-    final content = _buildZoneContent(
-      context,
-      editor,
-      config,
-      zoneId,
-      isInteractiveRegion: templateMode || (editor.canEdit && visualIndex == 0),
+    final content = BoundedRowTemplateScope(
+      rowHeight: config.rowHeight,
+      child: _buildZoneContent(
+        context,
+        editor,
+        config,
+        zoneId,
+        isInteractiveRegion:
+            templateMode || (editor.canEdit && visualIndex == 0),
+      ),
     );
     if (!showRemove) {
       return content;

@@ -1021,8 +1021,10 @@ class VibeAppToolRegistry {
       description:
           'Exécute un audit déterministe complet sur la page active (ou le scope actif), en balayant '
           'automatiquement tous les onglets des SuperTab de la page lorsqu’aucun scope n’est actif : '
-          'marges/paddings coupés, dépassements parent/viewport, budget de largeur en ligne (zoneAxes: row), '
-          'textes tronqués, erreurs runtime, attributs calculés @calculs manquants et contrastes WCAG AA.',
+          'marges/paddings coupés, dépassements parent/viewport, budget spatial bidirectionnel '
+          '(row_width_budget_exceeded en ligne et vertical_budget_overflow sur tout conteneur à hauteur bornée : '
+          'itemExtent, rowHeight, headerRowHeight, contraintes fixes), textes tronqués, erreurs runtime, '
+          'attributs calculés @calculs manquants et contrastes WCAG AA.',
       parametersSchema: <String, Object?>{
         'type': 'object',
         'properties': <String, Object?>{},

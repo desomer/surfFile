@@ -482,6 +482,16 @@ class _RenderSlotFlex extends RenderBox
       if (index < count - 1) main += stepSpacing;
     }
     size = resolvedSize;
+    if (!scrollable && contentMain > mainExtent(resolvedSize) + 1.0) {
+      RenderObject? ancestor = parent;
+      while (ancestor != null) {
+        if (ancestor is RenderAbstractViewport) break;
+        if (ancestor is SilentClipRelayoutTarget) {
+          ancestor.notifyDescendantLayoutChanged();
+        }
+        ancestor = ancestor.parent;
+      }
+    }
   }
 
   @override

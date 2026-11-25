@@ -1527,21 +1527,12 @@ void main() {
         final aliceFocus = tester.widget<TextField>(aliceListField).focusNode!;
         expect(aliceFocus.hasFocus, isTrue);
 
-        tester.testTextInput.updateEditingValue(
-          const TextEditingValue(
-            text: 'Zoe',
-            selection: TextSelection.collapsed(offset: 3),
-          ),
-        );
         await tester.runAsync(() async {
+          await tester.enterText(aliceListField, 'Zoe');
           await tester.pump();
-          await Future<void>.delayed(const Duration(milliseconds: 220));
-          for (var i = 0; i < 4; i++) {
-            await tester.pump();
-            await Future<void>.delayed(const Duration(milliseconds: 60));
-          }
+          await Future<void>.delayed(const Duration(milliseconds: 300));
         });
-        await tester.pumpAndSettle();
+        await flushReal(tester);
 
         expect(aliceFocus.hasFocus, isTrue);
         expect(
@@ -1564,21 +1555,12 @@ void main() {
             .focusNode!;
         expect(bobTableFocus.hasFocus, isTrue);
 
-        tester.testTextInput.updateEditingValue(
-          const TextEditingValue(
-            text: 'Zara',
-            selection: TextSelection.collapsed(offset: 4),
-          ),
-        );
         await tester.runAsync(() async {
+          await tester.enterText(bobTableField, 'Zara');
           await tester.pump();
-          await Future<void>.delayed(const Duration(milliseconds: 220));
-          for (var i = 0; i < 4; i++) {
-            await tester.pump();
-            await Future<void>.delayed(const Duration(milliseconds: 60));
-          }
+          await Future<void>.delayed(const Duration(milliseconds: 300));
         });
-        await tester.pumpAndSettle();
+        await flushReal(tester);
 
         expect(bobTableFocus.hasFocus, isTrue);
         final finalItems = (await tester.runAsync(

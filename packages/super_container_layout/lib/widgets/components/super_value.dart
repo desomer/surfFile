@@ -149,6 +149,7 @@ class _SuperValueState extends State<SuperValue>
       JsonTextControllerBinding.defaultDebounceDuration;
   bool _requestedSaveOnBlurOnly = false;
   Future<void>? _pendingBindingFlush;
+  JsonTextBinding? _pendingFlushBinding;
   TextEditingController? _observedController;
   String _lastControllerText = '';
   String _previousControllerText = '';
@@ -785,6 +786,7 @@ class _SuperValueState extends State<SuperValue>
       if (existingBinding != null) {
         existingBinding.removeListener(_bindingChanged);
         if (existingBinding.hasPendingWrite) {
+          _pendingFlushBinding = existingBinding.binding;
           _pendingBindingFlush = existingBinding.flush();
         }
         existingBinding.dispose();
@@ -809,8 +811,9 @@ class _SuperValueState extends State<SuperValue>
         } else if (resolved.error == null &&
             resolved.binding != null &&
             store != null &&
-            !store.hasActiveMutations &&
-            _pendingBindingFlush == null) {
+            !(stateful &&
+                (_pendingBindingFlush != null || store.hasActiveMutations)) &&
+            resolved.binding != _pendingFlushBinding) {
           final cached = store.peekAttribute(
             resolved.binding!,
             allowStringList: asStringList,
@@ -851,6 +854,7 @@ class _SuperValueState extends State<SuperValue>
         await flushed;
         if (identical(_pendingBindingFlush, flushed)) {
           _pendingBindingFlush = null;
+          _pendingFlushBinding = null;
         }
       }
       if (!mounted || generation != _bindingGeneration) return;

@@ -130,23 +130,45 @@ class _IterableContentState extends State<IterableContent> {
             customChild ??
             ValueListenableBuilder<SuperLayoutConfig>(
               valueListenable: layout,
-              builder: (context, config, _) => SuperLayout(
-                label: 'Layout',
-                id: widget.id == null
-                    ? null
-                    : (widget.id!.endsWith(':item')
-                          ? '${widget.id!.substring(0, widget.id!.length - 5)}:layout'
-                          : '${widget.id}:layout'),
-                config: config,
-                slots: widget.slots,
-                editable: widget.editable,
-                shrinkWrap: widget.shrinkWrap,
-                menuIcon: Icons.dashboard_outlined,
-                onChanged: (next) {
-                  layout.value = next;
-                  widget.onChanged?.call(next);
-                },
-              ),
+              builder: (context, config, _) {
+                final innerLayout = SuperLayout(
+                  label: 'Layout',
+                  id: widget.id == null
+                      ? null
+                      : (widget.id!.endsWith(':item')
+                            ? '${widget.id!.substring(0, widget.id!.length - 5)}:layout'
+                            : '${widget.id}:layout'),
+                  config: config,
+                  slots: widget.slots,
+                  editable: widget.editable,
+                  shrinkWrap: widget.shrinkWrap,
+                  menuIcon: Icons.dashboard_outlined,
+                  onChanged: (next) {
+                    layout.value = next;
+                    widget.onChanged?.call(next);
+                  },
+                );
+                final existingRowScope = BoundedRowTemplateScope.maybeOf(
+                  context,
+                );
+                if (existingRowScope != null) return innerLayout;
+                final pixelHeight =
+                    widget.sizeConstraints?.preferredHeight?.unit ==
+                        SlotSizeUnit.pixels
+                    ? widget.sizeConstraints!.preferredHeight!.value
+                    : (widget.sizeConstraints?.maxHeight?.unit ==
+                              SlotSizeUnit.pixels
+                          ? widget.sizeConstraints!.maxHeight!.value
+                          : null);
+                if (pixelHeight != null &&
+                    (widget.id?.endsWith(':item') ?? false)) {
+                  return BoundedRowTemplateScope(
+                    rowHeight: pixelHeight,
+                    child: innerLayout,
+                  );
+                }
+                return innerLayout;
+              },
             ),
       ),
     );

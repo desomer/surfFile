@@ -41,6 +41,8 @@ import '../../widgets/editing/ai/vibe_repository_applier.dart';
 import '../../widgets/editing/ai/vibe_scope_helpers.dart';
 import '../../widgets/editing/overlay/editor_overlay.dart'
     show isRenderObjectOffstage;
+import '../../widgets/editing/overlay/editor_silent_clip_indicator.dart'
+    show isSilentClippingRenderObject;
 import '../../widgets/editing/slots/editor_context_menu.dart'
     show VibeChatScope;
 import '../../widgets/editing/slots/editor_slot.dart'
@@ -784,9 +786,17 @@ class VibeAppInspector {
 
         if (renderObj is RenderBox && renderObj.hasSize) {
           final size = renderObj.size;
+          final isOffstage = isRenderObjectOffstage(renderObj, stopAt: rootBox);
+          final contentExtents = !isOffstage
+              ? _measureDescendantContentExtents(renderObj, size)
+              : size;
           item['size'] = <String, Object?>{
             'width': _round2(size.width),
             'height': _round2(size.height),
+            if (contentExtents.width > size.width + 0.5)
+              'unclippedWidth': _round2(contentExtents.width),
+            if (contentExtents.height > size.height + 0.5)
+              'unclippedHeight': _round2(contentExtents.height),
           };
           final constraints = renderObj.constraints;
           item['constraints'] = <String, Object?>{
@@ -798,7 +808,6 @@ class VibeAppInspector {
             'hasBoundedHeight': constraints.hasBoundedHeight,
           };
 
-          final isOffstage = isRenderObjectOffstage(renderObj, stopAt: rootBox);
           final origin = rootBox != null
               ? renderObj.localToGlobal(Offset.zero, ancestor: rootBox)
               : renderObj.localToGlobal(Offset.zero);
@@ -2623,10 +2632,7 @@ class VibeAppInspector {
       hops++;
       final clipsViewport =
           current is RenderAbstractViewport ||
-          (current is RenderClipRect && current.clipBehavior != Clip.none) ||
-          (current is RenderClipRRect && current.clipBehavior != Clip.none) ||
-          (current is RenderClipPath && current.clipBehavior != Clip.none) ||
-          (current is RenderClipOval && current.clipBehavior != Clip.none);
+          isSilentClippingRenderObject(current);
       if (clipsViewport &&
           current is RenderBox &&
           current.attached &&
@@ -2680,11 +2686,7 @@ class VibeAppInspector {
       if (current is RenderAbstractViewport) {
         break;
       }
-      final isClipNode =
-          (current is RenderClipRect && current.clipBehavior != Clip.none) ||
-          (current is RenderClipRRect && current.clipBehavior != Clip.none) ||
-          (current is RenderClipPath && current.clipBehavior != Clip.none) ||
-          (current is RenderClipOval && current.clipBehavior != Clip.none);
+      final isClipNode = isSilentClippingRenderObject(current);
       if (isClipNode &&
           current is RenderBox &&
           current.attached &&
@@ -2707,6 +2709,42 @@ class VibeAppInspector {
       clipped: clippedEdges.isNotEmpty,
       edges: clippedEdges.toList(growable: false),
     );
+  }
+
+  static Size _measureDescendantContentExtents(
+    RenderBox container,
+    Size containerSize,
+  ) {
+    if (containerSize.isEmpty) return Size.zero;
+    var maxRight = containerSize.width;
+    var maxBottom = containerSize.height;
+    var visited = 0;
+
+    void walk(RenderObject node) {
+      if (visited >= 80) return;
+      node.visitChildren((child) {
+        if (visited >= 80) return;
+        visited++;
+        if (child is RenderAbstractViewport) return;
+        if ((child is RenderOffstage && child.offstage) ||
+            (child is RenderSliverOffstage && child.offstage)) {
+          return;
+        }
+        if (child is RenderBox && child.attached && child.hasSize) {
+          final offset = child.localToGlobal(Offset.zero, ancestor: container);
+          if (offset.isFinite) {
+            final right = offset.dx + child.size.width;
+            final bottom = offset.dy + child.size.height;
+            if (right.isFinite && right > maxRight) maxRight = right;
+            if (bottom.isFinite && bottom > maxBottom) maxBottom = bottom;
+          }
+        }
+        walk(child);
+      });
+    }
+
+    walk(container);
+    return Size(maxRight, maxBottom);
   }
 
   static bool _inspectChildOverflow(RenderBox container, Size containerSize) {

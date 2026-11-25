@@ -883,62 +883,68 @@ void main() {
     testWidgets(
       'typing across validation error transitions and parent surface state saves preserves focus and EditableTextState',
       (tester) async {
-        final tempDir = await Directory.systemTemp.createTemp(
-          'sv_focus_validation_',
-        );
-        addTearDown(() async {
-          if (tempDir.existsSync()) await tempDir.delete(recursive: true);
-        });
+        final tempDir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('sv_focus_validation_'),
+        ))!;
         final store = JsonRepositoryStore(tempDir);
-        addTearDown(store.dispose);
+        addTearDown(() {
+          store.dispose();
+          if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+        });
+        final editMode = ValueNotifier<bool>(false);
+        addTearDown(editMode.dispose);
         store.registerRepository(
           RepositoryImpl(
             id: 'focus_repo',
             json: <String, Object?>{'code': '', 'surfaceState': 'idle'},
           ),
         );
+        await tester.runAsync(store.ensureSchemasLoaded);
 
         await tester.pumpWidget(
           MaterialApp(
-            home: JsonRepositoryScope(
-              store: store,
-              child: Scaffold(
-                body: EditableSurface(
-                  id: 'card',
-                  style: ContainerStyle(
-                    states: SurfaceStyleStates(
-                      binding: const JsonTextBinding(
-                        repositoryId: 'focus_repo',
-                        path: 'surfaceState',
-                      ),
-                      named: const {
-                        'saved': ContainerStyle(
-                          opacity: 0.92,
-                          shadow: ShadowSpec(blur: 8),
-                        ),
-                      },
-                      namedProperties: const {
-                        'saved': {
-                          SurfaceStyleProperty.opacity,
-                          SurfaceStyleProperty.shadow,
-                        },
-                      },
-                    ),
-                  ),
-                  child: const SizedBox(
-                    width: 260,
-                    child: SuperValue(
-                      id: 'code',
-                      config: SuperValueConfig(
-                        mode: SuperValueMode.input,
-                        binding: JsonTextBinding(
+            home: StyleEditScope(
+              controller: editMode,
+              child: JsonRepositoryScope(
+                store: store,
+                child: Scaffold(
+                  body: EditableSurface(
+                    id: 'card',
+                    style: ContainerStyle(
+                      states: SurfaceStyleStates(
+                        binding: const JsonTextBinding(
                           repositoryId: 'focus_repo',
-                          path: 'code',
+                          path: 'surfaceState',
                         ),
-                        bindingDebounceMs: 100,
-                        field: SuperTextFieldConfig(
-                          required: true,
-                          minLength: 3,
+                        named: const {
+                          'saved': ContainerStyle(
+                            opacity: 0.92,
+                            shadow: ShadowSpec(blur: 8),
+                          ),
+                        },
+                        namedProperties: const {
+                          'saved': {
+                            SurfaceStyleProperty.opacity,
+                            SurfaceStyleProperty.shadow,
+                          },
+                        },
+                      ),
+                    ),
+                    child: const SizedBox(
+                      width: 260,
+                      child: SuperValue(
+                        id: 'code',
+                        config: SuperValueConfig(
+                          mode: SuperValueMode.input,
+                          binding: JsonTextBinding(
+                            repositoryId: 'focus_repo',
+                            path: 'code',
+                          ),
+                          bindingDebounceMs: 100,
+                          field: SuperTextFieldConfig(
+                            required: true,
+                            minLength: 3,
+                          ),
                         ),
                       ),
                     ),
@@ -949,7 +955,6 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-
         final inputFinder = find.byKey(const ValueKey('super-value-input-code'));
         await tester.tap(inputFinder);
         await tester.pump();
@@ -1001,19 +1006,29 @@ void main() {
         );
         expect(focusNode.hasFocus, isTrue);
 
-        await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 180));
-          await store.writeAttribute(
-            const JsonTextBinding(
-              repositoryId: 'focus_repo',
-              path: 'surfaceState',
-            ),
-            'saved',
-            expectedValue: 'idle',
-          );
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-        });
+        // Advance past the 100ms debounce so 'ABC' saves automatically, then flip surface state.
+        await tester.pump(const Duration(milliseconds: 200));
         await tester.pumpAndSettle();
+        expect(
+          store
+              .peekAttribute(
+                const JsonTextBinding(repositoryId: 'focus_repo', path: 'code'),
+              )!
+              .value,
+          'ABC',
+        );
+        expect(focusNode.hasFocus, isTrue);
+
+        await store.writeAttribute(
+          const JsonTextBinding(
+            repositoryId: 'focus_repo',
+            path: 'surfaceState',
+          ),
+          'saved',
+          expectedValue: 'idle',
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
 
         expect(focusNode.hasFocus, isTrue);
         expect(
@@ -1024,14 +1039,6 @@ void main() {
             ),
           ),
           same(initialEditable),
-        );
-        expect(
-          (await tester.runAsync(
-            () => store.readAttribute(
-              const JsonTextBinding(repositoryId: 'focus_repo', path: 'code'),
-            ),
-          ))!.value,
-          'ABC',
         );
       },
     );

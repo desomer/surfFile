@@ -70,6 +70,7 @@ import '../dialogs/editor_tabbed_wizard.dart';
 import '../dialogs/super_value_json_extract_dialog.dart';
 import '../history/editor_history.dart';
 import '../overlay/editor_overlay.dart';
+import '../overlay/editor_silent_clip_indicator.dart';
 import '../overlay/editor_zone_badge.dart';
 import '../overlay/editor_zoom.dart';
 import '../../appearance/appearance_scope.dart';
@@ -1242,11 +1243,16 @@ class EditorSlotState extends State<EditorSlot> {
           ? (details) => openMenu(details.globalPosition)
           : null,
       child: RepaintBoundary(
-        child: ValueListenableBuilder<CustomPainter?>(
-          valueListenable: _painterNotifier,
-          child: child,
-          builder: (context, painter, inner) =>
-              CustomPaint(foregroundPainter: painter, child: inner),
+        child: EditorSilentClipIndicator(
+          enabled: trackHover,
+          radius: widget.outlineRadius,
+          zoomScale: _zoomScaleNotifier?.value ?? 1.0,
+          child: ValueListenableBuilder<CustomPainter?>(
+            valueListenable: _painterNotifier,
+            child: child,
+            builder: (context, painter, inner) =>
+                CustomPaint(foregroundPainter: painter, child: inner),
+          ),
         ),
       ),
     );
