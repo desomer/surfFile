@@ -32,6 +32,7 @@ import '../ai/usecase_orchestration_ai.dart';
 import '../ai/ux_patch_applier.dart';
 import '../ai/ux_prompt_builder.dart';
 import '../ai/ux_stage_agent.dart';
+import '../ai/value_objects_ai.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/business_rule_spec.dart';
@@ -58,6 +59,7 @@ import '../models/ux/ux_coherence_issue.dart';
 import '../models/ux/ux_forge_spec.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
+import '../models/value_object_spec.dart';
 import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
 import 'cost_auto_seeder.dart';
@@ -74,6 +76,7 @@ import 'spec_design_promoter.dart';
 import 'spec_project_store.dart';
 import 'spec_workspace_store.dart';
 import 'ux_coherence_analyzer.dart';
+import 'value_object_primitive_detector.dart';
 
 /// Orchestre l'état du projet actif, l'historique Undo/Redo, la persistance et les échanges IA.
 class SpecForgeController extends ChangeNotifier {
@@ -82,6 +85,17 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Nombre maximal de tours d'appels d'outils par tentative IA.
   static const int maxToolRounds = 6;
+
+  /// Clé de persistance de la largeur du panneau gauche d'Event Storming.
+  static const String eventStormingMasterPanelKey =
+      'event_storming.master_width';
+
+  /// Clé de persistance de la largeur du panneau gauche d'Example Mapping.
+  static const String exampleMappingMasterPanelKey =
+      'example_mapping.master_width';
+
+  /// Clé de persistance de la largeur de l'arbre Initiatives & Features.
+  static const String portfolioTreePanelKey = 'portfolio.tree_width';
 
   /// Crée un contrôleur avec workspace, stores, service IA et registre d'outils injectables.
   SpecForgeController({
@@ -213,8 +227,12 @@ class SpecForgeController extends ChangeNotifier {
   /// `domainId` dont le tour IA « Systèmes & Services » est en cours.
   String? _sendingSystemsServicesDomainId;
 
+  /// Clé de portée (`shared` ou `domain:<domainId>`) dont le tour IA Value Objects est en cours.
+  String? _sendingValueObjectsKey;
+
   /// Filtre de catégorie actif sur la page « Systèmes & Services », indexé par `domainId`.
   final Map<String, DomainSystemKind?> _systemsServicesActiveFilter = {};
+  final Map<String, double> _panelWidths = <String, double>{};
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -678,6 +696,37 @@ class SpecForgeController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Largeur mémorisée (en pixels logiques) du panneau identifié par [key],
+  /// ou `null` si la largeur par défaut s'applique.
+  double? panelWidth(String key) => _panelWidths[key];
+
+  /// Met à jour en mémoire la largeur du panneau [key] et la persiste si [persist] vaut `true`.
+  void setPanelWidth(
+    String key,
+    double width, {
+    bool persist = false,
+    bool notify = false,
+  }) {
+    if (!width.isFinite || width <= 0) return;
+    if (_panelWidths[key] == width && !persist) return;
+    _panelWidths[key] = width;
+    if (notify) notifyListeners();
+    if (persist) {
+      unawaited(persistPanelWidths());
+    }
+  }
+
+  /// Persiste l'ensemble des largeurs personnalisées de panneaux dans [SpecWorkspaceStore].
+  Future<void> persistPanelWidths() =>
+      _workspaceStore.savePanelWidths(Map<String, double>.from(_panelWidths));
+
+  /// Réinitialise la largeur mémorisée du panneau [key] et persiste la suppression.
+  Future<void> clearPanelWidth(String key, {bool notify = false}) async {
+    final removed = _panelWidths.remove(key) != null;
+    if (notify && removed) notifyListeners();
+    await persistPanelWidths();
+  }
+
   /// Dernière erreur rencontrée, le cas échéant.
   String? get lastError => _lastError;
 
@@ -692,6 +741,7 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Charge la liste des projets récents, les référentiels globaux et restaure optionnellement le dernier projet actif.
   Future<void> initialize({bool restoreLastProject = true}) async {
+    await _loadPanelWidths();
     if (!_hasCustomStores) {
       var targetDir = await _workspaceStore.resolveInitialWorkspaceDirectory();
       try {
@@ -819,6 +869,14 @@ class SpecForgeController extends ChangeNotifier {
     _sendingSystemsServicesDomainId = null;
     _sendingPortfolio = false;
     _lastError = null;
+  }
+
+  Future<void> _loadPanelWidths() async {
+    final loaded = await _workspaceStore.loadPanelWidths();
+    if (loaded.isEmpty) return;
+    for (final entry in loaded.entries) {
+      _panelWidths.putIfAbsent(entry.key, () => entry.value);
+    }
   }
 
   Future<void> _loadWorkspaceState({required bool restoreLastProject}) async {
@@ -5599,6 +5657,7 @@ class SpecForgeController extends ChangeNotifier {
       afterAskUserReply: afterReply,
       forceFollowUpQuestions: forceFollowUpQuestions,
       companyGlossary: _companyGlossary,
+      valueObjects: _domainCatalog.resolvedValueObjectsForDomain(domainId),
       focusedAttributePath: domainModelAttributePath(domainId, entryId),
       filter: domainModelFilter(domainId, entryId),
     );
@@ -5725,6 +5784,7 @@ class SpecForgeController extends ChangeNotifier {
               current.objectFor(currentEntry),
               patch,
               referenceTargets: current.referenceTargetsOf(currentEntry),
+              valueObjects: _domainCatalog.valueObjectsForDomain(domainId),
             );
             if (applied.summary.isNotEmpty) {
               next = next.withModel(entryId, object: applied.object);
@@ -6933,6 +6993,738 @@ class SpecForgeController extends ChangeNotifier {
       _stopRequested = false;
       _isSending = false;
       _sendingSystemsServicesDomainId = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  static String _valueObjectsScopeKey(
+    ValueObjectScope scope,
+    String? domainId,
+  ) => scope == ValueObjectScope.shared ? 'shared' : 'domain:${domainId ?? ''}';
+
+  /// Retourne l'historique du chat IA du catalogue des Value Objects pour [scope]/[domainId].
+  List<SpecChatMessage> valueObjectsChat({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) {
+    if (scope == ValueObjectScope.shared) {
+      return _domainCatalog.sharedValueObjectsChat;
+    }
+    return _domainCatalog.domains
+            .where((d) => d.id == domainId)
+            .firstOrNull
+            ?.valueObjectsChat ??
+        const <SpecChatMessage>[];
+  }
+
+  /// Indique si un tour IA Value Objects est en cours pour [scope]/[domainId].
+  bool isSendingValueObjects({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) =>
+      _isSending &&
+      _sendingValueObjectsKey == _valueObjectsScopeKey(scope, domainId);
+
+  /// Crée ou met à jour un [ValueObjectSpec] dans la portée [scope] (`shared` ou `domain`).
+  Future<void> upsertValueObject(
+    ValueObjectSpec vo, {
+    required ValueObjectScope scope,
+    String? domainId,
+  }) async {
+    vo.validate();
+    final now = DateTime.now().toUtc();
+    if (scope == ValueObjectScope.shared) {
+      final list = List<ValueObjectSpec>.from(_domainCatalog.sharedValueObjects);
+      final idx = list.indexWhere((item) => item.id == vo.id);
+      if (idx >= 0) {
+        list[idx] = vo;
+      } else {
+        list.add(vo);
+      }
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(sharedValueObjects: list, updatedAt: now),
+      );
+      return;
+    }
+    if (domainId == null ||
+        !_domainCatalog.domains.any((d) => d.id == domainId)) {
+      throw FormatException('Domaine introuvable : $domainId');
+    }
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId)
+              d.copyWith(
+                valueObjects: [
+                  for (final item in d.valueObjects)
+                    if (item.id == vo.id) vo else item,
+                  if (!d.valueObjects.any((item) => item.id == vo.id)) vo,
+                ],
+              )
+            else
+              d,
+        ],
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Supprime le Value Object [voId] de la portée [scope]/[domainId].
+  Future<void> deleteValueObject(
+    String voId, {
+    required ValueObjectScope scope,
+    String? domainId,
+  }) async {
+    final now = DateTime.now().toUtc();
+    if (scope == ValueObjectScope.shared) {
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(
+          sharedValueObjects: [
+            for (final vo in _domainCatalog.sharedValueObjects)
+              if (vo.id != voId) vo,
+          ],
+          updatedAt: now,
+        ),
+      );
+      return;
+    }
+    if (domainId == null) return;
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId)
+              d.copyWith(
+                valueObjects: [
+                  for (final vo in d.valueObjects)
+                    if (vo.id != voId) vo,
+                ],
+              )
+            else
+              d,
+        ],
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Importe une sélection de [presets] (en ignorant les doublons de `technicalName`)
+  /// dans la portée [scope]/[domainId] et retourne le nombre d'ajouts effectifs.
+  Future<int> importValueObjectPresets(
+    List<ValueObjectSpec> presets, {
+    required ValueObjectScope scope,
+    String? domainId,
+  }) async {
+    final existing = scope == ValueObjectScope.shared
+        ? _domainCatalog.sharedValueObjects
+        : (_domainCatalog.domains
+                  .where((d) => d.id == domainId)
+                  .firstOrNull
+                  ?.valueObjects ??
+              const <ValueObjectSpec>[]);
+    final takenTech = {for (final v in existing) v.technicalName.toLowerCase()};
+    final takenIds = {
+      for (final v in existing) v.id,
+      for (final v in _domainCatalog.sharedValueObjects) v.id,
+    };
+    final toAdd = <ValueObjectSpec>[];
+    for (final preset in presets) {
+      if (!takenTech.add(preset.technicalName.toLowerCase())) continue;
+      var id = preset.id;
+      if (takenIds.contains(id)) {
+        id = 'vo_${shortid.generate()}';
+      }
+      takenIds.add(id);
+      toAdd.add(preset.copyWith(id: id));
+    }
+    if (toAdd.isEmpty) return 0;
+    final now = DateTime.now().toUtc();
+    if (scope == ValueObjectScope.shared) {
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(
+          sharedValueObjects: [...existing, ...toAdd],
+          updatedAt: now,
+        ),
+      );
+    } else if (domainId != null) {
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(
+          domains: [
+            for (final d in _domainCatalog.domains)
+              if (d.id == domainId)
+                d.copyWith(valueObjects: [...d.valueObjects, ...toAdd])
+              else
+                d,
+          ],
+          updatedAt: now,
+        ),
+      );
+    }
+    return toAdd.length;
+  }
+
+  /// Déplace un Value Object [voId] entre le Shared Kernel et un domaine.
+  Future<void> moveValueObjectScope(
+    String voId, {
+    required ValueObjectScope fromScope,
+    String? fromDomainId,
+    required ValueObjectScope toScope,
+    String? toDomainId,
+  }) async {
+    if (fromScope == toScope && fromDomainId == toDomainId) return;
+    final sourceList = fromScope == ValueObjectScope.shared
+        ? _domainCatalog.sharedValueObjects
+        : (_domainCatalog.domains
+                  .where((d) => d.id == fromDomainId)
+                  .firstOrNull
+                  ?.valueObjects ??
+              const <ValueObjectSpec>[]);
+    final target = sourceList.where((v) => v.id == voId).firstOrNull;
+    if (target == null) return;
+
+    var nextShared = List<ValueObjectSpec>.from(
+      _domainCatalog.sharedValueObjects,
+    );
+    var nextDomains = List<FunctionalDomain>.from(_domainCatalog.domains);
+
+    if (fromScope == ValueObjectScope.shared) {
+      nextShared = [for (final v in nextShared) if (v.id != voId) v];
+    } else {
+      nextDomains = [
+        for (final d in nextDomains)
+          if (d.id == fromDomainId)
+            d.copyWith(
+              valueObjects: [
+                for (final v in d.valueObjects)
+                  if (v.id != voId) v,
+              ],
+            )
+          else
+            d,
+      ];
+    }
+
+    if (toScope == ValueObjectScope.shared) {
+      nextShared.add(target);
+    } else {
+      if (toDomainId == null || !nextDomains.any((d) => d.id == toDomainId)) {
+        throw FormatException('Domaine cible introuvable : $toDomainId');
+      }
+      nextDomains = [
+        for (final d in nextDomains)
+          if (d.id == toDomainId)
+            d.copyWith(valueObjects: [...d.valueObjects, target])
+          else
+            d,
+      ];
+    }
+
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        sharedValueObjects: nextShared,
+        domains: nextDomains,
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  /// Crée (ou réutilise) [valueObject] dans [scope] et remplace atomiquement
+  /// l'attribut à [attributePath] du modèle [entryId] par ce Value Object.
+  Future<void> promoteAttributeToValueObject({
+    required String domainId,
+    required String entryId,
+    required List<String> attributePath,
+    required ValueObjectSpec valueObject,
+    required ValueObjectScope scope,
+    bool createIfMissing = true,
+  }) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    final contracts = domain?.contracts;
+    final entry = contracts?.entryById(entryId);
+    if (domain == null || contracts == null || entry == null) return;
+
+    var catalog = _domainCatalog;
+    var effectiveVoId = valueObject.id;
+
+    if (createIfMissing) {
+      valueObject.validate();
+      final existingList = scope == ValueObjectScope.shared
+          ? catalog.sharedValueObjects
+          : domain.valueObjects;
+      final existingSameTech = existingList
+          .where(
+            (v) =>
+                v.id == valueObject.id ||
+                v.technicalName.toLowerCase() ==
+                    valueObject.technicalName.toLowerCase(),
+          )
+          .firstOrNull;
+      if (existingSameTech != null) {
+        effectiveVoId = existingSameTech.id;
+      } else if (scope == ValueObjectScope.shared) {
+        catalog = catalog.copyWith(
+          sharedValueObjects: [...catalog.sharedValueObjects, valueObject],
+        );
+      } else {
+        catalog = catalog.copyWith(
+          domains: [
+            for (final d in catalog.domains)
+              if (d.id == domainId)
+                d.copyWith(valueObjects: [...d.valueObjects, valueObject])
+              else
+                d,
+          ],
+        );
+      }
+    }
+
+    final currentObject = contracts.objectFor(entry);
+    final updatedObject = ValueObjectPrimitiveDetector.replaceAttributeAtPath(
+      currentObject,
+      attributePath,
+      valueObjectId: effectiveVoId,
+    );
+    final updatedContracts = contracts.withModel(entryId, object: updatedObject);
+    await updateDomainCatalog(
+      catalog.copyWith(
+        domains: [
+          for (final d in catalog.domains)
+            if (d.id == domainId) d.copyWith(contracts: updatedContracts) else d,
+        ],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  /// Remplace l'attribut à [attributePath] du modèle [entryId] par un VO existant [valueObjectId].
+  Future<void> replaceAttributeWithExistingValueObject({
+    required String domainId,
+    required String entryId,
+    required List<String> attributePath,
+    required String valueObjectId,
+  }) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    final contracts = domain?.contracts;
+    final entry = contracts?.entryById(entryId);
+    if (domain == null || contracts == null || entry == null) return;
+    final updatedObject = ValueObjectPrimitiveDetector.replaceAttributeAtPath(
+      contracts.objectFor(entry),
+      attributePath,
+      valueObjectId: valueObjectId,
+    );
+    await updateDomainModelObject(domainId, updatedObject);
+  }
+
+  Future<bool> _updateValueObjectsChat(
+    ValueObjectScope scope,
+    String? domainId,
+    List<SpecChatMessage> Function(List<SpecChatMessage> chat) transform,
+  ) async {
+    final now = DateTime.now().toUtc();
+    if (scope == ValueObjectScope.shared) {
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(
+          sharedValueObjectsChat: transform(
+            _domainCatalog.sharedValueObjectsChat,
+          ),
+          updatedAt: now,
+        ),
+      );
+      return true;
+    }
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) return false;
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId)
+              d.copyWith(valueObjectsChat: transform(d.valueObjectsChat))
+            else
+              d,
+        ],
+        updatedAt: now,
+      ),
+    );
+    return true;
+  }
+
+  /// Envoie un message à l'agent IA du Catalogue des Value Objects.
+  Future<void> sendValueObjectsMessage({
+    required ValueObjectScope scope,
+    String? domainId,
+    required String text,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    bool requestsMoreQuestions = false,
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty && !requestsMoreQuestions) {
+      return;
+    }
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions pour concevoir et affiner les Value Objects hexagonaux.'
+              : 'Analyse les pièces jointes et complète le catalogue des Value Objects.');
+    await _runValueObjectsTurn(
+      scope: scope,
+      domainId: domainId,
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire du chat Value Objects.
+  Future<void> submitValueObjectsAskUserAnswers({
+    required ValueObjectScope scope,
+    String? domainId,
+    required String messageId,
+    required Map<String, Object?> answers,
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    if (_isSending) return;
+    final target = valueObjectsChat(
+      scope: scope,
+      domainId: domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final summary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runValueObjectsTurn(
+      scope: scope,
+      domainId: domainId,
+      userDisplayText: askMore
+          ? '$summary\n(+ questions complémentaires demandées)'
+          : summary,
+      promptInput: summary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+      answered: target.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+        askUserRequestedMore: askMore,
+      ),
+    );
+  }
+
+  /// Ignore un questionnaire du chat Value Objects en appliquant les valeurs par défaut.
+  Future<void> skipValueObjectsAskUser({
+    required ValueObjectScope scope,
+    String? domainId,
+    required String messageId,
+  }) async {
+    if (_isSending) return;
+    final target = valueObjectsChat(
+      scope: scope,
+      domainId: domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final defaults = askUser.defaultAnswers();
+    await _runValueObjectsTurn(
+      scope: scope,
+      domainId: domainId,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput:
+          'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}',
+      afterAskUserReply: true,
+      answered: target.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      ),
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat Value Objects.
+  Future<void> retryLastValueObjectsTurn({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) async {
+    if (_isSending) return;
+    final lastUser = valueObjectsChat(scope: scope, domainId: domainId)
+        .lastWhere(
+          (m) => m.isUser,
+          orElse: () => SpecChatMessage(
+            id: '',
+            isUser: true,
+            text:
+                'La tentative précédente a échoué. Corrige le format JSON et mets à jour le catalogue des Value Objects.',
+          ),
+        );
+    await _runValueObjectsTurn(
+      scope: scope,
+      domainId: domainId,
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '${(lastUser.promptText ?? lastUser.text).trim()}\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastUser.attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat Value Objects pour [scope]/[domainId].
+  Future<void> clearValueObjectsChat({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) async {
+    if (_isSending) return;
+    await _updateValueObjectsChat(scope, domainId, (_) => const []);
+  }
+
+  Future<void> _runValueObjectsTurn({
+    required ValueObjectScope scope,
+    String? domainId,
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecChatMessage? answered,
+  }) async {
+    final initialDomain = scope == ValueObjectScope.domain
+        ? _domainCatalog.domains.where((d) => d.id == domainId).firstOrNull
+        : null;
+    if (scope == ValueObjectScope.domain && initialDomain == null) return;
+
+    String buildPrompt({required bool afterReply}) {
+      final currentDomain = scope == ValueObjectScope.domain
+          ? _domainCatalog.domains.where((d) => d.id == domainId).firstOrNull
+          : null;
+      return ValueObjectsAiAgent.buildTurnPrompt(
+        catalog: _domainCatalog,
+        scope: scope,
+        domain: currentDomain,
+        history: valueObjectsChat(scope: scope, domainId: domainId),
+        userInput: promptInput,
+        modelPreferences: _modelPreferences,
+        questioningLevel: _questioningLevel,
+        afterAskUserReply: afterReply,
+        forceFollowUpQuestions: forceFollowUpQuestions,
+        activeProject: _project,
+        companyGlossary: _companyGlossary,
+      );
+    }
+
+    var currentPrompt = buildPrompt(afterReply: afterAskUserReply);
+    final userMessage = SpecChatMessage(
+      id: 'vomsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+    final turnToolTraces = <VibeToolTrace>[];
+    final priorCauses = <String>[];
+    Future<bool> append(SpecChatMessage message) =>
+        _updateValueObjectsChat(scope, domainId, (chat) => [...chat, message]);
+
+    final activeProject = _project;
+    final registry =
+        _customToolRegistry ??
+        (activeProject != null
+            ? SpecForgeToolRegistry.build(
+                readProject: () => _project,
+                readCompanyGlossary: () => _companyGlossary,
+                readModelPreferences: () => _modelPreferences,
+                onUpdateProject: (_) async {},
+                onNavigateStage: (_) async {},
+                toolNames: ValueObjectsAiAgent.toolNames,
+              )
+            : VibeAppToolRegistry(const []));
+
+    _isSending = true;
+    _sendingValueObjectsKey = _valueObjectsScopeKey(scope, domainId);
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = scope == ValueObjectScope.shared
+        ? 'Conception des Value Objects (Shared Kernel)…'
+        : 'Conception des Value Objects (${initialDomain!.name})…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final started = await _updateValueObjectsChat(
+        scope,
+        domainId,
+        (chat) => [
+          for (final message in chat)
+            if (message.id == answered?.id) answered! else message,
+          userMessage,
+        ],
+      );
+      if (!started) return;
+
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.businessObjects,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour du catalogue des Value Objects…',
+            systemInstructionOverride: ValueObjectsAiAgent.systemInstruction,
+            staticGuideOverride: ValueObjectsAiAgent.staticGuide,
+            allowedToolNames: activeProject != null
+                ? ValueObjectsAiAgent.toolNames
+                : const <String>{},
+          );
+          final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
+          if (response == null) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            await append(
+              SpecChatMessage(
+                id: 'vomsg_${shortid.generate()}',
+                isUser: false,
+                text: partial.isNotEmpty
+                    ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                    : 'Réflexion IA interrompue par l’utilisateur.',
+                toolTraces: traces,
+              ),
+            );
+            return;
+          }
+          parsedResponse = response;
+
+          var nextCatalog = _domainCatalog;
+          var patchSummary = '';
+          final patch = response.specPatch;
+          if (patch != null && patch.isNotEmpty) {
+            final applied = ValueObjectsAiAgent.applyPatch(
+              nextCatalog,
+              scope: scope,
+              domainId: domainId,
+              patch: patch,
+            );
+            nextCatalog = applied.catalog;
+            patchSummary = applied.summary;
+          }
+          final assistantMessage = SpecChatMessage(
+            id: 'vomsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: traces,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          if (scope == ValueObjectScope.shared) {
+            await updateDomainCatalog(
+              nextCatalog.copyWith(
+                sharedValueObjectsChat: [
+                  ...nextCatalog.sharedValueObjectsChat,
+                  assistantMessage,
+                ],
+                updatedAt: DateTime.now().toUtc(),
+              ),
+            );
+          } else {
+            await updateDomainCatalog(
+              nextCatalog.copyWith(
+                domains: [
+                  for (final item in nextCatalog.domains)
+                    if (item.id == domainId)
+                      item.copyWith(
+                        valueObjectsChat: [
+                          ...item.valueObjectsChat,
+                          assistantMessage,
+                        ],
+                      )
+                    else
+                      item,
+                ],
+                updatedAt: DateTime.now().toUtc(),
+              ),
+            );
+          }
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+          saveError(
+            '[SpecForge Value Objects IA] Tentative ${attempt + 1}/$maxRecoveryAttempts : $cause',
+            stack,
+          );
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          if (attempt < maxRecoveryAttempts - 1 && isValidationError) {
+            final retryProject =
+                _project ??
+                SpecForgeProject.fromIdea(
+                  idea: initialDomain?.name ?? 'Shared Kernel',
+                  name: initialDomain?.name ?? 'Shared Kernel',
+                  id: 'vo_retry_${domainId ?? 'shared'}',
+                );
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: buildPrompt(afterReply: afterAskUserReply),
+              priorCauses: priorCauses,
+              salvage: SpecSalvageOutcome.none(
+                retryProject,
+                wasTruncated: parsedResponse == null,
+              ),
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+          _lastError = cause;
+          await append(
+            SpecChatMessage(
+              id: 'vomsg_${shortid.generate()}',
+              isUser: false,
+              text:
+                  'Erreur lors de l’appel à l’assistant Value Objects '
+                  '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n'
+                  '${priorCauses.length > 1 ? priorCauses.join('\n') : cause}',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            ),
+          );
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingValueObjectsKey = null;
       _sendingStage = null;
       _streamingMessage = null;
       _streamingStatus = '';

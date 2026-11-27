@@ -132,6 +132,12 @@ String _formatBody(ModelPromptContext ctx, {BuildTechStackProfile? techStack}) {
     buf.writeln();
   }
 
+  PromptMarkdownSections.writePersistenceValueObjectsMappingSection(
+    buf,
+    ctx.referencedValueObjects,
+    heading: '### 2.2 Cas de Mapping Value Objects à Tester',
+  );
+
   buf
     ..writeln('## 3. Exécution')
     ..writeln(

@@ -1180,5 +1180,54 @@ void main() {
         expect(candidates[2].isOpenSourceTool, isFalse);
       },
     );
+
+    testWidgets(
+      'EventStormingEditorView : le panneau gauche des contextes est redimensionnable et se réinitialise au double-clic',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 860));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final store = _MemProjectStore()..seed(_buildSampleProject());
+        final controller = SpecForgeController(
+          store: store,
+          glossaryStore: _MemGlossaryStore(),
+          modelDictionaryStore: _MemDictStore(),
+          domainCatalogStore: _MemDomainStore(),
+          enterpriseRateCardStore: _MemRateCardStore(),
+          aiService: _FakeEventStormingAi(),
+        );
+        await controller.initialize();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: EventStormingEditorView(controller: controller),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final paneFinder = find.byKey(const ValueKey('spec-es-master-pane'));
+        final handleFinder = find.byKey(
+          const ValueKey('spec-es-master-split-handle'),
+        );
+        expect(paneFinder, findsOneWidget);
+        expect(handleFinder, findsOneWidget);
+
+        final initialWidth = tester.getSize(paneFinder).width;
+        expect(initialWidth, 256.0);
+
+        await tester.drag(handleFinder, const Offset(80, 0));
+        await tester.pumpAndSettle();
+        final widened = tester.getSize(paneFinder).width;
+        expect(widened, greaterThan(initialWidth));
+
+        await tester.tap(handleFinder);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(handleFinder);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(paneFinder).width, initialWidth);
+      },
+    );
   });
 }

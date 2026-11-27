@@ -153,6 +153,11 @@ String _formatBody(ModelPromptContext ctx, {BuildTechStackProfile? techStack}) {
     }
   }
 
+  PromptMarkdownSections.writeReferencedValueObjectsTddSection(
+    buf,
+    ctx.referencedValueObjects,
+  );
+
   buf
     ..writeln()
     ..writeln('## 3. Exécution & Critères de Succès')

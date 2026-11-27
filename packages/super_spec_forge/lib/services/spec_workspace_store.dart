@@ -162,6 +162,9 @@ class SpecWorkspaceStore {
   static const String recentWorkspacesPrefKey =
       'super_spec_forge.recent_workspaces';
 
+  /// Clé `SharedPreferences` des largeurs personnalisées de panneaux UI.
+  static const String panelWidthsPrefKey = 'super_spec_forge.panel_widths';
+
   /// Contenu par défaut du `.gitignore` généré à la racine d'un workspace.
   static const String defaultGitignoreContent =
       '# État local machine (dernier projet actif, caches UI)\n'
@@ -259,6 +262,44 @@ class SpecWorkspaceStore {
       recentWorkspacesPrefKey,
       jsonEncode([for (final e in entries) e.toJson()]),
     );
+  }
+
+  /// Lit les largeurs personnalisées des panneaux redimensionnables depuis `SharedPreferences`.
+  Future<Map<String, double>> loadPanelWidths() async {
+    final prefs = await _tryGetPreferences();
+    if (prefs == null) return const <String, double>{};
+    final raw = prefs.getString(panelWidthsPrefKey);
+    if (raw == null || raw.trim().isEmpty) return const <String, double>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, double>{};
+      final result = <String, double>{};
+      for (final entry in decoded.entries) {
+        final key = entry.key;
+        final val = entry.value;
+        if (key is String && val is num && val.isFinite && val > 0) {
+          result[key] = val.toDouble();
+        }
+      }
+      return result;
+    } catch (_) {
+      return const <String, double>{};
+    }
+  }
+
+  /// Enregistre les largeurs personnalisées des panneaux redimensionnables dans `SharedPreferences`.
+  Future<void> savePanelWidths(Map<String, double> widths) async {
+    final prefs = await _tryGetPreferences();
+    if (prefs == null) return;
+    final sanitized = <String, double>{
+      for (final entry in widths.entries)
+        if (entry.value.isFinite && entry.value > 0) entry.key: entry.value,
+    };
+    if (sanitized.isEmpty) {
+      await prefs.remove(panelWidthsPrefKey);
+      return;
+    }
+    await prefs.setString(panelWidthsPrefKey, jsonEncode(sanitized));
   }
 
   /// Ouvre un dossier workspace existant ou l'initialise s'il est vide (ou si

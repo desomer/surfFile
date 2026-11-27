@@ -31,7 +31,8 @@ MinVersion=10.0.17134
 OutputDir=..\build\installer
 OutputBaseFilename=SurfFile-{#AppVersion}-windows-x64-setup
 SetupIconFile=..\windows\runner\resources\app_icon.ico
-UninstallDisplayIcon={app}\surf_file.exe
+UninstallDisplayIcon={app}\app_icon.ico
+ChangesAssociations=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -48,10 +49,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#ReleaseDir}\*"; DestDir: "{app}"; Excludes: "*.pdb,*.exp,*.lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#RuntimeDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\windows\runner\resources\app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\SurfFile"; Filename: "{app}\surf_file.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\SurfFile"; Filename: "{app}\surf_file.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\SurfFile"; Filename: "{app}\surf_file.exe"; WorkingDir: "{app}"; IconFilename: "{app}\app_icon.ico"
+Name: "{autodesktop}\SurfFile"; Filename: "{app}\surf_file.exe"; WorkingDir: "{app}"; IconFilename: "{app}\app_icon.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\surf_file.exe"; Description: "{cm:LaunchProgram,SurfFile}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent

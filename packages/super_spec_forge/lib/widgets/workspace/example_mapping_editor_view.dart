@@ -4,6 +4,7 @@
 /// ([ExampleMappingEditorView]).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -15,6 +16,7 @@ import '../../models/example_mapping_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../services/example_mapping_operations.dart';
 import '../../services/spec_forge_controller.dart';
+import '../spec_split_handle.dart';
 import 'example_injection_dialog.dart';
 
 /// Vue interactive à 4 couleurs pour l'Example Mapping d'un [SpecForgeProject].
@@ -31,6 +33,12 @@ class ExampleMappingEditorView extends StatefulWidget {
 }
 
 class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
+  static const double _defaultMasterWidth = 260.0;
+  static const double _minMasterWidth = 180.0;
+  static const double _minDetailWidth = 280.0;
+
+  final GlobalKey _splitRowKey = GlobalKey();
+  double _masterDragOffset = SpecSplitHandle.width / 2;
   String? _objectFilterId;
 
   String _shortId(String prefix) {
@@ -272,11 +280,78 @@ class _ExampleMappingEditorViewState extends State<ExampleMappingEditorView> {
                     )
                   : _buildStoryBoard(context, project, selectedStory, isDark);
               if (constraints.maxWidth >= 560) {
+                const dividerWidth = SpecSplitHandle.width;
+                final availableWidth = (constraints.maxWidth - dividerWidth)
+                    .clamp(0.0, double.infinity);
+                final maxMasterWidth = math.max(
+                  _minMasterWidth,
+                  availableWidth - _minDetailWidth,
+                );
+                final storedWidth =
+                    widget.controller.panelWidth(
+                      SpecForgeController.exampleMappingMasterPanelKey,
+                    ) ??
+                    _defaultMasterWidth;
+                final masterWidth = storedWidth.clamp(
+                  _minMasterWidth,
+                  maxMasterWidth,
+                );
                 return Row(
+                  key: _splitRowKey,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SizedBox(width: 260, child: masterPane),
-                    const VerticalDivider(width: 1),
+                    SizedBox(
+                      key: const ValueKey('spec-em-master-pane'),
+                      width: masterWidth,
+                      child: masterPane,
+                    ),
+                    SpecSplitHandle(
+                      key: const ValueKey('spec-em-master-split-handle'),
+                      onDoubleTap: () => setState(() {
+                        unawaited(
+                          widget.controller.clearPanelWidth(
+                            SpecForgeController.exampleMappingMasterPanelKey,
+                          ),
+                        );
+                      }),
+                      onHorizontalDragDown: (details) {
+                        final box =
+                            _splitRowKey.currentContext?.findRenderObject()
+                                as RenderBox?;
+                        if (box != null) {
+                          final localX = box
+                              .globalToLocal(details.globalPosition)
+                              .dx;
+                          _masterDragOffset = (localX - masterWidth).clamp(
+                            0.0,
+                            SpecSplitHandle.width,
+                          );
+                        } else {
+                          _masterDragOffset = SpecSplitHandle.width / 2;
+                        }
+                      },
+                      onHorizontalDragUpdate: (details) {
+                        final box =
+                            _splitRowKey.currentContext?.findRenderObject()
+                                as RenderBox?;
+                        if (box == null || availableWidth <= 0) return;
+                        final localX = box
+                            .globalToLocal(details.globalPosition)
+                            .dx;
+                        final nextWidth = localX - _masterDragOffset;
+                        final clamped = nextWidth
+                            .clamp(_minMasterWidth, maxMasterWidth)
+                            .toDouble();
+                        setState(() {
+                          widget.controller.setPanelWidth(
+                            SpecForgeController.exampleMappingMasterPanelKey,
+                            clamped,
+                          );
+                        });
+                      },
+                      onHorizontalDragEnd: (_) =>
+                          unawaited(widget.controller.persistPanelWidths()),
+                    ),
                     Expanded(child: detailPane),
                   ],
                 );

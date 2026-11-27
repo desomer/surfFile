@@ -16,10 +16,12 @@ import '../../models/business_object_spec.dart';
 import '../../models/domain_contracts.dart';
 import '../../models/domain_layer_spec.dart';
 import '../../models/spec_forge_project.dart';
+import '../../models/value_object_spec.dart';
 import '../../services/business_object_operations.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
 import '../../services/spec_forge_controller.dart';
 import '../../services/spec_schema_dsl_bridge.dart';
+import '../../services/value_object_primitive_detector.dart';
 import '../spec_split_handle.dart';
 import '../workspace/attribute_constraints_editor.dart';
 import '../workspace/business_objects/business_object_inspector_panes.dart';
@@ -27,6 +29,7 @@ import '../workspace/business_objects/business_object_tree_models.dart';
 import '../workspace/json_schema_viewer_dialog.dart';
 import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_model_chat_pane.dart';
+import 'value_object_editor_dialog.dart';
 
 /// Icône de chaque étape, partagée par l'arbre, le formulaire et la fiche.
 const contractStageIcons = {
@@ -146,6 +149,7 @@ class ContractEntryView extends StatefulWidget {
     required this.document,
     required this.entry,
     this.onOpenDomainLayer,
+    this.onOpenValueObjectsCatalog,
     this.pickAttachments,
     this.pasteAttachments,
     this.hasClipboardMedia,
@@ -169,6 +173,9 @@ class ContractEntryView extends StatefulWidget {
 
   /// Ouvre la page dédiée à la couche Domain (Architecture Hexagonale) de cet objet.
   final VoidCallback? onOpenDomainLayer;
+
+  /// Ouvre le Catalogue des Value Objects contextualisé sur [domainId].
+  final VoidCallback? onOpenValueObjectsCatalog;
 
   /// Remplacent les accès fichiers et presse-papiers du chat (tests).
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
@@ -206,7 +213,17 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   double _treeFraction = _defaultTreeFraction;
   DomainContracts? _syncedDocument;
   String? _syncedEntryId;
+  int _syncedVoHash = 0;
   late _ModelSnapshot _model;
+
+  List<ResolvedValueObject> get _resolvedValueObjects =>
+      widget.controller.domainCatalog.resolvedValueObjectsForDomain(
+        widget.domainId,
+      );
+
+  List<ValueObjectSpec> get _valueObjectSpecs => [
+    for (final item in _resolvedValueObjects) item.spec,
+  ];
 
   final _filterCtrl = TextEditingController();
   bool _showFilterBar = false;
@@ -245,6 +262,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
             value,
             current: _model.object,
             referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+            valueObjects: _valueObjectSpecs,
           );
         } on FormatException catch (e) {
           err = e.message;
@@ -305,10 +323,13 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       }
       if (filter.trim().isNotEmpty) _showFilterBar = true;
     }
+    final voSpecs = _valueObjectSpecs;
+    final voHash = Object.hashAll(voSpecs);
     if (!forceYaml &&
         identical(document, _syncedDocument) &&
         !entryChanged &&
-        filter == _syncedFilter) {
+        filter == _syncedFilter &&
+        voHash == _syncedVoHash) {
       if (!_samePath(_focusPath, _syncedFocus)) {
         _syncedFocus = _focusPath;
         if (_registered) _highlightSelection();
@@ -319,6 +340,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     _syncedEntryId = entry.id;
     _syncedFilter = filter;
     _syncedFocus = _focusPath;
+    _syncedVoHash = voHash;
 
     // Même projet temporaire que l'agent IA : l'objet et, comme cibles des
     // références, les autres entrées du domaine.
@@ -335,9 +357,10 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     // Sans attribut, le DSL écrirait un `id` fictif : l'arbre reste vide.
     if (object.attributes.isNotEmpty) {
       try {
-        final root = SpecSchemaDslBridge.buildTreeNodes(project)
-            .where((node) => node['objectId'] == object.id)
-            .firstOrNull;
+        final root = SpecSchemaDslBridge.buildTreeNodes(
+          project,
+          valueObjects: voSpecs,
+        ).where((node) => node['objectId'] == object.id).firstOrNull;
         nodes = BusinessObjectOperations.filterTreeNodes([
           if (root?['children'] case final List children)
             for (final child in children)
@@ -384,7 +407,11 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     _model = (project: project, object: object, targets: targets, error: error);
 
     if (!_yamlDirty || forceYaml || entryChanged) {
-      _yamlText = SpecSchemaDslBridge.toSingleObjectYamlLight(project, object);
+      _yamlText = SpecSchemaDslBridge.toSingleObjectYamlLight(
+        project,
+        object,
+        valueObjects: voSpecs,
+      );
       _yamlErrorNotifier.value = '';
       _yamlDirty = false;
       _codeEditorConfig.repaintCode();
@@ -459,6 +486,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       project: _model.project,
       existing: existing,
       isSubAttribute: parentPath.isNotEmpty,
+      availableValueObjects: _resolvedValueObjects,
     );
     if (attribute == null || !mounted) return;
     // Relu après le dialogue : l'IA a pu modifier l'objet entre-temps.
@@ -467,6 +495,84 @@ class _ContractEntryViewState extends State<ContractEntryView> {
         _model.object,
         parentAttrPath: parentPath,
         attribute: attribute,
+      ),
+    );
+  }
+
+  Future<void> _promoteAttribute(
+    BusinessAttribute attribute,
+    List<String> path, {
+    PrimitiveObsessionSuggestion? suggestion,
+  }) async {
+    final result = await showPromoteToValueObjectDialog(
+      context,
+      attribute: attribute,
+      availableValueObjects: _resolvedValueObjects,
+      suggestedSpec: suggestion?.proposedSpec,
+      suggestedExisting: suggestion?.matchedVo,
+      initialScope: suggestion?.suggestedScope ?? ValueObjectScope.domain,
+    );
+    if (result == null || !mounted) return;
+    await widget.controller.promoteAttributeToValueObject(
+      domainId: widget.domainId,
+      entryId: widget.entry.id,
+      attributePath: path,
+      valueObject: result.valueObject,
+      scope: result.scope,
+      createIfMissing: !result.useExisting,
+    );
+  }
+
+  Future<void> _openPrimitiveSuggestionsDialog(
+    List<PrimitiveObsessionSuggestion> suggestions,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(
+          'Suggestions Value Objects — ${widget.entry.name} (${suggestions.length})',
+        ),
+        content: SizedBox(
+          width: 600,
+          height: 380,
+          child: ListView.builder(
+            itemCount: suggestions.length,
+            itemBuilder: (_, index) {
+              final s = suggestions[index];
+              final isExisting =
+                  s.matchKind == PrimitiveObsessionMatchKind.existingCatalogVo;
+              return Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(
+                    '${s.attribute.name} (${s.attribute.type.dslKeyword}) → ${s.proposedSpec.technicalName}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(s.reason),
+                  trailing: FilledButton.tonal(
+                    key: ValueKey('contract-vo-suggest-apply-${s.attribute.id}'),
+                    onPressed: () async {
+                      Navigator.pop(dialogCtx);
+                      await _promoteAttribute(
+                        s.attribute,
+                        s.attributePath,
+                        suggestion: s,
+                      );
+                    },
+                    child: Text(isExisting ? 'Réutiliser' : 'Promouvoir'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Fermer'),
+          ),
+        ],
       ),
     );
   }
@@ -481,6 +587,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
         _yamlText,
         current: _model.object,
         referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+        valueObjects: _valueObjectSpecs,
       );
       _yamlErrorNotifier.value = '';
       setState(() {
@@ -696,6 +803,33 @@ class _ContractEntryViewState extends State<ContractEntryView> {
                         ? 'Couche Domain ($domainLayerCount)'
                         : 'Couche Domain',
                   ),
+                ),
+              Builder(
+                builder: (context) {
+                  final suggestions =
+                      ValueObjectPrimitiveDetector.detectForObject(
+                        domainId: widget.domainId,
+                        entryId: entry.id,
+                        entryName: entry.name,
+                        object: _model.object,
+                        catalogVos: _resolvedValueObjects,
+                      );
+                  if (suggestions.isEmpty) return const SizedBox.shrink();
+                  return OutlinedButton.icon(
+                    key: const ValueKey('contract-vo-suggestions-btn'),
+                    onPressed: () =>
+                        _openPrimitiveSuggestionsDialog(suggestions),
+                    icon: const Icon(Icons.troubleshoot_rounded, size: 16),
+                    label: Text('Suggestions VO (${suggestions.length})'),
+                  );
+                },
+              ),
+              if (widget.onOpenValueObjectsCatalog != null)
+                OutlinedButton.icon(
+                  key: const ValueKey('contract-open-vo-catalog-btn'),
+                  onPressed: widget.onOpenValueObjectsCatalog,
+                  icon: const Icon(Icons.diamond_outlined, size: 16),
+                  label: Text('Value Objects (${_resolvedValueObjects.length})'),
                 ),
               Chip(
                 label: Text(
@@ -1003,11 +1137,14 @@ class _ContractEntryViewState extends State<ContractEntryView> {
             : null,
         onDeleteAttribute: () => _deleteAttribute(path),
         onExtractToSeparateObject: null,
+        availableValueObjects: _resolvedValueObjects,
+        onPromoteToValueObject: () => _promoteAttribute(attribute, path),
       );
     }
     return _ModelInspector(
       project: _model.project,
       object: object,
+      availableValueObjects: _resolvedValueObjects,
       onEditDescription: _editDescription,
       onAddAttribute: _editAttribute,
       onEditAttribute: (attribute) => _editAttribute(existing: attribute),
@@ -1033,14 +1170,20 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   Widget _buildRepositoryTab() {
     final object = _model.object;
     final resolutionProject = _domainResolutionProject();
+    final resolvedVos = _resolvedValueObjects;
+    final voSpecs = [for (final item in resolvedVos) item.spec];
+    final voScopes = {for (final item in resolvedVos) item.spec.id: item.scope};
     final preview = SpecSuperDesignerExporter.buildRepositoryPreview(
       resolutionProject,
       object,
       modelPreferencesOverride: widget.controller.modelPreferences,
+      valueObjects: voSpecs,
+      valueObjectScopes: voScopes,
     );
     final yamlLight = SpecSchemaDslBridge.toSingleObjectYamlLight(
       resolutionProject,
       object,
+      valueObjects: voSpecs,
     );
     final bundle = SuperDesignerExportBundle(
       yamlLightSchema: yamlLight,
@@ -1105,6 +1248,7 @@ class _ContractEntryViewState extends State<ContractEntryView> {
                       _yamlText = SpecSchemaDslBridge.toSingleObjectYamlLight(
                         _model.project,
                         _model.object,
+                        valueObjects: _valueObjectSpecs,
                       );
                       _yamlErrorNotifier.value = '';
                       _codeEditorConfig.repaintCode();
@@ -1160,6 +1304,7 @@ class _ModelInspector extends StatelessWidget {
   const _ModelInspector({
     required this.project,
     required this.object,
+    required this.availableValueObjects,
     required this.onEditDescription,
     required this.onAddAttribute,
     required this.onEditAttribute,
@@ -1168,6 +1313,7 @@ class _ModelInspector extends StatelessWidget {
 
   final SpecForgeProject project;
   final BusinessObjectSpec object;
+  final List<ResolvedValueObject> availableValueObjects;
   final VoidCallback onEditDescription;
   final VoidCallback onAddAttribute;
   final ValueChanged<BusinessAttribute> onEditAttribute;
@@ -1242,6 +1388,11 @@ class _ModelInspector extends StatelessWidget {
           schemaMap: SpecSuperDesignerExporter.objectToJsonSchema(
             project,
             object,
+            valueObjects: [for (final item in availableValueObjects) item.spec],
+            valueObjectScopes: {
+              for (final item in availableValueObjects)
+                item.spec.id: item.scope,
+            },
           ),
           badges: ['$total/$max attributs'],
         ),

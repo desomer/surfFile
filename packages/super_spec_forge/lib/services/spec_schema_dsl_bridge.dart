@@ -7,39 +7,59 @@ import 'package:super_schema_dsl/super_schema_dsl.dart';
 
 import '../models/business_object_spec.dart';
 import '../models/spec_forge_project.dart';
+import '../models/value_object_spec.dart';
 import 'exporters/spec_super_designer_exporter.dart';
 
 /// Convertit les objets métiers structurés vers/depuis `Yaml2JsonSchemasParser` et `SuperTreeView`.
 abstract final class SpecSchemaDslBridge {
   /// Génère la source YAML « JSON Schemas Light » à partir des objets métiers du projet.
-  static String toYamlLight(SpecForgeProject project) =>
-      SpecSuperDesignerExporter.toYamlLightSchema(project);
+  static String toYamlLight(
+    SpecForgeProject project, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) => SpecSuperDesignerExporter.toYamlLightSchema(
+    project,
+    valueObjects: valueObjects,
+  );
 
   /// Génère la source YAML « JSON Schemas Light » d'un unique [object] en résolvant
   /// ses références via [contextProject].
   static String toSingleObjectYamlLight(
     SpecForgeProject contextProject,
-    BusinessObjectSpec object,
-  ) => SpecSuperDesignerExporter.toSingleObjectYamlLightSchema(
+    BusinessObjectSpec object, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) => SpecSuperDesignerExporter.toSingleObjectYamlLightSchema(
     contextProject,
     object,
+    valueObjects: valueObjects,
   );
 
   /// Parse [project.businessObjects] via [Yaml2JsonSchemasParser] et retourne
   /// la liste hiérarchique de cartes JSON prêtes pour le `SuperTreeView` (`nodes`).
-  static List<Map<String, Object?>> buildTreeNodes(SpecForgeProject project) {
+  static List<Map<String, Object?>> buildTreeNodes(
+    SpecForgeProject project, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) {
     if (project.businessObjects.isEmpty) {
       return const <Map<String, Object?>>[];
     }
-    final yaml = toYamlLight(project);
-    final parsedNodes = Yaml2JsonSchemasParser().parse(yaml);
+    final yaml = toYamlLight(project, valueObjects: valueObjects);
+    final voTypeNames = <String>{
+      for (final vo in valueObjects) vo.technicalName,
+    };
+    final parsedNodes = Yaml2JsonSchemasParser(
+      externalTypes: voTypeNames,
+    ).parse(yaml);
     final objectsByTech = <String, BusinessObjectSpec>{
       for (final obj in project.businessObjects) obj.technicalName: obj,
     };
 
     return [
       for (final root in parsedNodes)
-        _enrichRootNode(root, objectsByTech[root.name]),
+        _enrichRootNode(
+          root,
+          objectsByTech[root.name],
+          valueObjects: valueObjects,
+        ),
     ];
   }
 
@@ -50,9 +70,14 @@ abstract final class SpecSchemaDslBridge {
     String yaml, {
     List<BusinessObjectSpec> existing = const <BusinessObjectSpec>[],
     Set<String> externalTypes = const <String>{},
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
+    final effectiveExternalTypes = <String>{
+      ...externalTypes,
+      for (final vo in valueObjects) vo.technicalName,
+    };
     final parsedNodes = Yaml2JsonSchemasParser(
-      externalTypes: externalTypes,
+      externalTypes: effectiveExternalTypes,
     ).parse(yaml);
     final existingByTech = <String, BusinessObjectSpec>{
       for (final obj in existing) obj.technicalName.toLowerCase(): obj,
@@ -61,7 +86,7 @@ abstract final class SpecSchemaDslBridge {
       for (final obj in existing) obj.name.toLowerCase(): obj,
     };
     final knownTypeNames = {
-      ...externalTypes,
+      ...effectiveExternalTypes,
       for (final node in parsedNodes)
         if (node.type != Yaml2JsonSchemasParser.endpointType) node.name,
     };
@@ -108,6 +133,7 @@ abstract final class SpecSchemaDslBridge {
             prev: prevAttrsByName[child.name],
             knownTypeNames: knownTypeNames,
             existingObjects: existing,
+            valueObjects: valueObjects,
           ),
         );
       }
@@ -131,13 +157,17 @@ abstract final class SpecSchemaDslBridge {
 
   /// Parse et applique une source YAML « JSON Schemas Light » sur un unique modèle
   /// de domaine [current], en résolvant les références vers [referenceTargets]
-  /// (`entryId -> technicalName`).
+  /// (`entryId -> technicalName`) et les Value Objects [valueObjects].
   static BusinessObjectSpec applySingleObjectYamlSource(
     String yaml, {
     required BusinessObjectSpec current,
     required Map<String, String> referenceTargets,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
-    final externalTypes = referenceTargets.values.toSet();
+    final externalTypes = <String>{
+      ...referenceTargets.values,
+      for (final vo in valueObjects) vo.technicalName,
+    };
     final parsedNodes = Yaml2JsonSchemasParser(
       externalTypes: externalTypes,
     ).parse(yaml);
@@ -175,6 +205,7 @@ abstract final class SpecSchemaDslBridge {
       yaml,
       existing: <BusinessObjectSpec>[current, ...stubs],
       externalTypes: externalTypes,
+      valueObjects: valueObjects,
     );
     final updated = current.copyWith(attributes: parsed.single.attributes);
     updated.validate();
@@ -183,8 +214,9 @@ abstract final class SpecSchemaDslBridge {
 
   static Map<String, Object?> _enrichRootNode(
     JsonNode root,
-    BusinessObjectSpec? obj,
-  ) {
+    BusinessObjectSpec? obj, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) {
     final base = root.toJson();
     final attrByName = <String, BusinessAttribute>{
       if (obj != null)
@@ -212,6 +244,7 @@ abstract final class SpecSchemaDslBridge {
           attr: attrByName[root.children[i].name],
           rel: relByName[root.children[i].name],
           pathIds: const <String>[],
+          valueObjects: valueObjects,
         ),
     ];
     base['typeIcon'] = 'container';
@@ -224,6 +257,7 @@ abstract final class SpecSchemaDslBridge {
     required BusinessAttribute? attr,
     required BusinessRelation? rel,
     required List<String> pathIds,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
     final map = node.toJson();
     final nextPath = attr != null ? [...pathIds, attr.id] : pathIds;
@@ -239,9 +273,25 @@ abstract final class SpecSchemaDslBridge {
     final isNullable =
         (attr?.nullable ?? false) || (node.properties['nullable'] == true);
 
+    ValueObjectSpec? matchedVo;
+    if (attr?.type == BusinessAttributeType.valueObject) {
+      final key = attr!.valueObjectId.trim();
+      for (final vo in valueObjects) {
+        if (vo.id == key || vo.technicalName.toLowerCase() == key.toLowerCase()) {
+          matchedVo = vo;
+          break;
+        }
+      }
+    }
+
     final typeLabel = StringBuffer();
     if (rel != null) {
       typeLabel.write('Relation (${rel.cardinality.symbol}) → ${node.type}');
+    } else if (attr?.type == BusinessAttributeType.valueObject) {
+      final voName = matchedVo?.technicalName ??
+          (attr!.valueObjectId.isNotEmpty ? attr.valueObjectId : node.type);
+      typeLabel.write('VO · $voName');
+      if (isArray) typeLabel.write('[]');
     } else if (attr?.type == BusinessAttributeType.object ||
         node.type == Yaml2JsonSchemasParser.objectType) {
       typeLabel.write(isArray ? 'Sous-objets[]' : 'Sous-objet');
@@ -268,6 +318,8 @@ abstract final class SpecSchemaDslBridge {
     map['attributeId'] = attr?.id ?? '';
     map['relationId'] = rel?.id ?? '';
     map['attrType'] = attr?.type.name ?? '';
+    map['isValueObject'] = attr?.type == BusinessAttributeType.valueObject;
+    map['valueObjectId'] = matchedVo?.id ?? attr?.valueObjectId ?? '';
     map['hasConstraints'] = attr?.schemaConstraints.isNotEmpty ?? false;
     map['isRootObject'] = false;
     map['isArray'] = isArray;
@@ -288,6 +340,7 @@ abstract final class SpecSchemaDslBridge {
             attr: childByName[child.name],
             rel: null,
             pathIds: nextPath,
+            valueObjects: valueObjects,
           ),
       ];
     } else {
@@ -303,6 +356,7 @@ abstract final class SpecSchemaDslBridge {
     required BusinessAttribute? prev,
     required Set<String> knownTypeNames,
     required List<BusinessObjectSpec> existingObjects,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
     final isArray = node.properties['array'] == true;
     final isRequired = node.properties['required'] == true;
@@ -327,6 +381,7 @@ abstract final class SpecSchemaDslBridge {
               prev: prevChildren[child.name],
               knownTypeNames: knownTypeNames,
               existingObjects: existingObjects,
+              valueObjects: valueObjects,
             ),
       ];
       return BusinessAttribute(
@@ -347,17 +402,29 @@ abstract final class SpecSchemaDslBridge {
     }
 
     var refObjectId = '';
+    var valueObjectId = '';
     late final BusinessAttributeType type;
     if (enumValues.isNotEmpty || node.type == Yaml2JsonSchemasParser.enumType) {
       type = BusinessAttributeType.enumeration;
-    } else if (knownTypeNames.contains(node.type)) {
-      type = BusinessAttributeType.reference;
-      final matched = existingObjects
-          .where((o) => o.technicalName.toLowerCase() == node.type.toLowerCase())
-          .firstOrNull;
-      refObjectId = matched?.id ?? node.type;
     } else {
-      type = BusinessAttributeType.fromJson(node.type);
+      final lowerType = node.type.toLowerCase();
+      final matchedVo = valueObjects
+          .where((vo) => vo.technicalName.toLowerCase() == lowerType)
+          .firstOrNull;
+      final matchedObj = existingObjects
+          .where((o) => o.technicalName.toLowerCase() == lowerType)
+          .firstOrNull;
+      if (matchedVo != null &&
+          (matchedObj == null ||
+              prev?.type == BusinessAttributeType.valueObject)) {
+        type = BusinessAttributeType.valueObject;
+        valueObjectId = matchedVo.id;
+      } else if (knownTypeNames.contains(node.type)) {
+        type = BusinessAttributeType.reference;
+        refObjectId = matchedObj?.id ?? node.type;
+      } else {
+        type = BusinessAttributeType.fromJson(node.type);
+      }
     }
 
     return BusinessAttribute(
@@ -371,8 +438,16 @@ abstract final class SpecSchemaDslBridge {
       estimatedMaxRows: prev?.estimatedMaxRows,
       defaultValue: rawDefault ?? prev?.defaultValue,
       enumValues: enumValues.isNotEmpty ? enumValues : (prev?.enumValues ?? const []),
-      referenceObjectId:
-          refObjectId.isNotEmpty ? refObjectId : (prev?.referenceObjectId ?? ''),
+      referenceObjectId: type == BusinessAttributeType.reference
+          ? (refObjectId.isNotEmpty
+                ? refObjectId
+                : (prev?.referenceObjectId ?? ''))
+          : '',
+      valueObjectId: type == BusinessAttributeType.valueObject
+          ? (valueObjectId.isNotEmpty
+                ? valueObjectId
+                : (prev?.valueObjectId ?? ''))
+          : '',
       description: prev?.description ?? '',
       constraints: prev?.constraints ?? '',
       schemaConstraints: prev?.schemaConstraints,

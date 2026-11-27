@@ -11,6 +11,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../../models/business_object_spec.dart';
 import '../../models/json_schema_constraints.dart';
 import '../../models/spec_forge_project.dart';
+import '../../models/value_object_spec.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
 
 /// Ouvre la boîte de dialogue multi-onglets d'édition d'un [BusinessAttribute]
@@ -20,12 +21,15 @@ Future<BusinessAttribute?> showBusinessAttributeEditorDialog(
   required SpecForgeProject project,
   BusinessAttribute? existing,
   bool isSubAttribute = false,
+  List<ResolvedValueObject> availableValueObjects =
+      const <ResolvedValueObject>[],
 }) => showDialog<BusinessAttribute>(
   context: context,
   builder: (ctx) => _BusinessAttributeEditorDialog(
     project: project,
     existing: existing,
     isSubAttribute: isSubAttribute,
+    availableValueObjects: availableValueObjects,
   ),
 );
 
@@ -160,11 +164,13 @@ class _BusinessAttributeEditorDialog extends StatefulWidget {
     required this.project,
     required this.existing,
     required this.isSubAttribute,
+    required this.availableValueObjects,
   });
 
   final SpecForgeProject project;
   final BusinessAttribute? existing;
   final bool isSubAttribute;
+  final List<ResolvedValueObject> availableValueObjects;
 
   @override
   State<_BusinessAttributeEditorDialog> createState() =>
@@ -218,6 +224,7 @@ class _BusinessAttributeEditorDialogState
   late bool _uniqueFlag;
   late bool _isArray;
   late String _refObjectId;
+  late String _valueObjectId;
 
   late bool _uniqueItems;
   late bool _readOnly;
@@ -311,6 +318,7 @@ class _BusinessAttributeEditorDialogState
     _uniqueFlag = ex?.unique ?? false;
     _isArray = ex?.isArray ?? false;
     _refObjectId = ex?.referenceObjectId ?? '';
+    _valueObjectId = ex?.valueObjectId ?? '';
 
     _uniqueItems = sc.uniqueItems ?? false;
     _readOnly = sc.readOnly ?? false;
@@ -520,7 +528,12 @@ class _BusinessAttributeEditorDialogState
       enumValues: _type == BusinessAttributeType.enumeration
           ? enumValues
           : const <String>[],
-      referenceObjectId: _refObjectId,
+      referenceObjectId: _type == BusinessAttributeType.reference
+          ? _refObjectId
+          : '',
+      valueObjectId: _type == BusinessAttributeType.valueObject
+          ? _valueObjectId
+          : '',
       description: _descCtrl.text.trim(),
       constraints: _freeConstraintsCtrl.text.trim(),
       schemaConstraints: schemaConstraints,
@@ -529,7 +542,12 @@ class _BusinessAttributeEditorDialogState
     attr.validate();
     // Vérifie le JSON Schema complet produit pour cet attribut.
     JsonSchemaValidator.validateSchemaDefinition(
-      SpecSuperDesignerExporter.attributeToJsonSchema(attr),
+      SpecSuperDesignerExporter.attributeToJsonSchema(
+        attr,
+        valueObjects: [
+          for (final item in widget.availableValueObjects) item.spec,
+        ],
+      ),
     );
     return attr;
   }
@@ -682,6 +700,44 @@ class _BusinessAttributeEditorDialogState
               ],
               onChanged: (v) => setState(() => _refObjectId = v ?? ''),
             ),
+          ],
+          if (_type == BusinessAttributeType.valueObject) ...[
+            const SizedBox(height: 10),
+            if (widget.availableValueObjects.isEmpty)
+              Text(
+                'Aucun Value Object défini dans le catalogue (Domaine ou Shared Kernel). Créez-en un depuis le Catalogue des Value Objects.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              DropdownButtonFormField<String>(
+                key: const ValueKey('spec-attr-vo-dropdown'),
+                initialValue: widget.availableValueObjects.any(
+                  (v) => v.spec.id == _valueObjectId,
+                )
+                    ? _valueObjectId
+                    : '',
+                decoration: const InputDecoration(
+                  labelText: 'Value Object du catalogue',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Sélectionner un Value Object…'),
+                  ),
+                  for (final item in widget.availableValueObjects)
+                    DropdownMenuItem(
+                      value: item.spec.id,
+                      child: Text(
+                        '${item.spec.technicalName} — ${item.spec.name} (${item.scope.label})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _valueObjectId = v ?? ''),
+              ),
           ],
           const SizedBox(height: 10),
           TextField(

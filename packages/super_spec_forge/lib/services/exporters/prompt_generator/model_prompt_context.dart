@@ -11,6 +11,7 @@ import '../../../models/domain_catalog.dart';
 import '../../../models/domain_contracts.dart';
 import '../../../models/domain_layer_spec.dart';
 import '../../../models/spec_forge_project.dart';
+import '../../../models/value_object_spec.dart';
 
 /// Regroupe les métadonnées métier et hexagonales résolues pour un item modèle.
 class ModelPromptContext {
@@ -26,6 +27,8 @@ class ModelPromptContext {
     required this.dslType,
     required this.groupName,
     required this.portName,
+    required this.availableValueObjects,
+    required this.referencedValueObjects,
   });
 
   /// Domaine propriétaire.
@@ -61,10 +64,18 @@ class ModelPromptContext {
   /// Nom du port sortant Repository.
   final String portName;
 
+  /// Tous les Value Objects visibles dans ce domaine (Domaine + Shared Kernel).
+  final List<ResolvedValueObject> availableValueObjects;
+
+  /// Value Objects effectivement référencés par [objectSpec] (y compris
+  /// récursivement par les champs des Value Objects composites).
+  final List<ResolvedValueObject> referencedValueObjects;
+
   /// Extrait et résout le contexte complet de [item] dans [domain].
   factory ModelPromptContext.resolve({
     required FunctionalDomain domain,
     required BuildDesignItem item,
+    DomainCatalog? catalog,
     BusinessObjectModelPreferences? modelPreferences,
   }) {
     final contracts = domain.contracts;
@@ -114,6 +125,21 @@ class ModelPromptContext {
         ? rawPort
         : '${objectSpec.technicalName}Repository';
 
+    final availableValueObjects = catalog != null
+        ? catalog.resolvedValueObjectsForDomain(domain.id)
+        : List<ResolvedValueObject>.unmodifiable(<ResolvedValueObject>[
+            for (final vo in domain.valueObjects)
+              ResolvedValueObject(
+                spec: vo,
+                scope: ValueObjectScope.domain,
+                domainId: domain.id,
+              ),
+          ]);
+    final referencedValueObjects = _collectReferencedValueObjects(
+      objectSpec,
+      availableValueObjects,
+    );
+
     return ModelPromptContext._(
       domain: domain,
       item: item,
@@ -126,6 +152,49 @@ class ModelPromptContext {
       dslType: dslType,
       groupName: groupName,
       portName: portName,
+      availableValueObjects: availableValueObjects,
+      referencedValueObjects: referencedValueObjects,
     );
+  }
+
+  static List<ResolvedValueObject> _collectReferencedValueObjects(
+    BusinessObjectSpec objectSpec,
+    List<ResolvedValueObject> pool,
+  ) {
+    if (pool.isEmpty) return const <ResolvedValueObject>[];
+    final byId = <String, ResolvedValueObject>{
+      for (final item in pool) item.spec.id: item,
+    };
+    final byTech = <String, ResolvedValueObject>{
+      for (final item in pool) item.spec.technicalName.toLowerCase(): item,
+    };
+    final collected = <ResolvedValueObject>[];
+    final seenIds = <String>{};
+
+    ResolvedValueObject? lookup(String ref) {
+      final clean = ref.trim();
+      if (clean.isEmpty) return null;
+      return byId[clean] ?? byTech[clean.toLowerCase()];
+    }
+
+    void collectAttributes(List<BusinessAttribute> attrs) {
+      for (final attr in attrs) {
+        if (attr.type == BusinessAttributeType.valueObject) {
+          final resolved = lookup(attr.valueObjectId);
+          if (resolved != null && seenIds.add(resolved.spec.id)) {
+            collected.add(resolved);
+            if (resolved.spec.isComposite) {
+              collectAttributes(resolved.spec.fields);
+            }
+          }
+        }
+        if (attr.children.isNotEmpty) {
+          collectAttributes(attr.children);
+        }
+      }
+    }
+
+    collectAttributes(objectSpec.attributes);
+    return List<ResolvedValueObject>.unmodifiable(collected);
   }
 }

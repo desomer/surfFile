@@ -18,6 +18,7 @@ enum BusinessAttributeType {
   url('url', 'URL'),
   enumeration('enum', 'Énumération'),
   reference('ref', 'Référence'),
+  valueObject('vo', 'Value Object'),
   object('object', 'Sous-objet'),
   json('json', 'JSON libre');
 
@@ -69,6 +70,11 @@ enum BusinessAttributeType {
         case 'ref':
         case 'reference':
           return BusinessAttributeType.reference;
+        case 'vo':
+        case 'valueobject':
+        case 'value_object':
+        case 'value-object':
+          return BusinessAttributeType.valueObject;
         case 'object':
         case 'subobject':
         case 'sub_object':
@@ -130,6 +136,7 @@ class BusinessAttribute {
     this.defaultValue,
     List<String> enumValues = const <String>[],
     this.referenceObjectId = '',
+    this.valueObjectId = '',
     this.description = '',
     this.constraints = '',
     JsonSchemaConstraints? schemaConstraints,
@@ -189,6 +196,10 @@ class BusinessAttribute {
 
   /// Identifiant de l'objet cible si [type] vaut [BusinessAttributeType.reference].
   final String referenceObjectId;
+
+  /// Identifiant (ou nom technique) du Value Object cible si [type] vaut
+  /// [BusinessAttributeType.valueObject].
+  final String valueObjectId;
 
   /// Description fonctionnelle.
   final String description;
@@ -254,6 +265,7 @@ class BusinessAttribute {
     bool clearDefaultValue = false,
     List<String>? enumValues,
     String? referenceObjectId,
+    String? valueObjectId,
     String? description,
     String? constraints,
     JsonSchemaConstraints? schemaConstraints,
@@ -274,6 +286,7 @@ class BusinessAttribute {
         : (defaultValue ?? this.defaultValue),
     enumValues: enumValues ?? this.enumValues,
     referenceObjectId: referenceObjectId ?? this.referenceObjectId,
+    valueObjectId: valueObjectId ?? this.valueObjectId,
     description: description ?? this.description,
     constraints: constraints ?? this.constraints,
     schemaConstraints: schemaConstraints ?? this.schemaConstraints,
@@ -293,6 +306,7 @@ class BusinessAttribute {
     if (defaultValue != null) 'defaultValue': defaultValue,
     'enumValues': enumValues,
     'referenceObjectId': referenceObjectId,
+    if (valueObjectId.isNotEmpty) 'valueObjectId': valueObjectId,
     'description': description,
     'constraints': constraints,
     if (schemaConstraints.isNotEmpty)
@@ -345,6 +359,7 @@ class BusinessAttribute {
       defaultValue: raw['defaultValue']?.toString(),
       enumValues: _stringList(raw['enumValues']),
       referenceObjectId: (raw['referenceObjectId'] as String?)?.trim() ?? '',
+      valueObjectId: (raw['valueObjectId'] as String?)?.trim() ?? '',
       description: (raw['description'] as String?)?.trim() ?? '',
       constraints: (raw['constraints'] as String?)?.trim() ?? '',
       schemaConstraints: parsedSchemaConstraints,
@@ -369,6 +384,7 @@ class BusinessAttribute {
           other.defaultValue == defaultValue &&
           listEquals(other.enumValues, enumValues) &&
           other.referenceObjectId == referenceObjectId &&
+          other.valueObjectId == valueObjectId &&
           other.description == description &&
           other.constraints == constraints &&
           other.schemaConstraints == schemaConstraints &&
@@ -387,6 +403,7 @@ class BusinessAttribute {
     defaultValue,
     Object.hashAll(enumValues),
     referenceObjectId,
+    valueObjectId,
     description,
     constraints,
     schemaConstraints,

@@ -51,6 +51,7 @@ class DesignDomainBreadcrumbBar extends StatefulWidget {
     required this.onDomainSelected,
     required this.segments,
     this.domainCrumbKey = const ValueKey('design-domain-crumb'),
+    this.trailing,
     super.key,
   });
 
@@ -68,6 +69,9 @@ class DesignDomainBreadcrumbBar extends StatefulWidget {
 
   /// Clé de test du bouton de sélection du domaine.
   final Key? domainCrumbKey;
+
+  /// Action optionnelle affichée à droite de la barre.
+  final Widget? trailing;
 
   @override
   State<DesignDomainBreadcrumbBar> createState() =>
@@ -98,17 +102,10 @@ class _DesignDomainBreadcrumbBarState extends State<DesignDomainBreadcrumbBar> {
         ? colors.onSurfaceVariant
         : colors.onPrimary;
 
-    return Container(
-      height: _barHeight,
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
-      ),
-      alignment: Alignment.centerLeft,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: _ChevronRibbonRow(
+    final ribbon = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: _ChevronRibbonRow(
           overlap: _chevronDepth,
           children: [
             _buildChevronShell(
@@ -197,7 +194,26 @@ class _DesignDomainBreadcrumbBarState extends State<DesignDomainBreadcrumbBar> {
               ),
           ],
         ),
+      );
+
+    return Container(
+      height: _barHeight,
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
+      alignment: Alignment.centerLeft,
+      child: widget.trailing == null
+          ? ribbon
+          : Row(
+              children: [
+                Expanded(child: ribbon),
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: widget.trailing!,
+                ),
+              ],
+            ),
     );
   }
 

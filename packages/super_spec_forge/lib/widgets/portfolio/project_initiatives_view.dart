@@ -2,6 +2,9 @@
 /// d'un projet ([ProjectInitiativesView]), point d'entrée vers les 4 Wizards.
 library;
 
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
@@ -71,9 +74,15 @@ class ProjectInitiativesView extends StatefulWidget {
 }
 
 class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
+  static const double _defaultTreeWidth = 370.0;
+  static const double _minTreeWidth = 240.0;
+  static const double _minDetailWidth = 340.0;
+
   final GlobalKey _splitRowKey = GlobalKey();
+  final GlobalKey _treeSplitRowKey = GlobalKey();
   double _chatPaneFraction = 0.30;
   double _chatDragOffset = SpecSplitHandle.width / 2;
+  double _treeDragOffset = SpecSplitHandle.width / 2;
 
   String _searchQuery = '';
   SpecPortfolioStatus? _statusFilter;
@@ -379,34 +388,130 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
                         });
                       },
                     ),
-                    SizedBox(
-                      width: 370,
-                      child: _buildPortfolioTreePane(
-                        context,
-                        theme,
-                        colors,
-                        project,
-                        inspectedInitiative,
-                      ),
-                    ),
-                    const VerticalDivider(width: 1, thickness: 1),
                     Expanded(
-                      child: inspectedInitiative != null
-                          ? _buildInitiativeDetailPane(
-                              context,
-                              theme,
-                              colors,
-                              project,
-                              inspectedInitiative,
-                            )
-                          : _buildFeatureDetailPane(
-                              context,
-                              theme,
-                              colors,
-                              project,
-                              project.activeFeature,
-                              project.activeInitiative,
-                            ),
+                      child: LayoutBuilder(
+                        builder: (context, workspaceConstraints) {
+                          const treeDividerWidth = SpecSplitHandle.width;
+                          final workspaceAvailableWidth =
+                              (workspaceConstraints.maxWidth - treeDividerWidth)
+                                  .clamp(0.0, double.infinity);
+                          final minTree =
+                              workspaceAvailableWidth >
+                                  _minTreeWidth + _minDetailWidth
+                              ? _minTreeWidth
+                              : workspaceAvailableWidth * 0.25;
+                          final maxTree =
+                              workspaceAvailableWidth >
+                                  _minTreeWidth + _minDetailWidth
+                              ? (workspaceAvailableWidth - _minDetailWidth)
+                              : workspaceAvailableWidth * 0.65;
+                          final storedTreeWidth =
+                              widget.controller.panelWidth(
+                                SpecForgeController.portfolioTreePanelKey,
+                              ) ??
+                              _defaultTreeWidth;
+                          final double treeWidth = workspaceAvailableWidth <= 0
+                              ? 0.0
+                              : storedTreeWidth
+                                    .clamp(
+                                      minTree,
+                                      math.max<double>(minTree, maxTree),
+                                    )
+                                    .toDouble();
+
+                          return Row(
+                            key: _treeSplitRowKey,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SizedBox(
+                                key: const ValueKey('portfolio-tree-pane'),
+                                width: treeWidth,
+                                child: _buildPortfolioTreePane(
+                                  context,
+                                  theme,
+                                  colors,
+                                  project,
+                                  inspectedInitiative,
+                                ),
+                              ),
+                              SpecSplitHandle(
+                                key: const ValueKey(
+                                  'portfolio-tree-split-handle',
+                                ),
+                                onDoubleTap: () => setState(() {
+                                  unawaited(
+                                    widget.controller.clearPanelWidth(
+                                      SpecForgeController.portfolioTreePanelKey,
+                                    ),
+                                  );
+                                }),
+                                onHorizontalDragDown: (details) {
+                                  final box =
+                                      _treeSplitRowKey.currentContext
+                                              ?.findRenderObject()
+                                          as RenderBox?;
+                                  if (box != null) {
+                                    final localX = box
+                                        .globalToLocal(details.globalPosition)
+                                        .dx;
+                                    _treeDragOffset = (localX - treeWidth)
+                                        .clamp(0.0, SpecSplitHandle.width);
+                                  } else {
+                                    _treeDragOffset = SpecSplitHandle.width / 2;
+                                  }
+                                },
+                                onHorizontalDragUpdate: (details) {
+                                  final box =
+                                      _treeSplitRowKey.currentContext
+                                              ?.findRenderObject()
+                                          as RenderBox?;
+                                  if (box == null ||
+                                      workspaceAvailableWidth <= 0) {
+                                    return;
+                                  }
+                                  final localX = box
+                                      .globalToLocal(details.globalPosition)
+                                      .dx;
+                                  final nextWidth = localX - _treeDragOffset;
+                                  final clamped = nextWidth
+                                      .clamp(
+                                        minTree,
+                                        math.max<double>(minTree, maxTree),
+                                      )
+                                      .toDouble();
+                                  setState(() {
+                                    widget.controller.setPanelWidth(
+                                      SpecForgeController.portfolioTreePanelKey,
+                                      clamped,
+                                    );
+                                  });
+                                },
+                                onHorizontalDragEnd: (_) => unawaited(
+                                  widget.controller.persistPanelWidths(),
+                                ),
+                              ),
+                              Expanded(
+                                child: inspectedInitiative != null
+                                    ? _buildInitiativeDetailPane(
+                                        context,
+                                        theme,
+                                        colors,
+                                        project,
+                                        inspectedInitiative,
+                                      )
+                                    : _buildFeatureDetailPane(
+                                        context,
+                                        theme,
+                                        colors,
+                                        project,
+                                        project.activeFeature,
+                                        project.activeInitiative,
+                                      ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ],
                 );

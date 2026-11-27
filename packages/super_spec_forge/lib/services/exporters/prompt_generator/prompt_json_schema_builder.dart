@@ -9,6 +9,7 @@ import '../../../models/business_object_model_preferences.dart';
 import '../../../models/business_object_spec.dart';
 import '../../../models/spec_forge_project.dart';
 import '../../../models/usecase_orchestration_spec.dart';
+import '../../../models/value_object_spec.dart';
 import '../spec_super_designer_exporter.dart';
 import 'model_prompt_context.dart';
 
@@ -38,12 +39,20 @@ abstract final class PromptJsonSchemaBuilder {
     final strictObjects =
         project.businessObjectModelPreferences.schemaStrictness ==
         JsonSchemaStrictness.strict;
+    final voSpecs = [
+      for (final item in ctx.availableValueObjects) item.spec,
+    ];
+    final voScopes = <String, ValueObjectScope>{
+      for (final item in ctx.availableValueObjects) item.spec.id: item.scope,
+    };
     final entitySchema = _buildObjectSchema(
       project: project,
       obj: ctx.objectSpec,
       refTargets: ctx.refTargets,
       visited: <String>{ctx.objectSpec.id},
       strictObjects: strictObjects,
+      valueObjects: voSpecs,
+      valueObjectScopes: voScopes,
     );
 
     return <String, Object?>{
@@ -102,10 +111,15 @@ abstract final class PromptJsonSchemaBuilder {
     required Map<String, String> refTargets,
     required Set<String> visited,
     required bool strictObjects,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
   }) {
     final baseSchema = SpecSuperDesignerExporter.objectToJsonSchema(
       project,
       obj,
+      valueObjects: valueObjects,
+      valueObjectScopes: valueObjectScopes,
     );
     final rawProps = baseSchema['properties'];
     final baseProps = rawProps is Map
@@ -119,6 +133,8 @@ abstract final class PromptJsonSchemaBuilder {
         refTargets: refTargets,
         visited: visited,
         strictObjects: strictObjects,
+        valueObjects: valueObjects,
+        valueObjectScopes: valueObjectScopes,
       );
     }
 
@@ -131,6 +147,9 @@ abstract final class PromptJsonSchemaBuilder {
     required Map<String, String> refTargets,
     required Set<String> visited,
     required bool strictObjects,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
   }) {
     if (attr.type == BusinessAttributeType.object && attr.children.isNotEmpty) {
       final childProps = <String, Object?>{};
@@ -142,6 +161,8 @@ abstract final class PromptJsonSchemaBuilder {
           refTargets: refTargets,
           visited: visited,
           strictObjects: strictObjects,
+          valueObjects: valueObjects,
+          valueObjectScopes: valueObjectScopes,
         );
         if (child.required) childRequired.add(child.name);
       }
@@ -179,6 +200,8 @@ abstract final class PromptJsonSchemaBuilder {
           refTargets: refTargets,
           visited: <String>{...visited, target.id},
           strictObjects: strictObjects,
+          valueObjects: valueObjects,
+          valueObjectScopes: valueObjectScopes,
         );
         final schema = <String, Object?>{
           ...resolvedSchema,
@@ -205,6 +228,8 @@ abstract final class PromptJsonSchemaBuilder {
     return SpecSuperDesignerExporter.attributeToJsonSchema(
       attr,
       strictObjects: strictObjects,
+      valueObjects: valueObjects,
+      valueObjectScopes: valueObjectScopes,
     );
   }
 

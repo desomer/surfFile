@@ -8,6 +8,7 @@ import 'build_tech_stack_profile.dart';
 import 'domain_contracts.dart';
 import 'spec_stage_chat.dart';
 import 'usecase_orchestration_spec.dart';
+import 'value_object_spec.dart';
 
 /// Catégorie d'urbanisme d'un système ou service rattaché à un domaine.
 enum DomainSystemKind {
@@ -207,6 +208,8 @@ class FunctionalDomain {
     this.contracts,
     this.useCaseOrchestration,
     this.systemsServicesChat = const <SpecChatMessage>[],
+    this.valueObjects = const <ValueObjectSpec>[],
+    this.valueObjectsChat = const <SpecChatMessage>[],
   });
 
   /// Identifiant technique.
@@ -237,6 +240,12 @@ class FunctionalDomain {
   /// Historique de conversation IA « Systèmes & Services » du domaine.
   final List<SpecChatMessage> systemsServicesChat;
 
+  /// Catalogue des Value Objects (Architecture Hexagonale) propres à ce domaine.
+  final List<ValueObjectSpec> valueObjects;
+
+  /// Historique de conversation IA du catalogue de Value Objects de ce domaine.
+  final List<SpecChatMessage> valueObjectsChat;
+
   /// Vérifie les invariants du domaine.
   void validate() {
     if (id.trim().isEmpty) throw const FormatException('Domaine.id requis.');
@@ -248,6 +257,21 @@ class FunctionalDomain {
       throw const FormatException('La description du domaine dépasse 2000 caractères.');
     }
     useCaseOrchestration?.validate();
+    final voIds = <String>{};
+    final voTechNames = <String>{};
+    for (final vo in valueObjects) {
+      vo.validate();
+      if (!voIds.add(vo.id)) {
+        throw FormatException(
+          'Identifiant de Value Object dupliqué dans $domainCode : ${vo.id}',
+        );
+      }
+      if (!voTechNames.add(vo.technicalName.toLowerCase())) {
+        throw FormatException(
+          'Nom technique de Value Object dupliqué dans $domainCode : ${vo.technicalName}',
+        );
+      }
+    }
   }
 
   /// Copie modifiée.
@@ -262,6 +286,8 @@ class FunctionalDomain {
     DomainContracts? contracts,
     UseCaseOrchestrationSpec? useCaseOrchestration,
     List<SpecChatMessage>? systemsServicesChat,
+    List<ValueObjectSpec>? valueObjects,
+    List<SpecChatMessage>? valueObjectsChat,
   }) => FunctionalDomain(
     id: id ?? this.id,
     domainCode: domainCode ?? this.domainCode,
@@ -274,6 +300,12 @@ class FunctionalDomain {
     systemsServicesChat: systemsServicesChat == null
         ? this.systemsServicesChat
         : List<SpecChatMessage>.unmodifiable(systemsServicesChat),
+    valueObjects: valueObjects == null
+        ? this.valueObjects
+        : List<ValueObjectSpec>.unmodifiable(valueObjects),
+    valueObjectsChat: valueObjectsChat == null
+        ? this.valueObjectsChat
+        : List<SpecChatMessage>.unmodifiable(valueObjectsChat),
   );
 
   /// Sérialise le domaine.
@@ -292,6 +324,12 @@ class FunctionalDomain {
       'systemsServicesChat': [
         for (final msg in systemsServicesChat) msg.toJson(),
       ],
+    if (valueObjects.isNotEmpty)
+      'valueObjects': [for (final vo in valueObjects) vo.toJson()],
+    if (valueObjectsChat.isNotEmpty)
+      'valueObjectsChat': [
+        for (final msg in valueObjectsChat) msg.toJson(),
+      ],
   };
 
   /// Désérialise un domaine.
@@ -299,6 +337,8 @@ class FunctionalDomain {
     if (raw is! Map) throw const FormatException('Domaine invalide.');
     final rawStackId = (raw['techStackId'] as String?)?.trim();
     final rawChat = raw['systemsServicesChat'];
+    final rawVos = raw['valueObjects'];
+    final rawVoChat = raw['valueObjectsChat'];
     final item = FunctionalDomain(
       id: raw['id'] as String? ?? '',
       domainCode: raw['domainCode'] as String? ?? '',
@@ -315,6 +355,18 @@ class FunctionalDomain {
       systemsServicesChat: rawChat is List
           ? List<SpecChatMessage>.unmodifiable(<SpecChatMessage>[
               for (final msg in rawChat)
+                if (msg is Map)
+                  SpecChatMessage.fromJson(Map<String, Object?>.from(msg)),
+            ])
+          : const <SpecChatMessage>[],
+      valueObjects: rawVos is List
+          ? List<ValueObjectSpec>.unmodifiable(<ValueObjectSpec>[
+              for (final vo in rawVos) ValueObjectSpec.fromJson(vo),
+            ])
+          : const <ValueObjectSpec>[],
+      valueObjectsChat: rawVoChat is List
+          ? List<SpecChatMessage>.unmodifiable(<SpecChatMessage>[
+              for (final msg in rawVoChat)
                 if (msg is Map)
                   SpecChatMessage.fromJson(Map<String, Object?>.from(msg)),
             ])
@@ -846,6 +898,8 @@ class DomainCatalog {
         const <ConfigurationEntry>[],
     List<AuditLogEntry> auditLog = const <AuditLogEntry>[],
     List<BuildTechStackProfile>? techStacks,
+    List<ValueObjectSpec> sharedValueObjects = const <ValueObjectSpec>[],
+    List<SpecChatMessage> sharedValueObjectsChat = const <SpecChatMessage>[],
     DateTime? updatedAt,
   }) : domains = List<FunctionalDomain>.unmodifiable(domains),
        environments = List<LogicalEnvironment>.unmodifiable(environments),
@@ -856,6 +910,12 @@ class DomainCatalog {
        auditLog = List<AuditLogEntry>.unmodifiable(auditLog),
        techStacks = List<BuildTechStackProfile>.unmodifiable(
          techStacks ?? BuildTechStackProfile.defaults,
+       ),
+       sharedValueObjects = List<ValueObjectSpec>.unmodifiable(
+         sharedValueObjects,
+       ),
+       sharedValueObjectsChat = List<SpecChatMessage>.unmodifiable(
+         sharedValueObjectsChat,
        ),
        updatedAt = updatedAt?.toUtc();
 
@@ -880,8 +940,76 @@ class DomainCatalog {
   /// Profils de stacks techniques configurés dans le workspace pour les prompts Build.
   final List<BuildTechStackProfile> techStacks;
 
+  /// Catalogue Shared Kernel des Value Objects partagés entre tous les domaines du workspace.
+  final List<ValueObjectSpec> sharedValueObjects;
+
+  /// Historique de conversation IA du Shared Kernel de Value Objects.
+  final List<SpecChatMessage> sharedValueObjectsChat;
+
   /// Horodatage UTC de la dernière modification.
   final DateTime? updatedAt;
+
+  /// Retourne tous les Value Objects visibles pour [domainId] avec leur portée
+  /// effective : les VOs du domaine priment sur le Shared Kernel en cas d'homonyme
+  /// de `technicalName`.
+  List<ResolvedValueObject> resolvedValueObjectsForDomain(String? domainId) {
+    final domain = domainId == null
+        ? null
+        : domains.where((d) => d.id == domainId).firstOrNull;
+    final resolved = <ResolvedValueObject>[];
+    final seenTechNames = <String>{};
+    if (domain != null) {
+      for (final vo in domain.valueObjects) {
+        seenTechNames.add(vo.technicalName.toLowerCase());
+        resolved.add(
+          ResolvedValueObject(
+            spec: vo,
+            scope: ValueObjectScope.domain,
+            domainId: domain.id,
+          ),
+        );
+      }
+    }
+    for (final vo in sharedValueObjects) {
+      if (seenTechNames.add(vo.technicalName.toLowerCase())) {
+        resolved.add(
+          ResolvedValueObject(spec: vo, scope: ValueObjectScope.shared),
+        );
+      }
+    }
+    return List<ResolvedValueObject>.unmodifiable(resolved);
+  }
+
+  /// Retourne la liste fusionnée des [ValueObjectSpec] utilisables dans [domainId].
+  List<ValueObjectSpec> valueObjectsForDomain(String? domainId) => [
+    for (final item in resolvedValueObjectsForDomain(domainId)) item.spec,
+  ];
+
+  /// Recherche un Value Object par [idOrTechnicalName] dans [domainId] (prioritaire)
+  /// puis dans le Shared Kernel.
+  ResolvedValueObject? findValueObject(
+    String idOrTechnicalName, {
+    String? domainId,
+  }) {
+    final needle = idOrTechnicalName.trim();
+    if (needle.isEmpty) return null;
+    final lower = needle.toLowerCase();
+    final visible = resolvedValueObjectsForDomain(domainId);
+    for (final item in visible) {
+      if (item.spec.id == needle) return item;
+    }
+    for (final item in visible) {
+      if (item.spec.technicalName.toLowerCase() == lower) return item;
+    }
+    // Repli : un VO du Shared Kernel masqué par un homonyme de domaine reste
+    // résoluble par son ID exact.
+    for (final vo in sharedValueObjects) {
+      if (vo.id == needle) {
+        return ResolvedValueObject(spec: vo, scope: ValueObjectScope.shared);
+      }
+    }
+    return null;
+  }
 
   /// Retourne le profil de stack technique associé à [domain], ou `null` si aucun.
   BuildTechStackProfile? techStackForDomain(FunctionalDomain domain) {
@@ -905,6 +1033,19 @@ class DomainCatalog {
     _validateUniqueIds(configurationEntries.map((e) => e.id), 'configuration');
     _validateUniqueIds(auditLog.map((e) => e.id), 'audit');
     _validateUniqueIds(techStacks.map((e) => e.id), 'stack technique');
+    _validateUniqueIds(
+      sharedValueObjects.map((e) => e.id),
+      'Value Object partagé',
+    );
+    _validateUniqueBy(
+      sharedValueObjects,
+      (v) => v.technicalName.toLowerCase(),
+      'Nom technique de Value Object partagé dupliqué',
+    );
+    for (final vo in sharedValueObjects) {
+      vo.validate();
+    }
+    ValueObjectSpec.validateNoCycles(sharedValueObjects);
 
     _validateUniqueBy(
       techStacks,
@@ -926,6 +1067,12 @@ class DomainCatalog {
     );
     for (final domain in domains) {
       domain.validate();
+      if (domain.valueObjects.isNotEmpty) {
+        ValueObjectSpec.validateNoCycles([
+          ...domain.valueObjects,
+          ...sharedValueObjects,
+        ]);
+      }
       if (domain.techStackId != null &&
           !techStackIds.contains(domain.techStackId)) {
         throw FormatException(
@@ -1018,6 +1165,8 @@ class DomainCatalog {
     List<ConfigurationEntry>? configurationEntries,
     List<AuditLogEntry>? auditLog,
     List<BuildTechStackProfile>? techStacks,
+    List<ValueObjectSpec>? sharedValueObjects,
+    List<SpecChatMessage>? sharedValueObjectsChat,
     DateTime? updatedAt,
   }) => DomainCatalog(
     domains: domains ?? this.domains,
@@ -1026,6 +1175,9 @@ class DomainCatalog {
     configurationEntries: configurationEntries ?? this.configurationEntries,
     auditLog: auditLog ?? this.auditLog,
     techStacks: techStacks ?? this.techStacks,
+    sharedValueObjects: sharedValueObjects ?? this.sharedValueObjects,
+    sharedValueObjectsChat:
+        sharedValueObjectsChat ?? this.sharedValueObjectsChat,
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
@@ -1039,6 +1191,14 @@ class DomainCatalog {
     ],
     'auditLog': [for (final item in auditLog) item.toJson()],
     'techStacks': [for (final item in techStacks) item.toJson()],
+    if (sharedValueObjects.isNotEmpty)
+      'sharedValueObjects': [
+        for (final item in sharedValueObjects) item.toJson(),
+      ],
+    if (sharedValueObjectsChat.isNotEmpty)
+      'sharedValueObjectsChat': [
+        for (final msg in sharedValueObjectsChat) msg.toJson(),
+      ],
     if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
   };
 
@@ -1054,6 +1214,8 @@ class DomainCatalog {
               BuildTechStackProfile.fromJson(item),
           ]
         : null;
+    final rawSharedVos = raw['sharedValueObjects'];
+    final rawSharedVoChat = raw['sharedValueObjectsChat'];
     final catalog = DomainCatalog(
       domains: [
         if (raw['domains'] is List)
@@ -1080,6 +1242,18 @@ class DomainCatalog {
           for (final item in raw['auditLog'] as List) AuditLogEntry.fromJson(item),
       ],
       techStacks: parsedTechStacks,
+      sharedValueObjects: rawSharedVos is List
+          ? <ValueObjectSpec>[
+              for (final item in rawSharedVos) ValueObjectSpec.fromJson(item),
+            ]
+          : const <ValueObjectSpec>[],
+      sharedValueObjectsChat: rawSharedVoChat is List
+          ? <SpecChatMessage>[
+              for (final msg in rawSharedVoChat)
+                if (msg is Map)
+                  SpecChatMessage.fromJson(Map<String, Object?>.from(msg)),
+            ]
+          : const <SpecChatMessage>[],
       updatedAt: date,
     );
     catalog.validate();

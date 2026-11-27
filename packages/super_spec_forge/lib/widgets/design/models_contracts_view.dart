@@ -29,6 +29,7 @@ class ModelsContractsView extends StatefulWidget {
     required this.onBack,
     required this.onManageDomains,
     this.initialDomainId,
+    this.onOpenValueObjectsCatalog,
     this.onOpenEntryChanged,
     this.navigationController,
     this.pickAttachments,
@@ -52,6 +53,9 @@ class ModelsContractsView extends StatefulWidget {
 
   /// Identifiant optionnel du domaine sélectionné à l'ouverture de la vue.
   final String? initialDomainId;
+
+  /// Ouvre directement le Catalogue des Value Objects sur le domaine courant.
+  final ValueChanged<String?>? onOpenValueObjectsCatalog;
 
   /// Signale au shell la fiche visible, ou le retour à la liste.
   final void Function(String? domainId, String? entryId)? onOpenEntryChanged;
@@ -221,6 +225,23 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
         DesignDomainBreadcrumbBar(
           domains: domains,
           selectedDomain: selected,
+          trailing:
+              widget.onOpenValueObjectsCatalog != null &&
+                  selected != null &&
+                  _level == 0
+              ? TextButton.icon(
+                  key: const ValueKey('models-open-vo-catalog-btn'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onPressed: () =>
+                      widget.onOpenValueObjectsCatalog!(selected.id),
+                  icon: const Icon(Icons.diamond_outlined, size: 15),
+                  label: Text(
+                    'Value Objects (${widget.controller.domainCatalog.resolvedValueObjectsForDomain(selected.id).length})',
+                  ),
+                )
+              : null,
           onDomainSelected: (domain) {
             final changed = domain.id != selected?.id;
             if (changed && _pages.hasClients) {
@@ -327,6 +348,12 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
                           domainId: selected.id,
                           entryId: opened.id,
                         ),
+                        onOpenValueObjectsCatalog:
+                            widget.onOpenValueObjectsCatalog == null
+                            ? null
+                            : () => widget.onOpenValueObjectsCatalog!(
+                                selected.id,
+                              ),
                         pickAttachments: widget.pickAttachments,
                         pasteAttachments: widget.pasteAttachments,
                         hasClipboardMedia: widget.hasClipboardMedia,

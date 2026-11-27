@@ -185,6 +185,11 @@ String _formatBody({
     buf.writeln();
   }
 
+  PromptMarkdownSections.writeReferencedValueObjectsSection(
+    buf,
+    ctx.referencedValueObjects,
+  );
+
   PromptMarkdownSections.writeDomainLayerBehaviorsSection(
     buf,
     objectSpec,

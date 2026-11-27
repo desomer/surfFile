@@ -184,6 +184,11 @@ String _formatBody({
     buf.writeln();
   }
 
+  PromptMarkdownSections.writePersistenceValueObjectsMappingSection(
+    buf,
+    ctx.referencedValueObjects,
+  );
+
   buf
     ..writeln('## 4. Livrables & Vérification')
     ..writeln(

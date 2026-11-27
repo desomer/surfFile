@@ -12,6 +12,7 @@ class SpecSplitHandle extends StatefulWidget {
   const SpecSplitHandle({
     required this.onHorizontalDragUpdate,
     this.onHorizontalDragDown,
+    this.onHorizontalDragEnd,
     this.onDoubleTap,
     super.key,
   });
@@ -21,6 +22,9 @@ class SpecSplitHandle extends StatefulWidget {
 
   /// Callback appelé lors du glisser horizontal de la poignée.
   final GestureDragUpdateCallback onHorizontalDragUpdate;
+
+  /// Callback optionnel appelé à la fin du glisser horizontal.
+  final GestureDragEndCallback? onHorizontalDragEnd;
 
   /// Callback optionnel sur double-clic (ex. réinitialisation de la proportion).
   final VoidCallback? onDoubleTap;
@@ -44,6 +48,7 @@ class _SpecSplitHandleState extends State<SpecSplitHandle> {
         onDoubleTap: widget.onDoubleTap,
         onHorizontalDragDown: widget.onHorizontalDragDown,
         onHorizontalDragUpdate: widget.onHorizontalDragUpdate,
+        onHorizontalDragEnd: widget.onHorizontalDragEnd,
         child: Container(
           width: SpecSplitHandle.width,
           decoration: BoxDecoration(

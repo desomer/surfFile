@@ -95,6 +95,16 @@ class _MemDomainStore extends DomainCatalogStore {
   Future<void> save(DomainCatalog catalog) async {}
 }
 
+class _MemRateCardStore extends EnterpriseRateCardStore {
+  _MemRateCardStore() : super(Directory('memory_em_store'));
+
+  @override
+  Future<EnterpriseRateCard> load() async => EnterpriseRateCard.defaults;
+
+  @override
+  Future<void> save(EnterpriseRateCard card) async {}
+}
+
 class _FakeExampleMapperAi implements SpecAiService {
   final List<SpecForgeStage> calledStages = [];
   final List<String> receivedPrompts = [];
@@ -763,6 +773,55 @@ void main() {
             .attributes
             .firstWhere((a) => a.name == 'montantHt');
         expect(updatedMontant.schemaConstraints.examples, const [500]);
+      },
+    );
+
+    testWidgets(
+      'ExampleMappingEditorView : le panneau gauche des stories est redimensionnable et se réinitialise au double-clic',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 860));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final store = _MemProjectStore()..seed(_buildSampleProject());
+        final controller = SpecForgeController(
+          store: store,
+          glossaryStore: _MemGlossaryStore(),
+          modelDictionaryStore: _MemDictStore(),
+          domainCatalogStore: _MemDomainStore(),
+          enterpriseRateCardStore: _MemRateCardStore(),
+          aiService: _FakeExampleMapperAi(),
+        );
+        await controller.initialize();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ExampleMappingEditorView(controller: controller),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final paneFinder = find.byKey(const ValueKey('spec-em-master-pane'));
+        final handleFinder = find.byKey(
+          const ValueKey('spec-em-master-split-handle'),
+        );
+        expect(paneFinder, findsOneWidget);
+        expect(handleFinder, findsOneWidget);
+
+        final initialWidth = tester.getSize(paneFinder).width;
+        expect(initialWidth, 260.0);
+
+        await tester.drag(handleFinder, const Offset(80, 0));
+        await tester.pumpAndSettle();
+        final widened = tester.getSize(paneFinder).width;
+        expect(widened, greaterThan(initialWidth));
+
+        await tester.tap(handleFinder);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(handleFinder);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(paneFinder).width, initialWidth);
       },
     );
   });

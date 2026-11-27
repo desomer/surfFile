@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/business_object_spec.dart';
 import '../../../models/spec_forge_project.dart';
+import '../../../models/value_object_spec.dart';
 import '../../../services/business_object_operations.dart';
 import '../../../services/exporters/spec_super_designer_exporter.dart';
 import '../../../services/spec_forge_controller.dart';
@@ -322,6 +323,8 @@ class AttributeInspectorPane extends StatelessWidget {
     required this.onAddChildAttribute,
     required this.onDeleteAttribute,
     required this.onExtractToSeparateObject,
+    this.availableValueObjects = const <ResolvedValueObject>[],
+    this.onPromoteToValueObject,
     super.key,
   });
 
@@ -351,6 +354,12 @@ class AttributeInspectorPane extends StatelessWidget {
 
   /// Extrait un tableau > 200 lignes vers un objet séparé.
   final VoidCallback? onExtractToSeparateObject;
+
+  /// Value Objects visibles dans le contexte (Domaine + Shared Kernel).
+  final List<ResolvedValueObject> availableValueObjects;
+
+  /// Action optionnelle pour promouvoir un attribut primitif/sous-objet en Value Object.
+  final VoidCallback? onPromoteToValueObject;
 
   @override
   Widget build(BuildContext context) {
@@ -508,9 +517,37 @@ class AttributeInspectorPane extends StatelessWidget {
             style: theme.textTheme.bodySmall,
           ),
         ],
+        if (attribute.type == BusinessAttributeType.valueObject) ...[
+          const SizedBox(height: 10),
+          _ValueObjectSummaryCard(
+            valueObjectId: attribute.valueObjectId,
+            availableValueObjects: availableValueObjects,
+          ),
+        ] else if (onPromoteToValueObject != null &&
+            attribute.type != BusinessAttributeType.reference) ...[
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('spec-attr-promote-to-vo-btn'),
+              onPressed: onPromoteToValueObject,
+              icon: const Icon(Icons.diamond_outlined, size: 16),
+              label: const Text('Promouvoir en Value Object'),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         AttributeSchemaPreviewCard(
-          schemaMap: SpecSuperDesignerExporter.attributeToJsonSchema(attribute),
+          schemaMap: SpecSuperDesignerExporter.attributeToJsonSchema(
+            attribute,
+            valueObjects: [
+              for (final item in availableValueObjects) item.spec,
+            ],
+            valueObjectScopes: {
+              for (final item in availableValueObjects)
+                item.spec.id: item.scope,
+            },
+          ),
           badges: attribute.schemaConstraints.describeBadges(),
         ),
         if (onExtractToSeparateObject != null) ...[
@@ -725,4 +762,91 @@ class EnumValuesTable extends StatelessWidget {
 String _formatExampleValue(Object? value) {
   if (value is String) return value;
   return jsonEncode(value);
+}
+
+class _ValueObjectSummaryCard extends StatelessWidget {
+  const _ValueObjectSummaryCard({
+    required this.valueObjectId,
+    required this.availableValueObjects,
+  });
+
+  final String valueObjectId;
+  final List<ResolvedValueObject> availableValueObjects;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final needle = valueObjectId.trim();
+    final resolved = availableValueObjects
+        .where(
+          (item) =>
+              item.spec.id == needle ||
+              item.spec.technicalName.toLowerCase() == needle.toLowerCase(),
+        )
+        .firstOrNull;
+
+    if (resolved == null) {
+      return Card(
+        key: const ValueKey('spec-attr-inspector-vo-missing'),
+        elevation: 0,
+        color: colors.errorContainer.withValues(alpha: 0.4),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Text(
+            needle.isEmpty
+                ? 'Aucun Value Object associé à cet attribut.'
+                : 'Value Object introuvable dans le catalogue : $needle',
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
+          ),
+        ),
+      );
+    }
+
+    final vo = resolved.spec;
+    return Card(
+      key: const ValueKey('spec-attr-inspector-vo-card'),
+      elevation: 0,
+      color: colors.secondaryContainer.withValues(alpha: 0.45),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 6,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Icon(Icons.diamond_outlined, size: 16, color: colors.primary),
+                Text(
+                  '${vo.technicalName} — ${vo.name}',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(resolved.scope.label),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(vo.kind.label),
+                ),
+              ],
+            ),
+            Text(
+              vo.formatStructureSummary(),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+            if (vo.description.isNotEmpty)
+              Text(vo.description, style: theme.textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+  }
 }

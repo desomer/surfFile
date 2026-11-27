@@ -353,6 +353,27 @@ void main() {
         find.byKey(const ValueKey('spec-project-initiatives-view')),
         findsOneWidget,
       );
+
+      // 10. Le panneau gauche des initiatives/features (à droite du chat IA) est redimensionnable.
+      final treePaneFinder = find.byKey(const ValueKey('portfolio-tree-pane'));
+      final treeHandleFinder = find.byKey(
+        const ValueKey('portfolio-tree-split-handle'),
+      );
+      expect(treePaneFinder, findsOneWidget);
+      expect(treeHandleFinder, findsOneWidget);
+
+      final initialTreeWidth = tester.getSize(treePaneFinder).width;
+      expect(initialTreeWidth, 370.0);
+
+      await tester.drag(treeHandleFinder, const Offset(90, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(treePaneFinder).width, greaterThan(initialTreeWidth));
+
+      await tester.tap(treeHandleFinder);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(treeHandleFinder);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(treePaneFinder).width, initialTreeWidth);
     },
   );
 }

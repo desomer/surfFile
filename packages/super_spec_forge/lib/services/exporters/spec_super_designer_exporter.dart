@@ -26,6 +26,7 @@ import '../../models/json_schema_constraints.dart';
 import '../../models/spec_forge_project.dart';
 import '../../models/ux/ux_navigation_spec.dart';
 import '../../models/ux/ux_screen_spec.dart';
+import '../../models/value_object_spec.dart';
 import 'ux_design_md_exporter.dart';
 import 'ux_markdown_exporter.dart';
 import 'ux_super_designer_prompt_exporter.dart';
@@ -64,7 +65,10 @@ class SuperDesignerExportBundle {
 /// Convertit les objets métiers et règles de [SpecForgeProject] vers `super_designer` et `super_container_layout`.
 abstract final class SpecSuperDesignerExporter {
   /// Génère le YAML « JSON Schemas Light » compatible avec `Yaml2JsonSchemasParser`.
-  static String toYamlLightSchema(SpecForgeProject project) {
+  static String toYamlLightSchema(
+    SpecForgeProject project, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) {
     if (project.businessObjects.isEmpty) {
       return '# Aucun objet métier défini dans ${project.name}\n';
     }
@@ -78,7 +82,13 @@ abstract final class SpecSuperDesignerExporter {
         buf.writeln('  id: uuid!');
       } else {
         for (final attr in obj.attributes) {
-          _writeDslAttribute(buf, project, attr, indent: '  ');
+          _writeDslAttribute(
+            buf,
+            project,
+            attr,
+            indent: '  ',
+            valueObjects: valueObjects,
+          );
         }
         for (final rel in obj.relations) {
           final target = project.findBusinessObject(rel.targetObjectId);
@@ -101,8 +111,9 @@ abstract final class SpecSuperDesignerExporter {
   /// en résolvant ses éventuelles références via [contextProject].
   static String toSingleObjectYamlLightSchema(
     SpecForgeProject contextProject,
-    BusinessObjectSpec obj,
-  ) {
+    BusinessObjectSpec obj, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) {
     final buf = StringBuffer()
       ..writeln('# Schéma généré par SuperSpecForge — ${obj.name}')
       ..writeln();
@@ -111,7 +122,13 @@ abstract final class SpecSuperDesignerExporter {
     } else {
       buf.writeln('${obj.technicalName}:');
       for (final attr in obj.attributes) {
-        _writeDslAttribute(buf, contextProject, attr, indent: '  ');
+        _writeDslAttribute(
+          buf,
+          contextProject,
+          attr,
+          indent: '  ',
+          valueObjects: valueObjects,
+        );
       }
       for (final rel in obj.relations) {
         final target = contextProject.findBusinessObject(rel.targetObjectId);
@@ -146,6 +163,9 @@ abstract final class SpecSuperDesignerExporter {
     SpecForgeProject project,
     BusinessObjectSpec obj, {
     BusinessObjectModelPreferences? modelPreferencesOverride,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
   }) {
     final prefs =
         modelPreferencesOverride ?? project.businessObjectModelPreferences;
@@ -158,6 +178,8 @@ abstract final class SpecSuperDesignerExporter {
       obj,
       visited: {obj.id},
       strictObjects: strictObjects,
+      valueObjects: valueObjects,
+      valueObjectScopes: valueObjectScopes,
     );
 
     final schema = <String, Object?>{
@@ -179,6 +201,7 @@ abstract final class SpecSuperDesignerExporter {
           obj,
           visited: {obj.id},
           localeProfile: locale,
+          valueObjects: valueObjects,
         ),
       ],
     };
@@ -441,28 +464,54 @@ abstract final class SpecSuperDesignerExporter {
     }
   }
 
+  static ValueObjectSpec? _resolveValueObject(
+    String idOrName,
+    List<ValueObjectSpec> valueObjects,
+  ) {
+    final needle = idOrName.trim();
+    if (needle.isEmpty || valueObjects.isEmpty) return null;
+    for (final vo in valueObjects) {
+      if (vo.id == needle) return vo;
+    }
+    final lower = needle.toLowerCase();
+    for (final vo in valueObjects) {
+      if (vo.technicalName.toLowerCase() == lower) return vo;
+    }
+    return null;
+  }
+
   static void _writeDslAttribute(
     StringBuffer buf,
     SpecForgeProject project,
     BusinessAttribute attr, {
     required String indent,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
     if (attr.type == BusinessAttributeType.object && attr.children.isNotEmpty) {
       final arraySuffix = attr.isArray ? '[]' : '';
       final reqSuffix = attr.required ? '!' : (attr.nullable ? '?' : '');
       buf.writeln('$indent${attr.name}$arraySuffix$reqSuffix:');
       for (final child in attr.children) {
-        _writeDslAttribute(buf, project, child, indent: '$indent  ');
+        _writeDslAttribute(
+          buf,
+          project,
+          child,
+          indent: '$indent  ',
+          valueObjects: valueObjects,
+        );
       }
       return;
     }
-    buf.writeln('$indent${attr.name}: ${_formatDslType(project, attr)}');
+    buf.writeln(
+      '$indent${attr.name}: ${_formatDslType(project, attr, valueObjects: valueObjects)}',
+    );
   }
 
   static String _formatDslType(
     SpecForgeProject project,
-    BusinessAttribute attr,
-  ) {
+    BusinessAttribute attr, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+  }) {
     var base = switch (attr.type) {
       BusinessAttributeType.enumeration when attr.enumValues.isNotEmpty =>
         'enum(${attr.enumValues.join(', ')})',
@@ -472,6 +521,13 @@ abstract final class SpecSuperDesignerExporter {
         project.findBusinessObject(attr.referenceObjectId)?.technicalName ??
             (attr.referenceObjectId.isNotEmpty
                 ? _toPascal(attr.referenceObjectId)
+                : 'string'),
+      BusinessAttributeType.valueObject =>
+        _resolveValueObject(attr.valueObjectId, valueObjects)?.technicalName ??
+            (attr.valueObjectId.isNotEmpty
+                ? (BusinessAttribute.isValidDslIdentifier(attr.valueObjectId)
+                      ? attr.valueObjectId
+                      : _toPascal(attr.valueObjectId))
                 : 'string'),
       _ => attr.type.dslKeyword,
     };
@@ -490,17 +546,136 @@ abstract final class SpecSuperDesignerExporter {
     return base;
   }
 
+  /// Construit le JSON Schema Draft 2020-12 complet d'un [ValueObjectSpec].
+  static Map<String, Object?> valueObjectToJsonSchema(
+    ValueObjectSpec vo, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
+    ValueObjectScope? scope,
+    bool strictObjects = true,
+    Set<String>? visitedVoIds,
+  }) {
+    final effectiveScope = scope ?? valueObjectScopes[vo.id];
+    final visited = <String>{...?visitedVoIds};
+    if (!visited.add(vo.id)) {
+      return <String, Object?>{
+        'type': vo.isComposite ? 'object' : 'string',
+        'x-value-object': vo.technicalName,
+        if (effectiveScope != null) 'x-value-object-scope': effectiveScope.name,
+      };
+    }
+
+    if (vo.isScalar) {
+      final schema = switch (vo.primitiveType) {
+        BusinessAttributeType.string => <String, Object?>{'type': 'string'},
+        BusinessAttributeType.integer => <String, Object?>{'type': 'integer'},
+        BusinessAttributeType.number => <String, Object?>{'type': 'number'},
+        BusinessAttributeType.boolean => <String, Object?>{'type': 'boolean'},
+        BusinessAttributeType.date => <String, Object?>{
+          'type': 'string',
+          'format': 'date',
+        },
+        BusinessAttributeType.datetime => <String, Object?>{
+          'type': 'string',
+          'format': 'date-time',
+        },
+        BusinessAttributeType.uuid => <String, Object?>{
+          'type': 'string',
+          'format': 'uuid',
+        },
+        BusinessAttributeType.email => <String, Object?>{
+          'type': 'string',
+          'format': 'email',
+        },
+        BusinessAttributeType.url => <String, Object?>{
+          'type': 'string',
+          'format': 'uri',
+        },
+        BusinessAttributeType.enumeration => <String, Object?>{
+          'type': 'string',
+          if (vo.enumValues.isNotEmpty) 'enum': vo.enumValues,
+        },
+        _ => <String, Object?>{'type': 'string'},
+      };
+      if (vo.description.isNotEmpty) {
+        schema['description'] = vo.description;
+      }
+      for (final entry in vo.schemaConstraints.toSchemaMap().entries) {
+        if (!_arrayOnlyKeywords.contains(entry.key)) {
+          schema[entry.key] = entry.value;
+        }
+      }
+      schema['x-value-object'] = vo.technicalName;
+      if (effectiveScope != null) {
+        schema['x-value-object-scope'] = effectiveScope.name;
+      }
+      if (vo.normalizationRules.isNotEmpty) {
+        schema['x-normalization'] = vo.normalizationRules;
+      }
+      if (!schema.containsKey('examples') && vo.validExamples.isNotEmpty) {
+        schema['examples'] = [
+          for (final ex in vo.validExamples)
+            _coerceExampleScalar(ex.value, vo.primitiveType),
+        ];
+      }
+      return schema;
+    }
+
+    final properties = <String, Object?>{};
+    final required = <String>[];
+    for (final field in vo.fields) {
+      properties[field.name] = attributeToJsonSchema(
+        field,
+        strictObjects: strictObjects,
+        valueObjects: valueObjects,
+        valueObjectScopes: valueObjectScopes,
+        visitedVoIds: visited,
+      );
+      if (field.required) required.add(field.name);
+    }
+    return <String, Object?>{
+      'type': 'object',
+      if (vo.description.isNotEmpty) 'description': vo.description,
+      if (strictObjects) 'additionalProperties': false,
+      if (required.isNotEmpty) 'required': required,
+      'properties': properties,
+      'x-value-object': vo.technicalName,
+      if (effectiveScope != null) 'x-value-object-scope': effectiveScope.name,
+      if (vo.crossFieldRules.isNotEmpty)
+        'x-cross-field-rules': vo.crossFieldRules,
+    };
+  }
+
+  static Object _coerceExampleScalar(String raw, BusinessAttributeType type) {
+    final trimmed = raw.trim();
+    return switch (type) {
+      BusinessAttributeType.integer => int.tryParse(trimmed) ?? trimmed,
+      BusinessAttributeType.number => num.tryParse(trimmed) ?? trimmed,
+      BusinessAttributeType.boolean =>
+        trimmed.toLowerCase() == 'true'
+            ? true
+            : (trimmed.toLowerCase() == 'false' ? false : trimmed),
+      _ => trimmed,
+    };
+  }
+
   /// Construit le sous-schéma JSON Schema Draft 2020-12 complet d'un [BusinessObjectSpec].
   static Map<String, Object?> objectToJsonSchema(
     SpecForgeProject project,
-    BusinessObjectSpec obj,
-  ) => _objectToJsonSchema(
+    BusinessObjectSpec obj, {
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
+  }) => _objectToJsonSchema(
     project,
     obj,
     visited: {obj.id},
     strictObjects:
         project.businessObjectModelPreferences.schemaStrictness ==
         JsonSchemaStrictness.strict,
+    valueObjects: valueObjects,
+    valueObjectScopes: valueObjectScopes,
   );
 
   static Map<String, Object?> _objectToJsonSchema(
@@ -508,6 +683,9 @@ abstract final class SpecSuperDesignerExporter {
     BusinessObjectSpec obj, {
     required Set<String> visited,
     required bool strictObjects,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
   }) {
     final properties = <String, Object?>{};
     final required = <String>[];
@@ -516,6 +694,8 @@ abstract final class SpecSuperDesignerExporter {
       properties[attr.name] = attributeToJsonSchema(
         attr,
         strictObjects: strictObjects,
+        valueObjects: valueObjects,
+        valueObjectScopes: valueObjectScopes,
       );
       if (attr.required) required.add(attr.name);
     }
@@ -532,6 +712,8 @@ abstract final class SpecSuperDesignerExporter {
           target,
           visited: {...visited, target.id},
           strictObjects: strictObjects,
+          valueObjects: valueObjects,
+          valueObjectScopes: valueObjectScopes,
         );
       } else {
         itemOrRefSchema = <String, Object?>{'type': 'string'};
@@ -565,7 +747,14 @@ abstract final class SpecSuperDesignerExporter {
   static Map<String, Object?> attributeToJsonSchema(
     BusinessAttribute attr, {
     bool strictObjects = false,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Map<String, ValueObjectScope> valueObjectScopes =
+        const <String, ValueObjectScope>{},
+    Set<String>? visitedVoIds,
   }) {
+    final resolvedVo = attr.type == BusinessAttributeType.valueObject
+        ? _resolveValueObject(attr.valueObjectId, valueObjects)
+        : null;
     final schema = switch (attr.type) {
       BusinessAttributeType.string => <String, Object?>{'type': 'string'},
       BusinessAttributeType.integer => <String, Object?>{'type': 'integer'},
@@ -596,6 +785,19 @@ abstract final class SpecSuperDesignerExporter {
         if (attr.enumValues.isNotEmpty) 'enum': attr.enumValues,
       },
       BusinessAttributeType.reference => <String, Object?>{'type': 'string'},
+      BusinessAttributeType.valueObject when resolvedVo != null =>
+        valueObjectToJsonSchema(
+          resolvedVo,
+          valueObjects: valueObjects,
+          valueObjectScopes: valueObjectScopes,
+          strictObjects: strictObjects,
+          visitedVoIds: visitedVoIds,
+        ),
+      BusinessAttributeType.valueObject => <String, Object?>{
+        'type': 'string',
+        if (attr.valueObjectId.isNotEmpty)
+          'x-value-object': attr.valueObjectId,
+      },
       BusinessAttributeType.object when attr.children.isNotEmpty =>
         <String, Object?>{
           'type': 'object',
@@ -607,7 +809,13 @@ abstract final class SpecSuperDesignerExporter {
             ],
           'properties': <String, Object?>{
             for (final c in attr.children)
-              c.name: attributeToJsonSchema(c, strictObjects: strictObjects),
+              c.name: attributeToJsonSchema(
+                c,
+                strictObjects: strictObjects,
+                valueObjects: valueObjects,
+                valueObjectScopes: valueObjectScopes,
+                visitedVoIds: visitedVoIds,
+              ),
           },
         },
       BusinessAttributeType.object => <String, Object?>{
@@ -652,6 +860,7 @@ abstract final class SpecSuperDesignerExporter {
     BusinessObjectSpec obj, {
     required Set<String> visited,
     ModelLocaleProfile localeProfile = ModelLocaleProfile.frEur,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
     final record = <String, Object?>{};
     for (final attr in obj.attributes) {
@@ -664,12 +873,14 @@ abstract final class SpecSuperDesignerExporter {
               attr,
               index: i,
               localeProfile: localeProfile,
+              valueObjects: valueObjects,
             ),
         ];
       } else {
         record[attr.name] = _sampleValueForAttribute(
           attr,
           localeProfile: localeProfile,
+          valueObjects: valueObjects,
         );
       }
     }
@@ -684,6 +895,7 @@ abstract final class SpecSuperDesignerExporter {
               target,
               visited: {...visited, target.id},
               localeProfile: localeProfile,
+              valueObjects: valueObjects,
             )
           : 'ref_1';
       record[rel.name] = isList ? [value] : value;
@@ -691,10 +903,62 @@ abstract final class SpecSuperDesignerExporter {
     return record;
   }
 
+  static Object? _sampleValueForValueObject(
+    ValueObjectSpec vo, {
+    required int index,
+    required ModelLocaleProfile localeProfile,
+    required List<ValueObjectSpec> valueObjects,
+    Set<String>? visitedVoIds,
+  }) {
+    final visited = <String>{...?visitedVoIds};
+    if (!visited.add(vo.id)) return vo.technicalName;
+    final valid = vo.validExamples;
+    if (valid.isNotEmpty) {
+      final raw = valid[index % valid.length].value.trim();
+      if (vo.isComposite) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) return Map<String, Object?>.from(decoded);
+        } on Object {
+          // Repli sur la génération champ par champ.
+        }
+      } else {
+        return _coerceExampleScalar(raw, vo.primitiveType);
+      }
+    }
+    if (vo.isComposite) {
+      return <String, Object?>{
+        for (final field in vo.fields)
+          field.name: _sampleValueForAttribute(
+            field,
+            index: index,
+            localeProfile: localeProfile,
+            valueObjects: valueObjects,
+            visitedVoIds: visited,
+          ),
+      };
+    }
+    return _sampleValueForAttribute(
+      BusinessAttribute(
+        id: vo.id,
+        name: vo.technicalName,
+        type: vo.primitiveType,
+        enumValues: vo.enumValues,
+        schemaConstraints: vo.schemaConstraints,
+      ),
+      index: index,
+      localeProfile: localeProfile,
+      valueObjects: valueObjects,
+      visitedVoIds: visited,
+    );
+  }
+
   static Object? _sampleValueForAttribute(
     BusinessAttribute attr, {
     int index = 0,
     ModelLocaleProfile localeProfile = ModelLocaleProfile.frEur,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
+    Set<String>? visitedVoIds,
   }) {
     final sc = attr.schemaConstraints;
     if (sc.hasConst) {
@@ -702,6 +966,21 @@ abstract final class SpecSuperDesignerExporter {
     }
     if (sc.examples.isNotEmpty && index < sc.examples.length) {
       return sc.examples[index];
+    }
+    if (attr.type == BusinessAttributeType.valueObject) {
+      final vo = _resolveValueObject(attr.valueObjectId, valueObjects);
+      if (vo != null) {
+        return _sampleValueForValueObject(
+          vo,
+          index: index,
+          localeProfile: localeProfile,
+          valueObjects: valueObjects,
+          visitedVoIds: visitedVoIds,
+        );
+      }
+      return attr.valueObjectId.isNotEmpty
+          ? '${attr.valueObjectId}_${index + 1}'
+          : _sampleString(attr, index: index);
     }
     if (attr.type == BusinessAttributeType.object && attr.children.isNotEmpty) {
       return <String, Object?>{
@@ -712,12 +991,16 @@ abstract final class SpecSuperDesignerExporter {
                     child,
                     index: index,
                     localeProfile: localeProfile,
+                    valueObjects: valueObjects,
+                    visitedVoIds: visitedVoIds,
                   ),
                 ]
               : _sampleValueForAttribute(
                   child,
                   index: index,
                   localeProfile: localeProfile,
+                  valueObjects: valueObjects,
+                  visitedVoIds: visitedVoIds,
                 ),
       };
     }
@@ -752,6 +1035,10 @@ abstract final class SpecSuperDesignerExporter {
             : 'valeur_${index + 1}',
       BusinessAttributeType.reference =>
         'ref_${(index + 1).toString().padLeft(3, '0')}',
+      BusinessAttributeType.valueObject =>
+        attr.valueObjectId.isNotEmpty
+            ? '${attr.valueObjectId}_${index + 1}'
+            : _sampleString(attr, index: index),
       BusinessAttributeType.object => <String, Object?>{
         if (index > 0) 'index': index,
       },

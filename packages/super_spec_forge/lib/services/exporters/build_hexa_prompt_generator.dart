@@ -78,6 +78,7 @@ abstract final class BuildHexaPromptGenerator {
         BuildDesignItemKind.model => _buildModelPrompts(
           domain: domain,
           item: item,
+          catalog: catalog,
           dates: dates,
           techStack: effectiveStack,
           glossary: glossary,
@@ -253,6 +254,7 @@ abstract final class BuildHexaPromptGenerator {
   static List<BuildHexaPromptSpec> _buildModelPrompts({
     required FunctionalDomain domain,
     required BuildDesignItem item,
+    DomainCatalog? catalog,
     required PromptMetadataDates dates,
     BuildTechStackProfile? techStack,
     CompanyGlossary? glossary,
@@ -261,6 +263,7 @@ abstract final class BuildHexaPromptGenerator {
     final ctx = ModelPromptContext.resolve(
       domain: domain,
       item: item,
+      catalog: catalog,
       modelPreferences: modelPreferences,
     );
     return <BuildHexaPromptSpec>[

@@ -15,6 +15,7 @@ import '../models/domain_contracts.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_stage_chat.dart';
+import '../models/value_object_spec.dart';
 import 'spec_app_tools.dart';
 import 'spec_prompt_builder.dart';
 import 'spec_stage_agent.dart';
@@ -103,7 +104,8 @@ Ta mission :
    - eventxenvelopedto : enveloppe d'événement (eventId, type, occurredAt, source, payload) ;
    - flatfile : fichier plat (colonnes scalaires uniquement, sans sous-objet ni tableau).
 3. Relier les autres entrées du domaine par des attributs de type "reference" plutôt que de dupliquer leurs champs.
-4. En cas d'ambiguïté structurante (cardinalité, obligatoire, énumération), utilise "askUser" avec des options claires et des valeurs "default" pertinentes.
+4. Éviter la *Primitive Obsession* : dès qu'un Value Object du catalogue (listé dans « VALUE OBJECTS DISPONIBLES ») correspond au concept métier d'un attribut (ex. EmailAddress, Money, Iban, DateRange, PostalAddress…), utilise "type": "valueObject" avec "valueObjectId": "<id ou technicalName du VO>". Si un attribut gagnerait à devenir un nouveau Value Object absent du catalogue, signale-le clairement dans "message" en proposant sa promotion.
+5. En cas d'ambiguïté structurante (cardinalité, obligatoire, énumération), utilise "askUser" avec des options claires et des valeurs "default" pertinentes.
 5. RÈGLES IMPÉRATIVES DE DIMENSIONNEMENT ET DE MODÉLISATION DES ATTRIBUTS (communes avec l’étape Objets métier de la spec) :
 ${SpecStageAgent.attributeModelingRules}
    - Pour un modèle de domaine, l’objet séparé de la RÈGLE 3 est une autre entrée du domaine : référence-la si elle figure dans « ENTRÉES RÉFÉRENÇABLES », sinon propose dans "message" de l’ajouter au DSL. Les relations se modélisent uniquement par des attributs "reference" ; le nom technique du modèle est fixé par le DSL.
@@ -147,7 +149,7 @@ SCHÉMA "specPatch" POUR LE DÉTAIL D'UN MODÈLE :
     {
       "id": "attr_existant (à reprendre pour modifier un attribut, à omettre pour en créer un)",
       "name": "montantTotal",
-      "type": "string|integer|number|boolean|date|datetime|uuid|email|url|enumeration|reference|object|json",
+      "type": "string|integer|number|boolean|date|datetime|uuid|email|url|enumeration|reference|valueObject|object|json",
       "required": true,
       "nullable": false,
       "unique": false,
@@ -156,6 +158,7 @@ SCHÉMA "specPatch" POUR LE DÉTAIL D'UN MODÈLE :
       "defaultValue": null,
       "enumValues": ["BROUILLON", "VALIDE"],
       "referenceObjectId": "id ou nom technique d'une entrée du domaine (type reference uniquement)",
+      "valueObjectId": "id ou technicalName d'un Value Object disponible (type valueObject uniquement)",
       "description": "Sens métier du champ",
       "constraints": "min >= 0",
       "schemaConstraints": { "maxLength": 6, "pattern": "^[A-Z]{2}-\\d{3}\$", "x-mask": "UU-###", "x-searchable": true, "x-database-index": true, "examples": ["AB-123"] },
@@ -172,6 +175,7 @@ Règles de fusion :
 - Chaque élément de "attributes" remplace intégralement l'attribut racine de même "id" (sinon de même "name") : renvoie-le complet, sous-attributs "children" compris. Un attribut inconnu est ajouté à la fin.
 - "removeAttributes" supprime les attributs racine listés ; les attributs non mentionnés restent inchangés.
 - Un attribut "reference" doit cibler une entrée listée dans « ENTRÉES RÉFÉRENÇABLES » (ou le modèle lui-même).
+- Un attribut "valueObject" doit renseigner "valueObjectId" avec un id ou un technicalName listé dans « VALUE OBJECTS DISPONIBLES ».
 - Un attribut "object" porte ses sous-attributs dans "children" ; "isArray": true avec "estimatedMaxRows" ≤ 200 pour une collection.
 ''';
 
@@ -188,6 +192,7 @@ Règles de fusion :
     bool forceFollowUpQuestions = false,
     String domainId = '',
     CompanyGlossary? companyGlossary,
+    List<ResolvedValueObject> valueObjects = const <ResolvedValueObject>[],
     List<String> focusedAttributePath = const <String>[],
     String filter = '',
     int maxHistoryEntries = 10,
@@ -252,6 +257,22 @@ Règles de fusion :
       );
     }
 
+    buf
+      ..writeln()
+      ..writeln('VALUE OBJECTS DISPONIBLES (DOMAINE & SHARED KERNEL) :');
+    if (valueObjects.isEmpty) {
+      buf.writeln('(aucun Value Object défini dans le catalogue)');
+    } else {
+      for (final item in valueObjects) {
+        final vo = item.spec;
+        buf.writeln(
+          '- id : ${vo.id} · technicalName : ${vo.technicalName} · nom : ${vo.name}'
+          ' · portée : ${item.scope.label} · forme : ${vo.kind.label}'
+          ' · structure : ${vo.formatStructureSummary()}',
+        );
+      }
+    }
+
     final focusBlock = SpecPromptBuilder.buildFocusScopeBlock(
       project: modelProject(
         contracts,
@@ -294,6 +315,7 @@ Règles de fusion :
     BusinessObjectSpec current,
     Map<String, Object?> patch, {
     required Map<String, String> referenceTargets,
+    List<ValueObjectSpec> valueObjects = const <ValueObjectSpec>[],
   }) {
     final targets = {...referenceTargets, current.id: current.technicalName};
     String resolveReference(String raw, String attributeName) {
@@ -308,11 +330,29 @@ Règles de fusion :
       );
     }
 
+    String resolveValueObject(String raw, String attributeName) {
+      final key = raw.trim();
+      for (final vo in valueObjects) {
+        if (vo.id == key) return vo.id;
+      }
+      final lower = key.toLowerCase();
+      for (final vo in valueObjects) {
+        if (vo.technicalName.toLowerCase() == lower) return vo.id;
+      }
+      throw FormatException(
+        'Value Object inconnu « $key » sur l’attribut « $attributeName » : '
+        'utilisez un id ou technicalName listé dans VALUE OBJECTS DISPONIBLES.',
+      );
+    }
+
     BusinessAttribute resolve(BusinessAttribute attribute) =>
         attribute.copyWith(
           referenceObjectId: attribute.type == BusinessAttributeType.reference
               ? resolveReference(attribute.referenceObjectId, attribute.name)
               : attribute.referenceObjectId,
+          valueObjectId: attribute.type == BusinessAttributeType.valueObject
+              ? resolveValueObject(attribute.valueObjectId, attribute.name)
+              : attribute.valueObjectId,
           children: [for (final child in attribute.children) resolve(child)],
         );
 

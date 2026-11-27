@@ -8,6 +8,7 @@ import '../../../models/business_object_spec.dart';
 import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../../models/domain_layer_spec.dart';
+import '../../../models/value_object_spec.dart';
 import 'prompt_generator_models.dart';
 
 /// Écrit les blocs Markdown réutilisés par plusieurs types de prompts.
@@ -146,6 +147,153 @@ abstract final class PromptMarkdownSections {
       }
       buf.writeln();
     }
+  }
+
+  /// Rédige la spécification des Value Objects (Architecture Hexagonale)
+  /// référencés par un modèle pour le prompt d'implémentation Domain.
+  static void writeReferencedValueObjectsSection(
+    StringBuffer buf,
+    List<ResolvedValueObject> valueObjects, {
+    String heading = '### 3.3 Value Objects Référencés (Architecture Hexagonale)',
+  }) {
+    if (valueObjects.isEmpty) return;
+    buf
+      ..writeln(heading)
+      ..writeln(
+        'Chaque Value Object ci-dessous DOIT être implémenté en objet immuable auto-validé (factory `create()`, égalité structurelle `equals()`) dans le dossier `value-objects/` (ou importé du Shared Kernel si portée `Shared Kernel`) :',
+      )
+      ..writeln();
+
+    for (final item in valueObjects) {
+      final vo = item.spec;
+      buf.writeln(
+        '- **`${vo.technicalName}`** (${vo.name} · ${vo.kind.label} · portée : `${item.scope.label}` · v${vo.version})',
+      );
+      if (vo.description.isNotEmpty) {
+        buf.writeln('  - Rôle : ${vo.description}');
+      }
+      if (vo.isScalar) {
+        final summary = vo.schemaConstraints.formatSummary();
+        buf.writeln(
+          '  - Primitif encapsulé : `${vo.primitiveType.dslKeyword}`'
+          '${summary.isEmpty ? '' : ' · contraintes JSON Schema : $summary'}',
+        );
+        if (vo.enumValues.isNotEmpty) {
+          buf.writeln('  - Valeurs autorisées : `${vo.enumValues.join('`, `')}`');
+        }
+        if (vo.normalizationRules.isNotEmpty) {
+          buf.writeln(
+            '  - Normalisation avant validation : `${vo.normalizationRules.join('`, `')}`',
+          );
+        }
+      } else {
+        buf.writeln('  - Champs immuables :');
+        for (final f in vo.fields) {
+          final typeStr = f.type == BusinessAttributeType.valueObject
+              ? 'VO:${f.valueObjectId}'
+              : f.type.dslKeyword;
+          buf.writeln(
+            '    - `${f.name}` (`$typeStr`${f.required ? ', requis' : ''})'
+            '${f.description.isEmpty ? '' : ' — ${f.description}'}',
+          );
+        }
+        if (vo.crossFieldRules.isNotEmpty) {
+          buf.writeln(
+            '  - Règles inter-champs : ${vo.crossFieldRules.join(' ; ')}',
+          );
+        }
+      }
+      if (vo.constraints.isNotEmpty) {
+        buf.writeln('  - Invariants : ${vo.constraints}');
+      }
+      if (vo.validExamples.isNotEmpty) {
+        buf.writeln(
+          '  - Exemples valides : ${vo.validExamples.map((e) => '`${e.value}`').join(', ')}',
+        );
+      }
+      if (vo.invalidExamples.isNotEmpty) {
+        buf.writeln(
+          '  - Contre-exemples à rejeter : ${vo.invalidExamples.map((e) => '`${e.value}`${e.reason.isEmpty ? '' : ' (${e.reason})'}').join(' ; ')}',
+        );
+      }
+    }
+    buf.writeln();
+  }
+
+  /// Rédige la matrice de tests unitaires TDD pour les Value Objects référencés.
+  static void writeReferencedValueObjectsTddSection(
+    StringBuffer buf,
+    List<ResolvedValueObject> valueObjects,
+  ) {
+    if (valueObjects.isEmpty) return;
+    buf
+      ..writeln('\n### 2.5 Tests Unitaires des Value Objects Référencés')
+      ..writeln(
+        'Vérifie pour chaque Value Object l’immuabilité, l’égalité structurelle (`equals()`), la normalisation et le rejet métier via `create()` :',
+      );
+    for (final item in valueObjects) {
+      final vo = item.spec;
+      buf.writeln(
+        '- **`${vo.technicalName}`** (${vo.kind.label} · ${item.scope.label}) :',
+      );
+      if (vo.validExamples.isNotEmpty) {
+        for (final ex in vo.validExamples) {
+          buf.writeln(
+            '  - ✅ Valide : `${ex.value}`'
+            '${ex.reason.isEmpty ? '' : ' — ${ex.reason}'}',
+          );
+        }
+      } else {
+        buf.writeln('  - ✅ Cas nominal valide + égalité entre deux instances identiques.');
+      }
+      if (vo.invalidExamples.isNotEmpty) {
+        for (final ex in vo.invalidExamples) {
+          buf.writeln(
+            '  - ❌ Invalide : `${ex.value}` → rejet attendu'
+            '${ex.reason.isEmpty ? '' : ' (${ex.reason})'}',
+          );
+        }
+      }
+      if (vo.normalizationRules.isNotEmpty) {
+        buf.writeln(
+          '  - 🧹 Normalisation vérifiée : ${vo.normalizationRules.join(', ')}.',
+        );
+      }
+      if (vo.crossFieldRules.isNotEmpty) {
+        buf.writeln(
+          '  - ⚖️ Règles inter-champs vérifiées : ${vo.crossFieldRules.join(' ; ')}.',
+        );
+      }
+    }
+    buf.writeln();
+  }
+
+  /// Rédige les consignes de mapping Persistance ↔ Value Objects (déballage / reconstitution).
+  static void writePersistenceValueObjectsMappingSection(
+    StringBuffer buf,
+    List<ResolvedValueObject> valueObjects, {
+    String heading = '### 3.3 Mapping Persistance ↔ Value Objects',
+  }) {
+    if (valueObjects.isEmpty) return;
+    buf
+      ..writeln(heading)
+      ..writeln(
+        'Le mapper Domain ↔ Infrastructure DOIT sérialiser/désérialiser explicitement les Value Objects référencés (déballage primitif pour les scalaires, sous-document/colonnes dédiées pour les composites, et reconstitution via factory/reconstitute) :',
+      );
+    for (final item in valueObjects) {
+      final vo = item.spec;
+      if (vo.isScalar) {
+        buf.writeln(
+          '- **`${vo.technicalName}`** (Scalaire `${vo.primitiveType.dslKeyword}` · ${item.scope.label}) : déballage en primitif `${vo.primitiveType.dslKeyword}` côté persistance, reconstitution via `${vo.technicalName}.create(...)` / `reconstitute(...)`.',
+        );
+      } else {
+        final fieldNames = vo.fields.map((f) => '`${f.name}`').join(', ');
+        buf.writeln(
+          '- **`${vo.technicalName}`** (Composite · ${item.scope.label}) : mapping bidirectionnel des champs $fieldNames en sous-document ou colonnes dédiées, reconstitution immuable via `${vo.technicalName}.create(...)` / `reconstitute(...)`.',
+        );
+      }
+    }
+    buf.writeln();
   }
 
   /// Ajoute en fin de prompt la section d'extension de la stack technique,

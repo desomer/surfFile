@@ -23,6 +23,7 @@ import 'design/model_dictionary_view.dart';
 import 'design/models_contracts_view.dart';
 import 'design/systems_services_view.dart';
 import 'design/usecase_orchestration_view.dart';
+import 'design/value_objects_catalog_view.dart';
 import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
@@ -293,7 +294,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           final domain = widget.controller.domainCatalog.domains
               .where((domain) => domain.id == detail.domainId)
               .firstOrNull;
-          final name = (id == 'domain_management' || id == 'systems_services')
+          final name = (id == 'domain_management' ||
+                  id == 'systems_services' ||
+                  id == 'value_objects')
               ? domain?.name
               : domain?.contracts?.entryById(detail.entryId)?.name;
           if (name != null) {
@@ -634,8 +637,24 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         initialDomainId: _initialModelsDomainId,
         onBack: () => _selectDesignPage(null),
         onManageDomains: () => _selectDesignPage('domain_management'),
+        onOpenValueObjectsCatalog: (domainId) =>
+            _selectDesignPage('value_objects', initialDomainId: domainId),
         onOpenEntryChanged: _selectDesignDetail,
         navigationController: _modelsNavController,
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
+      );
+    }
+    if (_activeDesignLinkId == 'value_objects') {
+      return ValueObjectsCatalogView(
+        key: ObjectKey(widget.controller.store),
+        controller: widget.controller,
+        initialDomainId: _initialModelsDomainId,
+        onBack: () => _selectDesignPage(null),
+        onManageDomains: () => _selectDesignPage('domain_management'),
+        onDomainChanged: (id) => _selectDesignDetail(id, null),
         pickAttachments: widget.pickAttachments,
         pasteAttachments: widget.pasteAttachments,
         hasClipboardMedia: widget.hasClipboardMedia,
@@ -693,6 +712,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         if (item.id == 'domain_management' ||
             item.id == 'systems_services' ||
             item.id == 'models_contracts' ||
+            item.id == 'value_objects' ||
             item.id == 'usecase_orchestration') {
           _selectDesignPage(item.id);
           return;

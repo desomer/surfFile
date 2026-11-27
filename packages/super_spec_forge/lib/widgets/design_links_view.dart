@@ -103,6 +103,13 @@ class DesignLinksView extends StatefulWidget {
           icon: Icons.data_object_rounded,
         ),
         DesignLinkItem(
+          id: 'value_objects',
+          label: 'Catalogue des Value Objects',
+          icon: Icons.diamond_outlined,
+          tooltip:
+              'Définir les Value Objects immuables (Shared Kernel & par domaine) de l’Architecture Hexagonale',
+        ),
+        DesignLinkItem(
           id: 'outbound_mapping',
           label: 'Mapping sortant',
           icon: Icons.map_outlined,

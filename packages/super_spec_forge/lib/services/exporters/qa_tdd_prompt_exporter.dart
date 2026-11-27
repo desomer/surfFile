@@ -1720,6 +1720,10 @@ abstract final class QaAutoSeeder {
             : 'val_${index + 1}',
       BusinessAttributeType.reference =>
         'ref_${(index + 1).toString().padLeft(3, '0')}',
+      BusinessAttributeType.valueObject =>
+        attr.valueObjectId.isNotEmpty
+            ? '${attr.valueObjectId}_${index + 1}'
+            : _nominalString(attr, index: index),
       BusinessAttributeType.object ||
       BusinessAttributeType.json => const <String, Object?>{},
     };
