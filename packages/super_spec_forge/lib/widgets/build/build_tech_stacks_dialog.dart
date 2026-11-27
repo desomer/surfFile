@@ -612,6 +612,13 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
         else
           domain,
     ];
+    final nextServices = <Microservice>[
+      for (final service in catalog.microservices)
+        if (service.techStackId == targetId)
+          service.copyWith(clearTechStackId: true)
+        else
+          service,
+    ];
 
     setState(() {
       _saving = true;
@@ -621,6 +628,7 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
       await widget.controller.updateDomainCatalog(
         catalog.copyWith(
           domains: nextDomains,
+          microservices: nextServices,
           techStacks: nextStacks,
           updatedAt: DateTime.now().toUtc(),
         ),

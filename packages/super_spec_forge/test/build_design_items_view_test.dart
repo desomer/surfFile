@@ -1765,4 +1765,58 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Build : bouton apps de l’AppBar depuis Sélection des Prompts IA ramène directement au menu Build',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final billing = _buildBillingDomain();
+      final controller = _createController(
+        DomainCatalog(domains: <FunctionalDomain>[billing]),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Build'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-menu-btn')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('build-item-useCase-uc_issue_invoice')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('build-next-prompts-btn')));
+      await tester.pumpAndSettle();
+
+      final backFinder = find.byKey(const ValueKey('spec-forge-appbar-back-btn'));
+      final menuFinder = find.byKey(const ValueKey('spec-forge-appbar-menu-btn'));
+      expect(backFinder, findsOneWidget);
+      expect(menuFinder, findsOneWidget);
+      expect(
+        tester.getTopRight(backFinder).dx,
+        lessThanOrEqualTo(tester.getTopLeft(menuFinder).dx),
+      );
+
+      await tester.tap(menuFinder);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-build-menu-view')),
+        findsOneWidget,
+      );
+      expect(backFinder, findsNothing);
+      expect(menuFinder, findsNothing);
+    },
+  );
 }

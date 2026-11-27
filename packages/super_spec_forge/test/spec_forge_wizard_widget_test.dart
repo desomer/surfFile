@@ -4197,6 +4197,105 @@ Facture:
       expect(appBarBox.height, lessThan(kToolbarHeight));
     },
   );
+
+  testWidgets(
+    'SpecForgeShell AppBar : bouton apps (3x3) juste après retour ramène directement au menu de l’onglet actif',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final contracts = DomainContracts.parse('models:\n  Client: model\n');
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryCompanyGlossaryStore(),
+        modelDictionaryStore: _MemoryModelDictionaryStore(),
+        domainCatalogStore: _MemoryDomainCatalogStore(),
+        aiService: _FakeSpecAiService(),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+      await controller.updateDomainCatalog(
+        DomainCatalog(
+          domains: [
+            FunctionalDomain(
+              id: 'dom_crm',
+              domainCode: 'crm',
+              name: 'CRM',
+              contracts: contracts,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Sur le menu Spec, ni le bouton retour ni le bouton apps ne sont affichés.
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-menu-btn')),
+        findsNothing,
+      );
+
+      // Dans une sous-vue Spec, le bouton apps apparaît juste après le bouton retour.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-link-company_glossary')),
+      );
+      await tester.pumpAndSettle();
+
+      final backFinder = find.byKey(const ValueKey('spec-forge-appbar-back-btn'));
+      final menuFinder = find.byKey(const ValueKey('spec-forge-appbar-menu-btn'));
+      expect(backFinder, findsOneWidget);
+      expect(menuFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: menuFinder,
+          matching: find.byIcon(Icons.apps_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopRight(backFinder).dx,
+        lessThanOrEqualTo(tester.getTopLeft(menuFinder).dx),
+      );
+
+      await tester.tap(menuFinder);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+      expect(menuFinder, findsNothing);
+
+      // Dans Design › Modèles & Contrats › fiche d'un modèle (niveau 1),
+      // le bouton apps saute directement au menu Design sans repasser par la liste.
+      await tester.tap(find.text('Design'));
+      await tester.pumpAndSettle();
+      expect(menuFinder, findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('design-link-models_contracts')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('open-models.Client')));
+      await tester.pumpAndSettle();
+      expect(_appBarText('Modèles & Contrats › Client'), findsOneWidget);
+
+      await tester.tap(menuFinder);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-design-view')),
+        findsOneWidget,
+      );
+      expect(backFinder, findsNothing);
+      expect(menuFinder, findsNothing);
+    },
+  );
 }
 
 class _ObjectScopeAndFilterAiService implements SpecAiService {

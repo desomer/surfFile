@@ -101,7 +101,7 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                    width: 290,
+                    width: 390,
                     child: _buildDomainList(context, catalog, selected),
                   ),
                   const VerticalDivider(width: 1),
@@ -699,7 +699,9 @@ class _DomainManagementViewState extends State<DomainManagementView> {
               leading: const Icon(Icons.apps_rounded),
               title: Text(service.name),
               subtitle: Text(
-                '${service.serviceCode}${service.description.isNotEmpty ? ' · ${service.description}' : ''}'
+                '${service.serviceCode} · ${service.kind.shortLabel}'
+                '${service.vendor.isNotEmpty ? ' (${service.vendor})' : ''}'
+                '${service.description.isNotEmpty ? ' · ${service.description}' : ''}'
                 '${service.isActive ? '' : ' · inactif'}',
               ),
               trailing: Wrap(
@@ -1301,83 +1303,112 @@ class _DomainManagementViewState extends State<DomainManagementView> {
     final description = TextEditingController(
       text: existing?.description ?? '',
     );
+    var selectedKind = existing?.kind ?? DomainSystemKind.microservice;
     final result = await showDialog<Microservice>(
       context: context,
       builder: (dialogContext) => _DialogDisposalScope(
         disposables: [code, name, description],
-        child: AlertDialog(
-          title: Text(
-            existing == null
-                ? 'Nouveau microservice'
-                : 'Modifier le microservice',
-          ),
-          content: SizedBox(
-            width: 420,
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: code,
-                    decoration: const InputDecoration(
-                      labelText: 'Code',
-                      hintText: 'order-api',
+        child: StatefulBuilder(
+          builder: (dialogContext, setLocal) => AlertDialog(
+            title: Text(
+              existing == null
+                  ? 'Nouveau système ou service'
+                  : 'Modifier le système / service',
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<DomainSystemKind>(
+                      initialValue: selectedKind,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Catégorie',
+                      ),
+                      items: [
+                        for (final kind in DomainSystemKind.values)
+                          DropdownMenuItem(
+                            value: kind,
+                            child: Text(
+                              kind.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) setLocal(() => selectedKind = v);
+                      },
                     ),
-                    validator: (value) => _validateCode(value, 'microservice'),
-                  ),
-                  TextFormField(
-                    controller: name,
-                    decoration: const InputDecoration(labelText: 'Nom'),
-                    validator: (value) =>
-                        (value?.trim().length ?? 0) < 2 ? 'Nom requis.' : null,
-                  ),
-                  TextFormField(
-                    controller: description,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                    maxLines: 3,
-                  ),
-                ],
+                    TextFormField(
+                      controller: code,
+                      decoration: const InputDecoration(
+                        labelText: 'Code',
+                        hintText: 'order-api',
+                      ),
+                      validator: (value) => _validateCode(value, 'microservice'),
+                    ),
+                    TextFormField(
+                      controller: name,
+                      decoration: const InputDecoration(labelText: 'Nom'),
+                      validator: (value) =>
+                          (value?.trim().length ?? 0) < 2 ? 'Nom requis.' : null,
+                    ),
+                    TextFormField(
+                      controller: description,
+                      decoration: const InputDecoration(labelText: 'Description'),
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              key: const ValueKey('microservice-save-btn'),
-              onPressed: () {
-                if (!formKey.currentState!.validate()) return;
-                final duplicate = widget.controller.domainCatalog.microservices
-                    .any(
-                      (item) =>
-                          item.domainId == domain.id &&
-                          item.serviceCode == code.text.trim() &&
-                          item.id != existing?.id,
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                key: const ValueKey('microservice-save-btn'),
+                onPressed: () {
+                  if (!formKey.currentState!.validate()) return;
+                  final duplicate = widget.controller.domainCatalog.microservices
+                      .any(
+                        (item) =>
+                            item.domainId == domain.id &&
+                            item.serviceCode == code.text.trim() &&
+                            item.id != existing?.id,
+                      );
+                  if (duplicate) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('Ce code existe déjà.')),
                     );
-                if (duplicate) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Ce code existe déjà.')),
+                    return;
+                  }
+                  Navigator.pop(
+                    dialogContext,
+                    Microservice(
+                      id: existing?.id ?? 'service_${shortid.generate()}',
+                      domainId: domain.id,
+                      serviceCode: code.text.trim(),
+                      name: name.text.trim(),
+                      kind: selectedKind,
+                      description: description.text.trim(),
+                      isActive: existing?.isActive ?? true,
+                      techStackId: selectedKind.isOffTheShelf
+                          ? null
+                          : existing?.techStackId,
+                      vendor: existing?.vendor ?? '',
+                    ),
                   );
-                  return;
-                }
-                Navigator.pop(
-                  dialogContext,
-                  Microservice(
-                    id: existing?.id ?? 'service_${shortid.generate()}',
-                    domainId: domain.id,
-                    serviceCode: code.text.trim(),
-                    name: name.text.trim(),
-                    description: description.text.trim(),
-                    isActive: existing?.isActive ?? true,
-                  ),
-                );
-              },
-              child: const Text('Enregistrer'),
-            ),
-          ],
+                },
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          ),
         ),
       ),
     );

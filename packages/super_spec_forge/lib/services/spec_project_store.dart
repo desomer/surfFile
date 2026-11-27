@@ -55,6 +55,7 @@ import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_initiative.dart';
 import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/spec_vision.dart';
@@ -90,6 +91,9 @@ class SpecProjectSummary {
     this.wbsItemCount = 0,
     this.runItemCount = 0,
     this.currentCostStage = CostForgeStage.rateCardAssumptions,
+    this.initiativeCount = 1,
+    this.specFeatureCount = 1,
+    this.activeFeatureName = SpecFeatureSpec.defaultFeatureName,
     this.folderName,
   });
 
@@ -143,6 +147,15 @@ class SpecProjectSummary {
 
   /// Étape Coûts active lors de la dernière sauvegarde.
   final CostForgeStage currentCostStage;
+
+  /// Nombre d'initiatives définies dans le portefeuille du projet.
+  final int initiativeCount;
+
+  /// Nombre total de features de spécification dans le portefeuille du projet.
+  final int specFeatureCount;
+
+  /// Nom de la feature active du projet.
+  final String activeFeatureName;
 
   /// Nom du dossier slug sous `projects/`, si disponible sur disque.
   final String? folderName;
@@ -225,11 +238,20 @@ class SpecProjectStore {
   /// Identifiant de format d'un fichier de conversation d'étape Coûts (`chats/cost_*.json`).
   static const String costStageChatFormat = 'super_spec_forge.cost_stage_chat';
 
+  /// Identifiant de format d'un fichier d'initiative (`initiatives/<slug>/initiative.json`).
+  static const String initiativeFormat = 'super_spec_forge.initiative';
+
+  /// Identifiant de format d'un fichier de feature (`initiatives/<init>/features/<feat>/feature.json`).
+  static const String specFeatureFormat = 'super_spec_forge.spec_feature';
+
+  /// Identifiant de format du chat IA de découpage produit (`chats/portfolio_chat.json`).
+  static const String portfolioChatFormat = 'super_spec_forge.portfolio_chat';
+
   /// Identifiant de format d'un fichier d'ordre `_order.json`.
   static const String orderFormat = 'super_spec_forge.order';
 
   /// Version courante du format par dossier.
-  static const int storageVersion = 3;
+  static const int storageVersion = 4;
 
   static final RegExp _safeStorageFileRegex = RegExp(r'^[A-Za-z0-9._-]+$');
 
@@ -378,6 +400,22 @@ class SpecProjectStore {
   File _globalChatFile(Directory projectDir) => File(
     '${_chatsDir(projectDir).path}${Platform.pathSeparator}global_chat.json',
   );
+
+  File _portfolioChatFile(Directory projectDir) => File(
+    '${_chatsDir(projectDir).path}${Platform.pathSeparator}portfolio_chat.json',
+  );
+
+  Directory _initiativesDir(Directory projectDir) =>
+      Directory('${projectDir.path}${Platform.pathSeparator}initiatives');
+
+  File _initiativeMetaFile(Directory initDir) =>
+      File('${initDir.path}${Platform.pathSeparator}initiative.json');
+
+  Directory _initiativeFeaturesDir(Directory initDir) =>
+      Directory('${initDir.path}${Platform.pathSeparator}features');
+
+  File _featureMetaFile(Directory featDir) =>
+      File('${featDir.path}${Platform.pathSeparator}feature.json');
 
   Future<T> _enqueueProjectOp<T>(
     String projectId,
@@ -537,6 +575,8 @@ class SpecProjectStore {
       final prev = _persistedSnapshots[project.id];
 
       final writes = <Future<void>>[];
+      final attachmentsToWrite = <String, _PendingAttachmentWrite>{};
+      var anyChatOrAttachmentDirty = false;
 
       final manifestChanged =
           prev == null ||
@@ -544,7 +584,13 @@ class SpecProjectStore {
           prev.initialIdea != project.initialIdea ||
           prev.createdAt != project.createdAt ||
           prev.updatedAt != project.updatedAt ||
+          prev.activeFeatureId != project.activeFeatureId ||
+          prev.initiatives.length != project.initiatives.length ||
+          prev.totalFeatureCount != project.totalFeatureCount ||
+          prev.activeFeature.name != project.activeFeature.name ||
           prev.currentStage != project.currentStage ||
+          prev.businessObjects.length != project.businessObjects.length ||
+          prev.businessRules.length != project.businessRules.length ||
           prev.exampleMappings.length != project.exampleMappings.length ||
           prev.uxSpec.currentStage != project.uxSpec.currentStage ||
           prev.uxSpec.journeys.length != project.uxSpec.journeys.length ||
@@ -574,45 +620,6 @@ class SpecProjectStore {
         );
       }
 
-      if (prev == null || prev.vision != project.vision) {
-        writes.add(
-          _writeJson(_visionFile(projectDir), <String, Object?>{
-            'format': 'super_spec_forge.vision',
-            'version': storageVersion,
-            'data': project.vision.toJson(),
-          }),
-        );
-      }
-
-      if (prev == null || prev.cahierDesCharges != project.cahierDesCharges) {
-        writes.add(
-          _writeJson(_cahierDesChargesFile(projectDir), <String, Object?>{
-            'format': 'super_spec_forge.cahier_des_charges',
-            'version': storageVersion,
-            'data': project.cahierDesCharges.toJson(),
-          }),
-        );
-      }
-
-      if (prev == null || prev.eventStorming != project.eventStorming) {
-        writes.add(_syncEventStorming(projectDir, project.eventStorming));
-      }
-
-      if (prev == null ||
-          !listEquals(prev.businessObjects, project.businessObjects)) {
-        writes.add(_syncBusinessObjects(projectDir, project.businessObjects));
-      }
-
-      if (prev == null ||
-          !listEquals(prev.exampleMappings, project.exampleMappings)) {
-        writes.add(_syncExampleMaps(projectDir, project.exampleMappings));
-      }
-
-      if (prev == null ||
-          !listEquals(prev.businessRules, project.businessRules)) {
-        writes.add(_syncBusinessRules(projectDir, project.businessRules));
-      }
-
       if (prev == null ||
           prev.businessObjectModelPreferences !=
               project.businessObjectModelPreferences) {
@@ -625,370 +632,132 @@ class SpecProjectStore {
         );
       }
 
-      if (prev == null ||
-          !listEquals(prev.coherenceIssues, project.coherenceIssues)) {
+      if (prev == null || prev.lexiconStageState != project.lexiconStageState) {
+        anyChatOrAttachmentDirty = true;
+        final state = project.lexiconStageState;
+        final serializedMessages = <Map<String, Object?>>[
+          for (final msg in state.messages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
         writes.add(
-          _writeJson(_coherenceIssuesFile(projectDir), <String, Object?>{
-            'format': 'super_spec_forge.coherence_issues',
+          _writeJson(
+            _stageChatFile(projectDir, SpecForgeStage.lexicon),
+            <String, Object?>{
+              'format': 'super_spec_forge.stage_chat',
+              'version': storageVersion,
+              'data': <String, Object?>{
+                'stage': SpecForgeStage.lexicon.name,
+                'status': state.status.name,
+                'messages': serializedMessages,
+                'stageSummary': state.stageSummary,
+                'readyToAdvance': state.readyToAdvance,
+              },
+            },
+          ),
+        );
+      }
+
+      final portfolioChatChanged =
+          prev == null ||
+          !listEquals(
+            prev.portfolioChatMessages,
+            project.portfolioChatMessages,
+          );
+      if (portfolioChatChanged) {
+        final portfolioChatFile = _portfolioChatFile(projectDir);
+        if (project.portfolioChatMessages.isNotEmpty) {
+          anyChatOrAttachmentDirty = true;
+          final serializedPortfolio = <Map<String, Object?>>[
+            for (final msg in project.portfolioChatMessages)
+              _serializeChatMessage(msg, attachmentsToWrite),
+          ];
+          writes.add(
+            _writeJson(portfolioChatFile, <String, Object?>{
+              'format': portfolioChatFormat,
+              'version': storageVersion,
+              'items': serializedPortfolio,
+            }),
+          );
+        } else if (await portfolioChatFile.exists()) {
+          anyChatOrAttachmentDirty = true;
+          writes.add(() async {
+            try {
+              await portfolioChatFile.delete();
+            } catch (_) {}
+          }());
+        }
+      }
+
+      final globalChatChanged =
+          prev == null ||
+          !listEquals(prev.globalChatMessages, project.globalChatMessages);
+      if (globalChatChanged) {
+        anyChatOrAttachmentDirty = true;
+        final serializedGlobal = <Map<String, Object?>>[
+          for (final msg in project.globalChatMessages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
+        writes.add(
+          _writeJson(_globalChatFile(projectDir), <String, Object?>{
+            'format': 'super_spec_forge.global_chat',
             'version': storageVersion,
-            'items': [for (final i in project.coherenceIssues) i.toJson()],
+            'items': serializedGlobal,
           }),
         );
       }
 
-      final uxHasState =
-          project.uxSpec.hasContent || project.uxSpec != UxForgeSpec.empty;
-      final prevHadUxState =
-          prev != null &&
-          (prev.uxSpec.hasContent || prev.uxSpec != UxForgeSpec.empty);
-      final uxDirExisted = prevHadUxState || await _uxDir(projectDir).exists();
-      final existingUxChatStages = (!uxHasState && !uxDirExisted)
-          ? await _findExistingUxChatStages(projectDir)
-          : const <UxForgeStage>{};
-      final shouldPersistUx =
-          uxHasState || uxDirExisted || existingUxChatStages.isNotEmpty;
-      final forceInitUx =
-          uxHasState && (prev == null || !prevHadUxState || !uxDirExisted);
+      if (project.hasSingleDefaultFeature) {
+        final rootFeature = project.activeFeature;
+        final prevRoot = prev?.featureById(SpecFeatureSpec.defaultFeatureId);
+        final rootTouchedChats = await _planFeatureArtifactWrites(
+          baseDir: projectDir,
+          feature: rootFeature,
+          prev: prevRoot,
+          attachmentsToWrite: attachmentsToWrite,
+          writes: writes,
+        );
+        if (rootTouchedChats) anyChatOrAttachmentDirty = true;
 
-      if (shouldPersistUx) {
-        if (forceInitUx ||
-            (uxDirExisted && prev == null) ||
-            (prev != null &&
-                (prev.uxSpec.currentStage != project.uxSpec.currentStage ||
-                    prev.uxSpec.navigation != project.uxSpec.navigation))) {
-          writes.add(
-            _writeJson(_uxNavigationFile(projectDir), <String, Object?>{
-              'format': uxNavigationFormat,
-              'version': storageVersion,
-              'currentStage': project.uxSpec.currentStage.name,
-              'navigation': project.uxSpec.navigation.toJson(),
-            }),
+        final initDir = _initiativesDir(projectDir);
+        if (await initDir.exists()) {
+          anyChatOrAttachmentDirty = true;
+          writes.add(() async {
+            try {
+              await initDir.delete(recursive: true);
+            } catch (_) {}
+          }());
+        }
+      } else {
+        final rootFeature = project.featureById(
+          SpecFeatureSpec.defaultFeatureId,
+        );
+        if (rootFeature != null) {
+          final prevRoot = prev?.featureById(SpecFeatureSpec.defaultFeatureId);
+          final rootTouchedChats = await _planFeatureArtifactWrites(
+            baseDir: projectDir,
+            feature: rootFeature,
+            prev: prevRoot,
+            attachmentsToWrite: attachmentsToWrite,
+            writes: writes,
           );
+          if (rootTouchedChats) anyChatOrAttachmentDirty = true;
+        } else if (prev == null ||
+            prev.featureById(SpecFeatureSpec.defaultFeatureId) != null) {
+          anyChatOrAttachmentDirty = true;
+          writes.add(_pruneRootFeatureOnlyArtifacts(projectDir));
         }
 
-        if (forceInitUx ||
-            (uxDirExisted && prev == null) ||
-            (prev != null &&
-                !listEquals(
-                  prev.uxSpec.coherenceIssues,
-                  project.uxSpec.coherenceIssues,
-                ))) {
-          writes.add(
-            _writeJson(_uxCoherenceIssuesFile(projectDir), <String, Object?>{
-              'format': uxCoherenceIssuesFormat,
-              'version': storageVersion,
-              'items': [
-                for (final i in project.uxSpec.coherenceIssues) i.toJson(),
-              ],
-            }),
-          );
-        }
-
-        if ((forceInitUx && project.uxSpec.journeys.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.uxSpec.journeys, project.uxSpec.journeys)) {
-          writes.add(_syncUxJourneys(projectDir, project.uxSpec.journeys));
-        }
-
-        if ((forceInitUx && project.uxSpec.screens.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.uxSpec.screens, project.uxSpec.screens)) {
-          writes.add(_syncUxScreens(projectDir, project.uxSpec.screens));
-        }
+        final portfolioTouchedChats = await _syncInitiativesPortfolio(
+          projectDir: projectDir,
+          project: project,
+          prev: prev,
+          attachmentsToWrite: attachmentsToWrite,
+          writes: writes,
+        );
+        if (portfolioTouchedChats) anyChatOrAttachmentDirty = true;
       }
 
-      final qaHasState =
-          project.qaSpec.hasContent || project.qaSpec != QaForgeSpec.empty;
-      final prevHadQaState =
-          prev != null &&
-          (prev.qaSpec.hasContent || prev.qaSpec != QaForgeSpec.empty);
-      final qaDirExisted = prevHadQaState || await _qaDir(projectDir).exists();
-      final existingQaChatStages = (!qaHasState && !qaDirExisted)
-          ? await _findExistingQaChatStages(projectDir)
-          : const <QaForgeStage>{};
-      final shouldPersistQa =
-          qaHasState || qaDirExisted || existingQaChatStages.isNotEmpty;
-      final forceInitQa =
-          qaHasState && (prev == null || !prevHadQaState || !qaDirExisted);
-
-      if (shouldPersistQa) {
-        if (forceInitQa ||
-            (qaDirExisted && prev == null) ||
-            (prev != null &&
-                (prev.qaSpec.currentStage != project.qaSpec.currentStage ||
-                    prev.qaSpec.gherkinLanguage !=
-                        project.qaSpec.gherkinLanguage))) {
-          writes.add(
-            _writeJson(_qaMetaFile(projectDir), <String, Object?>{
-              'format': qaMetaFormat,
-              'version': storageVersion,
-              'currentStage': project.qaSpec.currentStage.name,
-              'gherkinLanguage': project.qaSpec.gherkinLanguage.name,
-            }),
-          );
-        }
-
-        if (forceInitQa ||
-            (qaDirExisted && prev == null) ||
-            (prev != null &&
-                !listEquals(
-                  prev.qaSpec.coherenceIssues,
-                  project.qaSpec.coherenceIssues,
-                ))) {
-          writes.add(
-            _writeJson(_qaCoherenceIssuesFile(projectDir), <String, Object?>{
-              'format': qaCoherenceIssuesFormat,
-              'version': storageVersion,
-              'items': [
-                for (final i in project.qaSpec.coherenceIssues) i.toJson(),
-              ],
-            }),
-          );
-        }
-
-        if ((forceInitQa && project.qaSpec.fixtures.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.qaSpec.fixtures, project.qaSpec.fixtures)) {
-          writes.add(_syncQaFixtures(projectDir, project.qaSpec.fixtures));
-        }
-
-        if ((forceInitQa && project.qaSpec.features.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.qaSpec.features, project.qaSpec.features)) {
-          writes.add(_syncQaFeatures(projectDir, project.qaSpec.features));
-        }
-
-        if ((forceInitQa && project.qaSpec.tddSuites.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.qaSpec.tddSuites, project.qaSpec.tddSuites)) {
-          writes.add(_syncQaTddSuites(projectDir, project.qaSpec.tddSuites));
-        }
-      }
-
-      final costHasState = project.costSpec.hasContent;
-      final prevHadCostState = prev != null && prev.costSpec.hasContent;
-      final costDirExisted =
-          prevHadCostState || await _costDir(projectDir).exists();
-      final existingCostChatStages =
-          (!costHasState && !costDirExisted && prev == null)
-          ? await _findExistingCostChatStages(projectDir)
-          : const <CostForgeStage>{};
-      final forceInitCost =
-          costHasState &&
-          (prev == null || !prevHadCostState || !costDirExisted);
-      final shouldPruneEmptyCost =
-          !costHasState &&
-          (costDirExisted || existingCostChatStages.isNotEmpty);
-
-      if (costHasState) {
-        if (forceInitCost ||
-            prev == null ||
-            !_hasSameCostAssumptions(prev.costSpec, project.costSpec)) {
-          writes.add(
-            _writeJson(
-              _costAssumptionsFile(projectDir),
-              _costAssumptionsToJson(project.costSpec),
-            ),
-          );
-        }
-
-        if (forceInitCost ||
-            prev == null ||
-            !listEquals(
-              prev.costSpec.coherenceIssues,
-              project.costSpec.coherenceIssues,
-            )) {
-          writes.add(
-            _writeJson(_costCoherenceIssuesFile(projectDir), <String, Object?>{
-              'format': costCoherenceIssuesFormat,
-              'version': storageVersion,
-              'items': [
-                for (final i in project.costSpec.coherenceIssues) i.toJson(),
-              ],
-            }),
-          );
-        }
-
-        if ((forceInitCost && project.costSpec.wbsItems.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.costSpec.wbsItems, project.costSpec.wbsItems)) {
-          writes.add(_syncCostWbs(projectDir, project.costSpec.wbsItems));
-        }
-
-        if ((forceInitCost && project.costSpec.runItems.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.costSpec.runItems, project.costSpec.runItems)) {
-          writes.add(_syncCostRun(projectDir, project.costSpec.runItems));
-        }
-
-        if ((forceInitCost && project.costSpec.riskItems.isNotEmpty) ||
-            prev == null ||
-            !listEquals(prev.costSpec.riskItems, project.costSpec.riskItems)) {
-          writes.add(_syncCostRisks(projectDir, project.costSpec.riskItems));
-        }
-      } else if (shouldPruneEmptyCost) {
-        writes.add(_pruneEmptyCostArtifacts(projectDir));
-      }
-
-      final changedStages = <SpecForgeStage>[
-        for (final stage in SpecForgeStage.values)
-          if (prev == null ||
-              prev.stageStateFor(stage) != project.stageStateFor(stage))
-            stage,
-      ];
-      final changedUxStages = !shouldPersistUx
-          ? const <UxForgeStage>[]
-          : (forceInitUx
-                ? UxForgeStage.values
-                : (prev == null
-                      ? <UxForgeStage>[
-                          for (final stage in UxForgeStage.values)
-                            if (existingUxChatStages.contains(stage) ||
-                                uxDirExisted)
-                              stage,
-                        ]
-                      : <UxForgeStage>[
-                          for (final stage in UxForgeStage.values)
-                            if (prev.uxSpec.stageStateFor(stage) !=
-                                project.uxSpec.stageStateFor(stage))
-                              stage,
-                        ]));
-      final changedQaStages = !shouldPersistQa
-          ? const <QaForgeStage>[]
-          : (forceInitQa
-                ? QaForgeStage.values
-                : (prev == null
-                      ? <QaForgeStage>[
-                          for (final stage in QaForgeStage.values)
-                            if (existingQaChatStages.contains(stage) ||
-                                qaDirExisted)
-                              stage,
-                        ]
-                      : <QaForgeStage>[
-                          for (final stage in QaForgeStage.values)
-                            if (prev.qaSpec.stageStateFor(stage) !=
-                                project.qaSpec.stageStateFor(stage))
-                              stage,
-                        ]));
-      final changedCostStages = !costHasState
-          ? const <CostForgeStage>[]
-          : ((forceInitCost || prev == null)
-                ? CostForgeStage.values
-                : <CostForgeStage>[
-                    for (final stage in CostForgeStage.values)
-                      if (prev.costSpec.stageStateFor(stage) !=
-                          project.costSpec.stageStateFor(stage))
-                        stage,
-                  ]);
-      final globalChatChanged =
-          prev == null ||
-          !listEquals(prev.globalChatMessages, project.globalChatMessages);
-
-      if (changedStages.isNotEmpty ||
-          changedUxStages.isNotEmpty ||
-          changedQaStages.isNotEmpty ||
-          changedCostStages.isNotEmpty ||
-          shouldPruneEmptyCost ||
-          globalChatChanged) {
-        final attachmentsToWrite = <String, _PendingAttachmentWrite>{};
-        for (final stage in changedStages) {
-          final state = project.stageStateFor(stage);
-          final serializedMessages = <Map<String, Object?>>[
-            for (final msg in state.messages)
-              _serializeChatMessage(msg, attachmentsToWrite),
-          ];
-          writes.add(
-            _writeJson(_stageChatFile(projectDir, stage), <String, Object?>{
-              'format': 'super_spec_forge.stage_chat',
-              'version': storageVersion,
-              'data': <String, Object?>{
-                'stage': state.stage.name,
-                'status': state.status.name,
-                'messages': serializedMessages,
-                'stageSummary': state.stageSummary,
-                'readyToAdvance': state.readyToAdvance,
-              },
-            }),
-          );
-        }
-
-        for (final stage in changedUxStages) {
-          final state = project.uxSpec.stageStateFor(stage);
-          final serializedMessages = <Map<String, Object?>>[
-            for (final msg in state.messages)
-              _serializeChatMessage(msg, attachmentsToWrite),
-          ];
-          writes.add(
-            _writeJson(_uxStageChatFile(projectDir, stage), <String, Object?>{
-              'format': uxStageChatFormat,
-              'version': storageVersion,
-              'data': <String, Object?>{
-                'stage': state.stage.name,
-                'status': state.status.name,
-                'messages': serializedMessages,
-                'stageSummary': state.stageSummary,
-                'readyToAdvance': state.readyToAdvance,
-              },
-            }),
-          );
-        }
-
-        for (final stage in changedQaStages) {
-          final state = project.qaSpec.stageStateFor(stage);
-          final serializedMessages = <Map<String, Object?>>[
-            for (final msg in state.messages)
-              _serializeChatMessage(msg, attachmentsToWrite),
-          ];
-          writes.add(
-            _writeJson(_qaStageChatFile(projectDir, stage), <String, Object?>{
-              'format': qaStageChatFormat,
-              'version': storageVersion,
-              'data': <String, Object?>{
-                'stage': state.stage.name,
-                'status': state.status.name,
-                'messages': serializedMessages,
-                'stageSummary': state.stageSummary,
-                'readyToAdvance': state.readyToAdvance,
-              },
-            }),
-          );
-        }
-
-        for (final stage in changedCostStages) {
-          final state = project.costSpec.stageStateFor(stage);
-          final serializedMessages = <Map<String, Object?>>[
-            for (final msg in state.messages)
-              _serializeChatMessage(msg, attachmentsToWrite),
-          ];
-          writes.add(
-            _writeJson(_costStageChatFile(projectDir, stage), <String, Object?>{
-              'format': costStageChatFormat,
-              'version': storageVersion,
-              'data': <String, Object?>{
-                'stage': state.stage.name,
-                'status': state.status.name,
-                'messages': serializedMessages,
-                'stageSummary': state.stageSummary,
-                'readyToAdvance': state.readyToAdvance,
-              },
-            }),
-          );
-        }
-
-        if (globalChatChanged) {
-          final serializedGlobal = <Map<String, Object?>>[
-            for (final msg in project.globalChatMessages)
-              _serializeChatMessage(msg, attachmentsToWrite),
-          ];
-          writes.add(
-            _writeJson(_globalChatFile(projectDir), <String, Object?>{
-              'format': 'super_spec_forge.global_chat',
-              'version': storageVersion,
-              'items': serializedGlobal,
-            }),
-          );
-        }
-
+      if (anyChatOrAttachmentDirty || attachmentsToWrite.isNotEmpty) {
         final attachmentsDir = _attachmentsDir(projectDir);
         for (final entry in attachmentsToWrite.entries) {
           final targetFile = File(
@@ -1019,6 +788,609 @@ class SpecProjectStore {
       _persistedSnapshots[project.id] = project;
       await setLastActiveProjectId(project.id);
     });
+  }
+
+  static Map<String, T> _assignUniqueSubdirs<T>(
+    List<T> items, {
+    required String Function(T item) labelFor,
+    required String Function(T item) idFor,
+    required String fallback,
+  }) {
+    final result = <String, T>{};
+    final usedLower = <String>{};
+    for (final item in items) {
+      final base = SpecStorageSlug.slugify(
+        labelFor(item),
+        fallback: fallback,
+        separator: '-',
+      );
+      var candidate = base;
+      if (!usedLower.add(candidate.toLowerCase())) {
+        final idSuffix = SpecStorageSlug.shortSuffixFromId(idFor(item));
+        candidate = '${base}__$idSuffix';
+        var idx = 2;
+        while (!usedLower.add(candidate.toLowerCase())) {
+          candidate = '${base}__${idSuffix}_$idx';
+          idx++;
+        }
+      }
+      result[candidate] = item;
+    }
+    return result;
+  }
+
+  Future<void> _pruneUnexpectedSubdirs(
+    Directory parentDir,
+    Set<String> keepLowerDirNames,
+  ) async {
+    if (!await parentDir.exists()) return;
+    await for (final entity in parentDir.list(followLinks: false)) {
+      if (entity is! Directory) continue;
+      final dirName = SpecStorageIo.fileNameOf(entity.path);
+      if (!keepLowerDirNames.contains(dirName.toLowerCase())) {
+        try {
+          await entity.delete(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _pruneRootFeatureOnlyArtifacts(Directory projectDir) async {
+    final filesToDelete = <File>[
+      _visionFile(projectDir),
+      _cahierDesChargesFile(projectDir),
+      _coherenceIssuesFile(projectDir),
+      for (final stage in SpecFeatureSpec.featureScopedStages)
+        _stageChatFile(projectDir, stage),
+      for (final stage in UxForgeStage.values)
+        _uxStageChatFile(projectDir, stage),
+      for (final stage in QaForgeStage.values)
+        _qaStageChatFile(projectDir, stage),
+      for (final stage in CostForgeStage.values)
+        _costStageChatFile(projectDir, stage),
+    ];
+    final dirsToDelete = <Directory>[
+      _eventStormingDir(projectDir),
+      _businessObjectsDir(projectDir),
+      _exampleMapsDir(projectDir),
+      _businessRulesDir(projectDir),
+      _uxDir(projectDir),
+      _qaDir(projectDir),
+      _costDir(projectDir),
+    ];
+    await Future.wait<void>([
+      for (final f in filesToDelete)
+        () async {
+          if (await f.exists()) {
+            try {
+              await f.delete();
+            } catch (_) {}
+          }
+        }(),
+      for (final d in dirsToDelete)
+        () async {
+          if (await d.exists()) {
+            try {
+              await d.delete(recursive: true);
+            } catch (_) {}
+          }
+        }(),
+    ]);
+  }
+
+  Future<bool> _syncInitiativesPortfolio({
+    required Directory projectDir,
+    required SpecForgeProject project,
+    required SpecForgeProject? prev,
+    required Map<String, _PendingAttachmentWrite> attachmentsToWrite,
+    required List<Future<void>> writes,
+  }) async {
+    var touchedChats = false;
+    final sep = Platform.pathSeparator;
+    final initiativesDir = _initiativesDir(projectDir);
+    await initiativesDir.create(recursive: true);
+
+    final initDirMap = _assignUniqueSubdirs<SpecInitiative>(
+      project.initiatives,
+      labelFor: (i) => i.code.trim().isNotEmpty ? '${i.code} ${i.name}' : i.name,
+      idFor: (i) => i.id,
+      fallback: 'initiative',
+    );
+
+    writes.add(
+      _writeJson(
+        File('${initiativesDir.path}${sep}_order.json'),
+        <String, Object?>{
+          'format': orderFormat,
+          'version': storageVersion,
+          'ids': [for (final i in project.initiatives) i.id],
+        },
+      ),
+    );
+
+    final keepInitDirsLower = <String>{
+      for (final dirName in initDirMap.keys) dirName.toLowerCase(),
+    };
+
+    for (final initEntry in initDirMap.entries) {
+      final initDir = Directory('${initiativesDir.path}$sep${initEntry.key}');
+      final init = initEntry.value;
+      final prevInit = prev?.initiativeById(init.id);
+      final initExisted = await _initiativeMetaFile(initDir).exists();
+
+      if (!initExisted || prevInit == null || !prevInit.hasSameMetadata(init)) {
+        writes.add(
+          _writeJson(_initiativeMetaFile(initDir), <String, Object?>{
+            'format': initiativeFormat,
+            'version': storageVersion,
+            'data': init.toMetadataJson(),
+          }),
+        );
+      }
+
+      final featuresDir = _initiativeFeaturesDir(initDir);
+      await featuresDir.create(recursive: true);
+
+      final featDirMap = _assignUniqueSubdirs<SpecFeatureSpec>(
+        init.features,
+        labelFor: (f) =>
+            f.code.trim().isNotEmpty ? '${f.code} ${f.name}' : f.name,
+        idFor: (f) => f.id,
+        fallback: 'feature',
+      );
+
+      writes.add(
+        _writeJson(
+          File('${featuresDir.path}${sep}_order.json'),
+          <String, Object?>{
+            'format': orderFormat,
+            'version': storageVersion,
+            'ids': [for (final f in init.features) f.id],
+          },
+        ),
+      );
+
+      final keepFeatDirsLower = <String>{
+        for (final dirName in featDirMap.keys) dirName.toLowerCase(),
+      };
+
+      for (final featEntry in featDirMap.entries) {
+        final featDir = Directory('${featuresDir.path}$sep${featEntry.key}');
+        final feat = featEntry.value;
+        final prevFeat = prev?.featureById(feat.id);
+        final featMetaExisted = await _featureMetaFile(featDir).exists();
+
+        if (!featMetaExisted ||
+            prevFeat == null ||
+            !prevFeat.hasSameMetadata(feat)) {
+          writes.add(
+            _writeJson(_featureMetaFile(featDir), <String, Object?>{
+              'format': specFeatureFormat,
+              'version': storageVersion,
+              'data': feat.toMetadataJson(),
+            }),
+          );
+        }
+
+        if (!feat.usesProjectRootStorage) {
+          final specAlreadyInDir = await _specDir(featDir).exists();
+          final featTouched = await _planFeatureArtifactWrites(
+            baseDir: featDir,
+            feature: feat,
+            prev: specAlreadyInDir ? prevFeat : null,
+            attachmentsToWrite: attachmentsToWrite,
+            writes: writes,
+          );
+          if (featTouched) touchedChats = true;
+        }
+      }
+
+      writes.add(_pruneUnexpectedSubdirs(featuresDir, keepFeatDirsLower));
+    }
+
+    writes.add(_pruneUnexpectedSubdirs(initiativesDir, keepInitDirsLower));
+    if (prev != null && prev.totalFeatureCount != project.totalFeatureCount) {
+      touchedChats = true;
+    }
+    return touchedChats;
+  }
+
+  Future<bool> _planFeatureArtifactWrites({
+    required Directory baseDir,
+    required SpecFeatureSpec feature,
+    required SpecFeatureSpec? prev,
+    required Map<String, _PendingAttachmentWrite> attachmentsToWrite,
+    required List<Future<void>> writes,
+  }) async {
+    var touchedChats = false;
+
+    if (prev == null || prev.vision != feature.vision) {
+      writes.add(
+        _writeJson(_visionFile(baseDir), <String, Object?>{
+          'format': 'super_spec_forge.vision',
+          'version': storageVersion,
+          'data': feature.vision.toJson(),
+        }),
+      );
+    }
+
+    if (prev == null || prev.cahierDesCharges != feature.cahierDesCharges) {
+      writes.add(
+        _writeJson(_cahierDesChargesFile(baseDir), <String, Object?>{
+          'format': 'super_spec_forge.cahier_des_charges',
+          'version': storageVersion,
+          'data': feature.cahierDesCharges.toJson(),
+        }),
+      );
+    }
+
+    if (prev == null || prev.eventStorming != feature.eventStorming) {
+      writes.add(_syncEventStorming(baseDir, feature.eventStorming));
+    }
+
+    if (prev == null ||
+        !listEquals(prev.businessObjects, feature.businessObjects)) {
+      writes.add(_syncBusinessObjects(baseDir, feature.businessObjects));
+    }
+
+    if (prev == null ||
+        !listEquals(prev.exampleMappings, feature.exampleMappings)) {
+      writes.add(_syncExampleMaps(baseDir, feature.exampleMappings));
+    }
+
+    if (prev == null ||
+        !listEquals(prev.businessRules, feature.businessRules)) {
+      writes.add(_syncBusinessRules(baseDir, feature.businessRules));
+    }
+
+    if (prev == null ||
+        !listEquals(prev.coherenceIssues, feature.coherenceIssues)) {
+      writes.add(
+        _writeJson(_coherenceIssuesFile(baseDir), <String, Object?>{
+          'format': 'super_spec_forge.coherence_issues',
+          'version': storageVersion,
+          'items': [for (final i in feature.coherenceIssues) i.toJson()],
+        }),
+      );
+    }
+
+    final uxHasState =
+        feature.uxSpec.hasContent || feature.uxSpec != UxForgeSpec.empty;
+    final prevHadUxState =
+        prev != null &&
+        (prev.uxSpec.hasContent || prev.uxSpec != UxForgeSpec.empty);
+    final uxDirExisted = prevHadUxState || await _uxDir(baseDir).exists();
+    final existingUxChatStages = (!uxHasState && !uxDirExisted)
+        ? await _findExistingUxChatStages(baseDir)
+        : const <UxForgeStage>{};
+    final shouldPersistUx =
+        uxHasState || uxDirExisted || existingUxChatStages.isNotEmpty;
+    final forceInitUx =
+        uxHasState && (prev == null || !prevHadUxState || !uxDirExisted);
+
+    if (shouldPersistUx) {
+      if (forceInitUx ||
+          (uxDirExisted && prev == null) ||
+          (prev != null &&
+              (prev.uxSpec.currentStage != feature.uxSpec.currentStage ||
+                  prev.uxSpec.navigation != feature.uxSpec.navigation))) {
+        writes.add(
+          _writeJson(_uxNavigationFile(baseDir), <String, Object?>{
+            'format': uxNavigationFormat,
+            'version': storageVersion,
+            'currentStage': feature.uxSpec.currentStage.name,
+            'navigation': feature.uxSpec.navigation.toJson(),
+          }),
+        );
+      }
+
+      if (forceInitUx ||
+          (uxDirExisted && prev == null) ||
+          (prev != null &&
+              !listEquals(
+                prev.uxSpec.coherenceIssues,
+                feature.uxSpec.coherenceIssues,
+              ))) {
+        writes.add(
+          _writeJson(_uxCoherenceIssuesFile(baseDir), <String, Object?>{
+            'format': uxCoherenceIssuesFormat,
+            'version': storageVersion,
+            'items': [
+              for (final i in feature.uxSpec.coherenceIssues) i.toJson(),
+            ],
+          }),
+        );
+      }
+
+      if ((forceInitUx && feature.uxSpec.journeys.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.uxSpec.journeys, feature.uxSpec.journeys)) {
+        writes.add(_syncUxJourneys(baseDir, feature.uxSpec.journeys));
+      }
+
+      if ((forceInitUx && feature.uxSpec.screens.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.uxSpec.screens, feature.uxSpec.screens)) {
+        writes.add(_syncUxScreens(baseDir, feature.uxSpec.screens));
+      }
+    }
+
+    final qaHasState =
+        feature.qaSpec.hasContent || feature.qaSpec != QaForgeSpec.empty;
+    final prevHadQaState =
+        prev != null &&
+        (prev.qaSpec.hasContent || prev.qaSpec != QaForgeSpec.empty);
+    final qaDirExisted = prevHadQaState || await _qaDir(baseDir).exists();
+    final existingQaChatStages = (!qaHasState && !qaDirExisted)
+        ? await _findExistingQaChatStages(baseDir)
+        : const <QaForgeStage>{};
+    final shouldPersistQa =
+        qaHasState || qaDirExisted || existingQaChatStages.isNotEmpty;
+    final forceInitQa =
+        qaHasState && (prev == null || !prevHadQaState || !qaDirExisted);
+
+    if (shouldPersistQa) {
+      if (forceInitQa ||
+          (qaDirExisted && prev == null) ||
+          (prev != null &&
+              (prev.qaSpec.currentStage != feature.qaSpec.currentStage ||
+                  prev.qaSpec.gherkinLanguage !=
+                      feature.qaSpec.gherkinLanguage))) {
+        writes.add(
+          _writeJson(_qaMetaFile(baseDir), <String, Object?>{
+            'format': qaMetaFormat,
+            'version': storageVersion,
+            'currentStage': feature.qaSpec.currentStage.name,
+            'gherkinLanguage': feature.qaSpec.gherkinLanguage.name,
+          }),
+        );
+      }
+
+      if (forceInitQa ||
+          (qaDirExisted && prev == null) ||
+          (prev != null &&
+              !listEquals(
+                prev.qaSpec.coherenceIssues,
+                feature.qaSpec.coherenceIssues,
+              ))) {
+        writes.add(
+          _writeJson(_qaCoherenceIssuesFile(baseDir), <String, Object?>{
+            'format': qaCoherenceIssuesFormat,
+            'version': storageVersion,
+            'items': [
+              for (final i in feature.qaSpec.coherenceIssues) i.toJson(),
+            ],
+          }),
+        );
+      }
+
+      if ((forceInitQa && feature.qaSpec.fixtures.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.qaSpec.fixtures, feature.qaSpec.fixtures)) {
+        writes.add(_syncQaFixtures(baseDir, feature.qaSpec.fixtures));
+      }
+
+      if ((forceInitQa && feature.qaSpec.features.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.qaSpec.features, feature.qaSpec.features)) {
+        writes.add(_syncQaFeatures(baseDir, feature.qaSpec.features));
+      }
+
+      if ((forceInitQa && feature.qaSpec.tddSuites.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.qaSpec.tddSuites, feature.qaSpec.tddSuites)) {
+        writes.add(_syncQaTddSuites(baseDir, feature.qaSpec.tddSuites));
+      }
+    }
+
+    final costHasState = feature.costSpec.hasContent;
+    final prevHadCostState = prev != null && prev.costSpec.hasContent;
+    final costDirExisted =
+        prevHadCostState || await _costDir(baseDir).exists();
+    final existingCostChatStages =
+        (!costHasState && !costDirExisted && prev == null)
+        ? await _findExistingCostChatStages(baseDir)
+        : const <CostForgeStage>{};
+    final forceInitCost =
+        costHasState &&
+        (prev == null || !prevHadCostState || !costDirExisted);
+    final shouldPruneEmptyCost =
+        !costHasState &&
+        (costDirExisted || existingCostChatStages.isNotEmpty);
+
+    if (costHasState) {
+      if (forceInitCost ||
+          prev == null ||
+          !_hasSameCostAssumptions(prev.costSpec, feature.costSpec)) {
+        writes.add(
+          _writeJson(
+            _costAssumptionsFile(baseDir),
+            _costAssumptionsToJson(feature.costSpec),
+          ),
+        );
+      }
+
+      if (forceInitCost ||
+          prev == null ||
+          !listEquals(
+            prev.costSpec.coherenceIssues,
+            feature.costSpec.coherenceIssues,
+          )) {
+        writes.add(
+          _writeJson(_costCoherenceIssuesFile(baseDir), <String, Object?>{
+            'format': costCoherenceIssuesFormat,
+            'version': storageVersion,
+            'items': [
+              for (final i in feature.costSpec.coherenceIssues) i.toJson(),
+            ],
+          }),
+        );
+      }
+
+      if ((forceInitCost && feature.costSpec.wbsItems.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.costSpec.wbsItems, feature.costSpec.wbsItems)) {
+        writes.add(_syncCostWbs(baseDir, feature.costSpec.wbsItems));
+      }
+
+      if ((forceInitCost && feature.costSpec.runItems.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.costSpec.runItems, feature.costSpec.runItems)) {
+        writes.add(_syncCostRun(baseDir, feature.costSpec.runItems));
+      }
+
+      if ((forceInitCost && feature.costSpec.riskItems.isNotEmpty) ||
+          prev == null ||
+          !listEquals(prev.costSpec.riskItems, feature.costSpec.riskItems)) {
+        writes.add(_syncCostRisks(baseDir, feature.costSpec.riskItems));
+      }
+    } else if (shouldPruneEmptyCost) {
+      touchedChats = true;
+      writes.add(_pruneEmptyCostArtifacts(baseDir));
+    }
+
+    final changedStages = <SpecForgeStage>[
+      for (final stage in SpecFeatureSpec.featureScopedStages)
+        if (prev == null ||
+            prev.stageStateFor(stage) != feature.stageStateFor(stage))
+          stage,
+    ];
+    final changedUxStages = !shouldPersistUx
+        ? const <UxForgeStage>[]
+        : (forceInitUx
+              ? UxForgeStage.values
+              : (prev == null
+                    ? <UxForgeStage>[
+                        for (final stage in UxForgeStage.values)
+                          if (existingUxChatStages.contains(stage) ||
+                              uxDirExisted)
+                            stage,
+                      ]
+                    : <UxForgeStage>[
+                        for (final stage in UxForgeStage.values)
+                          if (prev.uxSpec.stageStateFor(stage) !=
+                              feature.uxSpec.stageStateFor(stage))
+                            stage,
+                      ]));
+    final changedQaStages = !shouldPersistQa
+        ? const <QaForgeStage>[]
+        : (forceInitQa
+              ? QaForgeStage.values
+              : (prev == null
+                    ? <QaForgeStage>[
+                        for (final stage in QaForgeStage.values)
+                          if (existingQaChatStages.contains(stage) ||
+                              qaDirExisted)
+                            stage,
+                      ]
+                    : <QaForgeStage>[
+                        for (final stage in QaForgeStage.values)
+                          if (prev.qaSpec.stageStateFor(stage) !=
+                              feature.qaSpec.stageStateFor(stage))
+                            stage,
+                      ]));
+    final changedCostStages = !costHasState
+        ? const <CostForgeStage>[]
+        : ((forceInitCost || prev == null)
+              ? CostForgeStage.values
+              : <CostForgeStage>[
+                  for (final stage in CostForgeStage.values)
+                    if (prev.costSpec.stageStateFor(stage) !=
+                        feature.costSpec.stageStateFor(stage))
+                      stage,
+                ]);
+
+    if (changedStages.isNotEmpty ||
+        changedUxStages.isNotEmpty ||
+        changedQaStages.isNotEmpty ||
+        changedCostStages.isNotEmpty) {
+      touchedChats = true;
+      for (final stage in changedStages) {
+        final state = feature.stageStateFor(stage);
+        final serializedMessages = <Map<String, Object?>>[
+          for (final msg in state.messages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
+        writes.add(
+          _writeJson(_stageChatFile(baseDir, stage), <String, Object?>{
+            'format': 'super_spec_forge.stage_chat',
+            'version': storageVersion,
+            'data': <String, Object?>{
+              'stage': state.stage.name,
+              'status': state.status.name,
+              'messages': serializedMessages,
+              'stageSummary': state.stageSummary,
+              'readyToAdvance': state.readyToAdvance,
+            },
+          }),
+        );
+      }
+
+      for (final stage in changedUxStages) {
+        final state = feature.uxSpec.stageStateFor(stage);
+        final serializedMessages = <Map<String, Object?>>[
+          for (final msg in state.messages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
+        writes.add(
+          _writeJson(_uxStageChatFile(baseDir, stage), <String, Object?>{
+            'format': uxStageChatFormat,
+            'version': storageVersion,
+            'data': <String, Object?>{
+              'stage': state.stage.name,
+              'status': state.status.name,
+              'messages': serializedMessages,
+              'stageSummary': state.stageSummary,
+              'readyToAdvance': state.readyToAdvance,
+            },
+          }),
+        );
+      }
+
+      for (final stage in changedQaStages) {
+        final state = feature.qaSpec.stageStateFor(stage);
+        final serializedMessages = <Map<String, Object?>>[
+          for (final msg in state.messages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
+        writes.add(
+          _writeJson(_qaStageChatFile(baseDir, stage), <String, Object?>{
+            'format': qaStageChatFormat,
+            'version': storageVersion,
+            'data': <String, Object?>{
+              'stage': state.stage.name,
+              'status': state.status.name,
+              'messages': serializedMessages,
+              'stageSummary': state.stageSummary,
+              'readyToAdvance': state.readyToAdvance,
+            },
+          }),
+        );
+      }
+
+      for (final stage in changedCostStages) {
+        final state = feature.costSpec.stageStateFor(stage);
+        final serializedMessages = <Map<String, Object?>>[
+          for (final msg in state.messages)
+            _serializeChatMessage(msg, attachmentsToWrite),
+        ];
+        writes.add(
+          _writeJson(_costStageChatFile(baseDir, stage), <String, Object?>{
+            'format': costStageChatFormat,
+            'version': storageVersion,
+            'data': <String, Object?>{
+              'stage': state.stage.name,
+              'status': state.status.name,
+              'messages': serializedMessages,
+              'stageSummary': state.stageSummary,
+              'readyToAdvance': state.readyToAdvance,
+            },
+          }),
+        );
+      }
+    }
+
+    return touchedChats;
   }
 
   Future<void> _syncEventStorming(
@@ -1421,10 +1793,12 @@ class SpecProjectStore {
       final uxDirExists = await _uxDir(projectDir).exists();
       final qaDirExists = await _qaDir(projectDir).exists();
       final costDirExists = await _costDir(projectDir).exists();
+      final initiativesDirExists = await _initiativesDir(projectDir).exists();
       if (!specDirExists &&
           !uxDirExists &&
           !qaDirExists &&
           !costDirExists &&
+          !initiativesDirExists &&
           (manifestRaw['format'] == legacyProjectFormat ||
               manifestRaw.containsKey('lexicon') ||
               manifestRaw.containsKey('businessObjects'))) {
@@ -1442,387 +1816,87 @@ class SpecProjectStore {
       final attachmentsDir = _attachmentsDir(projectDir);
 
       final lexiconFuture = _readOptionalJsonMap(_lexiconFile(projectDir));
-      final visionFuture = _readOptionalJsonMap(_visionFile(projectDir));
-      final cdcFuture = _readOptionalJsonMap(_cahierDesChargesFile(projectDir));
-      final eventStormingFuture = _loadEventStorming(projectDir);
-      final objectsFuture = _loadSplitEntities<BusinessObjectSpec>(
-        _businessObjectsDir(projectDir),
-        parseItem: BusinessObjectSpec.fromJson,
-        idOf: (o) => o.id,
-      );
-      final exampleMapsFuture = _loadSplitEntities<ExampleMapStory>(
-        _exampleMapsDir(projectDir),
-        parseItem: ExampleMapStory.fromJson,
-        idOf: (s) => s.id,
-      );
-      final rulesFuture = _loadSplitEntities<BusinessRuleSpec>(
-        _businessRulesDir(projectDir),
-        parseItem: BusinessRuleSpec.fromJson,
-        idOf: (r) => r.id,
-      );
       final prefsFuture = _readOptionalJsonMap(
         _modelPreferencesFile(projectDir),
       );
-      final issuesFuture = _readOptionalJsonMap(
-        _coherenceIssuesFile(projectDir),
+      final lexiconChatFuture = _readOptionalJsonMap(
+        _stageChatFile(projectDir, SpecForgeStage.lexicon),
+      );
+      final portfolioChatFuture = _readOptionalJsonMap(
+        _portfolioChatFile(projectDir),
       );
       final globalChatFuture = _readOptionalJsonMap(
         _globalChatFile(projectDir),
       );
-      final stageFutures = <SpecForgeStage, Future<Map<dynamic, dynamic>?>>{
-        for (final stage in SpecForgeStage.values)
-          stage: _readOptionalJsonMap(_stageChatFile(projectDir, stage)),
-      };
-
-      final uxNavFuture = _readOptionalJsonMap(_uxNavigationFile(projectDir));
-      final uxIssuesFuture = _readOptionalJsonValue(
-        _uxCoherenceIssuesFile(projectDir),
+      final portfolioFuture = _loadInitiativesPortfolio(
+        projectDir: projectDir,
+        attachmentsDir: attachmentsDir,
+        manifestFallback: manifestRaw,
       );
-      final uxJourneysFuture = _loadSplitEntities<UxJourneySpec>(
-        _uxJourneysDir(projectDir),
-        parseItem: UxJourneySpec.fromJson,
-        idOf: (j) => j.id,
-      );
-      final uxScreensFuture = _loadSplitEntities<UxScreenSpec>(
-        _uxScreensDir(projectDir),
-        parseItem: UxScreenSpec.fromJson,
-        idOf: (s) => s.id,
-      );
-      final uxStageFutures = <UxForgeStage, Future<Map<dynamic, dynamic>?>>{
-        for (final stage in UxForgeStage.values)
-          stage: _readOptionalJsonMap(_uxStageChatFile(projectDir, stage)),
-      };
-
-      final qaMetaFuture = _readOptionalJsonMap(_qaMetaFile(projectDir));
-      final qaIssuesFuture = _readOptionalJsonValue(
-        _qaCoherenceIssuesFile(projectDir),
-      );
-      final qaFixturesFuture = _loadSplitEntities<QaFixtureSpec>(
-        _qaFixturesDir(projectDir),
-        parseItem: QaFixtureSpec.fromJson,
-        idOf: (f) => f.id,
-      );
-      final qaFeaturesFuture = _loadSplitEntities<GherkinFeatureSpec>(
-        _qaFeaturesDir(projectDir),
-        parseItem: GherkinFeatureSpec.fromJson,
-        idOf: (f) => f.id,
-      );
-      final qaTddSuitesFuture = _loadSplitEntities<TddTestSuiteSpec>(
-        _qaTddSuitesDir(projectDir),
-        parseItem: TddTestSuiteSpec.fromJson,
-        idOf: (s) => s.id,
-      );
-      final qaStageFutures = <QaForgeStage, Future<Map<dynamic, dynamic>?>>{
-        for (final stage in QaForgeStage.values)
-          stage: _readOptionalJsonMap(_qaStageChatFile(projectDir, stage)),
-      };
-
-      final costAssumptionsFuture = _readOptionalJsonMap(
-        _costAssumptionsFile(projectDir),
-      );
-      final costIssuesFuture = _readOptionalJsonValue(
-        _costCoherenceIssuesFile(projectDir),
-      );
-      final costWbsFuture = _loadSplitEntities<CostWbsItemSpec>(
-        _costWbsDir(projectDir),
-        parseItem: CostWbsItemSpec.fromJson,
-        idOf: (w) => w.id,
-      );
-      final costRunFuture = _loadSplitEntities<CostRunItemSpec>(
-        _costRunDir(projectDir),
-        parseItem: CostRunItemSpec.fromJson,
-        idOf: (r) => r.id,
-      );
-      final costRisksFuture = _loadSplitEntities<CostRiskItemSpec>(
-        _costRisksDir(projectDir),
-        parseItem: CostRiskItemSpec.fromJson,
-        idOf: (r) => r.id,
-      );
-      final costStageFutures = <CostForgeStage, Future<Map<dynamic, dynamic>?>>{
-        for (final stage in CostForgeStage.values)
-          stage: _readOptionalJsonMap(_costStageChatFile(projectDir, stage)),
-      };
 
       await Future.wait<Object?>([
         lexiconFuture,
-        visionFuture,
-        cdcFuture,
-        eventStormingFuture,
-        objectsFuture,
-        exampleMapsFuture,
-        rulesFuture,
         prefsFuture,
-        issuesFuture,
+        lexiconChatFuture,
+        portfolioChatFuture,
         globalChatFuture,
-        uxNavFuture,
-        uxIssuesFuture,
-        uxJourneysFuture,
-        uxScreensFuture,
-        qaMetaFuture,
-        qaIssuesFuture,
-        qaFixturesFuture,
-        qaFeaturesFuture,
-        qaTddSuitesFuture,
-        costAssumptionsFuture,
-        costIssuesFuture,
-        costWbsFuture,
-        costRunFuture,
-        costRisksFuture,
-        for (final stage in SpecForgeStage.values) stageFutures[stage]!,
-        for (final stage in UxForgeStage.values) uxStageFutures[stage]!,
-        for (final stage in QaForgeStage.values) qaStageFutures[stage]!,
-        for (final stage in CostForgeStage.values) costStageFutures[stage]!,
+        portfolioFuture,
       ]);
 
       final lexiconMap = await lexiconFuture;
-      final visionMap = await visionFuture;
-      final cdcMap = await cdcFuture;
-      final eventStorming = await eventStormingFuture;
-      final businessObjects = await objectsFuture;
-      final exampleMappings = await exampleMapsFuture;
-      final businessRules = await rulesFuture;
       final prefsMap = await prefsFuture;
-      final issuesMap = await issuesFuture;
+      final lexiconChatWrapper = await lexiconChatFuture;
+      final portfolioChatMap = await portfolioChatFuture;
       final globalChatMap = await globalChatFuture;
-      final uxNavMap = await uxNavFuture;
-      final uxIssuesRaw = await uxIssuesFuture;
-      final uxJourneys = await uxJourneysFuture;
-      final uxScreens = await uxScreensFuture;
-      final qaMetaMap = await qaMetaFuture;
-      final qaIssuesRaw = await qaIssuesFuture;
-      final qaFixtures = await qaFixturesFuture;
-      final qaFeatures = await qaFeaturesFuture;
-      final qaTddSuites = await qaTddSuitesFuture;
-      final costAssumptionsMap = await costAssumptionsFuture;
-      final costIssuesRaw = await costIssuesFuture;
-      final costWbsItems = await costWbsFuture;
-      final costRunItems = await costRunFuture;
-      final costRiskItems = await costRisksFuture;
+      final loadedPortfolio = await portfolioFuture;
 
-      final stageStates = <SpecForgeStage, SpecStageState>{};
-      final uxStageStates = <UxForgeStage, UxStageState>{};
-      final qaStageStates = <QaForgeStage, QaStageState>{};
-      final costStageStates = <CostForgeStage, CostStageState>{};
-      final hydrationFutures = <Future<void>>[];
-      for (final stage in SpecForgeStage.values) {
-        final rawStageWrapper = await stageFutures[stage]!;
-        final rawStageData = rawStageWrapper?['data'];
-        if (rawStageData != null) {
-          hydrationFutures.add(
-            _deserializeStageState(
-              rawStageData,
-              fallbackStage: stage,
-              attachmentsDir: attachmentsDir,
-            ).then((state) => stageStates[stage] = state),
-          );
-        }
-      }
-
-      for (final stage in UxForgeStage.values) {
-        final rawUxWrapper = await uxStageFutures[stage]!;
-        if (rawUxWrapper != null) {
-          final rawUxData = rawUxWrapper['data'] is Map
-              ? rawUxWrapper['data']
-              : rawUxWrapper;
-          hydrationFutures.add(
-            _deserializeUxStageState(
-              rawUxData,
-              fallbackStage: stage,
-              attachmentsDir: attachmentsDir,
-            ).then((state) => uxStageStates[stage] = state),
-          );
-        }
-      }
-
-      for (final stage in QaForgeStage.values) {
-        final rawQaWrapper = await qaStageFutures[stage]!;
-        if (rawQaWrapper != null) {
-          final rawQaData = rawQaWrapper['data'] is Map
-              ? rawQaWrapper['data']
-              : rawQaWrapper;
-          hydrationFutures.add(
-            _deserializeQaStageState(
-              rawQaData,
-              fallbackStage: stage,
-              attachmentsDir: attachmentsDir,
-            ).then((state) => qaStageStates[stage] = state),
-          );
-        }
-      }
-
-      for (final stage in CostForgeStage.values) {
-        final rawCostWrapper = await costStageFutures[stage]!;
-        if (rawCostWrapper != null) {
-          final rawCostData = rawCostWrapper['data'] is Map
-              ? rawCostWrapper['data']
-              : rawCostWrapper;
-          hydrationFutures.add(
-            _deserializeCostStageState(
-              rawCostData,
-              fallbackStage: stage,
-              attachmentsDir: attachmentsDir,
-            ).then((state) => costStageStates[stage] = state),
-          );
-        }
-      }
-
+      late final SpecStageState lexiconStageState;
+      late final List<SpecChatMessage> portfolioChatMessages;
       late final List<SpecChatMessage> globalChatMessages;
-      final rawGlobalItems = globalChatMap?['items'];
-      await Future.wait([
-        ...hydrationFutures,
+
+      await Future.wait<void>([
+        (() async {
+          final rawData = lexiconChatWrapper?['data'];
+          if (rawData != null) {
+            lexiconStageState = await _deserializeStageState(
+              rawData,
+              fallbackStage: SpecForgeStage.lexicon,
+              attachmentsDir: attachmentsDir,
+            );
+          } else {
+            lexiconStageState = SpecStageState(stage: SpecForgeStage.lexicon);
+          }
+        })(),
         _deserializeChatMessages(
-          rawGlobalItems,
+          portfolioChatMap?['items'],
+          attachmentsDir: attachmentsDir,
+        ).then((msgs) => portfolioChatMessages = msgs),
+        _deserializeChatMessages(
+          globalChatMap?['items'],
           attachmentsDir: attachmentsDir,
         ).then((msgs) => globalChatMessages = msgs),
       ]);
 
-      final hasModularUx =
-          uxDirExists ||
-          uxNavMap != null ||
-          uxIssuesRaw != null ||
-          uxJourneys.isNotEmpty ||
-          uxScreens.isNotEmpty ||
-          uxStageStates.isNotEmpty;
-
-      final UxForgeSpec uxSpec;
-      var loadedFromLegacyInlineUx = false;
-      if (hasModularUx) {
-        final rawCurrentUxStage =
-            uxNavMap?['currentStage'] ??
-            (uxNavMap?['data'] is Map
-                ? (uxNavMap!['data'] as Map)['currentStage']
-                : null) ??
-            manifestRaw['currentUxStage'];
-        uxSpec = UxForgeSpec(
-          currentStage: UxForgeStage.fromJson(rawCurrentUxStage),
-          journeys: uxJourneys,
-          navigation: UxNavigationSpec.fromJson(
-            _extractUxNavigationPayload(uxNavMap),
-          ),
-          screens: uxScreens,
-          stageStates: uxStageStates,
-          coherenceIssues: _parseUxCoherenceIssues(uxIssuesRaw),
-        );
-      } else if (manifestRaw['uxSpec'] != null) {
-        uxSpec = UxForgeSpec.fromJson(manifestRaw['uxSpec']);
-        loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
-      } else if (manifestRaw['currentUxStage'] != null) {
-        uxSpec = UxForgeSpec(
-          currentStage: UxForgeStage.fromJson(manifestRaw['currentUxStage']),
-        );
-        loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
+      final List<SpecInitiative> initiatives;
+      final bool loadedFromLegacyInline;
+      if (loadedPortfolio != null && loadedPortfolio.initiatives.isNotEmpty) {
+        initiatives = loadedPortfolio.initiatives;
+        loadedFromLegacyInline = loadedPortfolio.loadedFromLegacyInline;
       } else {
-        uxSpec = UxForgeSpec.empty;
+        // Migration automatique transparente des projets v1..v3 (sans dossier initiatives/).
+        final rootLoaded = await _loadFeatureArtifacts(
+          baseDir: projectDir,
+          attachmentsDir: attachmentsDir,
+          metadataSeed: SpecFeatureSpec.createDefault(
+            currentStage: currentStage,
+          ),
+          manifestFallback: manifestRaw,
+        );
+        initiatives = <SpecInitiative>[
+          SpecInitiative.createDefault(feature: rootLoaded.feature),
+        ];
+        loadedFromLegacyInline = rootLoaded.loadedFromLegacyInline;
       }
-
-      final hasModularQa =
-          qaDirExists ||
-          qaMetaMap != null ||
-          qaIssuesRaw != null ||
-          qaFixtures.isNotEmpty ||
-          qaFeatures.isNotEmpty ||
-          qaTddSuites.isNotEmpty ||
-          qaStageStates.isNotEmpty;
-
-      final QaForgeSpec qaSpec;
-      var loadedFromLegacyInlineQa = false;
-      if (hasModularQa) {
-        final rawCurrentQaStage =
-            qaMetaMap?['currentStage'] ??
-            (qaMetaMap?['data'] is Map
-                ? (qaMetaMap!['data'] as Map)['currentStage']
-                : null) ??
-            manifestRaw['currentQaStage'];
-        final rawGherkinLanguage =
-            qaMetaMap?['gherkinLanguage'] ??
-            (qaMetaMap?['data'] is Map
-                ? (qaMetaMap!['data'] as Map)['gherkinLanguage']
-                : null);
-        qaSpec = QaForgeSpec(
-          currentStage: QaForgeStage.fromJson(rawCurrentQaStage),
-          gherkinLanguage: GherkinKeywordLanguage.fromJson(rawGherkinLanguage),
-          fixtures: _deduplicateById(
-            qaFixtures,
-            idOf: (f) => f.id,
-            withId: (f, id) => f.copyWith(id: id),
-          ),
-          features: _deduplicateById(
-            qaFeatures,
-            idOf: (f) => f.id,
-            withId: (f, id) => f.copyWith(id: id),
-          ),
-          tddSuites: _deduplicateById(
-            qaTddSuites,
-            idOf: (s) => s.id,
-            withId: (s, id) => s.copyWith(id: id),
-          ),
-          stageStates: qaStageStates,
-          coherenceIssues: _parseQaCoherenceIssues(qaIssuesRaw),
-        );
-      } else if (manifestRaw['qaSpec'] != null) {
-        qaSpec = QaForgeSpec.fromJson(manifestRaw['qaSpec']);
-        loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
-      } else if (manifestRaw['currentQaStage'] != null) {
-        qaSpec = QaForgeSpec(
-          currentStage: QaForgeStage.fromJson(manifestRaw['currentQaStage']),
-        );
-        loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
-      } else {
-        qaSpec = QaForgeSpec.empty;
-      }
-
-      final hasModularCost =
-          costDirExists ||
-          costAssumptionsMap != null ||
-          costIssuesRaw != null ||
-          costWbsItems.isNotEmpty ||
-          costRunItems.isNotEmpty ||
-          costRiskItems.isNotEmpty ||
-          costStageStates.isNotEmpty;
-
-      final CostForgeSpec costSpec;
-      var loadedFromLegacyInlineCost = false;
-      if (hasModularCost) {
-        final baseCostSpec = CostForgeSpec.fromJson(
-          _extractCostAssumptionsPayload(
-            costAssumptionsMap,
-            fallbackStage: manifestRaw['currentCostStage'],
-          ),
-        );
-        costSpec = baseCostSpec.copyWith(
-          wbsItems: _deduplicateById(
-            costWbsItems,
-            idOf: (w) => w.id,
-            withId: (w, id) => w.copyWith(id: id),
-          ),
-          runItems: _deduplicateById(
-            costRunItems,
-            idOf: (r) => r.id,
-            withId: (r, id) => r.copyWith(id: id),
-          ),
-          riskItems: _deduplicateById(
-            costRiskItems,
-            idOf: (r) => r.id,
-            withId: (r, id) => r.copyWith(id: id),
-          ),
-          stageStates: costStageStates,
-          coherenceIssues: _parseCostCoherenceIssues(costIssuesRaw),
-        );
-      } else if (manifestRaw['costSpec'] != null) {
-        costSpec = CostForgeSpec.fromJson(manifestRaw['costSpec']);
-        loadedFromLegacyInlineCost = costSpec.hasContent;
-      } else if (manifestRaw['currentCostStage'] != null) {
-        costSpec = CostForgeSpec(
-          currentStage: CostForgeStage.fromJson(
-            manifestRaw['currentCostStage'],
-          ),
-        );
-        loadedFromLegacyInlineCost = costSpec.hasContent;
-      } else {
-        costSpec = CostForgeSpec.empty;
-      }
-
-      final rawIssues = issuesMap?['items'];
 
       final project = SpecForgeProject(
         id: id,
@@ -1830,36 +1904,567 @@ class SpecProjectStore {
         initialIdea: initialIdea,
         createdAt: createdAt,
         updatedAt: updatedAt,
-        currentStage: currentStage,
         lexicon: SpecLexicon.fromJson(lexiconMap?['data']),
-        vision: SpecVision.fromJson(visionMap?['data']),
-        cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
-        eventStorming: eventStorming,
-        businessObjects: businessObjects,
-        exampleMappings: exampleMappings,
-        businessRules: businessRules,
+        lexiconStageState: lexiconStageState,
         businessObjectModelPreferences: BusinessObjectModelPreferences.fromJson(
           prefsMap?['data'],
         ),
-        stageStates: stageStates,
-        coherenceIssues: [
-          if (rawIssues is List)
-            for (final item in rawIssues) SpecCoherenceIssue.fromJson(item),
-        ],
         globalChatMessages: globalChatMessages,
-        uxSpec: uxSpec,
-        qaSpec: qaSpec,
-        costSpec: costSpec,
+        portfolioChatMessages: portfolioChatMessages,
+        initiatives: initiatives,
+        activeFeatureId: (manifestRaw['activeFeatureId'] as String?)?.trim(),
       );
       project.validate();
-      if (specDirExists &&
-          !loadedFromLegacyInlineUx &&
-          !loadedFromLegacyInlineQa &&
-          !loadedFromLegacyInlineCost) {
+      if ((specDirExists || initiativesDirExists) && !loadedFromLegacyInline) {
         _persistedSnapshots[project.id] = project;
       }
       return project;
     });
+  }
+
+  Future<({List<SpecInitiative> initiatives, bool loadedFromLegacyInline})?>
+  _loadInitiativesPortfolio({
+    required Directory projectDir,
+    required Directory attachmentsDir,
+    required Map<dynamic, dynamic> manifestFallback,
+  }) async {
+    final initiativesDir = _initiativesDir(projectDir);
+    if (!await initiativesDir.exists()) return null;
+
+    final initSubdirs = <Directory>[];
+    await for (final entity in initiativesDir.list(followLinks: false)) {
+      if (entity is Directory && await _initiativeMetaFile(entity).exists()) {
+        initSubdirs.add(entity);
+      }
+    }
+    if (initSubdirs.isEmpty) return null;
+
+    initSubdirs.sort(
+      (a, b) => SpecStorageIo.fileNameOf(
+        a.path,
+      ).toLowerCase().compareTo(SpecStorageIo.fileNameOf(b.path).toLowerCase()),
+    );
+
+    var anyLegacyInline = false;
+    final parsedInitiatives = <SpecInitiative>[];
+    for (final initDir in initSubdirs) {
+      final rawInitWrapper = await _readOptionalJsonMap(
+        _initiativeMetaFile(initDir),
+      );
+      final rawInitData = rawInitWrapper?['data'] is Map
+          ? rawInitWrapper!['data'] as Map
+          : rawInitWrapper;
+      if (rawInitData == null) continue;
+
+      final featuresDir = _initiativeFeaturesDir(initDir);
+      final featSubdirs = <Directory>[];
+      if (await featuresDir.exists()) {
+        await for (final entity in featuresDir.list(followLinks: false)) {
+          if (entity is Directory && await _featureMetaFile(entity).exists()) {
+            featSubdirs.add(entity);
+          }
+        }
+      }
+      featSubdirs.sort(
+        (a, b) => SpecStorageIo.fileNameOf(a.path).toLowerCase().compareTo(
+          SpecStorageIo.fileNameOf(b.path).toLowerCase(),
+        ),
+      );
+
+      final parsedFeatures = <SpecFeatureSpec>[];
+      for (final featDir in featSubdirs) {
+        final rawFeatWrapper = await _readOptionalJsonMap(
+          _featureMetaFile(featDir),
+        );
+        final rawFeatData = rawFeatWrapper?['data'] is Map
+            ? rawFeatWrapper!['data'] as Map
+            : rawFeatWrapper;
+        if (rawFeatData == null) continue;
+        final featId = (rawFeatData['id'] as String?)?.trim() ?? '';
+        final featName = (rawFeatData['name'] as String?)?.trim() ?? '';
+        if (featId.isEmpty || featName.isEmpty) continue;
+        final seed = SpecFeatureSpec(
+          id: featId,
+          code: (rawFeatData['code'] as String?)?.trim() ?? '',
+          name: featName,
+          description: (rawFeatData['description'] as String?)?.trim() ?? '',
+          targetRelease:
+              (rawFeatData['targetRelease'] as String?)?.trim() ?? '',
+          priority: RequirementPriority.fromJson(rawFeatData['priority']),
+          status: SpecPortfolioStatus.fromJson(rawFeatData['status']),
+          currentStage: SpecForgeStage.fromJson(rawFeatData['currentStage']),
+        );
+        final artifactsBaseDir = seed.usesProjectRootStorage
+            ? projectDir
+            : featDir;
+        final loaded = await _loadFeatureArtifacts(
+          baseDir: artifactsBaseDir,
+          attachmentsDir: attachmentsDir,
+          metadataSeed: seed,
+          manifestFallback: seed.usesProjectRootStorage
+              ? manifestFallback
+              : null,
+        );
+        if (loaded.loadedFromLegacyInline) anyLegacyInline = true;
+        parsedFeatures.add(loaded.feature);
+      }
+
+      final orderedFeatures = await _orderByOrderJson<SpecFeatureSpec>(
+        featuresDir,
+        parsedFeatures,
+        idOf: (f) => f.id,
+      );
+      parsedInitiatives.add(
+        SpecInitiative.fromMetadataJson(rawInitData, features: orderedFeatures),
+      );
+    }
+
+    if (parsedInitiatives.isEmpty) return null;
+    final orderedInitiatives = await _orderByOrderJson<SpecInitiative>(
+      initiativesDir,
+      parsedInitiatives,
+      idOf: (i) => i.id,
+    );
+    return (
+      initiatives: orderedInitiatives,
+      loadedFromLegacyInline: anyLegacyInline,
+    );
+  }
+
+  Future<List<T>> _orderByOrderJson<T>(
+    Directory dir,
+    List<T> items, {
+    required String Function(T item) idOf,
+  }) async {
+    if (items.length <= 1 || !await dir.exists()) return items;
+    final orderFile = File('${dir.path}${Platform.pathSeparator}_order.json');
+    if (!await orderFile.exists()) return items;
+    try {
+      final rawOrder = jsonDecode(await orderFile.readAsString());
+      final ids = rawOrder is Map ? rawOrder['ids'] : null;
+      if (ids is! List) return items;
+      final byId = <String, T>{for (final item in items) idOf(item): item};
+      final ordered = <T>[];
+      final placed = <String>{};
+      for (final rawId in ids) {
+        if (rawId is! String) continue;
+        final item = byId[rawId];
+        if (item != null && placed.add(rawId)) {
+          ordered.add(item);
+        }
+      }
+      for (final item in items) {
+        if (placed.add(idOf(item))) {
+          ordered.add(item);
+        }
+      }
+      return ordered;
+    } catch (_) {
+      return items;
+    }
+  }
+
+  Future<({SpecFeatureSpec feature, bool loadedFromLegacyInline})>
+  _loadFeatureArtifacts({
+    required Directory baseDir,
+    required Directory attachmentsDir,
+    required SpecFeatureSpec metadataSeed,
+    Map<dynamic, dynamic>? manifestFallback,
+  }) async {
+    final uxDirExists = await _uxDir(baseDir).exists();
+    final qaDirExists = await _qaDir(baseDir).exists();
+    final costDirExists = await _costDir(baseDir).exists();
+
+    final visionFuture = _readOptionalJsonMap(_visionFile(baseDir));
+    final cdcFuture = _readOptionalJsonMap(_cahierDesChargesFile(baseDir));
+    final eventStormingFuture = _loadEventStorming(baseDir);
+    final objectsFuture = _loadSplitEntities<BusinessObjectSpec>(
+      _businessObjectsDir(baseDir),
+      parseItem: BusinessObjectSpec.fromJson,
+      idOf: (o) => o.id,
+    );
+    final exampleMapsFuture = _loadSplitEntities<ExampleMapStory>(
+      _exampleMapsDir(baseDir),
+      parseItem: ExampleMapStory.fromJson,
+      idOf: (s) => s.id,
+    );
+    final rulesFuture = _loadSplitEntities<BusinessRuleSpec>(
+      _businessRulesDir(baseDir),
+      parseItem: BusinessRuleSpec.fromJson,
+      idOf: (r) => r.id,
+    );
+    final issuesFuture = _readOptionalJsonMap(_coherenceIssuesFile(baseDir));
+    final stageFutures = <SpecForgeStage, Future<Map<dynamic, dynamic>?>>{
+      for (final stage in SpecFeatureSpec.featureScopedStages)
+        stage: _readOptionalJsonMap(_stageChatFile(baseDir, stage)),
+    };
+
+    final uxNavFuture = _readOptionalJsonMap(_uxNavigationFile(baseDir));
+    final uxIssuesFuture = _readOptionalJsonValue(
+      _uxCoherenceIssuesFile(baseDir),
+    );
+    final uxJourneysFuture = _loadSplitEntities<UxJourneySpec>(
+      _uxJourneysDir(baseDir),
+      parseItem: UxJourneySpec.fromJson,
+      idOf: (j) => j.id,
+    );
+    final uxScreensFuture = _loadSplitEntities<UxScreenSpec>(
+      _uxScreensDir(baseDir),
+      parseItem: UxScreenSpec.fromJson,
+      idOf: (s) => s.id,
+    );
+    final uxStageFutures = <UxForgeStage, Future<Map<dynamic, dynamic>?>>{
+      for (final stage in UxForgeStage.values)
+        stage: _readOptionalJsonMap(_uxStageChatFile(baseDir, stage)),
+    };
+
+    final qaMetaFuture = _readOptionalJsonMap(_qaMetaFile(baseDir));
+    final qaIssuesFuture = _readOptionalJsonValue(
+      _qaCoherenceIssuesFile(baseDir),
+    );
+    final qaFixturesFuture = _loadSplitEntities<QaFixtureSpec>(
+      _qaFixturesDir(baseDir),
+      parseItem: QaFixtureSpec.fromJson,
+      idOf: (f) => f.id,
+    );
+    final qaFeaturesFuture = _loadSplitEntities<GherkinFeatureSpec>(
+      _qaFeaturesDir(baseDir),
+      parseItem: GherkinFeatureSpec.fromJson,
+      idOf: (f) => f.id,
+    );
+    final qaTddSuitesFuture = _loadSplitEntities<TddTestSuiteSpec>(
+      _qaTddSuitesDir(baseDir),
+      parseItem: TddTestSuiteSpec.fromJson,
+      idOf: (s) => s.id,
+    );
+    final qaStageFutures = <QaForgeStage, Future<Map<dynamic, dynamic>?>>{
+      for (final stage in QaForgeStage.values)
+        stage: _readOptionalJsonMap(_qaStageChatFile(baseDir, stage)),
+    };
+
+    final costAssumptionsFuture = _readOptionalJsonMap(
+      _costAssumptionsFile(baseDir),
+    );
+    final costIssuesFuture = _readOptionalJsonValue(
+      _costCoherenceIssuesFile(baseDir),
+    );
+    final costWbsFuture = _loadSplitEntities<CostWbsItemSpec>(
+      _costWbsDir(baseDir),
+      parseItem: CostWbsItemSpec.fromJson,
+      idOf: (w) => w.id,
+    );
+    final costRunFuture = _loadSplitEntities<CostRunItemSpec>(
+      _costRunDir(baseDir),
+      parseItem: CostRunItemSpec.fromJson,
+      idOf: (r) => r.id,
+    );
+    final costRisksFuture = _loadSplitEntities<CostRiskItemSpec>(
+      _costRisksDir(baseDir),
+      parseItem: CostRiskItemSpec.fromJson,
+      idOf: (r) => r.id,
+    );
+    final costStageFutures = <CostForgeStage, Future<Map<dynamic, dynamic>?>>{
+      for (final stage in CostForgeStage.values)
+        stage: _readOptionalJsonMap(_costStageChatFile(baseDir, stage)),
+    };
+
+    await Future.wait<Object?>([
+      visionFuture,
+      cdcFuture,
+      eventStormingFuture,
+      objectsFuture,
+      exampleMapsFuture,
+      rulesFuture,
+      issuesFuture,
+      uxNavFuture,
+      uxIssuesFuture,
+      uxJourneysFuture,
+      uxScreensFuture,
+      qaMetaFuture,
+      qaIssuesFuture,
+      qaFixturesFuture,
+      qaFeaturesFuture,
+      qaTddSuitesFuture,
+      costAssumptionsFuture,
+      costIssuesFuture,
+      costWbsFuture,
+      costRunFuture,
+      costRisksFuture,
+      for (final stage in SpecFeatureSpec.featureScopedStages)
+        stageFutures[stage]!,
+      for (final stage in UxForgeStage.values) uxStageFutures[stage]!,
+      for (final stage in QaForgeStage.values) qaStageFutures[stage]!,
+      for (final stage in CostForgeStage.values) costStageFutures[stage]!,
+    ]);
+
+    final visionMap = await visionFuture;
+    final cdcMap = await cdcFuture;
+    final eventStorming = await eventStormingFuture;
+    final businessObjects = await objectsFuture;
+    final exampleMappings = await exampleMapsFuture;
+    final businessRules = await rulesFuture;
+    final issuesMap = await issuesFuture;
+    final uxNavMap = await uxNavFuture;
+    final uxIssuesRaw = await uxIssuesFuture;
+    final uxJourneys = await uxJourneysFuture;
+    final uxScreens = await uxScreensFuture;
+    final qaMetaMap = await qaMetaFuture;
+    final qaIssuesRaw = await qaIssuesFuture;
+    final qaFixtures = await qaFixturesFuture;
+    final qaFeatures = await qaFeaturesFuture;
+    final qaTddSuites = await qaTddSuitesFuture;
+    final costAssumptionsMap = await costAssumptionsFuture;
+    final costIssuesRaw = await costIssuesFuture;
+    final costWbsItems = await costWbsFuture;
+    final costRunItems = await costRunFuture;
+    final costRiskItems = await costRisksFuture;
+
+    final stageStates = <SpecForgeStage, SpecStageState>{};
+    final uxStageStates = <UxForgeStage, UxStageState>{};
+    final qaStageStates = <QaForgeStage, QaStageState>{};
+    final costStageStates = <CostForgeStage, CostStageState>{};
+    final hydrationFutures = <Future<void>>[];
+
+    for (final stage in SpecFeatureSpec.featureScopedStages) {
+      final rawStageWrapper = await stageFutures[stage]!;
+      final rawStageData = rawStageWrapper?['data'];
+      if (rawStageData != null) {
+        hydrationFutures.add(
+          _deserializeStageState(
+            rawStageData,
+            fallbackStage: stage,
+            attachmentsDir: attachmentsDir,
+          ).then((state) => stageStates[stage] = state),
+        );
+      }
+    }
+
+    for (final stage in UxForgeStage.values) {
+      final rawUxWrapper = await uxStageFutures[stage]!;
+      if (rawUxWrapper != null) {
+        final rawUxData = rawUxWrapper['data'] is Map
+            ? rawUxWrapper['data']
+            : rawUxWrapper;
+        hydrationFutures.add(
+          _deserializeUxStageState(
+            rawUxData,
+            fallbackStage: stage,
+            attachmentsDir: attachmentsDir,
+          ).then((state) => uxStageStates[stage] = state),
+        );
+      }
+    }
+
+    for (final stage in QaForgeStage.values) {
+      final rawQaWrapper = await qaStageFutures[stage]!;
+      if (rawQaWrapper != null) {
+        final rawQaData = rawQaWrapper['data'] is Map
+            ? rawQaWrapper['data']
+            : rawQaWrapper;
+        hydrationFutures.add(
+          _deserializeQaStageState(
+            rawQaData,
+            fallbackStage: stage,
+            attachmentsDir: attachmentsDir,
+          ).then((state) => qaStageStates[stage] = state),
+        );
+      }
+    }
+
+    for (final stage in CostForgeStage.values) {
+      final rawCostWrapper = await costStageFutures[stage]!;
+      if (rawCostWrapper != null) {
+        final rawCostData = rawCostWrapper['data'] is Map
+            ? rawCostWrapper['data']
+            : rawCostWrapper;
+        hydrationFutures.add(
+          _deserializeCostStageState(
+            rawCostData,
+            fallbackStage: stage,
+            attachmentsDir: attachmentsDir,
+          ).then((state) => costStageStates[stage] = state),
+        );
+      }
+    }
+
+    await Future.wait(hydrationFutures);
+
+    final hasModularUx =
+        uxDirExists ||
+        uxNavMap != null ||
+        uxIssuesRaw != null ||
+        uxJourneys.isNotEmpty ||
+        uxScreens.isNotEmpty ||
+        uxStageStates.isNotEmpty;
+
+    final UxForgeSpec uxSpec;
+    var loadedFromLegacyInlineUx = false;
+    if (hasModularUx) {
+      final rawCurrentUxStage =
+          uxNavMap?['currentStage'] ??
+          (uxNavMap?['data'] is Map
+              ? (uxNavMap!['data'] as Map)['currentStage']
+              : null) ??
+          manifestFallback?['currentUxStage'];
+      uxSpec = UxForgeSpec(
+        currentStage: UxForgeStage.fromJson(rawCurrentUxStage),
+        journeys: uxJourneys,
+        navigation: UxNavigationSpec.fromJson(
+          _extractUxNavigationPayload(uxNavMap),
+        ),
+        screens: uxScreens,
+        stageStates: uxStageStates,
+        coherenceIssues: _parseUxCoherenceIssues(uxIssuesRaw),
+      );
+    } else if (manifestFallback?['uxSpec'] != null) {
+      uxSpec = UxForgeSpec.fromJson(manifestFallback!['uxSpec']);
+      loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
+    } else if (manifestFallback?['currentUxStage'] != null) {
+      uxSpec = UxForgeSpec(
+        currentStage: UxForgeStage.fromJson(
+          manifestFallback!['currentUxStage'],
+        ),
+      );
+      loadedFromLegacyInlineUx = uxSpec != UxForgeSpec.empty;
+    } else {
+      uxSpec = UxForgeSpec.empty;
+    }
+
+    final hasModularQa =
+        qaDirExists ||
+        qaMetaMap != null ||
+        qaIssuesRaw != null ||
+        qaFixtures.isNotEmpty ||
+        qaFeatures.isNotEmpty ||
+        qaTddSuites.isNotEmpty ||
+        qaStageStates.isNotEmpty;
+
+    final QaForgeSpec qaSpec;
+    var loadedFromLegacyInlineQa = false;
+    if (hasModularQa) {
+      final rawCurrentQaStage =
+          qaMetaMap?['currentStage'] ??
+          (qaMetaMap?['data'] is Map
+              ? (qaMetaMap!['data'] as Map)['currentStage']
+              : null) ??
+          manifestFallback?['currentQaStage'];
+      final rawGherkinLanguage =
+          qaMetaMap?['gherkinLanguage'] ??
+          (qaMetaMap?['data'] is Map
+              ? (qaMetaMap!['data'] as Map)['gherkinLanguage']
+              : null);
+      qaSpec = QaForgeSpec(
+        currentStage: QaForgeStage.fromJson(rawCurrentQaStage),
+        gherkinLanguage: GherkinKeywordLanguage.fromJson(rawGherkinLanguage),
+        fixtures: _deduplicateById(
+          qaFixtures,
+          idOf: (f) => f.id,
+          withId: (f, id) => f.copyWith(id: id),
+        ),
+        features: _deduplicateById(
+          qaFeatures,
+          idOf: (f) => f.id,
+          withId: (f, id) => f.copyWith(id: id),
+        ),
+        tddSuites: _deduplicateById(
+          qaTddSuites,
+          idOf: (s) => s.id,
+          withId: (s, id) => s.copyWith(id: id),
+        ),
+        stageStates: qaStageStates,
+        coherenceIssues: _parseQaCoherenceIssues(qaIssuesRaw),
+      );
+    } else if (manifestFallback?['qaSpec'] != null) {
+      qaSpec = QaForgeSpec.fromJson(manifestFallback!['qaSpec']);
+      loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
+    } else if (manifestFallback?['currentQaStage'] != null) {
+      qaSpec = QaForgeSpec(
+        currentStage: QaForgeStage.fromJson(
+          manifestFallback!['currentQaStage'],
+        ),
+      );
+      loadedFromLegacyInlineQa = qaSpec != QaForgeSpec.empty;
+    } else {
+      qaSpec = QaForgeSpec.empty;
+    }
+
+    final hasModularCost =
+        costDirExists ||
+        costAssumptionsMap != null ||
+        costIssuesRaw != null ||
+        costWbsItems.isNotEmpty ||
+        costRunItems.isNotEmpty ||
+        costRiskItems.isNotEmpty ||
+        costStageStates.isNotEmpty;
+
+    final CostForgeSpec costSpec;
+    var loadedFromLegacyInlineCost = false;
+    if (hasModularCost) {
+      final baseCostSpec = CostForgeSpec.fromJson(
+        _extractCostAssumptionsPayload(
+          costAssumptionsMap,
+          fallbackStage: manifestFallback?['currentCostStage'],
+        ),
+      );
+      costSpec = baseCostSpec.copyWith(
+        wbsItems: _deduplicateById(
+          costWbsItems,
+          idOf: (w) => w.id,
+          withId: (w, id) => w.copyWith(id: id),
+        ),
+        runItems: _deduplicateById(
+          costRunItems,
+          idOf: (r) => r.id,
+          withId: (r, id) => r.copyWith(id: id),
+        ),
+        riskItems: _deduplicateById(
+          costRiskItems,
+          idOf: (r) => r.id,
+          withId: (r, id) => r.copyWith(id: id),
+        ),
+        stageStates: costStageStates,
+        coherenceIssues: _parseCostCoherenceIssues(costIssuesRaw),
+      );
+    } else if (manifestFallback?['costSpec'] != null) {
+      costSpec = CostForgeSpec.fromJson(manifestFallback!['costSpec']);
+      loadedFromLegacyInlineCost = costSpec.hasContent;
+    } else if (manifestFallback?['currentCostStage'] != null) {
+      costSpec = CostForgeSpec(
+        currentStage: CostForgeStage.fromJson(
+          manifestFallback!['currentCostStage'],
+        ),
+      );
+      loadedFromLegacyInlineCost = costSpec.hasContent;
+    } else {
+      costSpec = CostForgeSpec.empty;
+    }
+
+    final rawIssues = issuesMap?['items'];
+    final feature = metadataSeed.copyWith(
+      vision: SpecVision.fromJson(visionMap?['data']),
+      cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
+      eventStorming: eventStorming,
+      businessObjects: businessObjects,
+      exampleMappings: exampleMappings,
+      businessRules: businessRules,
+      stageStates: stageStates,
+      coherenceIssues: [
+        if (rawIssues is List)
+          for (final item in rawIssues) SpecCoherenceIssue.fromJson(item),
+      ],
+      uxSpec: uxSpec,
+      qaSpec: qaSpec,
+      costSpec: costSpec,
+    );
+    feature.validate();
+
+    return (
+      feature: feature,
+      loadedFromLegacyInline:
+          loadedFromLegacyInlineUx ||
+          loadedFromLegacyInlineQa ||
+          loadedFromLegacyInlineCost,
+    );
   }
 
   Future<List<T>> _loadSplitEntities<T>(
@@ -1990,17 +2595,22 @@ class SpecProjectStore {
         final rawCostSpec = decoded['costSpec'] is Map
             ? decoded['costSpec'] as Map
             : null;
+        final hasMultiFeatureCounts = decoded['specFeatureCount'] != null;
         final resolvedMeta = await Future.wait<Object>([
-          _resolveSummaryCount(
-            _businessObjectsDir(entity),
-            decoded['objectCount'],
-            fallbackList: decoded['businessObjects'],
-          ),
-          _resolveSummaryCount(
-            _businessRulesDir(entity),
-            decoded['ruleCount'],
-            fallbackList: decoded['businessRules'],
-          ),
+          hasMultiFeatureCounts
+              ? Future<int>.value(_parseManifestCount(decoded['objectCount']))
+              : _resolveSummaryCount(
+                  _businessObjectsDir(entity),
+                  decoded['objectCount'],
+                  fallbackList: decoded['businessObjects'],
+                ),
+          hasMultiFeatureCounts
+              ? Future<int>.value(_parseManifestCount(decoded['ruleCount']))
+              : _resolveSummaryCount(
+                  _businessRulesDir(entity),
+                  decoded['ruleCount'],
+                  fallbackList: decoded['businessRules'],
+                ),
           _resolveSummaryCount(
             _uxJourneysDir(entity),
             decoded['journeyCount'],
@@ -2059,6 +2669,18 @@ class SpecProjectStore {
             wbsItemCount: resolvedMeta[9] as int,
             runItemCount: resolvedMeta[10] as int,
             currentCostStage: resolvedMeta[11] as CostForgeStage,
+            initiativeCount: _parseManifestCount(decoded['initiativeCount']) > 0
+                ? _parseManifestCount(decoded['initiativeCount'])
+                : 1,
+            specFeatureCount:
+                _parseManifestCount(decoded['specFeatureCount']) > 0
+                ? _parseManifestCount(decoded['specFeatureCount'])
+                : 1,
+            activeFeatureName:
+                (decoded['activeFeatureName'] as String?)?.trim().isNotEmpty ==
+                    true
+                ? (decoded['activeFeatureName'] as String).trim()
+                : SpecFeatureSpec.defaultFeatureName,
             folderName: SpecStorageIo.fileNameOf(entity.path),
           ),
         );
@@ -2363,27 +2985,45 @@ class SpecProjectStore {
     _cachedLastActiveProjectId = projectId;
   }
 
-  Map<String, Object?> _manifestToJson(SpecForgeProject project) =>
-      <String, Object?>{
-        'format': manifestFormat,
-        'version': storageVersion,
-        'id': project.id,
-        'name': project.name,
-        'initialIdea': project.initialIdea,
-        'createdAt': project.createdAt.toUtc().toIso8601String(),
-        'updatedAt': project.updatedAt.toUtc().toIso8601String(),
-        'currentStage': project.currentStage.name,
-        'exampleMapCount': project.exampleMappings.length,
-        'currentUxStage': project.uxSpec.currentStage.name,
-        'journeyCount': project.uxSpec.journeys.length,
-        'screenCount': project.uxSpec.screens.length,
-        'currentQaStage': project.qaSpec.currentStage.name,
-        'featureCount': project.qaSpec.features.length,
-        'tddCaseCount': project.qaSpec.totalTddCaseCount,
-        'currentCostStage': project.costSpec.currentStage.name,
-        'wbsItemCount': project.costSpec.wbsItems.length,
-        'runItemCount': project.costSpec.runItems.length,
-      };
+  Map<String, Object?> _manifestToJson(SpecForgeProject project) {
+    final allFeats = project.allFeatures;
+    final totalObjects = allFeats.fold<int>(
+      0,
+      (sum, f) => sum + f.businessObjects.length,
+    );
+    final totalRules = allFeats.fold<int>(
+      0,
+      (sum, f) => sum + f.businessRules.length,
+    );
+    return <String, Object?>{
+      'format': manifestFormat,
+      'version': storageVersion,
+      'id': project.id,
+      'name': project.name,
+      'initialIdea': project.initialIdea,
+      'createdAt': project.createdAt.toUtc().toIso8601String(),
+      'updatedAt': project.updatedAt.toUtc().toIso8601String(),
+      'currentStage': project.currentStage.name,
+      if (!project.hasSingleDefaultFeature) ...<String, Object?>{
+        'activeFeatureId': project.activeFeatureId,
+        'activeFeatureName': project.activeFeature.name,
+        'initiativeCount': project.initiatives.length,
+        'specFeatureCount': project.totalFeatureCount,
+        'objectCount': totalObjects,
+        'ruleCount': totalRules,
+      },
+      'exampleMapCount': project.exampleMappings.length,
+      'currentUxStage': project.uxSpec.currentStage.name,
+      'journeyCount': project.uxSpec.journeys.length,
+      'screenCount': project.uxSpec.screens.length,
+      'currentQaStage': project.qaSpec.currentStage.name,
+      'featureCount': project.qaSpec.features.length,
+      'tddCaseCount': project.qaSpec.totalTddCaseCount,
+      'currentCostStage': project.costSpec.currentStage.name,
+      'wbsItemCount': project.costSpec.wbsItems.length,
+      'runItemCount': project.costSpec.runItems.length,
+    };
+  }
 
   Map<String, Object?> _costAssumptionsToJson(CostForgeSpec costSpec) =>
       <String, Object?>{
@@ -2808,8 +3448,8 @@ class SpecProjectStore {
 
   Set<String> _collectAllAttachmentFileNames(SpecForgeProject project) {
     final files = <String>{};
-    for (final stageState in project.stageStates.values) {
-      for (final msg in stageState.messages) {
+    void collectFromMessages(Iterable<SpecChatMessage> messages) {
+      for (final msg in messages) {
         for (final att in msg.attachments) {
           final desc = _describeAttachment(att);
           if (desc.bytes.isNotEmpty || desc.isText) {
@@ -2818,42 +3458,22 @@ class SpecProjectStore {
         }
       }
     }
-    for (final uxStageState in project.uxSpec.stageStates.values) {
-      for (final msg in uxStageState.messages) {
-        for (final att in msg.attachments) {
-          final desc = _describeAttachment(att);
-          if (desc.bytes.isNotEmpty || desc.isText) {
-            files.add(desc.fileName);
-          }
-        }
+
+    collectFromMessages(project.lexiconStageState.messages);
+    collectFromMessages(project.portfolioChatMessages);
+    collectFromMessages(project.globalChatMessages);
+    for (final feature in project.allFeatures) {
+      for (final stageState in feature.stageStates.values) {
+        collectFromMessages(stageState.messages);
       }
-    }
-    for (final qaStageState in project.qaSpec.stageStates.values) {
-      for (final msg in qaStageState.messages) {
-        for (final att in msg.attachments) {
-          final desc = _describeAttachment(att);
-          if (desc.bytes.isNotEmpty || desc.isText) {
-            files.add(desc.fileName);
-          }
-        }
+      for (final uxStageState in feature.uxSpec.stageStates.values) {
+        collectFromMessages(uxStageState.messages);
       }
-    }
-    for (final costStageState in project.costSpec.stageStates.values) {
-      for (final msg in costStageState.messages) {
-        for (final att in msg.attachments) {
-          final desc = _describeAttachment(att);
-          if (desc.bytes.isNotEmpty || desc.isText) {
-            files.add(desc.fileName);
-          }
-        }
+      for (final qaStageState in feature.qaSpec.stageStates.values) {
+        collectFromMessages(qaStageState.messages);
       }
-    }
-    for (final msg in project.globalChatMessages) {
-      for (final att in msg.attachments) {
-        final desc = _describeAttachment(att);
-        if (desc.bytes.isNotEmpty || desc.isText) {
-          files.add(desc.fileName);
-        }
+      for (final costStageState in feature.costSpec.stageStates.values) {
+        collectFromMessages(costStageState.messages);
       }
     }
     return files;

@@ -188,6 +188,23 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
               ],
             ),
           ),
+        if (stage == SpecForgeStage.lexicon)
+          _LexiconQuickActionsBar(
+            featureCode: project.hasSingleDefaultFeature
+                ? null
+                : (project.activeFeature.code.trim().isNotEmpty
+                      ? project.activeFeature.code.trim()
+                      : project.activeFeature.name),
+            featureDisplayLabel: project.activeFeature.displayLabel,
+            hasExistingTerms: project.lexicon.terms.isNotEmpty,
+            sending: widget.controller.isSending,
+            onComplementLexicon:
+                widget.controller.requestLexiconComplementForActiveFeature,
+            onAuditAmbiguities: () => widget.controller.sendUserMessage(
+              'Vérifie les éventuels doublons, synonymes ou ambiguïtés dans le lexique métier partagé'
+              '${project.hasSingleDefaultFeature ? '' : ' au regard de la feature « ${project.activeFeature.displayLabel} »'}.',
+            ),
+          ),
         SpecChatComposer(
           sending: widget.controller.isSending,
           hintText:
@@ -389,6 +406,80 @@ class _EmptyStageChatPlaceholder extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LexiconQuickActionsBar extends StatelessWidget {
+  const _LexiconQuickActionsBar({
+    required this.featureCode,
+    required this.featureDisplayLabel,
+    required this.hasExistingTerms,
+    required this.sending,
+    required this.onComplementLexicon,
+    required this.onAuditAmbiguities,
+  });
+
+  final String? featureCode;
+  final String featureDisplayLabel;
+  final bool hasExistingTerms;
+  final bool sending;
+  final VoidCallback onComplementLexicon;
+  final VoidCallback onAuditAmbiguities;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final complementLabel = featureCode != null
+        ? 'Compléter le lexique ($featureCode)'
+        : 'Rechercher un complément de lexique';
+
+    return Container(
+      key: const ValueKey('spec-chat-lexicon-quick-actions'),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow.withValues(alpha: 0.7),
+        border: Border(top: BorderSide(color: colors.outlineVariant)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Tooltip(
+            message:
+                'Rechercher avec l’IA les termes métier, sigles et ambiguïtés manquants pour $featureDisplayLabel',
+            child: ActionChip(
+              key: const ValueKey('spec-chat-lexicon-complement-action'),
+              avatar: Icon(
+                Icons.manage_search_rounded,
+                size: 16,
+                color: colors.primary,
+              ),
+              label: Text(complementLabel),
+              visualDensity: VisualDensity.compact,
+              onPressed: sending ? null : onComplementLexicon,
+            ),
+          ),
+          if (hasExistingTerms)
+            Tooltip(
+              message:
+                  'Détecter les doublons, faux-amis et termes ambigus dans le lexique partagé',
+              child: ActionChip(
+                key: const ValueKey('spec-chat-lexicon-audit-action'),
+                avatar: Icon(
+                  Icons.fact_check_outlined,
+                  size: 15,
+                  color: colors.secondary,
+                ),
+                label: const Text('Vérifier doublons & ambiguïtés'),
+                visualDensity: VisualDensity.compact,
+                onPressed: sending ? null : onAuditAmbiguities,
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -649,4 +649,206 @@ void main() {
       throwsFormatException,
     );
   });
+
+  group('DomainSystemKind & SystemsServicesAiAgent', () {
+    test(
+      'rétrocompatibilité JSON microservice par défaut et sérialisation des 7 catégories (dont Tools openSource)',
+      () {
+        final legacySvc = Microservice.fromJson(const <String, Object?>{
+          'id': 'svc_1',
+          'domainId': 'dom_1',
+          'serviceCode': 'legacy-api',
+          'name': 'Legacy API',
+        });
+        expect(legacySvc.kind, DomainSystemKind.microservice);
+        expect(legacySvc.vendor, isEmpty);
+        expect(legacySvc.techStackId, isNull);
+
+        expect(
+          DomainSystemKind.fromJson('Tools openSource'),
+          DomainSystemKind.openSourceTool,
+        );
+        expect(
+          DomainSystemKind.openSourceTool.label,
+          'Tools openSource',
+        );
+
+        for (final kind in DomainSystemKind.values) {
+          final svc = Microservice(
+            id: 'svc_${kind.name}',
+            domainId: 'dom_1',
+            serviceCode: 'code-${kind.name.toLowerCase()}',
+            name: 'Nom ${kind.shortLabel}',
+            kind: kind,
+            vendor: kind.isOffTheShelf ? 'Stripe / Apache' : '',
+            techStackId: kind.isOffTheShelf ? null : 'stack_ts_nestjs',
+          );
+          final restored = Microservice.fromJson(svc.toJson());
+          expect(restored, equals(svc));
+        }
+
+        // Stack inexistante sur un service rejetée par DomainCatalog.validate()
+        expect(
+          () => DomainCatalog(
+            domains: const [
+              FunctionalDomain(
+                id: 'dom_1',
+                domainCode: 'orders',
+                name: 'Orders',
+              ),
+            ],
+            microservices: const [
+              Microservice(
+                id: 'svc_bad_stack',
+                domainId: 'dom_1',
+                serviceCode: 'order-bff',
+                name: 'Order BFF',
+                kind: DomainSystemKind.bff,
+                techStackId: 'stack_inconnue',
+              ),
+            ],
+          ).validate(),
+          throwsFormatException,
+        );
+      },
+    );
+
+    test(
+      'SystemsServicesAiAgent.applyPatch crée, met à jour, valide les stacks et protège les configurations liées',
+      () {
+        const domain = FunctionalDomain(
+          id: 'dom_orders',
+          domainCode: 'orders',
+          name: 'Commandes',
+        );
+        final initialCatalog = DomainCatalog(domains: const [domain]);
+
+        final created = SystemsServicesAiAgent.applyPatch(
+          initialCatalog,
+          domainId: domain.id,
+          patch: const <String, Object?>{
+            'systems': <Object?>[
+              <String, Object?>{
+                'serviceCode': 'stripe-psp',
+                'name': 'Stripe Paiement',
+                'kind': 'externalApp',
+                'vendor': 'Stripe',
+                'description': 'Autorisation et capture CB',
+              },
+              <String, Object?>{
+                'serviceCode': 'keycloak-iam',
+                'name': 'Keycloak IAM',
+                'kind': 'openSourceTool',
+                'vendor': 'Apache 2.0',
+                'description': 'Fournisseur d’identité OIDC open-source',
+              },
+              <String, Object?>{
+                'serviceCode': 'shop-web',
+                'name': 'Boutique Web',
+                'kind': 'webFront',
+                'techStackId': 'ts-nestjs',
+              },
+              <String, Object?>{
+                'serviceCode': 'shop-mobile',
+                'name': 'App Mobile Client',
+                'kind': 'mobileApp',
+              },
+              <String, Object?>{
+                'serviceCode': 'mobile-bff',
+                'name': 'BFF Mobile',
+                'kind': 'bff',
+              },
+              <String, Object?>{
+                'serviceCode': 'orders-service',
+                'name': 'Service Commandes',
+                'kind': 'microservice',
+              },
+              <String, Object?>{
+                'serviceCode': 'legacy-erp',
+                'name': 'Monolithe ERP',
+                'kind': 'monolith',
+              },
+            ],
+          },
+        );
+
+        expect(created.addedCount, 7);
+        expect(created.updatedCount, 0);
+        expect(created.catalog.microservices, hasLength(7));
+        expect(created.catalog.auditLog, hasLength(1));
+
+        final ossTool = created.catalog.microservices.firstWhere(
+          (s) => s.serviceCode == 'keycloak-iam',
+        );
+        expect(ossTool.kind, DomainSystemKind.openSourceTool);
+        expect(ossTool.techStackId, isNull);
+
+        final webFront = created.catalog.microservices.firstWhere(
+          (s) => s.serviceCode == 'shop-web',
+        );
+        expect(webFront.kind, DomainSystemKind.webFront);
+        expect(
+          webFront.techStackId,
+          initialCatalog.techStacks.first.id,
+        );
+
+        // Mise à jour sans doublon + suppression d'un système non référencé
+        final updated = SystemsServicesAiAgent.applyPatch(
+          created.catalog,
+          domainId: domain.id,
+          patch: const <String, Object?>{
+            'systems': <Object?>[
+              <String, Object?>{
+                'serviceCode': 'stripe-psp',
+                'name': 'Stripe Paiement v2',
+                'kind': 'externalApp',
+                'vendor': 'Stripe Inc.',
+              },
+            ],
+            'removeSystems': <Object?>['legacy-erp'],
+          },
+        );
+        expect(updated.addedCount, 0);
+        expect(updated.updatedCount, 1);
+        expect(updated.removedCount, 1);
+        expect(updated.catalog.microservices, hasLength(6));
+
+        // Protection si une ConfigurationEntry cible le système
+        final stripe = updated.catalog.microservices.firstWhere(
+          (s) => s.serviceCode == 'stripe-psp',
+        );
+        final withEnvAndConfig = updated.catalog.copyWith(
+          environments: const [
+            LogicalEnvironment(
+              id: 'env_prod',
+              domainId: 'dom_orders',
+              environmentCode: 'prod',
+              name: 'Production',
+            ),
+          ],
+          configurationEntries: [
+            ConfigurationEntry(
+              id: 'cfg_stripe',
+              domainId: 'dom_orders',
+              environmentId: 'env_prod',
+              microserviceId: stripe.id,
+              configKey: 'STRIPE_PUBLIC_KEY',
+              entryType: ConfigurationEntryType.plainVariable,
+              plainValue: 'pk_live_123',
+            ),
+          ],
+        );
+        expect(
+          () => SystemsServicesAiAgent.applyPatch(
+            withEnvAndConfig,
+            domainId: domain.id,
+            patch: const <String, Object?>{
+              'removeSystems': <Object?>['stripe-psp'],
+            },
+          ),
+          throwsFormatException,
+        );
+      },
+    );
+  });
 }

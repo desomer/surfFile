@@ -16,6 +16,7 @@ import '../ai/cost_prompt_builder.dart';
 import '../ai/cost_stage_agent.dart';
 import '../ai/domain_layer_ai.dart';
 import '../ai/domain_model_ai.dart';
+import '../ai/portfolio_slicing_ai.dart';
 import '../ai/qa_patch_applier.dart';
 import '../ai/qa_prompt_builder.dart';
 import '../ai/qa_stage_agent.dart';
@@ -26,6 +27,7 @@ import '../ai/spec_patch_applier.dart';
 import '../ai/spec_prompt_builder.dart';
 import '../ai/spec_stage_agent.dart';
 import '../ai/spec_stream_parser.dart';
+import '../ai/systems_services_ai.dart';
 import '../ai/usecase_orchestration_ai.dart';
 import '../ai/ux_patch_applier.dart';
 import '../ai/ux_prompt_builder.dart';
@@ -43,9 +45,11 @@ import '../models/enterprise_rate_card.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_forge_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
+import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_initiative.dart';
 import '../models/spec_lexicon.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/technical_modeling_rule.dart';
@@ -160,6 +164,7 @@ class SpecForgeController extends ChangeNotifier {
   bool _isSending = false;
   bool _sendingGlobalQuestion = false;
   bool _sendingGlossary = false;
+  bool _sendingPortfolio = false;
 
   /// `domaine/entrée` du modèle dont le tour IA est en cours.
   String? _sendingDomainModelKey;
@@ -204,6 +209,12 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Onglet actif de la page « Cas d’usage & orchestration », indexé par `domainId`.
   final Map<String, UseCaseOrchestrationTab> _useCaseActiveTab = {};
+
+  /// `domainId` dont le tour IA « Systèmes & Services » est en cours.
+  String? _sendingSystemsServicesDomainId;
+
+  /// Filtre de catégorie actif sur la page « Systèmes & Services », indexé par `domainId`.
+  final Map<String, DomainSystemKind?> _systemsServicesActiveFilter = {};
   String? _lastError;
   bool _isSaving = false;
   int _saveGeneration = 0;
@@ -313,6 +324,32 @@ class SpecForgeController extends ChangeNotifier {
   ) {
     if (_useCaseActiveTab[domainId] == tab) return;
     _useCaseActiveTab[domainId] = tab;
+    notifyListeners();
+  }
+
+  /// Historique du chat IA « Systèmes & Services » du domaine [domainId].
+  List<SpecChatMessage> systemsServicesChat(String domainId) =>
+      _domainCatalog.domains
+          .where((d) => d.id == domainId)
+          .firstOrNull
+          ?.systemsServicesChat ??
+      const <SpecChatMessage>[];
+
+  /// Vrai lorsqu'un tour IA « Systèmes & Services » est en cours pour [domainId].
+  bool isSendingSystemsServices(String domainId) =>
+      _isSending && _sendingSystemsServicesDomainId == domainId;
+
+  /// Filtre de catégorie actif sur la page « Systèmes & Services » de [domainId].
+  DomainSystemKind? systemsServicesActiveFilter(String domainId) =>
+      _systemsServicesActiveFilter[domainId];
+
+  /// Mémorise le filtre de catégorie actif de « Systèmes & Services » pour [domainId].
+  void setSystemsServicesActiveFilter(
+    String domainId,
+    DomainSystemKind? filterKind,
+  ) {
+    if (_systemsServicesActiveFilter[domainId] == filterKind) return;
+    _systemsServicesActiveFilter[domainId] = filterKind;
     notifyListeners();
   }
 
@@ -445,6 +482,9 @@ class SpecForgeController extends ChangeNotifier {
 
   /// Vrai lorsqu'une question globale du chat « Question » est en cours de traitement.
   bool get isSendingGlobalQuestion => _isSending && _sendingGlobalQuestion;
+
+  /// Vrai lorsqu'un tour IA de découpage produit (Initiatives & Features) est en cours.
+  bool get isSendingPortfolio => _isSending && _sendingPortfolio;
 
   /// Étape en cours de génération IA.
   SpecForgeStage? get sendingStage => _sendingStage;
@@ -775,6 +815,9 @@ class SpecForgeController extends ChangeNotifier {
     _sendingDomainLayerKey = null;
     _useCaseActiveTab.clear();
     _sendingUseCaseDomainId = null;
+    _systemsServicesActiveFilter.clear();
+    _sendingSystemsServicesDomainId = null;
+    _sendingPortfolio = false;
     _lastError = null;
   }
 
@@ -1097,9 +1140,309 @@ class SpecForgeController extends ChangeNotifier {
     if (recordUndo) {
       _pushUndo(current);
     }
+    if (current.activeFeatureId != updated.activeFeatureId) {
+      _clearProjectFocusState();
+    }
     _project = updated;
     notifyListeners();
     await _persistProject(updated);
+  }
+
+  /// Sélectionne [featureId] comme feature active du projet et réinitialise les focus d'ateliers.
+  Future<void> selectActiveFeature(String featureId) async {
+    if (_isSending) return;
+    final current = _project;
+    if (current == null || current.activeFeatureId == featureId) return;
+    if (current.featureById(featureId) == null) return;
+    _clearProjectFocusState();
+    final next = current.selectFeature(featureId);
+    _project = next;
+    notifyListeners();
+    await _persistProject(next);
+  }
+
+  /// Crée une nouvelle initiative dans le projet actif (avec une première feature optionnelle).
+  Future<SpecInitiative?> addInitiative({
+    String? code,
+    required String name,
+    String description = '',
+    String owner = '',
+    String targetTimeframe = '',
+    RequirementPriority priority = RequirementPriority.must,
+    SpecPortfolioStatus status = SpecPortfolioStatus.draft,
+    bool createInitialFeature = true,
+  }) async {
+    final current = _project;
+    if (current == null) return null;
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return null;
+
+    final initCode = (code != null && code.trim().isNotEmpty)
+        ? code.trim()
+        : current.nextInitiativeCode();
+    final initialFeatures = <SpecFeatureSpec>[
+      if (createInitialFeature)
+        SpecFeatureSpec.create(
+          code: current.nextFeatureCode(),
+          name: trimmedName,
+          description: description,
+          priority: priority,
+        ),
+    ];
+    final created = SpecInitiative.create(
+      code: initCode,
+      name: trimmedName,
+      description: description,
+      owner: owner,
+      targetTimeframe: targetTimeframe,
+      priority: priority,
+      status: status,
+      features: initialFeatures,
+    );
+    final next = current.copyWith(
+      initiatives: <SpecInitiative>[...current.initiatives, created],
+      activeFeatureId: initialFeatures.isNotEmpty
+          ? initialFeatures.first.id
+          : current.activeFeatureId,
+    );
+    next.validate();
+    await updateProject(next);
+    return created;
+  }
+
+  /// Met à jour les métadonnées d'une initiative existante.
+  Future<void> updateInitiativeMetadata({
+    required String initiativeId,
+    String? code,
+    String? name,
+    String? description,
+    String? owner,
+    String? targetTimeframe,
+    RequirementPriority? priority,
+    SpecPortfolioStatus? status,
+  }) async {
+    final current = _project;
+    if (current == null) return;
+    final existing = current.initiativeById(initiativeId);
+    if (existing == null) return;
+    final updatedInit = existing.copyWith(
+      code: code?.trim(),
+      name: name != null && name.trim().isNotEmpty
+          ? name.trim()
+          : existing.name,
+      description: description?.trim(),
+      owner: owner?.trim(),
+      targetTimeframe: targetTimeframe?.trim(),
+      priority: priority,
+      status: status,
+    );
+    if (updatedInit == existing) return;
+    final next = current.copyWith(
+      initiatives: <SpecInitiative>[
+        for (final i in current.initiatives)
+          if (i.id == initiativeId) updatedInit else i,
+      ],
+    );
+    next.validate();
+    await updateProject(next);
+  }
+
+  /// Supprime une initiative du projet (en conservant toujours au moins 1 initiative et 1 feature).
+  Future<void> deleteInitiative(String initiativeId) async {
+    final current = _project;
+    if (current == null || current.initiatives.length <= 1) return;
+    final remaining = <SpecInitiative>[
+      for (final i in current.initiatives)
+        if (i.id != initiativeId) i,
+    ];
+    if (remaining.isEmpty) return;
+    final hasAnyFeature = remaining.any((i) => i.features.isNotEmpty);
+    if (!hasAnyFeature) {
+      remaining[0] = remaining[0].copyWith(
+        features: <SpecFeatureSpec>[
+          SpecFeatureSpec.create(
+            code: 'FEAT-01',
+            name: remaining[0].name,
+            description: remaining[0].description,
+          ),
+        ],
+      );
+    }
+    final next = current.copyWith(initiatives: remaining);
+    next.validate();
+    await updateProject(next);
+  }
+
+  /// Réordonne une initiative vers le haut (`delta < 0`) ou vers le bas (`delta > 0`).
+  Future<void> moveInitiative(String initiativeId, int delta) async {
+    final current = _project;
+    if (current == null || delta == 0) return;
+    final list = List<SpecInitiative>.from(current.initiatives);
+    final idx = list.indexWhere((i) => i.id == initiativeId);
+    if (idx < 0) return;
+    final target = (idx + delta).clamp(0, list.length - 1);
+    if (target == idx) return;
+    final moved = list.removeAt(idx);
+    list.insert(target, moved);
+    await updateProject(current.copyWith(initiatives: list));
+  }
+
+  /// Ajoute une nouvelle feature à l'initiative [initiativeId] et l'active optionnellement.
+  Future<SpecFeatureSpec?> addFeature({
+    required String initiativeId,
+    String? code,
+    required String name,
+    String description = '',
+    String targetRelease = '',
+    RequirementPriority priority = RequirementPriority.must,
+    SpecPortfolioStatus status = SpecPortfolioStatus.draft,
+    bool activate = true,
+  }) async {
+    final current = _project;
+    if (current == null) return null;
+    final targetInit = current.initiativeById(initiativeId);
+    if (targetInit == null) return null;
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return null;
+
+    final featCode = (code != null && code.trim().isNotEmpty)
+        ? code.trim()
+        : current.nextFeatureCode();
+    final created = SpecFeatureSpec.create(
+      code: featCode,
+      name: trimmedName,
+      description: description,
+      targetRelease: targetRelease,
+      priority: priority,
+      status: status,
+    );
+
+    final nextInitiatives = <SpecInitiative>[
+      for (final i in current.initiatives)
+        if (i.id == initiativeId)
+          i.copyWith(features: <SpecFeatureSpec>[...i.features, created])
+        else
+          i,
+    ];
+    final next = current.copyWith(
+      initiatives: nextInitiatives,
+      activeFeatureId: activate ? created.id : current.activeFeatureId,
+    );
+    next.validate();
+    await updateProject(next);
+    return created;
+  }
+
+  /// Met à jour les métadonnées d'une feature (et la déplace vers [targetInitiativeId] si précisé).
+  Future<void> updateFeatureMetadata({
+    required String featureId,
+    String? targetInitiativeId,
+    String? code,
+    String? name,
+    String? description,
+    String? targetRelease,
+    RequirementPriority? priority,
+    SpecPortfolioStatus? status,
+  }) async {
+    final current = _project;
+    if (current == null) return;
+    final existing = current.featureById(featureId);
+    final sourceInit = current.initiativeOfFeature(featureId);
+    if (existing == null || sourceInit == null) return;
+
+    final nextDesc = description?.trim() ?? existing.description;
+    final nextVision =
+        (existing.vision.ideaSummary.trim().isEmpty && nextDesc.isNotEmpty)
+        ? existing.vision.copyWith(ideaSummary: nextDesc)
+        : existing.vision;
+
+    final updatedFeat = existing.copyWith(
+      code: code?.trim(),
+      name: name != null && name.trim().isNotEmpty
+          ? name.trim()
+          : existing.name,
+      description: nextDesc,
+      targetRelease: targetRelease?.trim(),
+      priority: priority,
+      status: status,
+      vision: nextVision,
+    );
+
+    final destInitId =
+        (targetInitiativeId != null &&
+            current.initiativeById(targetInitiativeId) != null)
+        ? targetInitiativeId
+        : sourceInit.id;
+
+    if (destInitId == sourceInit.id && updatedFeat == existing) return;
+
+    final nextInitiatives = <SpecInitiative>[
+      for (final i in current.initiatives)
+        if (i.id == sourceInit.id && destInitId == sourceInit.id)
+          i.copyWith(
+            features: <SpecFeatureSpec>[
+              for (final f in i.features)
+                if (f.id == featureId) updatedFeat else f,
+            ],
+          )
+        else if (i.id == sourceInit.id)
+          i.copyWith(
+            features: <SpecFeatureSpec>[
+              for (final f in i.features)
+                if (f.id != featureId) f,
+            ],
+          )
+        else if (i.id == destInitId)
+          i.copyWith(features: <SpecFeatureSpec>[...i.features, updatedFeat])
+        else
+          i,
+    ];
+
+    final next = current.copyWith(initiatives: nextInitiatives);
+    next.validate();
+    await updateProject(next);
+  }
+
+  /// Supprime une feature du projet (tant qu'il reste au moins une autre feature).
+  Future<void> deleteFeature(String featureId) async {
+    final current = _project;
+    if (current == null || current.totalFeatureCount <= 1) return;
+    final nextInitiatives = <SpecInitiative>[
+      for (final i in current.initiatives)
+        i.copyWith(
+          features: <SpecFeatureSpec>[
+            for (final f in i.features)
+              if (f.id != featureId) f,
+          ],
+        ),
+    ];
+    final next = current.copyWith(initiatives: nextInitiatives);
+    next.validate();
+    await updateProject(next);
+  }
+
+  /// Réordonne une feature à l'intérieur de son initiative (`delta < 0` haut, `delta > 0` bas).
+  Future<void> moveFeature(
+    String initiativeId,
+    String featureId,
+    int delta,
+  ) async {
+    final current = _project;
+    if (current == null || delta == 0) return;
+    final init = current.initiativeById(initiativeId);
+    if (init == null) return;
+    final list = List<SpecFeatureSpec>.from(init.features);
+    final idx = list.indexWhere((f) => f.id == featureId);
+    if (idx < 0) return;
+    final target = (idx + delta).clamp(0, list.length - 1);
+    if (target == idx) return;
+    final moved = list.removeAt(idx);
+    list.insert(target, moved);
+    final nextInitiatives = <SpecInitiative>[
+      for (final i in current.initiatives)
+        if (i.id == initiativeId) i.copyWith(features: list) else i,
+    ];
+    await updateProject(current.copyWith(initiatives: nextInitiatives));
   }
 
   /// Valide et met à jour le volet UX du projet actif (avec support Undo/Redo unifié et sauvegarde automatique).
@@ -1565,6 +1908,28 @@ class SpecForgeController extends ChangeNotifier {
       attachments: attachments,
       afterAskUserReply: false,
       forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Lance une recherche ciblée de complément de lexique métier pour la feature active.
+  Future<void> requestLexiconComplementForActiveFeature() async {
+    var current = _project;
+    if (current == null || _isSending) return;
+    if (current.currentStage != SpecForgeStage.lexicon) {
+      await goToStage(SpecForgeStage.lexicon);
+      current = _project;
+      if (current == null) return;
+    }
+    final displayText = current.hasSingleDefaultFeature
+        ? 'Rechercher un complément de lexique pour le projet.'
+        : 'Compléter le lexique métier pour ${current.activeFeature.displayLabel}.';
+    final promptInput = SpecPromptBuilder.buildLexiconComplementPrompt(current);
+    await _runAgentTurn(
+      stage: SpecForgeStage.lexicon,
+      userDisplayText: displayText,
+      promptInput: promptInput,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
     );
   }
 
@@ -3707,6 +4072,7 @@ class SpecForgeController extends ChangeNotifier {
       afterAskUserReply: afterAskUserReply,
       forceFollowUpQuestions: forceFollowUpQuestions,
       companyGlossary: _companyGlossary,
+      domainCatalog: _domainCatalog,
       modelPreferencesOverride: _modelPreferences,
       focusedObjectId: _focusedObjectId,
       focusedAttributePath: _focusedAttributePath,
@@ -3875,6 +4241,7 @@ class SpecForgeController extends ChangeNotifier {
               afterAskUserReply: afterAskUserReply || salvage.hasCheckpoint,
               forceFollowUpQuestions: forceFollowUpQuestions,
               companyGlossary: _companyGlossary,
+              domainCatalog: _domainCatalog,
               modelPreferencesOverride: _modelPreferences,
               focusedObjectId: _focusedObjectId,
               focusedAttributePath: _focusedAttributePath,
@@ -4547,6 +4914,337 @@ class SpecForgeController extends ChangeNotifier {
     _glossaryChatMessages = const <SpecChatMessage>[];
     notifyListeners();
     await _glossaryStore.saveChatMessages(_glossaryChatMessages);
+  }
+
+  /// Envoie un message utilisateur à l'agent IA de découpage produit (Initiatives & Features).
+  Future<void> sendPortfolioMessage(
+    String text, {
+    bool requestsMoreQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    if (_isSending || _project == null) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && !requestsMoreQuestions && attachments.isEmpty) {
+      return;
+    }
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose des questions complémentaires pour affiner le découpage en initiatives et features.'
+              : 'Analyse les pièces jointes et découpe le projet en initiatives et features.');
+    await _runPortfolioTurn(
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` dans le chat Initiatives & Features.
+  Future<void> submitPortfolioAskUserAnswers(
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+  }) async {
+    final current = _project;
+    if (_isSending || current == null) return;
+    final messages = current.portfolioChatMessages;
+    final idx = messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final updatedMessages = List<SpecChatMessage>.from(messages)
+      ..[idx] = targetMsg.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+      );
+    _project = current.copyWith(portfolioChatMessages: updatedMessages);
+    notifyListeners();
+
+    final summary =
+        'Arbitrage enregistré :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runPortfolioTurn(
+      userDisplayText: summary,
+      promptInput: summary,
+      afterAskUserReply: true,
+    );
+  }
+
+  /// Ignore un questionnaire dans le chat Initiatives & Features en appliquant les valeurs par défaut.
+  Future<void> skipPortfolioAskUser(String messageId) async {
+    final current = _project;
+    if (_isSending || current == null) return;
+    final messages = current.portfolioChatMessages;
+    final idx = messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+    final targetMsg = messages[idx];
+    final askUser = targetMsg.askUser;
+    if (askUser == null) return;
+
+    final defaults = askUser.defaultAnswers();
+    final updatedMessages = List<SpecChatMessage>.from(messages)
+      ..[idx] = targetMsg.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      );
+    _project = current.copyWith(portfolioChatMessages: updatedMessages);
+    notifyListeners();
+
+    final summary =
+        'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}';
+    await _runPortfolioTurn(
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput: summary,
+      afterAskUserReply: true,
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat Initiatives & Features.
+  Future<void> retryLastPortfolioTurn() async {
+    final current = _project;
+    if (_isSending || current == null) return;
+    var retryText =
+        'Découpe le projet en initiatives et features structurées et renvoie un JSON valide.';
+    var lastAttachments = const <VibeChatAttachment>[];
+    for (var i = current.portfolioChatMessages.length - 1; i >= 0; i--) {
+      final msg = current.portfolioChatMessages[i];
+      if (msg.isUser) {
+        retryText = (msg.promptText ?? msg.text).trim();
+        lastAttachments = msg.attachments;
+        break;
+      }
+    }
+    await _runPortfolioTurn(
+      userDisplayText: 'Reprise du découpage IA suite à erreur…',
+      promptInput:
+          '$retryText\n\nNOTE DE REPRISE : renvoie strictement un JSON valide.',
+      attachments: lastAttachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA de découpage produit du projet actif.
+  Future<void> clearPortfolioChat() async {
+    final current = _project;
+    if (_isSending || current == null || current.portfolioChatMessages.isEmpty) {
+      return;
+    }
+    final next = current.copyWith(
+      portfolioChatMessages: const <SpecChatMessage>[],
+    );
+    _project = next;
+    notifyListeners();
+    await _persistProject(next);
+  }
+
+  Future<void> _runPortfolioTurn({
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+  }) async {
+    final initialProject = _project;
+    if (initialProject == null) return;
+
+    final userMessage = SpecChatMessage(
+      id: 'pfmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+    );
+    final withUserMsg = initialProject.copyWith(
+      portfolioChatMessages: <SpecChatMessage>[
+        ...initialProject.portfolioChatMessages,
+        userMessage,
+      ],
+    );
+    _project = withUserMsg;
+    _isSending = true;
+    _sendingPortfolio = true;
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus = 'Découpage en initiatives et features…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    var currentPrompt = PortfolioSlicingAiAgent.buildTurnPrompt(
+      project: withUserMsg,
+      history: withUserMsg.portfolioChatMessages,
+      userInput: promptInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: afterAskUserReply,
+      forceFollowUpQuestions: forceFollowUpQuestions,
+    );
+
+    try {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        if (_stopRequested) break;
+        final parser = SpecStreamParser();
+        try {
+          final completer = Completer<void>();
+          _activeStreamCompleter = completer;
+          _activeStreamSubscription = _aiService
+              .streamTurn(
+                stage: SpecForgeStage.vision,
+                prompt: currentPrompt,
+                attachments: attachments,
+                speedMode: _speedMode,
+                systemInstructionOverride:
+                    PortfolioSlicingAiAgent.systemInstruction,
+                staticGuideOverride: PortfolioSlicingAiAgent.patchSchemaGuide,
+              )
+              .listen(
+                (event) {
+                  if (_stopRequested) return;
+                  if (event.deltaText.isNotEmpty) {
+                    final snap = parser.addChunk(event.deltaText);
+                    _streamingMessage = snap.message;
+                    if (snap.hasAskUser) {
+                      _streamingStatus = 'Préparation des arbitrages produit…';
+                    } else if (snap.hasSpecPatch) {
+                      _streamingStatus =
+                          'Structuration des initiatives et features…';
+                    } else if (snap.message != null) {
+                      _streamingStatus = 'Rédaction en cours…';
+                    }
+                    notifyListeners();
+                  }
+                },
+                onError: (Object error, StackTrace stack) {
+                  _activeStreamSubscription = null;
+                  if (!completer.isCompleted) {
+                    completer.completeError(error, stack);
+                  }
+                },
+                onDone: () {
+                  _activeStreamSubscription = null;
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
+                },
+                cancelOnError: true,
+              );
+
+          await completer.future;
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+
+          final baseProject = _project;
+          if (baseProject == null) return;
+
+          if (_stopRequested) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            final stoppedMsg = SpecChatMessage(
+              id: 'pfmsg_${shortid.generate()}',
+              isUser: false,
+              text: partial.isNotEmpty
+                  ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                  : 'Réflexion IA interrompue par l’utilisateur.',
+            );
+            final stoppedProject = baseProject.copyWith(
+              portfolioChatMessages: <SpecChatMessage>[
+                ...baseProject.portfolioChatMessages,
+                stoppedMsg,
+              ],
+            );
+            _project = stoppedProject;
+            await _persistProject(stoppedProject);
+            return;
+          }
+
+          final response = SpecAgentResponse.parse(parser.rawText);
+          var workingProject = baseProject;
+          var patchSummary = '';
+          if (response.specPatch != null && response.specPatch!.isNotEmpty) {
+            final applied = PortfolioSlicingAiAgent.applyPatch(
+              baseProject,
+              response.specPatch!,
+            );
+            if (applied.project != baseProject) {
+              _pushUndo(initialProject);
+              if (applied.project.activeFeatureId !=
+                  baseProject.activeFeatureId) {
+                _clearProjectFocusState();
+              }
+              workingProject = applied.project;
+              patchSummary = applied.summary;
+            }
+          }
+
+          final assistantMsg = SpecChatMessage(
+            id: 'pfmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          final finalProject = workingProject.copyWith(
+            portfolioChatMessages: <SpecChatMessage>[
+              ...workingProject.portfolioChatMessages,
+              assistantMsg,
+            ],
+          );
+          _project = finalProject;
+          await _persistProject(finalProject);
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          saveError(
+            '[SpecForge Portfolio IA] Tentative ${attempt + 1} : $cause',
+            stack,
+          );
+          if (attempt == 0 &&
+              (error is FormatException ||
+                  error is ArgumentError ||
+                  error is StateError)) {
+            currentPrompt =
+                '$currentPrompt\n\nErreur JSON précédente ($cause). Renvoie uniquement un objet JSON valide.';
+            continue;
+          }
+          final baseProject = _project;
+          if (baseProject != null) {
+            final errMsg = SpecChatMessage(
+              id: 'pfmsg_${shortid.generate()}',
+              isUser: false,
+              text: 'Erreur lors du découpage produit : $cause',
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            );
+            final erroredProject = baseProject.copyWith(
+              portfolioChatMessages: <SpecChatMessage>[
+                ...baseProject.portfolioChatMessages,
+                errMsg,
+              ],
+            );
+            _project = erroredProject;
+            await _persistProject(erroredProject);
+          }
+          _lastError = cause;
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingPortfolio = false;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
   }
 
   Future<void> _runGlossaryTurn({
@@ -5859,6 +6557,382 @@ class SpecForgeController extends ChangeNotifier {
       _stopRequested = false;
       _isSending = false;
       _sendingUseCaseDomainId = null;
+      _sendingStage = null;
+      _streamingMessage = null;
+      _streamingStatus = '';
+      _streamingToolTraces = const <VibeToolTrace>[];
+      notifyListeners();
+    }
+  }
+
+  Future<bool> _updateSystemsServicesChat(
+    String domainId,
+    List<SpecChatMessage> Function(List<SpecChatMessage> chat) update,
+  ) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) return false;
+    final nextMessages = update(domain.systemsServicesChat);
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final item in _domainCatalog.domains)
+            if (item.id == domainId)
+              item.copyWith(systemsServicesChat: nextMessages)
+            else
+              item,
+        ],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+    return true;
+  }
+
+  /// Envoie un message à l'agent IA « Systèmes & Services » pour [domainId].
+  Future<void> sendSystemsServicesMessage(
+    String domainId,
+    String text, {
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    bool requestsMoreQuestions = false,
+  }) async {
+    if (_isSending) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty && attachments.isEmpty && !requestsMoreQuestions) {
+      return;
+    }
+    final filterKind = systemsServicesActiveFilter(domainId);
+    final effectiveText = trimmed.isNotEmpty
+        ? trimmed
+        : (requestsMoreQuestions
+              ? 'Pose-moi des questions complémentaires pour affiner les '
+                    '${filterKind == null ? 'systèmes et services du domaine' : filterKind.pluralLabel.toLowerCase()}.'
+              : 'Analyse les pièces jointes et complète les systèmes et services du domaine.');
+    await _runSystemsServicesTurn(
+      domainId,
+      userDisplayText: effectiveText,
+      promptInput: effectiveText,
+      attachments: attachments,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: requestsMoreQuestions,
+    );
+  }
+
+  /// Soumet les réponses d'un questionnaire du chat « Systèmes & Services ».
+  Future<void> submitSystemsServicesAskUserAnswers(
+    String domainId,
+    String messageId,
+    Map<String, Object?> answers, {
+    bool usedDefaults = false,
+    bool askMore = false,
+  }) async {
+    if (_isSending) return;
+    final target = systemsServicesChat(
+      domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final summary =
+        'Réponses enregistrées :\n${askUser.formatDisplaySummary(answers, usedDefaults: usedDefaults)}';
+    await _runSystemsServicesTurn(
+      domainId,
+      userDisplayText: askMore
+          ? '$summary\n(+ questions complémentaires demandées)'
+          : summary,
+      promptInput: summary,
+      afterAskUserReply: !askMore,
+      forceFollowUpQuestions: askMore,
+      answered: target.copyWith(
+        askUserAnswers: answers,
+        askUserUsedDefaults: usedDefaults,
+        askUserRequestedMore: askMore,
+      ),
+    );
+  }
+
+  /// Ignore un questionnaire du chat « Systèmes & Services » avec les valeurs par défaut.
+  Future<void> skipSystemsServicesAskUser(
+    String domainId,
+    String messageId,
+  ) async {
+    if (_isSending) return;
+    final target = systemsServicesChat(
+      domainId,
+    ).where((m) => m.id == messageId).firstOrNull;
+    final askUser = target?.askUser;
+    if (target == null || askUser == null) return;
+    final defaults = askUser.defaultAnswers();
+    await _runSystemsServicesTurn(
+      domainId,
+      userDisplayText: 'Valeurs par défaut appliquées.',
+      promptInput:
+          'Valeurs par défaut retenues :\n${askUser.formatDisplaySummary(defaults, usedDefaults: true)}',
+      afterAskUserReply: true,
+      answered: target.copyWith(
+        askUserAnswers: defaults,
+        askUserUsedDefaults: true,
+        askUserDismissed: true,
+      ),
+    );
+  }
+
+  /// Relance le dernier tour en erreur du chat « Systèmes & Services ».
+  Future<void> retryLastSystemsServicesTurn(String domainId) async {
+    if (_isSending) return;
+    final lastUser = systemsServicesChat(domainId).lastWhere(
+      (m) => m.isUser,
+      orElse: () => SpecChatMessage(
+        id: '',
+        isUser: true,
+        text:
+            'La tentative précédente a échoué. Corrige le format JSON et complète la cartographie Systèmes & Services.',
+      ),
+    );
+    await _runSystemsServicesTurn(
+      domainId,
+      userDisplayText: 'Reprise de la génération suite à erreur…',
+      promptInput:
+          '${(lastUser.promptText ?? lastUser.text).trim()}\n\nNOTE DE REPRISE : corrige l’erreur précédente et renvoie strictement un JSON valide.',
+      attachments: lastUser.attachments,
+      afterAskUserReply: false,
+    );
+  }
+
+  /// Efface l'historique du chat IA « Systèmes & Services » d'un domaine.
+  Future<void> clearSystemsServicesChat(String domainId) async {
+    if (_isSending) return;
+    await _updateSystemsServicesChat(domainId, (_) => const []);
+  }
+
+  Future<void> _runSystemsServicesTurn(
+    String domainId, {
+    required String userDisplayText,
+    required String promptInput,
+    required bool afterAskUserReply,
+    bool forceFollowUpQuestions = false,
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecChatMessage? answered,
+  }) async {
+    final initialDomain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (initialDomain == null) return;
+
+    String buildPrompt(FunctionalDomain domain, {required bool afterReply}) =>
+        SystemsServicesAiAgent.buildTurnPrompt(
+          domain: domain,
+          catalog: _domainCatalog,
+          activeFilterKind: systemsServicesActiveFilter(domainId),
+          history: domain.systemsServicesChat,
+          userInput: promptInput,
+          questioningLevel: _questioningLevel,
+          afterAskUserReply: afterReply,
+          forceFollowUpQuestions: forceFollowUpQuestions,
+          activeProject: _project,
+          companyGlossary: _companyGlossary,
+        );
+
+    var currentPrompt = buildPrompt(
+      initialDomain,
+      afterReply: afterAskUserReply,
+    );
+    final userMessage = SpecChatMessage(
+      id: 'sysmsg_${shortid.generate()}',
+      isUser: true,
+      text: userDisplayText,
+      promptText: promptInput,
+      attachments: attachments,
+      requestsMoreQuestions: forceFollowUpQuestions,
+    );
+    final turnToolTraces = <VibeToolTrace>[];
+    final priorCauses = <String>[];
+    Future<bool> append(SpecChatMessage message) =>
+        _updateSystemsServicesChat(domainId, (chat) => [...chat, message]);
+
+    final activeProject = _project;
+    final registry =
+        _customToolRegistry ??
+        (activeProject != null
+            ? SpecForgeToolRegistry.build(
+                readProject: () => _project,
+                readCompanyGlossary: () => _companyGlossary,
+                readModelPreferences: () => _modelPreferences,
+                onUpdateProject: (_) async {},
+                onNavigateStage: (_) async {},
+                toolNames: SystemsServicesAiAgent.toolNames,
+              )
+            : VibeAppToolRegistry(const []));
+
+    _isSending = true;
+    _sendingSystemsServicesDomainId = domainId;
+    _stopRequested = false;
+    _sendingStage = null;
+    _streamingMessage = null;
+    _streamingStatus =
+        'Cartographie Systèmes & Services (${initialDomain.name})…';
+    _streamingToolTraces = const <VibeToolTrace>[];
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final started = await _updateSystemsServicesChat(
+        domainId,
+        (chat) => [
+          for (final message in chat)
+            if (message.id == answered?.id) answered! else message,
+          userMessage,
+        ],
+      );
+      if (!started) return;
+      for (var attempt = 0; attempt < maxRecoveryAttempts; attempt++) {
+        if (_stopRequested) break;
+        if (attempt > 0) {
+          _streamingMessage = null;
+          _streamingStatus =
+              'Reprise automatique (${attempt + 1}/$maxRecoveryAttempts)…';
+          notifyListeners();
+        }
+        final parser = SpecStreamParser();
+        SpecAgentResponse? parsedResponse;
+        try {
+          final response = await _streamAgentResponse(
+            parser: parser,
+            stage: SpecForgeStage.specifications,
+            prompt: currentPrompt,
+            attachments: attachments,
+            registry: registry,
+            toolTraces: turnToolTraces,
+            patchStatus: 'Mise à jour des Systèmes & Services…',
+            systemInstructionOverride: SystemsServicesAiAgent.systemInstruction,
+            staticGuideOverride: SystemsServicesAiAgent.staticGuide,
+            allowedToolNames: activeProject != null
+                ? SystemsServicesAiAgent.toolNames
+                : const <String>{},
+          );
+          final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
+          if (response == null) {
+            final partial = parser.snapshot().message?.trim() ?? '';
+            await append(
+              SpecChatMessage(
+                id: 'sysmsg_${shortid.generate()}',
+                isUser: false,
+                text: partial.isNotEmpty
+                    ? '$partial\n\n[Réflexion IA interrompue par l’utilisateur.]'
+                    : 'Réflexion IA interrompue par l’utilisateur.',
+                toolTraces: traces,
+              ),
+            );
+            return;
+          }
+          parsedResponse = response;
+
+          final currentDomain = _domainCatalog.domains
+              .where((d) => d.id == domainId)
+              .firstOrNull;
+          if (currentDomain == null) return;
+          var nextCatalog = _domainCatalog;
+          var patchSummary = '';
+          final patch = response.specPatch;
+          if (patch != null && patch.isNotEmpty) {
+            final applied = SystemsServicesAiAgent.applyPatch(
+              nextCatalog,
+              domainId: domainId,
+              patch: patch,
+            );
+            nextCatalog = applied.catalog;
+            patchSummary = applied.summary;
+          }
+          final assistantMessage = SpecChatMessage(
+            id: 'sysmsg_${shortid.generate()}',
+            isUser: false,
+            text: response.message,
+            toolTraces: traces,
+            askUser: response.askUser,
+            appliedPatchSummary: patchSummary,
+          );
+          await updateDomainCatalog(
+            nextCatalog.copyWith(
+              domains: [
+                for (final item in nextCatalog.domains)
+                  if (item.id == domainId)
+                    item.copyWith(
+                      systemsServicesChat: [
+                        ...item.systemsServicesChat,
+                        assistantMessage,
+                      ],
+                    )
+                  else
+                    item,
+              ],
+              updatedAt: DateTime.now().toUtc(),
+            ),
+          );
+          return;
+        } catch (error, stack) {
+          final cause = _describeErrorCause(error);
+          priorCauses.add(
+            'Tentative ${attempt + 1} (${error.runtimeType}) : $cause',
+          );
+          saveError(
+            '[SpecForge Systèmes & Services IA] Tentative ${attempt + 1}/$maxRecoveryAttempts : $cause',
+            stack,
+          );
+          final isValidationError =
+              error is FormatException ||
+              error is ArgumentError ||
+              error is StateError;
+          final latestDomain = _domainCatalog.domains
+              .where((d) => d.id == domainId)
+              .firstOrNull;
+          if (attempt < maxRecoveryAttempts - 1 &&
+              isValidationError &&
+              latestDomain != null) {
+            final retryProject =
+                _project ??
+                SpecForgeProject.fromIdea(
+                  idea: latestDomain.name,
+                  name: latestDomain.name,
+                  id: 'sys_retry_$domainId',
+                );
+            currentPrompt = SpecDeltaRecovery.buildDeltaRetryPrompt(
+              refreshedTurnPrompt: buildPrompt(
+                latestDomain,
+                afterReply: afterAskUserReply,
+              ),
+              priorCauses: priorCauses,
+              salvage: SpecSalvageOutcome.none(
+                retryProject,
+                wasTruncated: parsedResponse == null,
+              ),
+              rawFailedResponse: parser.rawText,
+            );
+            continue;
+          }
+          _lastError = cause;
+          await append(
+            SpecChatMessage(
+              id: 'sysmsg_${shortid.generate()}',
+              isUser: false,
+              text:
+                  'Erreur lors de l’appel à l’assistant Systèmes & Services '
+                  '(${attempt + 1}/$maxRecoveryAttempts tentative(s)) :\n'
+                  '${priorCauses.length > 1 ? priorCauses.join('\n') : cause}',
+              toolTraces: List<VibeToolTrace>.unmodifiable(turnToolTraces),
+              failedResponse: parser.rawText.isEmpty ? null : parser.rawText,
+            ),
+          );
+          return;
+        } finally {
+          _activeStreamSubscription = null;
+          _activeStreamCompleter = null;
+        }
+      }
+    } finally {
+      _activeStreamSubscription = null;
+      _activeStreamCompleter = null;
+      _stopRequested = false;
+      _isSending = false;
+      _sendingSystemsServicesDomainId = null;
       _sendingStage = null;
       _streamingMessage = null;
       _streamingStatus = '';

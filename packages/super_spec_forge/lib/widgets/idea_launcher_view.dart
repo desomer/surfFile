@@ -13,6 +13,7 @@ class IdeaLauncherView extends StatefulWidget {
   const IdeaLauncherView({
     required this.controller,
     this.onProjectActivated,
+    this.onOpenInitiatives,
     this.onSelectWorkspace,
     super.key,
   });
@@ -20,8 +21,11 @@ class IdeaLauncherView extends StatefulWidget {
   /// Contrôleur principal de forge.
   final SpecForgeController controller;
 
-  /// Callback optionnel appelé après création ou ouverture d'un projet.
+  /// Callback optionnel appelé pour démarrer directement le Wizard (Étape 1).
   final VoidCallback? onProjectActivated;
+
+  /// Callback optionnel appelé pour ouvrir la page intermédiaire Initiatives & Features.
+  final VoidCallback? onOpenInitiatives;
 
   /// Callback optionnel pour changer le dossier Workspace Git actif.
   final VoidCallback? onSelectWorkspace;
@@ -90,7 +94,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool openInitiatives = false}) async {
     final idea = _ideaController.text.trim();
     if (idea.isEmpty || _submitting) return;
     setState(() => _submitting = true);
@@ -101,7 +105,11 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
             ? null
             : _nameController.text.trim(),
       );
-      widget.onProjectActivated?.call();
+      if (openInitiatives && widget.onOpenInitiatives != null) {
+        widget.onOpenInitiatives!.call();
+      } else {
+        widget.onProjectActivated?.call();
+      }
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -112,7 +120,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
   Future<void> _openProject(String projectId) async {
     await widget.controller.openProject(projectId);
     if (mounted && widget.controller.project != null) {
-      widget.onProjectActivated?.call();
+      (widget.onOpenInitiatives ?? widget.onProjectActivated)?.call();
     }
   }
 
@@ -234,15 +242,34 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                         ],
                       ),
                       const SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.end,
                         children: [
-                          FilledButton.icon(
+                          OutlinedButton.icon(
                             onPressed:
                                 _ideaController.text.trim().isEmpty ||
                                     _submitting
                                 ? null
-                                : _submit,
+                                : () => _submit(openInitiatives: false),
+                            icon: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Démarrer le wizard (Étape 1 : Lexique métier)',
+                            ),
+                          ),
+                          FilledButton.icon(
+                            key: const ValueKey(
+                              'idea-launcher-open-initiatives-btn',
+                            ),
+                            onPressed:
+                                _ideaController.text.trim().isEmpty ||
+                                    _submitting
+                                ? null
+                                : () => _submit(openInitiatives: true),
                             icon: _submitting
                                 ? const SizedBox(
                                     width: 16,
@@ -251,9 +278,12 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(Icons.arrow_forward_rounded),
+                                : const Icon(
+                                    Icons.account_tree_rounded,
+                                    size: 18,
+                                  ),
                             label: const Text(
-                              'Démarrer le wizard (Étape 1 : Lexique métier)',
+                              'Créer & découper en Initiatives / Features',
                             ),
                           ),
                         ],
@@ -344,6 +374,7 @@ class _RecentProjectTile extends StatelessWidget {
           ),
         ),
         subtitle: Text(
+          '${summary.specFeatureCount > 1 || summary.initiativeCount > 1 ? '${summary.initiativeCount} init. · ${summary.specFeatureCount} feat. · ' : ''}'
           'Étape ${summary.currentStage.stepNumber}/${SpecForgeStage.values.length} (${summary.currentStage.shortLabel}) · '
           '${summary.objectCount} objet(s) · ${summary.ruleCount} règle(s)'
           '${summary.folderName != null ? ' · projects/${summary.folderName}' : ''}\n${summary.initialIdea}',

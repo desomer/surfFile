@@ -7,10 +7,152 @@ library;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/domain_catalog.dart';
 import '../../../models/event_storming_spec.dart';
 import '../../../services/event_storming_operations.dart';
 import '../../../services/exporters/event_storming_dsl_codec.dart';
 import 'event_storming_step_column.dart';
+
+/// Candidat issu du référentiel « Systèmes & Services » proposable comme
+/// système externe (`EXT-*`) dans un document Event Storming.
+@immutable
+class EventStormExternalSystemCandidate {
+  /// Construit un candidat de système externe.
+  const EventStormExternalSystemCandidate({
+    required this.service,
+    required this.domain,
+    required this.isDirectExternalApp,
+  });
+
+  /// Système ou service source déclaré dans `DomainCatalog`.
+  final Microservice service;
+
+  /// Domaine fonctionnel propriétaire dans `DomainCatalog`.
+  final FunctionalDomain? domain;
+
+  /// Vrai lorsqu'il s'agit d'une `Application externe` (`DomainSystemKind.externalApp`),
+  /// faux pour un `Tools openSource` ou un service d'un autre domaine.
+  final bool isDirectExternalApp;
+
+  /// Vrai lorsqu'il s'agit d'un `Tools openSource` (`DomainSystemKind.openSourceTool`).
+  bool get isOpenSourceTool => service.kind.isOpenSourceTool;
+
+  /// Libellé de badge affiché dans les puces et dialogues d'import.
+  String get badgeLabel {
+    if (isDirectExternalApp) {
+      final vendorPart = service.vendor.isNotEmpty
+          ? ' · ${service.vendor}'
+          : '';
+      final domainPart = domain != null ? ' (${domain!.name})' : '';
+      return 'App externe$vendorPart$domainPart';
+    }
+    if (isOpenSourceTool) {
+      final vendorPart = service.vendor.isNotEmpty
+          ? ' · ${service.vendor}'
+          : '';
+      final domainPart = domain != null ? ' (${domain!.name})' : '';
+      return 'Tools openSource$vendorPart$domainPart';
+    }
+    return '${service.kind.shortLabel}'
+        '${domain != null ? ' · Domaine ${domain!.name}' : ''}';
+  }
+}
+
+/// Extrait depuis [catalog] les systèmes proposables comme `EXT-*` pour [document]
+/// (applications externes, Tools openSource et services des autres domaines non encore présents).
+List<EventStormExternalSystemCandidate> resolveEventStormExternalCandidates(
+  DomainCatalog catalog,
+  EventStormDocument document,
+) {
+  if (catalog.microservices.isEmpty) {
+    return const <EventStormExternalSystemCandidate>[];
+  }
+
+  String norm(String v) =>
+      v.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
+  final existingNames = <String>{
+    for (final ext in document.catalog.externalSystems) norm(ext.name),
+  }..remove('');
+  final existingIds = <String>{
+    for (final ext in document.catalog.externalSystems) ext.id.toUpperCase(),
+  };
+
+  final docNorms = <String>{
+    norm(document.id),
+    norm(document.meta.boundedContext),
+    norm(document.meta.domain),
+  }..remove('');
+
+  final matchedDomainIds = <String>{
+    for (final d in catalog.domains)
+      if (docNorms.contains(norm(d.domainCode)) ||
+          docNorms.contains(norm(d.name)))
+        d.id,
+  };
+
+  final domainsById = <String, FunctionalDomain>{
+    for (final d in catalog.domains) d.id: d,
+  };
+
+  final directExternals = <EventStormExternalSystemCandidate>[];
+  final openSourceTools = <EventStormExternalSystemCandidate>[];
+  final crossDomainServices = <EventStormExternalSystemCandidate>[];
+
+  for (final svc in catalog.microservices) {
+    if (!svc.isActive) continue;
+    final normName = norm(svc.name);
+    final defaultExtId = EventStormingOperations.nextCatalogId(
+      'EXT',
+      svc.name,
+      const <String>{},
+    );
+    if (existingNames.contains(normName) ||
+        existingIds.contains(defaultExtId.toUpperCase())) {
+      continue;
+    }
+    final domain = domainsById[svc.domainId];
+    if (svc.kind.isExternal) {
+      directExternals.add(
+        EventStormExternalSystemCandidate(
+          service: svc,
+          domain: domain,
+          isDirectExternalApp: true,
+        ),
+      );
+    } else if (svc.kind.isOpenSourceTool) {
+      openSourceTools.add(
+        EventStormExternalSystemCandidate(
+          service: svc,
+          domain: domain,
+          isDirectExternalApp: false,
+        ),
+      );
+    } else {
+      final belongsToSameContext =
+          matchedDomainIds.isNotEmpty &&
+          matchedDomainIds.contains(svc.domainId);
+      if (!belongsToSameContext && svc.kind.isBackend) {
+        crossDomainServices.add(
+          EventStormExternalSystemCandidate(
+            service: svc,
+            domain: domain,
+            isDirectExternalApp: false,
+          ),
+        );
+      }
+    }
+  }
+
+  directExternals.sort((a, b) => a.service.name.compareTo(b.service.name));
+  openSourceTools.sort((a, b) => a.service.name.compareTo(b.service.name));
+  crossDomainServices.sort((a, b) => a.service.name.compareTo(b.service.name));
+  return <EventStormExternalSystemCandidate>[
+    ...directExternals,
+    ...openSourceTools,
+    ...crossDomainServices,
+  ];
+}
 
 /// Catégorie d'entrée dans le bloc `catalog`.
 enum EventStormCatalogCategory {
@@ -183,6 +325,8 @@ Future<EventStormCatalogItem?> showEventStormCatalogItemDialog(
   required EventStormCatalogCategory category,
   required Set<String> existingIds,
   EventStormCatalogItem? item,
+  List<EventStormExternalSystemCandidate> externalSuggestions =
+      const <EventStormExternalSystemCandidate>[],
 }) async {
   final idCtrl = TextEditingController(text: item?.id ?? '');
   final nameCtrl = TextEditingController(text: item?.name ?? '');
@@ -198,64 +342,113 @@ Future<EventStormCatalogItem?> showEventStormCatalogItemDialog(
               : 'Modifier ${item.id}',
         ),
         content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 10,
-            children: [
-              TextField(
-                key: const ValueKey('spec-es-cat-name-field'),
-                controller: nameCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Nom *',
-                  hintText: switch (category) {
-                    EventStormCatalogCategory.actor => 'Client',
-                    EventStormCatalogCategory.aggregate => 'Commande',
-                    EventStormCatalogCategory.externalSystem => 'Stripe',
-                  },
-                ),
-                onChanged: (val) {
-                  if (item == null && val.trim().isNotEmpty) {
-                    idCtrl.text = EventStormingOperations.nextCatalogId(
-                      category.prefix,
-                      val,
-                      existingIds,
-                    );
-                  }
-                },
-              ),
-              TextField(
-                key: const ValueKey('spec-es-cat-id-field'),
-                controller: idCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Identifiant canonique (${category.prefix}-*) *',
-                  hintText: '${category.prefix}-EXEMPLE',
-                ),
-              ),
-              if (category == EventStormCatalogCategory.actor)
-                DropdownButtonFormField<EventStormActorType>(
-                  initialValue: actorType,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Type d’acteur (`type`)',
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 10,
+              children: [
+                if (category == EventStormCatalogCategory.externalSystem &&
+                    item == null &&
+                    externalSuggestions.isNotEmpty) ...[
+                  Text(
+                    'Suggestions depuis Systèmes & Services :',
+                    style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  items: [
-                    for (final t in EventStormActorType.values)
-                      DropdownMenuItem(
-                        value: t,
-                        child: Text(
-                          '${t.label} (${t.yamlValue})',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final cand in externalSuggestions)
+                        ActionChip(
+                          key: ValueKey(
+                            'spec-es-ext-suggestion-${cand.service.id}',
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          avatar: Icon(
+                            cand.isDirectExternalApp
+                                ? Icons.public_rounded
+                                : (cand.isOpenSourceTool
+                                      ? Icons.handyman_rounded
+                                      : Icons.hub_outlined),
+                            size: 14,
+                          ),
+                          tooltip: cand.badgeLabel,
+                          label: Text(
+                            cand.service.name,
+                            style: Theme.of(ctx).textTheme.labelSmall,
+                          ),
+                          onPressed: () {
+                            setLocal(() {
+                              nameCtrl.text = cand.service.name;
+                              idCtrl.text =
+                                  EventStormingOperations.nextCatalogId(
+                                    category.prefix,
+                                    cand.service.name,
+                                    existingIds,
+                                  );
+                            });
+                          },
                         ),
-                      ),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) setLocal(() => actorType = v);
+                    ],
+                  ),
+                ],
+                TextField(
+                  key: const ValueKey('spec-es-cat-name-field'),
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Nom *',
+                    hintText: switch (category) {
+                      EventStormCatalogCategory.actor => 'Client',
+                      EventStormCatalogCategory.aggregate => 'Commande',
+                      EventStormCatalogCategory.externalSystem => 'Stripe',
+                    },
+                  ),
+                  onChanged: (val) {
+                    if (item == null && val.trim().isNotEmpty) {
+                      idCtrl.text = EventStormingOperations.nextCatalogId(
+                        category.prefix,
+                        val,
+                        existingIds,
+                      );
+                    }
                   },
                 ),
-            ],
+                TextField(
+                  key: const ValueKey('spec-es-cat-id-field'),
+                  controller: idCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Identifiant canonique (${category.prefix}-*) *',
+                    hintText: '${category.prefix}-EXEMPLE',
+                  ),
+                ),
+                if (category == EventStormCatalogCategory.actor)
+                  DropdownButtonFormField<EventStormActorType>(
+                    initialValue: actorType,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Type d’acteur (`type`)',
+                    ),
+                    items: [
+                      for (final t in EventStormActorType.values)
+                        DropdownMenuItem(
+                          value: t,
+                          child: Text(
+                            '${t.label} (${t.yamlValue})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setLocal(() => actorType = v);
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -288,6 +481,191 @@ Future<EventStormCatalogItem?> showEventStormCatalogItemDialog(
     name: name,
     type: category == EventStormCatalogCategory.actor ? actorType : null,
   );
+}
+
+/// Ouvre le dialogue d'import en 1 clic des systèmes externes (`EXT-*`) depuis
+/// le référentiel Design « Systèmes & Services » ([DomainCatalog]).
+Future<List<EventStormCatalogItem>?> showEventStormImportSystemsDialog(
+  BuildContext context, {
+  required EventStormDocument document,
+  required DomainCatalog catalog,
+}) async {
+  final candidates = resolveEventStormExternalCandidates(catalog, document);
+  final selectedIds = <String>{
+    for (final c in candidates)
+      if (c.isDirectExternalApp) c.service.id,
+  };
+
+  final existingIds = <String>{
+    for (final a in document.catalog.actors) a.id,
+    for (final a in document.catalog.aggregates) a.id,
+    for (final e in document.catalog.externalSystems) e.id,
+  };
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setLocal) {
+        final theme = Theme.of(ctx);
+        final colors = theme.colorScheme;
+        final directList = candidates
+            .where((c) => c.isDirectExternalApp)
+            .toList();
+        final openSourceList = candidates
+            .where((c) => c.isOpenSourceTool)
+            .toList();
+        final crossList = candidates
+            .where((c) => !c.isDirectExternalApp && !c.isOpenSourceTool)
+            .toList();
+
+        Widget buildTile(EventStormExternalSystemCandidate cand) {
+          final checked = selectedIds.contains(cand.service.id);
+          final previewId = EventStormingOperations.nextCatalogId(
+            'EXT',
+            cand.service.name,
+            existingIds,
+          );
+          return CheckboxListTile(
+            key: ValueKey('spec-es-import-cand-${cand.service.id}'),
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: checked,
+            onChanged: (v) {
+              setLocal(() {
+                if (v == true) {
+                  selectedIds.add(cand.service.id);
+                } else {
+                  selectedIds.remove(cand.service.id);
+                }
+              });
+            },
+            title: Text(
+              '${cand.service.name} ($previewId)',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              '${cand.badgeLabel}'
+              '${cand.service.description.isEmpty ? '' : ' — ${cand.service.description}'}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }
+
+        return AlertDialog(
+          title: const Text('Importer depuis Systèmes & Services'),
+          content: SizedBox(
+            width: 520,
+            child: candidates.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      'Tous les systèmes externes et services inter-domaines déclarés dans Systèmes & Services sont déjà présents dans ce catalogue.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 420),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (directList.isNotEmpty) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Applications externes déclarées (${directList.length})',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.primary,
+                                ),
+                              ),
+                            ),
+                            for (final cand in directList) buildTile(cand),
+                          ],
+                          if (openSourceList.isNotEmpty) ...[
+                            if (directList.isNotEmpty)
+                              const Divider(height: 20),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Tools openSource déclarés (${openSourceList.length})',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.primary,
+                                ),
+                              ),
+                            ),
+                            for (final cand in openSourceList) buildTile(cand),
+                          ],
+                          if (crossList.isNotEmpty) ...[
+                            if (directList.isNotEmpty ||
+                                openSourceList.isNotEmpty)
+                              const Divider(height: 20),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                'Services des autres domaines (${crossList.length})',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Text(
+                                'Cochez les services d’autres domaines appelés de façon synchrone par ce Bounded Context :',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            for (final cand in crossList) buildTile(cand),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Annuler'),
+            ),
+            if (candidates.isNotEmpty)
+              FilledButton.icon(
+                key: const ValueKey('spec-es-import-confirm-btn'),
+                onPressed: selectedIds.isEmpty
+                    ? null
+                    : () => Navigator.of(ctx).pop(true),
+                icon: const Icon(Icons.download_done_rounded, size: 16),
+                label: Text('Importer (${selectedIds.length})'),
+              ),
+          ],
+        );
+      },
+    ),
+  );
+
+  if (confirmed != true || selectedIds.isEmpty) return null;
+  final usedIds = Set<String>.from(existingIds);
+  final imported = <EventStormCatalogItem>[];
+  for (final cand in candidates) {
+    if (!selectedIds.contains(cand.service.id)) continue;
+    final nextId = EventStormingOperations.nextCatalogId(
+      'EXT',
+      cand.service.name,
+      usedIds,
+    );
+    usedIds.add(nextId);
+    imported.add(EventStormCatalogItem(id: nextId, name: cand.service.name));
+  }
+  return imported;
 }
 
 /// Ouvre le dialogue complet d'édition d'une étape chronologique (`EventStormStep`).

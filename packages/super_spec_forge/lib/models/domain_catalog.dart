@@ -6,7 +6,121 @@ import 'package:flutter/foundation.dart';
 
 import 'build_tech_stack_profile.dart';
 import 'domain_contracts.dart';
+import 'spec_stage_chat.dart';
 import 'usecase_orchestration_spec.dart';
+
+/// Catégorie d'urbanisme d'un système ou service rattaché à un domaine.
+enum DomainSystemKind {
+  /// Application ou API externe / tierce (Stripe, SendGrid, SAP, etc.).
+  externalApp('Application externe', 'App externe', 'Applications externes'),
+
+  /// Outil open-source auto-hébergé ou déployé (Keycloak, Kafka, MinIO, Meilisearch…).
+  openSourceTool('Tools openSource', 'Tools openSource', 'Tools openSource'),
+
+  /// Application Front Web (SPA, portail client, back-office web).
+  webFront('Front Web', 'Front Web', 'Fronts Web'),
+
+  /// Application mobile native ou hybride (iOS / Android).
+  mobileApp('App Mobile', 'App Mobile', 'Apps Mobiles'),
+
+  /// Backend For Frontend dédié à un canal client.
+  bff('BFF (Backend For Frontend)', 'BFF', 'BFF'),
+
+  /// Service métier autonome ou microservice (valeur par défaut rétrocompatible).
+  microservice('(Micro)Service', 'Service', '(Micro)Services'),
+
+  /// Application monolithique ou cœur applicatif unifié.
+  monolith('Application monolithique', 'Monolithe', 'Applications monolithiques');
+
+  /// Construit une catégorie d'urbanisme.
+  const DomainSystemKind(this.label, this.shortLabel, this.pluralLabel);
+
+  /// Libellé complet affiché dans les formulaires et en-têtes.
+  final String label;
+
+  /// Libellé compact affiché dans les badges et filtres.
+  final String shortLabel;
+
+  /// Libellé pluriel utilisé dans les regroupements.
+  final String pluralLabel;
+
+  /// Indique s'il s'agit d'une application/API externe au SI ou au domaine.
+  bool get isExternal => this == DomainSystemKind.externalApp;
+
+  /// Indique s'il s'agit d'un outil open-source déployé / auto-hébergé.
+  bool get isOpenSourceTool => this == DomainSystemKind.openSourceTool;
+
+  /// Indique s'il s'agit d'un outil ou système tiers hors code interne (sans stack Build dédiée).
+  bool get isOffTheShelf => isExternal || isOpenSourceTool;
+
+  /// Indique s'il s'agit d'une application frontale (Web ou Mobile).
+  bool get isFrontend =>
+      this == DomainSystemKind.webFront || this == DomainSystemKind.mobileApp;
+
+  /// Indique s'il s'agit d'un composant serveur interne (BFF, Service, Monolithe).
+  bool get isBackend =>
+      this == DomainSystemKind.bff ||
+      this == DomainSystemKind.microservice ||
+      this == DomainSystemKind.monolith;
+
+  /// Désérialise une catégorie de système (`microservice` par défaut si absente).
+  static DomainSystemKind fromJson(Object? raw) {
+    if (raw == null) return DomainSystemKind.microservice;
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return DomainSystemKind.microservice;
+      for (final kind in values) {
+        if (trimmed == kind.name) return kind;
+      }
+      final norm = trimmed.toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_');
+      switch (norm) {
+        case 'externalapp':
+        case 'external_app':
+        case 'external':
+        case 'external_system':
+        case 'application_externe':
+        case 'app_externe':
+          return DomainSystemKind.externalApp;
+        case 'opensourcetool':
+        case 'open_source_tool':
+        case 'open_source':
+        case 'opensource':
+        case 'tools_opensource':
+        case 'tool_opensource':
+        case 'tools_open_source':
+        case 'tool_open_source':
+        case 'oss':
+        case 'oss_tool':
+          return DomainSystemKind.openSourceTool;
+        case 'webfront':
+        case 'web_front':
+        case 'front_web':
+        case 'web':
+        case 'spa':
+          return DomainSystemKind.webFront;
+        case 'mobileapp':
+        case 'mobile_app':
+        case 'app_mobile':
+        case 'mobile':
+          return DomainSystemKind.mobileApp;
+        case 'bff':
+        case 'backend_for_frontend':
+          return DomainSystemKind.bff;
+        case 'microservice':
+        case 'micro_service':
+        case 'service':
+          return DomainSystemKind.microservice;
+        case 'monolith':
+        case 'monolithe':
+        case 'monolithic':
+        case 'application_monolithique':
+        case 'app_monolithique':
+          return DomainSystemKind.monolith;
+      }
+    }
+    throw FormatException('Catégorie de système inconnue : $raw');
+  }
+}
 
 /// Statut du cycle de vie d'un environnement logique.
 enum LogicalEnvironmentStatus {
@@ -92,6 +206,7 @@ class FunctionalDomain {
     this.techStackId,
     this.contracts,
     this.useCaseOrchestration,
+    this.systemsServicesChat = const <SpecChatMessage>[],
   });
 
   /// Identifiant technique.
@@ -119,6 +234,9 @@ class FunctionalDomain {
   /// Spécification « Cas d’usage & orchestration » du domaine, absente si vierge.
   final UseCaseOrchestrationSpec? useCaseOrchestration;
 
+  /// Historique de conversation IA « Systèmes & Services » du domaine.
+  final List<SpecChatMessage> systemsServicesChat;
+
   /// Vérifie les invariants du domaine.
   void validate() {
     if (id.trim().isEmpty) throw const FormatException('Domaine.id requis.');
@@ -143,6 +261,7 @@ class FunctionalDomain {
     bool clearTechStackId = false,
     DomainContracts? contracts,
     UseCaseOrchestrationSpec? useCaseOrchestration,
+    List<SpecChatMessage>? systemsServicesChat,
   }) => FunctionalDomain(
     id: id ?? this.id,
     domainCode: domainCode ?? this.domainCode,
@@ -152,6 +271,9 @@ class FunctionalDomain {
     techStackId: clearTechStackId ? null : (techStackId ?? this.techStackId),
     contracts: contracts ?? this.contracts,
     useCaseOrchestration: useCaseOrchestration ?? this.useCaseOrchestration,
+    systemsServicesChat: systemsServicesChat == null
+        ? this.systemsServicesChat
+        : List<SpecChatMessage>.unmodifiable(systemsServicesChat),
   );
 
   /// Sérialise le domaine.
@@ -166,12 +288,17 @@ class FunctionalDomain {
     if (contracts != null) 'contracts': contracts!.toJson(),
     if (useCaseOrchestration != null && !useCaseOrchestration!.isEmpty)
       'useCaseOrchestration': useCaseOrchestration!.toJson(),
+    if (systemsServicesChat.isNotEmpty)
+      'systemsServicesChat': [
+        for (final msg in systemsServicesChat) msg.toJson(),
+      ],
   };
 
   /// Désérialise un domaine.
   factory FunctionalDomain.fromJson(Object? raw) {
     if (raw is! Map) throw const FormatException('Domaine invalide.');
     final rawStackId = (raw['techStackId'] as String?)?.trim();
+    final rawChat = raw['systemsServicesChat'];
     final item = FunctionalDomain(
       id: raw['id'] as String? ?? '',
       domainCode: raw['domainCode'] as String? ?? '',
@@ -185,6 +312,13 @@ class FunctionalDomain {
       useCaseOrchestration: raw['useCaseOrchestration'] != null
           ? UseCaseOrchestrationSpec.fromJson(raw['useCaseOrchestration'])
           : null,
+      systemsServicesChat: rawChat is List
+          ? List<SpecChatMessage>.unmodifiable(<SpecChatMessage>[
+              for (final msg in rawChat)
+                if (msg is Map)
+                  SpecChatMessage.fromJson(Map<String, Object?>.from(msg)),
+            ])
+          : const <SpecChatMessage>[],
     );
     item.validate();
     return item;
@@ -298,17 +432,21 @@ class LogicalEnvironment {
   }
 }
 
-/// Microservice rattaché à un unique domaine fonctionnel.
+/// Système ou service (application externe, front Web/Mobile, BFF, microservice
+/// ou monolithe) rattaché à un unique domaine fonctionnel.
 @immutable
 class Microservice {
-  /// Crée un microservice.
+  /// Crée un système ou service rattaché à un domaine.
   const Microservice({
     required this.id,
     required this.domainId,
     required this.serviceCode,
     required this.name,
+    this.kind = DomainSystemKind.microservice,
     this.description = '',
     this.isActive = true,
+    this.techStackId,
+    this.vendor = '',
   });
 
   /// Identifiant technique.
@@ -323,13 +461,22 @@ class Microservice {
   /// Nom affiché.
   final String name;
 
-  /// Description de la responsabilité du service.
+  /// Catégorie d'urbanisme ([DomainSystemKind.microservice] par défaut).
+  final DomainSystemKind kind;
+
+  /// Description de la responsabilité du système ou service.
   final String description;
 
-  /// Indique si le service est actif.
+  /// Indique si le système ou service est actif.
   final bool isActive;
 
-  /// Vérifie les invariants du microservice.
+  /// Identifiant optionnel du profil de stack technique ([BuildTechStackProfile.id]).
+  final String? techStackId;
+
+  /// Fournisseur, éditeur ou propriétaire tiers optionnel (ex. `Stripe`, `SendGrid`).
+  final String vendor;
+
+  /// Vérifie les invariants du système ou service.
   void validate() {
     if (id.trim().isEmpty || domainId.trim().isEmpty) {
       throw const FormatException('Identifiants de microservice requis.');
@@ -341,6 +488,9 @@ class Microservice {
     if (description.length > 2000) {
       throw const FormatException('La description du microservice dépasse 2000 caractères.');
     }
+    if (vendor.length > 255) {
+      throw const FormatException('Le fournisseur dépasse 255 caractères.');
+    }
   }
 
   /// Copie modifiée.
@@ -349,41 +499,85 @@ class Microservice {
     String? domainId,
     String? serviceCode,
     String? name,
+    DomainSystemKind? kind,
     String? description,
     bool? isActive,
+    String? techStackId,
+    bool clearTechStackId = false,
+    String? vendor,
   }) => Microservice(
     id: id ?? this.id,
     domainId: domainId ?? this.domainId,
     serviceCode: serviceCode ?? this.serviceCode,
     name: name ?? this.name,
+    kind: kind ?? this.kind,
     description: description ?? this.description,
     isActive: isActive ?? this.isActive,
+    techStackId: clearTechStackId ? null : (techStackId ?? this.techStackId),
+    vendor: vendor ?? this.vendor,
   );
 
-  /// Sérialise le microservice.
+  /// Sérialise le système ou service.
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'domainId': domainId,
     'serviceCode': serviceCode,
     'name': name,
+    'kind': kind.name,
     'description': description,
     'isActive': isActive,
+    if (techStackId != null && techStackId!.trim().isNotEmpty)
+      'techStackId': techStackId,
+    if (vendor.trim().isNotEmpty) 'vendor': vendor,
   };
 
-  /// Désérialise un microservice.
+  /// Désérialise un système ou service (rétrocompatible si `kind` est absent).
   factory Microservice.fromJson(Object? raw) {
     if (raw is! Map) throw const FormatException('Microservice invalide.');
+    final rawStackId = (raw['techStackId'] as String?)?.trim();
     final item = Microservice(
       id: raw['id'] as String? ?? '',
       domainId: raw['domainId'] as String? ?? '',
       serviceCode: raw['serviceCode'] as String? ?? '',
       name: raw['name'] as String? ?? '',
+      kind: DomainSystemKind.fromJson(raw['kind']),
       description: raw['description'] as String? ?? '',
       isActive: raw['isActive'] as bool? ?? true,
+      techStackId: (rawStackId == null || rawStackId.isEmpty)
+          ? null
+          : rawStackId,
+      vendor: (raw['vendor'] as String? ?? '').trim(),
     );
     item.validate();
     return item;
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Microservice &&
+          other.id == id &&
+          other.domainId == domainId &&
+          other.serviceCode == serviceCode &&
+          other.name == name &&
+          other.kind == kind &&
+          other.description == description &&
+          other.isActive == isActive &&
+          other.techStackId == techStackId &&
+          other.vendor == vendor;
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    domainId,
+    serviceCode,
+    name,
+    kind,
+    description,
+    isActive,
+    techStackId,
+    vendor,
+  );
 }
 
 /// Variable en clair ou secret chiffré, ciblé optionnellement sur un microservice.
@@ -696,6 +890,13 @@ class DomainCatalog {
     return techStacks.where((stack) => stack.id == stackId).firstOrNull;
   }
 
+  /// Retourne le profil de stack technique associé à [service], ou `null` si aucun.
+  BuildTechStackProfile? techStackForService(Microservice service) {
+    final stackId = service.techStackId;
+    if (stackId == null || stackId.isEmpty) return null;
+    return techStacks.where((stack) => stack.id == stackId).firstOrNull;
+  }
+
   /// Valide l'intégrité référentielle et l'unicité de toutes les entités.
   void validate() {
     _validateUniqueIds(domains.map((e) => e.id), 'domaine');
@@ -756,6 +957,12 @@ class DomainCatalog {
       }
       if (!serviceCodes.add('${service.domainId}\u0000${service.serviceCode}')) {
         throw FormatException('Code de microservice dupliqué : ${service.serviceCode}');
+      }
+      if (service.techStackId != null &&
+          !techStackIds.contains(service.techStackId)) {
+        throw FormatException(
+          'Stack technique introuvable pour le système ${service.serviceCode} : ${service.techStackId}',
+        );
       }
     }
 

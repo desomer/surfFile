@@ -21,10 +21,12 @@ import 'design/domain_management_view.dart';
 import 'design/enterprise_rate_card_view.dart';
 import 'design/model_dictionary_view.dart';
 import 'design/models_contracts_view.dart';
+import 'design/systems_services_view.dart';
 import 'design/usecase_orchestration_view.dart';
 import 'design_links_view.dart';
 import 'global_question_chat_pane.dart';
 import 'idea_launcher_view.dart';
+import 'portfolio/project_initiatives_view.dart';
 import 'qa_stage_ai_chat_pane.dart';
 import 'qa_wizard_stepper.dart';
 import 'qa_workspace/qa_fixtures_editor_view.dart';
@@ -104,6 +106,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   double _chatDragOffset = SpecSplitHandle.width / 2;
   int _selectedRailIndex = 0;
   String? _activeSpecLinkId;
+  bool _wizardOpenedFromInitiatives = false;
   String? _activeDesignLinkId;
   String? _activeBuildLinkId;
   String? _initialModelsDomainId;
@@ -126,7 +129,10 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       return;
     }
     setState(() {
-      if (index == 0 && _selectedRailIndex == 0) _activeSpecLinkId = null;
+      if (index == 0 && _selectedRailIndex == 0) {
+        _activeSpecLinkId = null;
+        _wizardOpenedFromInitiatives = false;
+      }
       if (index == 1 && _selectedRailIndex == 1) _activeDesignLinkId = null;
       if (index == 2 && _selectedRailIndex == 2) {
         _activeBuildLinkId = null;
@@ -160,6 +166,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           );
   });
 
+  static bool _isWizardSpecLink(String? id) =>
+      id == 'wizard' ||
+      id == 'ux_wizard' ||
+      id == 'qa_wizard' ||
+      id == 'cost_wizard';
+
   ({
     String tooltip,
     VoidCallback onBack,
@@ -170,7 +182,23 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     switch (_selectedRailIndex) {
       case 0:
         if (_activeSpecLinkId == null) return null;
-        void goToSpecMenu() => setState(() => _activeSpecLinkId = null);
+        void goToSpecMenu() => setState(() {
+          _activeSpecLinkId = null;
+          _wizardOpenedFromInitiatives = false;
+        });
+        if (_isWizardSpecLink(_activeSpecLinkId) &&
+            _wizardOpenedFromInitiatives &&
+            widget.controller.project != null) {
+          return (
+            tooltip: 'Retour aux Initiatives & Features',
+            onBack: () => setState(() {
+              _activeSpecLinkId = 'initiatives';
+              _wizardOpenedFromInitiatives = false;
+            }),
+            menuTooltip: 'Menu Spec',
+            onMainMenu: goToSpecMenu,
+          );
+        }
         return (
           tooltip: 'Retour au menu Spec',
           onBack: goToSpecMenu,
@@ -228,6 +256,11 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   String _appBarTitle(SpecForgeProject? project) {
     switch (_selectedRailIndex) {
       case 0:
+        final wizardSuffix = project == null
+            ? ''
+            : (project.hasSingleDefaultFeature
+                  ? project.name
+                  : '${project.activeFeature.displayLabel} (${project.name})');
         return switch (_activeSpecLinkId) {
           'company_glossary' => 'Spec › ${SpecLinksView.glossaryLabel}',
           'modeling_dictionary' =>
@@ -235,14 +268,17 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           'enterprise_rates' =>
             'Spec › ${SpecLinksView.enterpriseRatesLabel}',
           'projects' => 'Spec › ${SpecLinksView.projectsLabel}',
+          'initiatives' when project != null =>
+            'Spec › ${project.name} › ${SpecLinksView.initiativesLabel}',
+          'initiatives' => 'Spec › ${SpecLinksView.initiativesLabel}',
           'wizard' when project != null =>
-            '${project.currentStage.title} — ${project.name}',
+            '${project.currentStage.title} — $wizardSuffix',
           'ux_wizard' when project != null =>
-            'UX · ${project.uxSpec.currentStage.title} — ${project.name}',
+            'UX · ${project.uxSpec.currentStage.title} — $wizardSuffix',
           'qa_wizard' when project != null =>
-            'BDD/TDD · ${project.qaSpec.currentStage.title} — ${project.name}',
+            'BDD/TDD · ${project.qaSpec.currentStage.title} — $wizardSuffix',
           'cost_wizard' when project != null =>
-            'Coûts IT · ${project.costSpec.currentStage.title} — ${project.name}',
+            'Coûts IT · ${project.costSpec.currentStage.title} — $wizardSuffix',
           _ => 'Spec',
         };
       case 1:
@@ -257,7 +293,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           final domain = widget.controller.domainCatalog.domains
               .where((domain) => domain.id == detail.domainId)
               .firstOrNull;
-          final name = id == 'domain_management'
+          final name = (id == 'domain_management' || id == 'systems_services')
               ? domain?.name
               : domain?.contracts?.entryById(detail.entryId)?.name;
           if (name != null) {
@@ -302,12 +338,11 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     );
     if (!changed || !mounted) return;
     setState(() {
-      if ((_activeSpecLinkId == 'wizard' ||
-              _activeSpecLinkId == 'ux_wizard' ||
-              _activeSpecLinkId == 'qa_wizard' ||
-              _activeSpecLinkId == 'cost_wizard') &&
+      if ((_isWizardSpecLink(_activeSpecLinkId) ||
+              _activeSpecLinkId == 'initiatives') &&
           widget.controller.project == null) {
         _activeSpecLinkId = 'projects';
+        _wizardOpenedFromInitiatives = false;
       }
     });
   }
@@ -390,6 +425,20 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
               ],
             ),
             actions: [
+              if (_selectedRailIndex == 0 &&
+                  project != null &&
+                  _isWizardSpecLink(_activeSpecLinkId)) ...[
+                _ActiveFeatureAppBarMenu(
+                  project: project,
+                  disabled: widget.controller.isSending,
+                  onManagePortfolio: () => setState(() {
+                    _activeSpecLinkId = 'initiatives';
+                    _wizardOpenedFromInitiatives = false;
+                  }),
+                  onSelectFeature: widget.controller.selectActiveFeature,
+                ),
+                const SizedBox(width: 6),
+              ],
               Tooltip(
                 message:
                     'Workspace Git actif : ${widget.controller.workspaceDirectory.path}',
@@ -606,6 +655,31 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         pasteClipboardMedia: widget.pasteClipboardMedia,
       );
     }
+    if (_activeDesignLinkId == 'systems_services') {
+      return SystemsServicesView(
+        key: ObjectKey(widget.controller.store),
+        controller: widget.controller,
+        initialDomainId: _initialModelsDomainId,
+        onBack: () => _selectDesignPage(null),
+        onManageDomains: () => _selectDesignPage('domain_management'),
+        onDomainChanged: (id) => _selectDesignDetail(id, null),
+        onOpenEventStorming: widget.controller.project == null
+            ? null
+            : () {
+                setState(() {
+                  _selectedRailIndex = 0;
+                  _activeSpecLinkId = 'wizard';
+                  _activeDesignLinkId = null;
+                  _designDetail = null;
+                });
+                widget.controller.goToStage(SpecForgeStage.eventStorming);
+              },
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
+      );
+    }
     if (_activeDesignLinkId == 'domain_management') {
       return DomainManagementView(
         key: ObjectKey(widget.controller.store),
@@ -617,6 +691,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       key: const ValueKey('spec-forge-design-view'),
       onLinkTap: (item) {
         if (item.id == 'domain_management' ||
+            item.id == 'systems_services' ||
             item.id == 'models_contracts' ||
             item.id == 'usecase_orchestration') {
           _selectDesignPage(item.id);
@@ -664,8 +739,42 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     if (_activeSpecLinkId == 'projects') {
       return IdeaLauncherView(
         controller: widget.controller,
-        onProjectActivated: () => setState(() => _activeSpecLinkId = 'wizard'),
+        onProjectActivated: () => setState(() {
+          _activeSpecLinkId = 'wizard';
+          _wizardOpenedFromInitiatives = false;
+        }),
+        onOpenInitiatives: () => setState(() {
+          _activeSpecLinkId = 'initiatives';
+          _wizardOpenedFromInitiatives = false;
+        }),
         onSelectWorkspace: () => _openWorkspaceSelector(context),
+      );
+    }
+    if (_activeSpecLinkId == 'initiatives' && project != null) {
+      return ProjectInitiativesView(
+        controller: widget.controller,
+        onOpenSharedLexicon: () {
+          widget.controller.goToStage(SpecForgeStage.lexicon);
+          setState(() {
+            _wizardOpenedFromInitiatives = true;
+            _activeSpecLinkId = 'wizard';
+          });
+        },
+        onOpenWizard: (target) {
+          setState(() {
+            _wizardOpenedFromInitiatives = true;
+            _activeSpecLinkId = switch (target) {
+              SpecPortfolioWizardTarget.spec => 'wizard',
+              SpecPortfolioWizardTarget.ux => 'ux_wizard',
+              SpecPortfolioWizardTarget.qa => 'qa_wizard',
+              SpecPortfolioWizardTarget.cost => 'cost_wizard',
+            };
+          });
+        },
+        pickAttachments: widget.pickAttachments,
+        pasteAttachments: widget.pasteAttachments,
+        hasClipboardMedia: widget.hasClipboardMedia,
+        pasteClipboardMedia: widget.pasteClipboardMedia,
       );
     }
     if (_activeSpecLinkId == 'wizard' && project != null) {
@@ -692,15 +801,22 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
             item.id == 'company_glossary' ||
             item.id == 'modeling_dictionary' ||
             item.id == 'enterprise_rates') {
-          setState(() => _activeSpecLinkId = item.id);
+          setState(() {
+            _activeSpecLinkId = item.id;
+            _wizardOpenedFromInitiatives = false;
+          });
           return;
         }
-        if (item.id == 'wizard' ||
+        if (item.id == 'initiatives' ||
+            item.id == 'wizard' ||
             item.id == 'ux_wizard' ||
             item.id == 'qa_wizard' ||
             item.id == 'cost_wizard') {
           if (project != null) {
-            setState(() => _activeSpecLinkId = item.id);
+            setState(() {
+              _wizardOpenedFromInitiatives = false;
+              _activeSpecLinkId = item.id;
+            });
             return;
           }
           ScaffoldMessenger.maybeOf(context)
@@ -1606,3 +1722,131 @@ class _RailDestinationButton extends StatelessWidget {
     );
   }
 }
+
+class _ActiveFeatureAppBarMenu extends StatelessWidget {
+  const _ActiveFeatureAppBarMenu({
+    required this.project,
+    required this.disabled,
+    required this.onManagePortfolio,
+    required this.onSelectFeature,
+  });
+
+  final SpecForgeProject project;
+  final bool disabled;
+  final VoidCallback onManagePortfolio;
+  final ValueChanged<String> onSelectFeature;
+
+  static const String _manageActionValue = '__manage_portfolio__';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final activeFeat = project.activeFeature;
+
+    return PopupMenuButton<String>(
+      key: const ValueKey('spec-appbar-feature-switcher'),
+      enabled: !disabled,
+      tooltip:
+          'Feature active : ${activeFeat.displayLabel} — changer de feature ou gérer les initiatives',
+      onSelected: (value) {
+        if (value == _manageActionValue) {
+          onManagePortfolio();
+        } else {
+          onSelectFeature(value);
+        }
+      },
+      itemBuilder: (context) => <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: _manageActionValue,
+          child: Row(
+            children: [
+              Icon(
+                Icons.account_tree_rounded,
+                size: 18,
+                color: colors.primary,
+              ),
+              const SizedBox(width: 8),
+              const Flexible(
+                child: Text(
+                  'Gérer les Initiatives & Features…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        for (final init in project.initiatives) ...[
+          PopupMenuItem<String>(
+            enabled: false,
+            height: 28,
+            child: Text(
+              init.displayLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: colors.primary,
+              ),
+            ),
+          ),
+          for (final feat in init.features)
+            CheckedPopupMenuItem<String>(
+              key: ValueKey('spec-appbar-feature-item-${feat.id}'),
+              value: feat.id,
+              checked: feat.id == project.activeFeatureId,
+              child: Text(
+                feat.displayLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: colors.secondaryContainer.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: colors.secondary.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.account_tree_rounded,
+              size: 15,
+              color: colors.onSecondaryContainer,
+            ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                activeFeat.code.trim().isNotEmpty
+                    ? activeFeat.code.trim()
+                    : activeFeat.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.onSecondaryContainer,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.arrow_drop_down_rounded,
+              size: 18,
+              color: colors.onSecondaryContainer,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

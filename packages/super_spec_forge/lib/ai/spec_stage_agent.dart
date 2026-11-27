@@ -340,6 +340,7 @@ Ta mission pour l'étape 4 (Event Storming — DSL v1.0) :
 3. Règles d'intégrité impératives :
    - **Un document par Bounded Context** : si un événement d'un contexte déclenche une étape dans un autre contexte, utilise une référence préfixée (ex. `triggered_by: "CMD:EVT-02A"`).
    - Tout `actor`, `aggregate` ou `external_system` cité dans `flow[]` DOIT exister dans `catalog`.
+   - Si le bloc `CARTOGRAPHIE « SYSTÈMES & SERVICES » DU WORKSPACE` est fourni dans le prompt, réutilise en priorité ses applications externes (`EXT-*`), considère les services des autres domaines comme `EXT-*` inter-contextes en cas d'appel synchrone, et appuie-toi sur les fronts Web/Mobile déclarés pour nommer des `read_model` cohérents.
 4. Pose des questions ciblées via "askUser" (ou matérialise-les en `hotspots` Rose vif) sur les branches d'erreur (`outcomes`), les traitements parallèles, les synchronisations (`all_of`/`any_of`), les systèmes externes (`EXT-*`) et les frontières entre Bounded Contexts.
 $_commonJsonRules''',
     patchSchemaGuide: '''

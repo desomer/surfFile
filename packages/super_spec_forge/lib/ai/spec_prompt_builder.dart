@@ -8,9 +8,12 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
 import '../models/company_glossary.dart';
+import '../models/domain_catalog.dart';
+import '../models/event_storming_spec.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
+import '../services/event_storming_operations.dart';
 import 'spec_stage_agent.dart';
 
 /// Assemble les prompts contextuels et consignes de questionnement pour chaque étape.
@@ -74,8 +77,14 @@ abstract final class SpecPromptBuilder {
     BusinessObjectModelPreferences? modelPreferencesOverride,
   }) => switch (stage) {
     SpecForgeStage.lexicon =>
-      'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
-          'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.',
+      project.hasSingleDefaultFeature
+          ? 'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
+                'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.'
+          : 'Nous travaillons sur la feature « ${project.activeFeature.displayLabel} » '
+                '(initiative « ${project.activeInitiative.displayLabel} ») du projet « ${project.name} ».'
+                '${project.activeFeature.description.isNotEmpty ? ' Périmètre de la feature : « ${project.activeFeature.description} ».' : ''} '
+                'En tenant compte de l’idée du projet (« ${project.initialIdea} ») et des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, '
+                'identifie les termes métier clés, sigles et ambiguïtés terminologiques à ajouter ou préciser.',
     SpecForgeStage.vision =>
       'Nous passons à l’étape 2 (Cadrage & Acteurs). En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le lexique métier établi, '
           'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
@@ -103,6 +112,27 @@ abstract final class SpecPromptBuilder {
           'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
   };
 
+  /// Construit le prompt ciblé pour rechercher un complément de lexique métier
+  /// propre à la feature active sans dupliquer ni écraser les termes existants.
+  static String buildLexiconComplementPrompt(SpecForgeProject project) {
+    final feature = project.activeFeature;
+    final initiative = project.activeInitiative;
+    final existingCount = project.lexicon.terms.length;
+    final featureContext = feature.description.trim().isNotEmpty
+        ? feature.description.trim()
+        : (feature.vision.ideaSummary.trim().isNotEmpty
+              ? feature.vision.ideaSummary.trim()
+              : project.initialIdea);
+    final featureLabel = project.hasSingleDefaultFeature
+        ? 'le projet « ${project.name} »'
+        : 'la feature « ${feature.displayLabel} » (initiative « ${initiative.displayLabel} ») du projet « ${project.name} »';
+    return 'Recherche un complément de lexique métier pour $featureLabel.\n'
+        'Contexte fonctionnel ciblé : « $featureContext ».\n'
+        'Le lexique partagé du projet contient actuellement $existingCount terme(s). '
+        'Identifie uniquement les nouveaux termes métier, acronymes, synonymes ou ambiguïtés spécifiques à cette feature qui manquent encore dans le lexique partagé, '
+        'sans supprimer ni réécrire les termes existants déjà validés.';
+  }
+
   /// Assemble le prompt complet envoyé à l'agent de [stage] pour le tour courant.
   static String buildTurnPrompt({
     required SpecForgeProject project,
@@ -113,6 +143,7 @@ abstract final class SpecPromptBuilder {
     bool forceFollowUpQuestions = false,
     int maxHistoryEntries = 10,
     CompanyGlossary? companyGlossary,
+    DomainCatalog? domainCatalog,
     BusinessObjectModelPreferences? modelPreferencesOverride,
     String? focusedObjectId,
     List<String> focusedAttributePath = const <String>[],
@@ -178,6 +209,24 @@ abstract final class SpecPromptBuilder {
         ..writeln(glossaryBlock);
     }
 
+    if (stage == SpecForgeStage.eventStorming ||
+        stage == SpecForgeStage.reviewExport) {
+      final focusedDoc =
+          (focusedEventStormFlowId != null &&
+              focusedEventStormFlowId.isNotEmpty)
+          ? project.eventStorming.findDocument(focusedEventStormFlowId)
+          : null;
+      final systemsBlock = domainSystemsBlock(
+        domainCatalog,
+        focusedDocument: focusedDoc,
+      );
+      if (systemsBlock.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln(systemsBlock);
+      }
+    }
+
     if (previousSummaries.isNotEmpty) {
       buffer
         ..writeln()
@@ -228,6 +277,134 @@ abstract final class SpecPromptBuilder {
         .convert(companyGlossary.toPromptContextJson());
     return 'GLOSSAIRE D’ENTREPRISE (RÉFÉRENTIEL PRIORITAIRE — respecte les termes validés et évite les "forbiddenTerms") :\n'
         '$glossaryJson';
+  }
+
+  /// Bloc « CARTOGRAPHIE SYSTÈMES & SERVICES DU WORKSPACE » destiné à assister
+  /// l'Event Storming (`EXT-*` externes, dépendances inter-domaines et fronts).
+  static String domainSystemsBlock(
+    DomainCatalog? domainCatalog, {
+    EventStormDocument? focusedDocument,
+  }) {
+    if (domainCatalog == null) return '';
+    final activeSystems = domainCatalog.microservices
+        .where((s) => s.isActive)
+        .toList();
+    if (activeSystems.isEmpty) return '';
+
+    final domainsById = <String, FunctionalDomain>{
+      for (final d in domainCatalog.domains) d.id: d,
+    };
+
+    String norm(String v) =>
+        v.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    final focusedNorms = <String>{
+      if (focusedDocument != null) ...[
+        norm(focusedDocument.id),
+        norm(focusedDocument.meta.boundedContext),
+        norm(focusedDocument.meta.domain),
+      ],
+    }..remove('');
+
+    final matchedDomainIds = <String>{
+      for (final d in domainCatalog.domains)
+        if (focusedNorms.contains(norm(d.domainCode)) ||
+            focusedNorms.contains(norm(d.name)))
+          d.id,
+    };
+
+    final externalApps = activeSystems
+        .where((s) => s.kind.isExternal)
+        .toList();
+    final openSourceTools = activeSystems
+        .where((s) => s.kind.isOpenSourceTool)
+        .toList();
+    final frontendApps = activeSystems
+        .where((s) => s.kind.isFrontend)
+        .toList();
+    final backendApps = activeSystems.where((s) => s.kind.isBackend).toList();
+
+    final usedExtIds = <String>{};
+    String suggestExtId(String name) {
+      final id = EventStormingOperations.nextCatalogId('EXT', name, usedExtIds);
+      usedExtIds.add(id);
+      return id;
+    }
+
+    final buf = StringBuffer()
+      ..writeln(
+        'CARTOGRAPHIE « SYSTÈMES & SERVICES » DU WORKSPACE (RÉFÉRENTIEL POUR L’EVENT STORMING) :',
+      )
+      ..writeln(
+        'Exploite prioritairement ce référentiel d’urbanisme pour peupler `catalog.external_systems` (`EXT-*`), contextualiser les points d’entrée frontaux (`read_model` / `ACT-*`) et aligner les Bounded Contexts :',
+      );
+
+    if (externalApps.isNotEmpty) {
+      buf.writeln(
+        '1. Applications externes déclarées (candidats directs `EXT-*` Rose pâle) :',
+      );
+      for (final ext in externalApps) {
+        final dom = domainsById[ext.domainId];
+        final extId = suggestExtId(ext.name);
+        buf.writeln(
+          '   - $extId -> « ${ext.name} » (code: ${ext.serviceCode}'
+          '${dom == null ? '' : ', domaine: ${dom.name}'}'
+          '${ext.vendor.isEmpty ? '' : ', fournisseur: ${ext.vendor}'})'
+          '${ext.description.isEmpty ? '' : ' : ${ext.description}'}',
+        );
+      }
+    }
+
+    if (openSourceTools.isNotEmpty) {
+      buf.writeln(
+        '2. Tools openSource déclarés (outils auto-hébergés/open-source — utilisables en `EXT-*` Rose pâle lorsqu’ils interviennent dans le flux) :',
+      );
+      for (final tool in openSourceTools) {
+        final dom = domainsById[tool.domainId];
+        final extId = suggestExtId(tool.name);
+        buf.writeln(
+          '   - $extId -> « ${tool.name} » [Tools openSource] (code: ${tool.serviceCode}'
+          '${dom == null ? '' : ', domaine: ${dom.name}'}'
+          '${tool.vendor.isEmpty ? '' : ', projet/licence: ${tool.vendor}'})'
+          '${tool.description.isEmpty ? '' : ' : ${tool.description}'}',
+        );
+      }
+    }
+
+    if (backendApps.isNotEmpty) {
+      buf.writeln(
+        '3. Services internes, BFF & Monolithes par domaine (pour un autre Bounded Context, tout appel synchrone vers un autre domaine peut être modélisé en `EXT-*` ou via événement inter-contexte `<CTX>:EVT-*`) :',
+      );
+      for (final svc in backendApps) {
+        final dom = domainsById[svc.domainId];
+        final isOtherDomain =
+            matchedDomainIds.isNotEmpty &&
+            !matchedDomainIds.contains(svc.domainId);
+        final crossHint = isOtherDomain
+            ? ' [AUTRE DOMAINE -> candidat EXT-* inter-contexte : ${suggestExtId(svc.name)}]'
+            : '';
+        buf.writeln(
+          '   - [${svc.kind.label}] « ${svc.name} » (${svc.serviceCode}'
+          '${dom == null ? '' : ', domaine: ${dom.name} (${dom.domainCode})'})$crossHint'
+          '${svc.description.isEmpty ? '' : ' : ${svc.description}'}',
+        );
+      }
+    }
+
+    if (frontendApps.isNotEmpty) {
+      buf.writeln(
+        '4. Applications Frontales (Web & Mobile — repères pour les `read_model` Verts et interactions `ACT-*`) :',
+      );
+      for (final front in frontendApps) {
+        final dom = domainsById[front.domainId];
+        buf.writeln(
+          '   - [${front.kind.label}] « ${front.name} » (${front.serviceCode}'
+          '${dom == null ? '' : ', domaine: ${dom.name}'})'
+          '${front.description.isEmpty ? '' : ' : ${front.description}'}',
+        );
+      }
+    }
+
+    return buf.toString().trimRight();
   }
 
   /// Bloc « FOCUS COURANT » décrivant l'objet, l'attribut sélectionné et le

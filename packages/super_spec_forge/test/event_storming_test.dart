@@ -1063,5 +1063,122 @@ void main() {
         expect(find.byKey(const ValueKey('spec-es-help-dialog')), findsNothing);
       },
     );
+
+    test(
+      'SpecPromptBuilder & resolveEventStormExternalCandidates injectent et proposent les Systèmes & Services en Event Storming',
+      () {
+        final refDoc = EventStormingDslCodec.fromYaml(
+          _referenceGestionCommandesYaml,
+          idHint: 'gestion-commandes',
+        );
+        final project = _buildSampleProject(
+          eventStorming: EventStormingSpec(documents: [refDoc]),
+        );
+
+        final domainCatalog = DomainCatalog(
+          domains: const [
+            FunctionalDomain(
+              id: 'dom_cmd',
+              domainCode: 'gestion-commandes',
+              name: 'Gestion des commandes',
+            ),
+            FunctionalDomain(
+              id: 'dom_billing',
+              domainCode: 'billing',
+              name: 'Facturation',
+            ),
+          ],
+          microservices: const [
+            // Déjà présent dans refDoc ("Stripe") -> ne doit pas être reproposé à l'import
+            Microservice(
+              id: 'svc_stripe',
+              domainId: 'dom_cmd',
+              serviceCode: 'stripe',
+              name: 'Stripe',
+              kind: DomainSystemKind.externalApp,
+              vendor: 'Stripe',
+            ),
+            // Nouvelle application externe -> proposée en candidat direct EXT-*
+            Microservice(
+              id: 'svc_sendgrid',
+              domainId: 'dom_cmd',
+              serviceCode: 'sendgrid-mailer',
+              name: 'SendGrid',
+              kind: DomainSystemKind.externalApp,
+              vendor: 'Twilio SendGrid',
+              description: 'Envoi transactionnel d’emails',
+            ),
+            // Tool openSource -> proposé dans la section dédiée EXT-* et dans le prompt IA
+            Microservice(
+              id: 'svc_keycloak',
+              domainId: 'dom_cmd',
+              serviceCode: 'keycloak-iam',
+              name: 'Keycloak',
+              kind: DomainSystemKind.openSourceTool,
+              vendor: 'Apache 2.0',
+              description: 'Authentification OIDC open-source',
+            ),
+            // Front Web du domaine courant -> mentionné dans le prompt IA
+            Microservice(
+              id: 'svc_portal_web',
+              domainId: 'dom_cmd',
+              serviceCode: 'checkout-web',
+              name: 'Portail Checkout Web',
+              kind: DomainSystemKind.webFront,
+            ),
+            // Service interne du MÊME domaine -> pas proposé comme EXT-* de ce BC
+            Microservice(
+              id: 'svc_order_core',
+              domainId: 'dom_cmd',
+              serviceCode: 'order-service',
+              name: 'Service Commandes',
+              kind: DomainSystemKind.microservice,
+            ),
+            // Service d'un AUTRE domaine -> proposé en candidat EXT-* inter-domaines !
+            Microservice(
+              id: 'svc_billing_api',
+              domainId: 'dom_billing',
+              serviceCode: 'billing-api',
+              name: 'Service Facturation',
+              kind: DomainSystemKind.microservice,
+            ),
+          ],
+        );
+
+        final prompt = SpecPromptBuilder.buildTurnPrompt(
+          project: project,
+          stage: SpecForgeStage.eventStorming,
+          userInput: 'Complète les systèmes externes',
+          questioningLevel: VibeQuestioningLevel.none,
+          afterAskUserReply: false,
+          domainCatalog: domainCatalog,
+          focusedEventStormFlowId: 'gestion-commandes',
+        );
+        expect(
+          prompt,
+          contains('CARTOGRAPHIE « SYSTÈMES & SERVICES » DU WORKSPACE'),
+        );
+        expect(prompt, contains('EXT-SENDGRID -> « SendGrid »'));
+        expect(prompt, contains('EXT-KEYCLOAK -> « Keycloak » [Tools openSource]'));
+        expect(prompt, contains('Portail Checkout Web'));
+        expect(
+          prompt,
+          contains('[AUTRE DOMAINE -> candidat EXT-* inter-contexte : EXT-SERVICE_FACTURATION]'),
+        );
+
+        final candidates = resolveEventStormExternalCandidates(
+          domainCatalog,
+          refDoc,
+        );
+        expect(
+          candidates.map((c) => c.service.serviceCode).toList(),
+          ['sendgrid-mailer', 'keycloak-iam', 'billing-api'],
+        );
+        expect(candidates[0].isDirectExternalApp, isTrue);
+        expect(candidates[1].isOpenSourceTool, isTrue);
+        expect(candidates[2].isDirectExternalApp, isFalse);
+        expect(candidates[2].isOpenSourceTool, isFalse);
+      },
+    );
   });
 }

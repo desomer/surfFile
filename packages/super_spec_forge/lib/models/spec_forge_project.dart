@@ -14,23 +14,25 @@ import 'qa/qa_forge_spec.dart';
 import 'spec_cahier_des_charges.dart';
 import 'spec_coherence_issue.dart';
 import 'spec_forge_stage.dart';
+import 'spec_initiative.dart';
 import 'spec_lexicon.dart';
 import 'spec_stage_chat.dart';
 import 'spec_vision.dart';
 import 'ux/ux_forge_spec.dart';
 
-/// Projet complet de spécification construit au fil des 8 étapes du wizard IA.
+/// Projet complet de spécification structuré en Initiatives & Features et construit au fil des wizards IA.
 @immutable
 class SpecForgeProject {
   /// Construit un projet immuable de spécification.
   SpecForgeProject({
-    required this.id,
-    required this.name,
-    required this.initialIdea,
-    required this.createdAt,
-    required this.updatedAt,
-    this.currentStage = SpecForgeStage.lexicon,
+    required String id,
+    required String name,
+    required String initialIdea,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    SpecForgeStage currentStage = SpecForgeStage.lexicon,
     SpecLexicon? lexicon,
+    SpecStageState? lexiconStageState,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
@@ -42,30 +44,79 @@ class SpecForgeProject {
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue> coherenceIssues = const <SpecCoherenceIssue>[],
     List<SpecChatMessage> globalChatMessages = const <SpecChatMessage>[],
+    List<SpecChatMessage> portfolioChatMessages = const <SpecChatMessage>[],
     UxForgeSpec? uxSpec,
     QaForgeSpec? qaSpec,
     CostForgeSpec? costSpec,
-  }) : lexicon = lexicon ?? SpecLexicon.empty,
-       vision = vision ?? SpecVision.empty,
-       cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
-       eventStorming = eventStorming ?? EventStormingSpec.empty,
-       businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
-       _exampleMappings = List<ExampleMapStory>.unmodifiable(exampleMappings),
-       businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
-       businessObjectModelPreferences =
-           businessObjectModelPreferences ??
-           businessObjectLanguageSettings ??
-           BusinessObjectModelPreferences.defaults,
-       stageStates = Map<SpecForgeStage, SpecStageState>.unmodifiable(
-         _normalizeStageStates(stageStates),
-       ),
-       coherenceIssues = List<SpecCoherenceIssue>.unmodifiable(coherenceIssues),
-       globalChatMessages = List<SpecChatMessage>.unmodifiable(
-         globalChatMessages,
-       ),
-       uxSpec = uxSpec ?? UxForgeSpec.empty,
-       qaSpec = qaSpec ?? QaForgeSpec.empty,
-       costSpec = costSpec ?? CostForgeSpec.empty;
+    List<SpecInitiative>? initiatives,
+    String? activeFeatureId,
+  }) : this._resolved(
+         id: id,
+         name: name,
+         initialIdea: initialIdea,
+         createdAt: createdAt,
+         updatedAt: updatedAt,
+         lexicon: lexicon ?? SpecLexicon.empty,
+         lexiconStageState: _normalizeLexiconStageState(
+           lexiconStageState ?? stageStates?[SpecForgeStage.lexicon],
+         ),
+         businessObjectModelPreferences:
+             businessObjectModelPreferences ??
+             businessObjectLanguageSettings ??
+             BusinessObjectModelPreferences.defaults,
+         globalChatMessages: List<SpecChatMessage>.unmodifiable(
+           globalChatMessages,
+         ),
+         portfolioChatMessages: List<SpecChatMessage>.unmodifiable(
+           portfolioChatMessages,
+         ),
+         resolvedPortfolio: _resolvePortfolio(
+           initiatives: initiatives,
+           activeFeatureId: activeFeatureId,
+           currentStage: currentStage,
+           vision: vision,
+           cahierDesCharges: cahierDesCharges,
+           eventStorming: eventStorming,
+           businessObjects: businessObjects,
+           exampleMappings: exampleMappings,
+           businessRules: businessRules,
+           stageStates: stageStates,
+           coherenceIssues: coherenceIssues,
+           uxSpec: uxSpec,
+           qaSpec: qaSpec,
+           costSpec: costSpec,
+         ),
+       );
+
+  SpecForgeProject._resolved({
+    required this.id,
+    required this.name,
+    required this.initialIdea,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lexicon,
+    required this.lexiconStageState,
+    required this.businessObjectModelPreferences,
+    required this.globalChatMessages,
+    required this.portfolioChatMessages,
+    required ({
+      List<SpecInitiative> initiatives,
+      String activeFeatureId,
+      SpecInitiative activeInitiative,
+      SpecFeatureSpec activeFeature,
+    })
+    resolvedPortfolio,
+  }) : initiatives = resolvedPortfolio.initiatives,
+       activeFeatureId = resolvedPortfolio.activeFeatureId,
+       _activeInitiative = resolvedPortfolio.activeInitiative,
+       _activeFeature = resolvedPortfolio.activeFeature,
+       _mergedStageStates = Map<SpecForgeStage, SpecStageState>.unmodifiable(
+         <SpecForgeStage, SpecStageState>{
+           SpecForgeStage.lexicon: lexiconStageState,
+           for (final stage in SpecFeatureSpec.featureScopedStages)
+             stage: resolvedPortfolio.activeFeature.stageStateFor(stage),
+         },
+       );
 
   /// Crée un nouveau projet à partir d'une idée initiale saisie par l'utilisateur.
   factory SpecForgeProject.fromIdea({
@@ -120,57 +171,190 @@ class SpecForgeProject {
   /// Horodatage UTC de dernière modification.
   final DateTime updatedAt;
 
-  /// Étape actuellement sélectionnée dans le wizard.
-  final SpecForgeStage currentStage;
-
-  /// Livrable de l'étape 1 (Lexique métier).
+  /// Livrable de l'étape 1 (Lexique métier), partagé entre toutes les features du projet.
   final SpecLexicon lexicon;
 
-  /// Livrable de l'étape 2 (Cadrage & Acteurs).
-  final SpecVision vision;
+  /// État et historique du chat de l'étape 1 (Lexique métier), partagés à l'échelle du projet.
+  final SpecStageState lexiconStageState;
 
-  /// Livrable de l'étape 3 (Cahier des charges fonctionnel et non fonctionnel).
-  final SpecCahierDesCharges cahierDesCharges;
-
-  /// Livrable de l'étape 4 (Event Storming : événements, commandes, politiques, agrégats, read models, hotspots, bounded contexts).
-  final EventStormingSpec eventStorming;
-
-  /// Livrable de l'étape 5 (Objets métiers, attributs, relations, cycles de vie).
-  final List<BusinessObjectSpec> businessObjects;
-
-  final List<ExampleMapStory>? _exampleMappings;
-
-  /// Livrable de l'étape 6 (Tableaux d'Example Mapping à 4 couleurs).
-  List<ExampleMapStory> get exampleMappings =>
-      _exampleMappings ?? const <ExampleMapStory>[];
-
-  /// Livrable de l'étape 7 (Règles de gestion structurées).
-  final List<BusinessRuleSpec> businessRules;
-
-  /// Préférences unifiées de modélisation (langues, casse, clés/audit, rigueur JSON Schema, profil régional).
+  /// Préférences unifiées de modélisation partagées à l'échelle du projet.
   final BusinessObjectModelPreferences businessObjectModelPreferences;
+
+  /// Liste ordonnée des initiatives produit du projet (contenant chacune leurs features).
+  final List<SpecInitiative> initiatives;
+
+  /// Identifiant de la [SpecFeatureSpec] actuellement active dans les wizards.
+  final String activeFeatureId;
+
+  /// Historique des échanges du chat IA de découpage produit (Initiatives & Features).
+  final List<SpecChatMessage> portfolioChatMessages;
+
+  /// Historique des échanges du chat global de questions sur le projet.
+  final List<SpecChatMessage> globalChatMessages;
+
+  final SpecInitiative _activeInitiative;
+  final SpecFeatureSpec _activeFeature;
+  final Map<SpecForgeStage, SpecStageState> _mergedStageStates;
+
+  /// Initiative parente contenant la [activeFeature] courante.
+  SpecInitiative get activeInitiative => _activeInitiative;
+
+  /// Feature actuellement sélectionnée et projetée dans les 4 wizards.
+  SpecFeatureSpec get activeFeature => _activeFeature;
+
+  /// Liste aplatie de toutes les features du projet dans l'ordre de leurs initiatives.
+  List<SpecFeatureSpec> get allFeatures => <SpecFeatureSpec>[
+    for (final init in initiatives) ...init.features,
+  ];
+
+  /// Nombre total de features déclarées dans l'ensemble des initiatives.
+  int get totalFeatureCount =>
+      initiatives.fold<int>(0, (sum, init) => sum + init.features.length);
+
+  /// Vrai lorsque le projet ne contient encore que l'initiative et la feature initiales par défaut.
+  bool get hasSingleDefaultFeature =>
+      initiatives.length == 1 &&
+      initiatives.single.isDefaultMetadata &&
+      initiatives.single.features.length == 1 &&
+      initiatives.single.features.single.isDefaultMetadata;
+
+  /// Vrai dès que des initiatives/features personnalisées ou un chat portefeuille ont été enregistrés.
+  bool get hasPortfolioCustomization =>
+      !hasSingleDefaultFeature || portfolioChatMessages.isNotEmpty;
+
+  /// Étape actuellement sélectionnée dans le wizard de la feature active.
+  SpecForgeStage get currentStage => _activeFeature.currentStage;
+
+  /// Livrable de l'étape 2 (Cadrage & Acteurs) de la feature active.
+  SpecVision get vision => _activeFeature.vision;
+
+  /// Livrable de l'étape 3 (Cahier des charges) de la feature active.
+  SpecCahierDesCharges get cahierDesCharges => _activeFeature.cahierDesCharges;
+
+  /// Livrable de l'étape 4 (Event Storming) de la feature active.
+  EventStormingSpec get eventStorming => _activeFeature.eventStorming;
+
+  /// Livrable de l'étape 5 (Objets métiers) de la feature active.
+  List<BusinessObjectSpec> get businessObjects =>
+      _activeFeature.businessObjects;
+
+  /// Livrable de l'étape 6 (Tableaux d'Example Mapping) de la feature active.
+  List<ExampleMapStory> get exampleMappings => _activeFeature.exampleMappings;
+
+  /// Livrable de l'étape 7 (Règles de gestion) de la feature active.
+  List<BusinessRuleSpec> get businessRules => _activeFeature.businessRules;
 
   /// Alias rétrocompatible vers [businessObjectModelPreferences].
   BusinessObjectModelPreferences get businessObjectLanguageSettings =>
       businessObjectModelPreferences;
 
-  /// Historique et statut de chaque étape du wizard.
-  final Map<SpecForgeStage, SpecStageState> stageStates;
+  /// Historique et statut de chaque étape du wizard (étape 1 partagée + étapes 2..8 de la feature active).
+  Map<SpecForgeStage, SpecStageState> get stageStates => _mergedStageStates;
 
-  /// Diagnostics de cohérence relevés (locaux et/ou IA).
-  final List<SpecCoherenceIssue> coherenceIssues;
+  /// Diagnostics de cohérence relevés sur la feature active.
+  List<SpecCoherenceIssue> get coherenceIssues =>
+      _activeFeature.coherenceIssues;
 
-  /// Historique des échanges du chat global de questions sur le projet.
-  final List<SpecChatMessage> globalChatMessages;
+  /// Spécification UX en 4 étapes de la feature active.
+  UxForgeSpec get uxSpec => _activeFeature.uxSpec;
 
-  /// Spécification UX en 4 étapes (parcours, architecture/navigation, écrans et audit UX).
-  final UxForgeSpec uxSpec;
+  /// Spécification QA BDD/Gherkin & TDD en 4 étapes de la feature active.
+  QaForgeSpec get qaSpec => _activeFeature.qaSpec;
 
-  /// Spécification QA BDD/Gherkin & TDD en 4 étapes (jeux d'essais, features Gherkin, suites TDD et couverture 360°).
-  final QaForgeSpec qaSpec;
+  /// Spécification FinOps & Chiffrage en 4 étapes de la feature active.
+  CostForgeSpec get costSpec => _activeFeature.costSpec;
 
-  /// Spécification FinOps & Chiffrage en 4 étapes (grille TJM, Build WBS, Run OPEX et TCO/Risques).
-  final CostForgeSpec costSpec;
+  /// Recherche une initiative par son identifiant.
+  SpecInitiative? initiativeById(String? initiativeId) {
+    if (initiativeId == null || initiativeId.trim().isEmpty) return null;
+    for (final init in initiatives) {
+      if (init.id == initiativeId) return init;
+    }
+    return null;
+  }
+
+  /// Recherche une feature par son identifiant à travers toutes les initiatives.
+  SpecFeatureSpec? featureById(String? featureId) {
+    if (featureId == null || featureId.trim().isEmpty) return null;
+    for (final init in initiatives) {
+      final found = init.featureById(featureId);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  /// Retourne l'initiative parente d'une feature [featureId], ou `null` si introuvable.
+  SpecInitiative? initiativeOfFeature(String? featureId) {
+    if (featureId == null || featureId.trim().isEmpty) return null;
+    for (final init in initiatives) {
+      if (init.featureById(featureId) != null) return init;
+    }
+    return null;
+  }
+
+  /// Sélectionne [featureId] comme feature active du projet.
+  SpecForgeProject selectFeature(String featureId, {DateTime? updatedAt}) {
+    if (featureById(featureId) == null) {
+      throw FormatException('Feature introuvable : $featureId');
+    }
+    if (activeFeatureId == featureId && updatedAt == null) return this;
+    return copyWith(activeFeatureId: featureId, updatedAt: updatedAt);
+  }
+
+  /// Remplace une feature existante par [updatedFeature] dans son initiative parente.
+  SpecForgeProject updateFeature(
+    SpecFeatureSpec updatedFeature, {
+    DateTime? updatedAt,
+  }) {
+    var replaced = false;
+    final nextInitiatives = <SpecInitiative>[
+      for (final init in initiatives)
+        init.featureById(updatedFeature.id) == null
+            ? init
+            : init.copyWith(
+                features: <SpecFeatureSpec>[
+                  for (final f in init.features)
+                    if (f.id == updatedFeature.id)
+                      (() {
+                        replaced = true;
+                        return updatedFeature;
+                      })()
+                    else
+                      f,
+                ],
+              ),
+    ];
+    if (!replaced) {
+      throw FormatException('Feature introuvable : ${updatedFeature.id}');
+    }
+    return copyWith(initiatives: nextInitiatives, updatedAt: updatedAt);
+  }
+
+  /// Génère le prochain code court d'initiative libre (`INIT-01`, `INIT-02`, …).
+  String nextInitiativeCode() {
+    final existing = <String>{
+      for (final i in initiatives) i.code.trim().toUpperCase(),
+    };
+    var index = initiatives.length + 1;
+    while (true) {
+      final candidate = 'INIT-${index.toString().padLeft(2, '0')}';
+      if (!existing.contains(candidate)) return candidate;
+      index++;
+    }
+  }
+
+  /// Génère le prochain code court de feature libre (`FEAT-01`, `FEAT-02`, …).
+  String nextFeatureCode() {
+    final existing = <String>{
+      for (final f in allFeatures) f.code.trim().toUpperCase(),
+    };
+    var index = totalFeatureCount + 1;
+    while (true) {
+      final candidate = 'FEAT-${index.toString().padLeft(2, '0')}';
+      if (!existing.contains(candidate)) return candidate;
+      index++;
+    }
+  }
 
   /// Retourne l'état d'une étape donnée (garanti non nul).
   SpecStageState stageStateFor(SpecForgeStage stage) =>
@@ -237,38 +421,40 @@ class SpecForgeProject {
       );
     }
     lexicon.validate();
-    vision.validate();
-    cahierDesCharges.validate();
-    eventStorming.validate();
+    if (lexiconStageState.stage != SpecForgeStage.lexicon) {
+      throw const FormatException(
+        'lexiconStageState doit cibler SpecForgeStage.lexicon.',
+      );
+    }
     businessObjectModelPreferences.validate();
-
-    final objIds = <String>{};
-    for (final obj in businessObjects) {
-      obj.validate();
-      if (!objIds.add(obj.id)) {
-        throw FormatException('Objet métier dupliqué : ${obj.id}');
+    if (initiatives.isEmpty) {
+      throw const FormatException(
+        'SpecForgeProject doit contenir au moins une initiative.',
+      );
+    }
+    final initIds = <String>{};
+    final featIds = <String>{};
+    for (final init in initiatives) {
+      init.validate();
+      if (!initIds.add(init.id)) {
+        throw FormatException('Initiative dupliquée : ${init.id}');
+      }
+      for (final feat in init.features) {
+        if (!featIds.add(feat.id)) {
+          throw FormatException('Feature dupliquée dans le projet : ${feat.id}');
+        }
       }
     }
-
-    final emIds = <String>{};
-    for (final story in exampleMappings) {
-      story.validate();
-      if (!emIds.add(story.id)) {
-        throw FormatException('Tableau Example Mapping dupliqué : ${story.id}');
-      }
+    if (featIds.isEmpty) {
+      throw const FormatException(
+        'SpecForgeProject doit contenir au moins une feature.',
+      );
     }
-
-    final ruleIds = <String>{};
-    for (final rule in businessRules) {
-      rule.validate();
-      if (!ruleIds.add(rule.id)) {
-        throw FormatException('Règle de gestion dupliquée : ${rule.id}');
-      }
+    if (!featIds.contains(activeFeatureId)) {
+      throw FormatException(
+        'SpecForgeProject.activeFeatureId introuvable : $activeFeatureId',
+      );
     }
-
-    uxSpec.validate();
-    qaSpec.validate();
-    costSpec.validate();
   }
 
   /// Produit un instantané JSON concis adapté à l'injection dans le prompt de [stage].
@@ -276,6 +462,42 @@ class SpecForgeProject {
       <String, Object?>{
         'projectName': name,
         'initialIdea': initialIdea,
+        if (!hasSingleDefaultFeature) ...<String, Object?>{
+          'activeInitiative': <String, Object?>{
+            'id': activeInitiative.id,
+            if (activeInitiative.code.isNotEmpty) 'code': activeInitiative.code,
+            'name': activeInitiative.name,
+            if (activeInitiative.description.isNotEmpty)
+              'description': activeInitiative.description,
+          },
+          'activeFeature': <String, Object?>{
+            'id': activeFeature.id,
+            if (activeFeature.code.isNotEmpty) 'code': activeFeature.code,
+            'name': activeFeature.name,
+            if (activeFeature.description.isNotEmpty)
+              'description': activeFeature.description,
+            if (activeFeature.targetRelease.isNotEmpty)
+              'targetRelease': activeFeature.targetRelease,
+            'priority': activeFeature.priority.name,
+          },
+          'projectPortfolio': [
+            for (final init in initiatives)
+              <String, Object?>{
+                'id': init.id,
+                if (init.code.isNotEmpty) 'code': init.code,
+                'name': init.name,
+                'features': [
+                  for (final f in init.features)
+                    <String, Object?>{
+                      'id': f.id,
+                      if (f.code.isNotEmpty) 'code': f.code,
+                      'name': f.name,
+                      'active': f.id == activeFeatureId,
+                    },
+                ],
+              },
+          ],
+        },
         'currentStage': stage.name,
         'lexicon': lexicon.toJson(),
         if (stage.index >= SpecForgeStage.vision.index || vision.hasContent)
@@ -436,6 +658,7 @@ class SpecForgeProject {
     DateTime? updatedAt,
     SpecForgeStage? currentStage,
     SpecLexicon? lexicon,
+    SpecStageState? lexiconStageState,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
@@ -447,39 +670,86 @@ class SpecForgeProject {
     Map<SpecForgeStage, SpecStageState>? stageStates,
     List<SpecCoherenceIssue>? coherenceIssues,
     List<SpecChatMessage>? globalChatMessages,
+    List<SpecChatMessage>? portfolioChatMessages,
     UxForgeSpec? uxSpec,
     QaForgeSpec? qaSpec,
     CostForgeSpec? costSpec,
-  }) => SpecForgeProject(
-    id: id ?? this.id,
-    name: name ?? this.name,
-    initialIdea: initialIdea ?? this.initialIdea,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? DateTime.now().toUtc(),
-    currentStage: currentStage ?? this.currentStage,
-    lexicon: lexicon ?? this.lexicon,
-    vision: vision ?? this.vision,
-    cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
-    eventStorming: eventStorming ?? this.eventStorming,
-    businessObjects: businessObjects ?? this.businessObjects,
-    exampleMappings: exampleMappings ?? this.exampleMappings,
-    businessRules: businessRules ?? this.businessRules,
-    businessObjectModelPreferences:
-        businessObjectModelPreferences ??
-        businessObjectLanguageSettings ??
-        this.businessObjectModelPreferences,
-    stageStates: stageStates ?? this.stageStates,
-    coherenceIssues: coherenceIssues ?? this.coherenceIssues,
-    globalChatMessages: globalChatMessages ?? this.globalChatMessages,
-    uxSpec: uxSpec ?? this.uxSpec,
-    qaSpec: qaSpec ?? this.qaSpec,
-    costSpec: costSpec ?? this.costSpec,
-  );
+    List<SpecInitiative>? initiatives,
+    String? activeFeatureId,
+  }) {
+    final baseInitiatives = initiatives ?? this.initiatives;
+    final targetFeatureId = activeFeatureId ?? this.activeFeatureId;
+    final hasFeatureOverrides =
+        currentStage != null ||
+        vision != null ||
+        cahierDesCharges != null ||
+        eventStorming != null ||
+        businessObjects != null ||
+        exampleMappings != null ||
+        businessRules != null ||
+        stageStates != null ||
+        coherenceIssues != null ||
+        uxSpec != null ||
+        qaSpec != null ||
+        costSpec != null;
+
+    final nextInitiatives = !hasFeatureOverrides
+        ? baseInitiatives
+        : <SpecInitiative>[
+            for (final init in baseInitiatives)
+              init.copyWith(
+                features: <SpecFeatureSpec>[
+                  for (final f in init.features)
+                    if (f.id == targetFeatureId)
+                      f.copyWith(
+                        currentStage: currentStage,
+                        vision: vision,
+                        cahierDesCharges: cahierDesCharges,
+                        eventStorming: eventStorming,
+                        businessObjects: businessObjects,
+                        exampleMappings: exampleMappings,
+                        businessRules: businessRules,
+                        stageStates: stageStates,
+                        coherenceIssues: coherenceIssues,
+                        uxSpec: uxSpec,
+                        qaSpec: qaSpec,
+                        costSpec: costSpec,
+                      )
+                    else
+                      f,
+                ],
+              ),
+          ];
+
+    final nextLexiconState =
+        lexiconStageState ??
+        stageStates?[SpecForgeStage.lexicon] ??
+        this.lexiconStageState;
+
+    return SpecForgeProject(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      initialIdea: initialIdea ?? this.initialIdea,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? DateTime.now().toUtc(),
+      lexicon: lexicon ?? this.lexicon,
+      lexiconStageState: nextLexiconState,
+      businessObjectModelPreferences:
+          businessObjectModelPreferences ??
+          businessObjectLanguageSettings ??
+          this.businessObjectModelPreferences,
+      globalChatMessages: globalChatMessages ?? this.globalChatMessages,
+      portfolioChatMessages:
+          portfolioChatMessages ?? this.portfolioChatMessages,
+      initiatives: nextInitiatives,
+      activeFeatureId: targetFeatureId,
+    );
+  }
 
   /// Sérialise le projet complet en JSON.
   Map<String, Object?> toJson() => <String, Object?>{
     'format': 'super_spec_forge.project',
-    'version': 1,
+    'version': hasPortfolioCustomization ? 2 : 1,
     'id': id,
     'name': name,
     'initialIdea': initialIdea,
@@ -503,9 +773,17 @@ class SpecForgeProject {
     'coherenceIssues': [for (final i in coherenceIssues) i.toJson()],
     if (globalChatMessages.isNotEmpty)
       'globalChatMessages': [for (final m in globalChatMessages) m.toJson()],
+    if (portfolioChatMessages.isNotEmpty)
+      'portfolioChatMessages': [
+        for (final m in portfolioChatMessages) m.toJson(),
+      ],
     if (uxSpec.hasContent) 'uxSpec': uxSpec.toJson(),
     if (qaSpec.hasContent) 'qaSpec': qaSpec.toJson(),
     if (costSpec.hasContent) 'costSpec': costSpec.toJson(),
+    if (!hasSingleDefaultFeature) ...<String, Object?>{
+      'activeFeatureId': activeFeatureId,
+      'initiatives': [for (final i in initiatives) i.toJson()],
+    },
   };
 
   /// Désérialise et valide un projet depuis JSON.
@@ -534,6 +812,13 @@ class SpecForgeProject {
       }
     }
 
+    final parsedInitiatives = raw['initiatives'] is List
+        ? <SpecInitiative>[
+            for (final item in raw['initiatives'] as List)
+              SpecInitiative.fromJson(item),
+          ]
+        : null;
+
     final project = SpecForgeProject(
       id: id,
       name: name,
@@ -542,6 +827,7 @@ class SpecForgeProject {
       updatedAt: updatedAt,
       currentStage: SpecForgeStage.fromJson(raw['currentStage']),
       lexicon: SpecLexicon.fromJson(raw['lexicon']),
+      lexiconStageState: parsedStageStates[SpecForgeStage.lexicon],
       vision: SpecVision.fromJson(raw['vision']),
       cahierDesCharges: SpecCahierDesCharges.fromJson(raw['cahierDesCharges']),
       eventStorming: EventStormingSpec.fromJson(raw['eventStorming']),
@@ -576,20 +862,122 @@ class SpecForgeProject {
           for (final item in raw['globalChatMessages'] as List)
             SpecChatMessage.fromJson(item),
       ],
+      portfolioChatMessages: [
+        if (raw['portfolioChatMessages'] is List)
+          for (final item in raw['portfolioChatMessages'] as List)
+            SpecChatMessage.fromJson(item),
+      ],
       uxSpec: UxForgeSpec.fromJson(raw['uxSpec']),
       qaSpec: QaForgeSpec.fromJson(raw['qaSpec']),
       costSpec: CostForgeSpec.fromJson(raw['costSpec']),
+      initiatives: parsedInitiatives,
+      activeFeatureId: (raw['activeFeatureId'] as String?)?.trim(),
     );
     project.validate();
     return project;
   }
 
-  static Map<SpecForgeStage, SpecStageState> _normalizeStageStates(
-    Map<SpecForgeStage, SpecStageState>? source,
-  ) => <SpecForgeStage, SpecStageState>{
-    for (final stage in SpecForgeStage.values)
-      stage: source?[stage] ?? SpecStageState(stage: stage),
-  };
+  static SpecStageState _normalizeLexiconStageState(SpecStageState? source) {
+    if (source == null) {
+      return SpecStageState(stage: SpecForgeStage.lexicon);
+    }
+    if (source.stage == SpecForgeStage.lexicon) return source;
+    return SpecStageState(
+      stage: SpecForgeStage.lexicon,
+      status: source.status,
+      messages: source.messages,
+      stageSummary: source.stageSummary,
+      readyToAdvance: source.readyToAdvance,
+    );
+  }
+
+  static ({
+    List<SpecInitiative> initiatives,
+    String activeFeatureId,
+    SpecInitiative activeInitiative,
+    SpecFeatureSpec activeFeature,
+  })
+  _resolvePortfolio({
+    required List<SpecInitiative>? initiatives,
+    required String? activeFeatureId,
+    required SpecForgeStage currentStage,
+    required SpecVision? vision,
+    required SpecCahierDesCharges? cahierDesCharges,
+    required EventStormingSpec? eventStorming,
+    required List<BusinessObjectSpec> businessObjects,
+    required List<ExampleMapStory> exampleMappings,
+    required List<BusinessRuleSpec> businessRules,
+    required Map<SpecForgeStage, SpecStageState>? stageStates,
+    required List<SpecCoherenceIssue> coherenceIssues,
+    required UxForgeSpec? uxSpec,
+    required QaForgeSpec? qaSpec,
+    required CostForgeSpec? costSpec,
+  }) {
+    SpecFeatureSpec buildFallbackFeature() => SpecFeatureSpec.createDefault(
+      currentStage: currentStage,
+      vision: vision,
+      cahierDesCharges: cahierDesCharges,
+      eventStorming: eventStorming,
+      businessObjects: businessObjects,
+      exampleMappings: exampleMappings,
+      businessRules: businessRules,
+      stageStates: stageStates,
+      coherenceIssues: coherenceIssues,
+      uxSpec: uxSpec,
+      qaSpec: qaSpec,
+      costSpec: costSpec,
+    );
+
+    List<SpecInitiative> normalized;
+    if (initiatives == null || initiatives.isEmpty) {
+      normalized = <SpecInitiative>[
+        SpecInitiative.createDefault(feature: buildFallbackFeature()),
+      ];
+    } else {
+      final hasAnyFeature = initiatives.any((i) => i.features.isNotEmpty);
+      if (!hasAnyFeature) {
+        normalized = <SpecInitiative>[
+          initiatives.first.copyWith(
+            features: <SpecFeatureSpec>[buildFallbackFeature()],
+          ),
+          ...initiatives.skip(1),
+        ];
+      } else {
+        normalized = initiatives;
+      }
+    }
+
+    final frozenInitiatives = List<SpecInitiative>.unmodifiable(normalized);
+    final trimmedActive = activeFeatureId?.trim();
+    SpecInitiative? matchedInitiative;
+    SpecFeatureSpec? matchedFeature;
+    if (trimmedActive != null && trimmedActive.isNotEmpty) {
+      for (final init in frozenInitiatives) {
+        final found = init.featureById(trimmedActive);
+        if (found != null) {
+          matchedInitiative = init;
+          matchedFeature = found;
+          break;
+        }
+      }
+    }
+    if (matchedFeature == null || matchedInitiative == null) {
+      for (final init in frozenInitiatives) {
+        if (init.features.isNotEmpty) {
+          matchedInitiative = init;
+          matchedFeature = init.features.first;
+          break;
+        }
+      }
+    }
+
+    return (
+      initiatives: frozenInitiatives,
+      activeFeatureId: matchedFeature!.id,
+      activeInitiative: matchedInitiative!,
+      activeFeature: matchedFeature,
+    );
+  }
 
   static DateTime? _parseDateTime(Object? raw) {
     if (raw is! String || raw.trim().isEmpty) return null;
@@ -611,22 +999,14 @@ class SpecForgeProject {
           other.initialIdea == initialIdea &&
           other.createdAt == createdAt &&
           other.updatedAt == updatedAt &&
-          other.currentStage == currentStage &&
           other.lexicon == lexicon &&
-          other.vision == vision &&
-          other.cahierDesCharges == cahierDesCharges &&
-          other.eventStorming == eventStorming &&
-          listEquals(other.businessObjects, businessObjects) &&
-          listEquals(other.exampleMappings, exampleMappings) &&
-          listEquals(other.businessRules, businessRules) &&
+          other.lexiconStageState == lexiconStageState &&
           other.businessObjectModelPreferences ==
               businessObjectModelPreferences &&
-          mapEquals(other.stageStates, stageStates) &&
-          listEquals(other.coherenceIssues, coherenceIssues) &&
+          other.activeFeatureId == activeFeatureId &&
+          listEquals(other.initiatives, initiatives) &&
           listEquals(other.globalChatMessages, globalChatMessages) &&
-          other.uxSpec == uxSpec &&
-          other.qaSpec == qaSpec &&
-          other.costSpec == costSpec;
+          listEquals(other.portfolioChatMessages, portfolioChatMessages);
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
@@ -635,20 +1015,12 @@ class SpecForgeProject {
     initialIdea,
     createdAt,
     updatedAt,
-    currentStage,
     lexicon,
-    vision,
-    cahierDesCharges,
-    eventStorming,
-    Object.hashAll(businessObjects),
-    Object.hashAll(exampleMappings),
-    Object.hashAll(businessRules),
+    lexiconStageState,
     businessObjectModelPreferences,
-    Object.hashAll(stageStates.values),
-    Object.hashAll(coherenceIssues),
+    activeFeatureId,
+    Object.hashAll(initiatives),
     Object.hashAll(globalChatMessages),
-    uxSpec,
-    qaSpec,
-    costSpec,
+    Object.hashAll(portfolioChatMessages),
   ]);
 }

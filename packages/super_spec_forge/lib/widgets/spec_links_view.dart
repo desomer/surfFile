@@ -26,6 +26,7 @@ class SpecLinksView extends StatelessWidget {
 
   /// Libellés partagés par les cartes et le titre de la page ouverte.
   static const projectsLabel = 'Projets';
+  static const initiativesLabel = 'Initiatives & Features';
   static const glossaryLabel = 'Glossaire d’entreprise';
   static const modelingDictionaryLabel = 'Dictionnaire technique & Modèle';
   static const enterpriseRatesLabel = 'Grille TJM & Abaques IT';
@@ -128,12 +129,27 @@ class SpecLinksView extends StatelessWidget {
             tooltip: 'Démarrer une nouvelle forge depuis une idée ou reprendre un projet récent',
           ),
           DesignLinkItem(
+            id: 'initiatives',
+            label: initiativesLabel,
+            icon: Icons.account_tree_rounded,
+            subtitle: project != null
+                ? '${project.initiatives.length} initiative(s) · ${project.totalFeatureCount} feature(s)'
+                : 'Découpage produit par projet',
+            tooltip: project != null
+                ? 'Gérer les initiatives et features du projet « ${project.name} » et lancer ses Wizards'
+                : 'Ouvrez ou créez d’abord un projet dans Projets',
+          ),
+          DesignLinkItem(
             id: 'wizard',
             label: 'Wizard de spécification',
             icon: Icons.auto_awesome_rounded,
-            subtitle: project != null ? project.name : 'Aucun projet actif',
+            subtitle: project == null
+                ? 'Aucun projet actif'
+                : (project.hasSingleDefaultFeature
+                      ? project.name
+                      : '${project.name} › ${project.activeFeature.displayLabel}'),
             tooltip: project != null
-                ? 'Ouvrir le wizard du projet « ${project.name} »'
+                ? 'Ouvrir le wizard de la feature « ${project.activeFeature.name} » (${project.name})'
                 : 'Ouvrez ou créez d’abord un projet dans Projets',
           ),
           DesignLinkItem(

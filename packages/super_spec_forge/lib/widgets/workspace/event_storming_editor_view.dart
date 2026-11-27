@@ -266,11 +266,20 @@ class _EventStormingEditorViewState extends State<EventStormingEditorView> {
     };
     if (item != null) existingIds.remove(item.id);
 
+    final externalSuggestions =
+        category == EventStormCatalogCategory.externalSystem && item == null
+        ? resolveEventStormExternalCandidates(
+            widget.controller.domainCatalog,
+            doc,
+          )
+        : const <EventStormExternalSystemCandidate>[];
+
     final saved = await showEventStormCatalogItemDialog(
       context,
       category: category,
       existingIds: existingIds,
       item: item,
+      externalSuggestions: externalSuggestions,
     );
     if (saved == null) return;
 
@@ -325,6 +334,26 @@ class _EventStormingEditorViewState extends State<EventStormingEditorView> {
             .toList(),
       ),
     };
+    await _updateDocument(project, doc.copyWith(catalog: nextCatalog));
+  }
+
+  Future<void> _importExternalSystemsFromDomainCatalog(
+    BuildContext context,
+    SpecForgeProject project,
+    EventStormDocument doc,
+  ) async {
+    final imported = await showEventStormImportSystemsDialog(
+      context,
+      document: doc,
+      catalog: widget.controller.domainCatalog,
+    );
+    if (imported == null || imported.isEmpty) return;
+    final nextCatalog = doc.catalog.copyWith(
+      externalSystems: <EventStormCatalogItem>[
+        ...doc.catalog.externalSystems,
+        ...imported,
+      ],
+    );
     await _updateDocument(project, doc.copyWith(catalog: nextCatalog));
   }
 
@@ -896,35 +925,72 @@ class _EventStormingEditorViewState extends State<EventStormingEditorView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: palette.border,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '$title (${items.length})',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: palette.border,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          '$title (${items.length})',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  TextButton.icon(
-                    key: ValueKey('spec-es-cat-add-${category.name}'),
-                    onPressed: () => _addOrEditCatalogItem(
-                      context,
-                      project,
-                      doc,
-                      category: category,
-                    ),
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Ajouter'),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (category == EventStormCatalogCategory.externalSystem &&
+                          widget.controller.domainCatalog.microservices.any(
+                            (s) => s.isActive,
+                          ))
+                        TextButton.icon(
+                          key: const ValueKey('spec-es-import-ext-systems-btn'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () =>
+                              _importExternalSystemsFromDomainCatalog(
+                                context,
+                                project,
+                                doc,
+                              ),
+                          icon: const Icon(Icons.download_rounded, size: 16),
+                          label: const Text('Importer Systèmes & Services'),
+                        ),
+                      TextButton.icon(
+                        key: ValueKey('spec-es-cat-add-${category.name}'),
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => _addOrEditCatalogItem(
+                          context,
+                          project,
+                          doc,
+                          category: category,
+                        ),
+                        icon: const Icon(Icons.add_rounded, size: 16),
+                        label: const Text('Ajouter'),
+                      ),
+                    ],
                   ),
                 ],
               ),

@@ -267,10 +267,11 @@ SCHÉMA "specPatch" POUR « CAS D’USAGE & ORCHESTRATION » :
       );
 
     if (domainServices.isNotEmpty) {
-      buf.writeln('- microservices du domaine :');
+      buf.writeln('- systèmes et services du domaine :');
       for (final svc in domainServices) {
         buf.writeln(
-          '  * ${svc.serviceCode} (${svc.name})'
+          '  * [${svc.kind.label}] ${svc.serviceCode} (${svc.name})'
+          '${svc.vendor.isEmpty ? '' : ' · fournisseur: ${svc.vendor}'}'
           '${svc.description.isEmpty ? '' : ' — ${svc.description}'}',
         );
       }
