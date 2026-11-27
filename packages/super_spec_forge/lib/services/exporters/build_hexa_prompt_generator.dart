@@ -6,9 +6,13 @@ library;
 import '../../models/build_design_item.dart';
 import '../../models/build_tech_stack_profile.dart';
 import '../../models/business_object_model_preferences.dart';
+import '../../models/business_object_spec.dart';
 import '../../models/company_glossary.dart';
 import '../../models/domain_catalog.dart';
+import '../../models/domain_iteration_snapshot.dart';
 import '../../models/usecase_orchestration_spec.dart';
+import '../../models/value_object_spec.dart';
+import '../design_evolution_analyzer.dart';
 import '../spec_storage_slug.dart';
 import 'prompt_generator/domain_boilerplate_prompt_builders.dart';
 import 'prompt_generator/domain_check_integration_prompt_builders.dart';
@@ -21,13 +25,17 @@ import 'prompt_generator/model_persistence_prompt_builder.dart';
 import 'prompt_generator/model_persistence_unit_test_prompt_builder.dart';
 import 'prompt_generator/model_prompt_context.dart';
 import 'prompt_generator/model_unit_test_prompt_builder.dart';
+import 'prompt_generator/prompt_evolution_sections.dart';
 import 'prompt_generator/prompt_generator_models.dart';
 import 'prompt_generator/prompt_yaml_header_builder.dart';
 import 'prompt_generator/saga_implementation_prompt_builder.dart';
 import 'prompt_generator/saga_unit_test_prompt_builder.dart';
 import 'prompt_generator/usecase_implementation_prompt_builder.dart';
 import 'prompt_generator/usecase_unit_test_prompt_builder.dart';
+import 'prompt_generator/value_object_implementation_prompt_builder.dart';
+import 'prompt_generator/value_object_unit_test_prompt_builder.dart';
 
+export 'prompt_generator/prompt_evolution_sections.dart';
 export 'prompt_generator/prompt_generator_models.dart';
 
 /// Assemble les prompts Markdown pour implémenter les modèles, cas d'usage,
@@ -66,24 +74,57 @@ abstract final class BuildHexaPromptGenerator {
     BusinessObjectModelPreferences? modelPreferences,
     DateTime? referenceDate,
     bool includeDomainAdapters = true,
+    BuildPromptGenerationMode mode = BuildPromptGenerationMode.autoByBaseline,
+    DomainIterationSnapshot? baselineOverride,
+    DomainEvolutionReport? evolutionReport,
   }) {
     final dates = PromptYamlHeaderBuilder.resolveMetadataDates(
       domain: domain,
       catalog: catalog,
       referenceDate: referenceDate,
     );
-    final effectiveStack = techStack ?? catalog?.techStackForDomain(domain);
+    final effectiveCatalog = _synchronizeDomainInCatalog(domain, catalog);
+    final effectiveStack =
+        techStack ?? effectiveCatalog?.techStackForDomain(domain);
+    final effectiveBaseline =
+        baselineOverride ??
+        evolutionReport?.baseline ??
+        domain.activeBaselineSnapshot;
+    final effectiveEvolution =
+        (mode == BuildPromptGenerationMode.fullFromScratch ||
+            effectiveBaseline == null)
+        ? null
+        : (evolutionReport ??
+              DesignEvolutionAnalyzer.analyzeDomain(
+                domain: domain,
+                catalog: effectiveCatalog,
+                baselineOverride: baselineOverride,
+              ));
+
     final groups = <BuildItemPromptGroup>[];
     for (final item in selectedItems) {
       final prompts = switch (item.kind) {
-        BuildDesignItemKind.model => _buildModelPrompts(
+        BuildDesignItemKind.valueObject => _buildValueObjectPrompts(
           domain: domain,
           item: item,
-          catalog: catalog,
+          catalog: effectiveCatalog,
           dates: dates,
           techStack: effectiveStack,
           glossary: glossary,
           modelPreferences: modelPreferences,
+          mode: mode,
+          evolutionReport: effectiveEvolution,
+        ),
+        BuildDesignItemKind.model => _buildModelPrompts(
+          domain: domain,
+          item: item,
+          catalog: effectiveCatalog,
+          dates: dates,
+          techStack: effectiveStack,
+          glossary: glossary,
+          modelPreferences: modelPreferences,
+          mode: mode,
+          evolutionReport: effectiveEvolution,
         ),
         BuildDesignItemKind.useCase => _buildUseCasePrompts(
           domain: domain,
@@ -92,6 +133,8 @@ abstract final class BuildHexaPromptGenerator {
           techStack: effectiveStack,
           glossary: glossary,
           modelPreferences: modelPreferences,
+          mode: mode,
+          evolutionReport: effectiveEvolution,
         ),
         BuildDesignItemKind.saga => _buildSagaPrompts(
           domain: domain,
@@ -99,6 +142,8 @@ abstract final class BuildHexaPromptGenerator {
           dates: dates,
           techStack: effectiveStack,
           glossary: glossary,
+          mode: mode,
+          evolutionReport: effectiveEvolution,
         ),
       };
       if (prompts.isNotEmpty) {
@@ -106,6 +151,11 @@ abstract final class BuildHexaPromptGenerator {
       }
     }
     if (includeDomainAdapters) {
+      final adapterDecision =
+          PromptEvolutionSections.resolveDomainAdapterDecision(
+            mode: mode,
+            evolutionReport: effectiveEvolution,
+          );
       groups.add(
         BuildItemPromptGroup.standalone(
           section: BuildTechStackSection.outbound,
@@ -118,11 +168,13 @@ abstract final class BuildHexaPromptGenerator {
               techStack: effectiveStack,
               glossary: glossary,
               modelPreferences: modelPreferences,
+              evolutionDecision: adapterDecision,
             ),
             buildDomainOutboundUnitTestPrompt(
               domain: domain,
               dates: dates,
               techStack: effectiveStack,
+              evolutionDecision: adapterDecision,
             ),
           ],
         ),
@@ -139,11 +191,13 @@ abstract final class BuildHexaPromptGenerator {
               techStack: effectiveStack,
               glossary: glossary,
               modelPreferences: modelPreferences,
+              evolutionDecision: adapterDecision,
             ),
             buildDomainInboundUnitTestPrompt(
               domain: domain,
               dates: dates,
               techStack: effectiveStack,
+              evolutionDecision: adapterDecision,
             ),
           ],
         ),
@@ -205,11 +259,13 @@ abstract final class BuildHexaPromptGenerator {
               techStack: effectiveStack,
               glossary: glossary,
               modelPreferences: modelPreferences,
+              evolutionDecision: adapterDecision,
             ),
             buildDomainCheckIntegrationUnitTestPrompt(
               domain: domain,
               dates: dates,
               techStack: effectiveStack,
+              evolutionDecision: adapterDecision,
             ),
           ],
         ),
@@ -275,6 +331,119 @@ abstract final class BuildHexaPromptGenerator {
     return SpecStorageIo.normalizeLf(buf.toString());
   }
 
+  static DomainCatalog? _synchronizeDomainInCatalog(
+    FunctionalDomain domain,
+    DomainCatalog? catalog,
+  ) {
+    if (catalog == null) return null;
+    if (catalog.domains.any((d) => d.id == domain.id && identical(d, domain))) {
+      return catalog;
+    }
+    return catalog.copyWith(
+      domains: <FunctionalDomain>[
+        for (final existing in catalog.domains)
+          if (existing.id != domain.id) existing,
+        domain,
+      ],
+    );
+  }
+
+  static List<ResolvedValueObject> _resolveVisibleValueObjects(
+    FunctionalDomain domain,
+    DomainCatalog? catalog,
+  ) {
+    final resolved = <ResolvedValueObject>[];
+    final seenTechNames = <String>{};
+    for (final vo in domain.valueObjects) {
+      seenTechNames.add(vo.technicalName.toLowerCase());
+      resolved.add(
+        ResolvedValueObject(
+          spec: vo,
+          scope: ValueObjectScope.domain,
+          domainId: domain.id,
+        ),
+      );
+    }
+    if (catalog != null) {
+      for (final vo in catalog.sharedValueObjects) {
+        if (seenTechNames.add(vo.technicalName.toLowerCase())) {
+          resolved.add(
+            ResolvedValueObject(spec: vo, scope: ValueObjectScope.shared),
+          );
+        }
+      }
+    }
+    return List<ResolvedValueObject>.unmodifiable(resolved);
+  }
+
+  static List<BuildHexaPromptSpec> _buildValueObjectPrompts({
+    required FunctionalDomain domain,
+    required BuildDesignItem item,
+    DomainCatalog? catalog,
+    required PromptMetadataDates dates,
+    BuildTechStackProfile? techStack,
+    CompanyGlossary? glossary,
+    BusinessObjectModelPreferences? modelPreferences,
+    required BuildPromptGenerationMode mode,
+    DomainEvolutionReport? evolutionReport,
+  }) {
+    final availableVos = _resolveVisibleValueObjects(domain, catalog);
+    final resolved =
+        availableVos.where((r) => r.spec.id == item.id).firstOrNull ??
+        availableVos
+            .where(
+              (r) =>
+                  r.spec.technicalName.toLowerCase() == item.name.toLowerCase(),
+            )
+            .firstOrNull;
+    final effectiveScope =
+        resolved?.scope ?? item.valueObjectScope ?? ValueObjectScope.domain;
+    final effectiveVo =
+        resolved?.spec ??
+        ValueObjectSpec(
+          id: item.id,
+          technicalName: BusinessAttribute.isValidDslIdentifier(item.name)
+              ? item.name
+              : BusinessAttribute.toPascalCaseDslIdentifier(item.name),
+          name: item.subtitle.isNotEmpty ? item.subtitle : item.name,
+          version: ValueObjectSpec.versionPattern.hasMatch(item.version)
+              ? item.version
+              : '1.0.0',
+        );
+    final decision = PromptEvolutionSections.resolveArtifactDecision(
+      mode: mode,
+      item: item,
+      currentVersion: effectiveVo.version,
+      evolutionReport: evolutionReport,
+    );
+
+    return <BuildHexaPromptSpec>[
+      buildValueObjectImplementationPrompt(
+        domain: domain,
+        item: item,
+        valueObject: effectiveVo,
+        scope: effectiveScope,
+        availableValueObjects: availableVos,
+        dates: dates,
+        techStack: techStack,
+        glossary: glossary,
+        modelPreferences: modelPreferences,
+        evolutionDecision: decision,
+      ),
+      buildValueObjectUnitTestPrompt(
+        domain: domain,
+        item: item,
+        valueObject: effectiveVo,
+        scope: effectiveScope,
+        availableValueObjects: availableVos,
+        dates: dates,
+        techStack: techStack,
+        modelPreferences: modelPreferences,
+        evolutionDecision: decision,
+      ),
+    ];
+  }
+
   static List<BuildHexaPromptSpec> _buildModelPrompts({
     required FunctionalDomain domain,
     required BuildDesignItem item,
@@ -283,12 +452,20 @@ abstract final class BuildHexaPromptGenerator {
     BuildTechStackProfile? techStack,
     CompanyGlossary? glossary,
     BusinessObjectModelPreferences? modelPreferences,
+    required BuildPromptGenerationMode mode,
+    DomainEvolutionReport? evolutionReport,
   }) {
     final ctx = ModelPromptContext.resolve(
       domain: domain,
       item: item,
       catalog: catalog,
       modelPreferences: modelPreferences,
+    );
+    final decision = PromptEvolutionSections.resolveArtifactDecision(
+      mode: mode,
+      item: item,
+      currentVersion: ctx.detail.version,
+      evolutionReport: evolutionReport,
     );
     return <BuildHexaPromptSpec>[
       buildModelImplementationPrompt(
@@ -297,22 +474,26 @@ abstract final class BuildHexaPromptGenerator {
         techStack: techStack,
         glossary: glossary,
         modelPreferences: modelPreferences,
+        evolutionDecision: decision,
       ),
       buildModelUnitTestPrompt(
         ctx: ctx,
         dates: dates,
         techStack: techStack,
+        evolutionDecision: decision,
       ),
       buildModelPersistencePrompt(
         ctx: ctx,
         dates: dates,
         techStack: techStack,
         modelPreferences: modelPreferences,
+        evolutionDecision: decision,
       ),
       buildModelPersistenceUnitTestPrompt(
         ctx: ctx,
         dates: dates,
         techStack: techStack,
+        evolutionDecision: decision,
       ),
     ];
   }
@@ -324,6 +505,8 @@ abstract final class BuildHexaPromptGenerator {
     BuildTechStackProfile? techStack,
     CompanyGlossary? glossary,
     BusinessObjectModelPreferences? modelPreferences,
+    required BuildPromptGenerationMode mode,
+    DomainEvolutionReport? evolutionReport,
   }) {
     final existing = domain.useCaseOrchestration?.useCases
         .where((uc) => uc.id == item.id)
@@ -338,6 +521,12 @@ abstract final class BuildHexaPromptGenerator {
           version: item.version,
           boundedContext: item.groupName,
         );
+    final decision = PromptEvolutionSections.resolveArtifactDecision(
+      mode: mode,
+      item: item,
+      currentVersion: useCase.version,
+      evolutionReport: evolutionReport,
+    );
 
     return <BuildHexaPromptSpec>[
       buildUseCaseImplementationPrompt(
@@ -348,6 +537,7 @@ abstract final class BuildHexaPromptGenerator {
         techStack: techStack,
         glossary: glossary,
         modelPreferences: modelPreferences,
+        evolutionDecision: decision,
       ),
       buildUseCaseUnitTestPrompt(
         domain: domain,
@@ -355,6 +545,7 @@ abstract final class BuildHexaPromptGenerator {
         useCase: useCase,
         dates: dates,
         techStack: techStack,
+        evolutionDecision: decision,
       ),
     ];
   }
@@ -365,6 +556,8 @@ abstract final class BuildHexaPromptGenerator {
     required PromptMetadataDates dates,
     BuildTechStackProfile? techStack,
     CompanyGlossary? glossary,
+    required BuildPromptGenerationMode mode,
+    DomainEvolutionReport? evolutionReport,
   }) {
     final existing = domain.useCaseOrchestration?.sagas
         .where((s) => s.id == item.id)
@@ -378,6 +571,12 @@ abstract final class BuildHexaPromptGenerator {
           title: item.subtitle,
           version: item.version,
         );
+    final decision = PromptEvolutionSections.resolveArtifactDecision(
+      mode: mode,
+      item: item,
+      currentVersion: saga.version,
+      evolutionReport: evolutionReport,
+    );
 
     return <BuildHexaPromptSpec>[
       buildSagaImplementationPrompt(
@@ -387,6 +586,7 @@ abstract final class BuildHexaPromptGenerator {
         dates: dates,
         techStack: techStack,
         glossary: glossary,
+        evolutionDecision: decision,
       ),
       buildSagaUnitTestPrompt(
         domain: domain,
@@ -394,6 +594,7 @@ abstract final class BuildHexaPromptGenerator {
         saga: saga,
         dates: dates,
         techStack: techStack,
+        evolutionDecision: decision,
       ),
     ];
   }

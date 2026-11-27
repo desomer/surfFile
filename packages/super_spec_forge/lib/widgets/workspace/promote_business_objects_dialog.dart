@@ -8,6 +8,7 @@ import '../../models/business_object_spec.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/domain_contracts.dart';
 import '../../models/spec_forge_project.dart';
+import '../../services/spec_design_merge_engine.dart';
 import '../../services/spec_design_promoter.dart';
 import '../../services/spec_forge_controller.dart';
 import '../design/contract_entry_view.dart' show contractTypeColor;
@@ -51,7 +52,7 @@ class _RowDraft {
   String? domainId;
   String contractType;
   PromotionConflictResolution conflictResolution =
-      PromotionConflictResolution.updateExisting;
+      PromotionConflictResolution.smartMerge;
 }
 
 class _PromoteBusinessObjectsDialogState
@@ -60,6 +61,7 @@ class _PromoteBusinessObjectsDialogState
   late final Map<String, _RowDraft> _drafts;
   String? _batchDomainId;
   String _filterQuery = '';
+  bool _autoBumpVersion = false;
   bool _submitting = false;
   String? _errorMessage;
 
@@ -79,18 +81,20 @@ class _PromoteBusinessObjectsDialogState
         final existingDomain = domains
             .where(
               (d) =>
-                  SpecDesignPromoter.findExistingEntry(
+                  SpecDesignPromoter.findEntryForSpecObject(
                     d.contracts,
-                    obj.technicalName,
+                    obj,
+                    projectId: project.id,
                   ) !=
                   null,
             )
             .firstOrNull;
         final existingEntry = existingDomain == null
             ? null
-            : SpecDesignPromoter.findExistingEntry(
+            : SpecDesignPromoter.findEntryForSpecObject(
                 existingDomain.contracts,
-                obj.technicalName,
+                obj,
+                projectId: project.id,
               );
         _drafts[obj.id] = _RowDraft(
           checked: false,
@@ -143,8 +147,66 @@ class _PromoteBusinessObjectsDialogState
           domainId: entry.value.domainId,
           contractType: entry.value.contractType,
           conflictResolution: entry.value.conflictResolution,
+          autoBumpVersion: _autoBumpVersion,
         ),
   ];
+
+  Map<String, ObjectPromotionPreview> _computePreviews(
+    SpecForgeProject project,
+  ) {
+    final catalog = widget.controller.domainCatalog;
+    final prefs = widget.controller.modelPreferences;
+    final byObjectId = <String, ObjectPromotionPreview>{};
+    final checkedChoices = _selectedChoices;
+    if (checkedChoices.isNotEmpty) {
+      try {
+        final checkedPreviews = SpecDesignPromoter.previewPromotion(
+          project: project,
+          catalog: catalog,
+          choices: checkedChoices,
+          modelPreferences: prefs,
+        );
+        for (final p in checkedPreviews) {
+          byObjectId[p.specObject.id] = p;
+        }
+      } on Object {
+        // Ignore un état intermédiaire invalide le temps de l'édition.
+      }
+    }
+    for (final entry in _drafts.entries) {
+      final draft = entry.value;
+      if (draft.checked ||
+          draft.domainId == null ||
+          draft.domainId!.isEmpty ||
+          byObjectId.containsKey(entry.key)) {
+        continue;
+      }
+      final probeChoice = ObjectPromotionChoice(
+        objectId: entry.key,
+        domainId: draft.domainId,
+        contractType: draft.contractType,
+        conflictResolution: draft.conflictResolution,
+        autoBumpVersion: _autoBumpVersion,
+      );
+      try {
+        final probePreviews = SpecDesignPromoter.previewPromotion(
+          project: project,
+          catalog: catalog,
+          choices: <ObjectPromotionChoice>[...checkedChoices, probeChoice],
+          modelPreferences: prefs,
+        );
+        final match = probePreviews
+            .where((p) => p.specObject.id == entry.key)
+            .firstOrNull;
+        if (match != null) {
+          byObjectId[entry.key] = match;
+        }
+      } on Object {
+        // Ignore un état intermédiaire invalide.
+      }
+    }
+    return byObjectId;
+  }
 
   void _selectAllVisible(List<BusinessObjectSpec> visible) {
     setState(() {
@@ -262,6 +324,7 @@ class _PromoteBusinessObjectsDialogState
 
         final visible = _filteredObjects(project);
         final plannedDomains = _plannedDomainByObjectId;
+        final previewsByObjectId = _computePreviews(project);
         final readyChoices = _selectedChoices;
         final canSubmit =
             !_submitting &&
@@ -373,6 +436,7 @@ class _PromoteBusinessObjectsDialogState
                             domains: domains,
                             object: visible[index],
                             plannedDomains: plannedDomains,
+                            preview: previewsByObjectId[visible[index].id],
                           ),
                         ),
                 ),
@@ -465,6 +529,17 @@ class _PromoteBusinessObjectsDialogState
               onPressed: _checkedCount == 0 ? null : _clearAll,
               child: const Text('Tout décocher'),
             ),
+            FilterChip(
+              key: const ValueKey('promote-dialog-auto-bump-toggle'),
+              visualDensity: VisualDensity.compact,
+              selected: _autoBumpVersion,
+              label: const Text('Incrémenter SemVer auto'),
+              tooltip:
+                  'Incrémente automatiquement la version sémantique (Patch/Mineur/Majeur) des contrats mis à jour',
+              onSelected: _submitting
+                  ? null
+                  : (value) => setState(() => _autoBumpVersion = value),
+            ),
           ],
         ),
         if (domains.isNotEmpty)
@@ -538,6 +613,7 @@ class _PromoteBusinessObjectsDialogState
     required List<FunctionalDomain> domains,
     required BusinessObjectSpec object,
     required Map<String, String?> plannedDomains,
+    required ObjectPromotionPreview? preview,
   }) {
     final draft = _drafts[object.id]!;
     final selectedDomain = domains
@@ -545,9 +621,10 @@ class _PromoteBusinessObjectsDialogState
         .firstOrNull;
     final existingEntry = selectedDomain == null
         ? null
-        : SpecDesignPromoter.findExistingEntry(
+        : SpecDesignPromoter.findEntryForSpecObject(
             selectedDomain.contracts,
-            object.technicalName,
+            object,
+            projectId: project.id,
           );
     final hasConflict = draft.checked && existingEntry != null;
     final missingDomain = draft.checked && selectedDomain == null;
@@ -555,8 +632,8 @@ class _PromoteBusinessObjectsDialogState
         (draft.checked &&
             selectedDomain != null &&
             (!hasConflict ||
-                draft.conflictResolution ==
-                    PromotionConflictResolution.updateExisting))
+                draft.conflictResolution !=
+                    PromotionConflictResolution.skipExisting))
         ? SpecDesignPromoter.countExternalReferencesForObject(
             project: project,
             catalog: widget.controller.domainCatalog,
@@ -569,6 +646,151 @@ class _PromoteBusinessObjectsDialogState
     final borderColor = missingDomain
         ? colors.error
         : (draft.checked ? colors.primary.withValues(alpha: 0.6) : colors.outlineVariant);
+
+    final statusPills = <Widget>[];
+    if (selectedDomain != null && preview != null) {
+      final isDark = colors.brightness == Brightness.dark;
+      if (preview.isNewEntry) {
+        statusPills.add(
+          _PromoteStatusPill(
+            key: ValueKey('promote-status-${object.id}'),
+            label: 'Nouveau contrat',
+            icon: Icons.fiber_new_rounded,
+            backgroundColor: Colors.blue.withValues(alpha: isDark ? 0.22 : 0.12),
+            foregroundColor: isDark ? Colors.lightBlue.shade200 : Colors.blue.shade800,
+            borderColor: Colors.blue.withValues(alpha: isDark ? 0.48 : 0.34),
+          ),
+        );
+      } else {
+        final mergeResult = preview.mergeResult;
+        if (preview.willSkip || mergeResult == null) {
+          statusPills.add(
+            _PromoteStatusPill(
+              key: ValueKey('promote-status-${object.id}'),
+              label: 'Ignoré',
+              icon: Icons.block_rounded,
+              backgroundColor: colors.surfaceContainerHighest,
+              foregroundColor: colors.onSurfaceVariant,
+              borderColor: colors.outlineVariant,
+            ),
+          );
+        } else if (!mergeResult.hasChanges) {
+          statusPills.add(
+            _PromoteStatusPill(
+              key: ValueKey('promote-status-${object.id}'),
+              label: 'À jour avec Design',
+              icon: Icons.check_circle_outline_rounded,
+              backgroundColor: Colors.green.withValues(
+                alpha: isDark ? 0.20 : 0.11,
+              ),
+              foregroundColor: isDark
+                  ? Colors.green.shade200
+                  : Colors.green.shade800,
+              borderColor: Colors.green.withValues(alpha: isDark ? 0.46 : 0.32),
+            ),
+          );
+          if (mergeResult.preservedValueObjectIds.isNotEmpty &&
+              draft.conflictResolution ==
+                  PromotionConflictResolution.smartMerge) {
+            statusPills.add(
+              _PromoteStatusPill(
+                key: ValueKey('promote-vo-preserved-${object.id}'),
+                label:
+                    '${mergeResult.preservedValueObjectIds.length} VO préservé(s)',
+                icon: Icons.diamond_outlined,
+                backgroundColor: Colors.teal.withValues(
+                  alpha: isDark ? 0.22 : 0.12,
+                ),
+                foregroundColor: isDark
+                    ? Colors.teal.shade200
+                    : Colors.teal.shade800,
+                borderColor: Colors.teal.withValues(
+                  alpha: isDark ? 0.50 : 0.35,
+                ),
+              ),
+            );
+          }
+        } else {
+          statusPills.add(
+            _PromoteStatusPill(
+              key: ValueKey('promote-status-${object.id}'),
+              label:
+                  'Δ +${mergeResult.addedCount} / ~${mergeResult.updatedCount} / -${mergeResult.removedCount}',
+              icon: Icons.merge_type_rounded,
+              backgroundColor: Colors.orange.withValues(
+                alpha: isDark ? 0.22 : 0.13,
+              ),
+              foregroundColor: isDark
+                  ? Colors.amber.shade200
+                  : Colors.orange.shade900,
+              borderColor: Colors.orange.withValues(
+                alpha: isDark ? 0.50 : 0.36,
+              ),
+            ),
+          );
+          if (mergeResult.preservedValueObjectIds.isNotEmpty &&
+              draft.conflictResolution ==
+                  PromotionConflictResolution.smartMerge) {
+            statusPills.add(
+              _PromoteStatusPill(
+                key: ValueKey('promote-vo-preserved-${object.id}'),
+                label:
+                    '${mergeResult.preservedValueObjectIds.length} VO préservé(s)',
+                icon: Icons.diamond_outlined,
+                backgroundColor: Colors.teal.withValues(
+                  alpha: isDark ? 0.22 : 0.12,
+                ),
+                foregroundColor: isDark
+                    ? Colors.teal.shade200
+                    : Colors.teal.shade800,
+                borderColor: Colors.teal.withValues(
+                  alpha: isDark ? 0.50 : 0.35,
+                ),
+              ),
+            );
+          }
+          if (mergeResult.conflictCount > 0) {
+            statusPills.add(
+              _PromoteStatusPill(
+                key: ValueKey('promote-conflicts-pill-${object.id}'),
+                label: '${mergeResult.conflictCount} conflit(s)',
+                icon: Icons.warning_amber_rounded,
+                backgroundColor: Colors.amber.withValues(
+                  alpha: isDark ? 0.24 : 0.16,
+                ),
+                foregroundColor: isDark
+                    ? Colors.amber.shade200
+                    : Colors.amber.shade900,
+                borderColor: Colors.amber.withValues(
+                  alpha: isDark ? 0.55 : 0.42,
+                ),
+              ),
+            );
+          }
+        }
+        if (_autoBumpVersion &&
+            !preview.willSkip &&
+            preview.suggestedVersion != preview.currentVersion) {
+          statusPills.add(
+            _PromoteStatusPill(
+              key: ValueKey('promote-semver-pill-${object.id}'),
+              label:
+                  'v${preview.currentVersion} → v${preview.suggestedVersion}',
+              icon: Icons.auto_fix_high_rounded,
+              backgroundColor: colors.secondaryContainer,
+              foregroundColor: colors.onSecondaryContainer,
+              borderColor: colors.secondary.withValues(alpha: 0.35),
+            ),
+          );
+        }
+      }
+    }
+
+    final canShowMergePreview =
+        selectedDomain != null &&
+        preview != null &&
+        !preview.isNewEntry &&
+        preview.mergeResult != null;
 
     return DecoratedBox(
       key: ValueKey('promote-row-${object.id}'),
@@ -649,6 +871,29 @@ class _PromoteBusinessObjectsDialogState
                               color: colors.onSurfaceVariant,
                             ),
                           ),
+                          ...statusPills,
+                          if (canShowMergePreview)
+                            TextButton.icon(
+                              key: ValueKey('promote-preview-${object.id}'),
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () => _showMergePreviewDialog(
+                                context,
+                                preview: preview,
+                              ),
+                              icon: const Icon(
+                                Icons.compare_arrows_rounded,
+                                size: 15,
+                              ),
+                              label: const Text('Aperçu du merge'),
+                            ),
                         ],
                       ),
                       if (object.description.trim().isNotEmpty)
@@ -1007,3 +1252,401 @@ class _QuickCreateDomainDialogState extends State<_QuickCreateDomainDialog> {
     );
   }
 }
+
+class _PromoteStatusPill extends StatelessWidget {
+  const _PromoteStatusPill({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.borderColor,
+    this.icon,
+    super.key,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color borderColor;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          if (icon != null) Icon(icon, size: 13, color: foregroundColor),
+          Text(
+            label,
+            style: TextStyle(
+              color: foregroundColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showMergePreviewDialog(
+  BuildContext context, {
+  required ObjectPromotionPreview preview,
+}) => showDialog<void>(
+  context: context,
+  builder: (_) => _MergePreviewDialog(preview: preview),
+);
+
+class _MergePreviewDialog extends StatelessWidget {
+  const _MergePreviewDialog({required this.preview});
+
+  final ObjectPromotionPreview preview;
+
+  static ({Color bg, Color fg, Color border, IconData icon}) _paletteForKind(
+    AttributeMergeKind kind,
+    ColorScheme colors,
+  ) {
+    final isDark = colors.brightness == Brightness.dark;
+    return switch (kind) {
+      AttributeMergeKind.addedFromSpec => (
+        bg: Colors.green.withValues(alpha: isDark ? 0.22 : 0.12),
+        fg: isDark ? Colors.green.shade200 : Colors.green.shade800,
+        border: Colors.green.withValues(alpha: isDark ? 0.50 : 0.35),
+        icon: Icons.add_circle_outline_rounded,
+      ),
+      AttributeMergeKind.updatedFromSpec => (
+        bg: Colors.orange.withValues(alpha: isDark ? 0.22 : 0.13),
+        fg: isDark ? Colors.amber.shade200 : Colors.orange.shade900,
+        border: Colors.orange.withValues(alpha: isDark ? 0.50 : 0.36),
+        icon: Icons.sync_rounded,
+      ),
+      AttributeMergeKind.preservedDesignValueObject => (
+        bg: Colors.teal.withValues(alpha: isDark ? 0.22 : 0.12),
+        fg: isDark ? Colors.teal.shade200 : Colors.teal.shade800,
+        border: Colors.teal.withValues(alpha: isDark ? 0.50 : 0.35),
+        icon: Icons.diamond_outlined,
+      ),
+      AttributeMergeKind.preservedDesignOnly => (
+        bg: Colors.indigo.withValues(alpha: isDark ? 0.22 : 0.11),
+        fg: isDark ? Colors.indigo.shade200 : Colors.indigo.shade800,
+        border: Colors.indigo.withValues(alpha: isDark ? 0.48 : 0.34),
+        icon: Icons.shield_outlined,
+      ),
+      AttributeMergeKind.removedFromSpec => (
+        bg: Colors.red.withValues(alpha: isDark ? 0.22 : 0.11),
+        fg: isDark ? Colors.red.shade200 : Colors.red.shade800,
+        border: Colors.red.withValues(alpha: isDark ? 0.52 : 0.36),
+        icon: Icons.remove_circle_outline_rounded,
+      ),
+      AttributeMergeKind.conflictKeptDesign => (
+        bg: Colors.amber.withValues(alpha: isDark ? 0.24 : 0.16),
+        fg: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+        border: Colors.amber.withValues(alpha: isDark ? 0.55 : 0.42),
+        icon: Icons.warning_amber_rounded,
+      ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
+    final mergeResult = preview.mergeResult!;
+
+    return AlertDialog(
+      key: const ValueKey('promote-merge-preview-dialog'),
+      insetPadding: const EdgeInsets.all(20),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 6,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Icon(Icons.compare_arrows_rounded, color: colors.primary),
+              Text(
+                'Aperçu du merge — ${preview.specObject.name}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              _PromoteStatusPill(
+                key: const ValueKey('merge-preview-version-badge'),
+                label:
+                    'v${preview.currentVersion} → v${preview.suggestedVersion}',
+                icon: Icons.tag_rounded,
+                backgroundColor: colors.secondaryContainer,
+                foregroundColor: colors.onSecondaryContainer,
+                borderColor: colors.secondary.withValues(alpha: 0.35),
+              ),
+            ],
+          ),
+          Text(
+            'Domaine « ${preview.targetDomainName} »'
+            '${preview.existingEntryPath != null ? ' · ${preview.existingEntryPath}' : ''}'
+            ' · Stratégie : ${preview.choice.conflictResolution.label}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: (screen.width * 0.66).clamp(520.0, 820.0),
+        height: (screen.height * 0.65).clamp(320.0, 560.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _PromoteStatusPill(
+                    label: '+${mergeResult.addedCount} ajouté(s)',
+                    backgroundColor: Colors.green.withValues(
+                      alpha: isDark ? 0.22 : 0.12,
+                    ),
+                    foregroundColor: isDark
+                        ? Colors.green.shade200
+                        : Colors.green.shade800,
+                    borderColor: Colors.green.withValues(
+                      alpha: isDark ? 0.50 : 0.35,
+                    ),
+                  ),
+                  _PromoteStatusPill(
+                    label: '~${mergeResult.updatedCount} mis à jour',
+                    backgroundColor: Colors.orange.withValues(
+                      alpha: isDark ? 0.22 : 0.13,
+                    ),
+                    foregroundColor: isDark
+                        ? Colors.amber.shade200
+                        : Colors.orange.shade900,
+                    borderColor: Colors.orange.withValues(
+                      alpha: isDark ? 0.50 : 0.36,
+                    ),
+                  ),
+                  _PromoteStatusPill(
+                    label: '-${mergeResult.removedCount} retiré(s)',
+                    backgroundColor: Colors.red.withValues(
+                      alpha: isDark ? 0.22 : 0.11,
+                    ),
+                    foregroundColor: isDark
+                        ? Colors.red.shade200
+                        : Colors.red.shade800,
+                    borderColor: Colors.red.withValues(
+                      alpha: isDark ? 0.52 : 0.36,
+                    ),
+                  ),
+                  if (mergeResult.preservedValueObjectIds.isNotEmpty)
+                    _PromoteStatusPill(
+                      label:
+                          '${mergeResult.preservedValueObjectIds.length} VO préservé(s)',
+                      icon: Icons.diamond_outlined,
+                      backgroundColor: Colors.teal.withValues(
+                        alpha: isDark ? 0.22 : 0.12,
+                      ),
+                      foregroundColor: isDark
+                          ? Colors.teal.shade200
+                          : Colors.teal.shade800,
+                      borderColor: Colors.teal.withValues(
+                        alpha: isDark ? 0.50 : 0.35,
+                      ),
+                    ),
+                  if (mergeResult.preservedDesignOnlyCount > 0)
+                    _PromoteStatusPill(
+                      label:
+                          '${mergeResult.preservedDesignOnlyCount} attribut(s) Design conservé(s)',
+                      icon: Icons.shield_outlined,
+                      backgroundColor: Colors.indigo.withValues(
+                        alpha: isDark ? 0.22 : 0.11,
+                      ),
+                      foregroundColor: isDark
+                          ? Colors.indigo.shade200
+                          : Colors.indigo.shade800,
+                      borderColor: Colors.indigo.withValues(
+                        alpha: isDark ? 0.48 : 0.34,
+                      ),
+                    ),
+                  if (mergeResult.conflictCount > 0)
+                    _PromoteStatusPill(
+                      label: '${mergeResult.conflictCount} conflit(s)',
+                      icon: Icons.warning_amber_rounded,
+                      backgroundColor: Colors.amber.withValues(
+                        alpha: isDark ? 0.24 : 0.16,
+                      ),
+                      foregroundColor: isDark
+                          ? Colors.amber.shade200
+                          : Colors.amber.shade900,
+                      borderColor: Colors.amber.withValues(
+                        alpha: isDark ? 0.55 : 0.42,
+                      ),
+                    ),
+                ],
+              ),
+              if (mergeResult.warnings.isNotEmpty)
+                Container(
+                  key: const ValueKey('merge-preview-warnings'),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: isDark ? 0.18 : 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.amber.withValues(
+                        alpha: isDark ? 0.48 : 0.38,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 6,
+                    children: [
+                      Row(
+                        spacing: 6,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: isDark
+                                ? Colors.amber.shade200
+                                : Colors.amber.shade900,
+                          ),
+                          Text(
+                            'Avertissements (${mergeResult.warnings.length})',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      for (final warning in mergeResult.warnings)
+                        Text(warning, style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                ),
+              if (mergeResult.decisions.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Text(
+                    'Aucune différence d’attribut détectée : le contrat Design est aligné avec la Spec.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < mergeResult.decisions.length; i++) ...[
+                        if (i > 0)
+                          Divider(
+                            height: 1,
+                            color: colors.outlineVariant.withValues(
+                              alpha: 0.55,
+                            ),
+                          ),
+                        Builder(
+                          builder: (_) {
+                            final d = mergeResult.decisions[i];
+                            final palette = _paletteForKind(d.kind, colors);
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 9,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                spacing: 4,
+                                children: [
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      _PromoteStatusPill(
+                                        label: d.kind.label,
+                                        icon: palette.icon,
+                                        backgroundColor: palette.bg,
+                                        foregroundColor: palette.fg,
+                                        borderColor: palette.border,
+                                      ),
+                                      Text(
+                                        d.attributePath,
+                                        style: theme.textTheme.labelLarge
+                                            ?.copyWith(
+                                              fontFamily: 'monospace',
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      if (d.preservedValueObjectId != null &&
+                                          d.preservedValueObjectId!
+                                              .trim()
+                                              .isNotEmpty)
+                                        _PromoteStatusPill(
+                                          label:
+                                              'VO : ${d.preservedValueObjectId}',
+                                          icon: Icons.diamond_outlined,
+                                          backgroundColor:
+                                              colors.surfaceContainerHighest,
+                                          foregroundColor: colors.onSurface,
+                                          borderColor: colors.outlineVariant,
+                                        ),
+                                    ],
+                                  ),
+                                  Text(
+                                    d.summary,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('merge-preview-close-btn'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+      ],
+    );
+  }
+}
+

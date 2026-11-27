@@ -9,6 +9,8 @@ import '../models/event_storming_spec.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_initiative.dart';
+import 'cross_feature_object_analyzer.dart';
 import 'exporters/event_storming_dsl_codec.dart';
 
 /// Vérifie la cohérence référentielle et la complétude d'un [SpecForgeProject].
@@ -588,6 +590,89 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
+    // 3 quarter. Gouvernance inter-features des objets métiers (additive_warn_on_validated)
+    if (project.allFeatures.length > 1 &&
+        project.activeFeature.effectiveStatus != SpecPortfolioStatus.archived) {
+      final crossReport = CrossFeatureObjectAnalyzer.analyzeFeature(project);
+      for (final obj in project.businessObjects) {
+        final objReport = crossReport.byObjectId[obj.id];
+        if (objReport == null || !objReport.isSharedAcrossFeatures) continue;
+
+        final breakingValidatedLinks = [
+          for (final link in objReport.siblingLinks)
+            if (link.isSiblingValidated &&
+                link.divergence == CrossFeatureDivergenceKind.breaking)
+              link,
+        ];
+        if (breakingValidatedLinks.isNotEmpty) {
+          final featRefs = [
+            for (final link in breakingValidatedLinks) link.effectiveFeatureRef,
+          ];
+          final perFeatureDetails = [
+            for (final link in breakingValidatedLinks)
+              '${link.effectiveFeatureRef} (${_formatBreakingLines(link.differenceSummaries)})',
+          ].join(' ; ');
+          final plural = featRefs.length > 1;
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_feat_breaking_${obj.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.businessObjects,
+              code: 'COH-FEAT-001',
+              title:
+                  'Divergence cassante sur ${obj.name} face à ${featRefs.join(', ')} (${plural ? 'Validées' : 'Validée'})',
+              description:
+                  'L’objet métier « ${obj.name} » (${obj.technicalName}) présente une divergence incompatible avec ${plural ? 'les features validées' : 'la feature validée'} : $perFeatureDetails.',
+              targetRef: obj.id,
+              suggestion:
+                  'Utilisez « Importer / Synchroniser… » pour réaligner cet objet par fusion 3-voies ou transformez la modification en extension additive (attributs optionnels, nouvelles valeurs d’énumération ou nouveaux états).',
+            ),
+          );
+        }
+
+        final downstreamImpacts = <CrossFeatureDownstreamImpact>[
+          for (final link in objReport.siblingLinks) ...link.downstreamImpacts,
+        ];
+        if (downstreamImpacts.isNotEmpty) {
+          final uniqueRefs = <String>[];
+          final seenRefs = <String>{};
+          for (final impact in downstreamImpacts) {
+            final label =
+                '${impact.artifactRef} (${impact.featureCode} · ${impact.area.label})';
+            if (seenRefs.add(label)) {
+              uniqueRefs.add(label);
+            }
+          }
+          final shortRefs = <String>[];
+          final seenShort = <String>{};
+          for (final impact in downstreamImpacts) {
+            if (seenShort.add(impact.artifactRef)) {
+              shortRefs.add(impact.artifactRef);
+            }
+          }
+          final detailPreview = downstreamImpacts
+              .take(4)
+              .map((i) => i.summary)
+              .join(' ');
+          issues.add(
+            SpecCoherenceIssue(
+              id: 'coh_feat_downstream_${obj.id}',
+              severity: CoherenceSeverity.warning,
+              stage: SpecForgeStage.businessObjects,
+              code: 'COH-FEAT-002',
+              title:
+                  'Impact aval inter-features sur ${obj.name} : ${shortRefs.join(', ')}',
+              description:
+                  'Les écarts de « ${obj.name} » (${obj.technicalName}) impactent des livrables aval dans les features sœurs (${uniqueRefs.join(', ')}). $detailPreview',
+              targetRef: obj.id,
+              suggestion:
+                  'Utilisez « Importer / Synchroniser… » sur « ${obj.name} » ou mettez à jour les règles RG, écrans UX et tests QA des features concernées.',
+            ),
+          );
+        }
+      }
+    }
+
     // 3 bis. Contrôles d'Example Mapping (Étape 6)
     if (project.isStageEnabled(SpecForgeStage.exampleMapping) &&
         project.exampleMappings.isNotEmpty) {
@@ -789,6 +874,20 @@ abstract final class SpecCoherenceAnalyzer {
 
     issues.sort((a, b) => a.severity.index.compareTo(b.severity.index));
     return List<SpecCoherenceIssue>.unmodifiable(issues);
+  }
+
+  static String _formatBreakingLines(List<String> summaries) {
+    final relevant = [
+      for (final line in summaries)
+        if (line.startsWith('~') ||
+            line.startsWith('-') ||
+            line.startsWith('+ attribut obligatoire') ||
+            line.startsWith('+ relation obligatoire'))
+          line,
+    ];
+    final source = relevant.isNotEmpty ? relevant : summaries;
+    if (source.isEmpty) return 'écart structurel incompatible';
+    return source.join(', ');
   }
 
   static void _checkTechnicalModelingRules({

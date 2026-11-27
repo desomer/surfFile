@@ -7,6 +7,7 @@ import '../../../models/build_tech_stack_profile.dart';
 import '../../../models/business_object_model_preferences.dart';
 import '../../spec_storage_slug.dart';
 import 'model_prompt_context.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_json_schema_builder.dart';
 import 'prompt_markdown_sections.dart';
@@ -18,6 +19,8 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final domain = ctx.domain;
   final item = ctx.item;
@@ -68,12 +71,17 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
       'deletion': policy.deletionStrategy.name,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatBody(
     ctx: ctx,
     techStack: techStack,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -84,6 +92,10 @@ BuildHexaPromptSpec buildModelPersistencePrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -91,6 +103,7 @@ String _formatBody({
   required ModelPromptContext ctx,
   BuildTechStackProfile? techStack,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final domain = ctx.domain;
   final objectSpec = ctx.objectSpec;
@@ -123,6 +136,14 @@ String _formatBody({
       ..writeln(modelPreferences.toPromptDirective())
       ..writeln();
   }
+
+  PromptEvolutionSections.writeModelEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    ctx: ctx,
+    section: BuildTechStackSection.persistence,
+    role: BuildHexaPromptRole.implementation,
+  );
 
   buf
     ..writeln('## 3. Politique de Persistance & Contrat du Port `$portName`')

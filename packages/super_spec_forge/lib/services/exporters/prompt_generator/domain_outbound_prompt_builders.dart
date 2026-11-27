@@ -8,6 +8,7 @@ import '../../../models/business_object_model_preferences.dart';
 import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -19,6 +20,8 @@ BuildHexaPromptSpec buildDomainOutboundImplementationPrompt({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Adaptateurs sortants hors persistance (messaging, événements, logger, clients externes) implémentant les ports Outbound du domaine.';
@@ -56,6 +59,10 @@ BuildHexaPromptSpec buildDomainOutboundImplementationPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatImplementationBody(
@@ -63,6 +70,7 @@ BuildHexaPromptSpec buildDomainOutboundImplementationPrompt({
     techStack: techStack,
     glossary: glossary,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -72,6 +80,10 @@ BuildHexaPromptSpec buildDomainOutboundImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -80,6 +92,8 @@ BuildHexaPromptSpec buildDomainOutboundUnitTestPrompt({
   required FunctionalDomain domain,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Tests unitaires des adaptateurs sortants (messaging, logger, clients externes) avec doublures déterministes.';
@@ -118,9 +132,17 @@ BuildHexaPromptSpec buildDomainOutboundUnitTestPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
-  final body = _formatUnitTestBody(domain: domain, techStack: techStack);
+  final body = _formatUnitTestBody(
+    domain: domain,
+    techStack: techStack,
+    evolutionDecision: evolutionDecision,
+  );
 
   return BuildHexaPromptSpec(
     id: 'standalone:${BuildTechStackSection.outbound.name}:${BuildHexaPromptRole.unitTest.name}',
@@ -129,6 +151,10 @@ BuildHexaPromptSpec buildDomainOutboundUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -186,6 +212,7 @@ String _formatImplementationBody({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final ctx = _collectOutboundContext(domain);
   final buf = StringBuffer()
@@ -207,6 +234,13 @@ String _formatImplementationBody({
     domain,
     glossary,
     modelPreferences,
+  );
+
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.outbound,
+    role: BuildHexaPromptRole.implementation,
   );
 
   buf.writeln('## 3. Ports Sortants, Événements & Messages Inventoriés');
@@ -251,6 +285,7 @@ String _formatImplementationBody({
 String _formatUnitTestBody({
   required FunctionalDomain domain,
   BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final ctx = _collectOutboundContext(domain);
   final buf = StringBuffer()
@@ -262,7 +297,16 @@ String _formatUnitTestBody({
     ..writeln(
       'Écris la suite de **tests unitaires** des adaptateurs sortants hors persistance du domaine **`${domain.domainCode}`** en isolant les SDK/transports externes par des doublures déterministes.',
     )
-    ..writeln()
+    ..writeln();
+
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.outbound,
+    role: BuildHexaPromptRole.unitTest,
+  );
+
+  buf
     ..writeln('## 2. Cas de Test à Couvrir')
     ..writeln(
       '- Mapping des payloads sortants (événements, messages, requêtes HTTP) et préservation des clés de corrélation.',

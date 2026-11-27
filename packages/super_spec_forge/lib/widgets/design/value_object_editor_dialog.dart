@@ -7,11 +7,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../models/business_object_spec.dart';
+import '../../models/contract_stage.dart';
 import '../../models/json_schema_constraints.dart';
 import '../../models/spec_forge_project.dart';
 import '../../models/value_object_spec.dart';
 import '../../services/value_object_primitive_detector.dart';
 import '../workspace/attribute_constraints_editor.dart';
+import 'contract_entry_view.dart' show ContractPhaseStatusStrip;
 
 /// Résultat validé du dialogue de promotion d'un attribut vers un Value Object.
 class PromoteToValueObjectResult {
@@ -106,6 +108,7 @@ class _ValueObjectEditorDialogState extends State<_ValueObjectEditorDialog> {
   late BusinessAttributeType _primitiveType;
   late List<BusinessAttribute> _fields;
   late List<ValueObjectExample> _examples;
+  late Map<ContractStage, ContractStatus> _states;
   String? _error;
 
   @override
@@ -141,6 +144,9 @@ class _ValueObjectEditorDialogState extends State<_ValueObjectEditorDialog> {
     _primitiveType = ex?.primitiveType ?? BusinessAttributeType.string;
     _fields = List<BusinessAttribute>.from(ex?.fields ?? const []);
     _examples = List<ValueObjectExample>.from(ex?.examples ?? const []);
+    _states = Map<ContractStage, ContractStatus>.from(
+      ex?.states ?? const <ContractStage, ContractStatus>{},
+    );
   }
 
   @override
@@ -375,6 +381,7 @@ class _ValueObjectEditorDialogState extends State<_ValueObjectEditorDialog> {
             ? crossRules
             : const <String>[],
         examples: _examples,
+        states: _states,
       );
       spec.validate();
       Navigator.pop(context, spec);
@@ -548,6 +555,37 @@ class _ValueObjectEditorDialogState extends State<_ValueObjectEditorDialog> {
             ],
             selected: {_kind},
             onSelectionChanged: (sel) => setState(() => _kind = sel.first),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  'Avancement :',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                ContractPhaseStatusStrip(
+                  keyPrefix: 'vo-editor-stage',
+                  states: _states,
+                  iconSize: 16,
+                  onStageTap: (stage) => setState(() {
+                    _states[stage] = nextContractStatus(_states[stage]);
+                  }),
+                ),
+              ],
+            ),
           ),
           TextField(
             key: const ValueKey('vo-editor-description'),

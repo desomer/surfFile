@@ -25,6 +25,7 @@ import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_initiative.dart';
 import '../models/qa/gherkin_feature_spec.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_forge_spec.dart';
@@ -45,6 +46,7 @@ abstract final class SpecForgeToolRegistry {
     'get_requirements_summary',
     'get_event_storming',
     'inspect_business_object',
+    'list_sibling_features_business_objects',
     'get_example_mapping',
     'get_business_rules',
     'get_debug_entries',
@@ -72,6 +74,7 @@ abstract final class SpecForgeToolRegistry {
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'inspect_business_object',
+    'list_sibling_features_business_objects',
     'get_business_rules',
     'run_coherence_audit',
     'get_debug_entries',
@@ -97,6 +100,7 @@ abstract final class SpecForgeToolRegistry {
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'inspect_business_object',
+    'list_sibling_features_business_objects',
     'get_example_mapping',
     'get_business_rules',
     'run_coherence_audit',
@@ -119,6 +123,7 @@ abstract final class SpecForgeToolRegistry {
     'get_requirements_summary',
     'get_event_storming',
     'inspect_business_object',
+    'list_sibling_features_business_objects',
     'get_business_rules',
     'get_ux_overview',
     'inspect_ux_screen',
@@ -145,6 +150,10 @@ abstract final class SpecForgeToolRegistry {
     (
       'inspect_business_object',
       'lit le détail complet d\'un objet métier (sous-objets, attributs, compteur N/200, tableaux, relations, cycle de vie, YAML Light).',
+    ),
+    (
+      'list_sibling_features_business_objects',
+      'liste et inspecte en lecture seule les objets métiers définis dans les autres features non archivées du projet (attributs complets, cycle de vie et dépendances RG/UX/QA des features validées).',
     ),
     (
       'get_example_mapping',
@@ -309,6 +318,27 @@ abstract final class SpecForgeToolRegistry {
       },
     ),
     VibeToolDeclaration(
+      name: 'list_sibling_features_business_objects',
+      description: 'Liste et inspecte en lecture seule les objets métiers définis dans les autres features non archivées du projet afin d’assurer la réutilisation canonique des identifiants/noms techniques et de connaître les artefacts (RG-xxx, écrans UX, fixtures QA) des features validées qui en dépendent.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'query': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par id, technicalName ou nom métier (correspondance exacte ou sous-chaîne insensible à la casse).',
+          },
+          'featureCodeOrId': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel vers une feature sœur spécifique par son identifiant ou son code (ex. "FEAT-01").',
+          },
+          'includeFullAttributes': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut la définition complète des attributs, le cycle de vie et la liste usedByValidatedFeatureArtifacts (true par défaut lorsque query est non vide, false sinon).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
       name: 'get_example_mapping',
       description: 'Consulte les tableaux d’Example Mapping à 4 couleurs (stories jaunes, règles bleues, exemples verts et questions rouges), filtrables par objet métier, code EM-xxx ou questions ouvertes.',
       parametersSchema: <String, Object?>{
@@ -320,7 +350,8 @@ abstract final class SpecForgeToolRegistry {
           },
           'storyIdOrCode': <String, Object?>{
             'type': 'string',
-            'description': 'Filtre optionnel par identifiant ou code EM-xxx de story.',
+            'description':
+                'Filtre optionnel par identifiant ou code EM-xxx de story.',
           },
           'onlyOpenQuestions': <String, Object?>{
             'type': 'boolean',
@@ -673,23 +704,28 @@ abstract final class SpecForgeToolRegistry {
           },
           'profileId': <String, Object?>{
             'type': 'string',
-            'description': 'Alias optionnel de idOrCode pour cibler un profil TJM.',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un profil TJM.',
           },
           'wbsItemId': <String, Object?>{
             'type': 'string',
-            'description': 'Alias optionnel de idOrCode pour cibler un lot Build WBS.',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un lot Build WBS.',
           },
           'runItemId': <String, Object?>{
             'type': 'string',
-            'description': 'Alias optionnel de idOrCode pour cibler un poste Run OPEX.',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un poste Run OPEX.',
           },
           'riskItemId': <String, Object?>{
             'type': 'string',
-            'description': 'Alias optionnel de idOrCode pour cibler un risque budgétaire.',
+            'description':
+                'Alias optionnel de idOrCode pour cibler un risque budgétaire.',
           },
           'kind': <String, Object?>{
             'type': 'string',
-            'description': 'Indice optionnel du type d’élément (profile, wbs, run, risk).',
+            'description':
+                'Indice optionnel du type d’élément (profile, wbs, run, risk).',
           },
         },
       },
@@ -1077,6 +1113,17 @@ abstract final class SpecForgeToolRegistry {
           },
         );
       },
+      'list_sibling_features_business_objects': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        return _executeListSiblingFeaturesBusinessObjects(project, call);
+      },
       'get_example_mapping': (call) async {
         final project = readProject();
         if (project == null) {
@@ -1091,7 +1138,9 @@ abstract final class SpecForgeToolRegistry {
             ? null
             : project.findBusinessObject(objKey);
         final storyKey =
-            (call.arguments['storyIdOrCode'] as String?)?.trim().toLowerCase() ??
+            (call.arguments['storyIdOrCode'] as String?)
+                ?.trim()
+                .toLowerCase() ??
             '';
         final onlyOpenQuestions = call.arguments['onlyOpenQuestions'] == true;
 
@@ -2340,8 +2389,7 @@ abstract final class SpecForgeToolRegistry {
             (call.arguments['discipline'] as String?)?.trim() ?? '';
         final categoryRaw =
             (call.arguments['category'] as String?)?.trim() ?? '';
-        final moduleRaw =
-            (call.arguments['moduleId'] as String?)?.trim() ?? '';
+        final moduleRaw = (call.arguments['moduleId'] as String?)?.trim() ?? '';
 
         final priorityFilter = priorityRaw.isEmpty
             ? null
@@ -2833,6 +2881,8 @@ abstract final class SpecForgeToolRegistry {
           return '${obj['technicalName']} (${data['totalAttributeCount'] ?? 0}/200 attr.)';
         }
         return '${data['objectCount'] ?? 0} objet(s) métier(s)';
+      case 'list_sibling_features_business_objects':
+        return '${data['objectCount'] ?? 0} objet(s) métier trouvé(s) dans les features sœurs';
       case 'get_business_rules':
         return '${data['ruleCount'] ?? 0} règle(s) RG';
       case 'get_debug_entries':
@@ -2962,7 +3012,9 @@ abstract final class SpecForgeToolRegistry {
   static Map<String, Object?> buildCostSummaryJson(CostForgeSpec cost) {
     final mvpLot = _computeLotSummaryJson(
       cost,
-      cost.wbsItems.where((w) => w.priority == RequirementPriority.must).toList(),
+      cost.wbsItems
+          .where((w) => w.priority == RequirementPriority.must)
+          .toList(),
     );
     final v1Lot = _computeLotSummaryJson(
       cost,
@@ -3111,9 +3163,7 @@ abstract final class SpecForgeToolRegistry {
         (ratios.architectureDevOpsPct / 100.0) *
         (1.0 - aiArchGain / 100.0);
     final aiQaDays =
-        aiWbsDays *
-        (ratios.transverseQaPct / 100.0) *
-        (1.0 - aiQaGain / 100.0);
+        aiWbsDays * (ratios.transverseQaPct / 100.0) * (1.0 - aiQaGain / 100.0);
     final aiSubDays = aiWbsDays + aiPmDays + aiArchDays + aiQaDays;
     final aiSubCost =
         aiWbsCost +
@@ -3296,4 +3346,500 @@ abstract final class SpecForgeToolRegistry {
   static String _toCamel(String pascal) => pascal.isEmpty
       ? 'parent'
       : '${pascal[0].toLowerCase()}${pascal.substring(1)}';
+
+  static VibeToolResult _executeListSiblingFeaturesBusinessObjects(
+    SpecForgeProject project,
+    VibeToolCall call,
+  ) {
+    final query = (call.arguments['query'] as String?)?.trim() ?? '';
+    final featureFilter =
+        (call.arguments['featureCodeOrId'] as String?)?.trim() ?? '';
+    final rawIncludeFull = call.arguments['includeFullAttributes'];
+    final includeFullAttributes = rawIncludeFull is bool
+        ? rawIncludeFull
+        : query.isNotEmpty;
+
+    final allNonArchivedSiblings = <SpecFeatureSpec>[
+      for (final f in project.allFeatures)
+        if (f.id != project.activeFeatureId &&
+            f.effectiveStatus != SpecPortfolioStatus.archived)
+          f,
+    ];
+
+    final featureFilterLower = featureFilter.toLowerCase();
+    final scopedSiblings = featureFilterLower.isEmpty
+        ? allNonArchivedSiblings
+        : allNonArchivedSiblings
+              .where(
+                (f) =>
+                    f.id.toLowerCase() == featureFilterLower ||
+                    f.code.trim().toLowerCase() == featureFilterLower ||
+                    f.name.trim().toLowerCase() == featureFilterLower ||
+                    f.displayLabel.toLowerCase() == featureFilterLower,
+              )
+              .toList();
+
+    final validatedSiblings = <SpecFeatureSpec>[
+      for (final f in allNonArchivedSiblings)
+        if (f.effectiveStatus == SpecPortfolioStatus.validated) f,
+    ];
+
+    final groups = <_SiblingToolObjectGroup>[];
+    for (final feature in scopedSiblings) {
+      for (final obj in feature.businessObjects) {
+        final objIdLower = obj.id.trim().toLowerCase();
+        final techLower = obj.technicalName.trim().toLowerCase();
+        _SiblingToolObjectGroup? existing;
+        for (final group in groups) {
+          if (group.matchesIdentity(objIdLower, techLower)) {
+            existing = group;
+            break;
+          }
+        }
+        if (existing == null) {
+          groups.add(_SiblingToolObjectGroup.initial(feature, obj));
+        } else {
+          existing.addDefinition(feature, obj);
+        }
+      }
+    }
+
+    final queryLower = query.toLowerCase();
+    final queryFolded = _foldLatinAccentsLower(query);
+    final filteredGroups = queryLower.isEmpty
+        ? groups
+        : groups.where((g) => g.matchesQuery(queryLower, queryFolded)).toList();
+
+    final activeObjects = project.activeFeature.businessObjects;
+    final serializedObjects = <Map<String, Object?>>[
+      for (final group in filteredGroups)
+        group.toToolJson(
+          activeObjects: activeObjects,
+          validatedSiblings: validatedSiblings,
+          includeFullAttributes: includeFullAttributes,
+        ),
+    ];
+
+    return VibeToolResult(
+      callId: call.id,
+      name: call.name,
+      data: <String, Object?>{
+        'activeFeatureId': project.activeFeatureId,
+        'activeFeatureLabel': project.activeFeature.displayLabel,
+        'siblingFeatureCount': scopedSiblings.length,
+        'includeFullAttributes': includeFullAttributes,
+        if (query.isNotEmpty) 'query': query,
+        if (featureFilter.isNotEmpty) 'featureCodeOrId': featureFilter,
+        'objectCount': serializedObjects.length,
+        'objects': serializedObjects,
+      },
+    );
+  }
+
+  static String _foldLatinAccentsLower(String input) {
+    const accents = <String, String>{
+      'à': 'a',
+      'á': 'a',
+      'â': 'a',
+      'ã': 'a',
+      'ä': 'a',
+      'å': 'a',
+      'æ': 'ae',
+      'ç': 'c',
+      'è': 'e',
+      'é': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'ì': 'i',
+      'í': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ñ': 'n',
+      'ò': 'o',
+      'ó': 'o',
+      'ô': 'o',
+      'õ': 'o',
+      'ö': 'o',
+      'ø': 'o',
+      'œ': 'oe',
+      'ù': 'u',
+      'ú': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ý': 'y',
+      'ÿ': 'y',
+    };
+    final lower = input.trim().toLowerCase();
+    final buf = StringBuffer();
+    for (var i = 0; i < lower.length; i++) {
+      final ch = lower[i];
+      buf.write(accents[ch] ?? ch);
+    }
+    return buf.toString();
+  }
+}
+
+class _SiblingToolObjectGroup {
+  _SiblingToolObjectGroup._(this.canonicalObject, this._canonicalIsValidated);
+
+  factory _SiblingToolObjectGroup.initial(
+    SpecFeatureSpec feature,
+    BusinessObjectSpec object,
+  ) {
+    final isVal = feature.effectiveStatus == SpecPortfolioStatus.validated;
+    final group = _SiblingToolObjectGroup._(object, isVal);
+    group._register(feature, object);
+    return group;
+  }
+
+  BusinessObjectSpec canonicalObject;
+  bool _canonicalIsValidated;
+
+  final Set<String> _objectIdsLower = <String>{};
+  final Set<String> _technicalNamesLower = <String>{};
+  final Set<String> _namesLower = <String>{};
+  final Set<String> _foldedTokens = <String>{};
+  final List<(SpecFeatureSpec, BusinessObjectSpec)> _definitions =
+      <(SpecFeatureSpec, BusinessObjectSpec)>[];
+
+  bool matchesIdentity(String objectIdLower, String technicalNameLower) =>
+      (objectIdLower.isNotEmpty && _objectIdsLower.contains(objectIdLower)) ||
+      (technicalNameLower.isNotEmpty &&
+          _technicalNamesLower.contains(technicalNameLower));
+
+  bool matchesQuery(String queryLower, String queryFolded) {
+    for (final id in _objectIdsLower) {
+      if (id.contains(queryLower)) return true;
+    }
+    for (final tech in _technicalNamesLower) {
+      if (tech.contains(queryLower)) return true;
+    }
+    for (final name in _namesLower) {
+      if (name.contains(queryLower)) return true;
+    }
+    if (queryFolded.isNotEmpty) {
+      for (final token in _foldedTokens) {
+        if (token.contains(queryFolded)) return true;
+      }
+    }
+    return false;
+  }
+
+  void addDefinition(SpecFeatureSpec feature, BusinessObjectSpec object) {
+    final isVal = feature.effectiveStatus == SpecPortfolioStatus.validated;
+    if (isVal && !_canonicalIsValidated) {
+      canonicalObject = object;
+      _canonicalIsValidated = true;
+    }
+    _register(feature, object);
+  }
+
+  void _register(SpecFeatureSpec feature, BusinessObjectSpec object) {
+    final idLower = object.id.trim().toLowerCase();
+    final techLower = object.technicalName.trim().toLowerCase();
+    final nameLower = object.name.trim().toLowerCase();
+    if (idLower.isNotEmpty) {
+      _objectIdsLower.add(idLower);
+      _foldedTokens.add(SpecForgeToolRegistry._foldLatinAccentsLower(idLower));
+    }
+    if (techLower.isNotEmpty) {
+      _technicalNamesLower.add(techLower);
+      _foldedTokens.add(
+        SpecForgeToolRegistry._foldLatinAccentsLower(techLower),
+      );
+    }
+    if (nameLower.isNotEmpty) {
+      _namesLower.add(nameLower);
+      _foldedTokens.add(
+        SpecForgeToolRegistry._foldLatinAccentsLower(nameLower),
+      );
+    }
+    _definitions.add((feature, object));
+  }
+
+  List<(SpecFeatureSpec, BusinessObjectSpec)> get _orderedDefinitions =>
+      <(SpecFeatureSpec, BusinessObjectSpec)>[
+        for (final entry in _definitions)
+          if (entry.$1.effectiveStatus == SpecPortfolioStatus.validated) entry,
+        for (final entry in _definitions)
+          if (entry.$1.effectiveStatus != SpecPortfolioStatus.validated) entry,
+      ];
+
+  List<BusinessAttribute> get mergedAttributes => _mergeAttributeLists([
+    for (final (_, obj) in _orderedDefinitions) obj.attributes,
+  ]);
+
+  static List<BusinessAttribute> _mergeAttributeLists(
+    Iterable<List<BusinessAttribute>> sources,
+  ) {
+    final indexByName = <String, int>{};
+    final merged = <BusinessAttribute>[];
+    for (final list in sources) {
+      for (final attr in list) {
+        final key = attr.name.toLowerCase();
+        final existingIdx = indexByName[key];
+        if (existingIdx == null) {
+          indexByName[key] = merged.length;
+          merged.add(attr);
+        } else if (attr.children.isNotEmpty) {
+          final existing = merged[existingIdx];
+          final combinedChildren = _mergeAttributeLists(
+            <List<BusinessAttribute>>[existing.children, attr.children],
+          );
+          if (combinedChildren.length != existing.children.length) {
+            merged[existingIdx] = existing.copyWith(children: combinedChildren);
+          }
+        }
+      }
+    }
+    return merged;
+  }
+
+  List<BusinessRelation> get mergedRelations {
+    final seen = <String>{};
+    final merged = <BusinessRelation>[];
+    for (final (_, obj) in _orderedDefinitions) {
+      for (final rel in obj.relations) {
+        if (seen.add(rel.name.toLowerCase())) {
+          merged.add(rel);
+        }
+      }
+    }
+    return merged;
+  }
+
+  List<LifecycleState> get mergedLifecycleStates {
+    final seen = <String>{};
+    final merged = <LifecycleState>[];
+    for (final (_, obj) in _orderedDefinitions) {
+      for (final state in obj.lifecycleStates) {
+        if (seen.add(state.name.toLowerCase())) {
+          merged.add(state);
+        }
+      }
+    }
+    return merged;
+  }
+
+  List<LifecycleTransition> get mergedLifecycleTransitions {
+    final seen = <String>{};
+    final merged = <LifecycleTransition>[];
+    for (final (_, obj) in _orderedDefinitions) {
+      for (final tr in obj.lifecycleTransitions) {
+        final key =
+            '${tr.fromState.toLowerCase()}->${tr.toState.toLowerCase()}';
+        if (seen.add(key)) {
+          merged.add(tr);
+        }
+      }
+    }
+    return merged;
+  }
+
+  Map<String, Object?> toToolJson({
+    required List<BusinessObjectSpec> activeObjects,
+    required List<SpecFeatureSpec> validatedSiblings,
+    required bool includeFullAttributes,
+  }) {
+    final attrs = mergedAttributes;
+    final rels = mergedRelations;
+    final states = mergedLifecycleStates;
+    final transitions = mergedLifecycleTransitions;
+    final totalAttrCount = attrs.fold<int>(
+      0,
+      (sum, a) => sum + a.totalAttributeCount,
+    );
+    final presentInActive = activeObjects.any(
+      (o) => matchesIdentity(
+        o.id.trim().toLowerCase(),
+        o.technicalName.trim().toLowerCase(),
+      ),
+    );
+    final hasValidatedDefinition = _definitions.any(
+      (entry) => entry.$1.effectiveStatus == SpecPortfolioStatus.validated,
+    );
+
+    return <String, Object?>{
+      'id': canonicalObject.id,
+      'technicalName': canonicalObject.technicalName,
+      'name': canonicalObject.name,
+      if (canonicalObject.description.isNotEmpty)
+        'description': canonicalObject.description,
+      'aggregateRoot': canonicalObject.aggregateRoot,
+      'presentInActiveFeature': presentInActive,
+      'hasValidatedSiblingFeature': hasValidatedDefinition,
+      'totalAttributeCount': totalAttrCount,
+      'relationCount': rels.length,
+      'definedInFeatures': <Map<String, Object?>>[
+        for (final (f, obj) in _definitions)
+          <String, Object?>{
+            'featureId': f.id,
+            if (f.code.isNotEmpty) 'code': f.code,
+            'name': f.name,
+            'status': f.effectiveStatus.name,
+            'statusLabel': f.effectiveStatus.label,
+            'objectId': obj.id,
+            'technicalName': obj.technicalName,
+            'attributeCount': obj.totalAttributeCount,
+          },
+      ],
+      if (!includeFullAttributes) ...<String, Object?>{
+        'attributeSummary': <String>[
+          for (final a in attrs)
+            '${a.name}: ${a.type.dslKeyword}${a.isArray ? '[]' : ''}${a.required ? '!' : ''}',
+        ],
+        if (states.isNotEmpty)
+          'lifecycleStateNames': <String>[for (final s in states) s.name],
+      } else ...<String, Object?>{
+        'attributes': <Map<String, Object?>>[
+          for (final a in attrs) _serializeFullAttribute(a),
+        ],
+        if (rels.isNotEmpty)
+          'relations': <Map<String, Object?>>[for (final r in rels) r.toJson()],
+        'lifecycleStates': <Map<String, Object?>>[
+          for (final s in states) s.toJson(),
+        ],
+        if (transitions.isNotEmpty)
+          'lifecycleTransitions': <Map<String, Object?>>[
+            for (final t in transitions) t.toJson(),
+          ],
+        'usedByValidatedFeatureArtifacts': _collectValidatedDependentArtifacts(
+          validatedSiblings,
+        ),
+      },
+    };
+  }
+
+  Map<String, Object?> _serializeFullAttribute(BusinessAttribute a) =>
+      <String, Object?>{
+        'id': a.id,
+        'name': a.name,
+        'type': a.type.name,
+        'required': a.required,
+        if (a.nullable) 'nullable': a.nullable,
+        if (a.unique) 'unique': a.unique,
+        'isArray': a.isArray,
+        if (a.estimatedMaxRows != null) 'estimatedMaxRows': a.estimatedMaxRows,
+        if (a.defaultValue != null) 'defaultValue': a.defaultValue,
+        'enumValues': a.enumValues,
+        'referenceObjectId': a.referenceObjectId,
+        if (a.valueObjectId.isNotEmpty) 'valueObjectId': a.valueObjectId,
+        'description': a.description,
+        if (a.constraints.isNotEmpty) 'constraints': a.constraints,
+        if (a.schemaConstraints.isNotEmpty)
+          'schemaConstraints': a.schemaConstraints.toJson(),
+        'children': <Map<String, Object?>>[
+          for (final c in a.children) _serializeFullAttribute(c),
+        ],
+      };
+
+  List<Map<String, Object?>> _collectValidatedDependentArtifacts(
+    List<SpecFeatureSpec> validatedSiblings,
+  ) {
+    final allMatchKeys = <String>{
+      ..._objectIdsLower,
+      ..._technicalNamesLower,
+      ..._namesLower,
+    };
+    final dependents = <Map<String, Object?>>[];
+
+    for (final f in validatedSiblings) {
+      final featureMatchKeys = <String>{...allMatchKeys};
+      for (final obj in f.businessObjects) {
+        if (matchesIdentity(
+          obj.id.trim().toLowerCase(),
+          obj.technicalName.trim().toLowerCase(),
+        )) {
+          featureMatchKeys
+            ..add(obj.id.trim().toLowerCase())
+            ..add(obj.technicalName.trim().toLowerCase())
+            ..add(obj.name.trim().toLowerCase());
+        }
+      }
+
+      final featureLabel = f.code.trim().isNotEmpty ? f.code.trim() : f.name;
+
+      for (final rule in f.businessRules) {
+        final matchesTargetId = rule.targetObjectIds.any(
+          (ref) => featureMatchKeys.contains(ref.trim().toLowerCase()),
+        );
+        final matchesTargetAttr = rule.targetAttributes.any((attrPath) {
+          final dotIdx = attrPath.indexOf('.');
+          if (dotIdx <= 0) return false;
+          final prefix = attrPath.substring(0, dotIdx).trim().toLowerCase();
+          return featureMatchKeys.contains(prefix);
+        });
+        if (matchesTargetId || matchesTargetAttr) {
+          dependents.add(<String, Object?>{
+            'kind': 'businessRule',
+            'featureId': f.id,
+            if (f.code.isNotEmpty) 'featureCode': f.code,
+            'featureName': f.name,
+            'artifactId': rule.id,
+            'code': rule.code,
+            'title': rule.title,
+            'category': rule.category.name,
+            if (rule.targetObjectIds.isNotEmpty)
+              'targetObjectIds': rule.targetObjectIds,
+            if (rule.targetAttributes.isNotEmpty)
+              'targetAttributes': rule.targetAttributes,
+            'summary': '$featureLabel · ${rule.code} — ${rule.title}',
+          });
+        }
+      }
+
+      for (final screen in f.uxSpec.screens) {
+        final matchesPrimary = featureMatchKeys.contains(
+          screen.primaryObjectId.trim().toLowerCase(),
+        );
+        final slotAttrs = <String>{};
+        var matchesSlot = false;
+        for (final zone in screen.zones) {
+          for (final slot in zone.slots) {
+            if (featureMatchKeys.contains(
+              slot.businessObjectId.trim().toLowerCase(),
+            )) {
+              matchesSlot = true;
+              slotAttrs.addAll(slot.attributeNames);
+            }
+          }
+        }
+        if (matchesPrimary || matchesSlot) {
+          dependents.add(<String, Object?>{
+            'kind': 'uxScreen',
+            'featureId': f.id,
+            if (f.code.isNotEmpty) 'featureCode': f.code,
+            'featureName': f.name,
+            'artifactId': screen.id,
+            'code': screen.code,
+            'title': screen.name,
+            if (slotAttrs.isNotEmpty)
+              'referencedAttributes': slotAttrs.toList(),
+            'summary': '$featureLabel · ${screen.code} — ${screen.name}',
+          });
+        }
+      }
+
+      for (final fixture in f.qaSpec.fixtures) {
+        if (featureMatchKeys.contains(
+          fixture.businessObjectId.trim().toLowerCase(),
+        )) {
+          dependents.add(<String, Object?>{
+            'kind': 'qaFixture',
+            'featureId': f.id,
+            if (f.code.isNotEmpty) 'featureCode': f.code,
+            'featureName': f.name,
+            'artifactId': fixture.id,
+            'code': fixture.code,
+            'title': fixture.name,
+            if (fixture.payload.isNotEmpty)
+              'payloadKeys': fixture.payload.keys.toList(),
+            'summary': '$featureLabel · ${fixture.code} — ${fixture.name}',
+          });
+        }
+      }
+    }
+
+    return dependents;
+  }
 }

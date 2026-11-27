@@ -1,11 +1,47 @@
 /// Modèles immuables des prompts IA en Architecture Hexagonale
-/// ([BuildHexaPromptRole], [BuildHexaPromptSpec], [BuildItemPromptGroup]).
+/// ([BuildPromptGenerationMode], [BuildHexaPromptRole], [BuildHexaPromptSpec],
+/// [BuildItemPromptGroup]).
 library;
 
 import 'package:flutter/foundation.dart';
 
 import '../../../models/build_design_item.dart';
 import '../../../models/build_tech_stack_profile.dart';
+import '../../design_evolution_analyzer.dart';
+
+/// Mode de génération des prompts vis-à-vis du jalon d'itération actif du domaine.
+enum BuildPromptGenerationMode {
+  /// Création pour les nouveaux éléments, Delta `vN → vN+1` pour les éléments modifiés ou impactés.
+  autoByBaseline(
+    label: 'Auto (selon jalon)',
+    subtitle:
+        'Création pour les nouveaux éléments, Delta vN → vN+1 pour les éléments modifiés ou impactés',
+  ),
+
+  /// Inclut systématiquement le changelog d'évolution et les consignes de migration depuis le jalon.
+  evolutionDelta(
+    label: 'Delta vN → vN+1',
+    subtitle:
+        'Inclut systématiquement le changelog d’évolution et les consignes de migration depuis le jalon',
+  ),
+
+  /// Spécification complète autonome sans historique d'itération.
+  fullFromScratch(
+    label: 'Complet (from scratch)',
+    subtitle: 'Spécification complète autonome sans historique d’itération',
+  );
+
+  const BuildPromptGenerationMode({
+    required this.label,
+    required this.subtitle,
+  });
+
+  /// Libellé court affiché dans les sélecteurs de mode.
+  final String label;
+
+  /// Description synthétique du comportement de génération.
+  final String subtitle;
+}
 
 /// Sous-rôle d'un prompt de génération de code en Architecture Hexagonale.
 enum BuildHexaPromptRole {
@@ -48,9 +84,13 @@ class BuildHexaPromptSpec {
     required this.summary,
     required this.promptMarkdown,
     this.item,
+    this.isEvolutionDelta = false,
+    this.baselineLabel,
+    this.baselineVersion,
+    this.changeBump = SemVerBump.none,
   });
 
-  /// Identifiant unique stable (`<kind>:<itemId>:<section>:<role>` ou `domain:<section>:<role>`).
+  /// Identifiant unique stable (`<kind>:<itemId>:<section>:<role>` ou `standalone:<section>:<role>`).
   final String id;
 
   /// Élément de design auquel se rattache ce prompt (`null` pour Outbound / Inbound autonomes).
@@ -71,6 +111,18 @@ class BuildHexaPromptSpec {
   /// Contenu complet du prompt au format Markdown.
   final String promptMarkdown;
 
+  /// Indique si ce prompt contient un bloc d'évolution et de migration inter-itérations.
+  final bool isEvolutionDelta;
+
+  /// Libellé du jalon d'itération utilisé comme référence lorsque [isEvolutionDelta] vaut `true`.
+  final String? baselineLabel;
+
+  /// Version sémantique précédente dans le jalon lorsque [isEvolutionDelta] vaut `true`.
+  final String? baselineVersion;
+
+  /// Niveau d'incrément SemVer associé au delta lorsque [isEvolutionDelta] vaut `true`.
+  final SemVerBump changeBump;
+
   /// Libellé synthétique de la cible (nom de l'item ou nom de la section autonome).
   String get targetLabel => item?.name ?? section.label;
 
@@ -84,11 +136,26 @@ class BuildHexaPromptSpec {
           other.role == role &&
           other.title == title &&
           other.summary == summary &&
-          other.promptMarkdown == promptMarkdown;
+          other.promptMarkdown == promptMarkdown &&
+          other.isEvolutionDelta == isEvolutionDelta &&
+          other.baselineLabel == baselineLabel &&
+          other.baselineVersion == baselineVersion &&
+          other.changeBump == changeBump;
 
   @override
-  int get hashCode =>
-      Object.hash(id, item, section, role, title, summary, promptMarkdown);
+  int get hashCode => Object.hash(
+    id,
+    item,
+    section,
+    role,
+    title,
+    summary,
+    promptMarkdown,
+    isEvolutionDelta,
+    baselineLabel,
+    baselineVersion,
+    changeBump,
+  );
 }
 
 /// Groupe de prompts IA rattachés à un [BuildDesignItem] sélectionné ou à une

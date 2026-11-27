@@ -8,12 +8,14 @@ import 'package:super_container_layout/super_container_layout.dart'
     show VibeChatAttachment;
 
 import '../../models/domain_contracts.dart';
+import '../../services/spec_design_drift_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
 import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_domain_layer_view.dart';
 import 'contract_entry_view.dart';
 import 'design_domain_breadcrumb.dart';
 import 'domain_contracts_editor.dart';
+import 'iteration_snapshot_dialogs.dart';
 
 /// Affiche le fil d’Ariane et permet de changer de domaine sans quitter la page.
 ///
@@ -132,6 +134,7 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
   /// 0 = liste des modèles et contrats, 1 = fiche de [_openId], 2 = couche Domain.
   int _level = 0;
   double _codeFraction = DomainContractsEditor.defaultCodeFraction;
+  final Set<String> _dismissedSpecDriftDomainIds = <String>{};
   final _pages = PageController();
 
   @override
@@ -210,7 +213,8 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
   );
 
   Widget _buildContent(BuildContext context) {
-    final domains = widget.controller.domainCatalog.domains;
+    final catalog = widget.controller.domainCatalog;
+    final domains = catalog.domains;
     final effectiveId = _selectedId ?? widget.controller.activeDesignDomainId;
     final selected =
         domains.where((domain) => domain.id == effectiveId).firstOrNull ??
@@ -218,6 +222,22 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
     final document = selected?.contracts ?? DomainContracts.empty;
     final opened = document.entryById(_openId);
     final entry = _level >= 1 ? opened : null;
+    final activeProject = widget.controller.project;
+    final specDriftReport =
+        (selected != null && _level == 0 && activeProject != null)
+        ? SpecDesignDriftAnalyzer.analyzeDomain(
+            project: activeProject,
+            domain: selected,
+            catalog: catalog,
+          )
+        : null;
+    final showSpecDriftBanner =
+        selected != null &&
+        _level == 0 &&
+        specDriftReport != null &&
+        (specDriftReport.driftedContractsCount > 0 ||
+            specDriftReport.linkedSpecRefDrifts.isNotEmpty) &&
+        !_dismissedSpecDriftDomainIds.contains(selected.id);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -289,6 +309,24 @@ class _ModelsContractsViewState extends State<ModelsContractsView> {
             ],
           ],
         ),
+        if (selected != null && _level == 0)
+          DomainIterationSnapshotBar(
+            controller: widget.controller,
+            domain: selected,
+            compact: true,
+          ),
+        if (showSpecDriftBanner)
+          _SpecDriftInfoBanner(
+            key: ValueKey('models-spec-drift-banner-${selected.id}'),
+            report: specDriftReport,
+            onShowDetails: () => _showSpecDriftDetailsDialog(
+              context,
+              report: specDriftReport,
+            ),
+            onDismiss: () => setState(
+              () => _dismissedSpecDriftDomainIds.add(selected.id),
+            ),
+          ),
         Expanded(
           child: selected == null
               ? Center(
@@ -405,3 +443,251 @@ class _KeepAliveState extends State<_KeepAlive>
     return widget.child;
   }
 }
+
+class _SpecDriftInfoBanner extends StatelessWidget {
+  const _SpecDriftInfoBanner({
+    required this.report,
+    required this.onShowDetails,
+    required this.onDismiss,
+    super.key,
+  });
+
+  final DomainSpecDriftReport report;
+  final VoidCallback onShowDetails;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
+    final fg = isDark ? Colors.amber.shade200 : Colors.amber.shade900;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: isDark ? 0.18 : 0.12),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.amber.withValues(alpha: isDark ? 0.45 : 0.35),
+          ),
+        ),
+      ),
+      child: Row(
+        spacing: 8,
+        children: [
+          Icon(Icons.sync_problem_rounded, size: 17, color: fg),
+          Expanded(
+            child: Text(
+              '${report.driftedContractsCount} contrat(s) / '
+              '${report.linkedSpecRefDrifts.length} référence(s) Spec modifiés en amont',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            key: const ValueKey('models-spec-drift-details-btn'),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            onPressed: onShowDetails,
+            icon: const Icon(Icons.difference_outlined, size: 15),
+            label: const Text('Voir le détail Spec ↔ Design'),
+          ),
+          IconButton(
+            key: const ValueKey('models-spec-drift-dismiss-btn'),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Masquer cet avertissement',
+            icon: Icon(Icons.close_rounded, size: 16, color: fg),
+            onPressed: onDismiss,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showSpecDriftDetailsDialog(
+  BuildContext context, {
+  required DomainSpecDriftReport report,
+}) => showDialog<void>(
+  context: context,
+  builder: (dialogCtx) {
+    final screen = MediaQuery.sizeOf(dialogCtx);
+    final theme = Theme.of(dialogCtx);
+    final colors = theme.colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
+    final driftedContracts = report.driftedContracts;
+    final refDrifts = report.linkedSpecRefDrifts;
+
+    return AlertDialog(
+      key: const ValueKey('models-spec-drift-dialog'),
+      insetPadding: const EdgeInsets.all(20),
+      title: Row(
+        spacing: 10,
+        children: [
+          Icon(Icons.sync_problem_rounded, color: colors.primary),
+          Expanded(
+            child: Text(
+              'Dérive amont Spec ↔ Design — ${report.domainName}',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: (screen.width * 0.66).clamp(520.0, 800.0),
+        height: (screen.height * 0.64).clamp(320.0, 560.0),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 14,
+            children: [
+              if (driftedContracts.isNotEmpty) ...[
+                Text(
+                  'Contrats impactés (${driftedContracts.length})',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                for (final contract in driftedContracts)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: colors.outlineVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 6,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              contract.entryName,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: contract.isMissingInSpec
+                                    ? colors.errorContainer
+                                    : Colors.amber.withValues(
+                                        alpha: isDark ? 0.24 : 0.16,
+                                      ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                contract.status.label,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: contract.isMissingInSpec
+                                      ? colors.onErrorContainer
+                                      : (isDark
+                                            ? Colors.amber.shade200
+                                            : Colors.amber.shade900),
+                                ),
+                              ),
+                            ),
+                            if (contract.specOrigin != null)
+                              Text(
+                                '${contract.specOrigin!.projectName} (${contract.specOrigin!.featuresSummaryLabel.isNotEmpty ? contract.specOrigin!.featuresSummaryLabel : contract.specOrigin!.featureCode})',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                          ],
+                        ),
+                        Text(
+                          contract.summary,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+              if (refDrifts.isNotEmpty) ...[
+                Text(
+                  'Références Spec modifiées ou supprimées (${refDrifts.length})',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                for (final ref in refDrifts)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: colors.outlineVariant),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      spacing: 4,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.secondaryContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                ref.refCode,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.onSecondaryContainer,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${ref.refKind.label} · ${ref.status.label}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '→ ${ref.ownerName}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(ref.summary, style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('models-spec-drift-dialog-close-btn'),
+          onPressed: () => Navigator.pop(dialogCtx),
+          child: const Text('Fermer'),
+        ),
+      ],
+    );
+  },
+);

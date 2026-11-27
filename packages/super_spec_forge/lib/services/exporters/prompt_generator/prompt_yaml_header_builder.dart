@@ -5,6 +5,7 @@ library;
 import '../../../models/build_design_item.dart';
 import '../../../models/build_tech_stack_profile.dart';
 import '../../../models/domain_catalog.dart';
+import '../../design_evolution_analyzer.dart';
 import 'prompt_generator_models.dart';
 
 /// Dates ISO (`YYYY-MM-DD`) de création et de mise à jour d'un prompt.
@@ -44,6 +45,7 @@ abstract final class PromptYamlHeaderBuilder {
       return '${section.slug}-$rolePart';
     }
     final prefix = switch (itemKind) {
+      BuildDesignItemKind.valueObject => 'value-object',
       BuildDesignItemKind.model => 'model',
       BuildDesignItemKind.useCase => 'usecase',
       BuildDesignItemKind.saga => 'saga',
@@ -132,6 +134,10 @@ abstract final class PromptYamlHeaderBuilder {
   }
 
   /// Construit le bloc Markdown ```` ```yaml ... ``` ```` placé en début de prompt.
+  ///
+  /// Lorsque [isEvolutionDelta] vaut `true`, enrichit automatiquement le bloc
+  /// `generation:` avec `mode: evolution-delta`, `baselineIteration`,
+  /// `previousVersion` (si présent) et `changeImpact`.
   static String buildFencedYamlHeader({
     required String kind,
     required String name,
@@ -142,8 +148,27 @@ abstract final class PromptYamlHeaderBuilder {
     required List<String> tags,
     required Map<String, String> generation,
     required PromptMetadataDates dates,
+    bool isEvolutionDelta = false,
+    String? baselineIteration,
+    String? previousVersion,
+    SemVerBump? changeImpact,
   }) {
-    final cleanTags = _dedupKebabTags(tags);
+    final effectiveTags = <String>[
+      ...tags,
+      if (isEvolutionDelta) 'evolution-delta',
+    ];
+    final effectiveGeneration = <String, String>{
+      ...generation,
+      if (isEvolutionDelta) ...<String, String>{
+        'mode': 'evolution-delta',
+        if (baselineIteration != null && baselineIteration.trim().isNotEmpty)
+          'baselineIteration': baselineIteration.trim(),
+        if (previousVersion != null && previousVersion.trim().isNotEmpty)
+          'previousVersion': previousVersion.trim(),
+        if (changeImpact != null) 'changeImpact': changeImpact.name,
+      },
+    };
+    final cleanTags = _dedupKebabTags(effectiveTags);
     final buf = StringBuffer()
       ..writeln('```yaml')
       ..writeln('kind: ${_yamlScalar(kind)}')
@@ -174,7 +199,7 @@ abstract final class PromptYamlHeaderBuilder {
       ..writeln('    embeddable: true')
       ..writeln()
       ..writeln('generation:');
-    for (final entry in generation.entries) {
+    for (final entry in effectiveGeneration.entries) {
       if (entry.value.trim().isNotEmpty) {
         buf.writeln('    ${entry.key}: ${_yamlScalar(entry.value)}');
       }

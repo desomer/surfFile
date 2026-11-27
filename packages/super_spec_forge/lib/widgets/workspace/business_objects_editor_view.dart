@@ -14,8 +14,11 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
 
 import '../../models/business_object_spec.dart';
+import '../../models/feature_object_sync_baseline.dart';
 import '../../models/spec_forge_project.dart';
+import '../../models/spec_initiative.dart';
 import '../../services/business_object_operations.dart';
+import '../../services/cross_feature_object_analyzer.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
 import '../../services/spec_forge_controller.dart';
 import '../../services/spec_schema_dsl_bridge.dart';
@@ -24,6 +27,7 @@ import 'attribute_constraints_editor.dart';
 import 'business_objects/business_object_inspector_panes.dart';
 import 'business_objects/business_object_tree_models.dart';
 import 'business_objects/business_object_tree_tooltip_card.dart';
+import 'import_sync_business_objects_dialog.dart';
 import 'json_schema_viewer_dialog.dart';
 import 'markdown_viewer_dialog.dart';
 
@@ -64,6 +68,7 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
 
   String _yamlText = '';
   String? _lastSyncedProjectId;
+  String? _lastSyncedFeatureId;
   String? _lastFocusedObjectId;
   List<String> _lastFocusedAttrPath = const <String>[];
   String _lastSyncedFilter = '';
@@ -151,7 +156,9 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
 
   void _syncFromProject(SpecForgeProject? project, {bool forceYaml = false}) {
     if (project == null) return;
-    final projectChanged = _lastSyncedProjectId != project.id;
+    final projectChanged =
+        _lastSyncedProjectId != project.id ||
+        _lastSyncedFeatureId != project.activeFeatureId;
     final focusedId = widget.controller.focusedObjectId;
     final focusedAttrPath = widget.controller.focusedAttributePath;
     final rawFilter = widget.controller.businessObjectFilter;
@@ -170,7 +177,11 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
       return;
     }
 
+    if (projectChanged) {
+      _yamlDirty = false;
+    }
     _lastSyncedProjectId = project.id;
+    _lastSyncedFeatureId = project.activeFeatureId;
     _lastSyncedObjects = project.businessObjects;
     _lastSyncedFilter = rawFilter;
     if (_filterCtrl.text != rawFilter) {
@@ -440,104 +451,251 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     }
   }
 
+  Future<void> _openImportSyncDialog(
+    BuildContext context, {
+    ObjectSyncSourceKind? initialSourceKind,
+    String? initialSourceFeatureId,
+    String? initialSourceDomainId,
+    String? preselectedObjectIdOrTechName,
+  }) async {
+    final result = await ImportSyncBusinessObjectsDialog.show(
+      context,
+      controller: widget.controller,
+      initialSourceKind: initialSourceKind,
+      initialSourceFeatureId: initialSourceFeatureId,
+      initialSourceDomainId: initialSourceDomainId,
+      preselectedObjectIdOrTechName: preselectedObjectIdOrTechName,
+    );
+    if (result == null || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(formatFeatureObjectSyncSummary(result))),
+    );
+  }
+
+  Future<void> _openCrossFeatureImpactDialog(
+    BuildContext context,
+    SpecForgeProject project,
+    List<ObjectCrossFeatureReport> reports, {
+    String? focusedObjectName,
+  }) async {
+    final syncTarget = await CrossFeatureImpactDetailsDialog.show(
+      context,
+      project: project,
+      reports: reports,
+      focusedObjectName: focusedObjectName,
+    );
+    if (syncTarget == null || !context.mounted) return;
+    await _openImportSyncDialog(
+      context,
+      initialSourceKind: ObjectSyncSourceKind.feature,
+      initialSourceFeatureId: syncTarget.featureId,
+      preselectedObjectIdOrTechName: syncTarget.objectIdOrTechName,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final project = widget.controller.project;
-    if (project == null) return const SizedBox.shrink();
-    _syncFromProject(project);
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final project = widget.controller.project;
+        if (project == null) return const SizedBox.shrink();
+        _syncFromProject(project);
 
-    final singleExpanded =
-        widget.controller.modelPreferences.singleExpandedBusinessObject;
-    if (singleExpanded && _expandedObjectIds.length > 1) {
-      final keepId = (_selectedObjectId != null &&
-              _expandedObjectIds.contains(_selectedObjectId))
-          ? _selectedObjectId!
-          : _expandedObjectIds.first;
-      _expandedObjectIds
-        ..clear()
-        ..add(keepId);
-    }
+        final singleExpanded =
+            widget.controller.modelPreferences.singleExpandedBusinessObject;
+        if (singleExpanded && _expandedObjectIds.length > 1) {
+          final keepId = (_selectedObjectId != null &&
+                  _expandedObjectIds.contains(_selectedObjectId))
+              ? _selectedObjectId!
+              : _expandedObjectIds.first;
+          _expandedObjectIds
+            ..clear()
+            ..add(keepId);
+        }
 
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final objects = project.businessObjects;
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        final isDark = theme.brightness == Brightness.dark;
+        final objects = project.businessObjects;
+        final crossReport = CrossFeatureObjectAnalyzer.analyzeFeature(project);
+        final hasSiblingObjects = project.allFeatures.any(
+          (f) =>
+              f.id != project.activeFeatureId &&
+              f.effectiveStatus != SpecPortfolioStatus.archived &&
+              f.businessObjects.isNotEmpty,
+        );
+        final hasDesignContracts = widget.controller.domainCatalog.domains.any(
+          (d) => d.contracts?.groups.any((g) => g.children.isNotEmpty) ?? false,
+        );
+        final canImportOrSync = hasSiblingObjects || hasDesignContracts;
 
-    return JsonRepositoryScope(
-      store: _treeRepoStore,
-      child: DefaultTabController(
-        length: 3,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Objets métiers (${objects.length})',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Règles : max 200 attributs/objet · max 200 lignes/tableau imbriqué · objet dédié au-delà',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+        return JsonRepositoryScope(
+          store: _treeRepoStore,
+          child: DefaultTabController(
+            length: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.spaceBetween,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      FilledButton.tonalIcon(
-                        key: const ValueKey('spec-objects-add-root'),
-                        onPressed: () => _editObjectDialog(context, project),
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Nouvel objet'),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Objets métiers (${objects.length})',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Règles : max 200 attributs/objet · max 200 lignes/tableau imbriqué · objet dédié au-delà',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Tooltip(
+                            message: canImportOrSync
+                                ? 'Importer ou synchroniser en 3-voies depuis une autre Feature ou un domaine Design'
+                                : 'Aucun objet dans une autre Feature ni contrat Design disponible',
+                            child: OutlinedButton.icon(
+                              key: const ValueKey(
+                                'spec-objects-import-sync-btn',
+                              ),
+                              onPressed: canImportOrSync
+                                  ? () => _openImportSyncDialog(context)
+                                  : null,
+                              icon: const Icon(
+                                Icons.sync_alt_rounded,
+                                size: 16,
+                              ),
+                              label: const Text('Importer / Synchroniser…'),
+                            ),
+                          ),
+                          FilledButton.tonalIcon(
+                            key: const ValueKey('spec-objects-add-root'),
+                            onPressed: () =>
+                                _editObjectDialog(context, project),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Nouvel objet'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            const TabBar(
-              tabs: [
-                Tab(
-                  key: ValueKey('spec-objects-tree-tab'),
-                  text: 'Objets',
                 ),
-                Tab(
-                  key: ValueKey('spec-objects-schema-tab'),
-                  text: 'Repositories',
+                const TabBar(
+                  tabs: [
+                    Tab(
+                      key: ValueKey('spec-objects-tree-tab'),
+                      text: 'Objets',
+                    ),
+                    Tab(
+                      key: ValueKey('spec-objects-schema-tab'),
+                      text: 'Repositories',
+                    ),
+                    Tab(
+                      key: ValueKey('spec-objects-dsl-tab'),
+                      text: 'DSL',
+                    ),
+                  ],
                 ),
-                Tab(
-                  key: ValueKey('spec-objects-dsl-tab'),
-                  text: 'DSL',
+                if (crossReport.warningObjectCount > 0)
+                  Container(
+                    key: const ValueKey(
+                      'spec-objects-cross-feature-warning-banner',
+                    ),
+                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(
+                        alpha: isDark ? 0.18 : 0.13,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Colors.amber.withValues(
+                          alpha: isDark ? 0.50 : 0.40,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 18,
+                          color: isDark
+                              ? Colors.amber.shade200
+                              : Colors.amber.shade900,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '${crossReport.warningObjectCount} objet(s) présentent une divergence cassante '
+                            'ou un impact RG/UX/QA vis-à-vis d’une feature Validée',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.amber.shade100
+                                  : Colors.amber.shade900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          key: const ValueKey(
+                            'spec-objects-cross-feature-warning-details-btn',
+                          ),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () => _openCrossFeatureImpactDialog(
+                            context,
+                            project,
+                            crossReport.warnings,
+                          ),
+                          icon: const Icon(Icons.visibility_outlined, size: 15),
+                          label: const Text('Voir les impacts'),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildTreeAndInspectorTab(
+                        context,
+                        project,
+                        colors,
+                        theme,
+                        crossReport: crossReport,
+                        canImportOrSync: canImportOrSync,
+                      ),
+                      _buildJsonSchemaAndSeedTab(project),
+                      _buildYamlSourceTab(context, project, colors, theme),
+                    ],
+                  ),
                 ),
               ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildTreeAndInspectorTab(context, project, colors, theme),
-                  _buildJsonSchemaAndSeedTab(project),
-                  _buildYamlSourceTab(context, project, colors, theme),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -545,13 +703,34 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     BuildContext context,
     SpecForgeProject project,
     ColorScheme colors,
-    ThemeData theme,
-  ) {
+    ThemeData theme, {
+    required FeatureCrossObjectReport crossReport,
+    required bool canImportOrSync,
+  }) {
     if (project.businessObjects.isEmpty) {
-      return const Center(
-        child: Text(
-          'Aucun objet métier pour l’instant.\nUtilisez le Domain Modeler à gauche ou cliquez sur « Nouvel objet ».',
-          textAlign: TextAlign.center,
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Aucun objet métier pour l’instant.\nUtilisez le Domain Modeler à gauche ou cliquez sur « Nouvel objet ».',
+                textAlign: TextAlign.center,
+              ),
+              if (canImportOrSync) ...[
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  key: const ValueKey('spec-objects-empty-import-sync-btn'),
+                  onPressed: () => _openImportSyncDialog(context),
+                  icon: const Icon(Icons.download_rounded, size: 16),
+                  label: const Text(
+                    'Importer depuis une autre Feature / Design…',
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       );
     }
@@ -822,6 +1001,7 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
                                     context,
                                     project,
                                     entry,
+                                    crossReport: crossReport,
                                     treeWidth: treeWidth,
                                     theme: theme,
                                     colors: colors,
@@ -959,10 +1139,83 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     );
   }
 
+  Widget? _buildObjectSyncBadge({
+    required BuildContext context,
+    required SpecForgeProject project,
+    required BusinessObjectSpec object,
+    required ObjectCrossFeatureReport? objReport,
+    required FeatureObjectSyncBaseline? syncBase,
+    required ColorScheme colors,
+    required bool isDark,
+  }) {
+    if (objReport != null && objReport.isSharedAcrossFeatures) {
+      if (objReport.hasBreakingValidatedWarning) {
+        return _ObjectSyncBadgePill(
+          key: ValueKey('spec-object-shared-badge-${object.id}'),
+          label: '⚠ Impact ${objReport.sharedFeaturesSummary}',
+          backgroundColor: Colors.orange.withValues(
+            alpha: isDark ? 0.24 : 0.15,
+          ),
+          foregroundColor: isDark
+              ? Colors.amber.shade200
+              : Colors.deepOrange.shade900,
+          borderColor: Colors.orange.withValues(alpha: isDark ? 0.55 : 0.42),
+          onTap: () => _openCrossFeatureImpactDialog(
+            context,
+            project,
+            <ObjectCrossFeatureReport>[objReport],
+            focusedObjectName: object.name,
+          ),
+        );
+      }
+      return _ObjectSyncBadgePill(
+        key: ValueKey('spec-object-shared-badge-${object.id}'),
+        icon: objReport.sharedWithValidatedFeature
+            ? Icons.verified_rounded
+            : Icons.share_outlined,
+        label: 'Partagé · ${objReport.sharedFeaturesSummary}',
+        backgroundColor: Colors.teal.withValues(alpha: isDark ? 0.22 : 0.12),
+        foregroundColor: isDark ? Colors.teal.shade200 : Colors.teal.shade800,
+        borderColor: Colors.teal.withValues(alpha: isDark ? 0.48 : 0.34),
+        onTap: () => _openCrossFeatureImpactDialog(
+          context,
+          project,
+          <ObjectCrossFeatureReport>[objReport],
+          focusedObjectName: object.name,
+        ),
+      );
+    }
+
+    if (syncBase != null &&
+        syncBase.sourceKind == ObjectSyncSourceKind.designDomain) {
+      return _ObjectSyncBadgePill(
+        key: ValueKey('spec-object-design-sync-badge-${object.id}'),
+        icon: Icons.architecture_rounded,
+        label: 'Sync · ${syncBase.sourceDisplayLabel}',
+        backgroundColor: Colors.indigo.withValues(alpha: isDark ? 0.22 : 0.11),
+        foregroundColor: isDark
+            ? Colors.indigo.shade200
+            : Colors.indigo.shade800,
+        borderColor: Colors.indigo.withValues(alpha: isDark ? 0.48 : 0.34),
+        onTap: () => _openImportSyncDialog(
+          context,
+          initialSourceKind: ObjectSyncSourceKind.designDomain,
+          initialSourceDomainId: syncBase.sourceDomainId,
+          preselectedObjectIdOrTechName: syncBase.sourceEntryId.isNotEmpty
+              ? syncBase.sourceEntryId
+              : object.technicalName,
+        ),
+      );
+    }
+
+    return null;
+  }
+
   List<Widget> _buildRepositorySlivers(
     BuildContext context,
     SpecForgeProject project,
     RepoTreeEntry entry, {
+    required FeatureCrossObjectReport crossReport,
     required double treeWidth,
     required ThemeData theme,
     required ColorScheme colors,
@@ -978,6 +1231,56 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     final borderColor =
         isObjectSelected ? colors.primary : colors.outlineVariant;
     final borderWidth = isObjectSelected ? 1.35 : 1.0;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final objReport = crossReport.reportFor(obj.id);
+    final syncBase = project.activeFeature.syncBaselineFor(obj.id);
+    final syncBadge = _buildObjectSyncBadge(
+      context: context,
+      project: project,
+      object: obj,
+      objReport: objReport,
+      syncBase: syncBase,
+      colors: colors,
+      isDark: isDark,
+    );
+    final badgeSignature = objReport != null && objReport.isSharedAcrossFeatures
+        ? 'shared:${objReport.hasBreakingValidatedWarning}:'
+              '${objReport.sharedWithValidatedFeature}:'
+              '${objReport.sharedFeaturesSummary}:'
+              '${objReport.totalDownstreamImpactCount}'
+        : (syncBase != null &&
+                  syncBase.sourceKind == ObjectSyncSourceKind.designDomain
+              ? 'design:${syncBase.sourceDomainId}:${syncBase.sourceDisplayLabel}'
+              : '');
+
+    void handleSelectObject() {
+      _clearTreeSelections();
+      _lastFocusedObjectId = obj.id;
+      _lastFocusedAttrPath = const <String>[];
+      widget.controller.focusBusinessSelection(objectId: obj.id);
+      setState(() {
+        _selectedObjectId = obj.id;
+        _selectedNodePath = null;
+        if (widget.controller.modelPreferences.singleExpandedBusinessObject) {
+          _expandedObjectIds.clear();
+        }
+        _expandedObjectIds.add(obj.id);
+      });
+    }
+
+    void handleToggleExpanded() {
+      setState(() {
+        if (isExpanded) {
+          _expandedObjectIds.remove(obj.id);
+        } else {
+          if (widget.controller.modelPreferences.singleExpandedBusinessObject) {
+            _expandedObjectIds.clear();
+          }
+          _expandedObjectIds.add(obj.id);
+        }
+      });
+    }
 
     return [
       SliverPadding(
@@ -986,49 +1289,35 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
           slivers: [
             SliverPersistentHeader(
               pinned: true,
-              delegate: RepoStickyHeaderDelegate(
-                entry: entry,
-                isExpanded: isExpanded,
-                isObjectSelected: isObjectSelected,
-                isHeaderHighlighted: isHeaderHighlighted,
-                overAttrLimit: overAttrLimit,
-                borderColor: borderColor,
-                borderWidth: borderWidth,
-                theme: theme,
-                colors: colors,
-                onSelectObject: () {
-                  _clearTreeSelections();
-                  _lastFocusedObjectId = obj.id;
-                  _lastFocusedAttrPath = const <String>[];
-                  widget.controller.focusBusinessSelection(objectId: obj.id);
-                  setState(() {
-                    _selectedObjectId = obj.id;
-                    _selectedNodePath = null;
-                    if (widget
-                        .controller
-                        .modelPreferences
-                        .singleExpandedBusinessObject) {
-                      _expandedObjectIds.clear();
-                    }
-                    _expandedObjectIds.add(obj.id);
-                  });
-                },
-                onToggleExpanded: () {
-                  setState(() {
-                    if (isExpanded) {
-                      _expandedObjectIds.remove(obj.id);
-                    } else {
-                      if (widget
-                          .controller
-                          .modelPreferences
-                          .singleExpandedBusinessObject) {
-                        _expandedObjectIds.clear();
-                      }
-                      _expandedObjectIds.add(obj.id);
-                    }
-                  });
-                },
-              ),
+              delegate: syncBadge == null
+                  ? RepoStickyHeaderDelegate(
+                      entry: entry,
+                      isExpanded: isExpanded,
+                      isObjectSelected: isObjectSelected,
+                      isHeaderHighlighted: isHeaderHighlighted,
+                      overAttrLimit: overAttrLimit,
+                      borderColor: borderColor,
+                      borderWidth: borderWidth,
+                      theme: theme,
+                      colors: colors,
+                      onSelectObject: handleSelectObject,
+                      onToggleExpanded: handleToggleExpanded,
+                    )
+                  : _RepoStickyHeaderWithSyncBadgeDelegate(
+                      entry: entry,
+                      isExpanded: isExpanded,
+                      isObjectSelected: isObjectSelected,
+                      isHeaderHighlighted: isHeaderHighlighted,
+                      overAttrLimit: overAttrLimit,
+                      borderColor: borderColor,
+                      borderWidth: borderWidth,
+                      theme: theme,
+                      colors: colors,
+                      syncBadge: syncBadge,
+                      badgeSignature: badgeSignature,
+                      onSelectObject: handleSelectObject,
+                      onToggleExpanded: handleToggleExpanded,
+                    ),
             ),
             if (isExpanded)
               SliverToBoxAdapter(
@@ -1588,4 +1877,315 @@ class _BusinessObjectsEditorViewState extends State<BusinessObjectsEditorView> {
     );
   }
 }
+
+class _ObjectSyncBadgePill extends StatelessWidget {
+  const _ObjectSyncBadgePill({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.borderColor,
+    required this.onTap,
+    this.icon,
+    super.key,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color borderColor;
+  final VoidCallback onTap;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4,
+            children: [
+              if (icon != null) Icon(icon, size: 12, color: foregroundColor),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RepoStickyHeaderWithSyncBadgeDelegate
+    extends SliverPersistentHeaderDelegate {
+  const _RepoStickyHeaderWithSyncBadgeDelegate({
+    required this.entry,
+    required this.isExpanded,
+    required this.isObjectSelected,
+    required this.isHeaderHighlighted,
+    required this.overAttrLimit,
+    required this.borderColor,
+    required this.borderWidth,
+    required this.theme,
+    required this.colors,
+    required this.syncBadge,
+    required this.badgeSignature,
+    required this.onSelectObject,
+    required this.onToggleExpanded,
+  });
+
+  static const double _headerHeight = 84.0;
+
+  final RepoTreeEntry entry;
+  final bool isExpanded;
+  final bool isObjectSelected;
+  final bool isHeaderHighlighted;
+  final bool overAttrLimit;
+  final Color borderColor;
+  final double borderWidth;
+  final ThemeData theme;
+  final ColorScheme colors;
+  final Widget syncBadge;
+  final String badgeSignature;
+  final VoidCallback onSelectObject;
+  final VoidCallback onToggleExpanded;
+
+  @override
+  double get minExtent => _headerHeight;
+
+  @override
+  double get maxExtent => _headerHeight;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final obj = entry.object;
+    final totalAttrs = obj.totalAttributeCount;
+    final bgColor = isHeaderHighlighted
+        ? Color.alphaBlend(
+            colors.primaryContainer.withValues(alpha: 0.42),
+            colors.surface,
+          )
+        : colors.surfaceContainerLow;
+    final borderSide = BorderSide(color: borderColor, width: borderWidth);
+
+    return Container(
+      key: ValueKey('spec-objects-repo-tile-${obj.id}'),
+      height: _headerHeight,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: isExpanded
+            ? const BorderRadius.vertical(top: Radius.circular(10))
+            : BorderRadius.circular(10),
+        border: Border.fromBorderSide(borderSide),
+        boxShadow: overlapsContent
+            ? [
+                BoxShadow(
+                  color: colors.shadow.withValues(alpha: 0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onSelectObject,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 5, 10, 5),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  key: ValueKey('spec-objects-repo-toggle-${obj.id}'),
+                  tooltip: isExpanded ? 'Replier' : 'Déplier',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
+                  onPressed: onToggleExpanded,
+                  icon: Icon(
+                    isExpanded
+                        ? Icons.expand_more_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 20,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            obj.aggregateRoot
+                                ? Icons.hub_rounded
+                                : Icons.account_tree_outlined,
+                            size: 15,
+                            color: obj.aggregateRoot
+                                ? colors.primary
+                                : colors.secondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              obj.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: entry.isSchemaValid
+                                  ? colors.secondaryContainer
+                                  : colors.errorContainer,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              entry.isSchemaValid
+                                  ? 'Valide'
+                                  : '${entry.schemaIssueCount} err.',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: entry.isSchemaValid
+                                    ? colors.onSecondaryContainer
+                                    : colors.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      LayoutBuilder(
+                        builder: (context, rowConstraints) {
+                          final maxChipsWidth =
+                              (rowConstraints.maxWidth * 0.58).clamp(
+                                0.0,
+                                180.0,
+                              );
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${entry.repoAlias} · ${obj.technicalName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: maxChipsWidth,
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      RepoCardChip(
+                                        label: obj.aggregateRoot
+                                            ? 'Agrégat'
+                                            : 'Entité liée',
+                                        bg: obj.aggregateRoot
+                                            ? colors.primaryContainer
+                                                  .withValues(alpha: 0.7)
+                                            : colors.surfaceContainerHighest,
+                                        fg: obj.aggregateRoot
+                                            ? colors.onPrimaryContainer
+                                            : colors.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      RepoCardChip(
+                                        label:
+                                            '$totalAttrs/${BusinessObjectSpec.maxAttributesPerObject} attr.',
+                                        bg: overAttrLimit
+                                            ? colors.errorContainer
+                                            : colors.surfaceContainerHighest,
+                                        fg: overAttrLimit
+                                            ? colors.onErrorContainer
+                                            : colors.onSurfaceVariant,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      Row(children: [Flexible(child: syncBadge)]),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(
+    covariant _RepoStickyHeaderWithSyncBadgeDelegate oldDelegate,
+  ) {
+    return oldDelegate.entry.object != entry.object ||
+        oldDelegate.entry.repoAlias != entry.repoAlias ||
+        oldDelegate.entry.isSchemaValid != entry.isSchemaValid ||
+        oldDelegate.entry.schemaIssueCount != entry.schemaIssueCount ||
+        oldDelegate.isExpanded != isExpanded ||
+        oldDelegate.isObjectSelected != isObjectSelected ||
+        oldDelegate.isHeaderHighlighted != isHeaderHighlighted ||
+        oldDelegate.overAttrLimit != overAttrLimit ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.borderWidth != borderWidth ||
+        oldDelegate.badgeSignature != badgeSignature ||
+        oldDelegate.theme.brightness != theme.brightness;
+  }
+}
+
 

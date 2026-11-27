@@ -1,6 +1,9 @@
 /// Vue principale de l'onglet Build du `NavigationRail` ([BuildDesignItemsView]),
 /// présentant par domaine fonctionnel la liste des items de design porteurs des
-/// 4 indicateurs d'avancement (Modèles & Contrats, Cas d'usage et Sagas).
+/// 4 indicateurs d'avancement (`Value Objects` Domaine & Shared Kernel,
+/// `Modèles & Contrats`, `Cas d'usage` et `Sagas`), la gouvernance des jalons
+/// d'itération ([DomainIterationSnapshotBar]) et les indicateurs non-intrusifs
+/// de dérive (`badge_only`).
 library;
 
 import 'dart:async';
@@ -10,6 +13,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../models/build_design_item.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/domain_contracts.dart';
+import '../../models/value_object_spec.dart';
+import '../../services/design_evolution_analyzer.dart';
 import '../../services/exporters/build_hexa_prompt_generator.dart';
 import '../../services/spec_forge_controller.dart';
 import '../design/contract_entry_view.dart'
@@ -20,6 +25,12 @@ import '../design/contract_entry_view.dart'
         contractStatusLabels,
         contractTypeColor;
 import '../design/design_domain_breadcrumb.dart';
+import '../design/iteration_snapshot_dialogs.dart'
+    show
+        ArtifactEvolutionDiffDialog,
+        DomainIterationSnapshotBar,
+        EvolutionDriftBadge,
+        SemVerBumpActionChip;
 import '../workspace/markdown_viewer_dialog.dart';
 import 'build_prompts_selection_view.dart';
 import 'build_tech_stacks_dialog.dart';
@@ -131,6 +142,11 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
   BuildDesignItemKind? _kindFilter;
   ContractStage? _stageFilter;
   ContractStatus? _statusFilter;
+  ArtifactEvolutionState? _evolutionFilter;
+  bool _actionableOnlyFilter = false;
+  bool _removedBannerExpanded = true;
+  BuildPromptGenerationMode _promptMode =
+      BuildPromptGenerationMode.autoByBaseline;
 
   static String _selectionKey(BuildDesignItem item) =>
       '${item.kind.name}:${item.id}';
@@ -139,7 +155,17 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
       _searchController.text.trim().isNotEmpty ||
       _kindFilter != null ||
       _stageFilter != null ||
-      _statusFilter != null;
+      _statusFilter != null ||
+      _evolutionFilter != null ||
+      _actionableOnlyFilter;
+
+  bool _hasEffectiveFilters(BuildDomainDesignItems projection) =>
+      _searchController.text.trim().isNotEmpty ||
+      _kindFilter != null ||
+      _stageFilter != null ||
+      _statusFilter != null ||
+      (projection.hasBaseline &&
+          (_evolutionFilter != null || _actionableOnlyFilter));
 
   @override
   void initState() {
@@ -298,7 +324,34 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
       _kindFilter = null;
       _stageFilter = null;
       _statusFilter = null;
+      _evolutionFilter = null;
+      _actionableOnlyFilter = false;
     });
+  }
+
+  Future<void> _applyItemVersionBump(
+    FunctionalDomain domain,
+    BuildDesignItem item,
+    String newVersion,
+  ) async {
+    final evolution = item.evolution;
+    if (evolution == null) return;
+    try {
+      await widget.controller.applyDesignArtifactVersionBump(
+        domainId: domain.id,
+        kind: evolution.kind,
+        artifactId: item.id,
+        newVersion: newVersion,
+        valueObjectScope: item.valueObjectScope,
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(error is FormatException ? error.message : '$error'),
+        ),
+      );
+    }
   }
 
   Future<void> _cycleItemStage(
@@ -308,6 +361,13 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
   ) async {
     try {
       switch (item.kind) {
+        case BuildDesignItemKind.valueObject:
+          await widget.controller.updateValueObjectStageStatus(
+            voId: item.id,
+            scope: item.valueObjectScope ?? ValueObjectScope.domain,
+            domainId: domain.id,
+            stage: stage,
+          );
         case BuildDesignItemKind.model:
           final contracts = domain.contracts;
           final node = contracts?.entryById(item.id);
@@ -412,6 +472,12 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
               ),
           ],
         ),
+        if (selected != null)
+          DomainIterationSnapshotBar(
+            controller: widget.controller,
+            domain: selected,
+            compact: true,
+          ),
         Expanded(
           child: selected == null
               ? _buildNoDomainState(context)
@@ -476,7 +542,10 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
 
   Widget _buildDomainPages(BuildContext context, FunctionalDomain domain) {
     final catalog = widget.controller.domainCatalog;
-    final projection = BuildDomainDesignItems.fromDomain(domain);
+    final projection = BuildDomainDesignItems.fromDomain(
+      domain,
+      catalog: catalog,
+    );
     final selectedItems = _selectedItemsOf(projection);
     final promptGroups = _level >= 1
         ? BuildHexaPromptGenerator.generateGroups(
@@ -485,6 +554,7 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
             catalog: catalog,
             glossary: widget.controller.companyGlossary,
             modelPreferences: widget.controller.modelPreferences,
+            mode: _promptMode,
           )
         : const <BuildItemPromptGroup>[];
 
@@ -512,6 +582,10 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
           onCopiedPrompt: widget.onCopiedPrompt,
           markdownViewerSurfaceBuilder: widget.markdownViewerSurfaceBuilder,
           markdownBrowserLauncher: widget.markdownBrowserLauncher,
+          promptMode: _promptMode,
+          hasActiveBaseline: projection.hasBaseline,
+          activeBaselineLabel: projection.baselineSnapshot?.label,
+          onPromptModeChanged: (mode) => setState(() => _promptMode = mode),
         ),
       ],
     );
@@ -552,6 +626,12 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final query = _searchController.text;
+    final hasEffectiveFilters = _hasEffectiveFilters(projection);
+    final effectiveEvolutionFilter = projection.hasBaseline
+        ? _evolutionFilter
+        : null;
+    final effectiveActionableOnly =
+        projection.hasBaseline && _actionableOnlyFilter;
 
     final filteredByKind = <BuildDesignItemKind, List<BuildDesignItem>>{
       for (final kind in BuildDesignItemKind.values)
@@ -561,6 +641,8 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
           kindFilter: _kindFilter,
           stageFilter: _stageFilter,
           statusFilter: _statusFilter,
+          evolutionFilter: effectiveEvolutionFilter,
+          actionableOnly: effectiveActionableOnly,
         ),
     };
     final visibleFilteredItems = <BuildDesignItem>[
@@ -575,7 +657,7 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
     final visibleKinds = <BuildDesignItemKind>[
       for (final kind in BuildDesignItemKind.values)
         if (_kindFilter == null || _kindFilter == kind)
-          if (!_hasActiveFilters || filteredByKind[kind]!.isNotEmpty) kind,
+          if (!hasEffectiveFilters || filteredByKind[kind]!.isNotEmpty) kind,
     ];
 
     return Column(
@@ -590,10 +672,17 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
             visibleFilteredItems: visibleFilteredItems,
             selectedItems: selectedItems,
           ),
+        if (projection.removedArtifacts.isNotEmpty)
+          _buildRemovedArtifactsBanner(
+            context,
+            theme: theme,
+            colors: colors,
+            projection: projection,
+          ),
         Expanded(
           child: projection.isEmpty
               ? _buildEmptyDomainItemsState(theme, colors, domain)
-              : (_hasActiveFilters && totalFiltered == 0)
+              : (hasEffectiveFilters && totalFiltered == 0)
               ? _buildFilteredEmptyState(theme, colors)
               : Align(
                   alignment: Alignment.topLeft,
@@ -612,6 +701,7 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
                             theme: theme,
                             colors: colors,
                             domain: domain,
+                            projection: projection,
                             kind: visibleKinds[i],
                             items: filteredByKind[visibleKinds[i]]!,
                           ),
@@ -738,6 +828,35 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
                     selectedStatus: _statusFilter,
                     onChanged: (value) => setState(() => _statusFilter = value),
                   ),
+                  if (projection.hasBaseline) ...[
+                    FilterChip(
+                      key: const ValueKey('build-filter-evolved-actionable'),
+                      label: Text('Évolués (${projection.actionableCount})'),
+                      selected: _actionableOnlyFilter,
+                      visualDensity: VisualDensity.compact,
+                      onSelected: (selected) => setState(() {
+                        _actionableOnlyFilter = selected;
+                        if (selected) _evolutionFilter = null;
+                      }),
+                    ),
+                    for (final (state, label)
+                        in const <(ArtifactEvolutionState, String)>[
+                          (ArtifactEvolutionState.added, 'Nouveaux'),
+                          (ArtifactEvolutionState.modified, 'Δ Modifiés'),
+                          (ArtifactEvolutionState.impacted, '⇄ Impactés'),
+                          (ArtifactEvolutionState.unchanged, 'Conformes'),
+                        ])
+                      ChoiceChip(
+                        key: ValueKey('build-filter-evolution-${state.name}'),
+                        label: Text(label),
+                        selected: _evolutionFilter == state,
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (selected) => setState(() {
+                          _evolutionFilter = selected ? state : null;
+                          if (selected) _actionableOnlyFilter = false;
+                        }),
+                      ),
+                  ],
                   if (_hasActiveFilters)
                     TextButton.icon(
                       key: const ValueKey('build-filter-reset-btn'),
@@ -759,6 +878,22 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
                   onManageStacks: () =>
                       unawaited(_openTechStacksDialog(context, domain)),
                 ),
+                if (projection.actionableCount > 0)
+                  TextButton.icon(
+                    key: const ValueKey('build-select-all-evolved'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _toggleItemsBatch(
+                      domain.id,
+                      projection.allItems.where((item) => item.isEvolved),
+                      select: true,
+                    ),
+                    icon: const Icon(Icons.bolt_rounded, size: 16),
+                    label: Text(
+                      'Sélectionner les évolués (${projection.actionableCount})',
+                    ),
+                  ),
                 TextButton.icon(
                   key: const ValueKey('build-select-all-btn'),
                   style: TextButton.styleFrom(
@@ -881,11 +1016,141 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
     );
   }
 
+  Widget _buildRemovedArtifactsBanner(
+    BuildContext context, {
+    required ThemeData theme,
+    required ColorScheme colors,
+    required BuildDomainDesignItems projection,
+  }) {
+    final isDark = colors.brightness == Brightness.dark;
+    final warningFg = isDark ? Colors.red.shade200 : Colors.red.shade900;
+    final warningBg = Colors.red.withValues(alpha: isDark ? 0.16 : 0.08);
+    final warningBorder = Colors.red.withValues(alpha: isDark ? 0.45 : 0.30);
+    final baselineLabel = projection.baselineSnapshot?.label;
+
+    return Container(
+      key: const ValueKey('build-removed-artifacts-banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: warningBg,
+        border: Border(bottom: BorderSide(color: warningBorder)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: [
+          InkWell(
+            key: const ValueKey('build-removed-artifacts-toggle'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(
+              () => _removedBannerExpanded = !_removedBannerExpanded,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                spacing: 8,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 18,
+                    color: warningFg,
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Éléments supprimés depuis « ${baselineLabel ?? ''} » (${projection.removedArtifacts.length}) — à décommissionner',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: warningFg,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _removedBannerExpanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 20,
+                    color: warningFg,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_removedBannerExpanded) ...[
+            Text(
+              'Les prompts Delta de niveau domaine (Outbound / Inbound / Check Integration) incluent automatiquement les consignes de décommissionnement pour ces éléments.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final removed in projection.removedArtifacts)
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: ValueKey(
+                        'build-removed-artifact-${removed.kind.name}-${removed.id}',
+                      ),
+                      borderRadius: BorderRadius.circular(7),
+                      onTap: () => unawaited(
+                        ArtifactEvolutionDiffDialog.show(
+                          context,
+                          report: removed,
+                          baselineLabel: baselineLabel,
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.surface.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(color: warningBorder),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: 5,
+                          children: [
+                            Icon(
+                              Icons.delete_sweep_outlined,
+                              size: 14,
+                              color: warningFg,
+                            ),
+                            Flexible(
+                              child: Text(
+                                '${removed.kind.shortLabel} · ${removed.name} (v${removed.baselineVersion ?? removed.currentVersion})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: warningFg,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSection(
     BuildContext context, {
     required ThemeData theme,
     required ColorScheme colors,
     required FunctionalDomain domain,
+    required BuildDomainDesignItems projection,
     required BuildDesignItemKind kind,
     required List<BuildDesignItem> items,
   }) {
@@ -992,6 +1257,29 @@ class _BuildDesignItemsViewState extends State<BuildDesignItemsView> {
                                         _cycleItemStage(domain, item, stage),
                                       )
                                     : null,
+                                onOpenDiff: item.evolution == null
+                                    ? null
+                                    : () => unawaited(
+                                        ArtifactEvolutionDiffDialog.show(
+                                          context,
+                                          report: item.evolution!,
+                                          baselineLabel:
+                                              projection.baselineSnapshot?.label,
+                                          onApplyRecommendedVersion: (v) =>
+                                              unawaited(
+                                                _applyItemVersionBump(
+                                                  domain,
+                                                  item,
+                                                  v,
+                                                ),
+                                              ),
+                                        ),
+                                      ),
+                                onApplyVersionBump: item.evolution == null
+                                    ? null
+                                    : (v) => unawaited(
+                                        _applyItemVersionBump(domain, item, v),
+                                      ),
                               ),
                           ],
                         ),
@@ -1024,6 +1312,7 @@ class _KeepAliveState extends State<_KeepAlive>
 }
 
 IconData _iconForKind(BuildDesignItemKind kind) => switch (kind) {
+  BuildDesignItemKind.valueObject => Icons.verified_outlined,
   BuildDesignItemKind.model => Icons.data_object_rounded,
   BuildDesignItemKind.useCase => Icons.check_circle_outline_rounded,
   BuildDesignItemKind.saga => Icons.account_tree_outlined,
@@ -1142,12 +1431,16 @@ class _BuildDesignItemCard extends StatefulWidget {
     required this.selected,
     required this.onTap,
     this.onStageTap,
+    this.onOpenDiff,
+    this.onApplyVersionBump,
   });
 
   final BuildDesignItem item;
   final bool selected;
   final VoidCallback onTap;
   final ValueChanged<ContractStage>? onStageTap;
+  final VoidCallback? onOpenDiff;
+  final ValueChanged<String>? onApplyVersionBump;
 
   @override
   State<_BuildDesignItemCard> createState() => _BuildDesignItemCardState();
@@ -1308,7 +1601,27 @@ class _BuildDesignItemCardState extends State<_BuildDesignItemCard> {
                                       background: primaryBg,
                                       foreground: primaryFg,
                                     ),
-                                  if (item.secondaryBadge.isNotEmpty)
+                                  if (item.kind ==
+                                          BuildDesignItemKind.valueObject &&
+                                      item.valueObjectScope ==
+                                          ValueObjectScope.shared) ...[
+                                    _CompactBadge(
+                                      key: ValueKey(
+                                        'build-item-shared-vo-${item.id}',
+                                      ),
+                                      label: 'Shared Kernel',
+                                      background: colors.tertiaryContainer
+                                          .withValues(alpha: 0.75),
+                                      foreground: colors.onTertiaryContainer,
+                                    ),
+                                    if (item.version.isNotEmpty)
+                                      _CompactBadge(
+                                        label: 'v${item.version}',
+                                        background:
+                                            colors.surfaceContainerHighest,
+                                        foreground: colors.onSurfaceVariant,
+                                      ),
+                                  ] else if (item.secondaryBadge.isNotEmpty)
                                     _CompactBadge(
                                       label: item.secondaryBadge,
                                       background:
@@ -1328,6 +1641,43 @@ class _BuildDesignItemCardState extends State<_BuildDesignItemCard> {
                             ),
                           ],
                         ),
+                        if (_hasVisibleEvolutionWidgets(item)) ...[
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (_hasVisibleDriftBadge(item))
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: EvolutionDriftBadge(
+                                    key: ValueKey(
+                                      'build-item-drift-${item.kind.name}-${item.id}',
+                                    ),
+                                    report: item.evolution,
+                                    compact: true,
+                                    onTap: widget.onOpenDiff,
+                                  ),
+                                ),
+                              if (widget.onApplyVersionBump != null &&
+                                  (item.evolution?.needsVersionBump ?? false))
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: SemVerBumpActionChip(
+                                    key: ValueKey(
+                                      'build-item-bump-${item.kind.name}-${item.id}',
+                                    ),
+                                    report: item.evolution,
+                                    compact: true,
+                                    onApplyVersion: widget.onApplyVersionBump!,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1340,8 +1690,23 @@ class _BuildDesignItemCardState extends State<_BuildDesignItemCard> {
     );
   }
 
+  static bool _hasVisibleDriftBadge(BuildDesignItem item) {
+    final state = item.evolution?.state;
+    return state != null &&
+        state != ArtifactEvolutionState.noBaseline &&
+        state != ArtifactEvolutionState.unchanged;
+  }
+
+  bool _hasVisibleEvolutionWidgets(BuildDesignItem item) =>
+      _hasVisibleDriftBadge(item) ||
+      (widget.onApplyVersionBump != null &&
+          (item.evolution?.needsVersionBump ?? false));
+
   static (Color, Color) _badgeColors(BuildDesignItem item, ColorScheme colors) {
     switch (item.kind) {
+      case BuildDesignItemKind.valueObject:
+        final base = Colors.cyan.shade700;
+        return (base.withValues(alpha: 0.15), base);
       case BuildDesignItemKind.model:
         final base = contractTypeColor(item.primaryBadge);
         return (base.withValues(alpha: 0.15), base);
@@ -1358,6 +1723,7 @@ class _CompactBadge extends StatelessWidget {
     required this.label,
     required this.background,
     required this.foreground,
+    super.key,
   });
 
   final String label;

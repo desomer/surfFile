@@ -12,6 +12,7 @@ import '../models/domain_catalog.dart';
 import '../models/event_storming_spec.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_forge_stage.dart';
+import '../models/spec_initiative.dart';
 import '../models/spec_stage_chat.dart';
 import '../services/event_storming_operations.dart';
 import 'spec_stage_agent.dart';
@@ -70,6 +71,127 @@ abstract final class SpecPromptBuilder {
     modelPreferencesOverride: modelPreferencesOverride,
   );
 
+  /// Plafond d'objets métiers inter-features injectés dans le catalogue compact du prompt.
+  static const int maxSiblingCatalogObjects = 30;
+
+  /// Plafond d'attributs résumés par objet métier dans le catalogue inter-features du prompt.
+  static const int maxSiblingCatalogAttributesPerObject = 20;
+
+  /// Étapes du wizard Spec dans lesquelles le catalogue d'objets des features sœurs est injecté à chaque tour.
+  static const Set<SpecForgeStage> _siblingObjectsTurnStages = <SpecForgeStage>{
+    SpecForgeStage.eventStorming,
+    SpecForgeStage.businessObjects,
+    SpecForgeStage.exampleMapping,
+    SpecForgeStage.businessRules,
+    SpecForgeStage.reviewExport,
+  };
+
+  /// Construit le catalogue compact en lecture seule des objets métiers définis
+  /// dans les features sœurs non archivées du projet, accompagné des règles
+  /// d'architecture `additive_warn_on_validated` (chaîne vide si sans objet).
+  static String buildSiblingFeaturesObjectsDirective(SpecForgeProject project) {
+    if (project.allFeatures.length <= 1) return '';
+    final siblingFeatures = <SpecFeatureSpec>[
+      for (final f in project.allFeatures)
+        if (f.id != project.activeFeatureId &&
+            f.effectiveStatus != SpecPortfolioStatus.archived &&
+            f.businessObjects.isNotEmpty)
+          f,
+    ];
+    if (siblingFeatures.isEmpty) return '';
+
+    final groups = <_SiblingObjectPromptGroup>[];
+    for (final feature in siblingFeatures) {
+      for (final obj in feature.businessObjects) {
+        final objIdLower = obj.id.trim().toLowerCase();
+        final techLower = obj.technicalName.trim().toLowerCase();
+        _SiblingObjectPromptGroup? existing;
+        for (final group in groups) {
+          if (group.matchesIdentity(objIdLower, techLower)) {
+            existing = group;
+            break;
+          }
+        }
+        if (existing == null) {
+          groups.add(_SiblingObjectPromptGroup.initial(feature, obj));
+        } else {
+          existing.addDefinition(feature, obj);
+        }
+      }
+    }
+    if (groups.isEmpty) return '';
+
+    final activeObjects = project.activeFeature.businessObjects;
+    final displayedGroups = groups.length <= maxSiblingCatalogObjects
+        ? groups
+        : groups.sublist(0, maxSiblingCatalogObjects);
+
+    final buf = StringBuffer()
+      ..writeln(
+        'CATALOGUE DES OBJETS MÉTIERS DES AUTRES FEATURES DU PROJET (LECTURE SEULE — ${groups.length} objet(s)) :',
+      );
+
+    for (final group in displayedGroups) {
+      final canonical = group.canonicalObject;
+      final isPresentInActive = activeObjects.any(
+        (o) => group.matchesIdentity(
+          o.id.trim().toLowerCase(),
+          o.technicalName.trim().toLowerCase(),
+        ),
+      );
+      final presenceLabel = isPresentInActive
+          ? 'déjà présent dans la feature active'
+          : 'disponible dans les autres features';
+      final attrs = group.mergedAttributes;
+      final shownAttrs = attrs.length <= maxSiblingCatalogAttributesPerObject
+          ? attrs
+          : attrs.sublist(0, maxSiblingCatalogAttributesPerObject);
+      final attrTokens = <String>[
+        for (final a in shownAttrs) _formatCompactSiblingAttribute(a),
+      ];
+      final extraAttrCount = attrs.length - shownAttrs.length;
+      final attrSummary = attrTokens.isEmpty
+          ? 'aucun attribut'
+          : (extraAttrCount > 0
+                ? '${attrTokens.join(', ')}, … (+$extraAttrCount autre(s))'
+                : attrTokens.join(', '));
+
+      buf.writeln(
+        '- `${canonical.technicalName}` (id: `${canonical.id}`, nom: « ${canonical.name} ») '
+        '— défini dans : ${group.featureBadges.join(', ')} '
+        '— statut local : $presenceLabel '
+        '— attributs : [$attrSummary]',
+      );
+    }
+
+    final omittedObjectsCount = groups.length - displayedGroups.length;
+    if (omittedObjectsCount > 0) {
+      buf.writeln(
+        '- … (+$omittedObjectsCount autre(s) objet(s) disponible(s) via l’outil `list_sibling_features_business_objects`).',
+      );
+    }
+
+    buf
+      ..writeln()
+      ..writeln(
+        'POLITIQUE DE PARTAGE INTER-FEATURES — additive_warn_on_validated :',
+      )
+      ..writeln(
+        '1. **Réutilisation canonique obligatoire** : si la feature active (${project.activeFeature.displayLabel}) doit manipuler ou référencer une entité déjà présente dans une autre feature du projet, réutilise **exactement son `id` et son `technicalName`** (et ses noms d\'attributs existants) au lieu de créer un doublon ou un synonyme. Utilise l\'outil `list_sibling_features_business_objects` pour inspecter sa structure complète avant de la reprendre dans `businessObjects`.',
+      )
+      ..write(
+        '2. **Gouvernance `additive_warn_on_validated`** : privilégie les extensions additives compatibles (nouveaux attributs optionnels, nouvelles valeurs d\'énumération, nouveaux états/transitions). Si un objet appartient à une feature au statut **Validée**, évite de supprimer, renommer ou retyper de manière incompatible ses attributs existants (ou signale explicitement l\'impact à l\'utilisateur dans `message` / `askUser`).',
+      );
+
+    return buf.toString();
+  }
+
+  static String _formatCompactSiblingAttribute(BusinessAttribute attr) {
+    final arraySuffix = attr.isArray ? '[]' : '';
+    final requiredSuffix = attr.required ? '!' : '';
+    return '${attr.name}: ${attr.type.dslKeyword}$arraySuffix$requiredSuffix';
+  }
+
   /// Construit le prompt automatique d'amorce lorsqu'on entre dans une étape sans historique.
   static String buildStageKickoffPrompt(
     SpecForgeProject project,
@@ -83,6 +205,14 @@ abstract final class SpecPromptBuilder {
     final hasExampleMapping = project.isStageEnabled(
       SpecForgeStage.exampleMapping,
     );
+    final siblingDirective =
+        (stage == SpecForgeStage.eventStorming ||
+            stage == SpecForgeStage.businessObjects)
+        ? buildSiblingFeaturesObjectsDirective(project)
+        : '';
+    final siblingSuffix = siblingDirective.isEmpty
+        ? ''
+        : '\n\n$siblingDirective';
     return switch (stage) {
       SpecForgeStage.lexicon =>
         project.hasSingleDefaultFeature
@@ -102,11 +232,11 @@ abstract final class SpecPromptBuilder {
       SpecForgeStage.eventStorming =>
         'Nous passons à l’étape $step (Event Storming — DSL v1.0). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
             'modélise un document par Bounded Context (`dsl_version: "1.0"`, `meta`, `catalog` avec `ACT-*`/`AGG-*`/`EXT-*`, `flow[]` chronologique) : '
-            'commandes à l’infinitif (bleu), événements au passé composé (orange) ou `outcomes` exclusifs, politiques « Quand…, alors… » (violet), read models (vert), systèmes externes (rose pâle), synchronisations `all_of` / `any_of`, `backlog` et `hotspots` (rose vif).',
+            'commandes à l’infinitif (bleu), événements au passé composé (orange) ou `outcomes` exclusifs, politiques « Quand…, alors… » (violet), read models (vert), systèmes externes (rose pâle), synchronisations `all_of` / `any_of`, `backlog` et `hotspots` (rose vif).$siblingSuffix',
       SpecForgeStage.businessObjects =>
         'Nous passons à l’étape $step (Objets métiers). En t’appuyant sur le lexique, le cadrage, le cahier des charges${hasEventStorming ? ' et les agrégats/événements de l’Event Storming' : ''}, '
             'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
-            '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
+            '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}$siblingSuffix',
       SpecForgeStage.exampleMapping =>
         'Nous passons à l’étape $step (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique${hasEventStorming ? ', l’Event Storming' : ''} et les cas d’usage du cahier des charges, '
             'explore avec l’utilisateur les règles (cartes bleues), exemples concrets et cas aux limites (cartes vertes) et zones d’ombre (cartes rouges) '
@@ -242,6 +372,15 @@ abstract final class SpecPromptBuilder {
         buffer
           ..writeln()
           ..writeln(systemsBlock);
+      }
+    }
+
+    if (_siblingObjectsTurnStages.contains(stage)) {
+      final siblingObjectsBlock = buildSiblingFeaturesObjectsDirective(project);
+      if (siblingObjectsBlock.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln(siblingObjectsBlock);
       }
     }
 
@@ -610,5 +749,76 @@ abstract final class SpecPromptBuilder {
         ? messages
         : messages.sublist(messages.length - maxEntries);
     return slice.map((m) => m.toConversationEntry()).join('\n');
+  }
+}
+
+class _SiblingObjectPromptGroup {
+  _SiblingObjectPromptGroup._(this.canonicalObject, this._canonicalIsValidated);
+
+  factory _SiblingObjectPromptGroup.initial(
+    SpecFeatureSpec feature,
+    BusinessObjectSpec object,
+  ) {
+    final isVal = feature.effectiveStatus == SpecPortfolioStatus.validated;
+    final group = _SiblingObjectPromptGroup._(object, isVal);
+    group._register(feature, object);
+    return group;
+  }
+
+  BusinessObjectSpec canonicalObject;
+  bool _canonicalIsValidated;
+
+  final Set<String> _objectIdsLower = <String>{};
+  final Set<String> _technicalNamesLower = <String>{};
+  final Set<String> _seenFeatureIds = <String>{};
+  final List<String> featureBadges = <String>[];
+  final List<(SpecFeatureSpec, BusinessObjectSpec)> _definitions =
+      <(SpecFeatureSpec, BusinessObjectSpec)>[];
+
+  bool matchesIdentity(String objectIdLower, String technicalNameLower) =>
+      (objectIdLower.isNotEmpty && _objectIdsLower.contains(objectIdLower)) ||
+      (technicalNameLower.isNotEmpty &&
+          _technicalNamesLower.contains(technicalNameLower));
+
+  void addDefinition(SpecFeatureSpec feature, BusinessObjectSpec object) {
+    final isVal = feature.effectiveStatus == SpecPortfolioStatus.validated;
+    if (isVal && !_canonicalIsValidated) {
+      canonicalObject = object;
+      _canonicalIsValidated = true;
+    }
+    _register(feature, object);
+  }
+
+  void _register(SpecFeatureSpec feature, BusinessObjectSpec object) {
+    final idLower = object.id.trim().toLowerCase();
+    final techLower = object.technicalName.trim().toLowerCase();
+    if (idLower.isNotEmpty) _objectIdsLower.add(idLower);
+    if (techLower.isNotEmpty) _technicalNamesLower.add(techLower);
+    if (_seenFeatureIds.add(feature.id)) {
+      final codeOrName = feature.code.trim().isNotEmpty
+          ? feature.code.trim()
+          : feature.name.trim();
+      featureBadges.add('$codeOrName (${feature.effectiveStatus.label})');
+    }
+    _definitions.add((feature, object));
+  }
+
+  List<BusinessAttribute> get mergedAttributes {
+    final orderedDefs = <(SpecFeatureSpec, BusinessObjectSpec)>[
+      for (final entry in _definitions)
+        if (entry.$1.effectiveStatus == SpecPortfolioStatus.validated) entry,
+      for (final entry in _definitions)
+        if (entry.$1.effectiveStatus != SpecPortfolioStatus.validated) entry,
+    ];
+    final seenNamesLower = <String>{};
+    final merged = <BusinessAttribute>[];
+    for (final (_, obj) in orderedDefs) {
+      for (final attr in obj.attributes) {
+        if (seenNamesLower.add(attr.name.toLowerCase())) {
+          merged.add(attr);
+        }
+      }
+    }
+    return merged;
   }
 }

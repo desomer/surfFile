@@ -2,13 +2,17 @@
 /// configurations du workspace ([DomainManagementView]).
 library;
 
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../models/domain_catalog.dart';
+import '../../models/domain_iteration_snapshot.dart';
 import '../../services/domain_env_exporter.dart';
 import '../../services/domain_secret_cipher.dart';
+import '../../services/exporters/domain_design_spec_exporter.dart';
 import '../../services/spec_forge_controller.dart';
 
 /// Vue de gestion des domaines fonctionnels depuis le menu Design.
@@ -354,7 +358,18 @@ class _DomainManagementViewState extends State<DomainManagementView> {
                 ),
                 Wrap(
                   spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    OutlinedButton.icon(
+                      key: const ValueKey('domain-export-design-spec-btn'),
+                      onPressed: () => _showDesignSpecExportDialog(
+                        context,
+                        catalog,
+                        domain,
+                      ),
+                      icon: const Icon(Icons.file_download_outlined, size: 17),
+                      label: const Text('Exporter Spec Design'),
+                    ),
                     FilterChip(
                       key: const ValueKey('domain-management-active-chip'),
                       label: Text(domain.isActive ? 'Actif' : 'Inactif'),
@@ -1750,6 +1765,164 @@ class _DomainManagementViewState extends State<DomainManagementView> {
           details: entry.entryType == ConfigurationEntryType.secret
               ? 'Secret supprimé (valeur masquée).'
               : 'Variable de configuration supprimée.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDesignSpecExportDialog(
+    BuildContext context,
+    DomainCatalog catalog,
+    FunctionalDomain domain,
+  ) async {
+    final sep = Platform.pathSeparator;
+    String defaultExportPathFor(DomainIterationSnapshot? snapshot) =>
+        '${widget.controller.workspaceDirectory.path}${sep}exports$sep'
+        '${DomainDesignSpecExporter.defaultFileName(domain, snapshot: snapshot)}';
+
+    final snapshots = [...domain.iterationSnapshots]
+      ..sort((a, b) => b.iterationNumber.compareTo(a.iterationNumber));
+    String? selectedSnapshotId;
+    var lastAutoPath = defaultExportPathFor(null);
+    final filePathController = TextEditingController(text: lastAutoPath);
+
+    DomainIterationSnapshot? resolveSnapshot(String? id) =>
+        id == null ? null : snapshots.where((s) => s.id == id).firstOrNull;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _DialogDisposalScope(
+        disposables: [filePathController],
+        child: StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            key: const ValueKey('domain-export-design-spec-dialog'),
+            title: Text('Exporter Spec Design · ${domain.domainCode}'),
+            content: SizedBox(
+              width: 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Génère le bundle JSON portable du domaine '
+                    '(les valeurs chiffrées des secrets sont automatiquement exclues).',
+                    style: Theme.of(dialogContext).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    key: const ValueKey('domain-export-source-dropdown'),
+                    isExpanded: true,
+                    initialValue: selectedSnapshotId,
+                    decoration: const InputDecoration(
+                      labelText: 'Source à exporter',
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          'État courant du domaine',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      for (final snap in snapshots)
+                        DropdownMenuItem<String?>(
+                          value: snap.id,
+                          child: Text(
+                            'Itération ${snap.iterationNumber} — ${snap.label}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (nextId) {
+                      final nextAutoPath = defaultExportPathFor(
+                        resolveSnapshot(nextId),
+                      );
+                      final currentText = filePathController.text.trim();
+                      if (currentText.isEmpty || currentText == lastAutoPath) {
+                        filePathController.text = nextAutoPath;
+                      }
+                      lastAutoPath = nextAutoPath;
+                      setDialogState(() => selectedSnapshotId = nextId);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    key: const ValueKey('domain-export-file-path-field'),
+                    controller: filePathController,
+                    decoration: const InputDecoration(
+                      labelText: 'Fichier cible',
+                      helperText:
+                          'Chemin d’enregistrement (<workspace>/exports/<fichier>)',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Annuler'),
+              ),
+              OutlinedButton.icon(
+                key: const ValueKey('domain-export-copy-json-btn'),
+                onPressed: () async {
+                  final jsonText = DomainDesignSpecExporter.exportToPrettyJson(
+                    domain: domain,
+                    catalog: catalog,
+                    snapshot: resolveSnapshot(selectedSnapshotId),
+                    modelPreferences: widget.controller.modelPreferences,
+                  );
+                  await Clipboard.setData(ClipboardData(text: jsonText));
+                  if (!dialogContext.mounted) return;
+                  Navigator.pop(dialogContext);
+                  _notice(
+                    'Spécification Design copiée dans le presse-papiers.',
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 17),
+                label: const Text('Copier le JSON'),
+              ),
+              FilledButton.icon(
+                key: const ValueKey('domain-export-save-file-btn'),
+                onPressed: () async {
+                  final targetPath = filePathController.text.trim();
+                  if (targetPath.isEmpty) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('Veuillez indiquer un chemin de fichier.'),
+                      ),
+                    );
+                    return;
+                  }
+                  try {
+                    final saved = await DomainDesignSpecExporter.exportToFile(
+                      targetFile: File(targetPath),
+                      domain: domain,
+                      catalog: catalog,
+                      snapshot: resolveSnapshot(selectedSnapshotId),
+                      modelPreferences: widget.controller.modelPreferences,
+                    );
+                    if (!dialogContext.mounted) return;
+                    Navigator.pop(dialogContext);
+                    _notice(
+                      'Spécification Design enregistrée dans ${saved.path}.',
+                    );
+                  } on Exception catch (error) {
+                    if (!dialogContext.mounted) return;
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Impossible d’enregistrer le fichier : $error',
+                        ),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.save_alt_rounded, size: 17),
+                label: const Text('Enregistrer'),
+              ),
+            ],
+          ),
         ),
       ),
     );

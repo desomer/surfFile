@@ -8,20 +8,28 @@ import 'package:super_schema_dsl/super_schema_dsl.dart';
 
 import '../models/business_object_model_preferences.dart';
 import '../models/business_object_spec.dart';
+import '../models/business_rule_spec.dart';
 import '../models/domain_catalog.dart';
 import '../models/domain_contracts.dart';
 import '../models/spec_forge_project.dart';
+import '../models/spec_origin_baseline.dart';
+import 'spec_design_merge_engine.dart';
 
-/// Stratégie de résolution lorsqu'une entrée de même nom technique existe déjà
-/// dans le domaine cible.
+/// Stratégie de résolution lorsqu'une entrée de même nom technique (ou même
+/// origine Spec) existe déjà dans le domaine cible.
 enum PromotionConflictResolution {
-  /// Met à jour les attributs, la description et le type DSL de l'entrée
-  /// existante tout en conservant son identifiant et son historique de chat IA.
-  updateExisting('Mettre à jour'),
+  /// Fusionne en 3-voies les évolutions de la Spec tout en conservant les
+  /// Value Objects, attributs techniques et enrichissements propres au Design.
+  smartMerge('Fusionner (conserver Design)'),
+
+  /// Remplace intégralement le modèle par la projection de la Spec tout en
+  /// conservant l'identifiant d'entrée et l'historique de chat IA.
+  updateExisting('Écraser depuis la Spec'),
 
   /// Conserve l'entrée existante intacte sans l'écraser.
   skipExisting('Ignorer');
 
+  /// Construit une stratégie de résolution de conflit.
   const PromotionConflictResolution(this.label);
 
   /// Libellé lisible affiché dans l'interface.
@@ -36,7 +44,8 @@ class ObjectPromotionChoice {
     required this.objectId,
     required this.domainId,
     required this.contractType,
-    this.conflictResolution = PromotionConflictResolution.updateExisting,
+    this.conflictResolution = PromotionConflictResolution.smartMerge,
+    this.autoBumpVersion = false,
   });
 
   /// Identifiant de l'objet métier source dans [SpecForgeProject.businessObjects].
@@ -51,6 +60,10 @@ class ObjectPromotionChoice {
   /// Stratégie appliquée si l'objet existe déjà dans le domaine cible.
   final PromotionConflictResolution conflictResolution;
 
+  /// Indique si la version sémantique de l'entrée existante doit être incrémentée
+  /// automatiquement selon l'impact structurel détecté.
+  final bool autoBumpVersion;
+
   /// Vrai si ce choix demande effectivement une promotion vers un domaine.
   bool get isSelected => domainId != null && domainId!.trim().isNotEmpty;
 
@@ -61,11 +74,13 @@ class ObjectPromotionChoice {
     bool clearDomainId = false,
     String? contractType,
     PromotionConflictResolution? conflictResolution,
+    bool? autoBumpVersion,
   }) => ObjectPromotionChoice(
     objectId: objectId ?? this.objectId,
     domainId: clearDomainId ? null : (domainId ?? this.domainId),
     contractType: contractType ?? this.contractType,
     conflictResolution: conflictResolution ?? this.conflictResolution,
+    autoBumpVersion: autoBumpVersion ?? this.autoBumpVersion,
   );
 
   @override
@@ -75,11 +90,121 @@ class ObjectPromotionChoice {
           other.objectId == objectId &&
           other.domainId == domainId &&
           other.contractType == contractType &&
-          other.conflictResolution == conflictResolution;
+          other.conflictResolution == conflictResolution &&
+          other.autoBumpVersion == autoBumpVersion;
 
   @override
-  int get hashCode =>
-      Object.hash(objectId, domainId, contractType, conflictResolution);
+  int get hashCode => Object.hash(
+    objectId,
+    domainId,
+    contractType,
+    conflictResolution,
+    autoBumpVersion,
+  );
+}
+
+/// Aperçu calculé avant exécution pour un choix de promotion [ObjectPromotionChoice].
+@immutable
+class ObjectPromotionPreview {
+  /// Crée un aperçu immuable de promotion d'objet métier.
+  const ObjectPromotionPreview({
+    required this.choice,
+    required this.specObject,
+    required this.targetDomainId,
+    required this.targetDomainName,
+    required this.isNewEntry,
+    this.existingEntryId,
+    this.existingEntryPath,
+    required this.currentVersion,
+    required this.suggestedVersion,
+    required this.externalRefCount,
+    required this.resolvedSpecObject,
+    this.mergeResult,
+  });
+
+  /// Choix de promotion évalué.
+  final ObjectPromotionChoice choice;
+
+  /// Objet métier source côté Spec.
+  final BusinessObjectSpec specObject;
+
+  /// Identifiant du domaine fonctionnel cible.
+  final String targetDomainId;
+
+  /// Nom affiché du domaine fonctionnel cible.
+  final String targetDomainName;
+
+  /// Vrai lorsqu'aucune entrée correspondante n'existe encore dans le domaine cible.
+  final bool isNewEntry;
+
+  /// Identifiant stable de l'entrée existante dans `DomainContracts`, ou `null` si création.
+  final String? existingEntryId;
+
+  /// Chemin DSL de l'entrée existante (ex. `models.Client`), ou `null` si création.
+  final String? existingEntryPath;
+
+  /// Version actuelle de l'entrée (`0.0.1` pour une création).
+  final String currentVersion;
+
+  /// Version sémantique recommandée après application du choix.
+  final String suggestedVersion;
+
+  /// Nombre de références/relations hors domaine converties en identifiant scalaire.
+  final int externalRefCount;
+
+  /// Projection résolue de l'objet Spec pour le domaine cible.
+  final BusinessObjectSpec resolvedSpecObject;
+
+  /// Résultat détaillé de la fusion 3-voies lorsque l'entrée existe déjà, ou `null` si création.
+  final ObjectMergeResult? mergeResult;
+
+  /// Vrai si l'entrée existe déjà et que la stratégie choisie est [PromotionConflictResolution.skipExisting].
+  bool get willSkip =>
+      !isNewEntry &&
+      choice.conflictResolution == PromotionConflictResolution.skipExisting;
+
+  /// Vrai si la promotion modifiera effectivement le catalogue du domaine cible.
+  bool get hasEffectiveChanges {
+    if (isNewEntry) return true;
+    if (willSkip) return false;
+    if (choice.conflictResolution == PromotionConflictResolution.smartMerge) {
+      return mergeResult?.hasChanges ?? false;
+    }
+    return true;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ObjectPromotionPreview &&
+          other.choice == choice &&
+          other.specObject == specObject &&
+          other.targetDomainId == targetDomainId &&
+          other.targetDomainName == targetDomainName &&
+          other.isNewEntry == isNewEntry &&
+          other.existingEntryId == existingEntryId &&
+          other.existingEntryPath == existingEntryPath &&
+          other.currentVersion == currentVersion &&
+          other.suggestedVersion == suggestedVersion &&
+          other.externalRefCount == externalRefCount &&
+          other.resolvedSpecObject == resolvedSpecObject &&
+          other.mergeResult == mergeResult;
+
+  @override
+  int get hashCode => Object.hash(
+    choice,
+    specObject,
+    targetDomainId,
+    targetDomainName,
+    isNewEntry,
+    existingEntryId,
+    existingEntryPath,
+    currentVersion,
+    suggestedVersion,
+    externalRefCount,
+    resolvedSpecObject,
+    mergeResult,
+  );
 }
 
 /// Bilan des promotions réalisées sur un [FunctionalDomain] donné.
@@ -91,10 +216,24 @@ class DomainPromotionSummary {
     required this.domainName,
     List<String> createdEntryIds = const <String>[],
     List<String> updatedEntryIds = const <String>[],
+    List<String> mergedEntryIds = const <String>[],
     List<String> skippedObjectNames = const <String>[],
+    int? preservedValueObjectsCount,
+    Map<String, ObjectMergeResult> mergeResultsByEntryId =
+        const <String, ObjectMergeResult>{},
   }) : createdEntryIds = List<String>.unmodifiable(createdEntryIds),
        updatedEntryIds = List<String>.unmodifiable(updatedEntryIds),
-       skippedObjectNames = List<String>.unmodifiable(skippedObjectNames);
+       mergedEntryIds = List<String>.unmodifiable(mergedEntryIds),
+       skippedObjectNames = List<String>.unmodifiable(skippedObjectNames),
+       mergeResultsByEntryId = Map<String, ObjectMergeResult>.unmodifiable(
+         mergeResultsByEntryId,
+       ),
+       preservedValueObjectsCount =
+           preservedValueObjectsCount ??
+           mergeResultsByEntryId.values.fold<int>(
+             0,
+             (sum, r) => sum + r.preservedValueObjectIds.length,
+           );
 
   /// Identifiant du domaine cible.
   final String domainId;
@@ -105,15 +244,26 @@ class DomainPromotionSummary {
   /// Identifiants des nouvelles entrées créées dans [DomainContracts].
   final List<String> createdEntryIds;
 
-  /// Identifiants des entrées existantes mises à jour dans [DomainContracts].
+  /// Identifiants des entrées existantes mises à jour (fusion 3-voies ou écrasement) dans [DomainContracts].
   final List<String> updatedEntryIds;
+
+  /// Sous-ensemble des entrées mises à jour via la fusion 3-voies ([PromotionConflictResolution.smartMerge]).
+  final List<String> mergedEntryIds;
 
   /// Noms des objets ignorés suite à un conflit en mode [PromotionConflictResolution.skipExisting].
   final List<String> skippedObjectNames;
 
+  /// Nombre d'affectations de Value Objects conservées lors des fusions 3-voies sur ce domaine.
+  final int preservedValueObjectsCount;
+
+  /// Résultats détaillés de fusion 3-voies indexés par identifiant d'entrée (`JsonNode.id`).
+  final Map<String, ObjectMergeResult> mergeResultsByEntryId;
+
   /// Vrai si le catalogue du domaine a été modifié (création ou mise à jour).
   bool get hasChanges =>
-      createdEntryIds.isNotEmpty || updatedEntryIds.isNotEmpty;
+      createdEntryIds.isNotEmpty ||
+      updatedEntryIds.isNotEmpty ||
+      mergedEntryIds.isNotEmpty;
 
   @override
   bool operator ==(Object other) =>
@@ -123,7 +273,10 @@ class DomainPromotionSummary {
           other.domainName == domainName &&
           listEquals(other.createdEntryIds, createdEntryIds) &&
           listEquals(other.updatedEntryIds, updatedEntryIds) &&
-          listEquals(other.skippedObjectNames, skippedObjectNames);
+          listEquals(other.mergedEntryIds, mergedEntryIds) &&
+          listEquals(other.skippedObjectNames, skippedObjectNames) &&
+          other.preservedValueObjectsCount == preservedValueObjectsCount &&
+          mapEquals(other.mergeResultsByEntryId, mergeResultsByEntryId);
 
   @override
   int get hashCode => Object.hash(
@@ -131,7 +284,13 @@ class DomainPromotionSummary {
     domainName,
     Object.hashAll(createdEntryIds),
     Object.hashAll(updatedEntryIds),
+    Object.hashAll(mergedEntryIds),
     Object.hashAll(skippedObjectNames),
+    preservedValueObjectsCount,
+    Object.hashAllUnordered([
+      for (final e in mergeResultsByEntryId.entries)
+        Object.hash(e.key, e.value),
+    ]),
   );
 }
 
@@ -159,11 +318,29 @@ class PromotionExecutionResult {
     (sum, item) => sum + item.createdEntryIds.length,
   );
 
-  /// Nombre total d'entrées existantes mises à jour.
+  /// Nombre total d'entrées existantes mises à jour (fusion 3-voies incluse).
   int get updatedCount => domainSummaries.fold<int>(
     0,
     (sum, item) => sum + item.updatedEntryIds.length,
   );
+
+  /// Nombre total d'entrées fusionnées en 3-voies ([PromotionConflictResolution.smartMerge]).
+  int get mergedCount => domainSummaries.fold<int>(
+    0,
+    (sum, item) => sum + item.mergedEntryIds.length,
+  );
+
+  /// Nombre total d'affectations de Value Objects préservées à travers les domaines.
+  int get preservedValueObjectsCount => domainSummaries.fold<int>(
+    0,
+    (sum, item) => sum + item.preservedValueObjectsCount,
+  );
+
+  /// Résultats de fusion 3-voies agrégés par identifiant d'entrée à travers les domaines.
+  Map<String, ObjectMergeResult> get mergeResultsByEntryId =>
+      Map<String, ObjectMergeResult>.unmodifiable(<String, ObjectMergeResult>{
+        for (final s in domainSummaries) ...s.mergeResultsByEntryId,
+      });
 
   /// Nombre total d'objets ignorés suite à un conflit.
   int get skippedCount => domainSummaries.fold<int>(
@@ -212,6 +389,265 @@ abstract final class SpecDesignPromoter {
     return null;
   }
 
+  /// Recherche dans [contracts] l'entrée rattachée à [specObject] via son
+  /// empreinte [SpecOriginBaseline] (lorsque `projectId` correspond), avec repli
+  /// sur la correspondance de `technicalName`.
+  static JsonNode? findEntryForSpecObject(
+    DomainContracts? contracts,
+    BusinessObjectSpec specObject, {
+    String? projectId,
+  }) {
+    if (contracts == null) return null;
+    for (final group in contracts.groups) {
+      for (final entry in group.children) {
+        final origin = contracts.details[entry.id]?.specOrigin;
+        if (origin != null &&
+            origin.specObjectId == specObject.id &&
+            (projectId == null || origin.projectId == projectId)) {
+          return entry;
+        }
+      }
+    }
+    return findExistingEntry(contracts, specObject.technicalName);
+  }
+
+  /// Construit l'empreinte d'origine [SpecOriginBaseline] capturant l'état de
+  /// [specObject] et les empreintes canoniques des règles `RG-xxx` qui le ciblent.
+  static SpecOriginBaseline buildSpecOriginBaseline({
+    required SpecForgeProject project,
+    required BusinessObjectSpec specObject,
+    required DateTime promotedAt,
+  }) {
+    final fingerprints = <String, String>{};
+    for (final rule in project.businessRules) {
+      if (_isRuleLinkedToSpecObject(rule, specObject)) {
+        final key = rule.code.trim().isNotEmpty
+            ? rule.code.trim()
+            : rule.id.trim();
+        if (key.isNotEmpty) {
+          fingerprints[key] = SpecOriginBaseline.computeRuleFingerprint(rule);
+        }
+      }
+    }
+    final activeFeature = project.activeFeature;
+    final contribution = activeFeature.id.trim().isEmpty
+        ? null
+        : SpecFeatureContribution(
+            featureId: activeFeature.id.trim(),
+            featureCode: activeFeature.code.trim(),
+            featureName: activeFeature.name.trim(),
+            promotedAt: promotedAt,
+          );
+    return SpecOriginBaseline(
+      projectId: project.id,
+      projectName: project.name.trim(),
+      featureId: activeFeature.id,
+      featureCode: activeFeature.code,
+      specObjectId: specObject.id,
+      promotedAt: promotedAt,
+      baseSpecObject: specObject,
+      ruleFingerprints: fingerprints,
+      contributingFeatures: <SpecFeatureContribution>[?contribution],
+    );
+  }
+
+  static bool _isRuleLinkedToSpecObject(
+    BusinessRuleSpec rule,
+    BusinessObjectSpec specObject,
+  ) {
+    final objIdLower = specObject.id.trim().toLowerCase();
+    final techLower = specObject.technicalName.trim().toLowerCase();
+    final nameLower = specObject.name.trim().toLowerCase();
+
+    for (final target in rule.targetObjectIds) {
+      final t = target.trim().toLowerCase();
+      if (t.isNotEmpty &&
+          (t == objIdLower || t == techLower || t == nameLower)) {
+        return true;
+      }
+    }
+    for (final attrRef in rule.targetAttributes) {
+      final dot = attrRef.indexOf('.');
+      if (dot > 0) {
+        final prefix = attrRef.substring(0, dot).trim().toLowerCase();
+        if (prefix == techLower ||
+            prefix == nameLower ||
+            prefix == objIdLower) {
+          return true;
+        }
+      }
+    }
+    if (specObject.technicalName.trim().length >= 3) {
+      final wordPattern = RegExp(
+        '\\b${RegExp.escape(specObject.technicalName.trim())}\\b',
+        caseSensitive: false,
+      );
+      final corpus = <String>[
+        rule.title,
+        rule.description,
+        rule.trigger,
+        rule.condition,
+        rule.effect,
+      ].join(' ');
+      if (wordPattern.hasMatch(corpus)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Suggère la prochaine version sémantique `x.y.z` à partir de [currentVersion]
+  /// et du résultat de fusion [mergeResult] :
+  /// - **majeur** : ajout d'attribut obligatoire, suppression d'attribut ou changement
+  ///   incompatible (type, cardinalité tableau, caractère requis/nullable, retrait de valeur d'enum) ;
+  /// - **mineur** : ajout d'attribut optionnel, extension d'énumération/cycle de vie ou
+  ///   assouplissement de contrainte ;
+  /// - **correctif (patch)** : modification documentaire uniquement (descriptions, libellés).
+  static String suggestNextSemVer(
+    String currentVersion,
+    ObjectMergeResult mergeResult,
+  ) {
+    final match = ContractDetails.versionPattern.firstMatch(
+      currentVersion.trim(),
+    );
+    final major = match != null ? int.parse(match.group(1)!) : 0;
+    final minor = match != null ? int.parse(match.group(2)!) : 0;
+    final patch = match != null ? int.parse(match.group(3)!) : 1;
+    final normalizedCurrent = '$major.$minor.$patch';
+
+    if (!mergeResult.hasChanges) {
+      return normalizedCurrent;
+    }
+
+    var bumpLevel = 1; // 1 = patch, 2 = minor, 3 = major
+    void escalate(int level) {
+      if (level > bumpLevel) bumpLevel = level;
+    }
+
+    for (final decision in mergeResult.decisions) {
+      switch (decision.kind) {
+        case AttributeMergeKind.removedFromSpec:
+          escalate(3);
+        case AttributeMergeKind.addedFromSpec:
+          if (decision.afterAttribute?.required == true) {
+            escalate(3);
+          } else {
+            escalate(2);
+          }
+        case AttributeMergeKind.updatedFromSpec:
+        case AttributeMergeKind.preservedDesignValueObject:
+        case AttributeMergeKind.conflictKeptDesign:
+          final before = decision.beforeAttribute;
+          final after = decision.afterAttribute;
+          if (before != null && after != null && before != after) {
+            escalate(_classifyAttributeChangeLevel(before, after));
+          }
+        case AttributeMergeKind.preservedDesignOnly:
+          break;
+      }
+    }
+
+    final beforeObj = mergeResult.currentDesign;
+    final afterObj = mergeResult.mergedObject;
+    if (!_sameLifecycleStructure(beforeObj, afterObj)) {
+      final beforeStateNames = <String>{
+        for (final s in beforeObj.lifecycleStates) s.name.trim().toLowerCase(),
+      };
+      final afterStateNames = <String>{
+        for (final s in afterObj.lifecycleStates) s.name.trim().toLowerCase(),
+      };
+      final removedState = beforeStateNames.any(
+        (s) => !afterStateNames.contains(s),
+      );
+      escalate(removedState ? 3 : 2);
+    }
+
+    return switch (bumpLevel) {
+      3 => '${major + 1}.0.0',
+      2 => '$major.${minor + 1}.0',
+      _ => '$major.$minor.${patch + 1}',
+    };
+  }
+
+  static int _classifyAttributeChangeLevel(
+    BusinessAttribute before,
+    BusinessAttribute after,
+  ) {
+    if (before.name != after.name ||
+        before.type != after.type ||
+        before.isArray != after.isArray ||
+        before.referenceObjectId != after.referenceObjectId ||
+        before.valueObjectId != after.valueObjectId ||
+        (!before.required && after.required) ||
+        (before.nullable && !after.nullable)) {
+      return 3;
+    }
+    if (before.enumValues.any((v) => !after.enumValues.contains(v))) {
+      return 3;
+    }
+    if ((before.required && !after.required) ||
+        (!before.nullable && after.nullable) ||
+        before.unique != after.unique ||
+        before.defaultValue != after.defaultValue ||
+        before.estimatedMaxRows != after.estimatedMaxRows ||
+        after.enumValues.length > before.enumValues.length ||
+        before.schemaConstraints != after.schemaConstraints) {
+      return 2;
+    }
+    return 1;
+  }
+
+  static bool _sameLifecycleStructure(
+    BusinessObjectSpec a,
+    BusinessObjectSpec b,
+  ) {
+    if (a.lifecycleStates.length != b.lifecycleStates.length ||
+        a.lifecycleTransitions.length != b.lifecycleTransitions.length) {
+      return false;
+    }
+    for (var i = 0; i < a.lifecycleStates.length; i++) {
+      final sa = a.lifecycleStates[i];
+      final sb = b.lifecycleStates[i];
+      if (sa.name != sb.name ||
+          sa.isInitial != sb.isInitial ||
+          sa.isTerminal != sb.isTerminal) {
+        return false;
+      }
+    }
+    for (var i = 0; i < a.lifecycleTransitions.length; i++) {
+      final ta = a.lifecycleTransitions[i];
+      final tb = b.lifecycleTransitions[i];
+      if (ta.fromState != tb.fromState ||
+          ta.toState != tb.toState ||
+          ta.trigger != tb.trigger) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Construit la projection résolue d'un [specObject] pour une [entry] d'un
+  /// [domain] fonctionnel (recâblage intra-domaine et conversion des références externes).
+  static BusinessObjectSpec resolveSpecObjectForDomainEntry({
+    required SpecForgeProject project,
+    required DomainCatalog catalog,
+    required FunctionalDomain domain,
+    required JsonNode entry,
+    required BusinessObjectSpec specObject,
+    Map<String, String> plannedDomainBySpecObjectId = const <String, String>{},
+    BusinessObjectModelPreferences? modelPreferences,
+  }) => _buildDomainObject(
+    project: project,
+    catalog: catalog,
+    currentDomain: domain,
+    currentDocument: domain.contracts ?? DomainContracts.empty,
+    entry: entry,
+    specObject: specObject,
+    plannedDomainBySpecObjectId: plannedDomainBySpecObjectId,
+    modelPreferences:
+        modelPreferences ?? project.businessObjectModelPreferences,
+  );
+
   /// Compte le nombre de références ou relations sortantes de [object] dont la cible
   /// ne sera pas disponible dans [targetDomainId] (et sera donc convertie en identifiant scalaire).
   static int countExternalReferencesForObject({
@@ -235,7 +671,11 @@ abstract final class SpecDesignPromoter {
         if (plannedDomainByObjectId[specTarget.id] == targetDomainId) {
           return true;
         }
-        if (findExistingEntry(targetContracts, specTarget.technicalName) !=
+        if (findEntryForSpecObject(
+              targetContracts,
+              specTarget,
+              projectId: project.id,
+            ) !=
             null) {
           return true;
         }
@@ -270,14 +710,195 @@ abstract final class SpecDesignPromoter {
     return count;
   }
 
+  /// Simule sans effet de bord la promotion des [choices] sélectionnés et retourne
+  /// pour chacun un [ObjectPromotionPreview] incluant l'aperçu de fusion 3-voies,
+  /// les Value Objects préservés et la version sémantique suggérée.
+  static List<ObjectPromotionPreview> previewPromotion({
+    required SpecForgeProject project,
+    required DomainCatalog catalog,
+    required List<ObjectPromotionChoice> choices,
+    BusinessObjectModelPreferences? modelPreferences,
+  }) {
+    final effectivePrefs =
+        modelPreferences ?? project.businessObjectModelPreferences;
+
+    final activeChoices = <ObjectPromotionChoice>[];
+    final plannedDomainByObjectId = <String, String?>{};
+    final plannedDomainBySpecObjectId = <String, String>{};
+    for (final choice in choices) {
+      if (!choice.isSelected) continue;
+      if (!DomainContracts.types.contains(choice.contractType)) {
+        throw FormatException(
+          'Type de contrat inconnu : ${choice.contractType}.',
+        );
+      }
+      final domainId = choice.domainId!.trim();
+      if (!catalog.domains.any((d) => d.id == domainId)) {
+        throw FormatException('Domaine cible introuvable : $domainId.');
+      }
+      final specObj = project.businessObjects
+          .where((o) => o.id == choice.objectId)
+          .firstOrNull;
+      if (specObj == null) {
+        throw FormatException('Objet métier introuvable : ${choice.objectId}.');
+      }
+      activeChoices.add(choice);
+      plannedDomainByObjectId[specObj.id] = domainId;
+      plannedDomainBySpecObjectId[specObj.id] = domainId;
+    }
+
+    if (activeChoices.isEmpty) {
+      return const <ObjectPromotionPreview>[];
+    }
+
+    // Prépare par domaine un document temporaire incluant les nouvelles entrées
+    // afin que la résolution des références intra-domaine soit fidèle à promote().
+    final simulatedDocByDomain = <String, DomainContracts>{};
+    final choicesByDomain = <String, List<ObjectPromotionChoice>>{};
+    for (final choice in activeChoices) {
+      choicesByDomain
+          .putIfAbsent(choice.domainId!.trim(), () => <ObjectPromotionChoice>[])
+          .add(choice);
+    }
+
+    for (final entry in choicesByDomain.entries) {
+      final domain = catalog.domains.firstWhere((d) => d.id == entry.key);
+      var tempDoc = domain.contracts ?? DomainContracts.empty;
+      for (final choice in entry.value) {
+        final specObj = project.businessObjects.firstWhere(
+          (o) => o.id == choice.objectId,
+        );
+        final existing = findEntryForSpecObject(
+          tempDoc,
+          specObj,
+          projectId: project.id,
+        );
+        if (existing == null) {
+          final nextSource = _insertEntryIntoYamlSource(
+            tempDoc.source,
+            groupName: defaultGroupForType(choice.contractType),
+            entryName: specObj.technicalName,
+            contractType: choice.contractType,
+          );
+          tempDoc = tempDoc.patch(nextSource);
+        }
+      }
+      simulatedDocByDomain[domain.id] = tempDoc;
+    }
+
+    final previews = <ObjectPromotionPreview>[];
+    for (final choice in activeChoices) {
+      final domainId = choice.domainId!.trim();
+      final domain = catalog.domains.firstWhere((d) => d.id == domainId);
+      final specObj = project.businessObjects.firstWhere(
+        (o) => o.id == choice.objectId,
+      );
+      final originalDoc = domain.contracts;
+      final existing = findEntryForSpecObject(
+        originalDoc,
+        specObj,
+        projectId: project.id,
+      );
+      final simulatedDoc = simulatedDocByDomain[domainId]!;
+      final simulatedEntry = existing != null
+          ? simulatedDoc.entryById(existing.id)!
+          : findExistingEntry(simulatedDoc, specObj.technicalName)!;
+
+      final resolvedSpecObject = _buildDomainObject(
+        project: project,
+        catalog: catalog,
+        currentDomain: domain,
+        currentDocument: simulatedDoc,
+        entry: simulatedEntry,
+        specObject: specObj,
+        plannedDomainBySpecObjectId: plannedDomainBySpecObjectId,
+        modelPreferences: effectivePrefs,
+      );
+
+      final isSkip =
+          existing != null &&
+          choice.conflictResolution == PromotionConflictResolution.skipExisting;
+      final externalRefCount = isSkip
+          ? 0
+          : countExternalReferencesForObject(
+              project: project,
+              catalog: catalog,
+              object: specObj,
+              targetDomainId: domainId,
+              plannedDomainByObjectId: plannedDomainByObjectId,
+            );
+
+      if (existing == null || originalDoc == null) {
+        previews.add(
+          ObjectPromotionPreview(
+            choice: choice,
+            specObject: specObj,
+            targetDomainId: domain.id,
+            targetDomainName: domain.name,
+            isNewEntry: true,
+            currentVersion: '0.0.1',
+            suggestedVersion: '0.0.1',
+            externalRefCount: externalRefCount,
+            resolvedSpecObject: resolvedSpecObject,
+          ),
+        );
+      } else {
+        final prevDetails =
+            originalDoc.details[existing.id] ?? ContractDetails.defaults;
+        final currentDesign = originalDoc.objectFor(existing);
+        final availableVos = catalog.resolvedValueObjectsForDomain(domain.id);
+        final mergeResult = SpecDesignMergeEngine.merge(
+          baseSpec: prevDetails.specOrigin?.baseSpecObject,
+          nextSpecResolved: resolvedSpecObject,
+          nextSpec: specObj,
+          currentDesign: currentDesign,
+          availableValueObjects: availableVos,
+        );
+        final suggestedVersion = switch (choice.conflictResolution) {
+          PromotionConflictResolution.skipExisting => prevDetails.version,
+          PromotionConflictResolution.smartMerge => suggestNextSemVer(
+            prevDetails.version,
+            mergeResult,
+          ),
+          PromotionConflictResolution.updateExisting => suggestNextSemVer(
+            prevDetails.version,
+            _buildOverwriteSyntheticMergeResult(
+              currentDesign: currentDesign,
+              overwrittenObject: resolvedSpecObject,
+            ),
+          ),
+        };
+        previews.add(
+          ObjectPromotionPreview(
+            choice: choice,
+            specObject: specObj,
+            targetDomainId: domain.id,
+            targetDomainName: domain.name,
+            isNewEntry: false,
+            existingEntryId: existing.id,
+            existingEntryPath: existing.path,
+            currentVersion: prevDetails.version,
+            suggestedVersion: suggestedVersion,
+            externalRefCount: externalRefCount,
+            resolvedSpecObject: resolvedSpecObject,
+            mergeResult: mergeResult,
+          ),
+        );
+      }
+    }
+
+    return List<ObjectPromotionPreview>.unmodifiable(previews);
+  }
+
   /// Exécute la promotion des objets sélectionnés dans [choices] vers les domaines de [catalog].
   ///
   /// Fonctionne en deux passes par domaine :
-  /// 1. Création ou mise à jour des entrées DSL et de leurs [ContractDetails] afin d'obtenir
-  ///    les identifiants stables [JsonNode.id] de toutes les entrées du domaine.
-  /// 2. Construction des [BusinessObjectSpec] cibles : recâblage des références intra-domaine
-  ///    vers l'identifiant d'entrée cible et conversion des références/relations hors domaine
-  ///    en identifiants scalaires documentés.
+  /// 1. Création ou mise à jour des entrées DSL et de leurs [ContractDetails] (incluant
+  ///    l'empreinte [SpecOriginBaseline]) afin d'obtenir les identifiants stables
+  ///    [JsonNode.id] de toutes les entrées du domaine.
+  /// 2. Construction des [BusinessObjectSpec] cibles : recâblage des références intra-domaine,
+  ///    conversion des références hors domaine en identifiants scalaires documentés, et
+  ///    application de la fusion 3-voies lorsque [PromotionConflictResolution.smartMerge] est actif.
   static PromotionExecutionResult promote({
     required SpecForgeProject project,
     required DomainCatalog catalog,
@@ -285,6 +906,7 @@ abstract final class SpecDesignPromoter {
     BusinessObjectModelPreferences? modelPreferences,
     String actorUsername = 'local-user',
     DateTime? now,
+    bool autoBumpVersion = false,
   }) {
     final effectivePrefs =
         modelPreferences ?? project.businessObjectModelPreferences;
@@ -307,9 +929,7 @@ abstract final class SpecDesignPromoter {
           .where((o) => o.id == choice.objectId)
           .firstOrNull;
       if (specObj == null) {
-        throw FormatException(
-          'Objet métier introuvable : ${choice.objectId}.',
-        );
+        throw FormatException('Objet métier introuvable : ${choice.objectId}.');
       }
       activeChoices.add(choice);
       plannedDomainBySpecObjectId[specObj.id] = domainId;
@@ -338,18 +958,41 @@ abstract final class SpecDesignPromoter {
       }
 
       var document = domain.contracts ?? DomainContracts.empty;
+      final availableVos = catalog.resolvedValueObjectsForDomain(domain.id);
       final createdIds = <String>[];
       final updatedIds = <String>[];
+      final mergedIds = <String>[];
       final skippedNames = <String>[];
+      final mergeResultsByEntryId = <String, ObjectMergeResult>{};
       final pendingObjectWrites =
-          <({BusinessObjectSpec specObject, String entryId})>[];
+          <
+            ({
+              ObjectPromotionChoice choice,
+              BusinessObjectSpec specObject,
+              String entryId,
+              bool isExisting,
+              BusinessObjectSpec? previousBaseSpec,
+              BusinessObjectSpec? previousDesignObject,
+              String previousVersion,
+            })
+          >[];
 
       // Passe 1 : création / mise à jour des entrées YAML et métadonnées ContractDetails.
       for (final choice in domainChoices) {
         final specObj = project.businessObjects.firstWhere(
           (o) => o.id == choice.objectId,
         );
-        final existing = findExistingEntry(document, specObj.technicalName);
+        final existing = findEntryForSpecObject(
+          document,
+          specObj,
+          projectId: project.id,
+        );
+        final freshOrigin = buildSpecOriginBaseline(
+          project: project,
+          specObject: specObj,
+          promotedAt: timestamp,
+        );
+
         if (existing != null) {
           if (choice.conflictResolution ==
               PromotionConflictResolution.skipExisting) {
@@ -358,6 +1001,22 @@ abstract final class SpecDesignPromoter {
           }
           final prevDetails =
               document.details[existing.id] ?? ContractDetails.defaults;
+          final prevOrigin = prevDetails.specOrigin;
+          final SpecOriginBaseline nextOrigin;
+          if (prevOrigin != null &&
+              prevOrigin.projectId == project.id &&
+              freshOrigin.contributingFeatures.isNotEmpty) {
+            nextOrigin = prevOrigin.mergeContribution(
+              freshOrigin.contributingFeatures.single,
+              nextBaseSpecObject: specObj,
+              nextRuleFingerprints: freshOrigin.ruleFingerprints,
+              projectName: project.name.trim(),
+            );
+          } else {
+            nextOrigin = freshOrigin;
+          }
+          final prevBaseSpec = prevOrigin?.baseSpecObject;
+          final prevDesignObj = document.objectFor(existing);
           final prevStates = Map<ContractStage, ContractStatus>.from(
             prevDetails.states,
           );
@@ -369,12 +1028,22 @@ abstract final class SpecDesignPromoter {
             title: specObj.name.trim(),
             version: prevDetails.version,
             states: prevStates,
+            specOrigin: nextOrigin,
           );
           document = document.edit(existing, choice.contractType, nextDetails);
           updatedIds.add(existing.id);
+          if (choice.conflictResolution ==
+              PromotionConflictResolution.smartMerge) {
+            mergedIds.add(existing.id);
+          }
           pendingObjectWrites.add((
+            choice: choice,
             specObject: specObj,
             entryId: existing.id,
+            isExisting: true,
+            previousBaseSpec: prevBaseSpec,
+            previousDesignObject: prevDesignObj,
+            previousVersion: prevDetails.version,
           ));
         } else {
           final groupName = defaultGroupForType(choice.contractType);
@@ -397,17 +1066,23 @@ abstract final class SpecDesignPromoter {
             states: const <ContractStage, ContractStatus>{
               ContractStage.design: ContractStatus.inProgress,
             },
+            specOrigin: freshOrigin,
           );
           document = document.edit(created, choice.contractType, details);
           createdIds.add(created.id);
           pendingObjectWrites.add((
+            choice: choice,
             specObject: specObj,
             entryId: created.id,
+            isExisting: false,
+            previousBaseSpec: null,
+            previousDesignObject: null,
+            previousVersion: '0.0.1',
           ));
         }
       }
 
-      // Passe 2 : construction et attachement des BusinessObjectSpec résolus.
+      // Passe 2 : construction, fusion éventuelle et attachement des BusinessObjectSpec résolus.
       for (final item in pendingObjectWrites) {
         final entry = document.entryById(item.entryId)!;
         final resolvedObject = _buildDomainObject(
@@ -420,7 +1095,51 @@ abstract final class SpecDesignPromoter {
           plannedDomainBySpecObjectId: plannedDomainBySpecObjectId,
           modelPreferences: effectivePrefs,
         );
-        document = document.withModel(item.entryId, object: resolvedObject);
+
+        BusinessObjectSpec targetObject = resolvedObject;
+        String? bumpedVersion;
+        final shouldAutoBump = autoBumpVersion || item.choice.autoBumpVersion;
+
+        if (item.isExisting && item.previousDesignObject != null) {
+          if (item.choice.conflictResolution ==
+              PromotionConflictResolution.smartMerge) {
+            final mergeResult = SpecDesignMergeEngine.merge(
+              baseSpec: item.previousBaseSpec,
+              nextSpecResolved: resolvedObject,
+              nextSpec: item.specObject,
+              currentDesign: item.previousDesignObject!,
+              availableValueObjects: availableVos,
+            );
+            targetObject = mergeResult.mergedObject;
+            mergeResultsByEntryId[item.entryId] = mergeResult;
+            if (shouldAutoBump) {
+              bumpedVersion = suggestNextSemVer(
+                item.previousVersion,
+                mergeResult,
+              );
+            }
+          } else if (shouldAutoBump) {
+            bumpedVersion = suggestNextSemVer(
+              item.previousVersion,
+              _buildOverwriteSyntheticMergeResult(
+                currentDesign: item.previousDesignObject!,
+                overwrittenObject: resolvedObject,
+              ),
+            );
+          }
+        }
+
+        if (bumpedVersion != null && bumpedVersion != item.previousVersion) {
+          final currentDetails =
+              document.details[item.entryId] ?? ContractDetails.defaults;
+          document = document.edit(
+            entry,
+            entry.type,
+            currentDetails.copyWith(version: bumpedVersion),
+          );
+        }
+
+        document = document.withModel(item.entryId, object: targetObject);
       }
 
       final summary = DomainPromotionSummary(
@@ -428,7 +1147,9 @@ abstract final class SpecDesignPromoter {
         domainName: domain.name,
         createdEntryIds: createdIds,
         updatedEntryIds: updatedIds,
+        mergedEntryIds: mergedIds,
         skippedObjectNames: skippedNames,
+        mergeResultsByEntryId: mergeResultsByEntryId,
       );
       summaries.add(summary);
 
@@ -469,15 +1190,33 @@ abstract final class SpecDesignPromoter {
     );
   }
 
+  static ObjectMergeResult _buildOverwriteSyntheticMergeResult({
+    required BusinessObjectSpec currentDesign,
+    required BusinessObjectSpec overwrittenObject,
+  }) {
+    // Compare directement currentDesign -> overwrittenObject (comme si baseSpec == currentDesign)
+    // afin d'évaluer fidèlement l'impact SemVer d'un écrasement complet.
+    return SpecDesignMergeEngine.merge(
+      baseSpec: currentDesign,
+      nextSpecResolved: overwrittenObject,
+      currentDesign: currentDesign,
+    );
+  }
+
   static String _buildAuditDetails(
     String projectName,
     DomainPromotionSummary summary,
   ) {
+    final overwrittenCount =
+        summary.updatedEntryIds.length - summary.mergedEntryIds.length;
     final parts = <String>[
       if (summary.createdEntryIds.isNotEmpty)
         '${summary.createdEntryIds.length} créé(s)',
-      if (summary.updatedEntryIds.isNotEmpty)
-        '${summary.updatedEntryIds.length} mis à jour',
+      if (summary.mergedEntryIds.isNotEmpty)
+        '${summary.mergedEntryIds.length} fusionné(s)',
+      if (overwrittenCount > 0) '$overwrittenCount mis à jour',
+      if (summary.preservedValueObjectsCount > 0)
+        '${summary.preservedValueObjectsCount} VO conservé(s)',
       if (summary.skippedObjectNames.isNotEmpty)
         '${summary.skippedObjectNames.length} ignoré(s)',
     ];
@@ -534,7 +1273,9 @@ abstract final class SpecDesignPromoter {
           lastChildIndex = i;
         }
       }
-      final insertAt = lastChildIndex >= 0 ? lastChildIndex + 1 : groupLineIndex + 1;
+      final insertAt = lastChildIndex >= 0
+          ? lastChildIndex + 1
+          : groupLineIndex + 1;
       lines.insert(insertAt, entryLine);
     } else {
       if (lines.isNotEmpty && lines.last.trim().isNotEmpty) {
@@ -622,7 +1363,8 @@ abstract final class SpecDesignPromoter {
       )) {
         continue;
       }
-      if (mergedAttributes.length >= BusinessObjectSpec.maxAttributesPerObject) {
+      if (mergedAttributes.length >=
+          BusinessObjectSpec.maxAttributesPerObject) {
         break;
       }
       final attrName = _uniqueAttributeName(rel.name, usedNamesLower);
@@ -777,7 +1519,8 @@ abstract final class SpecDesignPromoter {
     required String currentDomainId,
     required Map<String, String> plannedDomainBySpecObjectId,
   }) {
-    final targetLabel = targetSpec?.name ??
+    final targetLabel =
+        targetSpec?.name ??
         (rawTarget.trim().isNotEmpty ? rawTarget.trim() : 'entité externe');
     String? otherDomainName;
     if (targetSpec != null) {

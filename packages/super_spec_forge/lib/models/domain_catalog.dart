@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import 'build_tech_stack_profile.dart';
 import 'domain_contracts.dart';
+import 'domain_iteration_snapshot.dart';
 import 'spec_stage_chat.dart';
 import 'usecase_orchestration_spec.dart';
 import 'value_object_spec.dart';
@@ -210,6 +211,8 @@ class FunctionalDomain {
     this.systemsServicesChat = const <SpecChatMessage>[],
     this.valueObjects = const <ValueObjectSpec>[],
     this.valueObjectsChat = const <SpecChatMessage>[],
+    this.iterationSnapshots = const <DomainIterationSnapshot>[],
+    this.activeBaselineSnapshotId,
   });
 
   /// Identifiant technique.
@@ -246,6 +249,20 @@ class FunctionalDomain {
   /// Historique de conversation IA du catalogue de Value Objects de ce domaine.
   final List<SpecChatMessage> valueObjectsChat;
 
+  /// Historique ordonné des snapshots d'itération (jalons figés) de ce domaine.
+  final List<DomainIterationSnapshot> iterationSnapshots;
+
+  /// Identifiant optionnel du snapshot servant de baseline active pour la détection de dérive.
+  final String? activeBaselineSnapshotId;
+
+  /// Retourne le snapshot d'itération servant de baseline active, ou `null` si
+  /// aucune baseline n'est activée.
+  DomainIterationSnapshot? get activeBaselineSnapshot {
+    final targetId = activeBaselineSnapshotId?.trim();
+    if (targetId == null || targetId.isEmpty) return null;
+    return iterationSnapshots.where((s) => s.id == targetId).firstOrNull;
+  }
+
   /// Vérifie les invariants du domaine.
   void validate() {
     if (id.trim().isEmpty) throw const FormatException('Domaine.id requis.');
@@ -272,6 +289,23 @@ class FunctionalDomain {
         );
       }
     }
+    final snapshotIds = <String>{};
+    for (final snapshot in iterationSnapshots) {
+      snapshot.validate();
+      if (!snapshotIds.add(snapshot.id)) {
+        throw FormatException(
+          'Identifiant de snapshot d’itération dupliqué dans $domainCode : ${snapshot.id}',
+        );
+      }
+    }
+    final baselineId = activeBaselineSnapshotId?.trim();
+    if (baselineId != null &&
+        baselineId.isNotEmpty &&
+        !snapshotIds.contains(baselineId)) {
+      throw FormatException(
+        'Snapshot de baseline active introuvable dans $domainCode : $baselineId',
+      );
+    }
   }
 
   /// Copie modifiée.
@@ -288,6 +322,9 @@ class FunctionalDomain {
     List<SpecChatMessage>? systemsServicesChat,
     List<ValueObjectSpec>? valueObjects,
     List<SpecChatMessage>? valueObjectsChat,
+    List<DomainIterationSnapshot>? iterationSnapshots,
+    String? activeBaselineSnapshotId,
+    bool clearActiveBaselineSnapshotId = false,
   }) => FunctionalDomain(
     id: id ?? this.id,
     domainCode: domainCode ?? this.domainCode,
@@ -306,6 +343,12 @@ class FunctionalDomain {
     valueObjectsChat: valueObjectsChat == null
         ? this.valueObjectsChat
         : List<SpecChatMessage>.unmodifiable(valueObjectsChat),
+    iterationSnapshots: iterationSnapshots == null
+        ? this.iterationSnapshots
+        : List<DomainIterationSnapshot>.unmodifiable(iterationSnapshots),
+    activeBaselineSnapshotId: clearActiveBaselineSnapshotId
+        ? null
+        : (activeBaselineSnapshotId ?? this.activeBaselineSnapshotId),
   );
 
   /// Sérialise le domaine.
@@ -330,6 +373,13 @@ class FunctionalDomain {
       'valueObjectsChat': [
         for (final msg in valueObjectsChat) msg.toJson(),
       ],
+    if (iterationSnapshots.isNotEmpty)
+      'iterationSnapshots': [
+        for (final snap in iterationSnapshots) snap.toJson(),
+      ],
+    if (activeBaselineSnapshotId != null &&
+        activeBaselineSnapshotId!.trim().isNotEmpty)
+      'activeBaselineSnapshotId': activeBaselineSnapshotId,
   };
 
   /// Désérialise un domaine.
@@ -339,6 +389,13 @@ class FunctionalDomain {
     final rawChat = raw['systemsServicesChat'];
     final rawVos = raw['valueObjects'];
     final rawVoChat = raw['valueObjectsChat'];
+    final rawSnapshots = raw['iterationSnapshots'];
+    if (rawSnapshots != null && rawSnapshots is! List) {
+      throw const FormatException(
+        'Historique d’itérations du domaine invalide.',
+      );
+    }
+    final rawBaselineId = (raw['activeBaselineSnapshotId'] as String?)?.trim();
     final item = FunctionalDomain(
       id: raw['id'] as String? ?? '',
       domainCode: raw['domainCode'] as String? ?? '',
@@ -371,6 +428,16 @@ class FunctionalDomain {
                   SpecChatMessage.fromJson(Map<String, Object?>.from(msg)),
             ])
           : const <SpecChatMessage>[],
+      iterationSnapshots: rawSnapshots is List
+          ? List<DomainIterationSnapshot>.unmodifiable(<DomainIterationSnapshot>[
+              for (final snap in rawSnapshots)
+                DomainIterationSnapshot.fromJson(snap),
+            ])
+          : const <DomainIterationSnapshot>[],
+      activeBaselineSnapshotId:
+          (rawBaselineId == null || rawBaselineId.isEmpty)
+          ? null
+          : rawBaselineId,
     );
     item.validate();
     return item;

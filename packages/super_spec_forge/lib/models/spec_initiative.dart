@@ -10,6 +10,7 @@ import 'business_rule_spec.dart';
 import 'cost/cost_forge_spec.dart';
 import 'event_storming_spec.dart';
 import 'example_mapping_spec.dart';
+import 'feature_object_sync_baseline.dart';
 import 'qa/qa_forge_spec.dart';
 import 'spec_cahier_des_charges.dart';
 import 'spec_coherence_issue.dart';
@@ -77,6 +78,8 @@ class SpecFeatureSpec {
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
+    Map<String, FeatureObjectSyncBaseline> objectSyncBaselines =
+        const <String, FeatureObjectSyncBaseline>{},
     List<ExampleMapStory> exampleMappings = const <ExampleMapStory>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
     Map<SpecForgeStage, SpecStageState>? stageStates,
@@ -93,6 +96,10 @@ class SpecFeatureSpec {
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
        eventStorming = eventStorming ?? EventStormingSpec.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
+       objectSyncBaselines =
+           Map<String, FeatureObjectSyncBaseline>.unmodifiable(
+             objectSyncBaselines,
+           ),
        exampleMappings = List<ExampleMapStory>.unmodifiable(exampleMappings),
        businessRules = List<BusinessRuleSpec>.unmodifiable(businessRules),
        stageStates = Map<SpecForgeStage, SpecStageState>.unmodifiable(
@@ -170,6 +177,8 @@ class SpecFeatureSpec {
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
+    Map<String, FeatureObjectSyncBaseline> objectSyncBaselines =
+        const <String, FeatureObjectSyncBaseline>{},
     List<ExampleMapStory> exampleMappings = const <ExampleMapStory>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
     Map<SpecForgeStage, SpecStageState>? stageStates,
@@ -193,6 +202,7 @@ class SpecFeatureSpec {
       cahierDesCharges: cahierDesCharges,
       eventStorming: eventStorming,
       businessObjects: businessObjects,
+      objectSyncBaselines: objectSyncBaselines,
       exampleMappings: exampleMappings,
       businessRules: businessRules,
       stageStates: stageStates,
@@ -283,6 +293,13 @@ class SpecFeatureSpec {
   /// Livrable de l'étape 5 (Objets métiers).
   final List<BusinessObjectSpec> businessObjects;
 
+  /// Empreintes de synchronisation inter-features ou depuis Design par identifiant d'objet métier (`objectId -> baseline`).
+  final Map<String, FeatureObjectSyncBaseline> objectSyncBaselines;
+
+  /// Retourne l'empreinte de synchronisation associée à [objectId], ou `null` si absente.
+  FeatureObjectSyncBaseline? syncBaselineFor(String objectId) =>
+      objectSyncBaselines[objectId];
+
   /// Livrable de l'étape 6 (Example Mapping).
   final List<ExampleMapStory> exampleMappings;
 
@@ -342,6 +359,7 @@ class SpecFeatureSpec {
     if (cahierDesCharges.hasContent ||
         eventStorming.hasContent ||
         businessObjects.isNotEmpty ||
+        objectSyncBaselines.isNotEmpty ||
         exampleMappings.isNotEmpty ||
         businessRules.isNotEmpty ||
         uxSpec.hasContent ||
@@ -411,6 +429,20 @@ class SpecFeatureSpec {
       }
     }
 
+    for (final entry in objectSyncBaselines.entries) {
+      if (entry.key.trim().isEmpty) {
+        throw const FormatException(
+          'Clé objectSyncBaselines vide dans SpecFeatureSpec.',
+        );
+      }
+      entry.value.validate();
+      if (entry.key != entry.value.objectId) {
+        throw FormatException(
+          'Incohérence de clé objectSyncBaselines : "${entry.key}" != "${entry.value.objectId}".',
+        );
+      }
+    }
+
     final emIds = <String>{};
     for (final story in exampleMappings) {
       story.validate();
@@ -447,6 +479,7 @@ class SpecFeatureSpec {
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
     List<BusinessObjectSpec>? businessObjects,
+    Map<String, FeatureObjectSyncBaseline>? objectSyncBaselines,
     List<ExampleMapStory>? exampleMappings,
     List<BusinessRuleSpec>? businessRules,
     Map<SpecForgeStage, SpecStageState>? stageStates,
@@ -468,6 +501,7 @@ class SpecFeatureSpec {
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
     eventStorming: eventStorming ?? this.eventStorming,
     businessObjects: businessObjects ?? this.businessObjects,
+    objectSyncBaselines: objectSyncBaselines ?? this.objectSyncBaselines,
     exampleMappings: exampleMappings ?? this.exampleMappings,
     businessRules: businessRules ?? this.businessRules,
     stageStates: stageStates ?? this.stageStates,
@@ -498,6 +532,11 @@ class SpecFeatureSpec {
     'cahierDesCharges': cahierDesCharges.toJson(),
     if (eventStorming.hasContent) 'eventStorming': eventStorming.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
+    if (objectSyncBaselines.isNotEmpty)
+      'objectSyncBaselines': <String, Object?>{
+        for (final entry in objectSyncBaselines.entries)
+          entry.key: entry.value.toJson(),
+      },
     if (exampleMappings.isNotEmpty)
       'exampleMappings': [for (final s in exampleMappings) s.toJson()],
     'businessRules': [for (final r in businessRules) r.toJson()],
@@ -548,6 +587,9 @@ class SpecFeatureSpec {
           for (final item in raw['businessObjects'] as List)
             BusinessObjectSpec.fromJson(item),
       ],
+      objectSyncBaselines: parseObjectSyncBaselines(
+        raw['objectSyncBaselines'],
+      ),
       exampleMappings: [
         if (raw['exampleMappings'] is List)
           for (final item in raw['exampleMappings'] as List)
@@ -570,6 +612,30 @@ class SpecFeatureSpec {
     );
     feature.validate();
     return feature;
+  }
+
+  /// Désérialise une table JSON d'empreintes de synchronisation d'objets métiers (`objectId -> baseline`).
+  static Map<String, FeatureObjectSyncBaseline> parseObjectSyncBaselines(
+    Object? raw,
+  ) {
+    if (raw == null) return const <String, FeatureObjectSyncBaseline>{};
+    if (raw is! Map) {
+      throw const FormatException(
+        'objectSyncBaselines doit être un objet JSON.',
+      );
+    }
+    if (raw.isEmpty) return const <String, FeatureObjectSyncBaseline>{};
+    final parsed = <String, FeatureObjectSyncBaseline>{};
+    for (final entry in raw.entries) {
+      final key = '${entry.key}'.trim();
+      if (key.isEmpty) {
+        throw const FormatException(
+          'Clé objectSyncBaselines vide dans le JSON.',
+        );
+      }
+      parsed[key] = FeatureObjectSyncBaseline.fromJson(entry.value);
+    }
+    return Map<String, FeatureObjectSyncBaseline>.unmodifiable(parsed);
   }
 
   /// Désérialise une liste JSON de noms d'étapes optionnelles désactivées.
@@ -641,6 +707,7 @@ class SpecFeatureSpec {
           other.cahierDesCharges == cahierDesCharges &&
           other.eventStorming == eventStorming &&
           listEquals(other.businessObjects, businessObjects) &&
+          mapEquals(other.objectSyncBaselines, objectSyncBaselines) &&
           listEquals(other.exampleMappings, exampleMappings) &&
           listEquals(other.businessRules, businessRules) &&
           mapEquals(other.stageStates, stageStates) &&
@@ -664,6 +731,9 @@ class SpecFeatureSpec {
     cahierDesCharges,
     eventStorming,
     Object.hashAll(businessObjects),
+    Object.hashAllUnordered([
+      for (final e in objectSyncBaselines.entries) Object.hash(e.key, e.value),
+    ]),
     Object.hashAll(exampleMappings),
     Object.hashAll(businessRules),
     Object.hashAll(stageStates.values),

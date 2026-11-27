@@ -9,6 +9,7 @@ import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../../models/usecase_orchestration_spec.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_json_schema_builder.dart';
 import 'prompt_markdown_sections.dart';
@@ -23,6 +24,8 @@ BuildHexaPromptSpec buildUseCaseImplementationPrompt({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final title =
       '${useCase.code} · ${useCase.name} — Implémentation Couche Application';
@@ -67,6 +70,10 @@ BuildHexaPromptSpec buildUseCaseImplementationPrompt({
       'cqrs': useCase.cqrsType.name,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatBody(
@@ -75,6 +82,7 @@ BuildHexaPromptSpec buildUseCaseImplementationPrompt({
     techStack: techStack,
     glossary: glossary,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -85,6 +93,10 @@ BuildHexaPromptSpec buildUseCaseImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -94,6 +106,7 @@ String _formatBody({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final inbound = useCase.inboundPort.trim().isNotEmpty
       ? useCase.inboundPort.trim()
@@ -122,6 +135,13 @@ String _formatBody({
     domain,
     glossary,
     modelPreferences,
+  );
+
+  PromptEvolutionSections.writeUseCaseEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    currentUseCase: useCase,
+    role: BuildHexaPromptRole.implementation,
   );
 
   buf

@@ -7,6 +7,7 @@ import '../../../models/build_tech_stack_profile.dart';
 import '../../../models/domain_catalog.dart';
 import '../../../models/usecase_orchestration_spec.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -18,6 +19,8 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
   required OrchestrationSagaSpec saga,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final title =
       '${saga.code} · ${saga.name} — Tests unitaires Saga & Rollbacks';
@@ -60,9 +63,18 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
       'coordination': saga.coordinationMode.name,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
-  final body = _formatBody(domain: domain, saga: saga, techStack: techStack);
+  final body = _formatBody(
+    domain: domain,
+    saga: saga,
+    techStack: techStack,
+    evolutionDecision: evolutionDecision,
+  );
 
   return BuildHexaPromptSpec(
     id: '${item.kind.name}:${item.id}:${BuildTechStackSection.useCaseSaga.name}:${BuildHexaPromptRole.unitTest.name}',
@@ -72,6 +84,10 @@ BuildHexaPromptSpec buildSagaUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -79,6 +95,7 @@ String _formatBody({
   required FunctionalDomain domain,
   required OrchestrationSagaSpec saga,
   BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final buf = StringBuffer()
     ..writeln(
@@ -89,7 +106,16 @@ String _formatBody({
     ..writeln(
       'Écris la suite complète de **tests unitaires** de la Saga **`${saga.name}`** (domaine `${domain.domainCode}`) avec des doublures en mémoire des ports de commandes, d’événements et d’état de Saga.',
     )
-    ..writeln()
+    ..writeln();
+
+  PromptEvolutionSections.writeSagaEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    currentSaga: saga,
+    role: BuildHexaPromptRole.unitTest,
+  );
+
+  buf
     ..writeln('## 2. Scénarios de Test Obligatoires')
     ..writeln(
       '1. **Chemin nominal complet** : déclenchement par `${saga.triggerEventOrCommand.isEmpty ? 'l’événement initial' : saga.triggerEventOrCommand}`, exécution séquentielle de toutes les étapes et marquage de la Saga comme terminée.',

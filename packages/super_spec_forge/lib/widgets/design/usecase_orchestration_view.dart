@@ -17,6 +17,8 @@ import '../../models/domain_catalog.dart';
 import '../../models/domain_contracts.dart';
 import '../../models/spec_forge_project.dart';
 import '../../models/usecase_orchestration_spec.dart';
+import '../../services/design_evolution_analyzer.dart';
+import '../../services/spec_design_drift_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
 import '../spec_split_handle.dart';
 import '../workspace/markdown_viewer_dialog.dart';
@@ -27,6 +29,7 @@ import 'contract_entry_view.dart'
         contractStageLabels,
         contractStatusLabels;
 import 'design_domain_breadcrumb.dart';
+import 'iteration_snapshot_dialogs.dart';
 import 'saga_compensation_table.dart';
 import 'usecase_fields_tree.dart';
 import 'usecase_orchestration_chat_pane.dart';
@@ -324,6 +327,12 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
             ),
           ],
         ),
+        if (selected != null)
+          DomainIterationSnapshotBar(
+            controller: widget.controller,
+            domain: selected,
+            compact: true,
+          ),
         Expanded(
           child: selected == null
               ? Center(
@@ -806,6 +815,15 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
         _collapsedUseCaseSectionKeys.any(
           (k) => spec.useCases.any((uc) => k.startsWith('${uc.id}:')),
         );
+    final domainEvolution = widget.controller.analyzeDomainEvolution(domain.id);
+    final activeProject = widget.controller.project;
+    final specDriftReport = activeProject == null
+        ? null
+        : SpecDesignDriftAnalyzer.analyzeDomain(
+            project: activeProject,
+            domain: domain,
+            catalog: widget.controller.domainCatalog,
+          );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -864,6 +882,10 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) {
                     final uc = spec.useCases[index];
+                    final ucEvolution = domainEvolution.useCases[uc.id];
+                    final ucSpecRefDrifts =
+                        specDriftReport?.driftsForUseCase(uc.id) ??
+                        const <LinkedSpecRefDrift>[];
                     return _UseCaseCard(
                       key: ValueKey('usecase-card-${uc.id}'),
                       useCase: uc,
@@ -871,6 +893,17 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                       colors: colors,
                       isAiBusy: widget.controller.isSending,
                       expanded: !_collapsedUseCaseIds.contains(uc.id),
+                      evolutionReport: ucEvolution,
+                      baselineLabel: domainEvolution.baseline?.label,
+                      specRefDrifts: ucSpecRefDrifts,
+                      onApplyVersionBump: (newVer) => unawaited(
+                        widget.controller.applyDesignArtifactVersionBump(
+                          domainId: domain.id,
+                          kind: DesignArtifactKind.useCase,
+                          artifactId: uc.id,
+                          newVersion: newVer,
+                        ),
+                      ),
                       onToggleExpanded: () =>
                           _toggleSetKey(_collapsedUseCaseIds, uc.id),
                       isSectionExpanded: (sectionId) =>
@@ -927,6 +960,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
         _collapsedSagaSectionKeys.any(
           (k) => spec.sagas.any((s) => k.startsWith('${s.id}:')),
         );
+    final domainEvolution = widget.controller.analyzeDomainEvolution(domain.id);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -984,6 +1018,7 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) {
                     final saga = spec.sagas[index];
+                    final sagaEvolution = domainEvolution.sagas[saga.id];
                     return _SagaCard(
                       key: ValueKey('usecase-saga-card-${saga.id}'),
                       saga: saga,
@@ -991,6 +1026,16 @@ class _UseCaseOrchestrationViewState extends State<UseCaseOrchestrationView>
                       colors: colors,
                       isAiBusy: widget.controller.isSending,
                       expanded: !_collapsedSagaIds.contains(saga.id),
+                      evolutionReport: sagaEvolution,
+                      baselineLabel: domainEvolution.baseline?.label,
+                      onApplyVersionBump: (newVer) => unawaited(
+                        widget.controller.applyDesignArtifactVersionBump(
+                          domainId: domain.id,
+                          kind: DesignArtifactKind.saga,
+                          artifactId: saga.id,
+                          newVersion: newVer,
+                        ),
+                      ),
                       onToggleExpanded: () =>
                           _toggleSetKey(_collapsedSagaIds, saga.id),
                       isSectionExpanded: (sectionId) =>
@@ -2240,6 +2285,10 @@ class _UseCaseCard extends StatelessWidget {
     required this.onAskAiRefine,
     required this.onEdit,
     required this.onDelete,
+    this.evolutionReport,
+    this.baselineLabel,
+    this.specRefDrifts = const <LinkedSpecRefDrift>[],
+    this.onApplyVersionBump,
     super.key,
   });
 
@@ -2255,10 +2304,15 @@ class _UseCaseCard extends StatelessWidget {
   final VoidCallback onAskAiRefine;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ArtifactEvolutionReport? evolutionReport;
+  final String? baselineLabel;
+  final List<LinkedSpecRefDrift> specRefDrifts;
+  final ValueChanged<String>? onApplyVersionBump;
 
   @override
   Widget build(BuildContext context) {
     final isQuery = useCase.cqrsType == UseCaseCqrsType.query;
+    final isDark = colors.brightness == Brightness.dark;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -2322,6 +2376,58 @@ class _UseCaseCard extends StatelessWidget {
                                   background: colors.surfaceContainerHighest,
                                   foreground: colors.onSurfaceVariant,
                                 ),
+                                if (evolutionReport != null &&
+                                    evolutionReport!.state !=
+                                        ArtifactEvolutionState.noBaseline &&
+                                    evolutionReport!.state !=
+                                        ArtifactEvolutionState.unchanged)
+                                  EvolutionDriftBadge(
+                                    key: ValueKey(
+                                      'usecase-evolution-badge-${useCase.id}',
+                                    ),
+                                    report: evolutionReport,
+                                    compact: true,
+                                    onTap: () =>
+                                        ArtifactEvolutionDiffDialog.show(
+                                          context,
+                                          report: evolutionReport!,
+                                          baselineLabel: baselineLabel,
+                                          onApplyRecommendedVersion:
+                                              onApplyVersionBump,
+                                        ),
+                                  ),
+                                if (onApplyVersionBump != null &&
+                                    evolutionReport != null &&
+                                    evolutionReport!.needsVersionBump)
+                                  SemVerBumpActionChip(
+                                    key: ValueKey(
+                                      'usecase-semver-bump-${useCase.id}',
+                                    ),
+                                    report: evolutionReport,
+                                    compact: true,
+                                    onApplyVersion: onApplyVersionBump!,
+                                  ),
+                                if (specRefDrifts.isNotEmpty)
+                                  Tooltip(
+                                    message: specRefDrifts
+                                        .map(
+                                          (d) =>
+                                              '${d.refCode} (${d.status.label}) : ${d.summary}',
+                                        )
+                                        .join('\n'),
+                                    child: _PillBadge(
+                                      key: ValueKey(
+                                        'usecase-spec-drift-${useCase.id}',
+                                      ),
+                                      label: 'Δ Spec (${specRefDrifts.length})',
+                                      background: Colors.amber.withValues(
+                                        alpha: isDark ? 0.24 : 0.16,
+                                      ),
+                                      foreground: isDark
+                                          ? Colors.amber.shade200
+                                          : Colors.amber.shade900,
+                                    ),
+                                  ),
                                 Text(
                                   useCase.name,
                                   style: theme.textTheme.titleSmall?.copyWith(
@@ -2719,6 +2825,9 @@ class _SagaCard extends StatelessWidget {
     required this.onDeleteCompensationRow,
     required this.onEdit,
     required this.onDelete,
+    this.evolutionReport,
+    this.baselineLabel,
+    this.onApplyVersionBump,
     super.key,
   });
 
@@ -2739,6 +2848,9 @@ class _SagaCard extends StatelessWidget {
   final ValueChanged<SagaCompensationRow> onDeleteCompensationRow;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final ArtifactEvolutionReport? evolutionReport;
+  final String? baselineLabel;
+  final ValueChanged<String>? onApplyVersionBump;
 
   @override
   Widget build(BuildContext context) {
@@ -2807,6 +2919,37 @@ class _SagaCard extends StatelessWidget {
                                   background: colors.surfaceContainerHighest,
                                   foreground: colors.onSurfaceVariant,
                                 ),
+                                if (evolutionReport != null &&
+                                    evolutionReport!.state !=
+                                        ArtifactEvolutionState.noBaseline &&
+                                    evolutionReport!.state !=
+                                        ArtifactEvolutionState.unchanged)
+                                  EvolutionDriftBadge(
+                                    key: ValueKey(
+                                      'usecase-saga-evolution-badge-${saga.id}',
+                                    ),
+                                    report: evolutionReport,
+                                    compact: true,
+                                    onTap: () =>
+                                        ArtifactEvolutionDiffDialog.show(
+                                          context,
+                                          report: evolutionReport!,
+                                          baselineLabel: baselineLabel,
+                                          onApplyRecommendedVersion:
+                                              onApplyVersionBump,
+                                        ),
+                                  ),
+                                if (onApplyVersionBump != null &&
+                                    evolutionReport != null &&
+                                    evolutionReport!.needsVersionBump)
+                                  SemVerBumpActionChip(
+                                    key: ValueKey(
+                                      'usecase-saga-semver-bump-${saga.id}',
+                                    ),
+                                    report: evolutionReport,
+                                    compact: true,
+                                    onApplyVersion: onApplyVersionBump!,
+                                  ),
                                 Text(
                                   saga.name,
                                   style: theme.textTheme.titleSmall?.copyWith(
@@ -3032,6 +3175,7 @@ class _PillBadge extends StatelessWidget {
     required this.label,
     required this.background,
     required this.foreground,
+    super.key,
   });
 
   final String label;

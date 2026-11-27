@@ -8,6 +8,7 @@ import '../../../models/business_object_model_preferences.dart';
 import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -19,6 +20,8 @@ BuildHexaPromptSpec buildDomainInboundImplementationPrompt({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Points d’entrée entrants (contrôleurs HTTP/REST, DTOs d’entrée/sortie, consumers, guards) orchestrant les Use Cases du domaine.';
@@ -56,6 +59,10 @@ BuildHexaPromptSpec buildDomainInboundImplementationPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatImplementationBody(
@@ -63,6 +70,7 @@ BuildHexaPromptSpec buildDomainInboundImplementationPrompt({
     techStack: techStack,
     glossary: glossary,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -72,6 +80,10 @@ BuildHexaPromptSpec buildDomainInboundImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -80,6 +92,8 @@ BuildHexaPromptSpec buildDomainInboundUnitTestPrompt({
   required FunctionalDomain domain,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Tests unitaires des contrôleurs, validation des DTOs entrants, guards et mapping des erreurs vers les réponses HTTP/CLI.';
@@ -118,9 +132,17 @@ BuildHexaPromptSpec buildDomainInboundUnitTestPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
-  final body = _formatUnitTestBody(domain: domain, techStack: techStack);
+  final body = _formatUnitTestBody(
+    domain: domain,
+    techStack: techStack,
+    evolutionDecision: evolutionDecision,
+  );
 
   return BuildHexaPromptSpec(
     id: 'standalone:${BuildTechStackSection.inbound.name}:${BuildHexaPromptRole.unitTest.name}',
@@ -129,6 +151,10 @@ BuildHexaPromptSpec buildDomainInboundUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -176,6 +202,7 @@ String _formatImplementationBody({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final ctx = _collectInboundContext(domain);
   final buf = StringBuffer()
@@ -200,6 +227,13 @@ String _formatImplementationBody({
     domain,
     glossary,
     modelPreferences,
+  );
+
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.inbound,
+    role: BuildHexaPromptRole.implementation,
   );
 
   buf.writeln('## 3. Use Cases & Contrats DTO Exposés');
@@ -242,6 +276,7 @@ String _formatImplementationBody({
 String _formatUnitTestBody({
   required FunctionalDomain domain,
   BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final ctx = _collectInboundContext(domain);
   final buf = StringBuffer()
@@ -253,7 +288,16 @@ String _formatUnitTestBody({
     ..writeln(
       'Écris la suite de **tests unitaires** des adaptateurs entrants (contrôleurs, validation DTO, guards, consumers) du domaine **`${domain.domainCode}`** en remplaçant les Use Cases par des doublures en mémoire.',
     )
-    ..writeln()
+    ..writeln();
+
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.inbound,
+    role: BuildHexaPromptRole.unitTest,
+  );
+
+  buf
     ..writeln('## 2. Scénarios de Test Obligatoires')
     ..writeln(
       '- Validation des DTOs entrants (champs requis, formats, bornes) et rejet des payloads invalides.',

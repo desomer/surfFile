@@ -244,6 +244,10 @@ class SpecProjectStore {
   /// Identifiant de format d'un fichier de feature (`initiatives/<init>/features/<feat>/feature.json`).
   static const String specFeatureFormat = 'super_spec_forge.spec_feature';
 
+  /// Identifiant de format des empreintes de synchronisation d'objets métiers (`spec/object_sync_baselines.json`).
+  static const String objectSyncBaselinesFormat =
+      'super_spec_forge.object_sync_baselines';
+
   /// Identifiant de format du chat IA de découpage produit (`chats/portfolio_chat.json`).
   static const String portfolioChatFormat = 'super_spec_forge.portfolio_chat';
 
@@ -379,6 +383,10 @@ class SpecProjectStore {
 
   File _coherenceIssuesFile(Directory projectDir) => File(
     '${_specDir(projectDir).path}${Platform.pathSeparator}coherence_issues.json',
+  );
+
+  File _objectSyncBaselinesFile(Directory projectDir) => File(
+    '${_specDir(projectDir).path}${Platform.pathSeparator}object_sync_baselines.json',
   );
 
   File _stageChatFile(Directory projectDir, SpecForgeStage stage) => File(
@@ -844,6 +852,7 @@ class SpecProjectStore {
       _visionFile(projectDir),
       _cahierDesChargesFile(projectDir),
       _coherenceIssuesFile(projectDir),
+      _objectSyncBaselinesFile(projectDir),
       for (final stage in SpecFeatureSpec.featureScopedStages)
         _stageChatFile(projectDir, stage),
       for (final stage in UxForgeStage.values)
@@ -1056,6 +1065,29 @@ class SpecProjectStore {
           'items': [for (final i in feature.coherenceIssues) i.toJson()],
         }),
       );
+    }
+
+    if (prev == null ||
+        !mapEquals(prev.objectSyncBaselines, feature.objectSyncBaselines)) {
+      final syncBaselinesFile = _objectSyncBaselinesFile(baseDir);
+      if (feature.objectSyncBaselines.isNotEmpty) {
+        writes.add(
+          _writeJson(syncBaselinesFile, <String, Object?>{
+            'format': objectSyncBaselinesFormat,
+            'version': storageVersion,
+            'data': <String, Object?>{
+              for (final entry in feature.objectSyncBaselines.entries)
+                entry.key: entry.value.toJson(),
+            },
+          }),
+        );
+      } else if (await syncBaselinesFile.exists()) {
+        writes.add(() async {
+          try {
+            await syncBaselinesFile.delete();
+          } catch (_) {}
+        }());
+      }
     }
 
     final uxHasState =
@@ -2104,6 +2136,9 @@ class SpecProjectStore {
       idOf: (r) => r.id,
     );
     final issuesFuture = _readOptionalJsonMap(_coherenceIssuesFile(baseDir));
+    final syncBaselinesFuture = _readOptionalJsonMap(
+      _objectSyncBaselinesFile(baseDir),
+    );
     final stageFutures = <SpecForgeStage, Future<Map<dynamic, dynamic>?>>{
       for (final stage in SpecFeatureSpec.featureScopedStages)
         stage: _readOptionalJsonMap(_stageChatFile(baseDir, stage)),
@@ -2186,6 +2221,7 @@ class SpecProjectStore {
       exampleMapsFuture,
       rulesFuture,
       issuesFuture,
+      syncBaselinesFuture,
       uxNavFuture,
       uxIssuesFuture,
       uxJourneysFuture,
@@ -2214,6 +2250,7 @@ class SpecProjectStore {
     final exampleMappings = await exampleMapsFuture;
     final businessRules = await rulesFuture;
     final issuesMap = await issuesFuture;
+    final syncBaselinesMap = await syncBaselinesFuture;
     final uxNavMap = await uxNavFuture;
     final uxIssuesRaw = await uxIssuesFuture;
     final uxJourneys = await uxJourneysFuture;
@@ -2450,11 +2487,24 @@ class SpecProjectStore {
     }
 
     final rawIssues = issuesMap?['items'];
+    final rawSyncBaselines = syncBaselinesMap != null
+        ? (syncBaselinesMap.containsKey('data')
+              ? syncBaselinesMap['data']
+              : syncBaselinesMap)
+        : manifestFallback?['objectSyncBaselines'];
+    final parsedSyncBaselines = SpecFeatureSpec.parseObjectSyncBaselines(
+      rawSyncBaselines,
+    );
+    final loadedFromLegacyInlineSyncBaselines =
+        syncBaselinesMap == null &&
+        manifestFallback?['objectSyncBaselines'] != null &&
+        parsedSyncBaselines.isNotEmpty;
     final feature = metadataSeed.copyWith(
       vision: SpecVision.fromJson(visionMap?['data']),
       cahierDesCharges: SpecCahierDesCharges.fromJson(cdcMap?['data']),
       eventStorming: eventStorming,
       businessObjects: businessObjects,
+      objectSyncBaselines: parsedSyncBaselines,
       exampleMappings: exampleMappings,
       businessRules: businessRules,
       stageStates: stageStates,
@@ -2473,7 +2523,8 @@ class SpecProjectStore {
       loadedFromLegacyInline:
           loadedFromLegacyInlineUx ||
           loadedFromLegacyInlineQa ||
-          loadedFromLegacyInlineCost,
+          loadedFromLegacyInlineCost ||
+          loadedFromLegacyInlineSyncBaselines,
     );
   }
 

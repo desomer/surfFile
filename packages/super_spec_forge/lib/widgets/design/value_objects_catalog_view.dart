@@ -14,12 +14,15 @@ import 'package:super_container_layout/super_container_layout.dart'
 import '../../models/business_object_spec.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/value_object_spec.dart';
+import '../../services/design_evolution_analyzer.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
 import '../../services/spec_forge_controller.dart';
 import '../../services/value_object_primitive_detector.dart';
 import '../spec_split_handle.dart';
 import '../workspace/attribute_constraints_editor.dart';
+import 'contract_entry_view.dart' show ContractPhaseStatusStrip;
 import 'design_domain_breadcrumb.dart';
+import 'iteration_snapshot_dialogs.dart';
 import 'value_object_editor_dialog.dart';
 import 'value_objects_chat_pane.dart';
 
@@ -454,6 +457,12 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
                 ),
               ],
             ),
+            if (selectedDomain != null)
+              DomainIterationSnapshotBar(
+                controller: widget.controller,
+                domain: selectedDomain,
+                compact: true,
+              ),
             Expanded(
               child: _buildSplitWorkspace(
                 context,
@@ -702,7 +711,7 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
           child: Row(
             children: [
               SizedBox(
-                width: 300,
+                width: 320,
                 child: _buildMasterList(
                   context,
                   catalog: catalog,
@@ -789,6 +798,9 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final domainEvolution = selectedDomain == null
+        ? null
+        : widget.controller.analyzeDomainEvolution(selectedDomain.id);
     final inheritedShared =
         effectiveScope == ValueObjectScope.domain && selectedDomain != null
         ? [
@@ -826,6 +838,7 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
                   scope: effectiveScope,
                   ownerDomainId: selectedDomain?.id,
                 ).length;
+                final voReport = domainEvolution?.valueObjects[vo.id];
                 return Card(
                   key: ValueKey('vo-list-item-${vo.technicalName}'),
                   elevation: 0,
@@ -841,28 +854,116 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
                           : colors.outlineVariant.withValues(alpha: 0.6),
                     ),
                   ),
-                  child: ListTile(
-                    dense: true,
-                    onTap: () => setState(() => _selectedVoId = vo.id),
-                    leading: Icon(
-                      vo.isComposite
-                          ? Icons.view_module_outlined
-                          : Icons.diamond_outlined,
-                      size: 18,
-                      color: isSelected ? colors.primary : colors.onSurface,
-                    ),
-                    title: Text(
-                      vo.technicalName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${vo.name} · ${vo.kind.label}'
-                      '${usageCount > 0 ? ' · $usageCount usage(s)' : ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ListTile(
+                        dense: true,
+                        onTap: () => setState(() => _selectedVoId = vo.id),
+                        leading: Icon(
+                          vo.isComposite
+                              ? Icons.view_module_outlined
+                              : Icons.diamond_outlined,
+                          size: 18,
+                          color: isSelected ? colors.primary : colors.onSurface,
+                        ),
+                        title: Text(
+                          vo.technicalName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          '${vo.name} · ${vo.kind.label} · v${vo.version}'
+                          '${usageCount > 0 ? ' · $usageCount usage(s)' : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            ContractPhaseStatusStrip(
+                              keyPrefix: 'vo-stage-${vo.id}',
+                              states: vo.states,
+                              iconSize: 15,
+                              onStageTap: (stage) => unawaited(
+                                widget.controller.updateValueObjectStageStatus(
+                                  voId: vo.id,
+                                  scope: effectiveScope,
+                                  domainId: selectedDomain?.id,
+                                  stage: stage,
+                                ),
+                              ),
+                            ),
+                            if (selectedDomain != null && voReport != null) ...[
+                              if (voReport.state !=
+                                      ArtifactEvolutionState.noBaseline &&
+                                  voReport.state !=
+                                      ArtifactEvolutionState.unchanged)
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: EvolutionDriftBadge(
+                                    key: ValueKey(
+                                      'vo-evolution-badge-${vo.id}',
+                                    ),
+                                    report: voReport,
+                                    compact: true,
+                                    onTap: () =>
+                                        ArtifactEvolutionDiffDialog.show(
+                                          context,
+                                          report: voReport,
+                                          baselineLabel:
+                                              domainEvolution?.baseline?.label,
+                                          onApplyRecommendedVersion: (v) =>
+                                              unawaited(
+                                                widget.controller
+                                                    .applyDesignArtifactVersionBump(
+                                                      domainId:
+                                                          selectedDomain.id,
+                                                      kind: DesignArtifactKind
+                                                          .valueObject,
+                                                      artifactId: vo.id,
+                                                      newVersion: v,
+                                                      valueObjectScope:
+                                                          effectiveScope,
+                                                    ),
+                                              ),
+                                        ),
+                                  ),
+                                ),
+                              if (voReport.needsVersionBump)
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: SemVerBumpActionChip(
+                                    key: ValueKey('vo-semver-bump-${vo.id}'),
+                                    report: voReport,
+                                    compact: true,
+                                    onApplyVersion: (v) => unawaited(
+                                      widget.controller
+                                          .applyDesignArtifactVersionBump(
+                                            domainId: selectedDomain.id,
+                                            kind:
+                                                DesignArtifactKind.valueObject,
+                                            artifactId: vo.id,
+                                            newVersion: v,
+                                            valueObjectScope: effectiveScope,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
@@ -959,6 +1060,19 @@ class _ValueObjectsCatalogViewState extends State<ValueObjectsCatalogView> {
                       Chip(
                         visualDensity: VisualDensity.compact,
                         label: Text('${vo.category} · v${vo.version}'),
+                      ),
+                      ContractPhaseStatusStrip(
+                        keyPrefix: 'vo-detail-stage-${vo.id}',
+                        states: vo.states,
+                        iconSize: 16,
+                        onStageTap: (stage) => unawaited(
+                          widget.controller.updateValueObjectStageStatus(
+                            voId: vo.id,
+                            scope: effectiveScope,
+                            domainId: selectedDomain?.id,
+                            stage: stage,
+                          ),
+                        ),
                       ),
                     ],
                   ),

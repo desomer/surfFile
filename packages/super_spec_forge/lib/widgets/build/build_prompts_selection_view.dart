@@ -1,6 +1,8 @@
 /// Deuxième page de l'onglet Build ([BuildPromptsSelectionView]) affichant,
-/// regroupés par élément de design sélectionné (`Modèle`, `Use Case`, `Saga`),
-/// les prompts IA d'implémentation en Architecture Hexagonale.
+/// regroupés par élément de design sélectionné (`Value Object`, `Modèle`,
+/// `Use Case`, `Saga`), les prompts IA d'implémentation en Architecture
+/// Hexagonale ainsi que le sélecteur de mode de génération inter-itérations
+/// ([BuildPromptGenerationMode]).
 library;
 
 import 'dart:async';
@@ -12,13 +14,16 @@ import '../../models/build_design_item.dart';
 import '../../models/build_tech_stack_profile.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/domain_contracts.dart';
+import '../../services/design_evolution_analyzer.dart';
 import '../../services/exporters/build_hexa_prompt_generator.dart';
 import '../design/contract_entry_view.dart'
     show ContractPhaseStatusStrip, contractTypeColor;
+import '../design/iteration_snapshot_dialogs.dart' show EvolutionDriftBadge;
 import '../workspace/markdown_viewer_dialog.dart';
 import 'build_tech_stacks_dialog.dart';
 
 /// Vue « Sélection des Prompts IA » regroupant :
+/// - pour chaque **Value Object** sélectionné : 2 prompts (`Domain Impl/TU`),
 /// - pour chaque **Modèle** sélectionné : 4 prompts (`Domain Impl/TU`, `Persistance Impl/TU`),
 /// - pour chaque **Use Case** ou **Saga** sélectionné : 2 prompts (`UseCase / Saga Impl/TU`),
 /// - en bas de la liste (sans rattachement) : les groupes autonomes **Outbound**, **Inbound**, **Boilerplate**, **Dev Tools**, **Check Integration** et **Playground** (`Impl/TU`).
@@ -36,6 +41,10 @@ class BuildPromptsSelectionView extends StatefulWidget {
     this.onCopiedPrompt,
     this.markdownViewerSurfaceBuilder,
     this.markdownBrowserLauncher,
+    this.promptMode = BuildPromptGenerationMode.autoByBaseline,
+    this.hasActiveBaseline = false,
+    this.activeBaselineLabel,
+    this.onPromptModeChanged,
     super.key,
   });
 
@@ -71,6 +80,18 @@ class BuildPromptsSelectionView extends StatefulWidget {
 
   /// Lanceur navigateur optionnel pour le visualisateur Markdown (tests).
   final SpecMarkdownBrowserLauncher? markdownBrowserLauncher;
+
+  /// Mode courant de génération des prompts vis-à-vis du jalon d'itération actif.
+  final BuildPromptGenerationMode promptMode;
+
+  /// Indique si le domaine possède un jalon d'itération de référence actif.
+  final bool hasActiveBaseline;
+
+  /// Libellé du jalon d'itération actif lorsque [hasActiveBaseline] vaut `true`.
+  final String? activeBaselineLabel;
+
+  /// Callback optionnelle déclenchée lors du changement de [BuildPromptGenerationMode].
+  final ValueChanged<BuildPromptGenerationMode>? onPromptModeChanged;
 
   @override
   State<BuildPromptsSelectionView> createState() =>
@@ -140,9 +161,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   ];
 
   List<BuildTechStackSection> get _availableSections {
-    final present = {
-      for (final p in _allPrompts) p.section,
-    };
+    final present = {for (final p in _allPrompts) p.section};
     return <BuildTechStackSection>[
       for (final section in BuildTechStackSection.values)
         if (present.contains(section)) section,
@@ -355,6 +374,7 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
                 visiblePrompts: visiblePrompts,
                 selectedCount: selectedInGroup.length,
                 collapsed: collapsed,
+                hasActiveBaseline: widget.hasActiveBaseline,
                 isPromptSelected: _isPromptSelected,
                 isPromptExpanded: _expandedPromptIds.contains,
                 onToggleCollapsed: () => _toggleGroupCollapsed(group),
@@ -476,6 +496,12 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
               onChanged: widget.onTechStackChanged!,
               onManageStacks: widget.onManageTechStacks,
             ),
+          _PromptGenerationModeSelector(
+            promptMode: widget.promptMode,
+            hasActiveBaseline: widget.hasActiveBaseline,
+            activeBaselineLabel: widget.activeBaselineLabel,
+            onChanged: widget.onPromptModeChanged,
+          ),
           TextButton(
             key: const ValueKey('build-prompts-select-all-btn'),
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -533,12 +559,152 @@ class _BuildPromptsSelectionViewState extends State<BuildPromptsSelectionView> {
   }
 }
 
+class _PromptGenerationModeSelector extends StatelessWidget {
+  const _PromptGenerationModeSelector({
+    required this.promptMode,
+    required this.hasActiveBaseline,
+    required this.activeBaselineLabel,
+    required this.onChanged,
+  });
+
+  final BuildPromptGenerationMode promptMode;
+  final bool hasActiveBaseline;
+  final String? activeBaselineLabel;
+  final ValueChanged<BuildPromptGenerationMode>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final enabled = onChanged != null;
+    final cleanBaseline = activeBaselineLabel?.trim() ?? '';
+    final baselineSubtitle = hasActiveBaseline
+        ? 'Jalon actif : ${cleanBaseline.isNotEmpty ? cleanBaseline : 'Référence'}'
+        : 'Aucun jalon actif — génération complète';
+
+    return Container(
+      key: const ValueKey('build-prompt-mode-selector'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: enabled
+            ? colors.surfaceContainerLow
+            : colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: enabled
+              ? colors.primary.withValues(alpha: 0.35)
+              : colors.outlineVariant,
+        ),
+      ),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4,
+            children: [
+              Icon(
+                Icons.published_with_changes_rounded,
+                size: 15,
+                color: enabled ? colors.primary : colors.onSurfaceVariant,
+              ),
+              Text(
+                'Mode :',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          for (final mode in BuildPromptGenerationMode.values)
+            _buildModeSegment(
+              context,
+              mode: mode,
+              selected: promptMode == mode,
+              enabled: enabled,
+              colors: colors,
+              theme: theme,
+            ),
+          Text(
+            baselineSubtitle,
+            key: const ValueKey('build-prompt-mode-baseline-hint'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color: hasActiveBaseline
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+              fontWeight: hasActiveBaseline ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeSegment(
+    BuildContext context, {
+    required BuildPromptGenerationMode mode,
+    required bool selected,
+    required bool enabled,
+    required ColorScheme colors,
+    required ThemeData theme,
+  }) {
+    final bg = selected
+        ? (enabled
+              ? colors.primaryContainer
+              : colors.surfaceContainerHighest)
+        : Colors.transparent;
+    final fg = selected
+        ? (enabled ? colors.onPrimaryContainer : colors.onSurface)
+        : (enabled
+              ? colors.onSurfaceVariant
+              : colors.onSurfaceVariant.withValues(alpha: 0.65));
+    final border = selected
+        ? (enabled ? colors.primary : colors.outline)
+        : colors.outlineVariant.withValues(alpha: 0.6);
+
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        mode.label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontSize: 11.5,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: fg,
+        ),
+      ),
+    );
+
+    return Tooltip(
+      message: mode.subtitle,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey('build-prompt-mode-${mode.name}'),
+          borderRadius: BorderRadius.circular(7),
+          onTap: enabled ? () => onChanged!(mode) : null,
+          child: pill,
+        ),
+      ),
+    );
+  }
+}
+
 class _BuildPromptGroupCard extends StatelessWidget {
   const _BuildPromptGroupCard({
     required this.group,
     required this.visiblePrompts,
     required this.selectedCount,
     required this.collapsed,
+    required this.hasActiveBaseline,
     required this.isPromptSelected,
     required this.isPromptExpanded,
     required this.onToggleCollapsed,
@@ -554,6 +720,7 @@ class _BuildPromptGroupCard extends StatelessWidget {
   final List<BuildHexaPromptSpec> visiblePrompts;
   final int selectedCount;
   final bool collapsed;
+  final bool hasActiveBaseline;
   final bool Function(BuildHexaPromptSpec) isPromptSelected;
   final bool Function(String promptId) isPromptExpanded;
   final VoidCallback onToggleCollapsed;
@@ -568,11 +735,13 @@ class _BuildPromptGroupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
     final item = group.item;
     final (badgeBg, badgeFg) = _groupBadgeColors(group, colors);
     final keySlug = item != null
         ? '${item.kind.name}-${item.id}'
         : 'standalone-${group.standaloneSection!.name}';
+    final hasDeltaInGroup = visiblePrompts.any((p) => p.isEvolutionDelta);
 
     return Container(
       key: ValueKey('build-prompt-group-$keySlug'),
@@ -655,6 +824,25 @@ class _BuildPromptGroupCard extends StatelessWidget {
                                   background: colors.surfaceContainerHighest,
                                   foreground: colors.onSurfaceVariant,
                                 ),
+                                if (hasActiveBaseline && item != null)
+                                  EvolutionDriftBadge(
+                                    report: item.evolution,
+                                    compact: true,
+                                  )
+                                else if (hasActiveBaseline && hasDeltaInGroup)
+                                  _GroupPill(
+                                    key: ValueKey(
+                                      'prompt-group-delta-badge-$keySlug',
+                                    ),
+                                    label: 'Migration / décommissionnement',
+                                    background: Colors.amber.withValues(
+                                      alpha: isDark ? 0.22 : 0.16,
+                                    ),
+                                    foreground: isDark
+                                        ? Colors.amber.shade200
+                                        : Colors.orange.shade900,
+                                    icon: Icons.compare_arrows_rounded,
+                                  ),
                               ],
                             ),
                           ),
@@ -701,6 +889,7 @@ class _BuildPromptGroupCard extends StatelessWidget {
                             prompt: prompt,
                             selected: isPromptSelected(prompt),
                             expanded: isPromptExpanded(prompt.id),
+                            hasActiveBaseline: hasActiveBaseline,
                             onToggleSelected: () =>
                                 onTogglePromptSelected(prompt.id),
                             onToggleExpanded: () =>
@@ -752,6 +941,9 @@ class _BuildPromptGroupCard extends StatelessWidget {
       };
     }
     switch (item.kind) {
+      case BuildDesignItemKind.valueObject:
+        final base = Colors.cyan.shade700;
+        return (base.withValues(alpha: 0.15), base);
       case BuildDesignItemKind.model:
         final base = contractTypeColor(item.primaryBadge);
         return (base.withValues(alpha: 0.15), base);
@@ -768,6 +960,7 @@ class _BuildPromptTile extends StatelessWidget {
     required this.prompt,
     required this.selected,
     required this.expanded,
+    required this.hasActiveBaseline,
     required this.onToggleSelected,
     required this.onToggleExpanded,
     required this.onCopy,
@@ -777,6 +970,7 @@ class _BuildPromptTile extends StatelessWidget {
   final BuildHexaPromptSpec prompt;
   final bool selected;
   final bool expanded;
+  final bool hasActiveBaseline;
   final VoidCallback onToggleSelected;
   final VoidCallback onToggleExpanded;
   final VoidCallback onCopy;
@@ -786,8 +980,17 @@ class _BuildPromptTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final isDark = colors.brightness == Brightness.dark;
     final (roleBg, roleFg) = _roleBadgeColors(prompt.role, colors);
     final (sectionBg, sectionFg) = _sectionBadgeColors(prompt.section, colors);
+    final isImpactedOnly =
+        prompt.item?.evolutionState == ArtifactEvolutionState.impacted;
+    final deltaBg = isImpactedOnly
+        ? Colors.indigo.withValues(alpha: isDark ? 0.24 : 0.14)
+        : Colors.amber.withValues(alpha: isDark ? 0.22 : 0.16);
+    final deltaFg = isImpactedOnly
+        ? (isDark ? Colors.indigo.shade200 : Colors.indigo.shade800)
+        : (isDark ? Colors.amber.shade200 : Colors.orange.shade900);
 
     return Container(
       key: ValueKey('build-prompt-card-${prompt.id}'),
@@ -846,6 +1049,31 @@ class _BuildPromptTile extends StatelessWidget {
                                 foreground: roleFg,
                                 icon: _iconForRole(prompt.role),
                               ),
+                              if (prompt.isEvolutionDelta)
+                                _GroupPill(
+                                  key: ValueKey(
+                                    'prompt-delta-badge-${prompt.id}',
+                                  ),
+                                  label:
+                                      'Delta v${prompt.baselineVersion ?? '—'} → v${prompt.item?.version ?? '—'}',
+                                  background: deltaBg,
+                                  foreground: deltaFg,
+                                  icon: Icons.compare_arrows_rounded,
+                                )
+                              else if (hasActiveBaseline)
+                                _GroupPill(
+                                  key: ValueKey(
+                                    'prompt-full-badge-${prompt.id}',
+                                  ),
+                                  label: 'Création complète',
+                                  background: Colors.teal.withValues(
+                                    alpha: isDark ? 0.20 : 0.12,
+                                  ),
+                                  foreground: isDark
+                                      ? Colors.teal.shade200
+                                      : Colors.teal.shade800,
+                                  icon: Icons.fiber_new_outlined,
+                                ),
                               Text(
                                 prompt.title,
                                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -870,9 +1098,7 @@ class _BuildPromptTile extends StatelessWidget {
                   tooltip: expanded ? 'Masquer le prompt' : 'Voir le prompt',
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
-                    expanded
-                        ? Icons.unfold_less_rounded
-                        : Icons.code_rounded,
+                    expanded ? Icons.unfold_less_rounded : Icons.code_rounded,
                     size: 18,
                   ),
                   onPressed: onToggleExpanded,
@@ -983,6 +1209,7 @@ class _GroupPill extends StatelessWidget {
     required this.background,
     required this.foreground,
     this.icon,
+    super.key,
   });
 
   final String label;
@@ -1003,12 +1230,16 @@ class _GroupPill extends StatelessWidget {
         spacing: 4,
         children: [
           if (icon != null) Icon(icon, size: 13, color: foreground),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: foreground,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: foreground,
+              ),
             ),
           ),
         ],
@@ -1018,6 +1249,7 @@ class _GroupPill extends StatelessWidget {
 }
 
 IconData _iconForItemKind(BuildDesignItemKind kind) => switch (kind) {
+  BuildDesignItemKind.valueObject => Icons.verified_outlined,
   BuildDesignItemKind.model => Icons.data_object_rounded,
   BuildDesignItemKind.useCase => Icons.check_circle_outline_rounded,
   BuildDesignItemKind.saga => Icons.account_tree_outlined,

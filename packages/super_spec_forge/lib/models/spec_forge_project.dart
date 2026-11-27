@@ -10,6 +10,7 @@ import 'business_rule_spec.dart';
 import 'cost/cost_forge_spec.dart';
 import 'event_storming_spec.dart';
 import 'example_mapping_spec.dart';
+import 'feature_object_sync_baseline.dart';
 import 'qa/qa_forge_spec.dart';
 import 'spec_cahier_des_charges.dart';
 import 'spec_coherence_issue.dart';
@@ -38,6 +39,8 @@ class SpecForgeProject {
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
     List<BusinessObjectSpec> businessObjects = const <BusinessObjectSpec>[],
+    Map<String, FeatureObjectSyncBaseline> objectSyncBaselines =
+        const <String, FeatureObjectSyncBaseline>{},
     List<ExampleMapStory> exampleMappings = const <ExampleMapStory>[],
     List<BusinessRuleSpec> businessRules = const <BusinessRuleSpec>[],
     BusinessObjectModelPreferences? businessObjectModelPreferences,
@@ -80,6 +83,7 @@ class SpecForgeProject {
            cahierDesCharges: cahierDesCharges,
            eventStorming: eventStorming,
            businessObjects: businessObjects,
+           objectSyncBaselines: objectSyncBaselines,
            exampleMappings: exampleMappings,
            businessRules: businessRules,
            stageStates: stageStates,
@@ -263,6 +267,10 @@ class SpecForgeProject {
   /// Livrable de l'étape 5 (Objets métiers) de la feature active.
   List<BusinessObjectSpec> get businessObjects =>
       _activeFeature.businessObjects;
+
+  /// Empreintes de synchronisation des objets métiers de la feature active.
+  Map<String, FeatureObjectSyncBaseline> get objectSyncBaselines =>
+      _activeFeature.objectSyncBaselines;
 
   /// Livrable de l'étape 6 (Tableaux d'Example Mapping) de la feature active.
   List<ExampleMapStory> get exampleMappings => _activeFeature.exampleMappings;
@@ -698,6 +706,7 @@ class SpecForgeProject {
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
     List<BusinessObjectSpec>? businessObjects,
+    Map<String, FeatureObjectSyncBaseline>? objectSyncBaselines,
     List<ExampleMapStory>? exampleMappings,
     List<BusinessRuleSpec>? businessRules,
     BusinessObjectModelPreferences? businessObjectModelPreferences,
@@ -721,6 +730,7 @@ class SpecForgeProject {
         cahierDesCharges != null ||
         eventStorming != null ||
         businessObjects != null ||
+        objectSyncBaselines != null ||
         exampleMappings != null ||
         businessRules != null ||
         stageStates != null ||
@@ -744,6 +754,7 @@ class SpecForgeProject {
                         cahierDesCharges: cahierDesCharges,
                         eventStorming: eventStorming,
                         businessObjects: businessObjects,
+                        objectSyncBaselines: objectSyncBaselines,
                         exampleMappings: exampleMappings,
                         businessRules: businessRules,
                         stageStates: stageStates,
@@ -800,6 +811,11 @@ class SpecForgeProject {
     'cahierDesCharges': cahierDesCharges.toJson(),
     if (eventStorming.hasContent) 'eventStorming': eventStorming.toJson(),
     'businessObjects': [for (final o in businessObjects) o.toJson()],
+    if (objectSyncBaselines.isNotEmpty)
+      'objectSyncBaselines': <String, Object?>{
+        for (final entry in objectSyncBaselines.entries)
+          entry.key: entry.value.toJson(),
+      },
     if (exampleMappings.isNotEmpty)
       'exampleMappings': [for (final s in exampleMappings) s.toJson()],
     'businessRules': [for (final r in businessRules) r.toJson()],
@@ -878,6 +894,9 @@ class SpecForgeProject {
           for (final item in raw['businessObjects'] as List)
             BusinessObjectSpec.fromJson(item),
       ],
+      objectSyncBaselines: SpecFeatureSpec.parseObjectSyncBaselines(
+        raw['objectSyncBaselines'],
+      ),
       exampleMappings: [
         if (raw['exampleMappings'] is List)
           for (final item in raw['exampleMappings'] as List)
@@ -948,6 +967,7 @@ class SpecForgeProject {
     required SpecCahierDesCharges? cahierDesCharges,
     required EventStormingSpec? eventStorming,
     required List<BusinessObjectSpec> businessObjects,
+    required Map<String, FeatureObjectSyncBaseline> objectSyncBaselines,
     required List<ExampleMapStory> exampleMappings,
     required List<BusinessRuleSpec> businessRules,
     required Map<SpecForgeStage, SpecStageState>? stageStates,
@@ -963,6 +983,7 @@ class SpecForgeProject {
       cahierDesCharges: cahierDesCharges,
       eventStorming: eventStorming,
       businessObjects: businessObjects,
+      objectSyncBaselines: objectSyncBaselines,
       exampleMappings: exampleMappings,
       businessRules: businessRules,
       stageStates: stageStates,

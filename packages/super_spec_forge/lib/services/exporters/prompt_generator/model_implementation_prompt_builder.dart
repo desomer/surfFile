@@ -8,6 +8,7 @@ import '../../../models/business_object_model_preferences.dart';
 import '../../../models/company_glossary.dart';
 import '../../spec_storage_slug.dart';
 import 'model_prompt_context.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_json_schema_builder.dart';
 import 'prompt_markdown_sections.dart';
@@ -20,6 +21,8 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final domain = ctx.domain;
   final item = ctx.item;
@@ -63,6 +66,10 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
       'artifactName': objectSpec.technicalName,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatBody(
@@ -70,6 +77,7 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
     techStack: techStack,
     glossary: glossary,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -80,6 +88,10 @@ BuildHexaPromptSpec buildModelImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -88,6 +100,7 @@ String _formatBody({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final domain = ctx.domain;
   final objectSpec = ctx.objectSpec;
@@ -123,6 +136,14 @@ String _formatBody({
     domain,
     glossary,
     modelPreferences,
+  );
+
+  PromptEvolutionSections.writeModelEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    ctx: ctx,
+    section: BuildTechStackSection.domain,
+    role: BuildHexaPromptRole.implementation,
   );
 
   buf

@@ -182,19 +182,21 @@ L'onglet **Build** du `NavigationRail` s'ouvre sur une page d'actions dédiée
 domaine sélectionné dans le fil d'Ariane (`DesignDomainBreadcrumbBar`, synchronisé
 avec l'espace **Design**), l'ensemble des items de conception porteurs des
 quatre indicateurs d'avancement (`Conception`, `Validation`, `Code`, `Livraison`) :
+- **Value Objects** (`ValueObjectSpec` du domaine et du `Shared Kernel`),
 - **Modèles & Contrats** (toutes les entrées du catalogue `DomainContracts` : `model`, `part`, `component`, DTO, messages),
 - **Cas d’usage** (`ApplicationUseCaseSpec`),
 - **Sagas** (`OrchestrationSagaSpec`).
 
-Une barre de recherche et de filtrage rapide (catégorie, étape, statut) permet
+Une barre de recherche et de filtrage rapide (catégorie, étape, statut et évolution inter-itérations) permet
 d'isoler les éléments à implémenter ou livrer, et un clic direct sur les icônes
 d'étapes fait évoluer leur statut (`À faire → En cours → Terminé`) avec
 persistance immédiate dans le domaine.
 
-La sélection multiple d'items (`Modèles`, `Use Cases`, `Sagas`) active le bouton
+La sélection multiple d'items (`Value Objects`, `Modèles`, `Use Cases`, `Sagas`) active le bouton
 **Sélection des Prompts IA**, qui ouvre dans le fil d'Ariane
 (*Domaine › Items de design & avancement › Sélection des Prompts IA*) la vue
 `BuildPromptsSelectionView` (`BuildHexaPromptGenerator`) regroupant :
+- **Value Object** (2 prompts) : *Domain — Implémentation* et *Domain — Test unitaire* (matrice TDD issue des exemples valides/invalides et contraintes JSON Schema),
 - **Modèle** (4 prompts) : *Domain — Implémentation*, *Domain — Test unitaire*, *Persistance — Implémentation* et *Persistance — Test unitaire*,
 - **Use Case** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
 - **Saga** (2 prompts) : *UseCase / Saga — Implémentation* et *UseCase / Saga — Test unitaire*,
@@ -218,6 +220,33 @@ spécifiques configurables sur les 9 parties **Domain**, **UseCase / Saga**,
 (`ts-nestjs`) est fourni par défaut et entièrement personnalisable dans un
 éditeur complet depuis **Build › Gestion des Stack technique** ou directement
 depuis le sélecteur de stack de **Génération des prompts agentiques**.
+
+## Partage et synchronisation des objets métiers entre Features (`Spec`)
+
+Chaque `SpecFeatureSpec` (`FEAT-01` MVP, `FEAT-02` Lot 2…) conserve sa propre copie isolée des objets métiers sur disque afin qu'un lot futur ne modifie jamais silencieusement une spécification déjà validée, tout en partageant l'identité canonique des entités via trois mécanismes :
+
+1. **Import & Synchronisation 3-voies (`Feature ↔ Feature` et `Design → Spec`)** (`FeatureObjectSyncEngine`, `ImportSyncBusinessObjectsDialog`) :
+   - Depuis l'étape **Objets métiers**, le bouton **« Importer / Synchroniser… »** permet d'importer ou de resynchroniser en 3-voies des objets depuis **une autre feature du projet** (en conservant leurs `id` et `technicalName` canoniques) ou depuis **un domaine fonctionnel Design** (projection inverse automatique des `ValueObjectSpec` scalaires et composites vers la Spec).
+   - La photographie de référence `FeatureObjectSyncBaseline` est mémorisée dans `SpecFeatureSpec.objectSyncBaselines` (`spec/object_sync_baselines.json`) pour préserver les attributs propres à la feature cible lors des synchronisations ultérieures.
+   - Côté Design, `SpecOriginBaseline.contributingFeatures` cumule toutes les features ayant successivement promu un même contrat (`FEAT-01, FEAT-02`).
+2. **Gouvernance `additive_warn_on_validated` & Impacts croisés (`RG`, `UX`, `QA`)** (`CrossFeatureObjectAnalyzer`) :
+   - Les enrichissements additifs (nouveaux attributs optionnels, nouvelles valeurs d'énumération, nouveaux états/transitions) sont libres entre features.
+   - Toute divergence cassante vis-à-vis d'une feature **Validée** ou impactant les règles `RG-xxx`, écrans **UX** ou fixtures/tests **QA** d'une feature sœur remonte des badges d'alerte cliquables dans `BusinessObjectsEditorView`, la carte *Objets métiers & Partage inter-features* de `ProjectInitiativesView` et les diagnostics `COH-FEAT-001` / `COH-FEAT-002` de `SpecCoherenceAnalyzer`.
+3. **Contexte IA inter-features** (`SpecPromptBuilder`, `list_sibling_features_business_objects`) :
+   - Lorsqu'un projet comporte plusieurs features, le référentiel des objets métiers des features sœurs est injecté en lecture seule dans les prompts IA et inspectable via l'outil `list_sibling_features_business_objects` afin de réutiliser les identifiants canoniques sans doublons divergents.
+
+## Gestion des évolutions inter-itérations (Spec → Design → Build)
+
+1. **Merge 3-voies Spec → Design & détection de dérive amont** (`SpecDesignMergeEngine`, `SpecDesignDriftAnalyzer`) :
+   - Chaque contrat promu conserve sa référence d'origine (`SpecOriginBaseline` dans `ContractDetails.specOrigin`).
+   - Lors d'une re-promotion en itération N+1 (`PromoteBusinessObjectsDialog`), le mode par défaut **Fusionner (conserver Design)** applique les ajouts/modifications/suppressions de la Spec tout en préservant les liaisons vers les `ValueObjectSpec`, les attributs techniques exclusifs au Design et les index/contraintes `x-database-index` / `x-searchable` / `x-mask`, avec aperçu détaillé du merge avant validation.
+   - Les contrats ou références `RG-xxx` / `EXF-xxx` / `UC-xxx` modifiés côté Spec sont signalés dans **Modèles & Contrats** et **Cas d’usage & orchestration**.
+2. **Jalons d'itération par domaine, SemVer assisté & Graphe d'impact** (`DomainIterationSnapshot`, `DesignEvolutionAnalyzer`) :
+   - La barre de jalon (`DomainIterationSnapshotBar`) permet de figer explicitement chaque itération d'un domaine (*Figer un jalon…*, ex. `Itération 1 — MVP`, capturant Modèles, Couches Domain, Value Objects du domaine et du Shared Kernel, Use Cases et Sagas) et de comparer à tout moment l'état courant à un jalon de référence.
+   - Chaque modification est qualifiée (`Patch`, `Mineur`, `Majeur / Breaking`) avec bouton 1-clic de **Bump SemVer suggéré** et propagation transitive d'impact (`Shared/Domain ValueObject → ValueObjects composites → Modèles/Contrats → Use Cases → Sagas`).
+3. **Suivi Build non intrusif (`badge_only`) & Prompts IA Delta (`vN → vN+1`)** :
+   - Les 4 indicateurs d'étapes (`Conception`, `Validation`, `Code`, `Livraison`) ne sont jamais rétrogradés automatiquement : des badges explicites (`Nouveau`, `Δ Modifié`, `⇄ Impacté`), un bandeau des artefacts supprimés à décommissionner, un filtre rapide *Évolués* et une sélection en 1 clic signalent les écarts depuis le jalon actif.
+   - Dans **Sélection des Prompts IA**, le sélecteur de mode (**Auto selon jalon**, **Delta `vN → vN+1`**, **Complet from scratch**) injecte automatiquement dans les prompts concernés la section **Évolution Inter-Itérations & Consignes de Migration** (changelog structuré, impacts amont, migrations de persistance et adaptation non régressive des tests unitaires).
 
 ## Lancement & Validation
 

@@ -8,6 +8,7 @@ import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../../models/usecase_orchestration_spec.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -20,6 +21,8 @@ BuildHexaPromptSpec buildSagaImplementationPrompt({
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final title =
       '${saga.code} · ${saga.name} — Implémentation Saga (${saga.coordinationMode.label})';
@@ -61,6 +64,10 @@ BuildHexaPromptSpec buildSagaImplementationPrompt({
       'coordination': saga.coordinationMode.name,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatBody(
@@ -68,6 +75,7 @@ BuildHexaPromptSpec buildSagaImplementationPrompt({
     saga: saga,
     techStack: techStack,
     glossary: glossary,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -78,6 +86,10 @@ BuildHexaPromptSpec buildSagaImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -86,6 +98,7 @@ String _formatBody({
   required OrchestrationSagaSpec saga,
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final buf = StringBuffer()
     ..writeln(
@@ -105,6 +118,13 @@ String _formatBody({
     ..writeln();
 
   PromptMarkdownSections.writeDomainContextSection(buf, domain, glossary, null);
+
+  PromptEvolutionSections.writeSagaEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    currentSaga: saga,
+    role: BuildHexaPromptRole.implementation,
+  );
 
   buf
     ..writeln('## 3. Paramètres de Coordination de la Saga')

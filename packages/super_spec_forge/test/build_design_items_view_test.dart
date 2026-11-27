@@ -1,4 +1,4 @@
-import 'dart:convert';
+ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -428,9 +428,7 @@ void main() {
       );
     });
 
-    test(
-      'BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2x6 autonomes Outbound / Inbound / Boilerplate / Dev Tools / Check Integration / Playground',
-      () {
+    test('BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2x6 autonomes Outbound / Inbound / Boilerplate / Dev Tools / Check Integration / Playground', () {
       final domain = _buildBillingDomain();
       final projection = BuildDomainDesignItems.fromDomain(domain);
       final invoiceItem = projection.models.firstWhere(
@@ -469,7 +467,10 @@ void main() {
       expect(groups[5].item, isNull);
       expect(groups[6].standaloneSection, BuildTechStackSection.devTools);
       expect(groups[6].item, isNull);
-      expect(groups[7].standaloneSection, BuildTechStackSection.checkIntegration);
+      expect(
+        groups[7].standaloneSection,
+        BuildTechStackSection.checkIntegration,
+      );
       expect(groups[7].item, isNull);
       expect(groups[8].standaloneSection, BuildTechStackSection.playground);
       expect(groups[8].item, isNull);
@@ -607,7 +608,10 @@ void main() {
       );
       expect(
         groups[0].prompts[3].promptMarkdown,
-        allOf(contains('Tests Unitaires Persistance'), contains('InvoiceRepository')),
+        allOf(
+          contains('Tests Unitaires Persistance'),
+          contains('InvoiceRepository'),
+        ),
       );
 
       // Use Case : Implémentation contient les JSON Schemas stricts Input & Output + Tests unitaires.
@@ -711,12 +715,18 @@ void main() {
       );
       expect(
         groups[4].prompts[0].promptMarkdown,
-        allOf(contains('IssueInvoiceUseCase'), contains('CreateInvoiceRequest')),
+        allOf(
+          contains('IssueInvoiceUseCase'),
+          contains('CreateInvoiceRequest'),
+        ),
       );
       expect(
         groups[5].prompts.map((p) => (p.section, p.role)),
         equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
-          (BuildTechStackSection.boilerplate, BuildHexaPromptRole.implementation),
+          (
+            BuildTechStackSection.boilerplate,
+            BuildHexaPromptRole.implementation,
+          ),
           (BuildTechStackSection.boilerplate, BuildHexaPromptRole.unitTest),
         ]),
       );
@@ -747,14 +757,14 @@ void main() {
       expect(
         groups[8].prompts.map((p) => (p.section, p.role)),
         equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
-          (BuildTechStackSection.playground, BuildHexaPromptRole.implementation),
+          (
+            BuildTechStackSection.playground,
+            BuildHexaPromptRole.implementation,
+          ),
           (BuildTechStackSection.playground, BuildHexaPromptRole.unitTest),
         ]),
       );
-      expect(
-        groups[8].prompts[0].promptMarkdown,
-        contains('Playground'),
-      );
+      expect(groups[8].prompts[0].promptMarkdown, contains('Playground'));
 
       final combined = BuildHexaPromptGenerator.combinePromptsMarkdown(
         domain: domain,
@@ -786,7 +796,9 @@ void main() {
         find.byKey(const ValueKey('spec-forge-build-menu-view')),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.tap(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Ajoutez un domaine pour commencer.'), findsOneWidget);
@@ -825,7 +837,9 @@ void main() {
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.tap(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+      );
       await tester.pumpAndSettle();
 
       // Vérifie l'affichage des 3 sections du premier domaine (Facturation).
@@ -958,7 +972,9 @@ void main() {
         );
       });
 
-      final invoiceCard = find.byKey(ValueKey('build-item-model-$invoiceNodeId'));
+      final invoiceCard = find.byKey(
+        ValueKey('build-item-model-$invoiceNodeId'),
+      );
       await tester.ensureVisible(invoiceCard);
       await tester.pumpAndSettle();
       await tester.tap(invoiceCard);
@@ -1206,7 +1222,9 @@ void main() {
       expect(
         prompt.promptMarkdown,
         allOf(
-          contains('## Mise à jour obligatoire de la documentation IA du projet'),
+          contains(
+            '## Mise à jour obligatoire de la documentation IA du projet',
+          ),
           contains('du module `billing`'),
         ),
       );
@@ -1215,7 +1233,9 @@ void main() {
         case (BuildTechStackSection.domain, BuildHexaPromptRole.implementation):
           expect(
             prompt.promptMarkdown,
-            contains('src/\n└── core/                # Domaine pur (DDD)\n    └── billing/'),
+            contains(
+              'src/\n└── core/                # Domaine pur (DDD)\n    └── billing/',
+            ),
           );
           expect(
             prompt.promptMarkdown,
@@ -1240,7 +1260,10 @@ void main() {
               contains('@ai-modification-guide'),
             ),
           );
-        case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.useCaseSaga,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(
             prompt.promptMarkdown,
             contains('src/\n└── core/\n    └── billing/\n        ├── ports/\n'),
@@ -1259,7 +1282,9 @@ void main() {
         case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.unitTest):
           expect(
             prompt.promptMarkdown,
-            contains('src/\n└── core/\n    └── billing/\n        └── application/'),
+            contains(
+              'src/\n└── core/\n    └── billing/\n        └── application/',
+            ),
           );
           expect(
             prompt.promptMarkdown,
@@ -1271,7 +1296,10 @@ void main() {
               contains('compensationMatrix'),
             ),
           );
-        case (BuildTechStackSection.outbound, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.outbound,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(
             prompt.promptMarkdown,
             allOf(
@@ -1289,7 +1317,10 @@ void main() {
             prompt.promptMarkdown,
             contains('identique au domaine principal'),
           );
-        case (BuildTechStackSection.inbound, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.inbound,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(
             prompt.promptMarkdown,
             allOf(
@@ -1303,7 +1334,10 @@ void main() {
           );
         case (BuildTechStackSection.inbound, BuildHexaPromptRole.unitTest):
           expect(prompt.promptMarkdown, contains('└── inbound/'));
-        case (BuildTechStackSection.persistence, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.persistence,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(
             prompt.promptMarkdown,
             contains('src/\n└── infrastructure/\n    └── billing/'),
@@ -1314,7 +1348,9 @@ void main() {
               contains('billing.module.ts'),
               contains('SCHÉMA MONGOOSE & INDEXATION'),
               contains('core/billing/ports/repositories'),
-              contains('src/infrastructure/billing/outbound/persistence/repositories/'),
+              contains(
+                'src/infrastructure/billing/outbound/persistence/repositories/',
+              ),
               contains('error.code === 11000'),
               contains('@collaborators'),
             ),
@@ -1324,7 +1360,10 @@ void main() {
             prompt.promptMarkdown,
             contains('identique au domaine principal'),
           );
-        case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.boilerplate,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(prompt.promptMarkdown, contains('├── main.ts'));
           expect(
             prompt.promptMarkdown,
@@ -1338,7 +1377,10 @@ void main() {
           );
         case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.unitTest):
           expect(prompt.promptMarkdown, contains('└── shared/'));
-        case (BuildTechStackSection.devTools, BuildHexaPromptRole.implementation):
+        case (
+          BuildTechStackSection.devTools,
+          BuildHexaPromptRole.implementation,
+        ):
           expect(
             prompt.promptMarkdown,
             allOf(
@@ -1372,7 +1414,10 @@ void main() {
           BuildHexaPromptRole.unitTest,
         ):
           expect(prompt.promptMarkdown, contains('└── e2e/'));
-          expect(prompt.promptMarkdown, contains('batterie de vérification complète'));
+          expect(
+            prompt.promptMarkdown,
+            contains('batterie de vérification complète'),
+          );
         case (
           BuildTechStackSection.playground,
           BuildHexaPromptRole.implementation,
@@ -1393,8 +1438,7 @@ void main() {
 
     // Lorsque des consignes Playground personnalisées sont configurées, elles sont injectées.
     final customPlaygroundStack = BuildTechStackProfile.tsNestJsPreset.copyWith(
-      playgroundImplementationExtension:
-          '- Générer un script `playground/billing/demo.ts` exécutable via `tsx`.',
+      playgroundImplementationExtension: '- Générer un script `playground/billing/demo.ts` exécutable via `tsx`.',
     );
     final customPlaygroundGroups = BuildHexaPromptGenerator.generateGroups(
       domain: billing,
@@ -1402,7 +1446,9 @@ void main() {
       techStack: customPlaygroundStack,
     );
     final playgroundImplPrompt = customPlaygroundGroups
-        .firstWhere((g) => g.standaloneSection == BuildTechStackSection.playground)
+        .firstWhere(
+          (g) => g.standaloneSection == BuildTechStackSection.playground,
+        )
         .prompts
         .first;
     expect(
@@ -1555,9 +1601,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(
-          const ValueKey(
-            'tech-stack-folders-useCaseSaga-implementation-field',
-          ),
+          const ValueKey('tech-stack-folders-useCaseSaga-implementation-field'),
         ),
         'src/main/java/com/acme/{{domain}}/application/',
       );
@@ -1570,9 +1614,7 @@ void main() {
 
       // Sous-onglet Test unitaire sous UseCase / Saga.
       await tester.tap(
-        find.byKey(
-          const ValueKey('tech-stack-subtab-useCaseSaga-unitTest'),
-        ),
+        find.byKey(const ValueKey('tech-stack-subtab-useCaseSaga-unitTest')),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -1582,9 +1624,7 @@ void main() {
         'src/test/java/com/acme/{{domain}}/application/',
       );
       await tester.enterText(
-        find.byKey(
-          const ValueKey('tech-stack-ext-useCaseSaga-unitTest-field'),
-        ),
+        find.byKey(const ValueKey('tech-stack-ext-useCaseSaga-unitTest-field')),
         '- Utilise JUnit 5 avec fakes en mémoire.',
       );
 
@@ -1596,13 +1636,17 @@ void main() {
       );
 
       // Revient au menu Build via l'AppBar puis ouvre « Génération des prompts agentiques ».
-      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
+      await tester.tap(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('spec-forge-build-menu-view')),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.tap(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+      );
       await tester.pumpAndSettle();
 
       // Sélectionne la nouvelle stack pour le domaine Facturation.
@@ -1656,10 +1700,7 @@ void main() {
         lastClipboardText,
         contains('Utilise JUnit 5 avec fakes en mémoire.'),
       );
-      expect(
-        lastClipboardText,
-        contains('## Documentation IA'),
-      );
+      expect(lastClipboardText, contains('## Documentation IA'));
       expect(
         lastClipboardText,
         contains('Mettre à jour `docs/architecture.md` pour `billing`.'),
@@ -1694,7 +1735,9 @@ void main() {
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.tap(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+      );
       await tester.pumpAndSettle();
 
       // Sélectionne un item de Facturation (encore sans stack) puis ouvre Prompts IA.
@@ -1738,13 +1781,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('## Extension Stack Technique & Structure des Dossiers'),
+        find.textContaining(
+          '## Extension Stack Technique & Structure des Dossiers',
+        ),
         findsOneWidget,
       );
-      expect(
-        find.textContaining('## Documentation IA'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('## Documentation IA'), findsOneWidget);
     },
   );
 
@@ -1869,7 +1911,9 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.tap(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('build-item-useCase-uc_issue_invoice')),
@@ -1878,8 +1922,12 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('build-next-prompts-btn')));
       await tester.pumpAndSettle();
 
-      final backFinder = find.byKey(const ValueKey('spec-forge-appbar-back-btn'));
-      final menuFinder = find.byKey(const ValueKey('spec-forge-appbar-menu-btn'));
+      final backFinder = find.byKey(
+        const ValueKey('spec-forge-appbar-back-btn'),
+      );
+      final menuFinder = find.byKey(
+        const ValueKey('spec-forge-appbar-menu-btn'),
+      );
       expect(backFinder, findsOneWidget);
       expect(menuFinder, findsOneWidget);
       expect(
@@ -1901,7 +1949,7 @@ void main() {
   testWidgets(
     'Build : éditeur de stack technique affiche des boutons de navigation sur écran étroit pour atteindre les onglets masqués',
     (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(1050, 820));
+      await tester.binding.setSurfaceSize(const Size(1350, 820));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final billing = _buildBillingDomain();
@@ -1953,11 +2001,710 @@ void main() {
       );
 
       // Sur écran large où tous les onglets tiennent, les boutons d'overflow sont masqués.
-      await tester.binding.setSurfaceSize(const Size(2400, 900));
+      await tester.binding.setSurfaceSize(const Size(3000, 900));
       await tester.pumpAndSettle();
       expect(leftBtn, findsNothing);
       expect(rightBtn, findsNothing);
       expect(menuBtn, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Build : affiche les Value Objects (Domaine & Shared Kernel), cycle leurs 4 indicateurs et ouvre leurs prompts Implémentation / Test unitaire',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final skuVo = ValueObjectSpec(
+        id: 'vo_dom_sku',
+        technicalName: 'SkuCode',
+        name: 'Code SKU article',
+        category: 'Identité',
+        version: '1.0.0',
+        kind: ValueObjectKind.scalar,
+        primitiveType: BusinessAttributeType.string,
+        normalizationRules: const <String>['trim', 'uppercase'],
+        schemaConstraints: JsonSchemaConstraints(minLength: 4, maxLength: 24),
+        examples: const <ValueObjectExample>[
+          ValueObjectExample(
+            id: 'ex_sku_ok',
+            value: 'SKU-2026',
+            isValid: true,
+            reason: 'SKU canonique',
+          ),
+          ValueObjectExample(
+            id: 'ex_sku_ko',
+            value: 'ab',
+            isValid: false,
+            reason: 'Trop court',
+          ),
+        ],
+      );
+
+      final moneyVo = ValueObjectSpec(
+        id: 'vo_shared_money',
+        technicalName: 'Money',
+        name: 'Montant monétaire',
+        category: 'Finance',
+        version: '1.3.0',
+        kind: ValueObjectKind.composite,
+        fields: <BusinessAttribute>[
+          BusinessAttribute(
+            id: 'f_amount',
+            name: 'amountMinorUnits',
+            type: BusinessAttributeType.integer,
+            required: true,
+          ),
+          BusinessAttribute(
+            id: 'f_currency',
+            name: 'currency',
+            type: BusinessAttributeType.string,
+            required: true,
+          ),
+        ],
+      );
+
+      final domain = FunctionalDomain(
+        id: 'dom_catalog',
+        domainCode: 'catalog',
+        name: 'Catalogue Produits',
+        techStackId: BuildTechStackProfile.defaultTsNestJsId,
+        valueObjects: <ValueObjectSpec>[skuVo],
+      );
+
+      final controller = _createController(
+        DomainCatalog(
+          domains: <FunctionalDomain>[domain],
+          sharedValueObjects: <ValueObjectSpec>[moneyVo],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      String? copiedMarkdown;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async => null,
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BuildDesignItemsView(
+              controller: controller,
+              onCopiedPrompt: (md) => copiedMarkdown = md,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Vérifie la présence de la section Value Objects avec les VO Domaine et Shared Kernel.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('build-section-header-valueObject')),
+          matching: find.text('Value Objects (2)'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('build-item-valueObject-vo_dom_sku')),
+        findsOneWidget,
+      );
+      final moneyCard = find.byKey(
+        const ValueKey('build-item-valueObject-vo_shared_money'),
+      );
+      expect(moneyCard, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('build-item-shared-vo-vo_shared_money')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: moneyCard, matching: find.text('Shared Kernel')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: moneyCard, matching: find.text('composite')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: moneyCard, matching: find.text('v1.3.0')),
+        findsOneWidget,
+      );
+
+      // Cycle les 4 indicateurs ContractStage sur le VO de Domaine (SkuCode) et le VO Shared Kernel (Money).
+      for (final stage in ContractStage.values) {
+        await tester.tap(
+          find.byKey(
+            ValueKey('build-item-phase-valueObject-vo_dom_sku-${stage.name}'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(
+            ValueKey(
+              'build-item-phase-valueObject-vo_shared_money-${stage.name}',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      final savedDomainVo = controller.domainCatalog.domains.single.valueObjects
+          .firstWhere((v) => v.id == 'vo_dom_sku');
+      final savedSharedVo = controller.domainCatalog.sharedValueObjects
+          .firstWhere((v) => v.id == 'vo_shared_money');
+      for (final stage in ContractStage.values) {
+        expect(savedDomainVo.statusOf(stage), ContractStatus.inProgress);
+        expect(savedSharedVo.statusOf(stage), ContractStatus.inProgress);
+      }
+
+      // Sélectionne les 2 Value Objects et ouvre BuildPromptsSelectionView.
+      await tester.tap(
+        find.byKey(const ValueKey('build-item-valueObject-vo_dom_sku')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(moneyCard);
+      await tester.pumpAndSettle();
+      expect(find.text('Sélection des Prompts IA (2)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('build-next-prompts-btn')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('build-prompts-selection-page')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Aucun jalon actif — génération complète'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'build-prompt-card-valueObject:vo_dom_sku:domain:implementation',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'build-prompt-card-valueObject:vo_dom_sku:domain:unitTest',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'build-prompt-card-valueObject:vo_shared_money:domain:implementation',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'build-prompt-card-valueObject:vo_shared_money:domain:unitTest',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(copiedMarkdown, isNotNull);
+      expect(
+        copiedMarkdown,
+        allOf(
+          contains('kind: value-object-implementation'),
+          contains('kind: value-object-unit-test'),
+          contains('SkuCode'),
+          contains('Money'),
+          contains('shared-kernel'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
+    'Build : capture jalon Itération 1, dérive badge_only en Itération 2 sans reset de Code=Terminé, filtres/sélection évolués et bascule Delta / Complet',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final skuVo = ValueObjectSpec(
+        id: 'vo_dom_sku',
+        technicalName: 'SkuCode',
+        name: 'Référence SKU',
+        category: 'Identité',
+        version: '1.0.0',
+        kind: ValueObjectKind.scalar,
+        primitiveType: BusinessAttributeType.string,
+      );
+
+      final moneyVoV1 = ValueObjectSpec(
+        id: 'vo_shared_money',
+        technicalName: 'Money',
+        name: 'Montant monétaire',
+        category: 'Finance',
+        version: '1.0.0',
+        kind: ValueObjectKind.composite,
+        fields: <BusinessAttribute>[
+          BusinessAttribute(
+            id: 'f_amount',
+            name: 'amountMinorUnits',
+            type: BusinessAttributeType.integer,
+            required: true,
+          ),
+          BusinessAttribute(
+            id: 'f_currency',
+            name: 'currency',
+            type: BusinessAttributeType.string,
+            required: true,
+          ),
+        ],
+      );
+
+      var contractsV1 = DomainContracts.parse(
+        'models:\n'
+        '  Product: model\n'
+        '  LegacyPromo: model\n',
+      );
+      final productNode = contractsV1.groups[0].children[0];
+      final legacyPromoNode = contractsV1.groups[0].children[1];
+      contractsV1 = contractsV1.edit(
+        productNode,
+        productNode.type,
+        ContractDetails(title: 'Produit catalogue', version: '1.0.0'),
+      );
+      contractsV1 = contractsV1.edit(
+        legacyPromoNode,
+        legacyPromoNode.type,
+        ContractDetails(title: 'Ancienne promotion', version: '1.0.0'),
+      );
+      contractsV1 = contractsV1.withModel(
+        productNode.id,
+        object: BusinessObjectSpec(
+          id: productNode.id,
+          name: 'Produit catalogue',
+          technicalName: 'Product',
+          aggregateRoot: true,
+          attributes: <BusinessAttribute>[
+            BusinessAttribute(
+              id: 'attr_sku',
+              name: 'sku',
+              type: BusinessAttributeType.valueObject,
+              valueObjectId: skuVo.id,
+              required: true,
+            ),
+            BusinessAttribute(
+              id: 'attr_price',
+              name: 'unitPrice',
+              type: BusinessAttributeType.valueObject,
+              valueObjectId: moneyVoV1.id,
+              required: true,
+            ),
+          ],
+        ),
+      );
+      contractsV1 = contractsV1.withDomainLayer(
+        productNode.id,
+        layer: HexagonalDomainLayerSpec(
+          persistencePolicy: DomainPersistencePolicySpec(
+            repositoryPortName: 'ProductRepository',
+          ),
+        ),
+      );
+      contractsV1 = contractsV1.withModel(
+        legacyPromoNode.id,
+        object: BusinessObjectSpec(
+          id: legacyPromoNode.id,
+          name: 'Ancienne promotion',
+          technicalName: 'LegacyPromo',
+          attributes: <BusinessAttribute>[
+            BusinessAttribute(
+              id: 'attr_code',
+              name: 'promoCode',
+              type: BusinessAttributeType.string,
+              required: true,
+            ),
+          ],
+        ),
+      );
+
+      final publishUc = ApplicationUseCaseSpec(
+        id: 'uc_publish_product',
+        code: 'UC-010',
+        name: 'PublishProduct',
+        title: 'Publier un produit',
+        version: '1.0.0',
+        boundedContext: 'Catalogue',
+        cqrsType: UseCaseCqrsType.command,
+        inboundPort: 'PublishProductUseCase',
+        targetAggregate: 'Product',
+        outboundPorts: const <String>['ProductRepository'],
+        triggerInputs: const <UseCaseFieldSpec>[
+          UseCaseFieldSpec(name: 'productId', type: 'uuid', required: true),
+        ],
+      );
+
+      final domainV1 = FunctionalDomain(
+        id: 'dom_catalog',
+        domainCode: 'catalog',
+        name: 'Catalogue Produits',
+        techStackId: BuildTechStackProfile.defaultTsNestJsId,
+        valueObjects: <ValueObjectSpec>[skuVo],
+        contracts: contractsV1,
+        useCaseOrchestration: UseCaseOrchestrationSpec(
+          useCases: <ApplicationUseCaseSpec>[publishUc],
+        ),
+      );
+
+      final controller = _createController(
+        DomainCatalog(
+          domains: <FunctionalDomain>[domainV1],
+          sharedValueObjects: <ValueObjectSpec>[moneyVoV1],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      String? copiedMarkdown;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async => null,
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BuildDesignItemsView(
+              controller: controller,
+              onCopiedPrompt: (md) => copiedMarkdown = md,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Capture du jalon d'Itération 1 depuis DomainIterationSnapshotBar.
+      await tester.tap(
+        find.byKey(const ValueKey('snapshot-bar-capture-dom_catalog')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('create-snapshot-label-field')),
+        'Itération 1 — MVP',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('create-snapshot-submit-btn')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('snapshot-bar-compliant-dom_catalog')),
+        findsOneWidget,
+      );
+
+      // 2. Marque Code = Terminé sur le Modèle Product (pending -> inProgress -> done).
+      final productCodePhase = find.byKey(
+        ValueKey('build-item-phase-model-${productNode.id}-code'),
+      );
+      await tester.ensureVisible(productCodePhase);
+      await tester.pumpAndSettle();
+      await tester.tap(productCodePhase);
+      await tester.pumpAndSettle();
+      await tester.tap(productCodePhase);
+      await tester.pumpAndSettle();
+
+      expect(
+        controller
+            .domainCatalog
+            .domains
+            .single
+            .contracts!
+            .details[productNode.id]!
+            .states[ContractStage.code],
+        ContractStatus.done,
+      );
+
+      // 3. Modifications en Itération 2 : Shared Kernel VO Money + Modèle Product (+ suppression de LegacyPromo).
+      final moneyVoV2 = moneyVoV1.copyWith(
+        fields: <BusinessAttribute>[
+          ...moneyVoV1.fields,
+          BusinessAttribute(
+            id: 'f_rounding',
+            name: 'roundingMode',
+            type: BusinessAttributeType.enumeration,
+            enumValues: const <String>['HALF_UP', 'HALF_EVEN'],
+            required: true,
+          ),
+        ],
+      );
+      await controller.upsertValueObject(
+        moneyVoV2,
+        scope: ValueObjectScope.shared,
+      );
+
+      final currentContracts =
+          controller.domainCatalog.domains.single.contracts!;
+      var contractsV2 = currentContracts.patch(
+        'models:\n'
+        '  Product: model\n',
+      );
+      final currentProductObj = currentContracts.objectFor(productNode);
+      contractsV2 = contractsV2.withModel(
+        productNode.id,
+        object: currentProductObj.copyWith(
+          attributes: <BusinessAttribute>[
+            ...currentProductObj.attributes,
+            BusinessAttribute(
+              id: 'attr_discount_tag',
+              name: 'discountTag',
+              type: BusinessAttributeType.string,
+              required: false,
+              nullable: true,
+            ),
+          ],
+        ),
+      );
+      await controller.updateDomainContracts('dom_catalog', contractsV2);
+      await tester.pumpAndSettle();
+
+      // POLITIQUE BADGE_ONLY : Code reste strictement Terminé malgré la dérive majeure !
+      expect(
+        controller
+            .domainCatalog
+            .domains
+            .single
+            .contracts!
+            .details[productNode.id]!
+            .states[ContractStage.code],
+        ContractStatus.done,
+      );
+      final codeTooltip = tester.widget<Tooltip>(
+        find
+            .ancestor(of: productCodePhase, matching: find.byType(Tooltip))
+            .first,
+      );
+      expect(codeTooltip.message, contains('Terminé'));
+
+      // Vérifie l'apparition des badges Δ et ⇄ Impacté ainsi que des puces SemVer.
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('build-item-drift-valueObject-vo_shared_money'),
+          ),
+          matching: find.textContaining('Δ'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey('build-item-drift-model-${productNode.id}')),
+          matching: find.textContaining('Δ'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('build-item-drift-useCase-uc_publish_product'),
+          ),
+          matching: find.textContaining('⇄ Impacté'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('build-item-drift-valueObject-vo_dom_sku')),
+        findsNothing,
+      );
+
+      // Applique le bump SemVer 1-clic sur Money (v1.0.0 -> v2.0.0) et via le dialogue Diff sur Product.
+      final moneyBumpChip = find.byKey(
+        const ValueKey('build-item-bump-valueObject-vo_shared_money'),
+      );
+      await tester.ensureVisible(moneyBumpChip);
+      await tester.pumpAndSettle();
+      await tester.tap(moneyBumpChip);
+      await tester.pumpAndSettle();
+      expect(
+        controller.domainCatalog.sharedValueObjects
+            .firstWhere((v) => v.id == 'vo_shared_money')
+            .version,
+        '2.0.0',
+      );
+
+      final productDriftBadge = find.byKey(
+        ValueKey('build-item-drift-model-${productNode.id}'),
+      );
+      await tester.ensureVisible(productDriftBadge);
+      await tester.pumpAndSettle();
+      await tester.tap(productDriftBadge);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('artifact-diff-apply-version-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        controller
+            .domainCatalog
+            .domains
+            .single
+            .contracts!
+            .details[productNode.id]!
+            .version,
+        '2.0.0',
+      );
+
+      // Vérifie la bannière repliable des artefacts supprimés (LegacyPromo).
+      expect(
+        find.byKey(const ValueKey('build-removed-artifacts-banner')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Éléments supprimés depuis « Itération 1 — MVP » (1) — à décommissionner',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(
+          ValueKey('build-removed-artifact-model-${legacyPromoNode.id}'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimé'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('artifact-diff-close-btn')));
+      await tester.pumpAndSettle();
+
+      // 4. Filtre rapide Évolués (build-filter-evolved-actionable) et sélection 1-clic (build-select-all-evolved).
+      expect(find.text('SkuCode'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('build-filter-evolved-actionable')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('SkuCode'), findsNothing);
+      expect(find.text('Money'), findsOneWidget);
+      expect(find.text('Product'), findsOneWidget);
+      expect(find.text('PublishProduct'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('build-filter-evolved-actionable')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('SkuCode'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('build-select-all-evolved')));
+      await tester.pumpAndSettle();
+      expect(find.text('Sélection des Prompts IA (3)'), findsOneWidget);
+
+      // 5. Ouvre BuildPromptsSelectionView, vérifie les badges Delta et le contenu Markdown,
+      // puis bascule sur build-prompt-mode-fullFromScratch.
+      await tester.tap(find.byKey(const ValueKey('build-next-prompts-btn')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Jalon actif : Itération 1 — MVP'), findsOneWidget);
+      final moneyDeltaBadge = find.byKey(
+        const ValueKey(
+          'prompt-delta-badge-valueObject:vo_shared_money:domain:implementation',
+        ),
+      );
+      expect(moneyDeltaBadge, findsOneWidget);
+      expect(
+        find.descendant(
+          of: moneyDeltaBadge,
+          matching: find.text('Delta v1.0.0 → v2.0.0'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          ValueKey(
+            'prompt-delta-badge-model:${productNode.id}:domain:implementation',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      final promptsScrollable = find.descendant(
+        of: find.byKey(const ValueKey('build-prompts-selection-page')),
+        matching: find.byType(Scrollable),
+      );
+      final ucDeltaBadge = find.byKey(
+        const ValueKey(
+          'prompt-delta-badge-useCase:uc_publish_product:useCaseSaga:implementation',
+        ),
+      );
+      await tester.scrollUntilVisible(
+        ucDeltaBadge,
+        300,
+        scrollable: promptsScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(ucDeltaBadge, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(copiedMarkdown, isNotNull);
+      expect(
+        copiedMarkdown,
+        allOf(
+          contains('## Évolution Inter-Itérations'),
+          contains('Itération 1 — MVP'),
+          contains('roundingMode'),
+          contains('discountTag'),
+        ),
+      );
+
+      // Bascule en mode Complet (from scratch) -> disparition des badges et sections Delta.
+      await tester.tap(
+        find.byKey(const ValueKey('build-prompt-mode-fullFromScratch')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(ucDeltaBadge, findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey(
+            'prompt-full-badge-useCase:uc_publish_product:useCaseSaga:implementation',
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Création complète'), findsWidgets);
+
+      await tester.tap(
+        find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        copiedMarkdown,
+        allOf(
+          isNot(contains('## Évolution Inter-Itérations')),
+          contains('Money'),
+          contains('Product'),
+          contains('PublishProductUseCase'),
+        ),
+      );
     },
   );
 }

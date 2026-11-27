@@ -7,6 +7,7 @@ import '../../../models/build_tech_stack_profile.dart';
 import '../../../models/domain_catalog.dart';
 import '../../../models/usecase_orchestration_spec.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -18,6 +19,8 @@ BuildHexaPromptSpec buildUseCaseUnitTestPrompt({
   required ApplicationUseCaseSpec useCase,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final title =
       '${useCase.code} · ${useCase.name} — Tests unitaires Couche Application';
@@ -61,12 +64,17 @@ BuildHexaPromptSpec buildUseCaseUnitTestPrompt({
       'cqrs': useCase.cqrsType.name,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatBody(
     domain: domain,
     useCase: useCase,
     techStack: techStack,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -77,6 +85,10 @@ BuildHexaPromptSpec buildUseCaseUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -84,6 +96,7 @@ String _formatBody({
   required FunctionalDomain domain,
   required ApplicationUseCaseSpec useCase,
   BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final buf = StringBuffer()
     ..writeln(
@@ -95,6 +108,13 @@ String _formatBody({
       'Écris la suite complète de **tests unitaires de la couche `application/`** pour **`${useCase.name}`** (domaine `${domain.domainCode}`), en isolant tous les ports sortants par des **fakes en mémoire ou doublures de test** (aucune infrastructure réelle).',
     )
     ..writeln();
+
+  PromptEvolutionSections.writeUseCaseEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    currentUseCase: useCase,
+    role: BuildHexaPromptRole.unitTest,
+  );
 
   if (useCase.outboundPorts.isNotEmpty) {
     buf

@@ -6,7 +6,8 @@
 /// [SpecStreamParser], [SpecPatchApplier], [SpecAiService]), les services de
 /// persistance/cohérence/export ([SpecProjectStore], [SpecCoherenceAnalyzer],
 /// [SpecMarkdownExporter], [SpecJsonExporter], [SpecSuperDesignerExporter],
-/// [SpecForgeController]) ainsi que les widgets du wizard ([SpecForgeShell]).
+/// [DomainDesignSpecExporter], [SpecForgeController]) ainsi que les widgets du
+/// wizard ([SpecForgeShell]).
 library;
 
 export 'ai/company_glossary_ai.dart';
@@ -38,6 +39,7 @@ export 'models/business_object_model_preferences.dart';
 export 'models/business_object_spec.dart';
 export 'models/business_rule_spec.dart';
 export 'models/company_glossary.dart';
+export 'models/contract_stage.dart';
 export 'models/cost/cost_coherence_issue.dart';
 export 'models/cost/cost_forge_spec.dart';
 export 'models/cost/cost_forge_stage.dart';
@@ -46,10 +48,12 @@ export 'models/cost/cost_run_item_spec.dart';
 export 'models/cost/cost_wbs_item_spec.dart';
 export 'models/domain_catalog.dart';
 export 'models/domain_contracts.dart';
+export 'models/domain_iteration_snapshot.dart';
 export 'models/domain_layer_spec.dart';
 export 'models/enterprise_rate_card.dart';
 export 'models/event_storming_spec.dart';
 export 'models/example_mapping_spec.dart';
+export 'models/feature_object_sync_baseline.dart';
 export 'models/json_schema_constraints.dart';
 export 'models/qa/gherkin_feature_spec.dart';
 export 'models/qa/qa_coherence_issue.dart';
@@ -63,6 +67,7 @@ export 'models/spec_forge_project.dart';
 export 'models/spec_forge_stage.dart';
 export 'models/spec_initiative.dart';
 export 'models/spec_lexicon.dart';
+export 'models/spec_origin_baseline.dart';
 export 'models/spec_stage_chat.dart';
 export 'models/spec_vision.dart';
 export 'models/technical_modeling_rule.dart';
@@ -79,6 +84,8 @@ export 'services/company_glossary_store.dart';
 export 'services/cost_auto_seeder.dart';
 export 'services/cost_calculator.dart';
 export 'services/cost_coherence_analyzer.dart';
+export 'services/cross_feature_object_analyzer.dart';
+export 'services/design_evolution_analyzer.dart';
 export 'services/domain_catalog_store.dart';
 export 'services/domain_env_exporter.dart';
 export 'services/domain_secret_cipher.dart';
@@ -89,6 +96,7 @@ export 'services/exporters/build_hexa_prompt_generator.dart';
 export 'services/exporters/company_glossary_codec.dart';
 export 'services/exporters/cost_csv_exporter.dart';
 export 'services/exporters/cost_markdown_exporter.dart';
+export 'services/exporters/domain_design_spec_exporter.dart';
 export 'services/exporters/event_storming_dsl_codec.dart';
 export 'services/exporters/gherkin_feature_exporter.dart';
 export 'services/exporters/model_dictionary_codec.dart';
@@ -102,9 +110,12 @@ export 'services/exporters/spec_super_designer_exporter.dart';
 export 'services/exporters/ux_design_md_exporter.dart';
 export 'services/exporters/ux_markdown_exporter.dart';
 export 'services/exporters/ux_super_designer_prompt_exporter.dart';
+export 'services/feature_object_sync_engine.dart';
 export 'services/model_dictionary_store.dart';
 export 'services/qa_coherence_analyzer.dart';
 export 'services/spec_coherence_analyzer.dart';
+export 'services/spec_design_drift_analyzer.dart';
+export 'services/spec_design_merge_engine.dart';
 export 'services/spec_design_promoter.dart';
 export 'services/spec_forge_controller.dart';
 export 'services/spec_project_store.dart';
@@ -127,6 +138,7 @@ export 'widgets/design/contract_entry_view.dart';
 export 'widgets/design/design_domain_breadcrumb.dart';
 export 'widgets/design/domain_management_view.dart';
 export 'widgets/design/enterprise_rate_card_view.dart';
+export 'widgets/design/iteration_snapshot_dialogs.dart';
 export 'widgets/design/model_dictionary_view.dart';
 export 'widgets/design/models_contracts_view.dart';
 export 'widgets/design/saga_compensation_table.dart';
@@ -171,6 +183,7 @@ export 'widgets/workspace/cost_wbs_editor_view.dart';
 export 'widgets/workspace/event_storming_editor_view.dart';
 export 'widgets/workspace/example_injection_dialog.dart';
 export 'widgets/workspace/example_mapping_editor_view.dart';
+export 'widgets/workspace/import_sync_business_objects_dialog.dart';
 export 'widgets/workspace/json_schema_viewer_dialog.dart';
 export 'widgets/workspace/lexicon_editor_view.dart';
 export 'widgets/workspace/markdown_viewer_dialog.dart';

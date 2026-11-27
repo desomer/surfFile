@@ -9,6 +9,7 @@ import '../../../models/business_object_model_preferences.dart';
 import '../../../models/company_glossary.dart';
 import '../../../models/domain_catalog.dart';
 import '../../spec_storage_slug.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_markdown_sections.dart';
 import 'prompt_yaml_header_builder.dart';
@@ -20,6 +21,8 @@ BuildHexaPromptSpec buildDomainCheckIntegrationImplementationPrompt({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Vérification du câblage DI complet (Inbound → Application → Domain → Outbound / Persistance) et préparation des tests d’intégration.';
@@ -57,6 +60,10 @@ BuildHexaPromptSpec buildDomainCheckIntegrationImplementationPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
   final body = _formatImplementationBody(
@@ -64,6 +71,7 @@ BuildHexaPromptSpec buildDomainCheckIntegrationImplementationPrompt({
     techStack: techStack,
     glossary: glossary,
     modelPreferences: modelPreferences,
+    evolutionDecision: evolutionDecision,
   );
 
   return BuildHexaPromptSpec(
@@ -73,6 +81,10 @@ BuildHexaPromptSpec buildDomainCheckIntegrationImplementationPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -81,6 +93,8 @@ BuildHexaPromptSpec buildDomainCheckIntegrationUnitTestPrompt({
   required FunctionalDomain domain,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   const summary =
       'Validation bout-en-bout du build, du typage, des contrats et de la suite complète de tests d’intégration du domaine.';
@@ -119,9 +133,17 @@ BuildHexaPromptSpec buildDomainCheckIntegrationUnitTestPrompt({
       'artifactName': domain.domainCode,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
-  final body = _formatUnitTestBody(domain: domain, techStack: techStack);
+  final body = _formatUnitTestBody(
+    domain: domain,
+    techStack: techStack,
+    evolutionDecision: evolutionDecision,
+  );
 
   return BuildHexaPromptSpec(
     id: 'standalone:${BuildTechStackSection.checkIntegration.name}:${BuildHexaPromptRole.unitTest.name}',
@@ -130,6 +152,10 @@ BuildHexaPromptSpec buildDomainCheckIntegrationUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
@@ -153,6 +179,7 @@ String _formatImplementationBody({
   BuildTechStackProfile? techStack,
   CompanyGlossary? glossary,
   BusinessObjectModelPreferences? modelPreferences,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final stats = _domainStats(domain);
   final buf = StringBuffer()
@@ -179,6 +206,13 @@ String _formatImplementationBody({
     modelPreferences,
   );
 
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.checkIntegration,
+    role: BuildHexaPromptRole.implementation,
+  );
+
   buf
     ..writeln('## 3. Livrables Attendus')
     ..writeln(
@@ -202,6 +236,7 @@ String _formatImplementationBody({
 String _formatUnitTestBody({
   required FunctionalDomain domain,
   BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
 }) {
   final stats = _domainStats(domain);
   final buf = StringBuffer()
@@ -213,7 +248,16 @@ String _formatUnitTestBody({
     ..writeln(
       'Exécute et complète les **tests d’intégration et la validation globale** du domaine **`${domain.domainCode}`** (${stats.modelsCount} modèle(s)/contrat(s), ${stats.useCasesCount} cas d’usage, ${stats.sagasCount} saga(s)).',
     )
-    ..writeln()
+    ..writeln();
+
+  PromptEvolutionSections.writeDomainAdapterEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    section: BuildTechStackSection.checkIntegration,
+    role: BuildHexaPromptRole.unitTest,
+  );
+
+  buf
     ..writeln('## 2. Points de Contrôle Obligatoires')
     ..writeln(
       '- Démarrage du conteneur / module applicatif sans erreur de dépendance manquante ni référence circulaire.',

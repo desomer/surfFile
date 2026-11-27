@@ -1471,25 +1471,30 @@ class _ScrollableTechStackTabBarState
     if (!mounted) return;
     final position = _findTabBarScrollPosition();
     if (position == null || !position.hasContentDimensions) return;
-    _handleMetrics(position);
+    _applyMetrics(position, immediate: true);
   }
 
-  void _handleMetrics(ScrollMetrics metrics) {
+  void _applyMetrics(ScrollMetrics metrics, {required bool immediate}) {
     if (metrics.axis != Axis.horizontal) return;
     final hasOverflow = metrics.maxScrollExtent > 1.0;
     final canLeft = metrics.extentBefore > 1.0;
     final canRight = metrics.extentAfter > 1.0;
-    if (hasOverflow == _hasOverflow &&
-        canLeft == _canScrollLeft &&
-        canRight == _canScrollRight) {
-      _pendingHasOverflow = hasOverflow;
-      _pendingCanScrollLeft = canLeft;
-      _pendingCanScrollRight = canRight;
-      return;
-    }
     _pendingHasOverflow = hasOverflow;
     _pendingCanScrollLeft = canLeft;
     _pendingCanScrollRight = canRight;
+    if (hasOverflow == _hasOverflow &&
+        canLeft == _canScrollLeft &&
+        canRight == _canScrollRight) {
+      return;
+    }
+    if (immediate) {
+      setState(() {
+        _hasOverflow = hasOverflow;
+        _canScrollLeft = canLeft;
+        _canScrollRight = canRight;
+      });
+      return;
+    }
     if (_scheduledUpdate) return;
     _scheduledUpdate = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1506,6 +1511,7 @@ class _ScrollableTechStackTabBarState
         _canScrollRight = _pendingCanScrollRight;
       });
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _scrollBy(int direction) {
@@ -1550,12 +1556,12 @@ class _ScrollableTechStackTabBarState
             Expanded(
               child: NotificationListener<ScrollMetricsNotification>(
                 onNotification: (notification) {
-                  _handleMetrics(notification.metrics);
+                  _applyMetrics(notification.metrics, immediate: false);
                   return false;
                 },
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
-                    _handleMetrics(notification.metrics);
+                    _applyMetrics(notification.metrics, immediate: false);
                     return false;
                   },
                   child: TabBar(

@@ -91,13 +91,20 @@ class _MemoryDictStore extends ModelDictionaryStore {
 }
 
 class _MemoryDomainStore extends DomainCatalogStore {
-  _MemoryDomainStore() : super(Directory('memory_portfolio_store'));
+  _MemoryDomainStore([DomainCatalog? initial])
+    : _catalog = initial ?? DomainCatalog.empty,
+      super(Directory('memory_portfolio_store'));
+
+  DomainCatalog _catalog;
 
   @override
-  Future<DomainCatalog> load() async => DomainCatalog.empty;
+  Future<DomainCatalog> load() async => _catalog;
 
   @override
-  Future<void> save(DomainCatalog catalog) async {}
+  Future<void> save(DomainCatalog catalog) async {
+    catalog.validate();
+    _catalog = catalog;
+  }
 }
 
 class _MemoryRateCardStore extends EnterpriseRateCardStore {
@@ -136,7 +143,8 @@ class _FakePortfolioAiService implements SpecAiService {
     receivedStages.add(stage);
     receivedPrompts.add(prompt);
     final Map<String, Object?> payload;
-    if (systemInstructionOverride == PortfolioSlicingAiAgent.systemInstruction) {
+    if (systemInstructionOverride ==
+        PortfolioSlicingAiAgent.systemInstruction) {
       payload = <String, Object?>{
         'message':
             'Voici un découpage en 2 initiatives et 3 features verticales.',
@@ -197,8 +205,7 @@ class _FakePortfolioAiService implements SpecAiService {
               {
                 'id': 'term_carte_grise',
                 'term': 'Carte grise',
-                'definition':
-                    'Certificat d’immatriculation associé à un véhicule du parc.',
+                'definition': 'Certificat d’immatriculation associé à un véhicule du parc.',
                 'domain': 'Parc véhicules',
               },
             ],
@@ -359,10 +366,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(fakeAi.receivedStages.last, SpecForgeStage.lexicon);
-      expect(
-        fakeAi.receivedPrompts.last,
-        contains('FEAT-01 · Parc véhicules'),
-      );
+      expect(fakeAi.receivedPrompts.last, contains('FEAT-01 · Parc véhicules'));
       expect(
         controller.project!.lexicon.terms.any((t) => t.term == 'Carte grise'),
         isTrue,
@@ -590,7 +594,10 @@ void main() {
         find.byKey(const ValueKey('portfolio-feature-spec-stages-card')),
         findsOneWidget,
       );
-      expect(find.text('Étapes de spécification (8/8 actives)'), findsOneWidget);
+      expect(
+        find.text('Étapes de spécification (8/8 actives)'),
+        findsOneWidget,
+      );
 
       // 2. Désactive Event Storming puis Example Mapping sur feat_a.
       await tester.tap(
@@ -599,7 +606,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Étapes de spécification (7/8 actives)'), findsOneWidget);
+      expect(
+        find.text('Étapes de spécification (7/8 actives)'),
+        findsOneWidget,
+      );
 
       await tester.tap(
         find.byKey(
@@ -607,7 +617,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Étapes de spécification (6/8 actives)'), findsOneWidget);
+      expect(
+        find.text('Étapes de spécification (6/8 actives)'),
+        findsOneWidget,
+      );
       expect(
         controller.project!.featureById('feat_a')!.disabledSpecStages,
         const {SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping},
@@ -618,9 +631,7 @@ void main() {
       );
 
       // 3. Crée une 3e feature via le dialogue en décochant Event Storming.
-      await tester.tap(
-        find.byKey(const ValueKey('portfolio-add-feature-btn')),
-      );
+      await tester.tap(find.byKey(const ValueKey('portfolio-add-feature-btn')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('portfolio-feature-name-field')),
@@ -638,11 +649,13 @@ void main() {
         find.byKey(const ValueKey('portfolio-feature-save-btn')),
       );
       await tester.pumpAndSettle();
+      expect(controller.project!.activeFeature.disabledSpecStages, const {
+        SpecForgeStage.eventStorming,
+      });
       expect(
-        controller.project!.activeFeature.disabledSpecStages,
-        const {SpecForgeStage.eventStorming},
+        find.text('Étapes de spécification (7/8 actives)'),
+        findsOneWidget,
       );
-      expect(find.text('Étapes de spécification (7/8 actives)'), findsOneWidget);
 
       // 4. Revient sur feat_a (6 étapes actives) et ouvre le Wizard Spec.
       await tester.tap(
@@ -702,6 +715,357 @@ void main() {
       expect(
         find.descendant(of: stepper, matching: find.text('Example Map')),
         findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'ProjectInitiativesView : carte Objets métiers & Partage inter-features (extension additive puis alerte de divergence cassante sur feature Validée)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final now = DateTime.utc(2026, 8, 1);
+      final feat1 = SpecFeatureSpec(
+        id: 'feat_01',
+        code: 'FEAT-01',
+        name: 'Parc véhicules',
+        status: SpecPortfolioStatus.validated,
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_vehicule_1',
+            name: 'Véhicule',
+            technicalName: 'Vehicule',
+            aggregateRoot: true,
+            attributes: [
+              BusinessAttribute(
+                id: 'attr_immat_1',
+                name: 'immatriculation',
+                type: BusinessAttributeType.string,
+                required: true,
+              ),
+            ],
+          ),
+        ],
+        businessRules: [
+          BusinessRuleSpec(
+            id: 'rule_immat',
+            code: 'RG-001',
+            title: 'Format plaque SIV',
+            description: 'Toute immatriculation respecte le format SIV.',
+            targetObjectIds: const ['obj_vehicule_1'],
+            targetAttributes: const ['immatriculation'],
+          ),
+        ],
+      );
+
+      final feat2Additive = SpecFeatureSpec(
+        id: 'feat_02',
+        code: 'FEAT-02',
+        name: 'Réservations collaborateurs',
+        status: SpecPortfolioStatus.inProgress,
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_vehicule_2',
+            name: 'Véhicule',
+            technicalName: 'Vehicule',
+            aggregateRoot: true,
+            attributes: [
+              BusinessAttribute(
+                id: 'attr_immat_2',
+                name: 'immatriculation',
+                type: BusinessAttributeType.string,
+                required: true,
+              ),
+              BusinessAttribute(
+                id: 'attr_km_2',
+                name: 'kilometrage',
+                type: BusinessAttributeType.integer,
+              ),
+            ],
+          ),
+          BusinessObjectSpec(
+            id: 'obj_resa_2',
+            name: 'Réservation',
+            technicalName: 'Reservation',
+            aggregateRoot: true,
+            attributes: [
+              BusinessAttribute(
+                id: 'attr_resa_id',
+                name: 'id',
+                type: BusinessAttributeType.uuid,
+                required: true,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final store = _MemorySpecProjectStore();
+      final initialProject = SpecForgeProject(
+        id: 'proj_shared_objs',
+        name: 'AutoFleet',
+        initialIdea: 'Gestion de flotte et réservations',
+        createdAt: now,
+        updatedAt: now,
+        initiatives: [
+          SpecInitiative(
+            id: 'init_fleet',
+            code: 'INIT-01',
+            name: 'Flotte',
+            features: [feat1, feat2Additive],
+          ),
+        ],
+        activeFeatureId: feat2Additive.id,
+      );
+      await store.saveProject(initialProject);
+
+      final controller = SpecForgeController(
+        store: store,
+        glossaryStore: _MemoryGlossaryStore(),
+        modelDictionaryStore: _MemoryDictStore(),
+        domainCatalogStore: _MemoryDomainStore(),
+        enterpriseRateCardStore: _MemoryRateCardStore(),
+        workspaceStore: SpecWorkspaceStore(),
+        aiService: _FakePortfolioAiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListenableBuilder(
+              listenable: controller,
+              builder: (_, _) => ProjectInitiativesView(
+                controller: controller,
+                onOpenWizard: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. État additif sain : 1 partagé, 1 propre, Extension additive, aucune icône d'alerte.
+      final sharedCard = find.byKey(
+        const ValueKey('portfolio-feature-shared-objects-card'),
+      );
+      expect(sharedCard, findsOneWidget);
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('1 partagé(s) inter-features'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.textContaining('1 propre(s)'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('Extension additive'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('Partagé avec FEAT-01'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('portfolio-feature-obj-warning-${feat1.id}')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          ValueKey('portfolio-feature-obj-warning-${feat2Additive.id}'),
+        ),
+        findsNothing,
+      );
+      expect(find.textContaining('alerte(s) Validée'), findsNothing);
+
+      // 2. Changement de type cassant sur immatriculation dans FEAT-02 face à FEAT-01 Validée.
+      final feat2Breaking = feat2Additive.copyWith(
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_vehicule_2',
+            name: 'Véhicule',
+            technicalName: 'Vehicule',
+            aggregateRoot: true,
+            attributes: [
+              BusinessAttribute(
+                id: 'attr_immat_2',
+                name: 'immatriculation',
+                type: BusinessAttributeType.integer,
+                required: true,
+              ),
+            ],
+          ),
+          feat2Additive.businessObjects[1],
+        ],
+      );
+      await controller.updateProject(
+        controller.project!.copyWith(
+          initiatives: [
+            SpecInitiative(
+              id: 'init_fleet',
+              code: 'INIT-01',
+              name: 'Flotte',
+              features: [feat1, feat2Breaking],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          ValueKey('portfolio-feature-obj-warning-${feat2Breaking.id}'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('1 alerte(s) Validée'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('⚠ Divergence cassante'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: sharedCard,
+          matching: find.text('1 impact(s) (1 RG)'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'ContractEntryView : affiche toutes les contributingFeatures dans le badge d’origine Spec',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final now = DateTime.utc(2026, 8, 15);
+      final vehiculeObj = BusinessObjectSpec(
+        id: 'spec_obj_vehicule',
+        name: 'Véhicule',
+        technicalName: 'Vehicule',
+        aggregateRoot: true,
+        attributes: [
+          BusinessAttribute(
+            id: 'attr_immat',
+            name: 'immatriculation',
+            type: BusinessAttributeType.string,
+            required: true,
+          ),
+        ],
+      );
+
+      var contracts = DomainContracts.parse('models:\n  Vehicule: model\n');
+      final entry = contracts.groups.first.children.single;
+      final specOrigin = SpecOriginBaseline(
+        projectId: 'proj_autofleet',
+        projectName: 'AutoFleet',
+        featureId: 'feat_02',
+        featureCode: 'FEAT-02',
+        specObjectId: vehiculeObj.id,
+        promotedAt: now,
+        baseSpecObject: vehiculeObj,
+        contributingFeatures: [
+          SpecFeatureContribution(
+            featureId: 'feat_01',
+            featureCode: 'FEAT-01',
+            featureName: 'Parc véhicules',
+            promotedAt: now.subtract(const Duration(days: 2)),
+          ),
+          SpecFeatureContribution(
+            featureId: 'feat_02',
+            featureCode: 'FEAT-02',
+            featureName: 'Réservations collaborateurs',
+            promotedAt: now,
+          ),
+        ],
+      );
+      contracts = contracts
+          .patch(contracts.source, {
+            entry.id: ContractDetails(specOrigin: specOrigin),
+          })
+          .withModel(entry.id, object: vehiculeObj.copyWith(id: entry.id));
+
+      final domain = FunctionalDomain(
+        id: 'dom_fleet',
+        domainCode: 'fleet',
+        name: 'Flotte',
+        contracts: contracts,
+      );
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        glossaryStore: _MemoryGlossaryStore(),
+        modelDictionaryStore: _MemoryDictStore(),
+        domainCatalogStore: _MemoryDomainStore(
+          DomainCatalog(domains: [domain]),
+        ),
+        enterpriseRateCardStore: _MemoryRateCardStore(),
+        workspaceStore: SpecWorkspaceStore(),
+        aiService: _FakePortfolioAiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ContractEntryView(
+              controller: controller,
+              domainId: domain.id,
+              document: contracts,
+              entry: contracts.entryById(entry.id)!,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final badgeFinder = find.byKey(
+        ValueKey('contract-spec-origin-badge-${entry.id}'),
+      );
+      expect(badgeFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: badgeFinder,
+          matching: find.textContaining('(FEAT-01, FEAT-02)'),
+        ),
+        findsOneWidget,
+      );
+
+      final tooltipFinder = find.ancestor(
+        of: badgeFinder,
+        matching: find.byType(Tooltip),
+      );
+      final tooltip = tester.widget<Tooltip>(tooltipFinder.first);
+      expect(tooltip.message, contains('FEAT-01 · Parc véhicules'));
+      expect(
+        tooltip.message,
+        contains('FEAT-02 · Réservations collaborateurs'),
       );
     },
   );

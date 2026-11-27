@@ -6,6 +6,7 @@ import '../../../models/build_design_item.dart';
 import '../../../models/build_tech_stack_profile.dart';
 import '../../spec_storage_slug.dart';
 import 'model_prompt_context.dart';
+import 'prompt_evolution_sections.dart';
 import 'prompt_generator_models.dart';
 import 'prompt_json_schema_builder.dart';
 import 'prompt_markdown_sections.dart';
@@ -16,6 +17,8 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
   required ModelPromptContext ctx,
   required PromptMetadataDates dates,
   BuildTechStackProfile? techStack,
+  PromptEvolutionDecision evolutionDecision =
+      const PromptEvolutionDecision.none(),
 }) {
   final domain = ctx.domain;
   final item = ctx.item;
@@ -58,9 +61,17 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
       'artifactName': objectSpec.technicalName,
     },
     dates: dates,
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineIteration: evolutionDecision.baselineLabel,
+    previousVersion: evolutionDecision.baselineVersion,
+    changeImpact: evolutionDecision.changeBump,
   );
 
-  final body = _formatBody(ctx, techStack: techStack);
+  final body = _formatBody(
+    ctx,
+    techStack: techStack,
+    evolutionDecision: evolutionDecision,
+  );
 
   return BuildHexaPromptSpec(
     id: '${item.kind.name}:${item.id}:${BuildTechStackSection.domain.name}:${BuildHexaPromptRole.unitTest.name}',
@@ -70,10 +81,18 @@ BuildHexaPromptSpec buildModelUnitTestPrompt({
     title: title,
     summary: summary,
     promptMarkdown: SpecStorageIo.normalizeLf('$header\n\n$body'),
+    isEvolutionDelta: evolutionDecision.isEvolutionDelta,
+    baselineLabel: evolutionDecision.baselineLabel,
+    baselineVersion: evolutionDecision.baselineVersion,
+    changeBump: evolutionDecision.changeBump,
   );
 }
 
-String _formatBody(ModelPromptContext ctx, {BuildTechStackProfile? techStack}) {
+String _formatBody(
+  ModelPromptContext ctx, {
+  BuildTechStackProfile? techStack,
+  required PromptEvolutionDecision evolutionDecision,
+}) {
   final domain = ctx.domain;
   final objectSpec = ctx.objectSpec;
   final layerSpec = ctx.layerSpec;
@@ -93,7 +112,17 @@ String _formatBody(ModelPromptContext ctx, {BuildTechStackProfile? techStack}) {
     ..writeln(
       '- Structure chaque test selon le pattern **Arrange / Act / Assert** avec des noms explicites orientés règles métier.',
     )
-    ..writeln()
+    ..writeln();
+
+  PromptEvolutionSections.writeModelEvolutionSection(
+    buf,
+    decision: evolutionDecision,
+    ctx: ctx,
+    section: BuildTechStackSection.domain,
+    role: BuildHexaPromptRole.unitTest,
+  );
+
+  buf
     ..writeln('## 2. Matrice des Cas de Tests à Couvrir')
     ..writeln('### 2.1 Instanciation, Fabriques & Contrat JSON Schema')
     ..writeln(

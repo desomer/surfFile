@@ -224,16 +224,18 @@ void main() {
       final customerNode = contracts.groups.first.children.single;
       contracts = contracts.withModel(
         customerNode.id,
-        object: contracts.objectFor(customerNode).copyWith(
-          attributes: [
-            BusinessAttribute(
-              id: 'a_email',
-              name: 'email',
-              type: BusinessAttributeType.email,
-              required: true,
+        object: contracts
+            .objectFor(customerNode)
+            .copyWith(
+              attributes: [
+                BusinessAttribute(
+                  id: 'a_email',
+                  name: 'email',
+                  type: BusinessAttributeType.email,
+                  required: true,
+                ),
+              ],
             ),
-          ],
-        ),
       );
 
       final emailPreset = ValueObjectPresets.standardPresets.firstWhere(
@@ -296,8 +298,144 @@ void main() {
 
       final updatedObj = controller.domainCatalog.domains.single.contracts!
           .objectFor(customerNode);
-      expect(updatedObj.attributes.single.type, BusinessAttributeType.valueObject);
+      expect(
+        updatedObj.attributes.single.type,
+        BusinessAttributeType.valueObject,
+      );
       expect(updatedObj.attributes.single.valueObjectId, emailPreset.id);
+    },
+  );
+
+  testWidgets(
+    'ValueObjectsCatalogView : bascule des étapes ContractStage, préservation de states à l’édition, badge de dérive et bump SemVer 1-clic',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 950);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final initialVo = ValueObjectSpec(
+        id: 'vo_invoice_num',
+        technicalName: 'InvoiceNumber',
+        name: 'Numéro de facture',
+        version: '1.0.0',
+        primitiveType: BusinessAttributeType.string,
+        schemaConstraints: JsonSchemaConstraints(pattern: r'^FAC-\d{6}$'),
+      );
+      final catalog = DomainCatalog(
+        domains: [
+          FunctionalDomain(
+            id: 'dom_billing',
+            domainCode: 'billing',
+            name: 'Facturation',
+            valueObjects: [initialVo],
+          ),
+        ],
+      );
+      final controller = await _createController(catalog);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ValueObjectsCatalogView(
+              controller: controller,
+              initialDomainId: 'dom_billing',
+              onBack: () {},
+              onManageDomains: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Barre de jalon visible sous l'en-tête
+      expect(find.byType(DomainIterationSnapshotBar), findsOneWidget);
+
+      // 2. Bascule de l'étape Conception (pending -> inProgress -> done) directement sur la carte VO
+      final designStageFinder = find.byKey(
+        const ValueKey('vo-stage-vo_invoice_num-design'),
+      );
+      expect(designStageFinder, findsOneWidget);
+      await tester.tap(designStageFinder);
+      await tester.pumpAndSettle();
+      expect(
+        controller
+            .domainCatalog
+            .domains
+            .single
+            .valueObjects
+            .single
+            .states[ContractStage.design],
+        ContractStatus.inProgress,
+      );
+      await tester.tap(designStageFinder);
+      await tester.pumpAndSettle();
+      expect(
+        controller
+            .domainCatalog
+            .domains
+            .single
+            .valueObjects
+            .single
+            .states[ContractStage.design],
+        ContractStatus.done,
+      );
+
+      // 3. Capture d'un jalon d'itération de référence (v1.0.0)
+      await controller.createDomainIterationSnapshot(
+        'dom_billing',
+        label: 'Itération 1',
+      );
+      await tester.pumpAndSettle();
+
+      // 4. Ouverture de ValueObjectEditorDialog : modification et sauvegarde SANS perte de `states` !
+      await tester.tap(find.byKey(const ValueKey('vo-detail-edit-btn')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('vo-editor-description')),
+        'Identifiant légal séquentiel de facture',
+      );
+      await tester.tap(find.byKey(const ValueKey('vo-editor-save-btn')));
+      await tester.pumpAndSettle();
+
+      final savedVo =
+          controller.domainCatalog.domains.single.valueObjects.single;
+      expect(
+        savedVo.states[ContractStage.design],
+        ContractStatus.done,
+        reason: 'L’enregistrement de ValueObjectEditorDialog ne doit jamais écraser states',
+      );
+      expect(savedVo.description, 'Identifiant légal séquentiel de facture');
+
+      // 5. EvolutionDriftBadge + dialogue de diff + SemVerBumpActionChip 1-clic
+      final evoBadge = find.byKey(
+        const ValueKey('vo-evolution-badge-vo_invoice_num'),
+      );
+      final bumpChip = find.byKey(
+        const ValueKey('vo-semver-bump-vo_invoice_num'),
+      );
+      expect(evoBadge, findsOneWidget);
+      expect(bumpChip, findsOneWidget);
+
+      await tester.tap(evoBadge);
+      await tester.pumpAndSettle();
+      expect(find.byType(ArtifactEvolutionDiffDialog), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('artifact-diff-close-btn')));
+      await tester.pumpAndSettle();
+
+      // Application 1-clic du bump SemVer (1.0.0 -> 1.0.1 pour modification documentaire)
+      await tester.tap(bumpChip);
+      await tester.pumpAndSettle();
+
+      final bumpedVo =
+          controller.domainCatalog.domains.single.valueObjects.single;
+      expect(bumpedVo.version, '1.0.1');
+      expect(bumpedVo.states[ContractStage.design], ContractStatus.done);
+      expect(
+        find.byKey(const ValueKey('vo-semver-bump-vo_invoice_num')),
+        findsNothing,
+      );
     },
   );
 }

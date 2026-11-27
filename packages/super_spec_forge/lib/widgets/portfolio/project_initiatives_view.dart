@@ -14,6 +14,7 @@ import '../../models/spec_forge_project.dart';
 import '../../models/spec_forge_stage.dart';
 import '../../models/spec_initiative.dart';
 import '../../services/cost_calculator.dart';
+import '../../services/cross_feature_object_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
 import '../spec_split_handle.dart';
 import 'portfolio_ai_chat_pane.dart';
@@ -264,6 +265,9 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
     final inspectedInitiative = _inspectedInitiativeId == null
         ? null
         : project.initiativeById(_inspectedInitiativeId);
+    final portfolioObjects = project.allFeatures.length > 1
+        ? CrossFeatureObjectAnalyzer.analyzePortfolio(project)
+        : null;
 
     return KeyedSubtree(
       key: const ValueKey('spec-project-initiatives-view'),
@@ -434,6 +438,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
                                   colors,
                                   project,
                                   inspectedInitiative,
+                                  portfolioObjects,
                                 ),
                               ),
                               SpecSplitHandle(
@@ -508,6 +513,9 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
                                         project,
                                         project.activeFeature,
                                         project.activeInitiative,
+                                        portfolioObjects?.reportForFeature(
+                                          project.activeFeature.id,
+                                        ),
                                       ),
                               ),
                             ],
@@ -649,6 +657,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
     ColorScheme colors,
     SpecForgeProject project,
     SpecInitiative? inspectedInitiative,
+    PortfolioCrossObjectSummary? portfolioObjects,
   ) {
     return Container(
       color: colors.surface,
@@ -866,6 +875,8 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
                           for (final feat in visibleFeatures)
                             _FeatureTreeTile(
                               feature: feat,
+                              featCrossReport: portfolioObjects
+                                  ?.reportForFeature(feat.id),
                               isSelected:
                                   inspectedInitiative == null &&
                                   project.activeFeatureId == feat.id,
@@ -1137,6 +1148,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
     SpecForgeProject project,
     SpecFeatureSpec feature,
     SpecInitiative parentInitiative,
+    FeatureCrossObjectReport? featCrossReport,
   ) {
     final featIndex = parentInitiative.features.indexWhere(
       (f) => f.id == feature.id,
@@ -1323,6 +1335,19 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
               ),
             ),
           ),
+          if (project.allFeatures.length > 1 &&
+              feature.businessObjects.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _FeatureSharedObjectsCard(
+              feature: feature,
+              featCrossReport:
+                  featCrossReport ??
+                  CrossFeatureObjectAnalyzer.analyzeFeature(
+                    project,
+                    featureId: feature.id,
+                  ),
+            ),
+          ],
           const SizedBox(height: 16),
           _FeatureSpecStagesCard(
             feature: feature,
@@ -1508,9 +1533,11 @@ class _FeatureTreeTile extends StatelessWidget {
     required this.isSelected,
     required this.isActiveInProject,
     required this.onTap,
+    this.featCrossReport,
   });
 
   final SpecFeatureSpec feature;
+  final FeatureCrossObjectReport? featCrossReport;
   final bool isSelected;
   final bool isActiveInProject;
   final VoidCallback onTap;
@@ -1519,6 +1546,8 @@ class _FeatureTreeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final warningCount = featCrossReport?.warningObjectCount ?? 0;
 
     return InkWell(
       key: ValueKey('portfolio-feature-tile-${feature.id}'),
@@ -1559,6 +1588,56 @@ class _FeatureTreeTile extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (warningCount > 0) ...[
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message:
+                        '$warningCount divergence(s) cassante(s) d’objet métier avec une feature Validée',
+                    child: Container(
+                      key: ValueKey(
+                        'portfolio-feature-obj-warning-${feature.id}',
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(
+                          alpha: isDark ? 0.24 : 0.18,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.amber.withValues(
+                            alpha: isDark ? 0.55 : 0.45,
+                          ),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 13,
+                            color: isDark
+                                ? Colors.amber.shade300
+                                : Colors.amber.shade900,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$warningCount',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isDark
+                                  ? Colors.amber.shade200
+                                  : Colors.amber.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 6),
                 _PriorityBadge(priority: feature.priority, compact: true),
               ],
@@ -1600,6 +1679,351 @@ class _FeatureTreeTile extends StatelessWidget {
                   ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureSharedObjectsCard extends StatelessWidget {
+  const _FeatureSharedObjectsCard({
+    required this.feature,
+    required this.featCrossReport,
+  });
+
+  final SpecFeatureSpec feature;
+  final FeatureCrossObjectReport featCrossReport;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final warningCount = featCrossReport.warningObjectCount;
+    final ownerLabel = feature.code.isNotEmpty ? feature.code : feature.name;
+
+    final sharedReports = <ObjectCrossFeatureReport>[
+      for (final obj in feature.businessObjects)
+        if (featCrossReport.reportFor(obj.id) case final r?
+            when r.isSharedAcrossFeatures)
+          r,
+    ];
+
+    return Card(
+      key: const ValueKey('portfolio-feature-shared-objects-card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: warningCount > 0
+              ? Colors.amber.withValues(alpha: isDark ? 0.65 : 0.55)
+              : colors.outlineVariant,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  warningCount > 0
+                      ? Icons.warning_amber_rounded
+                      : Icons.hub_outlined,
+                  size: 18,
+                  color: warningCount > 0
+                      ? (isDark ? Colors.amber.shade300 : Colors.amber.shade800)
+                      : colors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Objets métiers & Partage inter-features',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _MetricPill(
+                  label: '${feature.businessObjects.length} objet(s)',
+                  bg: colors.surfaceContainerLow,
+                  fg: colors.onSurfaceVariant,
+                  border: colors.outlineVariant.withValues(alpha: 0.7),
+                ),
+                _MetricPill(
+                  label:
+                      '${featCrossReport.sharedObjectCount} partagé(s) inter-features',
+                  bg: featCrossReport.sharedObjectCount > 0
+                      ? colors.secondaryContainer.withValues(alpha: 0.6)
+                      : colors.surfaceContainerLow,
+                  fg: featCrossReport.sharedObjectCount > 0
+                      ? colors.onSecondaryContainer
+                      : colors.onSurfaceVariant,
+                  border: featCrossReport.sharedObjectCount > 0
+                      ? colors.secondary.withValues(alpha: 0.35)
+                      : colors.outlineVariant.withValues(alpha: 0.7),
+                ),
+                _MetricPill(
+                  label:
+                      '${featCrossReport.localOnlyObjectCount} propre(s) à $ownerLabel',
+                  bg: colors.surfaceContainerLow,
+                  fg: colors.onSurfaceVariant,
+                  border: colors.outlineVariant.withValues(alpha: 0.7),
+                ),
+                if (warningCount > 0)
+                  _MetricPill(
+                    icon: Icons.warning_amber_rounded,
+                    label: '$warningCount alerte(s) Validée',
+                    bg: Colors.amber.withValues(alpha: isDark ? 0.24 : 0.18),
+                    fg: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+                    border: Colors.amber.withValues(
+                      alpha: isDark ? 0.55 : 0.45,
+                    ),
+                  ),
+              ],
+            ),
+            if (sharedReports.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final objReport in sharedReports)
+                    _SharedObjectSummaryChip(report: objReport),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricPill extends StatelessWidget {
+  const _MetricPill({
+    required this.label,
+    required this.bg,
+    required this.fg,
+    required this.border,
+    this.icon,
+  });
+
+  final String label;
+  final Color bg;
+  final Color fg;
+  final Color border;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: fg),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SharedObjectSummaryChip extends StatelessWidget {
+  const _SharedObjectSummaryChip({required this.report});
+
+  final ObjectCrossFeatureReport report;
+
+  static CrossFeatureDivergenceKind _effectiveDivergence(
+    ObjectCrossFeatureReport report,
+  ) {
+    if (report.hasBreakingValidatedWarning ||
+        report.siblingLinks.any(
+          (l) => l.divergence == CrossFeatureDivergenceKind.breaking,
+        )) {
+      return CrossFeatureDivergenceKind.breaking;
+    }
+    if (report.siblingLinks.any(
+      (l) => l.divergence == CrossFeatureDivergenceKind.behindSibling,
+    )) {
+      return CrossFeatureDivergenceKind.behindSibling;
+    }
+    if (report.siblingLinks.any(
+      (l) => l.divergence == CrossFeatureDivergenceKind.additive,
+    )) {
+      return CrossFeatureDivergenceKind.additive;
+    }
+    return CrossFeatureDivergenceKind.identical;
+  }
+
+  static String _divergenceLabel(CrossFeatureDivergenceKind kind) =>
+      switch (kind) {
+        CrossFeatureDivergenceKind.identical => 'Identique',
+        CrossFeatureDivergenceKind.additive => 'Extension additive',
+        CrossFeatureDivergenceKind.behindSibling => 'En retrait',
+        CrossFeatureDivergenceKind.breaking => '⚠ Divergence cassante',
+      };
+
+  static String _buildTooltip(ObjectCrossFeatureReport report) {
+    final lines = <String>[];
+    for (final link in report.siblingLinks) {
+      lines.add(
+        '${link.featureDisplayLabel} (${link.effectiveStatus.label}) : ${link.divergence.label}',
+      );
+      for (final diff in link.differenceSummaries) {
+        lines.add('  • $diff');
+      }
+      for (final impact in link.downstreamImpacts) {
+        lines.add(
+          '  • [${impact.area.label}] ${impact.artifactRef} : ${impact.summary}',
+        );
+      }
+    }
+    for (final selfImpact in report.selfValidatedImpacts) {
+      lines.add(
+        '• [${selfImpact.area.label}] ${selfImpact.artifactRef} : ${selfImpact.summary}',
+      );
+    }
+    return lines.join('\n');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final divergence = _effectiveDivergence(report);
+    final divergenceText = _divergenceLabel(divergence);
+    final displayName = report.technicalName.trim().isNotEmpty
+        ? report.technicalName.trim()
+        : report.objectName;
+
+    final allImpacts = <CrossFeatureDownstreamImpact>[
+      for (final link in report.siblingLinks) ...link.downstreamImpacts,
+      ...report.selfValidatedImpacts,
+    ];
+    final rgCount = allImpacts
+        .where((i) => i.area == CrossFeatureDownstreamArea.businessRule)
+        .length;
+    final uxCount = allImpacts
+        .where((i) => i.area == CrossFeatureDownstreamArea.ux)
+        .length;
+    final qaCount = allImpacts
+        .where((i) => i.area == CrossFeatureDownstreamArea.qa)
+        .length;
+    final impactBreakdown = <String>[
+      if (rgCount > 0) '$rgCount RG',
+      if (uxCount > 0) '$uxCount UX',
+      if (qaCount > 0) '$qaCount QA',
+    ].join(', ');
+
+    final (Color statusBg, Color statusFg) = switch (divergence) {
+      CrossFeatureDivergenceKind.breaking => (
+        Colors.amber.withValues(alpha: isDark ? 0.26 : 0.18),
+        isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+      ),
+      CrossFeatureDivergenceKind.additive => (
+        colors.primaryContainer.withValues(alpha: 0.7),
+        colors.onPrimaryContainer,
+      ),
+      CrossFeatureDivergenceKind.behindSibling => (
+        colors.tertiaryContainer.withValues(alpha: 0.7),
+        colors.onTertiaryContainer,
+      ),
+      CrossFeatureDivergenceKind.identical => (
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+      ),
+    };
+
+    return Tooltip(
+      message: _buildTooltip(report),
+      child: Container(
+        key: ValueKey('portfolio-shared-object-${report.objectId}'),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: report.hasBreakingValidatedWarning
+                ? Colors.amber.withValues(alpha: isDark ? 0.60 : 0.45)
+                : colors.outlineVariant,
+          ),
+        ),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              displayName,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(
+              'Partagé avec ${report.sharedFeaturesSummary}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: statusBg,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                divergenceText,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: statusFg,
+                ),
+              ),
+            ),
+            if (allImpacts.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.errorContainer,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${allImpacts.length} impact(s) ($impactBreakdown)',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: colors.onErrorContainer,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

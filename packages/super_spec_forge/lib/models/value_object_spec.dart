@@ -6,6 +6,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'business_object_spec.dart';
+import 'contract_stage.dart';
 import 'json_schema_constraints.dart';
 
 /// Forme structurelle d'un Value Object hexagonal.
@@ -206,12 +207,15 @@ class ValueObjectSpec {
     List<BusinessAttribute> fields = const <BusinessAttribute>[],
     List<String> crossFieldRules = const <String>[],
     List<ValueObjectExample> examples = const <ValueObjectExample>[],
+    Map<ContractStage, ContractStatus> states =
+        const <ContractStage, ContractStatus>{},
   }) : enumValues = List<String>.unmodifiable(enumValues),
        schemaConstraints = schemaConstraints ?? JsonSchemaConstraints.empty,
        normalizationRules = List<String>.unmodifiable(normalizationRules),
        fields = List<BusinessAttribute>.unmodifiable(fields),
        crossFieldRules = List<String>.unmodifiable(crossFieldRules),
-       examples = List<ValueObjectExample>.unmodifiable(examples);
+       examples = List<ValueObjectExample>.unmodifiable(examples),
+       states = Map<ContractStage, ContractStatus>.unmodifiable(states);
 
   /// Motif de version sémantique `x.y.z`.
   static final RegExp versionPattern = RegExp(
@@ -289,6 +293,13 @@ class ValueObjectSpec {
 
   /// Exemples valides et contre-exemples invalides (documentation + matrice TDD).
   final List<ValueObjectExample> examples;
+
+  /// États d'avancement par étape ([ContractStage]) du Value Object.
+  final Map<ContractStage, ContractStatus> states;
+
+  /// Retourne le statut de l'étape [stage] ([ContractStatus.pending] par défaut).
+  ContractStatus statusOf(ContractStage stage) =>
+      states[stage] ?? ContractStatus.pending;
 
   /// Indique si le Value Object est atomique (scalaire).
   bool get isScalar => kind == ValueObjectKind.scalar;
@@ -446,6 +457,7 @@ class ValueObjectSpec {
     List<BusinessAttribute>? fields,
     List<String>? crossFieldRules,
     List<ValueObjectExample>? examples,
+    Map<ContractStage, ContractStatus>? states,
   }) => ValueObjectSpec(
     id: id ?? this.id,
     technicalName: technicalName ?? this.technicalName,
@@ -462,6 +474,7 @@ class ValueObjectSpec {
     fields: fields ?? this.fields,
     crossFieldRules: crossFieldRules ?? this.crossFieldRules,
     examples: examples ?? this.examples,
+    states: states ?? this.states,
   );
 
   /// Sérialise le Value Object en JSON.
@@ -485,6 +498,7 @@ class ValueObjectSpec {
       'crossFieldRules': crossFieldRules,
     if (examples.isNotEmpty)
       'examples': [for (final e in examples) e.toJson()],
+    if (states.isNotEmpty) 'states': contractStatesToJson(states),
   };
 
   /// Désérialise un Value Object depuis JSON.
@@ -578,6 +592,7 @@ class ValueObjectSpec {
       fields: parsedFields,
       crossFieldRules: _cleanStringList(raw['crossFieldRules']),
       examples: parsedExamples,
+      states: parseContractStatesJson(raw['states']),
     );
     item.validate();
     return item;
@@ -601,7 +616,8 @@ class ValueObjectSpec {
           other.constraints == constraints &&
           listEquals(other.fields, fields) &&
           listEquals(other.crossFieldRules, crossFieldRules) &&
-          listEquals(other.examples, examples);
+          listEquals(other.examples, examples) &&
+          mapEquals(other.states, states);
 
   @override
   int get hashCode => Object.hash(
@@ -620,6 +636,9 @@ class ValueObjectSpec {
     Object.hashAll(fields),
     Object.hashAll(crossFieldRules),
     Object.hashAll(examples),
+    Object.hashAllUnordered([
+      for (final e in states.entries) Object.hash(e.key, e.value),
+    ]),
   );
 }
 

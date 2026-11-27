@@ -8,83 +8,115 @@ import 'package:super_schema_dsl/super_schema_dsl.dart';
 import 'package:yaml/yaml.dart';
 
 import 'business_object_spec.dart';
+import 'contract_stage.dart';
 import 'domain_layer_spec.dart';
+import 'spec_origin_baseline.dart';
 import 'spec_stage_chat.dart';
 
-/// Avancement d'une étape du contrat.
-enum ContractStatus { pending, inProgress, done }
-
-/// Retourne le statut suivant dans le cycle `À faire → En cours → Terminé → À faire`.
-ContractStatus nextContractStatus(ContractStatus? current) => switch (current) {
-  null || ContractStatus.pending => ContractStatus.inProgress,
-  ContractStatus.inProgress => ContractStatus.done,
-  ContractStatus.done => ContractStatus.pending,
-};
-
-/// Étapes représentées par les quatre indicateurs dans l'arbre.
-enum ContractStage { design, validation, code, delivery }
+export 'contract_stage.dart';
 
 /// Propriétés qui ne font pas partie de la syntaxe compacte `nom: type`.
 @immutable
 class ContractDetails {
+  /// Crée les métadonnées associées à une entrée de contrat.
   ContractDetails({
     this.title = '',
     this.version = '0.0.1',
     Map<ContractStage, ContractStatus> states = const {},
+    this.specOrigin,
   }) : states = Map.unmodifiable(states) {
-    if (!versionPattern.hasMatch(version)) {
-      throw const FormatException('La version doit être au format x.y.z.');
-    }
+    validate();
   }
 
+  /// Motif de version sémantique `x.y.z`.
   static final versionPattern = RegExp(
     r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$',
   );
+
+  /// Métadonnées par défaut d'une nouvelle entrée.
   static final defaults = ContractDetails();
+
+  /// Libellé métier de l'entrée.
   final String title;
+
+  /// Version sémantique (`x.y.z`).
   final String version;
+
+  /// Avancement par étape ([ContractStage]) de l'entrée.
   final Map<ContractStage, ContractStatus> states;
+
+  /// Photographie d'origine Spec optionnelle lorsque l'entrée provient d'une promotion.
+  final SpecOriginBaseline? specOrigin;
+
+  /// Vérifie les invariants des métadonnées du contrat.
+  void validate() {
+    if (!versionPattern.hasMatch(version)) {
+      throw const FormatException('La version doit être au format x.y.z.');
+    }
+    specOrigin?.validate();
+  }
 
   /// Copie modifiée des métadonnées du contrat.
   ContractDetails copyWith({
     String? title,
     String? version,
     Map<ContractStage, ContractStatus>? states,
+    SpecOriginBaseline? specOrigin,
+    bool clearSpecOrigin = false,
   }) => ContractDetails(
     title: title ?? this.title,
     version: version ?? this.version,
     states: states ?? this.states,
+    specOrigin: clearSpecOrigin ? null : (specOrigin ?? this.specOrigin),
   );
 
+  /// Sérialise les métadonnées du contrat en JSON.
   Map<String, Object?> toJson() => {
     'title': title,
     'version': version,
-    'states': {for (final e in states.entries) e.key.name: e.value.name},
+    'states': contractStatesToJson(states),
+    if (specOrigin != null) 'specOrigin': specOrigin!.toJson(),
   };
 
+  /// Désérialise les métadonnées du contrat depuis JSON.
   factory ContractDetails.fromJson(Object? raw) {
     if (raw case {
       'title': String title,
       'version': String version,
       'states': Map states,
     }) {
-      final parsed = <ContractStage, ContractStatus>{};
-      for (final e in states.entries) {
-        final stage = ContractStage.values
-            .where((s) => s.name == e.key)
-            .firstOrNull;
-        final status = ContractStatus.values
-            .where((s) => s.name == e.value)
-            .firstOrNull;
-        if (stage == null || status == null) {
-          throw const FormatException('État de contrat invalide.');
-        }
-        parsed[stage] = status;
-      }
-      return ContractDetails(title: title, version: version, states: parsed);
+      final parsed = parseContractStatesJson(states, strict: true);
+      final rawSpecOrigin = raw['specOrigin'];
+      return ContractDetails(
+        title: title,
+        version: version,
+        states: parsed,
+        specOrigin: rawSpecOrigin != null
+            ? SpecOriginBaseline.fromJson(rawSpecOrigin)
+            : null,
+      );
     }
     throw const FormatException('Métadonnées du contrat invalides.');
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ContractDetails &&
+          other.title == title &&
+          other.version == version &&
+          mapEquals(other.states, states) &&
+          other.specOrigin == specOrigin;
+
+  @override
+  int get hashCode => Object.hash(
+    title,
+    version,
+    Object.hashAllUnordered([
+      for (final e in states.entries) Object.hash(e.key, e.value),
+    ]),
+    specOrigin,
+  );
 }
 
 /// Source YAML, arbre aux ID stables et métadonnées indexées par ID d'entrée.

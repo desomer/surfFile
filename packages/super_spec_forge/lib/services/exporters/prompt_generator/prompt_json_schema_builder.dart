@@ -62,6 +62,38 @@ abstract final class PromptJsonSchemaBuilder {
     };
   }
 
+  /// Construit le JSON Schema Draft 2020-12 complet d'un [ValueObjectSpec]
+  /// (`scalar` ou `composite`), en résolvant les Value Objects enfants éventuels.
+  static Map<String, Object?> buildValueObjectSchema({
+    required ValueObjectSpec valueObject,
+    required ValueObjectScope scope,
+    List<ResolvedValueObject> availableValueObjects =
+        const <ResolvedValueObject>[],
+    BusinessObjectModelPreferences? modelPreferences,
+  }) {
+    final strictObjects =
+        (modelPreferences?.schemaStrictness ?? JsonSchemaStrictness.strict) ==
+        JsonSchemaStrictness.strict;
+    final voSpecs = <ValueObjectSpec>[
+      for (final item in availableValueObjects) item.spec,
+    ];
+    final voScopes = <String, ValueObjectScope>{
+      for (final item in availableValueObjects) item.spec.id: item.scope,
+    };
+    final baseSchema = SpecSuperDesignerExporter.valueObjectToJsonSchema(
+      valueObject,
+      valueObjects: voSpecs,
+      valueObjectScopes: voScopes,
+      scope: scope,
+      strictObjects: strictObjects,
+    );
+    return <String, Object?>{
+      r'$schema': draft202012Uri,
+      'title': valueObject.technicalName,
+      ...baseSchema,
+    };
+  }
+
   /// Construit un JSON Schema Draft 2020-12 strict (`additionalProperties: false`)
   /// à partir d'une liste de champs [UseCaseFieldSpec] (`Input` ou `Output`).
   static Map<String, Object?> buildUseCaseFieldsSchema({

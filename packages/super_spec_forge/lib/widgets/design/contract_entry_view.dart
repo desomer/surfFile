@@ -18,7 +18,9 @@ import '../../models/domain_layer_spec.dart';
 import '../../models/spec_forge_project.dart';
 import '../../models/value_object_spec.dart';
 import '../../services/business_object_operations.dart';
+import '../../services/design_evolution_analyzer.dart';
 import '../../services/exporters/spec_super_designer_exporter.dart';
+import '../../services/spec_design_drift_analyzer.dart';
 import '../../services/spec_forge_controller.dart';
 import '../../services/spec_schema_dsl_bridge.dart';
 import '../../services/value_object_primitive_detector.dart';
@@ -29,6 +31,7 @@ import '../workspace/business_objects/business_object_tree_models.dart';
 import '../workspace/json_schema_viewer_dialog.dart';
 import '../workspace/markdown_viewer_dialog.dart';
 import 'contract_model_chat_pane.dart';
+import 'iteration_snapshot_dialogs.dart';
 import 'value_object_editor_dialog.dart';
 
 /// Icône de chaque étape, partagée par l'arbre, le formulaire et la fiche.
@@ -225,6 +228,21 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     for (final item in _resolvedValueObjects) item.spec,
   ];
 
+  DomainContracts get _effectiveDocument =>
+      widget.controller.domainCatalog.domains
+          .where((d) => d.id == widget.domainId)
+          .firstOrNull
+          ?.contracts ??
+      widget.document;
+
+  JsonNode get _effectiveEntry =>
+      _effectiveDocument.entryById(widget.entry.id) ?? widget.entry;
+
+  void _onControllerChanged() {
+    if (!mounted) return;
+    setState(_sync);
+  }
+
   final _filterCtrl = TextEditingController();
   bool _showFilterBar = false;
   String? _syncedFilter;
@@ -261,7 +279,9 @@ class _ContractEntryViewState extends State<ContractEntryView> {
           SpecSchemaDslBridge.applySingleObjectYamlSource(
             value,
             current: _model.object,
-            referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+            referenceTargets: _effectiveDocument.referenceTargetsOf(
+              _effectiveEntry,
+            ),
             valueObjects: _valueObjectSpecs,
           );
         } on FormatException catch (e) {
@@ -272,17 +292,23 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       notifError: _yamlErrorNotifier,
       useLargeTextViewer: false,
     );
+    widget.controller.addListener(_onControllerChanged);
     _sync(forceYaml: true);
   }
 
   @override
   void didUpdateWidget(ContractEntryView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
     _sync();
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _filterCtrl.dispose();
     _yamlErrorNotifier.dispose();
     _store.dispose();
@@ -306,8 +332,8 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   /// Reconstruit l'objet et l'arbre quand le document, l'entrée ou le filtre
   /// change ; un simple changement de focus ne fait que resurligner le nœud.
   void _sync({bool forceYaml = false}) {
-    final document = widget.document;
-    final entry = widget.entry;
+    final document = _effectiveDocument;
+    final entry = _effectiveEntry;
     final filter = _filter;
     final entryChanged = entry.id != _syncedEntryId;
     if (entryChanged || filter != _syncedFilter) {
@@ -586,7 +612,9 @@ class _ContractEntryViewState extends State<ContractEntryView> {
       final updated = SpecSchemaDslBridge.applySingleObjectYamlSource(
         _yamlText,
         current: _model.object,
-        referenceTargets: widget.document.referenceTargetsOf(widget.entry),
+        referenceTargets: _effectiveDocument.referenceTargetsOf(
+          _effectiveEntry,
+        ),
         valueObjects: _valueObjectSpecs,
       );
       _yamlErrorNotifier.value = '';
@@ -649,8 +677,9 @@ class _ContractEntryViewState extends State<ContractEntryView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final details =
-        widget.document.details[widget.entry.id] ?? ContractDetails.defaults;
+    final document = _effectiveDocument;
+    final entry = _effectiveEntry;
+    final details = document.details[entry.id] ?? ContractDetails.defaults;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -762,13 +791,31 @@ class _ContractEntryViewState extends State<ContractEntryView> {
     ColorScheme colors,
     ContractDetails details,
   ) {
-    final entry = widget.entry;
-    final domainLayerCount = widget.document
-        .domainLayerFor(entry)
-        .totalItemsCount;
+    final document = _effectiveDocument;
+    final entry = _effectiveEntry;
+    final isDark = colors.brightness == Brightness.dark;
+    final domainLayerCount = document.domainLayerFor(entry).totalItemsCount;
     final showDomainLayerBtn =
         widget.onOpenDomainLayer != null &&
         HexagonalDomainLayerSpec.isEligibleType(entry.type);
+    final domainEvolution = widget.controller.analyzeDomainEvolution(
+      widget.domainId,
+    );
+    final evolutionReport = domainEvolution.models[entry.id];
+
+    final liveDomain = widget.controller.domainCatalog.domains
+        .where((d) => d.id == widget.domainId)
+        .firstOrNull;
+    final activeProject = widget.controller.project;
+    final contractSpecDrift = (activeProject != null && liveDomain != null)
+        ? SpecDesignDriftAnalyzer.analyzeDomain(
+            project: activeProject,
+            domain: liveDomain,
+            catalog: widget.controller.domainCatalog,
+          ).driftForEntry(entry.id)
+        : null;
+    final specOrigin = details.specOrigin;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       child: Column(
@@ -793,51 +840,68 @@ class _ContractEntryViewState extends State<ContractEntryView> {
                   ],
                 ),
               ),
-              if (showDomainLayerBtn)
-                FilledButton.tonalIcon(
-                  key: const ValueKey('contract-open-domain-layer-btn'),
-                  onPressed: widget.onOpenDomainLayer,
-                  icon: const Icon(Icons.hexagon_outlined, size: 17),
-                  label: Text(
-                    domainLayerCount > 0
-                        ? 'Couche Domain ($domainLayerCount)'
-                        : 'Couche Domain',
-                  ),
+              Flexible(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (showDomainLayerBtn)
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('contract-open-domain-layer-btn'),
+                        onPressed: widget.onOpenDomainLayer,
+                        icon: const Icon(Icons.hexagon_outlined, size: 17),
+                        label: Text(
+                          domainLayerCount > 0
+                              ? 'Couche Domain ($domainLayerCount)'
+                              : 'Couche Domain',
+                        ),
+                      ),
+                    Builder(
+                      builder: (context) {
+                        final suggestions =
+                            ValueObjectPrimitiveDetector.detectForObject(
+                              domainId: widget.domainId,
+                              entryId: entry.id,
+                              entryName: entry.name,
+                              object: _model.object,
+                              catalogVos: _resolvedValueObjects,
+                            );
+                        if (suggestions.isEmpty) return const SizedBox.shrink();
+                        return OutlinedButton.icon(
+                          key: const ValueKey('contract-vo-suggestions-btn'),
+                          onPressed: () =>
+                              _openPrimitiveSuggestionsDialog(suggestions),
+                          icon: const Icon(
+                            Icons.troubleshoot_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            'Suggestions VO (${suggestions.length})',
+                          ),
+                        );
+                      },
+                    ),
+                    if (widget.onOpenValueObjectsCatalog != null)
+                      OutlinedButton.icon(
+                        key: const ValueKey('contract-open-vo-catalog-btn'),
+                        onPressed: widget.onOpenValueObjectsCatalog,
+                        icon: const Icon(Icons.diamond_outlined, size: 16),
+                        label: Text(
+                          'Value Objects (${_resolvedValueObjects.length})',
+                        ),
+                      ),
+                    Chip(
+                      label: Text(
+                        entry.type,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      backgroundColor: contractTypeColor(entry.type),
+                      side: BorderSide.none,
+                    ),
+                  ],
                 ),
-              Builder(
-                builder: (context) {
-                  final suggestions =
-                      ValueObjectPrimitiveDetector.detectForObject(
-                        domainId: widget.domainId,
-                        entryId: entry.id,
-                        entryName: entry.name,
-                        object: _model.object,
-                        catalogVos: _resolvedValueObjects,
-                      );
-                  if (suggestions.isEmpty) return const SizedBox.shrink();
-                  return OutlinedButton.icon(
-                    key: const ValueKey('contract-vo-suggestions-btn'),
-                    onPressed: () =>
-                        _openPrimitiveSuggestionsDialog(suggestions),
-                    icon: const Icon(Icons.troubleshoot_rounded, size: 16),
-                    label: Text('Suggestions VO (${suggestions.length})'),
-                  );
-                },
-              ),
-              if (widget.onOpenValueObjectsCatalog != null)
-                OutlinedButton.icon(
-                  key: const ValueKey('contract-open-vo-catalog-btn'),
-                  onPressed: widget.onOpenValueObjectsCatalog,
-                  icon: const Icon(Icons.diamond_outlined, size: 16),
-                  label: Text('Value Objects (${_resolvedValueObjects.length})'),
-                ),
-              Chip(
-                label: Text(
-                  entry.type,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                backgroundColor: contractTypeColor(entry.type),
-                side: BorderSide.none,
               ),
             ],
           ),
@@ -848,19 +912,149 @@ class _ContractEntryViewState extends State<ContractEntryView> {
             children: [
               Text('Rubrique : ${entry.parent?.name ?? ''}'),
               Text('Version : ${details.version}'),
-              const SizedBox(width: 8),
-              for (final stage in ContractStage.values)
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: Icon(
-                    contractStageIcons[stage],
-                    size: 16,
-                    color: contractStatusColor(details.states[stage], colors),
+              ContractPhaseStatusStrip(
+                keyPrefix: 'contract-stage-${entry.id}',
+                states: details.states,
+                iconSize: 16,
+                onStageTap: (stage) {
+                  final nextStates = Map<ContractStage, ContractStatus>.from(
+                    details.states,
+                  )..[stage] = nextContractStatus(details.states[stage]);
+                  unawaited(
+                    widget.controller.updateDomainContracts(
+                      widget.domainId,
+                      document.edit(
+                        entry,
+                        entry.type,
+                        details.copyWith(states: nextStates),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              if (evolutionReport != null &&
+                  evolutionReport.state != ArtifactEvolutionState.noBaseline &&
+                  evolutionReport.state != ArtifactEvolutionState.unchanged)
+                EvolutionDriftBadge(
+                  key: ValueKey('contract-evolution-badge-${entry.id}'),
+                  report: evolutionReport,
+                  onTap: () => ArtifactEvolutionDiffDialog.show(
+                    context,
+                    report: evolutionReport,
+                    baselineLabel: domainEvolution.baseline?.label,
+                    onApplyRecommendedVersion: (v) => unawaited(
+                      widget.controller.applyDesignArtifactVersionBump(
+                        domainId: widget.domainId,
+                        kind: DesignArtifactKind.model,
+                        artifactId: entry.id,
+                        newVersion: v,
+                      ),
+                    ),
                   ),
-                  label: Text(
-                    '${contractStageLabels[stage]} : '
-                    '${contractStatusLabels[details.states[stage] ?? ContractStatus.pending]}',
+                ),
+              if (evolutionReport != null && evolutionReport.needsVersionBump)
+                SemVerBumpActionChip(
+                  key: ValueKey('contract-semver-bump-${entry.id}'),
+                  report: evolutionReport,
+                  onApplyVersion: (v) => unawaited(
+                    widget.controller.applyDesignArtifactVersionBump(
+                      domainId: widget.domainId,
+                      kind: DesignArtifactKind.model,
+                      artifactId: entry.id,
+                      newVersion: v,
+                    ),
                   ),
+                ),
+              if (specOrigin != null)
+                Builder(
+                  builder: (_) {
+                    final isMissing =
+                        contractSpecDrift?.isMissingInSpec ?? false;
+                    final isModified = contractSpecDrift?.hasDrift ?? false;
+                    final Color bg;
+                    final Color fg;
+                    final Color border;
+                    final String suffix;
+                    if (isMissing) {
+                      bg = colors.errorContainer;
+                      fg = colors.onErrorContainer;
+                      border = colors.error.withValues(alpha: 0.45);
+                      suffix = ' · Supprimé de la Spec';
+                    } else if (isModified) {
+                      bg = Colors.amber.withValues(
+                        alpha: isDark ? 0.24 : 0.15,
+                      );
+                      fg = isDark
+                          ? Colors.amber.shade200
+                          : Colors.amber.shade900;
+                      border = Colors.amber.withValues(
+                        alpha: isDark ? 0.52 : 0.40,
+                      );
+                      suffix = ' · Spec modifiée';
+                    } else {
+                      bg = colors.surfaceContainerHighest;
+                      fg = colors.onSurfaceVariant;
+                      border = colors.outlineVariant;
+                      suffix = '';
+                    }
+                    final featuresLabel =
+                        specOrigin.featuresSummaryLabel.isNotEmpty
+                        ? specOrigin.featuresSummaryLabel
+                        : specOrigin.featureCode;
+                    final originLabel =
+                        'Origine Spec : ${specOrigin.projectName} ($featuresLabel)$suffix';
+                    final contributionLines = <String>[
+                      for (final c in specOrigin.contributingFeatures)
+                        c.featureCode.trim().isNotEmpty &&
+                                c.featureName.trim().isNotEmpty
+                            ? '• ${c.featureCode.trim()} · ${c.featureName.trim()}'
+                            : '• ${c.displayLabel}',
+                    ];
+                    final baseTooltip =
+                        contractSpecDrift?.summary ??
+                        'Promu depuis la Spec « ${specOrigin.projectName} » ($featuresLabel).';
+                    final tooltipMsg = contributionLines.isEmpty
+                        ? baseTooltip
+                        : '$baseTooltip\nFeatures contributrices :\n${contributionLines.join('\n')}';
+                    return Tooltip(
+                      message: tooltipMsg,
+                      child: Container(
+                        key: ValueKey('contract-spec-origin-badge-${entry.id}'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: bg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: border),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: 5,
+                          children: [
+                            Icon(
+                              isMissing
+                                  ? Icons.link_off_rounded
+                                  : (isModified
+                                        ? Icons.sync_problem_rounded
+                                        : Icons.link_rounded),
+                              size: 14,
+                              color: fg,
+                            ),
+                            Text(
+                              originLabel,
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
             ],
           ),

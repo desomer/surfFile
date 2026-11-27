@@ -973,6 +973,7 @@ class _ContractFormState extends State<_ContractForm> {
                 title: _title.trim(),
                 version: _version,
                 states: _states,
+                specOrigin: widget.details.specOrigin,
               ),
             ));
           }

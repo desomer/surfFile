@@ -41,6 +41,7 @@ import '../models/cost/cost_forge_spec.dart';
 import '../models/cost/cost_forge_stage.dart';
 import '../models/domain_catalog.dart';
 import '../models/domain_contracts.dart';
+import '../models/domain_iteration_snapshot.dart';
 import '../models/domain_layer_spec.dart';
 import '../models/enterprise_rate_card.dart';
 import '../models/qa/qa_coherence_issue.dart';
@@ -64,11 +65,13 @@ import 'business_object_operations.dart';
 import 'company_glossary_store.dart';
 import 'cost_auto_seeder.dart';
 import 'cost_coherence_analyzer.dart';
+import 'design_evolution_analyzer.dart';
 import 'domain_catalog_store.dart';
 import 'enterprise_rate_card_store.dart';
 import 'event_storming_operations.dart';
 import 'example_mapping_operations.dart';
 import 'exporters/qa_tdd_prompt_exporter.dart';
+import 'feature_object_sync_engine.dart';
 import 'model_dictionary_store.dart';
 import 'qa_coherence_analyzer.dart';
 import 'spec_coherence_analyzer.dart';
@@ -1032,6 +1035,45 @@ class SpecForgeController extends ChangeNotifier {
     );
     if (result.updatedCatalog != _domainCatalog) {
       await updateDomainCatalog(result.updatedCatalog);
+    }
+    return result;
+  }
+
+  /// Simule sans effet de bord la synchronisation d'une sélection d'objets métiers
+  /// (depuis d'autres Features ou un domaine Design) dans la Feature active.
+  List<FeatureObjectSyncPreview> previewBusinessObjectSyncIntoActiveFeature(
+    List<FeatureObjectSyncChoice> choices,
+  ) {
+    final currentProject = _project;
+    if (currentProject == null) {
+      throw StateError('Aucun projet actif pour l’aperçu de synchronisation.');
+    }
+    return FeatureObjectSyncEngine.previewSync(
+      project: currentProject,
+      catalog: _domainCatalog,
+      modelPreferences: _modelPreferences,
+      choices: choices,
+    );
+  }
+
+  /// Synchronise une sélection d'objets métiers (depuis d'autres Features du
+  /// portefeuille ou depuis un domaine Design) dans la Feature active, enregistre
+  /// un point d'annulation Undo/Redo et persiste le projet mis à jour.
+  Future<FeatureObjectSyncResult> syncBusinessObjectsIntoActiveFeature(
+    List<FeatureObjectSyncChoice> choices,
+  ) async {
+    final currentProject = _project;
+    if (currentProject == null) {
+      throw StateError('Aucun projet actif pour la synchronisation.');
+    }
+    final result = FeatureObjectSyncEngine.executeSync(
+      project: currentProject,
+      catalog: _domainCatalog,
+      modelPreferences: _modelPreferences,
+      choices: choices,
+    );
+    if (result.hasChanges) {
+      await updateProject(result.updatedProject);
     }
     return result;
   }
@@ -7362,6 +7404,501 @@ class SpecForgeController extends ChangeNotifier {
       valueObjectId: valueObjectId,
     );
     await updateDomainModelObject(domainId, updatedObject);
+  }
+
+  static String _truncateAuditDetails(String raw) =>
+      raw.length <= 2000 ? raw : '${raw.substring(0, 1997)}...';
+
+  /// Analyse l'évolution et les impacts transitifs des artefacts Design de [domainId]
+  /// vis-à-vis de sa baseline active (ou de [baselineOverride] s'il est fourni).
+  DomainEvolutionReport analyzeDomainEvolution(
+    String domainId, {
+    DomainIterationSnapshot? baselineOverride,
+  }) {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) {
+      return DomainEvolutionReport(
+        domainId: domainId,
+        baseline: baselineOverride,
+      );
+    }
+    return DesignEvolutionAnalyzer.analyzeDomain(
+      domain: domain,
+      catalog: _domainCatalog,
+      baselineOverride: baselineOverride,
+    );
+  }
+
+  /// Capture un nouveau jalon d'itération ([DomainIterationSnapshot]) pour [domainId],
+  /// l'active optionnellement comme baseline et consigne l'opération dans le journal d'audit.
+  Future<DomainIterationSnapshot> createDomainIterationSnapshot(
+    String domainId, {
+    required String label,
+    String notes = '',
+    bool activateAsBaseline = true,
+  }) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    final nextIterationNumber =
+        domain.iterationSnapshots
+            .map((s) => s.iterationNumber)
+            .fold<int>(0, (a, b) => a > b ? a : b) +
+        1;
+    final existingIds = {for (final s in domain.iterationSnapshots) s.id};
+    var snapshotId = 'snap_${shortid.generate()}';
+    while (existingIds.contains(snapshotId)) {
+      snapshotId = 'snap_${shortid.generate()}';
+    }
+    final now = DateTime.now().toUtc();
+    final snapshot = DomainIterationSnapshot.capture(
+      id: snapshotId,
+      iterationNumber: nextIterationNumber,
+      label: label.trim(),
+      notes: notes.trim(),
+      createdAt: now,
+      domain: domain,
+      catalog: _domainCatalog,
+    );
+    final updatedDomain = domain.copyWith(
+      iterationSnapshots: [...domain.iterationSnapshots, snapshot],
+      activeBaselineSnapshotId: activateAsBaseline
+          ? snapshot.id
+          : domain.activeBaselineSnapshotId,
+    );
+    final event = AuditLogEntry(
+      id: 'audit_${shortid.generate()}',
+      recordedAt: now,
+      actorUsername: 'local-user',
+      domainId: domain.id,
+      actionType: DomainAuditAction.create,
+      targetKey: snapshot.id,
+      details: _truncateAuditDetails(
+        'Jalon d’itération #${snapshot.iterationNumber} « ${snapshot.label} » capturé '
+        '(${snapshot.valueObjects.length} VO, ${snapshot.models.length} modèle(s), '
+        '${snapshot.useCases.length} UC, ${snapshot.sagas.length} Saga(s))'
+        '${activateAsBaseline ? ' [baseline active]' : ''}.',
+      ),
+    );
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId) updatedDomain else d,
+        ],
+        auditLog: [..._domainCatalog.auditLog, event],
+        updatedAt: now,
+      ),
+    );
+    return snapshot;
+  }
+
+  /// Définit (ou désactive lorsque [snapshotId] vaut `null`) le jalon d'itération
+  /// servant de baseline active sur le domaine [domainId].
+  Future<void> setActiveBaselineSnapshot(
+    String domainId,
+    String? snapshotId,
+  ) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    final cleanId = snapshotId?.trim();
+    final effectiveId = (cleanId == null || cleanId.isEmpty) ? null : cleanId;
+    if (effectiveId != null &&
+        !domain.iterationSnapshots.any((s) => s.id == effectiveId)) {
+      throw FormatException(
+        'Snapshot de baseline introuvable dans ${domain.domainCode} : $effectiveId',
+      );
+    }
+    if (domain.activeBaselineSnapshotId == effectiveId) return;
+    final updatedDomain = effectiveId == null
+        ? domain.copyWith(clearActiveBaselineSnapshotId: true)
+        : domain.copyWith(activeBaselineSnapshotId: effectiveId);
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId) updatedDomain else d,
+        ],
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
+  /// Supprime le snapshot d'itération [snapshotId] du domaine [domainId].
+  ///
+  /// Si ce snapshot était la baseline active, bascule automatiquement sur le
+  /// dernier jalon restant (ou désactive la baseline s'il n'en reste aucun).
+  Future<void> deleteDomainIterationSnapshot(
+    String domainId,
+    String snapshotId,
+  ) async {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    final target = domain.iterationSnapshots
+        .where((s) => s.id == snapshotId)
+        .firstOrNull;
+    if (target == null) return;
+
+    final remaining = [
+      for (final s in domain.iterationSnapshots)
+        if (s.id != snapshotId) s,
+    ];
+    String? nextBaselineId = domain.activeBaselineSnapshotId;
+    var clearBaseline = false;
+    if (domain.activeBaselineSnapshotId == snapshotId) {
+      if (remaining.isEmpty) {
+        nextBaselineId = null;
+        clearBaseline = true;
+      } else {
+        var latest = remaining.first;
+        for (final candidate in remaining.skip(1)) {
+          if (candidate.iterationNumber > latest.iterationNumber ||
+              (candidate.iterationNumber == latest.iterationNumber &&
+                  !candidate.createdAt.isBefore(latest.createdAt))) {
+            latest = candidate;
+          }
+        }
+        nextBaselineId = latest.id;
+      }
+    }
+
+    final now = DateTime.now().toUtc();
+    final updatedDomain = domain.copyWith(
+      iterationSnapshots: remaining,
+      activeBaselineSnapshotId: nextBaselineId,
+      clearActiveBaselineSnapshotId: clearBaseline,
+    );
+    final event = AuditLogEntry(
+      id: 'audit_${shortid.generate()}',
+      recordedAt: now,
+      actorUsername: 'local-user',
+      domainId: domain.id,
+      actionType: DomainAuditAction.delete,
+      targetKey: target.id,
+      details: _truncateAuditDetails(
+        'Jalon d’itération #${target.iterationNumber} « ${target.label} » supprimé.',
+      ),
+    );
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId) updatedDomain else d,
+        ],
+        auditLog: [..._domainCatalog.auditLog, event],
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Met à jour (ou fait défiler lorsque [status] vaut `null`) le statut
+  /// d'avancement de l'étape [stage] sur le Value Object [voId].
+  Future<void> updateValueObjectStageStatus({
+    required String voId,
+    required ValueObjectScope scope,
+    String? domainId,
+    required ContractStage stage,
+    ContractStatus? status,
+  }) async {
+    final now = DateTime.now().toUtc();
+    if (scope == ValueObjectScope.shared) {
+      final target = _domainCatalog.sharedValueObjects
+          .where((v) => v.id == voId)
+          .firstOrNull;
+      if (target == null) {
+        throw StateError('Value Object partagé introuvable : $voId');
+      }
+      final resolvedStatus =
+          status ?? nextContractStatus(target.statusOf(stage));
+      final nextStates = Map<ContractStage, ContractStatus>.from(target.states)
+        ..[stage] = resolvedStatus;
+      final updatedVo = target.copyWith(states: nextStates);
+      await updateDomainCatalog(
+        _domainCatalog.copyWith(
+          sharedValueObjects: [
+            for (final v in _domainCatalog.sharedValueObjects)
+              if (v.id == voId) updatedVo else v,
+          ],
+          updatedAt: now,
+        ),
+      );
+      return;
+    }
+
+    final domain = domainId == null
+        ? null
+        : _domainCatalog.domains.where((d) => d.id == domainId).firstOrNull;
+    if (domain == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    final target = domain.valueObjects.where((v) => v.id == voId).firstOrNull;
+    if (target == null) {
+      throw StateError(
+        'Value Object introuvable dans ${domain.domainCode} : $voId',
+      );
+    }
+    final resolvedStatus = status ?? nextContractStatus(target.statusOf(stage));
+    final nextStates = Map<ContractStage, ContractStatus>.from(target.states)
+      ..[stage] = resolvedStatus;
+    final updatedVo = target.copyWith(states: nextStates);
+    await updateDomainCatalog(
+      _domainCatalog.copyWith(
+        domains: [
+          for (final d in _domainCatalog.domains)
+            if (d.id == domainId)
+              d.copyWith(
+                valueObjects: [
+                  for (final v in d.valueObjects)
+                    if (v.id == voId) updatedVo else v,
+                ],
+              )
+            else
+              d,
+        ],
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Met à jour la version sémantique `x.y.z` d'un artefact Design ([ValueObjectSpec],
+  /// [ContractDetails], [ApplicationUseCaseSpec] ou [OrchestrationSagaSpec]) sans
+  /// altérer ses indicateurs d'avancement ([ContractStage]).
+  Future<void> applyDesignArtifactVersionBump({
+    required String domainId,
+    required DesignArtifactKind kind,
+    required String artifactId,
+    required String newVersion,
+    ValueObjectScope? valueObjectScope,
+  }) async {
+    final cleanVersion = newVersion.trim();
+    if (!ContractDetails.versionPattern.hasMatch(cleanVersion)) {
+      throw FormatException(
+        'La version doit être au format x.y.z : $newVersion',
+      );
+    }
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) {
+      throw StateError('Le domaine sélectionné n’existe plus.');
+    }
+    final now = DateTime.now().toUtc();
+
+    switch (kind) {
+      case DesignArtifactKind.valueObject:
+        final resolvedScope =
+            valueObjectScope ??
+            (domain.valueObjects.any((v) => v.id == artifactId)
+                ? ValueObjectScope.domain
+                : ValueObjectScope.shared);
+        if (resolvedScope == ValueObjectScope.shared) {
+          final target = _domainCatalog.sharedValueObjects
+              .where((v) => v.id == artifactId)
+              .firstOrNull;
+          if (target == null) {
+            throw StateError('Value Object partagé introuvable : $artifactId');
+          }
+          if (target.version == cleanVersion) return;
+          final updatedVo = target.copyWith(version: cleanVersion);
+          final event = AuditLogEntry(
+            id: 'audit_${shortid.generate()}',
+            recordedAt: now,
+            actorUsername: 'local-user',
+            domainId: domain.id,
+            actionType: DomainAuditAction.update,
+            targetKey: target.id,
+            details: _truncateAuditDetails(
+              'Version du Value Object partagé « ${target.technicalName} » '
+              'incrémentée : v${target.version} → v$cleanVersion.',
+            ),
+          );
+          await updateDomainCatalog(
+            _domainCatalog.copyWith(
+              sharedValueObjects: [
+                for (final v in _domainCatalog.sharedValueObjects)
+                  if (v.id == artifactId) updatedVo else v,
+              ],
+              auditLog: [..._domainCatalog.auditLog, event],
+              updatedAt: now,
+            ),
+          );
+          return;
+        }
+
+        final target = domain.valueObjects
+            .where((v) => v.id == artifactId)
+            .firstOrNull;
+        if (target == null) {
+          throw StateError(
+            'Value Object introuvable dans ${domain.domainCode} : $artifactId',
+          );
+        }
+        if (target.version == cleanVersion) return;
+        final updatedVo = target.copyWith(version: cleanVersion);
+        final event = AuditLogEntry(
+          id: 'audit_${shortid.generate()}',
+          recordedAt: now,
+          actorUsername: 'local-user',
+          domainId: domain.id,
+          actionType: DomainAuditAction.update,
+          targetKey: target.id,
+          details: _truncateAuditDetails(
+            'Version du Value Object « ${target.technicalName} » '
+            'incrémentée : v${target.version} → v$cleanVersion.',
+          ),
+        );
+        await updateDomainCatalog(
+          _domainCatalog.copyWith(
+            domains: [
+              for (final d in _domainCatalog.domains)
+                if (d.id == domainId)
+                  d.copyWith(
+                    valueObjects: [
+                      for (final v in d.valueObjects)
+                        if (v.id == artifactId) updatedVo else v,
+                    ],
+                  )
+                else
+                  d,
+            ],
+            auditLog: [..._domainCatalog.auditLog, event],
+            updatedAt: now,
+          ),
+        );
+
+      case DesignArtifactKind.model:
+        final contracts = domain.contracts;
+        final node = contracts?.entryById(artifactId);
+        if (contracts == null || node == null) {
+          throw StateError('Entrée de contrat introuvable : $artifactId');
+        }
+        final prevDetail = contracts.details[node.id] ?? ContractDetails.defaults;
+        if (prevDetail.version == cleanVersion) return;
+        final nextDetail = prevDetail.copyWith(version: cleanVersion);
+        final nextContracts = contracts.edit(node, node.type, nextDetail);
+        final event = AuditLogEntry(
+          id: 'audit_${shortid.generate()}',
+          recordedAt: now,
+          actorUsername: 'local-user',
+          domainId: domain.id,
+          actionType: DomainAuditAction.update,
+          targetKey: node.id,
+          details: _truncateAuditDetails(
+            'Version du modèle « ${node.name} » incrémentée : '
+            'v${prevDetail.version} → v$cleanVersion.',
+          ),
+        );
+        await updateDomainCatalog(
+          _domainCatalog.copyWith(
+            domains: [
+              for (final d in _domainCatalog.domains)
+                if (d.id == domainId)
+                  d.copyWith(contracts: nextContracts)
+                else
+                  d,
+            ],
+            auditLog: [..._domainCatalog.auditLog, event],
+            updatedAt: now,
+          ),
+        );
+
+      case DesignArtifactKind.useCase:
+        final orchestration = domain.useCaseOrchestration;
+        final target = orchestration?.useCases
+            .where((uc) => uc.id == artifactId)
+            .firstOrNull;
+        if (orchestration == null || target == null) {
+          throw StateError('Use Case introuvable : $artifactId');
+        }
+        if (target.version == cleanVersion) return;
+        final updatedUc = target.copyWith(version: cleanVersion);
+        final nextOrchestration = orchestration.copyWith(
+          useCases: [
+            for (final uc in orchestration.useCases)
+              if (uc.id == artifactId) updatedUc else uc,
+          ],
+        );
+        final event = AuditLogEntry(
+          id: 'audit_${shortid.generate()}',
+          recordedAt: now,
+          actorUsername: 'local-user',
+          domainId: domain.id,
+          actionType: DomainAuditAction.update,
+          targetKey: target.id,
+          details: _truncateAuditDetails(
+            'Version du Use Case « ${target.name} » incrémentée : '
+            'v${target.version} → v$cleanVersion.',
+          ),
+        );
+        await updateDomainCatalog(
+          _domainCatalog.copyWith(
+            domains: [
+              for (final d in _domainCatalog.domains)
+                if (d.id == domainId)
+                  d.copyWith(useCaseOrchestration: nextOrchestration)
+                else
+                  d,
+            ],
+            auditLog: [..._domainCatalog.auditLog, event],
+            updatedAt: now,
+          ),
+        );
+
+      case DesignArtifactKind.saga:
+        final orchestration = domain.useCaseOrchestration;
+        final target = orchestration?.sagas
+            .where((s) => s.id == artifactId)
+            .firstOrNull;
+        if (orchestration == null || target == null) {
+          throw StateError('Saga introuvable : $artifactId');
+        }
+        if (target.version == cleanVersion) return;
+        final updatedSaga = target.copyWith(version: cleanVersion);
+        final nextOrchestration = orchestration.copyWith(
+          sagas: [
+            for (final s in orchestration.sagas)
+              if (s.id == artifactId) updatedSaga else s,
+          ],
+        );
+        final event = AuditLogEntry(
+          id: 'audit_${shortid.generate()}',
+          recordedAt: now,
+          actorUsername: 'local-user',
+          domainId: domain.id,
+          actionType: DomainAuditAction.update,
+          targetKey: target.id,
+          details: _truncateAuditDetails(
+            'Version de la Saga « ${target.name} » incrémentée : '
+            'v${target.version} → v$cleanVersion.',
+          ),
+        );
+        await updateDomainCatalog(
+          _domainCatalog.copyWith(
+            domains: [
+              for (final d in _domainCatalog.domains)
+                if (d.id == domainId)
+                  d.copyWith(useCaseOrchestration: nextOrchestration)
+                else
+                  d,
+            ],
+            auditLog: [..._domainCatalog.auditLog, event],
+            updatedAt: now,
+          ),
+        );
+    }
   }
 
   Future<bool> _updateValueObjectsChat(

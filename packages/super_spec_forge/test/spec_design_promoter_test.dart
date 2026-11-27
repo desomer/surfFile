@@ -416,5 +416,342 @@ void main() {
         expect(transporteur.description, contains('TransporteurExterne'));
       },
     );
+
+    test(
+      'enregistre SpecOriginBaseline avec ruleFingerprints et exécute smartMerge par défaut en préservant les ValueObjects et champs Design',
+      () {
+        final t1 = DateTime.utc(2026, 2, 1);
+        final t2 = DateTime.utc(2026, 2, 10);
+        final emailVo = ValueObjectPresets.standardPresets.firstWhere(
+          (v) => v.technicalName == 'EmailAddress',
+        );
+        final moneyVo = ValueObjectPresets.standardPresets.firstWhere(
+          (v) => v.technicalName == 'Money',
+        );
+
+        final clientV1 = BusinessObjectSpec(
+          id: 'obj_client',
+          name: 'Client',
+          technicalName: 'Client',
+          description: 'Client B2B v1',
+          attributes: [
+            BusinessAttribute(
+              id: 'attr_id',
+              name: 'id',
+              type: BusinessAttributeType.uuid,
+              required: true,
+              unique: true,
+            ),
+            BusinessAttribute(
+              id: 'attr_email',
+              name: 'emailContact',
+              type: BusinessAttributeType.email,
+              required: false,
+              description: 'Email initial',
+            ),
+            BusinessAttribute(
+              id: 'attr_plafond',
+              name: 'plafondEncours',
+              type: BusinessAttributeType.number,
+              required: true,
+            ),
+            BusinessAttribute(
+              id: 'attr_fax',
+              name: 'faxObsol',
+              type: BusinessAttributeType.string,
+            ),
+          ],
+        );
+        final rgPlafond = BusinessRuleSpec(
+          id: 'rule_1',
+          code: 'RG-001',
+          title: 'Plafond positif',
+          targetObjectIds: const ['obj_client'],
+          condition: 'plafondEncours >= 0',
+          effect: 'Autoriser la création',
+        );
+
+        final projectV1 = SpecForgeProject(
+          id: 'proj_b2b',
+          name: 'Portail B2B',
+          initialIdea: 'Portail commandes',
+          createdAt: t1,
+          updatedAt: t1,
+          businessObjects: [clientV1],
+          businessRules: [rgPlafond],
+        );
+
+        final initialCatalog = DomainCatalog(
+          sharedValueObjects: [emailVo, moneyVo],
+          domains: const [
+            FunctionalDomain(
+              id: 'dom_crm',
+              domainCode: 'crm',
+              name: 'CRM',
+            ),
+          ],
+        );
+
+        // 1re promotion : création initiale et capture de SpecOriginBaseline
+        final firstPromo = SpecDesignPromoter.promote(
+          project: projectV1,
+          catalog: initialCatalog,
+          now: t1,
+          choices: const [
+            ObjectPromotionChoice(
+              objectId: 'obj_client',
+              domainId: 'dom_crm',
+              contractType: 'model',
+            ),
+          ],
+        );
+
+        var crmDomain = firstPromo.updatedCatalog.domains.single;
+        var crmContracts = crmDomain.contracts!;
+        final clientEntry = SpecDesignPromoter.findExistingEntry(
+          crmContracts,
+          'Client',
+        )!;
+        final originV1 = crmContracts.details[clientEntry.id]?.specOrigin;
+        expect(originV1, isNotNull);
+        expect(originV1!.projectId, 'proj_b2b');
+        expect(originV1.specObjectId, 'obj_client');
+        expect(originV1.promotedAt, t1);
+        expect(originV1.baseSpecObject, clientV1);
+        expect(originV1.ruleFingerprints, contains('RG-001'));
+
+        // Enrichissement côté Design : ValueObjects (EmailAddress, Money), index DB, et champ technique tenantId
+        var enrichedDesignObj = crmContracts.objectFor(clientEntry);
+        enrichedDesignObj = ValueObjectPrimitiveDetector.replaceAttributeAtPath(
+          enrichedDesignObj,
+          const ['attr_email'],
+          valueObjectId: emailVo.id,
+        );
+        enrichedDesignObj = ValueObjectPrimitiveDetector.replaceAttributeAtPath(
+          enrichedDesignObj,
+          const ['attr_plafond'],
+          valueObjectId: moneyVo.id,
+        );
+        enrichedDesignObj = enrichedDesignObj.copyWith(
+          attributes: [
+            for (final a in enrichedDesignObj.attributes)
+              if (a.id == 'attr_email')
+                a.copyWith(
+                  schemaConstraints: JsonSchemaConstraints(
+                    extraKeywords: const {
+                      'x-database-index': true,
+                      'x-searchable': true,
+                    },
+                  ),
+                )
+              else
+                a,
+            BusinessAttribute(
+              id: 'attr_design_tenant',
+              name: 'tenantId',
+              type: BusinessAttributeType.uuid,
+              required: true,
+              description: 'Clé de partitionnement multi-tenant Design',
+            ),
+          ],
+        );
+        crmContracts = crmContracts.withModel(
+          clientEntry.id,
+          object: enrichedDesignObj,
+        );
+        final enrichedCatalog = firstPromo.updatedCatalog.copyWith(
+          domains: [crmDomain.copyWith(contracts: crmContracts)],
+        );
+
+        // Évolution Spec v2 :
+        // - emailContact devient obligatoire + nouvelle description
+        // - faxObsol est supprimé
+        // - siret (optionnel) est ajouté
+        final clientV2 = clientV1.copyWith(
+          description: 'Client B2B v2',
+          attributes: [
+            clientV1.attributes[0],
+            clientV1.attributes[1].copyWith(
+              required: true,
+              description: 'Email de facturation obligatoire',
+            ),
+            clientV1.attributes[2],
+            BusinessAttribute(
+              id: 'attr_siret',
+              name: 'siret',
+              type: BusinessAttributeType.string,
+              required: false,
+              schemaConstraints: JsonSchemaConstraints(
+                minLength: 14,
+                maxLength: 14,
+              ),
+            ),
+          ],
+        );
+        final projectV2 = projectV1.copyWith(businessObjects: [clientV2]);
+
+        // Aperçu avant exécution via previewPromotion
+        final previews = SpecDesignPromoter.previewPromotion(
+          project: projectV2,
+          catalog: enrichedCatalog,
+          choices: const [
+            ObjectPromotionChoice(
+              objectId: 'obj_client',
+              domainId: 'dom_crm',
+              contractType: 'model',
+            ),
+          ],
+        );
+        expect(previews, hasLength(1));
+        final preview = previews.single;
+        expect(preview.isNewEntry, isFalse);
+        expect(preview.existingEntryId, clientEntry.id);
+        // Suppression de faxObsol + passage de emailContact à required => bump majeur 1.0.0
+        expect(preview.suggestedVersion, '1.0.0');
+        expect(preview.mergeResult, isNotNull);
+        expect(preview.mergeResult!.addedCount, 1);
+        expect(preview.mergeResult!.removedCount, 1);
+        expect(
+          preview.mergeResult!.preservedValueObjectIds,
+          containsAll([emailVo.id, moneyVo.id]),
+        );
+
+        // 2de promotion en mode smartMerge (par défaut) avec autoBumpVersion: true
+        final secondPromo = SpecDesignPromoter.promote(
+          project: projectV2,
+          catalog: enrichedCatalog,
+          now: t2,
+          autoBumpVersion: true,
+          choices: const [
+            ObjectPromotionChoice(
+              objectId: 'obj_client',
+              domainId: 'dom_crm',
+              contractType: 'model',
+            ),
+          ],
+        );
+
+        expect(secondPromo.updatedCount, 1);
+        expect(secondPromo.mergedCount, 1);
+        expect(secondPromo.preservedValueObjectsCount, 2);
+        expect(
+          secondPromo.domainSummaries.single.mergedEntryIds,
+          [clientEntry.id],
+        );
+
+        final mergedContracts =
+            secondPromo.updatedCatalog.domains.single.contracts!;
+        final mergedDetails = mergedContracts.details[clientEntry.id]!;
+        expect(mergedDetails.version, '1.0.0');
+        expect(mergedDetails.specOrigin?.baseSpecObject, clientV2);
+        expect(mergedDetails.specOrigin?.promotedAt, t2);
+
+        final mergedObj = mergedContracts.objectFor(clientEntry);
+        final byName = {for (final a in mergedObj.attributes) a.name: a};
+
+        // faxObsol retiré, siret ajouté, tenantId conservé
+        expect(byName.containsKey('faxObsol'), isFalse);
+        expect(byName.containsKey('siret'), isTrue);
+        expect(byName.containsKey('tenantId'), isTrue);
+
+        // EmailAddress VO préservé + métadonnées Spec mises à jour + enrichissements x-* préservés
+        final emailAttr = byName['emailContact']!;
+        expect(emailAttr.type, BusinessAttributeType.valueObject);
+        expect(emailAttr.valueObjectId, emailVo.id);
+        expect(emailAttr.required, isTrue);
+        expect(emailAttr.description, 'Email de facturation obligatoire');
+        expect(emailAttr.schemaConstraints.xDatabaseIndex, isTrue);
+        expect(emailAttr.schemaConstraints.xSearchable, isTrue);
+
+        // Money VO composite préservé
+        final plafondAttr = byName['plafondEncours']!;
+        expect(plafondAttr.type, BusinessAttributeType.valueObject);
+        expect(plafondAttr.valueObjectId, moneyVo.id);
+      },
+    );
+
+    test(
+      'suggestNextSemVer distingue patch, minor et major selon la nature des changements',
+      () {
+        final baseObj = BusinessObjectSpec(
+          id: 'entry_1',
+          name: 'Produit',
+          technicalName: 'Produit',
+          description: 'Desc v1',
+          attributes: [
+            BusinessAttribute(
+              id: 'a1',
+              name: 'code',
+              type: BusinessAttributeType.string,
+              required: true,
+            ),
+          ],
+        );
+
+        // Aucun changement -> même version
+        final noChange = SpecDesignMergeEngine.merge(
+          baseSpec: baseObj,
+          nextSpecResolved: baseObj,
+          currentDesign: baseObj,
+        );
+        expect(SpecDesignPromoter.suggestNextSemVer('1.2.3', noChange), '1.2.3');
+
+        // Changement de description uniquement -> patch
+        final descChangeObj = baseObj.copyWith(description: 'Desc v2 enrichie');
+        final patchMerge = SpecDesignMergeEngine.merge(
+          baseSpec: baseObj,
+          nextSpecResolved: descChangeObj,
+          currentDesign: baseObj,
+        );
+        expect(
+          SpecDesignPromoter.suggestNextSemVer('1.2.3', patchMerge),
+          '1.2.4',
+        );
+
+        // Ajout d'un attribut optionnel -> minor
+        final minorObj = baseObj.copyWith(
+          attributes: [
+            ...baseObj.attributes,
+            BusinessAttribute(
+              id: 'a2',
+              name: 'marque',
+              type: BusinessAttributeType.string,
+              required: false,
+            ),
+          ],
+        );
+        final minorMerge = SpecDesignMergeEngine.merge(
+          baseSpec: baseObj,
+          nextSpecResolved: minorObj,
+          currentDesign: baseObj,
+        );
+        expect(
+          SpecDesignPromoter.suggestNextSemVer('1.2.3', minorMerge),
+          '1.3.0',
+        );
+
+        // Ajout d'un attribut obligatoire -> major
+        final majorObj = baseObj.copyWith(
+          attributes: [
+            ...baseObj.attributes,
+            BusinessAttribute(
+              id: 'a3',
+              name: 'prixHt',
+              type: BusinessAttributeType.number,
+              required: true,
+            ),
+          ],
+        );
+        final majorMerge = SpecDesignMergeEngine.merge(
+          baseSpec: baseObj,
+          nextSpecResolved: majorObj,
+          currentDesign: baseObj,
+        );
+        expect(
+          SpecDesignPromoter.suggestNextSemVer('1.2.3', majorMerge),
+          '2.0.0',
+        );
+      },
+    );
   });
 }
