@@ -4,8 +4,6 @@
 /// [VibeToolCall] et [VibeToolResult] de `super_container_layout`.
 library;
 
-import 'dart:math' as math;
-
 import 'package:shortid/shortid.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_schema_dsl/super_schema_dsl.dart';
@@ -18,7 +16,6 @@ import '../models/cost/cost_coherence_issue.dart';
 import '../models/cost/cost_forge_spec.dart';
 import '../models/cost/cost_forge_stage.dart';
 import '../models/cost/cost_run_item_spec.dart';
-import '../models/cost/cost_wbs_item_spec.dart';
 import '../models/enterprise_rate_card.dart';
 import '../models/event_storming_spec.dart';
 import '../models/spec_cahier_des_charges.dart';
@@ -34,6 +31,9 @@ import '../models/qa/tdd_suite_spec.dart';
 import '../models/ux/ux_coherence_issue.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
+import '../services/cost_auto_seeder.dart';
+import '../services/cost_calculator.dart';
+import '../services/cost_coherence_analyzer.dart';
 import '../services/exporters/event_storming_dsl_codec.dart';
 import '../services/spec_coherence_analyzer.dart';
 import '../services/spec_schema_dsl_bridge.dart';
@@ -107,10 +107,14 @@ abstract final class SpecForgeToolRegistry {
     'get_debug_entries',
   };
 
-  /// Ensemble des 3 outils dédiés au volet FinOps & Chiffrage.
+  /// Ensemble des 7 outils dédiés au volet FinOps & Chiffrage.
   static const Set<String> costToolNames = <String>{
     'get_cost_overview',
     'inspect_cost_item',
+    'run_cost_coherence_audit',
+    'seed_cost_from_project',
+    'simulate_cost_scenario',
+    'get_enterprise_rate_card',
     'focus_cost_item',
   };
 
@@ -118,12 +122,17 @@ abstract final class SpecForgeToolRegistry {
   static const Set<String> costStageToolNames = <String>{
     'get_cost_overview',
     'inspect_cost_item',
+    'run_cost_coherence_audit',
+    'seed_cost_from_project',
+    'simulate_cost_scenario',
+    'get_enterprise_rate_card',
     'focus_cost_item',
     'get_lexicon_and_synonyms',
     'get_requirements_summary',
     'get_event_storming',
     'inspect_business_object',
     'list_sibling_features_business_objects',
+    'get_example_mapping',
     'get_business_rules',
     'get_ux_overview',
     'inspect_ux_screen',
@@ -221,11 +230,27 @@ abstract final class SpecForgeToolRegistry {
     ),
     (
       'get_cost_overview',
-      'synthétise le volet FinOps & Chiffrage : hypothèses TJM, Build WBS CAPEX (MVP / V1 / Cible, PERT & P80, Classique vs IA), Run OPEX sur 1/3/5 ans, provision risques EMV, TCO 1/3/5 ans et diagnostics de cohérence.',
+      'synthétise le volet FinOps & Chiffrage : hypothèses TJM, Build WBS CAPEX (MVP / V1 / Cible, PERT & P80, ventilation par discipline, traçabilité et artefacts non chiffrés), Run OPEX 1/3/5 ans, risques EMV, TCO 1/3/5 ans et diagnostics.',
     ),
     (
       'inspect_cost_item',
       'lit le détail complet d\'un profil TJM (`PRF-xxx`), d\'un lot Build WBS (`WBS-xxx`), d\'un poste Run OPEX (`RUN-xxx`) ou d\'un risque budgétaire (`RSK-xxx`) par identifiant, code ou nom/titre.',
+    ),
+    (
+      'run_cost_coherence_audit',
+      'exécute l\'audit déterministe FinOps (`CostCoherenceAnalyzer`) et liste les anomalies filtrables par étape (`stage`) ainsi que les artefacts projet non encore chiffrés.',
+    ),
+    (
+      'seed_cost_from_project',
+      'lance ou prévisualise (`dryRun: true`) l\'amorçage déterministe et non destructif (`CostAutoSeeder`) des lots WBS, du socle Run OPEX et des risques Hotspots depuis les artefacts du projet.',
+    ),
+    (
+      'simulate_cost_scenario',
+      'simule sans modifier le projet un scénario FinOps « what-if » via `CostCalculator` (mode delivery, activation/multiplicateur IA, multiplicateur TJM, ratios transverses, croissance Run, exclusion de priorités MoSCoW, grille d\'entreprise) et calcule les écarts exacts Build/Run/TCO.',
+    ),
+    (
+      'get_enterprise_rate_card',
+      'consulte la grille tarifaire d\'entreprise de référence (`EnterpriseRateCard`) et compare ses TJM, devise et mode de delivery avec les hypothèses actives du projet.',
     ),
     (
       'focus_cost_item',
@@ -731,6 +756,107 @@ abstract final class SpecForgeToolRegistry {
       },
     ),
     VibeToolDeclaration(
+      name: 'run_cost_coherence_audit',
+      description: 'Exécute l’audit déterministe FinOps (CostCoherenceAnalyzer) : exigences Must/Should non chiffrées, écrans UX non chiffrés, profils TJM invalides ou nuls, absence de Run Prod/MCO, hotspots Event Storming non provisionnés, plus le bilan des artefacts non couverts.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'stage': <String, Object?>{
+            'type': 'string',
+            'description': 'Filtre optionnel par étape FinOps (rateCardAssumptions, buildWbs, runOpex, tcoReviewExport).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'seed_cost_from_project',
+      description: 'Amorçage déterministe, idempotent et non destructif (CostAutoSeeder) des lots Build WBS (EXF, objets métiers, écrans UX, features BDD, suites TDD, ENF sécurité/scalabilité/conformité), du socle Run OPEX (si vide) et des risques EMV issus des hotspots Event Storming.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'dryRun': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, prévisualise les éléments qui seraient ajoutés et le TCO projeté sans modifier le projet (false par défaut).',
+          },
+          'applyEnterpriseRateCard': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, réaligne les profils/TJM et abaques sur la grille tarifaire d’entreprise avant l’amorçage (false par défaut : appliquée automatiquement uniquement si le WBS est vide et sans hypothèses personnalisées).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'simulate_cost_scenario',
+      description: 'Simule en lecture seule un scénario FinOps « what-if » via CostCalculator sans modifier le projet et retourne la synthèse baseline, la synthèse simulée et les écarts absolus/relatifs (Build, P80, Run, Risques EMV, TCO 1/3/5 ans).',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'deliveryMode': <String, Object?>{
+            'type': 'string',
+            'description': 'Mode de delivery simulé (inHouse, timeAndMaterials, fixedPrice, hybrid).',
+          },
+          'aiEnabled': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Active ou désactive les gains d’ingénierie assistée par IA dans la simulation.',
+          },
+          'aiGainMultiplier': <String, Object?>{
+            'type': 'number',
+            'description': 'Multiplicateur appliqué aux pourcentages de gains IA par discipline (ex. 0.5 pour réduire les gains de moitié, borné dans [0, 2]).',
+          },
+          'rateMultiplier': <String, Object?>{
+            'type': 'number',
+            'description': 'Multiplicateur appliqué aux TJM internes et externes de tous les profils (ex. 1.15 pour +15 %, borné dans [0.1, 5]).',
+          },
+          'projectManagementPct': <String, Object?>{
+            'type': 'number',
+            'description': 'Ratio transverse Pilotage / PM simulé (0..200 %).',
+          },
+          'architectureDevOpsPct': <String, Object?>{
+            'type': 'number',
+            'description': 'Ratio transverse Architecture / DevSecOps simulé (0..200 %).',
+          },
+          'transverseQaPct': <String, Object?>{
+            'type': 'number',
+            'description': 'Ratio transverse QA / Recette simulé (0..200 %).',
+          },
+          'contingencyPct': <String, Object?>{
+            'type': 'number',
+            'description': 'Provision pour aléas simulée (0..200 %).',
+          },
+          'runGrowthDeltaPct': <String, Object?>{
+            'type': 'number',
+            'description': 'Variation (en points de %) ajoutée au taux de croissance annuelle de chaque poste Run OPEX (ex. 5 ou -5).',
+          },
+          'excludePriorities': <String, Object?>{
+            'type': 'array',
+            'items': <String, Object?>{'type': 'string'},
+            'description': 'Priorités MoSCoW à exclure des lots WBS simulés (ex. ["could", "wont"]).',
+          },
+          'includeDisabledRunItems': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, active temporairement les postes Run OPEX actuellement désactivés (options facultatives) dans la simulation.',
+          },
+          'useEnterpriseRateCard': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Si true, simule le chiffrage avec la grille tarifaire d’entreprise (EnterpriseRateCard).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
+      name: 'get_enterprise_rate_card',
+      description: 'Consulte la grille tarifaire d’entreprise de référence (EnterpriseRateCard : devise, TJM internes/externes, abaques T-shirt, ratios transverses, gains IA) et la compare aux hypothèses actives du projet.',
+      parametersSchema: <String, Object?>{
+        'type': 'object',
+        'properties': <String, Object?>{
+          'compareWithProject': <String, Object?>{
+            'type': 'boolean',
+            'description': 'Inclut le différentiel détaillé avec les profils et hypothèses du projet actif (true par défaut).',
+          },
+        },
+      },
+    ),
+    VibeToolDeclaration(
       name: 'focus_cost_item',
       description: 'Bascule l’atelier FinOps & Chiffrage sur une étape donnée et sélectionne éventuellement un profil TJM (profileId), un lot WBS (wbsItemId), un poste Run OPEX (runItemId) ou un risque budgétaire (riskItemId).',
       parametersSchema: <String, Object?>{
@@ -765,7 +891,7 @@ abstract final class SpecForgeToolRegistry {
     ),
   ];
 
-  /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec, UX et QA.
+  /// Crée un [VibeAppToolRegistry] complet incluant par défaut les outils Spec, UX, QA et Coûts.
   static VibeAppToolRegistry create({
     required SpecForgeProject? Function() readProject,
     Future<void> Function(SpecForgeProject updated)? onUpdateProject,
@@ -778,6 +904,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
+    EnterpriseRateCard? Function()? readEnterpriseRateCard,
     List<UxCoherenceIssue> Function(SpecForgeProject project)?
     onRunUxCoherenceAudit,
     void Function({
@@ -824,6 +951,7 @@ abstract final class SpecForgeToolRegistry {
     onFilterBusinessObjects: onFilterBusinessObjects,
     readCompanyGlossary: readCompanyGlossary,
     readModelPreferences: readModelPreferences,
+    readEnterpriseRateCard: readEnterpriseRateCard,
     onRunUxCoherenceAudit: onRunUxCoherenceAudit,
     onFocusUxItem: onFocusUxItem,
     onRunQaCoherenceAudit: onRunQaCoherenceAudit,
@@ -855,6 +983,7 @@ abstract final class SpecForgeToolRegistry {
     void Function(String query)? onFilterBusinessObjects,
     CompanyGlossary Function()? readCompanyGlossary,
     BusinessObjectModelPreferences Function()? readModelPreferences,
+    EnterpriseRateCard? Function()? readEnterpriseRateCard,
     List<UxCoherenceIssue> Function(SpecForgeProject project)?
     onRunUxCoherenceAudit,
     void Function({
@@ -2423,8 +2552,9 @@ abstract final class SpecForgeToolRegistry {
 
         final issues = onRunCostCoherenceAudit != null
             ? onRunCostCoherenceAudit(project)
-            : cost.coherenceIssues;
+            : CostCoherenceAnalyzer.analyze(project);
         final summary = buildCostSummaryJson(cost);
+        final uncovered = CostAutoSeeder.findUncoveredArtifacts(project);
 
         return VibeToolResult(
           callId: call.id,
@@ -2443,6 +2573,7 @@ abstract final class SpecForgeToolRegistry {
             'riskItemCount': cost.riskItems.length,
             'coherenceIssueCount': issues.length,
             'summary': summary,
+            'uncoveredArtifacts': uncovered.toJson(),
             'transverseRatios': cost.transverseRatios.toJson(),
             'aiProductivity': cost.aiProductivity.toJson(),
             if (cost.assumptionsNotes.isNotEmpty)
@@ -2474,7 +2605,15 @@ abstract final class SpecForgeToolRegistry {
                   'tshirtSize': w.tshirtSize.name,
                   'expectedDays': _round2(w.expectedDays),
                   'aiEligible': w.aiEligible,
+                  if (w.origin.isNotEmpty) 'origin': w.origin,
                   if (w.moduleId.isNotEmpty) 'moduleId': w.moduleId,
+                  if (w.requirementIds.isNotEmpty)
+                    'requirementIds': w.requirementIds,
+                  if (w.businessObjectIds.isNotEmpty)
+                    'businessObjectIds': w.businessObjectIds,
+                  if (w.uxScreenIds.isNotEmpty) 'uxScreenIds': w.uxScreenIds,
+                  if (w.qaFeatureIds.isNotEmpty) 'qaFeatureIds': w.qaFeatureIds,
+                  if (w.tddSuiteIds.isNotEmpty) 'tddSuiteIds': w.tddSuiteIds,
                 },
             ],
             'runItems': [
@@ -2746,6 +2885,471 @@ abstract final class SpecForgeToolRegistry {
           message: 'Élément FinOps introuvable : $needle',
         );
       },
+      'run_cost_coherence_audit': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final allIssues = onRunCostCoherenceAudit != null
+            ? onRunCostCoherenceAudit(project)
+            : CostCoherenceAnalyzer.analyze(project);
+        final stageRaw = (call.arguments['stage'] as String?)?.trim() ?? '';
+        final stageFilter = stageRaw.isEmpty
+            ? null
+            : CostForgeStage.fromJson(stageRaw);
+        final issues = stageFilter == null
+            ? allIssues
+            : allIssues.where((i) => i.stage == stageFilter).toList();
+        final errorCount = issues
+            .where((i) => i.severity == CoherenceSeverity.error)
+            .length;
+        final warningCount = issues
+            .where((i) => i.severity == CoherenceSeverity.warning)
+            .length;
+        final infoCount = issues
+            .where((i) => i.severity == CoherenceSeverity.info)
+            .length;
+        final uncovered = CostAutoSeeder.findUncoveredArtifacts(project);
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            if (stageFilter != null) 'stageFilter': stageFilter.name,
+            'issueCount': issues.length,
+            'errorCount': errorCount,
+            'warningCount': warningCount,
+            'infoCount': infoCount,
+            'issues': [for (final i in issues) i.toJson()],
+            'uncoveredArtifacts': uncovered.toJson(),
+          },
+        );
+      },
+      'seed_cost_from_project': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final dryRun = call.arguments['dryRun'] == true;
+        final applyRateCard =
+            call.arguments['applyEnterpriseRateCard'] == true;
+        final enterpriseCard =
+            readEnterpriseRateCard?.call() ?? EnterpriseRateCard.defaults;
+
+        var workingProject = project;
+        if (applyRateCard) {
+          workingProject = workingProject.copyWith(
+            costSpec: workingProject.costSpec.applyEnterpriseRateCard(
+              enterpriseCard,
+            ),
+          );
+        }
+
+        final beforeWbsCount = workingProject.costSpec.wbsItems.length;
+        final beforeRunCount = workingProject.costSpec.runItems.length;
+        final beforeRiskCount = workingProject.costSpec.riskItems.length;
+
+        final seeded = CostAutoSeeder.seedFromProject(
+          workingProject,
+          enterpriseRateCard: enterpriseCard,
+        );
+        final updatedProject = workingProject.copyWith(costSpec: seeded.spec);
+        final hasSpecChanges = updatedProject.costSpec != project.costSpec;
+        var applied = false;
+        if (!dryRun && hasSpecChanges && onUpdateProject != null) {
+          seeded.spec.validate();
+          await onUpdateProject(updatedProject);
+          applied = true;
+        }
+
+        final addedWbsItems = seeded.spec.wbsItems.skip(beforeWbsCount).toList();
+        final addedRunItems = seeded.spec.runItems.skip(beforeRunCount).toList();
+        final addedRiskItems = seeded.spec.riskItems
+            .skip(beforeRiskCount)
+            .toList();
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'dryRun': dryRun,
+            'applied': applied,
+            'enterpriseRateCardApplied': applyRateCard,
+            'addedWbsCount': seeded.addedWbsCount,
+            'addedRunCount': seeded.addedRunCount,
+            'addedRiskCount': seeded.addedRiskCount,
+            'totalAdded': seeded.totalAdded,
+            'addedWbsItems': [
+              for (final w in addedWbsItems)
+                <String, Object?>{
+                  'id': w.id,
+                  'code': w.code,
+                  'title': w.title,
+                  'discipline': w.discipline.name,
+                  'priority': w.priority.name,
+                  'tshirtSize': w.tshirtSize.name,
+                  'expectedDays': _round2(w.expectedDays),
+                },
+            ],
+            'addedRunItems': [
+              for (final r in addedRunItems)
+                <String, Object?>{
+                  'id': r.id,
+                  'code': r.code,
+                  'name': r.name,
+                  'category': r.category.name,
+                  'environment': r.environment.name,
+                  'monthlyCost': _round2(r.monthlyCost),
+                },
+            ],
+            'addedRiskItems': [
+              for (final r in addedRiskItems)
+                <String, Object?>{
+                  'id': r.id,
+                  'code': r.code,
+                  'title': r.title,
+                  'probabilityPct': r.probabilityPct,
+                  'expectedDays': _round2(r.expectedDays),
+                  if (r.linkedHotspotId.isNotEmpty)
+                    'linkedHotspotId': r.linkedHotspotId,
+                },
+            ],
+            'summary': buildCostSummaryJson(seeded.spec),
+            'remainingUncoveredArtifacts':
+                CostAutoSeeder.findUncoveredArtifacts(updatedProject).toJson(),
+          },
+        );
+      },
+      'simulate_cost_scenario': (call) async {
+        final project = readProject();
+        if (project == null) {
+          return VibeToolResult.error(
+            callId: call.id,
+            name: call.name,
+            message: 'Aucun projet actif.',
+          );
+        }
+        final baselineSpec = project.costSpec;
+        var simSpec = baselineSpec;
+        final appliedOverrides = <String, Object?>{};
+
+        if (call.arguments['useEnterpriseRateCard'] == true) {
+          final enterpriseCard =
+              readEnterpriseRateCard?.call() ?? EnterpriseRateCard.defaults;
+          simSpec = simSpec.applyEnterpriseRateCard(enterpriseCard);
+          appliedOverrides['useEnterpriseRateCard'] = true;
+        }
+
+        final deliveryModeRaw =
+            (call.arguments['deliveryMode'] as String?)?.trim() ?? '';
+        if (deliveryModeRaw.isNotEmpty) {
+          final mode = CostDeliveryMode.fromJson(deliveryModeRaw);
+          simSpec = simSpec.copyWith(deliveryMode: mode);
+          appliedOverrides['deliveryMode'] = mode.name;
+        }
+
+        final rawRateMult = call.arguments['rateMultiplier'];
+        if (rawRateMult is num && rawRateMult.isFinite) {
+          final mult = rawRateMult.toDouble().clamp(0.1, 5.0);
+          simSpec = simSpec.copyWith(
+            profiles: [
+              for (final p in simSpec.profiles)
+                p.copyWith(
+                  internalDailyRate: _round2(p.internalDailyRate * mult),
+                  externalDailyRate: _round2(p.externalDailyRate * mult),
+                ),
+            ],
+          );
+          appliedOverrides['rateMultiplier'] = _round2(mult);
+        }
+
+        var nextAi = simSpec.aiProductivity;
+        var aiModified = false;
+        final rawAiEnabled = call.arguments['aiEnabled'];
+        if (rawAiEnabled is bool) {
+          nextAi = nextAi.copyWith(enabled: rawAiEnabled);
+          appliedOverrides['aiEnabled'] = rawAiEnabled;
+          aiModified = true;
+        }
+        final rawAiMult = call.arguments['aiGainMultiplier'];
+        if (rawAiMult is num && rawAiMult.isFinite) {
+          final mult = rawAiMult.toDouble().clamp(0.0, 2.0);
+          nextAi = nextAi.copyWith(
+            backendGainPct: (nextAi.backendGainPct * mult).clamp(0.0, 80.0),
+            frontendUxGainPct: (nextAi.frontendUxGainPct * mult).clamp(
+              0.0,
+              80.0,
+            ),
+            dataIntegrationGainPct: (nextAi.dataIntegrationGainPct * mult)
+                .clamp(0.0, 80.0),
+            qaTestingGainPct: (nextAi.qaTestingGainPct * mult).clamp(0.0, 80.0),
+            devSecOpsGainPct: (nextAi.devSecOpsGainPct * mult).clamp(0.0, 80.0),
+            pmSpecsGainPct: (nextAi.pmSpecsGainPct * mult).clamp(0.0, 80.0),
+          );
+          appliedOverrides['aiGainMultiplier'] = _round2(mult);
+          aiModified = true;
+        }
+        if (aiModified) {
+          simSpec = simSpec.copyWith(aiProductivity: nextAi);
+        }
+
+        var nextRatios = simSpec.transverseRatios;
+        var ratiosModified = false;
+        final rawPm = call.arguments['projectManagementPct'];
+        if (rawPm is num && rawPm.isFinite) {
+          final v = rawPm.toDouble().clamp(0.0, 200.0);
+          nextRatios = nextRatios.copyWith(projectManagementPct: v);
+          appliedOverrides['projectManagementPct'] = _round2(v);
+          ratiosModified = true;
+        }
+        final rawArch = call.arguments['architectureDevOpsPct'];
+        if (rawArch is num && rawArch.isFinite) {
+          final v = rawArch.toDouble().clamp(0.0, 200.0);
+          nextRatios = nextRatios.copyWith(architectureDevOpsPct: v);
+          appliedOverrides['architectureDevOpsPct'] = _round2(v);
+          ratiosModified = true;
+        }
+        final rawQa = call.arguments['transverseQaPct'];
+        if (rawQa is num && rawQa.isFinite) {
+          final v = rawQa.toDouble().clamp(0.0, 200.0);
+          nextRatios = nextRatios.copyWith(transverseQaPct: v);
+          appliedOverrides['transverseQaPct'] = _round2(v);
+          ratiosModified = true;
+        }
+        final rawCont = call.arguments['contingencyPct'];
+        if (rawCont is num && rawCont.isFinite) {
+          final v = rawCont.toDouble().clamp(0.0, 200.0);
+          nextRatios = nextRatios.copyWith(contingencyPct: v);
+          appliedOverrides['contingencyPct'] = _round2(v);
+          ratiosModified = true;
+        }
+        if (ratiosModified) {
+          simSpec = simSpec.copyWith(transverseRatios: nextRatios);
+        }
+
+        final rawExclude = call.arguments['excludePriorities'];
+        if (rawExclude is List && rawExclude.isNotEmpty) {
+          final excluded = <RequirementPriority>{
+            for (final entry in rawExclude)
+              if (entry is String && entry.trim().isNotEmpty)
+                RequirementPriority.fromJson(entry),
+          };
+          if (excluded.isNotEmpty) {
+            simSpec = simSpec.copyWith(
+              wbsItems: [
+                for (final w in simSpec.wbsItems)
+                  if (!excluded.contains(w.priority)) w,
+              ],
+            );
+            appliedOverrides['excludePriorities'] = [
+              for (final p in excluded) p.name,
+            ];
+          }
+        }
+
+        final includeDisabledRuns =
+            call.arguments['includeDisabledRunItems'] == true;
+        final rawGrowthDelta = call.arguments['runGrowthDeltaPct'];
+        final hasGrowthDelta =
+            rawGrowthDelta is num && rawGrowthDelta.isFinite;
+        if (includeDisabledRuns || hasGrowthDelta) {
+          final growthDelta = hasGrowthDelta ? rawGrowthDelta.toDouble() : 0.0;
+          simSpec = simSpec.copyWith(
+            runItems: [
+              for (final r in simSpec.runItems)
+                r.copyWith(
+                  enabled: includeDisabledRuns ? true : r.enabled,
+                  annualGrowthPct: (r.annualGrowthPct + growthDelta).clamp(
+                    -50.0,
+                    500.0,
+                  ),
+                ),
+            ],
+          );
+          if (includeDisabledRuns) {
+            appliedOverrides['includeDisabledRunItems'] = true;
+          }
+          if (hasGrowthDelta) {
+            appliedOverrides['runGrowthDeltaPct'] = _round2(growthDelta);
+          }
+        }
+
+        final baseCalc = CostCalculator.compute(baselineSpec);
+        final simCalc = CostCalculator.compute(simSpec);
+
+        Map<String, Object?> deltaMetric(double baseVal, double simVal) {
+          final diff = simVal - baseVal;
+          final pct = baseVal.abs() > 1e-6 ? (diff / baseVal) * 100.0 : 0.0;
+          return <String, Object?>{
+            'baseline': _round2(baseVal),
+            'simulated': _round2(simVal),
+            'delta': _round2(diff),
+            'deltaPct': _round2(pct),
+          };
+        }
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'currency': simSpec.currency.code,
+            'appliedOverrides': appliedOverrides,
+            'baseline': buildCostSummaryJson(baselineSpec),
+            'simulated': buildCostSummaryJson(simSpec),
+            'deltas': <String, Object?>{
+              'mvpCost': deltaMetric(
+                baseCalc.mvpLot.effectiveTotalCost,
+                simCalc.mvpLot.effectiveTotalCost,
+              ),
+              'v1Cost': deltaMetric(
+                baseCalc.v1Lot.effectiveTotalCost,
+                simCalc.v1Lot.effectiveTotalCost,
+              ),
+              'fullBuildDays': deltaMetric(
+                baseCalc.fullLot.effectiveTotalDays,
+                simCalc.fullLot.effectiveTotalDays,
+              ),
+              'fullBuildCost': deltaMetric(
+                baseCalc.fullLot.effectiveTotalCost,
+                simCalc.fullLot.effectiveTotalCost,
+              ),
+              'fullP80Cost': deltaMetric(
+                baseCalc.fullLot.effectiveP80Cost,
+                simCalc.fullLot.effectiveP80Cost,
+              ),
+              'yearlyRunYear1': deltaMetric(
+                baseCalc.yearlyRunYear1,
+                simCalc.yearlyRunYear1,
+              ),
+              'cumulativeRun3Years': deltaMetric(
+                baseCalc.cumulativeRun3Years,
+                simCalc.cumulativeRun3Years,
+              ),
+              'riskEmvCost': deltaMetric(
+                baseCalc.riskEmvCost,
+                simCalc.riskEmvCost,
+              ),
+              'tco1Year': deltaMetric(baseCalc.tco1Year, simCalc.tco1Year),
+              'tco3Years': deltaMetric(baseCalc.tco3Years, simCalc.tco3Years),
+              'tco5Years': deltaMetric(baseCalc.tco5Years, simCalc.tco5Years),
+            },
+          },
+        );
+      },
+      'get_enterprise_rate_card': (call) async {
+        final workspaceCard = readEnterpriseRateCard?.call();
+        final card = workspaceCard ?? EnterpriseRateCard.defaults;
+        final compareWithProject =
+            call.arguments['compareWithProject'] != false;
+        final project = readProject();
+
+        Map<String, Object?>? comparison;
+        if (compareWithProject && project != null) {
+          final cost = project.costSpec;
+          final profileDiffs = <Map<String, Object?>>[];
+          final missingInProject = <Map<String, Object?>>[];
+          final matchedProjectIds = <String>{};
+
+          for (final entProfile in card.profiles) {
+            final projProfile =
+                cost.findProfile(entProfile.id) ??
+                cost.findProfile(entProfile.code);
+            if (projProfile == null) {
+              missingInProject.add(<String, Object?>{
+                'id': entProfile.id,
+                'code': entProfile.code,
+                'name': entProfile.name,
+                'discipline': entProfile.discipline.name,
+              });
+              continue;
+            }
+            matchedProjectIds.add(projProfile.id);
+            final internalDelta =
+                projProfile.internalDailyRate - entProfile.internalDailyRate;
+            final externalDelta =
+                projProfile.externalDailyRate - entProfile.externalDailyRate;
+            if (internalDelta.abs() > 0.01 || externalDelta.abs() > 0.01) {
+              profileDiffs.add(<String, Object?>{
+                'id': projProfile.id,
+                'code': projProfile.code,
+                'name': projProfile.name,
+                'projectInternalDailyRate': projProfile.internalDailyRate,
+                'enterpriseInternalDailyRate': entProfile.internalDailyRate,
+                'internalDelta': _round2(internalDelta),
+                'projectExternalDailyRate': projProfile.externalDailyRate,
+                'enterpriseExternalDailyRate': entProfile.externalDailyRate,
+                'externalDelta': _round2(externalDelta),
+              });
+            }
+          }
+
+          final extraInProject = <Map<String, Object?>>[
+            for (final p in cost.profiles)
+              if (!matchedProjectIds.contains(p.id))
+                <String, Object?>{
+                  'id': p.id,
+                  'code': p.code,
+                  'name': p.name,
+                  'discipline': p.discipline.name,
+                  'internalDailyRate': p.internalDailyRate,
+                  'externalDailyRate': p.externalDailyRate,
+                },
+          ];
+
+          final currencyDiff = cost.currency != card.currency;
+          final deliveryModeDiff =
+              cost.deliveryMode != card.defaultDeliveryMode;
+          final ratiosDiff = cost.transverseRatios != card.transverseRatios;
+          final aiDiff = cost.aiProductivity != card.aiProductivity;
+          comparison = <String, Object?>{
+            'hasDivergence':
+                currencyDiff ||
+                deliveryModeDiff ||
+                ratiosDiff ||
+                aiDiff ||
+                profileDiffs.isNotEmpty ||
+                missingInProject.isNotEmpty ||
+                extraInProject.isNotEmpty,
+            'currencyDiff': currencyDiff
+                ? <String, Object?>{
+                    'project': cost.currency.code,
+                    'enterprise': card.currency.code,
+                  }
+                : null,
+            'deliveryModeDiff': deliveryModeDiff
+                ? <String, Object?>{
+                    'project': cost.deliveryMode.name,
+                    'enterprise': card.defaultDeliveryMode.name,
+                  }
+                : null,
+            'transverseRatiosDiffer': ratiosDiff,
+            'aiProductivityDiffers': aiDiff,
+            'profileRateDiffs': profileDiffs,
+            'missingProfilesInProject': missingInProject,
+            'extraProfilesInProject': extraInProject,
+          };
+        }
+
+        return VibeToolResult(
+          callId: call.id,
+          name: call.name,
+          data: <String, Object?>{
+            'source': workspaceCard != null ? 'workspace' : 'defaults',
+            'rateCard': card.toJson(),
+            'averageDailyRate': _round2(
+              card.averageDailyRate(card.defaultDeliveryMode),
+            ),
+            'projectComparison': ?comparison,
+          },
+        );
+      },
       'focus_cost_item': (call) async {
         final project = readProject();
         if (project == null) {
@@ -2875,6 +3479,8 @@ abstract final class SpecForgeToolRegistry {
         return '${data['termCount'] ?? 0} terme(s) lu(s)';
       case 'get_requirements_summary':
         return '${data['functionalRequirementCount'] ?? 0} EXF, ${data['useCaseCount'] ?? 0} cas d’usage';
+      case 'get_event_storming':
+        return '${data['documentCount'] ?? 0} contexte(s), ${data['totalStepCount'] ?? 0} étape(s), ${data['openHotspotCount'] ?? 0} hotspot(s) ouvert(s)';
       case 'inspect_business_object':
         if (data['object'] is Map) {
           final obj = data['object'] as Map;
@@ -2883,6 +3489,8 @@ abstract final class SpecForgeToolRegistry {
         return '${data['objectCount'] ?? 0} objet(s) métier(s)';
       case 'list_sibling_features_business_objects':
         return '${data['objectCount'] ?? 0} objet(s) métier trouvé(s) dans les features sœurs';
+      case 'get_example_mapping':
+        return '${data['storyCount'] ?? 0} story(ies), ${data['exampleCount'] ?? 0} exemple(s), ${data['openQuestionCount'] ?? 0} question(s) ouverte(s)';
       case 'get_business_rules':
         return '${data['ruleCount'] ?? 0} règle(s) RG';
       case 'get_debug_entries':
@@ -2989,6 +3597,25 @@ abstract final class SpecForgeToolRegistry {
           return 'Profil ${prf['code'] ?? ''} — ${prf['name'] ?? ''}'.trim();
         }
         return '${data['wbsItemCount'] ?? 0} WBS, ${data['runItemCount'] ?? 0} Run, ${data['riskItemCount'] ?? 0} risque(s)';
+      case 'run_cost_coherence_audit':
+        return '${data['issueCount'] ?? 0} point(s) FinOps (${data['errorCount'] ?? 0} erreur(s))';
+      case 'seed_cost_from_project':
+        final prefix = data['dryRun'] == true ? 'Aperçu amorçage' : 'Amorçage';
+        return '$prefix : +${data['addedWbsCount'] ?? 0} WBS, +${data['addedRunCount'] ?? 0} Run, +${data['addedRiskCount'] ?? 0} risque(s)';
+      case 'simulate_cost_scenario':
+        final deltas = data['deltas'];
+        if (deltas is Map && deltas['tco3Years'] is Map) {
+          final tco3 = deltas['tco3Years'] as Map;
+          final pct = tco3['deltaPct'];
+          return 'Simulation TCO 3 ans : ${pct is num && pct >= 0 ? '+' : ''}${pct ?? 0} %';
+        }
+        return 'Simulation FinOps calculée';
+      case 'get_enterprise_rate_card':
+        final cmp = data['projectComparison'];
+        if (cmp is Map && cmp['hasDivergence'] == true) {
+          return 'Grille entreprise lue (écarts détectés avec le projet)';
+        }
+        return 'Grille tarifaire d’entreprise lue';
       case 'focus_cost_item':
         if (data['focusedWbsItemId'] is String) {
           return 'Focus lot WBS ${data['focusedWbsItemId']}';
@@ -3007,202 +3634,64 @@ abstract final class SpecForgeToolRegistry {
     return 'OK';
   }
 
-  /// Calcule de manière autonome un résumé financier JSON complet ([CostForgeSpec])
-  /// couvrant les lots Build (MVP, V1, Cible, Total), le Run 1/3/5 ans, les risques EMV et le TCO 1/3/5 ans.
+  /// Calcule via [CostCalculator] un résumé financier JSON complet ([CostForgeSpec])
+  /// couvrant les lots Build (MVP, V1, Cible, Total) avec ventilation par discipline, le Run 1/3/5 ans, les risques EMV et le TCO 1/3/5 ans.
   static Map<String, Object?> buildCostSummaryJson(CostForgeSpec cost) {
-    final mvpLot = _computeLotSummaryJson(
-      cost,
-      cost.wbsItems
-          .where((w) => w.priority == RequirementPriority.must)
-          .toList(),
-    );
-    final v1Lot = _computeLotSummaryJson(
-      cost,
-      cost.wbsItems
-          .where(
-            (w) =>
-                w.priority == RequirementPriority.must ||
-                w.priority == RequirementPriority.should,
-          )
-          .toList(),
-    );
-    final fullLot = _computeLotSummaryJson(
-      cost,
-      cost.wbsItems
-          .where((w) => w.priority != RequirementPriority.wont)
-          .toList(),
-    );
-    final allLot = _computeLotSummaryJson(cost, cost.wbsItems);
-
-    var monthlyRunY1 = 0.0;
-    var yearlyRunY1 = 0.0;
-    var yearlyRunY2 = 0.0;
-    var yearlyRunY3 = 0.0;
-    var yearlyRunY4 = 0.0;
-    var yearlyRunY5 = 0.0;
-    for (final run in cost.runItems) {
-      monthlyRunY1 += run.monthlyCost;
-      yearlyRunY1 += run.yearlyCostForYear(1);
-      yearlyRunY2 += run.yearlyCostForYear(2);
-      yearlyRunY3 += run.yearlyCostForYear(3);
-      yearlyRunY4 += run.yearlyCostForYear(4);
-      yearlyRunY5 += run.yearlyCostForYear(5);
-    }
-    final cumulativeRun3Y = yearlyRunY1 + yearlyRunY2 + yearlyRunY3;
-    final cumulativeRun5Y = cumulativeRun3Y + yearlyRunY4 + yearlyRunY5;
-
-    var riskEmvDays = 0.0;
-    var riskEmvCost = 0.0;
-    for (final risk in cost.riskItems) {
-      final profile =
-          cost.findProfile(risk.profileId) ??
-          cost.resolveProfileForDiscipline(CostDiscipline.backend);
-      final dailyRate = profile.effectiveDailyRate(cost.deliveryMode);
-      riskEmvDays += risk.expectedDays;
-      riskEmvCost += risk.expectedDays * dailyRate + risk.expectedFixedCost;
-    }
-
-    final effectiveBuild = (fullLot['effectiveTotalCost'] as num).toDouble();
-    final tco1Y = effectiveBuild + riskEmvCost + yearlyRunY1;
-    final tco3Y = effectiveBuild + riskEmvCost + cumulativeRun3Y;
-    final tco5Y = effectiveBuild + riskEmvCost + cumulativeRun5Y;
-
+    final calc = CostCalculator.compute(cost);
     return <String, Object?>{
-      'currency': cost.currency.code,
-      'mvpLot': mvpLot,
-      'v1Lot': v1Lot,
-      'fullLot': fullLot,
-      'allLot': allLot,
-      'monthlyRunYear1': _round2(monthlyRunY1),
-      'yearlyRunYear1': _round2(yearlyRunY1),
-      'yearlyRunYear2': _round2(yearlyRunY2),
-      'yearlyRunYear3': _round2(yearlyRunY3),
-      'cumulativeRun3Years': _round2(cumulativeRun3Y),
-      'cumulativeRun5Years': _round2(cumulativeRun5Y),
-      'riskEmvDays': _round2(riskEmvDays),
-      'riskEmvCost': _round2(riskEmvCost),
-      'tco1Year': _round2(tco1Y),
-      'tco3Years': _round2(tco3Y),
-      'tco5Years': _round2(tco5Y),
+      'currency': calc.currency.code,
+      'mvpLot': _lotSummaryToJson(calc.mvpLot),
+      'v1Lot': _lotSummaryToJson(calc.v1Lot),
+      'fullLot': _lotSummaryToJson(calc.fullLot),
+      'allLot': _lotSummaryToJson(calc.allLot),
+      'monthlyRunYear1': _round2(calc.monthlyRunYear1),
+      'yearlyRunYear1': _round2(calc.yearlyRunYear1),
+      'yearlyRunYear2': _round2(calc.yearlyRunYear2),
+      'yearlyRunYear3': _round2(calc.yearlyRunYear3),
+      'cumulativeRun3Years': _round2(calc.cumulativeRun3Years),
+      'cumulativeRun5Years': _round2(calc.cumulativeRun5Years),
+      'riskEmvDays': _round2(calc.riskEmvDays),
+      'riskEmvCost': _round2(calc.riskEmvCost),
+      'tco1Year': _round2(calc.tco1Year),
+      'tco3Years': _round2(calc.tco3Years),
+      'tco5Years': _round2(calc.tco5Years),
     };
   }
 
-  static Map<String, Object?> _computeLotSummaryJson(
-    CostForgeSpec cost,
-    List<CostWbsItemSpec> items,
-  ) {
-    var optDays = 0.0;
-    var expDays = 0.0;
-    var pessDays = 0.0;
-    var varianceSum = 0.0;
-    var classicWbsCost = 0.0;
-    var aiWbsDays = 0.0;
-    var aiWbsCost = 0.0;
-
-    for (final item in items) {
-      final profile =
-          cost.findProfile(item.profileId) ??
-          cost.resolveProfileForDiscipline(item.discipline);
-      final rate = profile.effectiveDailyRate(cost.deliveryMode);
-      final itemExp = item.expectedDays;
-      optDays += item.optimisticDays;
-      expDays += itemExp;
-      pessDays += item.pessimisticDays;
-      varianceSum += item.varianceDays;
-      classicWbsCost += itemExp * rate;
-
-      final gainPct = (cost.aiProductivity.enabled && item.aiEligible)
-          ? cost.aiProductivity.gainPctFor(item.discipline)
-          : 0.0;
-      final itemAiDays = itemExp * (1.0 - gainPct / 100.0);
-      aiWbsDays += itemAiDays;
-      aiWbsCost += itemAiDays * rate;
-    }
-
-    final p80Days = expDays + 0.8416212335729143 * math.sqrt(varianceSum);
-    final ratios = cost.transverseRatios;
-    final pmRate = cost
-        .resolveProfileForDiscipline(CostDiscipline.projectManagement)
-        .effectiveDailyRate(cost.deliveryMode);
-    final archRate = cost
-        .resolveProfileForDiscipline(CostDiscipline.devSecOps)
-        .effectiveDailyRate(cost.deliveryMode);
-    final qaRate = cost
-        .resolveProfileForDiscipline(CostDiscipline.qaTesting)
-        .effectiveDailyRate(cost.deliveryMode);
-    final weightedBaseRate = expDays > 0.0
-        ? classicWbsCost / expDays
-        : cost.toEnterpriseRateCard().averageDailyRate(cost.deliveryMode);
-
-    final classicPmDays = expDays * (ratios.projectManagementPct / 100.0);
-    final classicArchDays = expDays * (ratios.architectureDevOpsPct / 100.0);
-    final classicQaDays = expDays * (ratios.transverseQaPct / 100.0);
-    final classicSubDays =
-        expDays + classicPmDays + classicArchDays + classicQaDays;
-    final classicSubCost =
-        classicWbsCost +
-        classicPmDays * pmRate +
-        classicArchDays * archRate +
-        classicQaDays * qaRate;
-    final classicContDays = classicSubDays * (ratios.contingencyPct / 100.0);
-    final classicContCost = classicSubCost * (ratios.contingencyPct / 100.0);
-    final classicTotalDays = classicSubDays + classicContDays;
-    final classicTotalCost = classicSubCost + classicContCost;
-
-    final aiPmGain = cost.aiProductivity.gainPctFor(
-      CostDiscipline.projectManagement,
-    );
-    final aiArchGain = cost.aiProductivity.gainPctFor(CostDiscipline.devSecOps);
-    final aiQaGain = cost.aiProductivity.gainPctFor(CostDiscipline.qaTesting);
-    final aiPmDays =
-        aiWbsDays *
-        (ratios.projectManagementPct / 100.0) *
-        (1.0 - aiPmGain / 100.0);
-    final aiArchDays =
-        aiWbsDays *
-        (ratios.architectureDevOpsPct / 100.0) *
-        (1.0 - aiArchGain / 100.0);
-    final aiQaDays =
-        aiWbsDays * (ratios.transverseQaPct / 100.0) * (1.0 - aiQaGain / 100.0);
-    final aiSubDays = aiWbsDays + aiPmDays + aiArchDays + aiQaDays;
-    final aiSubCost =
-        aiWbsCost +
-        aiPmDays * pmRate +
-        aiArchDays * archRate +
-        aiQaDays * qaRate;
-    final aiContDays = aiSubDays * (ratios.contingencyPct / 100.0);
-    final aiContCost = aiSubCost * (ratios.contingencyPct / 100.0);
-    final aiTotalDays = aiSubDays + aiContDays;
-    final aiTotalCost = aiSubCost + aiContCost;
-
-    final effectiveTotalDays = cost.aiProductivity.enabled
-        ? aiTotalDays
-        : classicTotalDays;
-    final effectiveTotalCost = cost.aiProductivity.enabled
-        ? aiTotalCost
-        : classicTotalCost;
-    final p80Factor = expDays > 0.0 ? (p80Days / expDays) : 1.0;
-    final effectiveP80Cost = expDays > 0.0
-        ? effectiveTotalCost * p80Factor
-        : p80Days * weightedBaseRate;
-
-    return <String, Object?>{
-      'itemCount': items.length,
-      'wbsOptimisticDays': _round2(optDays),
-      'wbsExpectedDays': _round2(expDays),
-      'wbsPessimisticDays': _round2(pessDays),
-      'wbsP80Days': _round2(p80Days),
-      'classicTotalDays': _round2(classicTotalDays),
-      'classicTotalCost': _round2(classicTotalCost),
-      'aiTotalDays': _round2(aiTotalDays),
-      'aiTotalCost': _round2(aiTotalCost),
-      'effectiveTotalDays': _round2(effectiveTotalDays),
-      'effectiveTotalCost': _round2(effectiveTotalCost),
-      'effectiveP80Cost': _round2(effectiveP80Cost),
-      'aiSavedDays': _round2(classicTotalDays - aiTotalDays),
-      'aiSavedCost': _round2(classicTotalCost - aiTotalCost),
-    };
-  }
+  static Map<String, Object?> _lotSummaryToJson(CostLotSummary lot) =>
+      <String, Object?>{
+        'itemCount': lot.itemCount,
+        'wbsOptimisticDays': _round2(lot.wbsOptimisticDays),
+        'wbsExpectedDays': _round2(lot.wbsExpectedDays),
+        'wbsPessimisticDays': _round2(lot.wbsPessimisticDays),
+        'wbsP80Days': _round2(lot.wbsP80Days),
+        'transverseDays': _round2(lot.transverseDays),
+        'contingencyDays': _round2(lot.contingencyDays),
+        'classicTotalDays': _round2(lot.classicTotalDays),
+        'classicTotalCost': _round2(lot.classicTotalCost),
+        'aiWbsExpectedDays': _round2(lot.aiWbsExpectedDays),
+        'aiTransverseDays': _round2(lot.aiTransverseDays),
+        'aiContingencyDays': _round2(lot.aiContingencyDays),
+        'aiTotalDays': _round2(lot.aiTotalDays),
+        'aiTotalCost': _round2(lot.aiTotalCost),
+        'effectiveTotalDays': _round2(lot.effectiveTotalDays),
+        'effectiveTotalCost': _round2(lot.effectiveTotalCost),
+        'effectiveP80Cost': _round2(lot.effectiveP80Cost),
+        'aiSavedDays': _round2(lot.aiSavedDays),
+        'aiSavedCost': _round2(lot.aiSavedCost),
+        'byDiscipline': <String, Object?>{
+          for (final entry in lot.byDiscipline.entries)
+            entry.key.name: <String, Object?>{
+              'itemCount': entry.value.itemCount,
+              'classicExpectedDays': _round2(entry.value.classicExpectedDays),
+              'aiExpectedDays': _round2(entry.value.aiExpectedDays),
+              'classicCost': _round2(entry.value.classicCost),
+              'aiCost': _round2(entry.value.aiCost),
+              'savedDays': _round2(entry.value.savedDays),
+              'savedCost': _round2(entry.value.savedCost),
+            },
+        },
+      };
 
   static double _round2(double value) =>
       value.isFinite ? (value * 100.0).roundToDouble() / 100.0 : 0.0;

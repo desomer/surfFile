@@ -124,6 +124,7 @@ class _FakeSpecAiService implements SpecAiService {
   final List<SpecForgeStage> calledStages = [];
   final List<String> receivedPrompts = [];
   final List<List<VibeChatAttachment>> receivedAttachments = [];
+  int _visionTurn = 0;
   int _lexiconTurn = 0;
 
   @override
@@ -150,16 +151,57 @@ class _FakeSpecAiService implements SpecAiService {
     receivedAttachments.add(attachments);
 
     late final Map<String, Object?> payload;
-    if (stage == SpecForgeStage.lexicon && _lexiconTurn == 0) {
+    if (stage == SpecForgeStage.vision && _visionTurn == 0) {
+      _visionTurn++;
+      payload = {
+        'message': 'Clarifions d’abord le cadrage et les personas clés.',
+        'askUser': {
+          'questions': [
+            {
+              'id': 'q_cible_artisan',
+              'title': 'Quel est l’utilisateur principal de la solution ?',
+              'type': 'single',
+              'options': ['Artisan indépendant', 'Conducteur de travaux'],
+              'default': 'Artisan indépendant',
+            },
+          ],
+        },
+        'specPatch': null,
+        'stageReadyToAdvance': false,
+      };
+    } else if (stage == SpecForgeStage.vision) {
+      _visionTurn++;
+      payload = {
+        'message': 'Cadrage & Acteurs mis à jour.',
+        'askUser': null,
+        'specPatch': {
+          'vision': {
+            'problemStatement': 'Suivi dispersé des chiffrages artisans.',
+            'personas': [
+              {
+                'id': 'persona_artisan',
+                'name': 'Artisan',
+                'role': 'Dirigeant terrain',
+                'goals': ['Émettre un devis en moins de 5 minutes'],
+                'painPoints': ['Tableurs manuels'],
+              },
+            ],
+          },
+        },
+        'stageSummary': 'Vision et persona Artisan clarifiés.',
+        'stageReadyToAdvance': true,
+      };
+    } else if (stage == SpecForgeStage.lexicon && _lexiconTurn == 0) {
       _lexiconTurn++;
       payload = {
         'message':
-            'Clarifions d’abord le vocabulaire métier (devis vs chantier).',
+            'Clarifions le vocabulaire métier partagé (devis vs chantier).',
         'askUser': {
           'questions': [
             {
               'id': 'q_terme_devis',
-              'title': 'Quel terme canonique retenir pour les propositions chiffrées ?',
+              'title':
+                  'Quel terme canonique retenir pour les propositions chiffrées ?',
               'type': 'single',
               'options': ['Devis', 'Chiffrage'],
               'default': 'Devis',
@@ -216,7 +258,7 @@ Finder _appBarText(String title) =>
 
 void main() {
   testWidgets(
-    'Wizard IA complet : idée -> lexique métier (étape 1) -> VibeAskUserCard -> cadrage (étape 2)',
+    'Wizard IA complet : idée -> cadrage (étape 1) -> VibeAskUserCard -> lexique métier (étape 2)',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1400, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -250,7 +292,7 @@ void main() {
       await tester.pump();
 
       final startWizardButton = find.text(
-        'Démarrer le wizard (Étape 1 : Lexique métier)',
+        'Démarrer le wizard (Étape 1 : Cadrage & Acteurs)',
       );
       await tester.ensureVisible(startWizardButton);
       await tester.pumpAndSettle();
@@ -266,51 +308,62 @@ void main() {
       await tester.tap(startButton);
       await tester.pumpAndSettle();
 
-      // 3. L'agent Étape 1 (Ubiquitous Language Expert) a posé une question terminologique.
+      // 3. L'agent Étape 1 (Product Strategist) a posé une question de cadrage.
       expect(
-        find.text(
-          'Quel terme canonique retenir pour les propositions chiffrées ?',
-        ),
+        find.text('Quel est l’utilisateur principal de la solution ?'),
         findsOneWidget,
       );
-      expect(fakeAi.calledStages, [SpecForgeStage.lexicon]);
+      expect(fakeAi.calledStages, [SpecForgeStage.vision]);
 
       // 4. Soumission de la réponse au questionnaire VibeAskUserCard.
       await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
       await tester.pumpAndSettle();
 
-      // 5. Le patch a enrichi le Lexique métier (LexiconEditorView) et débloqué le passage.
+      // 5. Le patch a enrichi le Cadrage & Acteurs et débloqué le passage.
       expect(
-        find.text('Proposition chiffrée remise à un client artisan.'),
+        find.text('Suivi dispersé des chiffrages artisans.'),
         findsOneWidget,
       );
-      expect(find.text('Montants en EUR HT'), findsOneWidget);
       expect(controller.canUndo, isTrue);
 
-      // 6. Passage à l'étape 2 (Cadrage & Acteurs / Product Strategist) :
+      // 6. Passage à l'étape 2 (Lexique métier / Ubiquitous Language Expert) :
       // l'IA ne démarre pas automatiquement sans clic sur « Commencer ».
       await tester.tap(find.text('Valider & Suivant'));
       await tester.pumpAndSettle();
 
-      expect(controller.project!.currentStage, SpecForgeStage.vision);
+      expect(controller.project!.currentStage, SpecForgeStage.lexicon);
       expect(
-        controller.project!.stageStateFor(SpecForgeStage.lexicon).status,
+        controller.project!.stageStateFor(SpecForgeStage.vision).status,
         SpecStageStatus.validated,
       );
       expect(fakeAi.calledStages, [
-        SpecForgeStage.lexicon,
-        SpecForgeStage.lexicon,
+        SpecForgeStage.vision,
+        SpecForgeStage.vision,
       ]);
       expect(find.byKey(const ValueKey('spec-stage-start-ai')), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('spec-stage-start-ai')));
       await tester.pumpAndSettle();
 
+      expect(
+        find.text(
+          'Quel terme canonique retenir pour les propositions chiffrées ?',
+        ),
+        findsOneWidget,
+      );
       expect(fakeAi.calledStages, [
-        SpecForgeStage.lexicon,
-        SpecForgeStage.lexicon,
         SpecForgeStage.vision,
+        SpecForgeStage.vision,
+        SpecForgeStage.lexicon,
       ]);
+
+      await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Proposition chiffrée remise à un client artisan.'),
+        findsOneWidget,
+      );
+      expect(find.text('Montants en EUR HT'), findsOneWidget);
     },
   );
 
@@ -1294,10 +1347,10 @@ Facture:
       );
 
       // Re-clic sur l'item Spec actif dans le rail ramène au menu Spec.
-      expect(_appBarText('Lexique métier — DevisApp'), findsOneWidget);
-      await controller.goToStage(SpecForgeStage.vision);
-      await tester.pumpAndSettle();
       expect(_appBarText('Cadrage & Acteurs — DevisApp'), findsOneWidget);
+      await controller.goToStage(SpecForgeStage.lexicon);
+      await tester.pumpAndSettle();
+      expect(_appBarText('Lexique métier — DevisApp'), findsOneWidget);
       await tester.tap(find.text('Spec').first);
       await tester.pumpAndSettle();
       expect(
@@ -3142,7 +3195,7 @@ Facture:
       await tester.pumpAndSettle();
       expect(find.text('Commande client'), findsOneWidget);
 
-      // 6. Passerelle avec l'étape 1 d'un projet (Import + Promotion).
+      // 6. Passerelle avec le Lexique d'un projet (référentiel transverse Projet — Import + Promotion).
       await controller.createProjectFromIdea(
         idea: 'Gestion commerciale',
         autoKickoff: false,
@@ -3151,7 +3204,7 @@ Facture:
         find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.tap(find.byKey(const ValueKey('spec-link-project_lexicon')));
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -4294,6 +4347,123 @@ Facture:
       );
       expect(backFinder, findsNothing);
       expect(menuFinder, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Référentiel transverse « Lexique du projet » hors stepper : accès depuis Menu Spec et AppBar Wizard sans muter currentStage',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final fakeAi = _FakeSpecAiService();
+      final controller = SpecForgeController(
+        store: _MemorySpecProjectStore(),
+        aiService: fakeAi,
+      );
+      addTearDown(controller.dispose);
+
+      await controller.createProjectFromIdea(
+        name: 'ArtisanDevis',
+        idea: 'Gestion de devis pour artisans',
+        autoKickoff: false,
+      );
+      await controller.goToStage(SpecForgeStage.businessObjects);
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Accès depuis la carte « Lexique du projet » dans le menu Spec.
+      expect(
+        find.byKey(const ValueKey('spec-link-project_lexicon')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('spec-link-project_lexicon')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-project-lexicon-view')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-project-lexicon-banner')),
+        findsOneWidget,
+      );
+      expect(find.byType(SpecWizardStepper), findsNothing);
+      expect(find.text('Valider & Suivant'), findsNothing);
+      expect(
+        find.text('Ubiquitous Language Expert · Référentiel Projet'),
+        findsOneWidget,
+      );
+      expect(
+        _appBarText('Spec › ArtisanDevis › Lexique du projet'),
+        findsOneWidget,
+      );
+
+      // 2. Exécuter un échange IA (kickoff + askUser) dans la vue transverse :
+      // le lexique et lexiconStageState se mettent à jour sans altérer currentStage.
+      await tester.tap(find.byKey(const ValueKey('spec-stage-start-ai')));
+      await tester.pumpAndSettle();
+      expect(fakeAi.calledStages, [SpecForgeStage.lexicon]);
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      await tester.tap(find.byKey(const ValueKey('vibe-ask-user-submit')));
+      await tester.pumpAndSettle();
+      expect(
+        controller.project!.lexicon.terms.any((t) => t.term == 'Devis'),
+        isTrue,
+      );
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+      // Même lorsque stageReadyToAdvance est true, aucun bandeau « Passer à » n'apparaît hors stepper.
+      expect(find.textContaining('Passer à :'), findsNothing);
+
+      // Action rapide « Compléter le lexique » hors stepper conserve aussi currentStage.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-chat-lexicon-complement-action')),
+      );
+      await tester.pumpAndSettle();
+      expect(fakeAi.calledStages.last, SpecForgeStage.lexicon);
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      // 3. Retour au menu Spec -> ouverture du Wizard (toujours sur Objets métiers).
+      await tester.tap(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-spec-menu-view')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('spec-link-wizard')));
+      await tester.pumpAndSettle();
+      expect(_appBarText('Objets métiers — ArtisanDevis'), findsOneWidget);
+
+      // 4. Raccourci AppBar « Lexique (1) » depuis le Wizard -> ouvre la vue transverse
+      // et le bouton Retour ramène exactement au Wizard sur Objets métiers.
+      final appBarLexiconBtn = find.byKey(
+        const ValueKey('spec-appbar-project-lexicon-btn'),
+      );
+      expect(appBarLexiconBtn, findsOneWidget);
+      await tester.tap(appBarLexiconBtn);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('spec-project-lexicon-view')),
+        findsOneWidget,
+      );
+      expect(find.byType(SpecWizardStepper), findsNothing);
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      await tester.tap(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SpecWizardStepper), findsOneWidget);
+      expect(_appBarText('Objets métiers — ArtisanDevis'), findsOneWidget);
     },
   );
 }

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
 
 void main() {
@@ -236,6 +237,336 @@ void main() {
       final csvFiles = CostCsvExporter.exportAllFiles(patched.project);
       expect(csvFiles.keys, containsAll(['cost_summary_tco.csv', 'cost_build_wbs.csv', 'cost_run_opex.csv']));
       expect(csvFiles['cost_build_wbs.csv'], contains('WBS-099'));
+    });
+
+    test('CostAutoSeeder.findUncoveredArtifacts recense les écarts avant et après amorçage', () {
+      var project = SpecForgeProject.fromIdea(
+        idea: 'Gestion des devis',
+        name: 'DevisFlow',
+        id: 'proj_devis',
+      );
+      project = project.copyWith(
+        cahierDesCharges: SpecCahierDesCharges(
+          functionalRequirements: [
+            FunctionalRequirement(
+              id: 'ef_1',
+              code: 'EF-001',
+              title: 'Créer un devis',
+              priority: RequirementPriority.must,
+            ),
+          ],
+          nonFunctionalRequirements: [
+            NonFunctionalRequirement(
+              id: 'enf_sec',
+              code: 'ENF-001',
+              title: 'Chiffrement TLS & AES-256',
+              category: NonFunctionalCategory.security,
+            ),
+          ],
+        ),
+        businessObjects: [
+          BusinessObjectSpec(
+            id: 'obj_devis',
+            name: 'Devis',
+            technicalName: 'Devis',
+          ),
+        ],
+        eventStorming: EventStormingSpec(
+          documents: [
+            EventStormDocument(
+              id: 'ventes',
+              meta: const EventStormMeta(
+                domain: 'Ventes',
+                boundedContext: 'Devis',
+                date: '2026-11-27',
+              ),
+              flow: [
+                EventStormStep(
+                  step: 1,
+                  command: EventStormCommand(name: 'Valider le devis'),
+                  hotspots: const [
+                    EventStormHotspot(
+                      id: 'HS-01',
+                      question: 'Règle de TVA intracommunautaire',
+                      severity: EventStormHotspotSeverity.blocker,
+                      status: EventStormHotspotStatus.open,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final beforeGaps = CostAutoSeeder.findUncoveredArtifacts(project);
+      expect(beforeGaps.isComplete, isFalse);
+      expect(beforeGaps.missingRunBaseline, isTrue);
+      expect(beforeGaps.functionalRequirements, hasLength(1));
+      expect(beforeGaps.nonFunctionalRequirements, hasLength(1));
+      expect(beforeGaps.businessObjects, hasLength(1));
+      expect(beforeGaps.eventStormHotspots, hasLength(1));
+      expect(beforeGaps.totalUncoveredArtifacts, 4);
+
+      final seeded = CostAutoSeeder.seedFromProject(project);
+      final afterGaps = CostAutoSeeder.findUncoveredArtifacts(
+        project.copyWith(costSpec: seeded.spec),
+      );
+      expect(afterGaps.isComplete, isTrue);
+      expect(afterGaps.totalUncoveredArtifacts, 0);
+      expect(afterGaps.missingRunBaseline, isFalse);
+    });
+
+    test('Outils IA FinOps : seed_cost_from_project, run_cost_coherence_audit, simulate_cost_scenario, get_enterprise_rate_card et get_cost_overview', () async {
+      var project = SpecForgeProject.fromIdea(
+        idea: 'Portail SaaS de gestion de flotte avec assistant IA',
+        name: 'FleetAI',
+        id: 'proj_fleet_ai',
+      );
+      project = project.copyWith(
+        cahierDesCharges: SpecCahierDesCharges(
+          modules: const [SpecModule(id: 'mod_flotte', name: 'Flotte')],
+          functionalRequirements: [
+            FunctionalRequirement(
+              id: 'ef_1',
+              code: 'EF-001',
+              title: 'Enregistrer un véhicule',
+              moduleId: 'mod_flotte',
+              priority: RequirementPriority.must,
+            ),
+            FunctionalRequirement(
+              id: 'ef_2',
+              code: 'EF-002',
+              title: 'Export analytique avancé',
+              moduleId: 'mod_flotte',
+              priority: RequirementPriority.could,
+            ),
+          ],
+        ),
+        eventStorming: EventStormingSpec(
+          documents: [
+            EventStormDocument(
+              id: 'flotte',
+              meta: const EventStormMeta(
+                domain: 'Flotte',
+                boundedContext: 'Véhicules',
+                date: '2026-11-27',
+              ),
+              catalog: EventStormCatalog(
+                aggregates: const [
+                  EventStormCatalogItem(id: 'AGG-FLOTTE', name: 'Véhicule'),
+                ],
+              ),
+              flow: [
+                EventStormStep(
+                  step: 1,
+                  command: EventStormCommand(name: 'Synchroniser la flotte'),
+                  aggregate: 'AGG-FLOTTE',
+                  domainEvent: EventStormDomainEvent(
+                    id: 'EVT-01',
+                    name: 'Flotte synchronisée',
+                  ),
+                  hotspots: const [
+                    EventStormHotspot(
+                      id: 'HS-01',
+                      question: 'Synchronisation télématique temps réel',
+                      severity: EventStormHotspotSeverity.blocker,
+                      status: EventStormHotspotStatus.open,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final enterpriseCard = EnterpriseRateCard.defaults.copyWith(
+        currency: CostCurrency.chf,
+        defaultDeliveryMode: CostDeliveryMode.inHouse,
+        profiles: [
+          for (final p in EnterpriseRateCard.defaults.profiles)
+            if (p.id == 'prof_back')
+              p.copyWith(internalDailyRate: 700.0, externalDailyRate: 1100.0)
+            else
+              p,
+        ],
+      );
+
+      var updateCount = 0;
+      final registry = SpecForgeToolRegistry.build(
+        readProject: () => project,
+        readEnterpriseRateCard: () => enterpriseCard,
+        onUpdateProject: (updated) async {
+          updateCount++;
+          project = updated;
+        },
+        toolNames: SpecForgeToolRegistry.costStageToolNames,
+      );
+
+      expect(
+        registry.declarations.map((d) => d.name),
+        containsAll(<String>[
+          'get_cost_overview',
+          'inspect_cost_item',
+          'run_cost_coherence_audit',
+          'seed_cost_from_project',
+          'simulate_cost_scenario',
+          'get_enterprise_rate_card',
+          'focus_cost_item',
+          'get_example_mapping',
+        ]),
+      );
+
+      // 1. Prévisualisation dry-run : ne mute pas le projet
+      final dryRunRes = await registry.execute(
+        VibeToolCall(
+          id: 'c1',
+          name: 'seed_cost_from_project',
+          arguments: const <String, Object?>{'dryRun': true},
+        ),
+      );
+      expect(dryRunRes.isError, isFalse);
+      expect(dryRunRes.data['dryRun'], isTrue);
+      expect(dryRunRes.data['applied'], isFalse);
+      expect(dryRunRes.data['addedWbsCount'], 2);
+      expect(dryRunRes.data['addedRiskCount'], 1);
+      expect(updateCount, 0);
+      expect(project.costSpec.wbsItems, isEmpty);
+
+      // 2. Exécution réelle de l'amorçage non destructif
+      final seedRes = await registry.execute(
+        VibeToolCall(
+          id: 'c2',
+          name: 'seed_cost_from_project',
+          arguments: const <String, Object?>{'dryRun': false},
+        ),
+      );
+      expect(seedRes.isError, isFalse);
+      expect(seedRes.data['applied'], isTrue);
+      expect(updateCount, 1);
+      expect(project.costSpec.wbsItems, hasLength(2));
+      expect(project.costSpec.riskItems, hasLength(1));
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c2', name: 'seed_cost_from_project'),
+          seedRes,
+        ),
+        contains('+2 WBS'),
+      );
+
+      // 3. Vérification get_cost_overview (traçabilité + byDiscipline + uncoveredArtifacts)
+      final overviewRes = await registry.execute(
+        VibeToolCall(id: 'c3', name: 'get_cost_overview'),
+      );
+      expect(overviewRes.isError, isFalse);
+      final wbsList = overviewRes.data['wbsItems'] as List;
+      expect(wbsList, hasLength(2));
+      expect((wbsList.first as Map)['requirementIds'], isNotEmpty);
+      final summary = overviewRes.data['summary'] as Map;
+      final fullLot = summary['fullLot'] as Map;
+      expect(fullLot['byDiscipline'], isA<Map>());
+      expect((fullLot['byDiscipline'] as Map).containsKey('backend'), isTrue);
+      final uncovered = overviewRes.data['uncoveredArtifacts'] as Map;
+      expect(uncovered['isComplete'], isTrue);
+
+      // 4. Audit de cohérence FinOps filtrable par étape
+      project = project.copyWith(
+        costSpec: project.costSpec.copyWith(
+          runItems: const <CostRunItemSpec>[],
+        ),
+      );
+      final auditRunRes = await registry.execute(
+        VibeToolCall(
+          id: 'c4',
+          name: 'run_cost_coherence_audit',
+          arguments: const <String, Object?>{'stage': 'runOpex'},
+        ),
+      );
+      expect(auditRunRes.isError, isFalse);
+      expect(auditRunRes.data['stageFilter'], 'runOpex');
+      expect((auditRunRes.data['issueCount'] as int), greaterThanOrEqualTo(2));
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c4', name: 'run_cost_coherence_audit'),
+          auditRunRes,
+        ),
+        contains('FinOps'),
+      );
+
+      // 5. Simulation « what-if » en lecture seule (ne mute pas le projet)
+      final beforeSimSpec = project.costSpec;
+      final simRes = await registry.execute(
+        VibeToolCall(
+          id: 'c5',
+          name: 'simulate_cost_scenario',
+          arguments: const <String, Object?>{
+            'deliveryMode': 'fixedPrice',
+            'aiEnabled': false,
+            'rateMultiplier': 1.2,
+            'excludePriorities': <String>['could'],
+          },
+        ),
+      );
+      expect(simRes.isError, isFalse);
+      expect(project.costSpec, equals(beforeSimSpec));
+      final deltas = simRes.data['deltas'] as Map;
+      final simFull = (simRes.data['simulated'] as Map)['fullLot'] as Map;
+      expect(simFull['itemCount'], 1);
+      expect((deltas['mvpCost'] as Map)['delta'], greaterThan(0));
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c5', name: 'simulate_cost_scenario'),
+          simRes,
+        ),
+        contains('Simulation TCO 3 ans'),
+      );
+
+      // 6. Lecture et comparaison de la grille tarifaire d'entreprise
+      project = project.copyWith(
+        costSpec: project.costSpec.copyWith(
+          currency: CostCurrency.eur,
+          deliveryMode: CostDeliveryMode.hybrid,
+        ),
+      );
+      final rateCardRes = await registry.execute(
+        VibeToolCall(id: 'c6', name: 'get_enterprise_rate_card'),
+      );
+      expect(rateCardRes.isError, isFalse);
+      expect(rateCardRes.data['source'], 'workspace');
+      final cmp = rateCardRes.data['projectComparison'] as Map;
+      expect(cmp['hasDivergence'], isTrue);
+      expect((cmp['currencyDiff'] as Map)['enterprise'], 'CHF');
+      expect((cmp['deliveryModeDiff'] as Map)['enterprise'], 'inHouse');
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c6', name: 'get_enterprise_rate_card'),
+          rateCardRes,
+        ),
+        contains('écarts détectés'),
+      );
+
+      // 7. Résumés pour get_event_storming & get_example_mapping
+      final esRes = await registry.execute(
+        VibeToolCall(id: 'c7', name: 'get_event_storming'),
+      );
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c7', name: 'get_event_storming'),
+          esRes,
+        ),
+        contains('1 contexte(s)'),
+      );
+      final emRes = await registry.execute(
+        VibeToolCall(id: 'c8', name: 'get_example_mapping'),
+      );
+      expect(
+        SpecForgeToolRegistry.summarizeResult(
+          VibeToolCall(id: 'c8', name: 'get_example_mapping'),
+          emRes,
+        ),
+        contains('story(ies)'),
+      );
     });
   });
 }

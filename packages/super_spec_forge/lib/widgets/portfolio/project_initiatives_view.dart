@@ -55,7 +55,7 @@ class ProjectInitiativesView extends StatefulWidget {
   /// Callback appelé lorsqu'on ouvre l'un des 4 Wizards sur la feature sélectionnée.
   final ValueChanged<SpecPortfolioWizardTarget> onOpenWizard;
 
-  /// Callback optionnel ouvrant directement l'étape 1 (Lexique métier partagé du projet).
+  /// Callback optionnel ouvrant directement le référentiel transverse « Lexique du projet » (hors stepper feature).
   final VoidCallback? onOpenSharedLexicon;
 
   /// Sélecteur optionnel de pièces jointes transmis au chat IA.

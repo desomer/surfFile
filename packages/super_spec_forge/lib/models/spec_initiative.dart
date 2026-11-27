@@ -57,10 +57,11 @@ enum SpecPortfolioStatus {
 }
 
 /// Feature unitaire d'une [SpecInitiative] encapsulant les livrables des 4 Wizards
-/// (Spec étapes 2..8, UX, BDD/TDD et Estimation de coût IT).
+/// (Spec étape 1 et étapes 3..8, UX, BDD/TDD et Estimation de coût IT).
 ///
-/// L'étape 1 (Lexique métier) et les préférences de modélisation restent partagées
-/// à l'échelle du projet parent ([SpecForgeProject]).
+/// Le Lexique métier (étape 2 du wizard et référentiel transverse de niveau projet)
+/// et les préférences de modélisation restent partagés à l'échelle du projet parent
+/// ([SpecForgeProject]).
 @immutable
 class SpecFeatureSpec {
   /// Construit une feature immuable de spécification.
@@ -72,7 +73,7 @@ class SpecFeatureSpec {
     this.targetRelease = '',
     this.priority = RequirementPriority.must,
     this.status = SpecPortfolioStatus.draft,
-    SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    SpecForgeStage currentStage = SpecForgeStage.vision,
     Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
@@ -119,7 +120,7 @@ class SpecFeatureSpec {
   /// Nom par défaut de la feature initiale.
   static const String defaultFeatureName = 'Feature initiale';
 
-  /// Étapes du wizard Spec propres à chaque feature (toutes sauf l'étape 1 Lexique partagée).
+  /// Étapes du wizard Spec propres à chaque feature (toutes sauf l'étape 2 Lexique partagée au niveau projet).
   static const List<SpecForgeStage> featureScopedStages = <SpecForgeStage>[
     SpecForgeStage.vision,
     SpecForgeStage.specifications,
@@ -153,7 +154,7 @@ class SpecFeatureSpec {
       targetRelease: targetRelease.trim(),
       priority: priority,
       status: status,
-      currentStage: SpecForgeStage.lexicon,
+      currentStage: SpecForgeStage.vision,
       disabledSpecStages: disabledSpecStages,
       vision: trimmedDesc.isNotEmpty
           ? SpecVision(ideaSummary: trimmedDesc)
@@ -171,7 +172,7 @@ class SpecFeatureSpec {
   /// Crée la feature initiale par défaut (utilisée à la création d'un projet ou lors d'une migration v1..v3).
   factory SpecFeatureSpec.createDefault({
     String initialIdea = '',
-    SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    SpecForgeStage currentStage = SpecForgeStage.vision,
     Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
@@ -281,7 +282,7 @@ class SpecFeatureSpec {
     return null;
   }
 
-  /// Livrable de l'étape 2 (Cadrage & Acteurs).
+  /// Livrable de l'étape 1 (Cadrage & Acteurs).
   final SpecVision vision;
 
   /// Livrable de l'étape 3 (Cahier des charges fonctionnel et non fonctionnel).
@@ -306,7 +307,7 @@ class SpecFeatureSpec {
   /// Livrable de l'étape 7 (Règles de gestion).
   final List<BusinessRuleSpec> businessRules;
 
-  /// États et conversations des étapes 2 à 8 propres à cette feature.
+  /// États et conversations des étapes propres à cette feature (toutes sauf l'étape 2 Lexique).
   final Map<SpecForgeStage, SpecStageState> stageStates;
 
   /// Diagnostics de cohérence relevés sur cette feature.
@@ -676,7 +677,7 @@ class SpecFeatureSpec {
       final candidate = SpecForgeStage.values[i];
       if (!disabled.contains(candidate)) return candidate;
     }
-    return SpecForgeStage.lexicon;
+    return SpecForgeStage.vision;
   }
 
   static Map<SpecForgeStage, SpecStageState> _normalizeFeatureStageStates(

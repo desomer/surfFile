@@ -113,7 +113,7 @@ class LexiconTerm {
   );
 }
 
-/// Lexique métier complet de l'étape 1.
+/// Lexique métier complet (étape 2 du wizard et référentiel transverse partagé du projet).
 @immutable
 class SpecLexicon {
   /// Construit un lexique métier immuable.

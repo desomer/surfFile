@@ -24,7 +24,7 @@ abstract final class SpecCoherenceAnalyzer {
   }) {
     final issues = <SpecCoherenceIssue>[];
 
-    // 0. Contrôles du lexique métier (Étape 1)
+    // 0. Contrôles du lexique métier (Étape 2 / Référentiel Projet)
     if (project.lexicon.terms.isEmpty) {
       issues.add(
         const SpecCoherenceIssue(
@@ -36,7 +36,7 @@ abstract final class SpecCoherenceAnalyzer {
           description:
               'Aucun terme métier canonique n’est encore défini dans le lexique.',
           suggestion:
-              'Définissez les termes clés dès l’étape 1 pour unifier le vocabulaire du cahier des charges et des objets.',
+              'Définissez les termes clés dans le Lexique métier (étape 2 ou référentiel Projet) pour unifier le vocabulaire du cahier des charges et des objets.',
         ),
       );
     } else {
@@ -152,7 +152,7 @@ abstract final class SpecCoherenceAnalyzer {
       }
     }
 
-    // 1. Contrôles de cadrage (Étape 2)
+    // 1. Contrôles de cadrage (Étape 1)
     if (project.vision.personas.isEmpty) {
       issues.add(
         const SpecCoherenceIssue(
@@ -183,7 +183,7 @@ abstract final class SpecCoherenceAnalyzer {
       );
     }
 
-    // 2. Contrôles du cahier des charges (Étape 2)
+    // 2. Contrôles du cahier des charges (Étape 3)
     final personaIds = {for (final p in project.vision.personas) p.id};
     final moduleIds = {
       for (final m in project.cahierDesCharges.modules) m.id,
@@ -200,7 +200,7 @@ abstract final class SpecCoherenceAnalyzer {
           description:
               'Le cahier des charges ne contient pas encore d’exigence fonctionnelle (EXF).',
           suggestion:
-              'Complétez l’étape 2 avec l’agent Business Analyst ou ajoutez des exigences.',
+              'Complétez le cahier des charges (étape 3) avec l’agent Business Analyst ou ajoutez des exigences.',
         ),
       );
     }
@@ -355,7 +355,7 @@ abstract final class SpecCoherenceAnalyzer {
           title: 'Aucun objet métier modélisé',
           description: 'Le modèle du domaine est actuellement vide.',
           suggestion:
-              'Utilisez l’agent Domain Modeler (étape 3) pour définir les entités principales.',
+              'Utilisez l’agent Domain Modeler (Objets métiers) pour définir les entités principales.',
         ),
       );
     }

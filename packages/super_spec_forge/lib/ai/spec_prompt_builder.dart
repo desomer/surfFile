@@ -214,20 +214,28 @@ abstract final class SpecPromptBuilder {
         ? ''
         : '\n\n$siblingDirective';
     return switch (stage) {
-      SpecForgeStage.lexicon =>
+      SpecForgeStage.vision =>
         project.hasSingleDefaultFeature
             ? 'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
-                  'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.'
-            : 'Nous travaillons sur la feature « ${project.activeFeature.displayLabel} » '
+                  '${project.lexicon.terms.isNotEmpty ? 'En tenant compte des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, ' : ''}'
+                  'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas, le hors-périmètre et les contraintes.'
+            : 'Nous démarrons l’étape $step (Cadrage & Acteurs) pour la feature « ${project.activeFeature.displayLabel} » '
                   '(initiative « ${project.activeInitiative.displayLabel} ») du projet « ${project.name} ».'
                   '${project.activeFeature.description.isNotEmpty ? ' Périmètre de la feature : « ${project.activeFeature.description} ».' : ''} '
-                  'En tenant compte de l’idée du projet (« ${project.initialIdea} ») et des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, '
+                  '${project.lexicon.terms.isNotEmpty ? 'En t’appuyant sur les ${project.lexicon.terms.length} terme(s) du lexique partagé du projet, ' : ''}'
+                  'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
+      SpecForgeStage.lexicon =>
+        project.hasSingleDefaultFeature
+            ? 'Nous passons à l’étape $step (Lexique métier — référentiel partagé du projet). '
+                  'En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le cadrage établi, '
+                  'identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.'
+            : 'Nous travaillons sur le lexique métier partagé (étape $step) pour la feature « ${project.activeFeature.displayLabel} » '
+                  '(initiative « ${project.activeInitiative.displayLabel} ») du projet « ${project.name} ».'
+                  '${project.activeFeature.description.isNotEmpty ? ' Périmètre de la feature : « ${project.activeFeature.description} ».' : ''} '
+                  'En tenant compte du cadrage de la feature, de l’idée du projet (« ${project.initialIdea} ») et des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, '
                   'identifie les termes métier clés, sigles et ambiguïtés terminologiques à ajouter ou préciser.',
-      SpecForgeStage.vision =>
-        'Nous passons à l’étape $step (Cadrage & Acteurs). En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le lexique métier établi, '
-            'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
       SpecForgeStage.specifications =>
-        'Nous passons à l’étape $step (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
+        'Nous passons à l’étape $step (Cahier des charges). En t’appuyant sur le cadrage, les acteurs et le lexique métier validés, '
             'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
       SpecForgeStage.eventStorming =>
         'Nous passons à l’étape $step (Event Storming — DSL v1.0). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '

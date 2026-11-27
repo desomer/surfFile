@@ -1,4 +1,4 @@
-/// Atelier structuré de l'étape 2 : Cahier des charges fonctionnel et non fonctionnel ([SpecificationsEditorView]).
+/// Atelier structuré de l'étape 3 : Cahier des charges fonctionnel et non fonctionnel ([SpecificationsEditorView]).
 library;
 
 import 'package:material_ui/material_ui.dart';

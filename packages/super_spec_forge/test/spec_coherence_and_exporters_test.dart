@@ -161,7 +161,12 @@ void main() {
     test('SpecMarkdownExporter génère les sections, Mermaid et RG-001', () {
       final md = SpecMarkdownExporter.export(buildSampleProject());
       expect(md, contains('# Cahier des charges — B2B Orders'));
-      expect(md, contains('## 1. Lexique métier'));
+      expect(md, contains('## 1. Cadrage & Acteurs'));
+      expect(md, contains('## 2. Lexique métier'));
+      expect(
+        md.indexOf('## 1. Cadrage & Acteurs'),
+        lessThan(md.indexOf('## 2. Lexique métier')),
+      );
       expect(md, contains('Demande d’achat validée'));
       expect(md, contains('erDiagram'));
       expect(md, contains('stateDiagram-v2'));

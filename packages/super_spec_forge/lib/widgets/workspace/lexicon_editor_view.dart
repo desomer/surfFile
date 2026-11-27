@@ -1,4 +1,4 @@
-/// Atelier structuré de l'étape 1 : Lexique métier / Ubiquitous Language ([LexiconEditorView]).
+/// Atelier structuré de l'étape 2 (et référentiel transverse de niveau projet) : Lexique métier / Ubiquitous Language ([LexiconEditorView]).
 library;
 
 import 'package:material_ui/material_ui.dart';

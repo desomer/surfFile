@@ -331,7 +331,7 @@ void main() {
 
       expect(
         _appBarText(
-          'Lexique métier — FEAT-02 · Réservations collaborateurs (AutoFleet)',
+          'Cadrage & Acteurs — FEAT-02 · Réservations collaborateurs (AutoFleet)',
         ),
         findsOneWidget,
       );
@@ -352,11 +352,17 @@ void main() {
 
       expect(controller.project!.activeFeatureId, 'feat_parc');
       expect(
-        _appBarText('Lexique métier — FEAT-01 · Parc véhicules (AutoFleet)'),
+        _appBarText('Cadrage & Acteurs — FEAT-01 · Parc véhicules (AutoFleet)'),
         findsOneWidget,
       );
 
-      // 7b. Action rapide dans le chat pour rechercher un complément de lexique pour la feature active.
+      // 7b. Passage à l'étape 2 (Lexique métier) et action rapide dans le chat pour rechercher un complément de lexique.
+      await controller.goToStage(SpecForgeStage.lexicon);
+      await tester.pumpAndSettle();
+      expect(
+        _appBarText('Lexique métier — FEAT-01 · Parc véhicules (AutoFleet)'),
+        findsOneWidget,
+      );
       final complementChip = find.byKey(
         const ValueKey('spec-chat-lexicon-complement-action'),
       );
@@ -377,6 +383,36 @@ void main() {
       );
 
       // 8. Le bouton Retour de l'AppBar ramène à la page intermédiaire Initiatives & Features.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-project-initiatives-view')),
+        findsOneWidget,
+      );
+
+      // 8b. Le chip « Lexique partagé » ouvre le référentiel transverse de niveau Projet hors stepper,
+      // sans modifier l'étape active de la feature, et Retour ramène aux Initiatives & Features.
+      await controller.goToStage(SpecForgeStage.businessObjects);
+      await tester.pumpAndSettle();
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      await tester.tap(
+        find.byKey(const ValueKey('portfolio-shared-lexicon-chip')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-project-lexicon-view')),
+        findsOneWidget,
+      );
+      expect(find.byType(SpecWizardStepper), findsNothing);
+      expect(
+        _appBarText('Spec › AutoFleet › Lexique du projet'),
+        findsOneWidget,
+      );
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
       await tester.tap(
         find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
       );

@@ -5,25 +5,25 @@ import 'package:material_ui/material_ui.dart';
 
 /// Étapes ordonnées du wizard de forge de spécifications.
 enum SpecForgeStage {
-  /// Étape 1 : Lexique métier et langage omniprésent (termes, synonymes, sigles).
-  lexicon(
+  /// Étape 1 : Cadrage de l'idée, proposition de valeur, personas et contraintes.
+  vision(
     stepNumber: 1,
+    shortLabel: 'Cadrage',
+    title: 'Cadrage & Acteurs',
+    agentTitle: 'Product Strategist',
+    agentSubtitle: 'Clarification de l’idée, objectifs, personas et contraintes',
+    icon: Icons.lightbulb_outline_rounded,
+  ),
+
+  /// Étape 2 : Lexique métier et langage omniprésent (termes, synonymes, sigles — référentiel partagé du projet).
+  lexicon(
+    stepNumber: 2,
     shortLabel: 'Lexique',
     title: 'Lexique métier',
     agentTitle: 'Ubiquitous Language Expert',
     agentSubtitle:
         'Définition des termes, synonymes, sigles et vocabulaire partagé',
     icon: Icons.menu_book_outlined,
-  ),
-
-  /// Étape 2 : Cadrage de l'idée, proposition de valeur, personas et contraintes.
-  vision(
-    stepNumber: 2,
-    shortLabel: 'Cadrage',
-    title: 'Cadrage & Acteurs',
-    agentTitle: 'Product Strategist',
-    agentSubtitle: 'Clarification de l’idée, objectifs, personas et contraintes',
-    icon: Icons.lightbulb_outline_rounded,
   ),
 
   /// Étape 3 : Cahier des charges fonctionnel, cas d'usage et exigences non fonctionnelles.
@@ -166,9 +166,9 @@ enum SpecForgeStage {
     return null;
   }
 
-  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [lexicon].
+  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [vision].
   static SpecForgeStage fromJson(Object? raw) =>
-      tryFromJson(raw) ?? SpecForgeStage.lexicon;
+      tryFromJson(raw) ?? SpecForgeStage.vision;
 }
 
 /// État de progression d'une étape individuelle dans le wizard.

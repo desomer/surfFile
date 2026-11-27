@@ -258,7 +258,7 @@ class _IdeaLauncherViewState extends State<IdeaLauncherView> {
                               size: 18,
                             ),
                             label: const Text(
-                              'Démarrer le wizard (Étape 1 : Lexique métier)',
+                              'Démarrer le wizard (Étape 1 : Cadrage & Acteurs)',
                             ),
                           ),
                           FilledButton.icon(

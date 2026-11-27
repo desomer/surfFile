@@ -27,6 +27,7 @@ class SpecLinksView extends StatelessWidget {
   /// Libellés partagés par les cartes et le titre de la page ouverte.
   static const projectsLabel = 'Projets';
   static const initiativesLabel = 'Initiatives & Features';
+  static const projectLexiconLabel = 'Lexique du projet';
   static const glossaryLabel = 'Glossaire d’entreprise';
   static const modelingDictionaryLabel = 'Dictionnaire technique & Modèle';
   static const enterpriseRatesLabel = 'Grille TJM & Abaques IT';
@@ -137,6 +138,17 @@ class SpecLinksView extends StatelessWidget {
                 : 'Découpage produit par projet',
             tooltip: project != null
                 ? 'Gérer les initiatives et features du projet « ${project.name} » et lancer ses Wizards'
+                : 'Ouvrez ou créez d’abord un projet dans Projets',
+          ),
+          DesignLinkItem(
+            id: 'project_lexicon',
+            label: projectLexiconLabel,
+            icon: Icons.menu_book_rounded,
+            subtitle: project == null
+                ? 'Référentiel partagé du projet'
+                : '${project.lexicon.terms.length} terme(s) · Partagé inter-features',
+            tooltip: project != null
+                ? 'Gérer le lexique métier partagé du projet « ${project.name} » (référentiel transverse hors stepper)'
                 : 'Ouvrez ou créez d’abord un projet dans Projets',
           ),
           DesignLinkItem(

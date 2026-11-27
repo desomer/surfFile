@@ -1,4 +1,4 @@
-/// Générateur déterministe et non destructif d'amorçage WBS, Run OPEX et Risques EMV depuis les artefacts du projet ([CostAutoSeeder], [CostSeedResult]).
+/// Générateur déterministe et non destructif d'amorçage WBS, Run OPEX et Risques EMV depuis les artefacts du projet ([CostAutoSeeder], [CostSeedResult], [CostCoverageGaps]).
 library;
 
 import 'package:flutter/foundation.dart';
@@ -54,6 +54,111 @@ class CostSeedResult {
   @override
   int get hashCode =>
       Object.hash(spec, addedWbsCount, addedRunCount, addedRiskCount);
+}
+
+/// Bilan déterministe des artefacts projet non encore couverts par le volet FinOps ([CostAutoSeeder.findUncoveredArtifacts]).
+@immutable
+class CostCoverageGaps {
+  /// Construit le bilan immuable des écarts de couverture FinOps.
+  CostCoverageGaps({
+    List<String> functionalRequirements = const <String>[],
+    List<String> nonFunctionalRequirements = const <String>[],
+    List<String> businessObjects = const <String>[],
+    List<String> uxScreens = const <String>[],
+    List<String> qaFeatures = const <String>[],
+    List<String> tddSuites = const <String>[],
+    List<String> eventStormHotspots = const <String>[],
+    this.missingRunBaseline = false,
+  }) : functionalRequirements = List<String>.unmodifiable(
+         functionalRequirements,
+       ),
+       nonFunctionalRequirements = List<String>.unmodifiable(
+         nonFunctionalRequirements,
+       ),
+       businessObjects = List<String>.unmodifiable(businessObjects),
+       uxScreens = List<String>.unmodifiable(uxScreens),
+       qaFeatures = List<String>.unmodifiable(qaFeatures),
+       tddSuites = List<String>.unmodifiable(tddSuites),
+       eventStormHotspots = List<String>.unmodifiable(eventStormHotspots);
+
+  /// Exigences fonctionnelles (`EF-xxx` / `EXF-xxx`) non rattachées à un lot WBS.
+  final List<String> functionalRequirements;
+
+  /// Exigences non fonctionnelles sécurité/scalabilité/conformité (`ENF-xxx`) non rattachées à un lot WBS.
+  final List<String> nonFunctionalRequirements;
+
+  /// Objets métiers non rattachés à un lot WBS.
+  final List<String> businessObjects;
+
+  /// Écrans UX (`SCR-xxx`) non rattachés à un lot WBS.
+  final List<String> uxScreens;
+
+  /// Features Gherkin (`FEAT-xxx`) non rattachées à un lot WBS.
+  final List<String> qaFeatures;
+
+  /// Suites TDD (`TDD-xxx`) non rattachées à un lot WBS.
+  final List<String> tddSuites;
+
+  /// Hotspots Event Storming (`HS-xxx`) sans risque budgétaire EMV lié.
+  final List<String> eventStormHotspots;
+
+  /// Indique qu'aucun poste récurrent Run OPEX n'a encore été défini.
+  final bool missingRunBaseline;
+
+  /// Nombre total d'artefacts projet non couverts (hors socle Run).
+  int get totalUncoveredArtifacts =>
+      functionalRequirements.length +
+      nonFunctionalRequirements.length +
+      businessObjects.length +
+      uxScreens.length +
+      qaFeatures.length +
+      tddSuites.length +
+      eventStormHotspots.length;
+
+  /// Vrai lorsqu'aucun artefact ni socle Run ne manque.
+  bool get isComplete => totalUncoveredArtifacts == 0 && !missingRunBaseline;
+
+  /// Sérialise le bilan d'écarts de couverture pour les outils IA FinOps.
+  Map<String, Object?> toJson() => <String, Object?>{
+    'totalUncoveredArtifacts': totalUncoveredArtifacts,
+    'missingRunBaseline': missingRunBaseline,
+    'isComplete': isComplete,
+    'functionalRequirements': functionalRequirements,
+    'nonFunctionalRequirements': nonFunctionalRequirements,
+    'businessObjects': businessObjects,
+    'uxScreens': uxScreens,
+    'qaFeatures': qaFeatures,
+    'tddSuites': tddSuites,
+    'eventStormHotspots': eventStormHotspots,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CostCoverageGaps &&
+          listEquals(other.functionalRequirements, functionalRequirements) &&
+          listEquals(
+            other.nonFunctionalRequirements,
+            nonFunctionalRequirements,
+          ) &&
+          listEquals(other.businessObjects, businessObjects) &&
+          listEquals(other.uxScreens, uxScreens) &&
+          listEquals(other.qaFeatures, qaFeatures) &&
+          listEquals(other.tddSuites, tddSuites) &&
+          listEquals(other.eventStormHotspots, eventStormHotspots) &&
+          other.missingRunBaseline == missingRunBaseline;
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(functionalRequirements),
+    Object.hashAll(nonFunctionalRequirements),
+    Object.hashAll(businessObjects),
+    Object.hashAll(uxScreens),
+    Object.hashAll(qaFeatures),
+    Object.hashAll(tddSuites),
+    Object.hashAll(eventStormHotspots),
+    missingRunBaseline,
+  );
 }
 
 /// Pré-remplit de manière idempotente et non destructive les lots WBS, le socle Run et les risques Hotspots.
@@ -570,6 +675,105 @@ abstract final class CostAutoSeeder {
       addedWbsCount: addedWbs,
       addedRunCount: addedRun,
       addedRiskCount: addedRisk,
+    );
+  }
+
+  /// Recense de façon déterministe tous les artefacts de [project] non encore couverts dans [SpecForgeProject.costSpec].
+  static CostCoverageGaps findUncoveredArtifacts(SpecForgeProject project) {
+    final cost = project.costSpec;
+    final coveredReqRefs = <String>{
+      for (final w in cost.wbsItems)
+        for (final r in w.requirementIds) r.trim().toLowerCase(),
+    };
+    final coveredObjRefs = <String>{
+      for (final w in cost.wbsItems)
+        for (final o in w.businessObjectIds) o.trim().toLowerCase(),
+    };
+    final coveredScreenRefs = <String>{
+      for (final w in cost.wbsItems)
+        for (final s in w.uxScreenIds) s.trim().toLowerCase(),
+    };
+    final coveredFeatureRefs = <String>{
+      for (final w in cost.wbsItems)
+        for (final f in w.qaFeatureIds) f.trim().toLowerCase(),
+    };
+    final coveredTddRefs = <String>{
+      for (final w in cost.wbsItems)
+        for (final t in w.tddSuiteIds) t.trim().toLowerCase(),
+    };
+    final coveredHotspots = <String>{
+      for (final r in cost.riskItems)
+        if (r.linkedHotspotId.trim().isNotEmpty)
+          r.linkedHotspotId.trim().toLowerCase(),
+    };
+
+    final uncoveredReqs = <String>[
+      for (final req in project.cahierDesCharges.functionalRequirements)
+        if (!_isRequirementCovered(req, coveredReqRefs))
+          req.code.trim().isNotEmpty
+              ? '${req.code.trim()} (${req.priority.code}) — ${req.title}'
+              : '${req.id} (${req.priority.code}) — ${req.title}',
+    ];
+
+    final uncoveredEnfs = <String>[
+      for (final enf in project.cahierDesCharges.nonFunctionalRequirements)
+        if ((enf.category == NonFunctionalCategory.security ||
+                enf.category == NonFunctionalCategory.scalability ||
+                enf.category == NonFunctionalCategory.compliance) &&
+            !_isNonFunctionalCovered(enf, coveredReqRefs))
+          enf.code.trim().isNotEmpty
+              ? '${enf.code.trim()} (${enf.category.label}) — ${enf.title}'
+              : '${enf.id} (${enf.category.label}) — ${enf.title}',
+    ];
+
+    final uncoveredObjs = <String>[
+      for (final obj in project.businessObjects)
+        if (!_isBusinessObjectCovered(obj, coveredObjRefs))
+          '${obj.technicalName} (${obj.name})',
+    ];
+
+    final uncoveredScreens = <String>[
+      for (final screen in project.uxSpec.screens)
+        if (!_isScreenCovered(screen, coveredScreenRefs))
+          screen.code.trim().isNotEmpty
+              ? '${screen.code.trim()} — ${screen.name}'
+              : '${screen.id} — ${screen.name}',
+    ];
+
+    final uncoveredFeatures = <String>[
+      for (final feature in project.qaSpec.features)
+        if (!_isFeatureCovered(feature, coveredFeatureRefs))
+          feature.code.trim().isNotEmpty
+              ? '${feature.code.trim()} — ${feature.title}'
+              : '${feature.id} — ${feature.title}',
+    ];
+
+    final uncoveredSuites = <String>[
+      for (final suite in project.qaSpec.tddSuites)
+        if (!_isTddSuiteCovered(suite, coveredTddRefs))
+          suite.code.trim().isNotEmpty
+              ? '${suite.code.trim()} — ${suite.name}'
+              : '${suite.id} — ${suite.name}',
+    ];
+
+    final uncoveredHotspots = <String>[
+      for (final entry in project.eventStorming.allHotspots)
+        if (!coveredHotspots.contains(entry.hotspot.id.trim().toLowerCase()) &&
+            !coveredHotspots.contains(
+              '${entry.document.id}:${entry.hotspot.id}'.toLowerCase(),
+            ))
+          '${entry.hotspot.id} (${entry.hotspot.severity.label}) — ${entry.hotspot.question}',
+    ];
+
+    return CostCoverageGaps(
+      functionalRequirements: uncoveredReqs,
+      nonFunctionalRequirements: uncoveredEnfs,
+      businessObjects: uncoveredObjs,
+      uxScreens: uncoveredScreens,
+      qaFeatures: uncoveredFeatures,
+      tddSuites: uncoveredSuites,
+      eventStormHotspots: uncoveredHotspots,
+      missingRunBaseline: cost.runItems.isEmpty,
     );
   }
 

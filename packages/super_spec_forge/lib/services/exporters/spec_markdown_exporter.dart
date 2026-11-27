@@ -32,8 +32,8 @@ abstract final class SpecMarkdownExporter {
       ..writeln(project.initialIdea)
       ..writeln();
 
-    _writeLexicon(buf, project, companyGlossary: companyGlossary);
     _writeVision(buf, project);
+    _writeLexicon(buf, project, companyGlossary: companyGlossary);
     _writeCahierDesCharges(buf, project);
     if (project.isStageEnabled(SpecForgeStage.eventStorming)) {
       _writeEventStorming(buf, project);
@@ -58,7 +58,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 1. Lexique métier (Ubiquitous Language)')
+      ..writeln('## 2. Lexique métier (Ubiquitous Language)')
       ..writeln();
     if (!lex.hasContent) {
       buf
@@ -130,7 +130,7 @@ abstract final class SpecMarkdownExporter {
     buf
       ..writeln('---')
       ..writeln()
-      ..writeln('## 2. Cadrage & Acteurs')
+      ..writeln('## 1. Cadrage & Acteurs')
       ..writeln();
     if (v.ideaSummary.isNotEmpty) {
       buf

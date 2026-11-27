@@ -1213,7 +1213,7 @@ class SpecForgeController extends ChangeNotifier {
     notifyListeners();
 
     if (autoKickoff) {
-      await kickoffStageIfEmpty(SpecForgeStage.lexicon);
+      await kickoffStageIfEmpty(SpecForgeStage.vision);
     }
   }
 
@@ -2014,11 +2014,11 @@ class SpecForgeController extends ChangeNotifier {
     await _runAgentTurn(
       stage: stage,
       userDisplayText: switch (stage) {
-        SpecForgeStage.lexicon => 'Idée initiale : ${current.initialIdea}',
-        SpecForgeStage.vision =>
-          'Démarrer le cadrage & acteurs à partir du lexique métier.',
+        SpecForgeStage.vision => 'Idée initiale : ${current.initialIdea}',
+        SpecForgeStage.lexicon =>
+          'Établir le lexique métier partagé à partir du cadrage.',
         SpecForgeStage.specifications =>
-          'Démarrer le cahier des charges à partir du cadrage.',
+          'Démarrer le cahier des charges à partir du cadrage et du lexique.',
         SpecForgeStage.eventStorming =>
           'Lancer l’atelier Event Storming à partir du cahier des charges.',
         SpecForgeStage.businessObjects =>
@@ -2038,11 +2038,12 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
-  /// Envoie un message utilisateur libre (avec pièces jointes éventuelles) à l'agent de l'étape courante.
+  /// Envoie un message utilisateur libre (avec pièces jointes éventuelles) à l'agent de l'étape courante (ou [stageOverride]).
   Future<void> sendUserMessage(
     String text, {
     bool requestsMoreQuestions = false,
     List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    SpecForgeStage? stageOverride,
   }) async {
     final current = _project;
     if (current == null || _isSending) return;
@@ -2050,7 +2051,7 @@ class SpecForgeController extends ChangeNotifier {
     if (trimmed.isEmpty && !requestsMoreQuestions && attachments.isEmpty) {
       return;
     }
-    final stage = current.currentStage;
+    final stage = stageOverride ?? current.currentStage;
     final effectiveDisplay = trimmed.isNotEmpty
         ? trimmed
         : (requestsMoreQuestions
@@ -2067,10 +2068,15 @@ class SpecForgeController extends ChangeNotifier {
   }
 
   /// Lance une recherche ciblée de complément de lexique métier pour la feature active.
-  Future<void> requestLexiconComplementForActiveFeature() async {
+  ///
+  /// Lorsque [navigateToStage] vaut `false` (par ex. depuis le référentiel transverse
+  /// de niveau projet), `currentStage` de la feature active n'est pas modifié.
+  Future<void> requestLexiconComplementForActiveFeature({
+    bool navigateToStage = true,
+  }) async {
     var current = _project;
     if (current == null || _isSending) return;
-    if (current.currentStage != SpecForgeStage.lexicon) {
+    if (navigateToStage && current.currentStage != SpecForgeStage.lexicon) {
       await goToStage(SpecForgeStage.lexicon);
       current = _project;
       if (current == null) return;
@@ -2088,16 +2094,17 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
-  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` à l'agent de l'étape.
+  /// Soumet les réponses d'un questionnaire `VibeAskUserCard` à l'agent de l'étape (ou [stageOverride]).
   Future<void> submitAskUserAnswers(
     String messageId,
     Map<String, Object?> answers, {
     bool usedDefaults = false,
     bool askMore = false,
+    SpecForgeStage? stageOverride,
   }) async {
     final current = _project;
     if (current == null || _isSending) return;
-    final stage = current.currentStage;
+    final stage = stageOverride ?? current.currentStage;
     final stageState = current.stageStateFor(stage);
     final idx = stageState.messages.indexWhere((m) => m.id == messageId);
     if (idx < 0) return;
@@ -2133,10 +2140,13 @@ class SpecForgeController extends ChangeNotifier {
   }
 
   /// Ignore un questionnaire en proposant de passer directement à la génération avec hypothèses.
-  Future<void> skipAskUser(String messageId) async {
+  Future<void> skipAskUser(
+    String messageId, {
+    SpecForgeStage? stageOverride,
+  }) async {
     final current = _project;
     if (current == null || _isSending) return;
-    final stage = current.currentStage;
+    final stage = stageOverride ?? current.currentStage;
     final stageState = current.stageStateFor(stage);
     final idx = stageState.messages.indexWhere((m) => m.id == messageId);
     if (idx < 0) return;
@@ -2186,11 +2196,11 @@ class SpecForgeController extends ChangeNotifier {
     }
   }
 
-  /// Relance manuellement le dernier tour en erreur sur l'étape active avec contexte de correction.
-  Future<void> retryLastFailedTurn() async {
+  /// Relance manuellement le dernier tour en erreur sur l'étape active (ou [stageOverride]) avec contexte de correction.
+  Future<void> retryLastFailedTurn({SpecForgeStage? stageOverride}) async {
     final current = _project;
     if (current == null || _isSending) return;
-    final stage = current.currentStage;
+    final stage = stageOverride ?? current.currentStage;
     final messages = current.stageStateFor(stage).messages;
     String retryInput =
         'La tentative précédente a échoué. Corrige le format JSON et applique la mise à jour demandée.';
@@ -4504,6 +4514,7 @@ class SpecForgeController extends ChangeNotifier {
       readProject: readWorkingProject,
       readCompanyGlossary: () => _companyGlossary,
       readModelPreferences: () => _modelPreferences,
+      readEnterpriseRateCard: () => _enterpriseRateCard,
       onUpdateProject: (updated) async {
         _pushUndo(readWorkingProject());
         writeWorkingProject(updated);
@@ -8756,6 +8767,7 @@ class SpecForgeController extends ChangeNotifier {
           readProject: () => _project,
           readCompanyGlossary: () => _companyGlossary,
           readModelPreferences: () => _modelPreferences,
+          readEnterpriseRateCard: () => _enterpriseRateCard,
           onUpdateProject: (_) async {},
           onNavigateStage: (_) async {},
           toolNames: toolNames,

@@ -16,6 +16,8 @@ class StageAiChatPane extends StatefulWidget {
   /// Crée le panneau de chat connecté au [controller].
   const StageAiChatPane({
     required this.controller,
+    this.stageOverride,
+    this.isStandaloneProjectView = false,
     this.chatWidthFraction,
     this.onCycleChatSize,
     this.pickAttachments,
@@ -27,6 +29,14 @@ class StageAiChatPane extends StatefulWidget {
 
   /// Contrôleur principal.
   final SpecForgeController controller;
+
+  /// Étape forcée (ex. [SpecForgeStage.lexicon] pour la vue transverse de niveau
+  /// projet hors stepper). Lorsque `null`, suit [SpecForgeProject.currentStage].
+  final SpecForgeStage? stageOverride;
+
+  /// Vrai lorsque ce panneau est affiché en référentiel transverse de niveau Projet
+  /// (hors stepper feature : masque les boutons d'avancement d'étape).
+  final bool isStandaloneProjectView;
 
   /// Proportion courante de la zone de chat (utilisée pour l’icône de réduction).
   final double? chatWidthFraction;
@@ -76,9 +86,11 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
     final project = widget.controller.project;
     if (project == null) return const SizedBox.shrink();
 
-    final stage = project.currentStage;
+    final stage = widget.stageOverride ?? project.currentStage;
     final stageState = project.stageStateFor(stage);
-    final nextStage = project.nextEnabledStage(stage);
+    final nextStage = widget.isStandaloneProjectView
+        ? null
+        : project.nextEnabledStage(stage);
     final stepNumber = project.stepNumberFor(stage);
     final totalSteps = project.enabledSpecStages.length;
     final messages = stageState.messages;
@@ -99,11 +111,12 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
           stage: stage,
           stepNumber: stepNumber,
           totalSteps: totalSteps,
+          isStandaloneProjectView: widget.isStandaloneProjectView,
           stageState: stageState,
           isSending: widget.controller.isSending,
           chatWidthFraction: widget.chatWidthFraction,
           onCycleChatSize: widget.onCycleChatSize,
-          onClearChat: widget.controller.clearStageChat,
+          onClearChat: () => widget.controller.clearStageChat(stage),
           onShowContext: () {
             final inspection = widget.controller.inspectSpecStageAiContext(
               stage,
@@ -115,6 +128,7 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
           onAskMore: () => widget.controller.sendUserMessage(
             '',
             requestsMoreQuestions: true,
+            stageOverride: widget.stageOverride,
           ),
           onAdvanceStage: nextStage == null
               ? null
@@ -149,12 +163,25 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
                       message: msg,
                       sending: widget.controller.isSending,
                       onSubmitAskUser: (answers) => widget.controller
-                          .submitAskUserAnswers(msg.id, answers),
+                          .submitAskUserAnswers(
+                            msg.id,
+                            answers,
+                            stageOverride: widget.stageOverride,
+                          ),
                       onAskMore: (answers) => widget.controller
-                          .submitAskUserAnswers(msg.id, answers, askMore: true),
-                      onSkipAskUser: () =>
-                          widget.controller.skipAskUser(msg.id),
-                      onRetry: () => widget.controller.retryLastFailedTurn(),
+                          .submitAskUserAnswers(
+                            msg.id,
+                            answers,
+                            askMore: true,
+                            stageOverride: widget.stageOverride,
+                          ),
+                      onSkipAskUser: () => widget.controller.skipAskUser(
+                        msg.id,
+                        stageOverride: widget.stageOverride,
+                      ),
+                      onRetry: () => widget.controller.retryLastFailedTurn(
+                        stageOverride: widget.stageOverride,
+                      ),
                     );
                   },
                 ),
@@ -212,19 +239,25 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
             featureDisplayLabel: project.activeFeature.displayLabel,
             hasExistingTerms: project.lexicon.terms.isNotEmpty,
             sending: widget.controller.isSending,
-            onComplementLexicon:
-                widget.controller.requestLexiconComplementForActiveFeature,
+            onComplementLexicon: () => widget.controller
+                .requestLexiconComplementForActiveFeature(
+                  navigateToStage: !widget.isStandaloneProjectView,
+                ),
             onAuditAmbiguities: () => widget.controller.sendUserMessage(
               'Vérifie les éventuels doublons, synonymes ou ambiguïtés dans le lexique métier partagé'
               '${project.hasSingleDefaultFeature ? '' : ' au regard de la feature « ${project.activeFeature.displayLabel} »'}.',
+              stageOverride: widget.stageOverride,
             ),
           ),
         SpecChatComposer(
           sending: widget.controller.isSending,
           hintText:
               'Répondre, joindre ou coller (Ctrl+V) pour ${stage.agentTitle}…',
-          onSend: (text, attachments) =>
-              widget.controller.sendUserMessage(text, attachments: attachments),
+          onSend: (text, attachments) => widget.controller.sendUserMessage(
+            text,
+            attachments: attachments,
+            stageOverride: widget.stageOverride,
+          ),
           onStop: widget.controller.stopAiGeneration,
           pickAttachments: widget.pickAttachments,
           pasteAttachments: widget.pasteAttachments,
@@ -241,6 +274,7 @@ class _AgentHeader extends StatelessWidget {
     required this.stage,
     required this.stepNumber,
     required this.totalSteps,
+    required this.isStandaloneProjectView,
     required this.stageState,
     required this.isSending,
     required this.chatWidthFraction,
@@ -254,6 +288,7 @@ class _AgentHeader extends StatelessWidget {
   final SpecForgeStage stage;
   final int stepNumber;
   final int totalSteps;
+  final bool isStandaloneProjectView;
   final SpecStageState stageState;
   final bool isSending;
   final double? chatWidthFraction;
@@ -296,7 +331,9 @@ class _AgentHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${stage.agentTitle} · Étape $stepNumber/$totalSteps',
+                      isStandaloneProjectView
+                          ? '${stage.agentTitle} · Référentiel Projet'
+                          : '${stage.agentTitle} · Étape $stepNumber/$totalSteps',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(

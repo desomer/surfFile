@@ -96,6 +96,7 @@ class SpecForgeShell extends StatefulWidget {
 
 class _SpecForgeShellState extends State<SpecForgeShell> {
   final GlobalKey _splitRowKey = GlobalKey();
+  final GlobalKey _lexiconSplitRowKey = GlobalKey();
   final GlobalKey _uxSplitRowKey = GlobalKey();
   final GlobalKey _qaSplitRowKey = GlobalKey();
   final GlobalKey _costSplitRowKey = GlobalKey();
@@ -108,6 +109,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   int _selectedRailIndex = 0;
   String? _activeSpecLinkId;
   bool _wizardOpenedFromInitiatives = false;
+  String? _lexiconReturnSpecLinkId;
   String? _activeDesignLinkId;
   String? _activeBuildLinkId;
   String? _initialModelsDomainId;
@@ -133,6 +135,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       if (index == 0 && _selectedRailIndex == 0) {
         _activeSpecLinkId = null;
         _wizardOpenedFromInitiatives = false;
+        _lexiconReturnSpecLinkId = null;
       }
       if (index == 1 && _selectedRailIndex == 1) _activeDesignLinkId = null;
       if (index == 2 && _selectedRailIndex == 2) {
@@ -173,6 +176,11 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
       id == 'qa_wizard' ||
       id == 'cost_wizard';
 
+  void _openProjectLexicon({String? returnToLinkId}) => setState(() {
+    _lexiconReturnSpecLinkId = returnToLinkId;
+    _activeSpecLinkId = 'project_lexicon';
+  });
+
   ({
     String tooltip,
     VoidCallback onBack,
@@ -186,7 +194,30 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         void goToSpecMenu() => setState(() {
           _activeSpecLinkId = null;
           _wizardOpenedFromInitiatives = false;
+          _lexiconReturnSpecLinkId = null;
         });
+        if (_activeSpecLinkId == 'project_lexicon' &&
+            _lexiconReturnSpecLinkId != null &&
+            widget.controller.project != null) {
+          final target = _lexiconReturnSpecLinkId!;
+          final backTooltip = switch (target) {
+            'initiatives' => 'Retour aux Initiatives & Features',
+            'wizard' => 'Retour au Wizard de spécification',
+            'ux_wizard' => 'Retour au Wizard UX & Parcours',
+            'qa_wizard' => 'Retour au Wizard BDD / Gherkin & TDD',
+            'cost_wizard' => 'Retour à l’Estimation de coût IT',
+            _ => 'Retour',
+          };
+          return (
+            tooltip: backTooltip,
+            onBack: () => setState(() {
+              _activeSpecLinkId = target;
+              _lexiconReturnSpecLinkId = null;
+            }),
+            menuTooltip: 'Menu Spec',
+            onMainMenu: goToSpecMenu,
+          );
+        }
         if (_isWizardSpecLink(_activeSpecLinkId) &&
             _wizardOpenedFromInitiatives &&
             widget.controller.project != null) {
@@ -195,6 +226,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
             onBack: () => setState(() {
               _activeSpecLinkId = 'initiatives';
               _wizardOpenedFromInitiatives = false;
+              _lexiconReturnSpecLinkId = null;
             }),
             menuTooltip: 'Menu Spec',
             onMainMenu: goToSpecMenu,
@@ -272,6 +304,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           'initiatives' when project != null =>
             'Spec › ${project.name} › ${SpecLinksView.initiativesLabel}',
           'initiatives' => 'Spec › ${SpecLinksView.initiativesLabel}',
+          'project_lexicon' when project != null =>
+            'Spec › ${project.name} › ${SpecLinksView.projectLexiconLabel}',
+          'project_lexicon' => 'Spec › ${SpecLinksView.projectLexiconLabel}',
           'wizard' when project != null =>
             '${project.currentStage.title} — $wizardSuffix',
           'ux_wizard' when project != null =>
@@ -342,10 +377,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     if (!changed || !mounted) return;
     setState(() {
       if ((_isWizardSpecLink(_activeSpecLinkId) ||
-              _activeSpecLinkId == 'initiatives') &&
+              _activeSpecLinkId == 'initiatives' ||
+              _activeSpecLinkId == 'project_lexicon') &&
           widget.controller.project == null) {
         _activeSpecLinkId = 'projects';
         _wizardOpenedFromInitiatives = false;
+        _lexiconReturnSpecLinkId = null;
       }
     });
   }
@@ -437,8 +474,27 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
                   onManagePortfolio: () => setState(() {
                     _activeSpecLinkId = 'initiatives';
                     _wizardOpenedFromInitiatives = false;
+                    _lexiconReturnSpecLinkId = null;
                   }),
                   onSelectFeature: widget.controller.selectActiveFeature,
+                ),
+                const SizedBox(width: 4),
+                Tooltip(
+                  message:
+                      'Ouvrir le référentiel transverse « Lexique du projet » (sans changer l’étape active)',
+                  child: TextButton.icon(
+                    key: const ValueKey('spec-appbar-project-lexicon-btn'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: widget.controller.isSending
+                        ? null
+                        : () => _openProjectLexicon(
+                            returnToLinkId: _activeSpecLinkId,
+                          ),
+                    icon: const Icon(Icons.menu_book_outlined, size: 16),
+                    label: Text('Lexique (${project.lexicon.terms.length})'),
+                  ),
                 ),
                 const SizedBox(width: 6),
               ],
@@ -777,16 +833,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
     if (_activeSpecLinkId == 'initiatives' && project != null) {
       return ProjectInitiativesView(
         controller: widget.controller,
-        onOpenSharedLexicon: () {
-          widget.controller.goToStage(SpecForgeStage.lexicon);
-          setState(() {
-            _wizardOpenedFromInitiatives = true;
-            _activeSpecLinkId = 'wizard';
-          });
-        },
+        onOpenSharedLexicon: () =>
+            _openProjectLexicon(returnToLinkId: 'initiatives'),
         onOpenWizard: (target) {
           setState(() {
             _wizardOpenedFromInitiatives = true;
+            _lexiconReturnSpecLinkId = null;
             _activeSpecLinkId = switch (target) {
               SpecPortfolioWizardTarget.spec => 'wizard',
               SpecPortfolioWizardTarget.ux => 'ux_wizard',
@@ -800,6 +852,9 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         hasClipboardMedia: widget.hasClipboardMedia,
         pasteClipboardMedia: widget.pasteClipboardMedia,
       );
+    }
+    if (_activeSpecLinkId == 'project_lexicon' && project != null) {
+      return _buildProjectLexiconWorkspace(project, colors);
     }
     if (_activeSpecLinkId == 'wizard' && project != null) {
       return _buildSpecWizard(project, colors);
@@ -828,10 +883,12 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           setState(() {
             _activeSpecLinkId = item.id;
             _wizardOpenedFromInitiatives = false;
+            _lexiconReturnSpecLinkId = null;
           });
           return;
         }
         if (item.id == 'initiatives' ||
+            item.id == 'project_lexicon' ||
             item.id == 'wizard' ||
             item.id == 'ux_wizard' ||
             item.id == 'qa_wizard' ||
@@ -839,6 +896,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           if (project != null) {
             setState(() {
               _wizardOpenedFromInitiatives = false;
+              _lexiconReturnSpecLinkId = null;
               _activeSpecLinkId = item.id;
             });
             return;
@@ -856,6 +914,198 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
             );
         }
       },
+    );
+  }
+
+  Widget _buildProjectLexiconWorkspace(
+    SpecForgeProject project,
+    ColorScheme colors,
+  ) {
+    final theme = Theme.of(context);
+    return Column(
+      key: const ValueKey('spec-project-lexicon-view'),
+      children: [
+        Container(
+          key: const ValueKey('spec-project-lexicon-banner'),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            border: Border(bottom: BorderSide(color: colors.outlineVariant)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: colors.primaryContainer,
+                child: Icon(
+                  Icons.menu_book_rounded,
+                  size: 18,
+                  color: colors.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Référentiel transverse — Lexique du projet « ${project.name} »',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'Partagé entre toutes les initiatives & features (synchronisé avec l’étape 2 du Wizard sans modifier l’étape active).',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Chip(
+                avatar: const Icon(Icons.layers_outlined, size: 15),
+                label: Text('${project.lexicon.terms.length} terme(s)'),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const dividerWidth = SpecSplitHandle.width;
+              const collapsedRailWidth = 38.0;
+              const minChatWidth = 240.0;
+              const minWorkspaceWidth = 360.0;
+              final totalWidth = constraints.maxWidth;
+              final availableWidth = (totalWidth - dividerWidth).clamp(
+                0.0,
+                double.infinity,
+              );
+              final isCollapsed = _chatPaneFraction <= 0.0;
+              final chatWidth = isCollapsed
+                  ? 0.0
+                  : (availableWidth <= minChatWidth + minWorkspaceWidth
+                        ? availableWidth * _chatPaneFraction
+                        : (availableWidth * _chatPaneFraction).clamp(
+                            minChatWidth,
+                            availableWidth - minWorkspaceWidth,
+                          ));
+
+              return Row(
+                key: _lexiconSplitRowKey,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isCollapsed)
+                    Container(
+                      key: const ValueKey('spec-project-lexicon-chat-collapsed'),
+                      width: collapsedRailWidth,
+                      color: colors.surfaceContainerLow,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        children: [
+                          IconButton(
+                            key: const ValueKey('spec-chat-cycle-size-btn'),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: 'Afficher le chat IA (50 %)',
+                            onPressed: _cycleChatPaneSize,
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                          const SizedBox(height: 8),
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 16,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      key: const ValueKey('spec-project-lexicon-chat-pane'),
+                      width: chatWidth,
+                      child: StageAiChatPane(
+                        controller: widget.controller,
+                        stageOverride: SpecForgeStage.lexicon,
+                        isStandaloneProjectView: true,
+                        chatWidthFraction: _chatPaneFraction,
+                        onCycleChatSize: _cycleChatPaneSize,
+                        pickAttachments: widget.pickAttachments,
+                        pasteAttachments: widget.pasteAttachments,
+                        hasClipboardMedia: widget.hasClipboardMedia,
+                        pasteClipboardMedia: widget.pasteClipboardMedia,
+                      ),
+                    ),
+                  SpecSplitHandle(
+                    key: const ValueKey('spec-project-lexicon-split-handle'),
+                    onDoubleTap: () => setState(() => _chatPaneFraction = 0.50),
+                    onHorizontalDragDown: (details) {
+                      final box =
+                          _lexiconSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box != null && !isCollapsed) {
+                        final localX = box
+                            .globalToLocal(details.globalPosition)
+                            .dx;
+                        _chatDragOffset = (localX - chatWidth).clamp(
+                          0.0,
+                          SpecSplitHandle.width,
+                        );
+                      } else {
+                        _chatDragOffset = SpecSplitHandle.width / 2;
+                      }
+                    },
+                    onHorizontalDragUpdate: (details) {
+                      final box =
+                          _lexiconSplitRowKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (box == null || availableWidth <= 0) return;
+                      final localX = box
+                          .globalToLocal(details.globalPosition)
+                          .dx;
+                      final nextWidth = localX - _chatDragOffset;
+                      final minFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? (minChatWidth / availableWidth)
+                          : 0.20;
+                      final maxFrac =
+                          availableWidth > minChatWidth + minWorkspaceWidth
+                          ? ((availableWidth - minWorkspaceWidth) /
+                                availableWidth)
+                          : 0.72;
+                      setState(() {
+                        if (isCollapsed) {
+                          if (nextWidth > 60) {
+                            _chatPaneFraction = (nextWidth / availableWidth)
+                                .clamp(minFrac, maxFrac);
+                          }
+                          return;
+                        }
+                        if (nextWidth < 140) {
+                          _chatPaneFraction = 0.0;
+                        } else {
+                          _chatPaneFraction = (nextWidth / availableWidth)
+                              .clamp(minFrac, maxFrac);
+                        }
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: LexiconEditorView(controller: widget.controller),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

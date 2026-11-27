@@ -75,9 +75,11 @@ void main() {
             activeFeatureId: 'feat_devis',
           );
 
-      // Sur feat_devis : démarre par défaut sur Lexique métier, voit Quote, 0 règle, 1 écran UX et le lexique partagé.
+      // Sur feat_devis : démarre par défaut sur Cadrage & Acteurs, voit Quote, 0 règle, 1 écran UX et le lexique partagé.
       expect(project.activeFeature.id, 'feat_devis');
-      expect(project.currentStage, SpecForgeStage.lexicon);
+      expect(project.currentStage, SpecForgeStage.vision);
+      expect(SpecForgeStage.vision.stepNumber, 1);
+      expect(SpecForgeStage.lexicon.stepNumber, 2);
       expect(project.businessObjects.single.technicalName, 'Quote');
       expect(project.businessRules, isEmpty);
       expect(project.uxSpec.screens.length, 1);
@@ -341,8 +343,8 @@ void main() {
         );
         expect(feat.currentStage, SpecForgeStage.specifications);
         expect(feat.enabledSpecStages, const [
-          SpecForgeStage.lexicon,
           SpecForgeStage.vision,
+          SpecForgeStage.lexicon,
           SpecForgeStage.specifications,
           SpecForgeStage.businessObjects,
           SpecForgeStage.businessRules,

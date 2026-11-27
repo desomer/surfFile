@@ -31,7 +31,7 @@ class SpecForgeProject {
     required String initialIdea,
     required DateTime createdAt,
     required DateTime updatedAt,
-    SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    SpecForgeStage currentStage = SpecForgeStage.vision,
     Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecLexicon? lexicon,
     SpecStageState? lexiconStageState,
@@ -147,14 +147,14 @@ class SpecForgeProject {
       initialIdea: trimmedIdea,
       createdAt: now,
       updatedAt: now,
-      currentStage: SpecForgeStage.lexicon,
+      currentStage: SpecForgeStage.vision,
       lexicon: SpecLexicon.empty,
       vision: SpecVision(ideaSummary: trimmedIdea),
       stageStates: <SpecForgeStage, SpecStageState>{
         for (final stage in SpecForgeStage.values)
           stage: SpecStageState(
             stage: stage,
-            status: stage == SpecForgeStage.lexicon
+            status: stage == SpecForgeStage.vision
                 ? SpecStageStatus.inProgress
                 : SpecStageStatus.notStarted,
           ),
@@ -177,10 +177,10 @@ class SpecForgeProject {
   /// Horodatage UTC de dernière modification.
   final DateTime updatedAt;
 
-  /// Livrable de l'étape 1 (Lexique métier), partagé entre toutes les features du projet.
+  /// Livrable de l'étape 2 (Lexique métier), partagé entre toutes les features du projet.
   final SpecLexicon lexicon;
 
-  /// État et historique du chat de l'étape 1 (Lexique métier), partagés à l'échelle du projet.
+  /// État et historique du chat de l'étape 2 (Lexique métier), partagés à l'échelle du projet.
   final SpecStageState lexiconStageState;
 
   /// Préférences unifiées de modélisation partagées à l'échelle du projet.
@@ -539,9 +539,9 @@ class SpecForgeProject {
         'enabledSpecStages': [for (final s in enabledSpecStages) s.name],
         if (disabledSpecStages.isNotEmpty)
           'disabledSpecStages': [for (final s in disabledSpecStages) s.name],
-        'lexicon': lexicon.toJson(),
-        if (stage.index >= SpecForgeStage.vision.index || vision.hasContent)
-          'vision': vision.toJson(),
+        'vision': vision.toJson(),
+        if (stage.index >= SpecForgeStage.lexicon.index || lexicon.hasContent)
+          'lexicon': lexicon.toJson(),
         if (stage.index >= SpecForgeStage.specifications.index ||
             cahierDesCharges.hasContent)
           'cahierDesCharges': cahierDesCharges.toJson(),
