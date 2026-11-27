@@ -45,6 +45,7 @@ enum SpecForgeStage {
     agentSubtitle:
         'Chronologie des événements, commandes, acteurs, agrégats, politiques, read models et hotspots',
     icon: Icons.bolt_rounded,
+    isOptional: true,
   ),
 
   /// Étape 5 : Objets métiers, attributs typés, relations et cycles de vie.
@@ -66,6 +67,7 @@ enum SpecForgeStage {
     agentSubtitle:
         'Exemples concrets, cas limites et zones d’ombre pour affiner les objets métiers',
     icon: Icons.view_kanban_outlined,
+    isOptional: true,
   ),
 
   /// Étape 7 : Règles de gestion structurées (validations, calculs, transitions, droits).
@@ -97,7 +99,14 @@ enum SpecForgeStage {
     required this.agentTitle,
     required this.agentSubtitle,
     required this.icon,
+    this.isOptional = false,
   });
+
+  /// Liste ordonnée des étapes de spécification pouvant être désactivées par feature.
+  static const List<SpecForgeStage> optionalStages = <SpecForgeStage>[
+    SpecForgeStage.eventStorming,
+    SpecForgeStage.exampleMapping,
+  ];
 
   /// Numéro d'ordre affiché (`1..8`).
   final int stepNumber;
@@ -117,6 +126,9 @@ enum SpecForgeStage {
   /// Icône représentative de l'étape dans le stepper.
   final IconData icon;
 
+  /// Vrai si cette étape est optionnelle et peut être activée/désactivée par feature.
+  final bool isOptional;
+
   /// Étape précédente, ou `null` pour la première étape.
   SpecForgeStage? get previous =>
       index > 0 ? SpecForgeStage.values[index - 1] : null;
@@ -126,33 +138,37 @@ enum SpecForgeStage {
       ? SpecForgeStage.values[index + 1]
       : null;
 
-  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [lexicon].
-  static SpecForgeStage fromJson(Object? raw) {
-    if (raw is String) {
-      final trimmed = raw.trim();
-      for (final stage in SpecForgeStage.values) {
-        if (stage.name == trimmed) return stage;
-      }
-      final norm = trimmed.toLowerCase();
-      switch (norm) {
-        case 'event_storming':
-        case 'event-storming':
-        case 'eventstorming':
-        case 'event_storm':
-        case 'event-storm':
-        case 'eventstorm':
-          return SpecForgeStage.eventStorming;
-        case 'example_mapping':
-        case 'example-mapping':
-        case 'examplemapping':
-        case 'example_map':
-        case 'example-map':
-        case 'examplemap':
-          return SpecForgeStage.exampleMapping;
-      }
+  /// Tente de résoudre une étape depuis son nom sérialisé en JSON, ou `null` si inconnue.
+  static SpecForgeStage? tryFromJson(Object? raw) {
+    if (raw is! String) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    for (final stage in SpecForgeStage.values) {
+      if (stage.name == trimmed) return stage;
     }
-    return SpecForgeStage.lexicon;
+    final norm = trimmed.toLowerCase();
+    switch (norm) {
+      case 'event_storming':
+      case 'event-storming':
+      case 'eventstorming':
+      case 'event_storm':
+      case 'event-storm':
+      case 'eventstorm':
+        return SpecForgeStage.eventStorming;
+      case 'example_mapping':
+      case 'example-mapping':
+      case 'examplemapping':
+      case 'example_map':
+      case 'example-map':
+      case 'examplemap':
+        return SpecForgeStage.exampleMapping;
+    }
+    return null;
   }
+
+  /// Résout une étape depuis son nom sérialisé en JSON, avec repli sur [lexicon].
+  static SpecForgeStage fromJson(Object? raw) =>
+      tryFromJson(raw) ?? SpecForgeStage.lexicon;
 }
 
 /// État de progression d'une étape individuelle dans le wizard.

@@ -299,5 +299,120 @@ void main() {
         'VehicleBooking',
       );
     });
+
+    test(
+      'Étapes optionnelles par feature (Event Storming & Example Mapping) : normalisation, navigation, cohérence et export',
+      () {
+        expect(SpecForgeStage.eventStorming.isOptional, isTrue);
+        expect(SpecForgeStage.exampleMapping.isOptional, isTrue);
+        expect(SpecForgeStage.businessObjects.isOptional, isFalse);
+        expect(
+          SpecForgeStage.optionalStages,
+          const [SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping],
+        );
+
+        // Les étapes obligatoires sont ignorées lors de la normalisation de disabledSpecStages,
+        // et currentStage bascule sur l'étape active précédente si elle est désactivée.
+        final feat = SpecFeatureSpec(
+          id: 'feat_light',
+          code: 'FEAT-01',
+          name: 'Feature légère',
+          currentStage: SpecForgeStage.eventStorming,
+          disabledSpecStages: const {
+            SpecForgeStage.vision, // obligatoire -> ignorée
+            SpecForgeStage.eventStorming,
+            SpecForgeStage.exampleMapping,
+          },
+          exampleMappings: [
+            ExampleMapStory(
+              id: 'em_1',
+              code: 'EM-01',
+              title: 'Ancienne story conservée',
+              questions: const [
+                ExampleMapQuestion(id: 'q1', question: 'Question ouverte ?'),
+              ],
+            ),
+          ],
+        );
+
+        expect(
+          feat.disabledSpecStages,
+          const {SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping},
+        );
+        expect(feat.currentStage, SpecForgeStage.specifications);
+        expect(feat.enabledSpecStages, const [
+          SpecForgeStage.lexicon,
+          SpecForgeStage.vision,
+          SpecForgeStage.specifications,
+          SpecForgeStage.businessObjects,
+          SpecForgeStage.businessRules,
+          SpecForgeStage.reviewExport,
+        ]);
+        expect(feat.stepNumberFor(SpecForgeStage.businessObjects), 4);
+        expect(feat.stepNumberFor(SpecForgeStage.businessRules), 5);
+        expect(feat.stepNumberFor(SpecForgeStage.reviewExport), 6);
+        expect(
+          feat.nextEnabledStage(SpecForgeStage.specifications),
+          SpecForgeStage.businessObjects,
+        );
+        expect(
+          feat.nextEnabledStage(SpecForgeStage.businessObjects),
+          SpecForgeStage.businessRules,
+        );
+        expect(
+          feat.previousEnabledStage(SpecForgeStage.businessRules),
+          SpecForgeStage.businessObjects,
+        );
+        // Les données existantes sont préservées mais ne font pas échouer la cohérence ni l'export.
+        expect(feat.exampleMappings, hasLength(1));
+
+        final now = DateTime.utc(2026, 6, 1);
+        final project = SpecForgeProject(
+          id: 'proj_opt',
+          name: 'OptSpec',
+          initialIdea: 'Idée test',
+          createdAt: now,
+          updatedAt: now,
+          initiatives: [
+            SpecInitiative(
+              id: 'init_1',
+              code: 'INIT-01',
+              name: 'Init 1',
+              features: [feat],
+            ),
+          ],
+          activeFeatureId: 'feat_light',
+        );
+
+        // moveToStage ignore une étape désactivée.
+        expect(
+          project.moveToStage(SpecForgeStage.eventStorming).currentStage,
+          SpecForgeStage.specifications,
+        );
+
+        // SpecCoherenceAnalyzer ignore les contrôles des étapes désactivées.
+        final issues = SpecCoherenceAnalyzer.analyze(project);
+        expect(
+          issues.any((i) => i.stage == SpecForgeStage.exampleMapping),
+          isFalse,
+        );
+        expect(
+          issues.any((i) => i.stage == SpecForgeStage.eventStorming),
+          isFalse,
+        );
+
+        // SpecMarkdownExporter omet les sections désactivées.
+        final markdown = SpecMarkdownExporter.export(project);
+        expect(markdown, isNot(contains('## 4. Event Storming')));
+        expect(markdown, isNot(contains('Example Mapping')));
+
+        // Aller-retour JSON préserve disabledSpecStages.
+        final roundTripped = SpecForgeProject.fromJson(project.toJson());
+        expect(
+          roundTripped.activeFeature.disabledSpecStages,
+          const {SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping},
+        );
+      },
+    );
   });
 }

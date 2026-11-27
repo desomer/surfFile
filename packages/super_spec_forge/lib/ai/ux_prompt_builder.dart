@@ -8,7 +8,6 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/business_object_model_preferences.dart';
 import '../models/company_glossary.dart';
 import '../models/spec_forge_project.dart';
-import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/ux/ux_forge_stage.dart';
 import '../models/ux/ux_screen_spec.dart';
@@ -256,9 +255,9 @@ abstract final class UxPromptBuilder {
         .convert(project.uxSpec.toCompactContextJson(stage));
 
     final previousSummaries = <String>[
-      for (final specStage in SpecForgeStage.values)
+      for (final specStage in project.enabledSpecStages)
         if (project.stageStateFor(specStage).stageSummary.trim().isNotEmpty)
-          '- Spec ${specStage.stepNumber} (${specStage.title}) : '
+          '- Spec ${project.stepNumberFor(specStage)} (${specStage.title}) : '
               '${project.stageStateFor(specStage).stageSummary.trim()}',
       for (final uxStage in UxForgeStage.values)
         if (uxStage.index < stage.index &&

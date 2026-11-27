@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
+import '../../models/spec_forge_stage.dart';
 import '../../services/exporters/event_storming_dsl_codec.dart';
 import '../../services/exporters/spec_json_exporter.dart';
 import '../../services/exporters/spec_json_schema_html_builder.dart';
@@ -91,9 +92,13 @@ class ReviewExportView extends StatelessWidget {
 
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final showEventStormingTab = project.isStageEnabled(
+      SpecForgeStage.eventStorming,
+    );
 
     return DefaultTabController(
-      length: 6,
+      key: ValueKey('review-export-tabs-$showEventStormingTab'),
+      length: showEventStormingTab ? 6 : 5,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -174,10 +179,11 @@ class ReviewExportView extends StatelessWidget {
             tabs: [
               Tab(text: 'Cohérence (${allIssues.length})'),
               const Tab(text: 'Cahier des charges (.md)'),
-              Tab(
-                text:
-                    'Event Storming (.es.yaml · ${project.eventStorming.documents.length})',
-              ),
+              if (showEventStormingTab)
+                Tab(
+                  text:
+                      'Event Storming (.es.yaml · ${project.eventStorming.documents.length})',
+                ),
               const Tab(text: 'YAML super_designer'),
               const Tab(text: 'JSON Schema & Seed'),
               const Tab(text: 'JSON Complet'),
@@ -232,13 +238,14 @@ class ReviewExportView extends StatelessWidget {
                     ),
                   ],
                 ),
-                _ExportCodeTab(
-                  content: eventStormingYamlPreview,
-                  filename: project.eventStorming.documents.length == 1
-                      ? project.eventStorming.documents.first.fileName
-                      : '${_safeName(project.name)}.es.yaml',
-                  colors: colors,
-                ),
+                if (showEventStormingTab)
+                  _ExportCodeTab(
+                    content: eventStormingYamlPreview,
+                    filename: project.eventStorming.documents.length == 1
+                        ? project.eventStorming.documents.first.fileName
+                        : '${_safeName(project.name)}.es.yaml',
+                    colors: colors,
+                  ),
                 _ExportCodeTab(
                   content: yamlSchema,
                   filename: '${_safeName(project.name)}_schema.yaml',

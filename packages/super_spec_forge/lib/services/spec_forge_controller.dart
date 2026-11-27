@@ -116,7 +116,16 @@ class SpecForgeController extends ChangeNotifier {
            modelDictionaryStore != null ||
            domainCatalogStore != null ||
            enterpriseRateCardStore != null,
-       _workspaceStore = workspaceStore ?? SpecWorkspaceStore(),
+       _workspaceStore =
+           workspaceStore ??
+           SpecWorkspaceStore(
+             usePreferences:
+                 store == null &&
+                 glossaryStore == null &&
+                 modelDictionaryStore == null &&
+                 domainCatalogStore == null &&
+                 enterpriseRateCardStore == null,
+           ),
        _store = store ?? SpecProjectStore(),
        _glossaryStore =
            glossaryStore ??
@@ -1354,6 +1363,7 @@ class SpecForgeController extends ChangeNotifier {
     String targetRelease = '',
     RequirementPriority priority = RequirementPriority.must,
     SpecPortfolioStatus status = SpecPortfolioStatus.draft,
+    Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     bool activate = true,
   }) async {
     final current = _project;
@@ -1373,6 +1383,7 @@ class SpecForgeController extends ChangeNotifier {
       targetRelease: targetRelease,
       priority: priority,
       status: status,
+      disabledSpecStages: disabledSpecStages,
     );
 
     final nextInitiatives = <SpecInitiative>[
@@ -1401,6 +1412,7 @@ class SpecForgeController extends ChangeNotifier {
     String? targetRelease,
     RequirementPriority? priority,
     SpecPortfolioStatus? status,
+    Set<SpecForgeStage>? disabledSpecStages,
   }) async {
     final current = _project;
     if (current == null) return;
@@ -1423,6 +1435,7 @@ class SpecForgeController extends ChangeNotifier {
       targetRelease: targetRelease?.trim(),
       priority: priority,
       status: status,
+      disabledSpecStages: disabledSpecStages,
       vision: nextVision,
     );
 
@@ -1880,6 +1893,31 @@ class SpecForgeController extends ChangeNotifier {
     await _persistProject(next);
   }
 
+  /// Active ou désactive une étape de spécification optionnelle ([stage]) sur [featureId].
+  Future<void> setFeatureStageEnabled({
+    required String featureId,
+    required SpecForgeStage stage,
+    required bool enabled,
+  }) async {
+    if (!stage.isOptional) return;
+    final current = _project;
+    if (current == null) return;
+    final existing = current.featureById(featureId);
+    if (existing == null) return;
+    final nextDisabled = Set<SpecForgeStage>.from(existing.disabledSpecStages);
+    if (enabled) {
+      nextDisabled.remove(stage);
+    } else {
+      nextDisabled.add(stage);
+    }
+    if (setEquals(nextDisabled, existing.disabledSpecStages)) return;
+    final next = current.updateFeature(
+      existing.copyWith(disabledSpecStages: nextDisabled),
+    );
+    next.validate();
+    await updateProject(next);
+  }
+
   /// Navigue vers [targetStage], valide optionnellement l'étape précédente et
   /// lance l'agent spécialisé de [targetStage] uniquement si [autoKickoffIfEmpty]
   /// vaut `true` et que sa conversation est vide.
@@ -1889,7 +1927,7 @@ class SpecForgeController extends ChangeNotifier {
     bool autoKickoffIfEmpty = false,
   }) async {
     final current = _project;
-    if (current == null) return;
+    if (current == null || !current.isStageEnabled(targetStage)) return;
     final moved = current.moveToStage(
       targetStage,
       validateCurrentStage: validateCurrent,
@@ -1909,7 +1947,7 @@ class SpecForgeController extends ChangeNotifier {
   /// Déclenche le message initial de l'agent spécialisé si l'étape n'a aucun échange.
   Future<void> kickoffStageIfEmpty(SpecForgeStage stage) async {
     final current = _project;
-    if (current == null || _isSending) return;
+    if (current == null || _isSending || !current.isStageEnabled(stage)) return;
     if (current.stageStateFor(stage).messages.isNotEmpty) return;
     final kickoffPrompt = SpecPromptBuilder.buildStageKickoffPrompt(
       current,
@@ -1927,7 +1965,9 @@ class SpecForgeController extends ChangeNotifier {
         SpecForgeStage.eventStorming =>
           'Lancer l’atelier Event Storming à partir du cahier des charges.',
         SpecForgeStage.businessObjects =>
-          'Modéliser les objets métiers à partir de l’Event Storming et du cahier des charges.',
+          current.isStageEnabled(SpecForgeStage.eventStorming)
+              ? 'Modéliser les objets métiers à partir de l’Event Storming et du cahier des charges.'
+              : 'Modéliser les objets métiers à partir du cahier des charges.',
         SpecForgeStage.exampleMapping =>
           'Lancer l’Example Mapping pour affiner les objets métiers par des exemples concrets.',
         SpecForgeStage.businessRules =>

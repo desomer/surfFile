@@ -75,42 +75,60 @@ abstract final class SpecPromptBuilder {
     SpecForgeProject project,
     SpecForgeStage stage, {
     BusinessObjectModelPreferences? modelPreferencesOverride,
-  }) => switch (stage) {
-    SpecForgeStage.lexicon =>
-      project.hasSingleDefaultFeature
-          ? 'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
-                'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.'
-          : 'Nous travaillons sur la feature « ${project.activeFeature.displayLabel} » '
-                '(initiative « ${project.activeInitiative.displayLabel} ») du projet « ${project.name} ».'
-                '${project.activeFeature.description.isNotEmpty ? ' Périmètre de la feature : « ${project.activeFeature.description} ».' : ''} '
-                'En tenant compte de l’idée du projet (« ${project.initialIdea} ») et des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, '
-                'identifie les termes métier clés, sigles et ambiguïtés terminologiques à ajouter ou préciser.',
-    SpecForgeStage.vision =>
-      'Nous passons à l’étape 2 (Cadrage & Acteurs). En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le lexique métier établi, '
-          'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
-    SpecForgeStage.specifications =>
-      'Nous passons à l’étape 3 (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
-          'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
-    SpecForgeStage.eventStorming =>
-      'Nous passons à l’étape 4 (Event Storming — DSL v1.0). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
-          'modélise un document par Bounded Context (`dsl_version: "1.0"`, `meta`, `catalog` avec `ACT-*`/`AGG-*`/`EXT-*`, `flow[]` chronologique) : '
-          'commandes à l’infinitif (bleu), événements au passé composé (orange) ou `outcomes` exclusifs, politiques « Quand…, alors… » (violet), read models (vert), systèmes externes (rose pâle), synchronisations `all_of` / `any_of`, `backlog` et `hotspots` (rose vif).',
-    SpecForgeStage.businessObjects =>
-      'Nous passons à l’étape 5 (Objets métiers). En t’appuyant sur le lexique, le cadrage, le cahier des charges et les agrégats/événements de l’Event Storming, '
-          'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
-          '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
-    SpecForgeStage.exampleMapping =>
-      'Nous passons à l’étape 6 (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique, l’Event Storming et les cas d’usage du cahier des charges, '
-          'explore avec l’utilisateur les règles (cartes bleues), exemples concrets et cas aux limites (cartes vertes) et zones d’ombre (cartes rouges) '
-          'pour affiner les attributs, bornes JSON Schema, énumérations et cycles de vie des objets métiers.\n\n'
-          '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
-    SpecForgeStage.businessRules =>
-      'Nous passons à l’étape 7 (Règles de gestion). En t’appuyant sur l’Event Storming (politiques, commandes, événements), les objets métiers, les tableaux d’Example Mapping (règles bleues, exemples verts et questions résolues), le lexique et le cahier des charges, '
-          'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
-    SpecForgeStage.reviewExport =>
-      'Nous passons à l’étape 8 (Revue globale & Cohérence). Audite l’ensemble du projet (lexique métier, cadrage, cahier des charges, Event Storming, objets métiers, Example Mapping et règles de gestion), '
-          'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
-  };
+  }) {
+    final step = project.stepNumberFor(stage);
+    final hasEventStorming = project.isStageEnabled(
+      SpecForgeStage.eventStorming,
+    );
+    final hasExampleMapping = project.isStageEnabled(
+      SpecForgeStage.exampleMapping,
+    );
+    return switch (stage) {
+      SpecForgeStage.lexicon =>
+        project.hasSingleDefaultFeature
+            ? 'Voici l’idée initiale du projet « ${project.name} » : « ${project.initialIdea} ». '
+                  'Identifie les termes métier clés, acronymes et ambiguïtés terminologiques, et pose tes questions pour établir le lexique métier partagé.'
+            : 'Nous travaillons sur la feature « ${project.activeFeature.displayLabel} » '
+                  '(initiative « ${project.activeInitiative.displayLabel} ») du projet « ${project.name} ».'
+                  '${project.activeFeature.description.isNotEmpty ? ' Périmètre de la feature : « ${project.activeFeature.description} ».' : ''} '
+                  'En tenant compte de l’idée du projet (« ${project.initialIdea} ») et des ${project.lexicon.terms.length} terme(s) déjà présents dans le lexique partagé, '
+                  'identifie les termes métier clés, sigles et ambiguïtés terminologiques à ajouter ou préciser.',
+      SpecForgeStage.vision =>
+        'Nous passons à l’étape $step (Cadrage & Acteurs). En t’appuyant sur l’idée initiale « ${project.initialIdea} » et le lexique métier établi, '
+            'pose tes questions de cadrage pour clarifier la vision, les objectifs, les acteurs/personas et les contraintes.',
+      SpecForgeStage.specifications =>
+        'Nous passons à l’étape $step (Cahier des charges). En t’appuyant sur le lexique, le cadrage et les acteurs validés, '
+            'pose les questions nécessaires (ou propose la structure) pour détailler les modules, exigences fonctionnelles MoSCoW, cas d’usage et exigences non fonctionnelles.',
+      SpecForgeStage.eventStorming =>
+        'Nous passons à l’étape $step (Event Storming — DSL v1.0). En t’appuyant sur le lexique, les acteurs et le cahier des charges (modules, exigences et cas d’usage), '
+            'modélise un document par Bounded Context (`dsl_version: "1.0"`, `meta`, `catalog` avec `ACT-*`/`AGG-*`/`EXT-*`, `flow[]` chronologique) : '
+            'commandes à l’infinitif (bleu), événements au passé composé (orange) ou `outcomes` exclusifs, politiques « Quand…, alors… » (violet), read models (vert), systèmes externes (rose pâle), synchronisations `all_of` / `any_of`, `backlog` et `hotspots` (rose vif).',
+      SpecForgeStage.businessObjects =>
+        'Nous passons à l’étape $step (Objets métiers). En t’appuyant sur le lexique, le cadrage, le cahier des charges${hasEventStorming ? ' et les agrégats/événements de l’Event Storming' : ''}, '
+            'pose les questions nécessaires pour modéliser les entités métiers, leurs sous-objets, leurs attributs typés, leurs relations et leurs cycles de vie.\n\n'
+            '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
+      SpecForgeStage.exampleMapping =>
+        'Nous passons à l’étape $step (Example Mapping). En t’appuyant sur les objets métiers modélisés, le lexique${hasEventStorming ? ', l’Event Storming' : ''} et les cas d’usage du cahier des charges, '
+            'explore avec l’utilisateur les règles (cartes bleues), exemples concrets et cas aux limites (cartes vertes) et zones d’ombre (cartes rouges) '
+            'pour affiner les attributs, bornes JSON Schema, énumérations et cycles de vie des objets métiers.\n\n'
+            '${businessObjectLanguageDirective(project, modelPreferencesOverride: modelPreferencesOverride)}',
+      SpecForgeStage.businessRules =>
+        'Nous passons à l’étape $step (Règles de gestion). En t’appuyant sur '
+            '${hasEventStorming ? 'l’Event Storming (politiques, commandes, événements), ' : ''}'
+            'les objets métiers, '
+            '${hasExampleMapping ? 'les tableaux d’Example Mapping (règles bleues, exemples verts et questions résolues), ' : ''}'
+            'le lexique et le cahier des charges, '
+            'pose les questions nécessaires pour formaliser les règles RG-xxx (validations, calculs, transitions d’état, habilitations et déclencheurs).',
+      SpecForgeStage.reviewExport =>
+        'Nous passons à l’étape $step (Revue globale & Cohérence). Audite l’ensemble du projet ('
+            'lexique métier, cadrage, cahier des charges'
+            '${hasEventStorming ? ', Event Storming' : ''}'
+            ', objets métiers'
+            '${hasExampleMapping ? ', Example Mapping' : ''}'
+            ' et règles de gestion), '
+            'signale toute incohérence ou oubli éventuel et propose un résumé ou des questions d’arbitrage final.',
+    };
+  }
 
   /// Construit le prompt ciblé pour rechercher un complément de lexique métier
   /// propre à la feature active sans dupliquer ni écraser les termes existants.
@@ -160,12 +178,12 @@ abstract final class SpecPromptBuilder {
         .convert(project.toCompactContextJson(stage));
 
     final previousSummaries = <String>[];
-    for (final s in SpecForgeStage.values) {
+    for (final s in project.enabledSpecStages) {
       if (s.index >= stage.index) break;
       final summary = project.stageStateFor(s).stageSummary.trim();
       if (summary.isNotEmpty) {
         previousSummaries.add(
-          '- Étape ${s.stepNumber} (${s.title}) : $summary',
+          '- Étape ${project.stepNumberFor(s)} (${s.title}) : $summary',
         );
       }
     }
@@ -177,7 +195,7 @@ abstract final class SpecPromptBuilder {
 
     final buffer = StringBuffer()
       ..writeln(
-        'ÉTAPE ACTIVE : ${stage.stepNumber}/${SpecForgeStage.values.length} — ${stage.title} (Agent : ${agent.stage.agentTitle})',
+        'ÉTAPE ACTIVE : ${project.stepNumberFor(stage)}/${project.enabledSpecStages.length} — ${stage.title} (Agent : ${agent.stage.agentTitle})',
       )
       ..writeln()
       ..writeln(
@@ -531,9 +549,9 @@ abstract final class SpecPromptBuilder {
         .convert(project.toCompactContextJson(SpecForgeStage.reviewExport));
 
     final stageSummaries = <String>[
-      for (final s in SpecForgeStage.values)
+      for (final s in project.enabledSpecStages)
         if (project.stageStateFor(s).stageSummary.trim().isNotEmpty)
-          '- Étape ${s.stepNumber} (${s.title}) [${project.stageStateFor(s).status.label}] : ${project.stageStateFor(s).stageSummary.trim()}',
+          '- Étape ${project.stepNumberFor(s)} (${s.title}) [${project.stageStateFor(s).status.label}] : ${project.stageStateFor(s).stageSummary.trim()}',
     ];
 
     final history = _buildHistory(
@@ -544,7 +562,7 @@ abstract final class SpecPromptBuilder {
     final buffer = StringBuffer()
       ..writeln('MODE : CHAT GLOBAL DE QUESTIONS SUR LE PROJET')
       ..writeln(
-        'ÉTAPE ACTIVE DU WIZARD : ${project.currentStage.stepNumber}/${SpecForgeStage.values.length} (${project.currentStage.title})',
+        'ÉTAPE ACTIVE DU WIZARD : ${project.stepNumberFor(project.currentStage)}/${project.enabledSpecStages.length} (${project.currentStage.title})',
       );
 
     if (stageSummaries.isNotEmpty) {

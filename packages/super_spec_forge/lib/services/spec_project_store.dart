@@ -589,6 +589,10 @@ class SpecProjectStore {
           prev.totalFeatureCount != project.totalFeatureCount ||
           prev.activeFeature.name != project.activeFeature.name ||
           prev.currentStage != project.currentStage ||
+          !setEquals(
+            prev.activeFeature.disabledSpecStages,
+            project.activeFeature.disabledSpecStages,
+          ) ||
           prev.businessObjects.length != project.businessObjects.length ||
           prev.businessRules.length != project.businessRules.length ||
           prev.exampleMappings.length != project.exampleMappings.length ||
@@ -1889,6 +1893,9 @@ class SpecProjectStore {
           attachmentsDir: attachmentsDir,
           metadataSeed: SpecFeatureSpec.createDefault(
             currentStage: currentStage,
+            disabledSpecStages: SpecFeatureSpec.parseDisabledSpecStages(
+              manifestRaw['disabledSpecStages'],
+            ),
           ),
           manifestFallback: manifestRaw,
         );
@@ -1993,6 +2000,9 @@ class SpecProjectStore {
           priority: RequirementPriority.fromJson(rawFeatData['priority']),
           status: SpecPortfolioStatus.fromJson(rawFeatData['status']),
           currentStage: SpecForgeStage.fromJson(rawFeatData['currentStage']),
+          disabledSpecStages: SpecFeatureSpec.parseDisabledSpecStages(
+            rawFeatData['disabledSpecStages'],
+          ),
         );
         final artifactsBaseDir = seed.usesProjectRootStorage
             ? projectDir
@@ -3004,6 +3014,11 @@ class SpecProjectStore {
       'createdAt': project.createdAt.toUtc().toIso8601String(),
       'updatedAt': project.updatedAt.toUtc().toIso8601String(),
       'currentStage': project.currentStage.name,
+      if (project.hasSingleDefaultFeature &&
+          project.activeFeature.disabledSpecStages.isNotEmpty)
+        'disabledSpecStages': [
+          for (final s in project.activeFeature.disabledSpecStages) s.name,
+        ],
       if (!project.hasSingleDefaultFeature) ...<String, Object?>{
         'activeFeatureId': project.activeFeatureId,
         'activeFeatureName': project.activeFeature.name,

@@ -37,6 +37,7 @@ class SpecWizardStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final stages = project.enabledSpecStages;
 
     return Container(
       decoration: BoxDecoration(
@@ -46,7 +47,7 @@ class SpecWizardStepper extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          for (var i = 0; i < SpecForgeStage.values.length; i++) ...[
+          for (var i = 0; i < stages.length; i++) ...[
             if (i > 0)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -58,12 +59,11 @@ class SpecWizardStepper extends StatelessWidget {
               ),
             Expanded(
               child: _StageStepTile(
-                stage: SpecForgeStage.values[i],
-                status: project.stageStateFor(SpecForgeStage.values[i]).status,
-                isActive: project.currentStage == SpecForgeStage.values[i],
-                onTap: disabled
-                    ? null
-                    : () => onSelectStage(SpecForgeStage.values[i]),
+                stage: stages[i],
+                stepNumber: i + 1,
+                status: project.stageStateFor(stages[i]).status,
+                isActive: project.currentStage == stages[i],
+                onTap: disabled ? null : () => onSelectStage(stages[i]),
               ),
             ),
           ],
@@ -94,12 +94,14 @@ class SpecWizardStepper extends StatelessWidget {
 class _StageStepTile extends StatelessWidget {
   const _StageStepTile({
     required this.stage,
+    required this.stepNumber,
     required this.status,
     required this.isActive,
     required this.onTap,
   });
 
   final SpecForgeStage stage;
+  final int stepNumber;
   final SpecStageStatus status;
   final bool isActive;
   final VoidCallback? onTap;
@@ -148,7 +150,7 @@ class _StageStepTile extends StatelessWidget {
               child: status == SpecStageStatus.validated && !isActive
                   ? Icon(Icons.check_rounded, size: 14, color: colors.onSecondary)
                   : Text(
-                      '${stage.stepNumber}',
+                      '$stepNumber',
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: isActive

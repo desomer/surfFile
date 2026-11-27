@@ -682,7 +682,11 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         onBack: () => _selectDesignPage(null),
         onManageDomains: () => _selectDesignPage('domain_management'),
         onDomainChanged: (id) => _selectDesignDetail(id, null),
-        onOpenEventStorming: widget.controller.project == null
+        onOpenEventStorming:
+            (widget.controller.project == null ||
+                !widget.controller.project!.isStageEnabled(
+                  SpecForgeStage.eventStorming,
+                ))
             ? null
             : () {
                 setState(() {

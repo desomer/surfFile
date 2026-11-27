@@ -243,5 +243,80 @@ void main() {
         );
       },
     );
+
+    test(
+      'persiste et recharge disabledSpecStages par feature (multi-features et feature initiale seule)',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp('ssf_opt_stages_');
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+        final store = SpecProjectStore(tempDir);
+
+        // 1. Cas single default feature (persisté dans project.json).
+        final single = SpecForgeProject.fromIdea(
+          id: 'proj_single_opt',
+          name: 'SingleOpt',
+          idea: 'Projet simple sans Event Storming',
+        ).copyWith(disabledSpecStages: const {SpecForgeStage.eventStorming});
+        await store.saveProject(single);
+
+        final reloadedSingle = await SpecProjectStore(
+          tempDir,
+        ).loadProject('proj_single_opt');
+        expect(reloadedSingle, isNotNull);
+        expect(
+          reloadedSingle!.activeFeature.disabledSpecStages,
+          const {SpecForgeStage.eventStorming},
+        );
+
+        // 2. Cas multi-features avec choix distincts par feature (persisté dans feature.json).
+        final now = DateTime.utc(2026, 6, 1);
+        final multi = SpecForgeProject(
+          id: 'proj_multi_opt',
+          name: 'MultiOpt',
+          initialIdea: 'Projet multi-features',
+          createdAt: now,
+          updatedAt: now,
+          initiatives: [
+            SpecInitiative(
+              id: 'init_core',
+              code: 'INIT-01',
+              name: 'Core',
+              features: [
+                SpecFeatureSpec.create(
+                  id: 'feat_a',
+                  code: 'FEAT-01',
+                  name: 'Feature complète',
+                ),
+                SpecFeatureSpec.create(
+                  id: 'feat_b',
+                  code: 'FEAT-02',
+                  name: 'Feature rapide',
+                  disabledSpecStages: const {
+                    SpecForgeStage.eventStorming,
+                    SpecForgeStage.exampleMapping,
+                  },
+                ),
+              ],
+            ),
+          ],
+          activeFeatureId: 'feat_b',
+        );
+        await store.saveProject(multi);
+
+        final reloadedMulti = await SpecProjectStore(
+          tempDir,
+        ).loadProject('proj_multi_opt');
+        expect(reloadedMulti, isNotNull);
+        expect(reloadedMulti!.featureById('feat_a')!.disabledSpecStages, isEmpty);
+        expect(
+          reloadedMulti.featureById('feat_b')!.disabledSpecStages,
+          const {SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping},
+        );
+      },
+    );
   });
 }

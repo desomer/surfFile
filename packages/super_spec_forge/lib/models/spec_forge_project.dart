@@ -31,6 +31,7 @@ class SpecForgeProject {
     required DateTime createdAt,
     required DateTime updatedAt,
     SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecLexicon? lexicon,
     SpecStageState? lexiconStageState,
     SpecVision? vision,
@@ -74,6 +75,7 @@ class SpecForgeProject {
            initiatives: initiatives,
            activeFeatureId: activeFeatureId,
            currentStage: currentStage,
+           disabledSpecStages: disabledSpecStages,
            vision: vision,
            cahierDesCharges: cahierDesCharges,
            eventStorming: eventStorming,
@@ -224,6 +226,30 @@ class SpecForgeProject {
 
   /// Étape actuellement sélectionnée dans le wizard de la feature active.
   SpecForgeStage get currentStage => _activeFeature.currentStage;
+
+  /// Étapes optionnelles désactivées pour la feature active.
+  Set<SpecForgeStage> get disabledSpecStages =>
+      _activeFeature.disabledSpecStages;
+
+  /// Étapes ordonnées actives dans le wizard de spécification pour la feature active.
+  List<SpecForgeStage> get enabledSpecStages =>
+      _activeFeature.enabledSpecStages;
+
+  /// Vrai si [stage] est active pour la feature active.
+  bool isStageEnabled(SpecForgeStage stage) =>
+      _activeFeature.isStageEnabled(stage);
+
+  /// Numéro d'ordre dynamique (1-based) de [stage] dans la feature active.
+  int stepNumberFor(SpecForgeStage stage) =>
+      _activeFeature.stepNumberFor(stage);
+
+  /// Étape active suivante après [stage] dans la feature active, ou `null`.
+  SpecForgeStage? nextEnabledStage(SpecForgeStage stage) =>
+      _activeFeature.nextEnabledStage(stage);
+
+  /// Étape active précédente avant [stage] dans la feature active, ou `null`.
+  SpecForgeStage? previousEnabledStage(SpecForgeStage stage) =>
+      _activeFeature.previousEnabledStage(stage);
 
   /// Livrable de l'étape 2 (Cadrage & Acteurs) de la feature active.
   SpecVision get vision => _activeFeature.vision;
@@ -376,6 +402,9 @@ class SpecForgeProject {
     SpecForgeStage targetStage, {
     bool validateCurrentStage = false,
   }) {
+    if (!isStageEnabled(targetStage)) {
+      return this;
+    }
     final nextMap = Map<SpecForgeStage, SpecStageState>.from(stageStates);
     if (validateCurrentStage && currentStage != targetStage) {
       final current = stageStateFor(currentStage);
@@ -499,14 +528,18 @@ class SpecForgeProject {
           ],
         },
         'currentStage': stage.name,
+        'enabledSpecStages': [for (final s in enabledSpecStages) s.name],
+        if (disabledSpecStages.isNotEmpty)
+          'disabledSpecStages': [for (final s in disabledSpecStages) s.name],
         'lexicon': lexicon.toJson(),
         if (stage.index >= SpecForgeStage.vision.index || vision.hasContent)
           'vision': vision.toJson(),
         if (stage.index >= SpecForgeStage.specifications.index ||
             cahierDesCharges.hasContent)
           'cahierDesCharges': cahierDesCharges.toJson(),
-        if (stage.index >= SpecForgeStage.eventStorming.index ||
-            eventStorming.hasContent)
+        if (isStageEnabled(SpecForgeStage.eventStorming) &&
+            (stage.index >= SpecForgeStage.eventStorming.index ||
+                eventStorming.hasContent))
           'eventStorming': eventStorming.toJson(),
         if (stage.index >= SpecForgeStage.businessObjects.index ||
             businessObjects.isNotEmpty)
@@ -515,8 +548,9 @@ class SpecForgeProject {
             !businessObjectModelPreferences.isDefault)
           'businessObjectModelPreferences':
               businessObjectModelPreferences.toJson(),
-        if (stage.index >= SpecForgeStage.exampleMapping.index ||
-            exampleMappings.isNotEmpty)
+        if (isStageEnabled(SpecForgeStage.exampleMapping) &&
+            (stage.index >= SpecForgeStage.exampleMapping.index ||
+                exampleMappings.isNotEmpty))
           'exampleMappings': [for (final s in exampleMappings) s.toJson()],
         if (stage.index >= SpecForgeStage.businessRules.index ||
             businessRules.isNotEmpty)
@@ -657,6 +691,7 @@ class SpecForgeProject {
     DateTime? createdAt,
     DateTime? updatedAt,
     SpecForgeStage? currentStage,
+    Set<SpecForgeStage>? disabledSpecStages,
     SpecLexicon? lexicon,
     SpecStageState? lexiconStageState,
     SpecVision? vision,
@@ -681,6 +716,7 @@ class SpecForgeProject {
     final targetFeatureId = activeFeatureId ?? this.activeFeatureId;
     final hasFeatureOverrides =
         currentStage != null ||
+        disabledSpecStages != null ||
         vision != null ||
         cahierDesCharges != null ||
         eventStorming != null ||
@@ -703,6 +739,7 @@ class SpecForgeProject {
                     if (f.id == targetFeatureId)
                       f.copyWith(
                         currentStage: currentStage,
+                        disabledSpecStages: disabledSpecStages,
                         vision: vision,
                         cahierDesCharges: cahierDesCharges,
                         eventStorming: eventStorming,
@@ -756,6 +793,8 @@ class SpecForgeProject {
     'createdAt': createdAt.toUtc().toIso8601String(),
     'updatedAt': updatedAt.toUtc().toIso8601String(),
     'currentStage': currentStage.name,
+    if (disabledSpecStages.isNotEmpty)
+      'disabledSpecStages': [for (final s in disabledSpecStages) s.name],
     'lexicon': lexicon.toJson(),
     'vision': vision.toJson(),
     'cahierDesCharges': cahierDesCharges.toJson(),
@@ -826,6 +865,9 @@ class SpecForgeProject {
       createdAt: createdAt,
       updatedAt: updatedAt,
       currentStage: SpecForgeStage.fromJson(raw['currentStage']),
+      disabledSpecStages: SpecFeatureSpec.parseDisabledSpecStages(
+        raw['disabledSpecStages'],
+      ),
       lexicon: SpecLexicon.fromJson(raw['lexicon']),
       lexiconStageState: parsedStageStates[SpecForgeStage.lexicon],
       vision: SpecVision.fromJson(raw['vision']),
@@ -901,6 +943,7 @@ class SpecForgeProject {
     required List<SpecInitiative>? initiatives,
     required String? activeFeatureId,
     required SpecForgeStage currentStage,
+    required Set<SpecForgeStage> disabledSpecStages,
     required SpecVision? vision,
     required SpecCahierDesCharges? cahierDesCharges,
     required EventStormingSpec? eventStorming,
@@ -915,6 +958,7 @@ class SpecForgeProject {
   }) {
     SpecFeatureSpec buildFallbackFeature() => SpecFeatureSpec.createDefault(
       currentStage: currentStage,
+      disabledSpecStages: disabledSpecStages,
       vision: vision,
       cahierDesCharges: cahierDesCharges,
       eventStorming: eventStorming,

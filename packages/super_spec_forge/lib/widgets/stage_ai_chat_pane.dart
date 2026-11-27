@@ -77,6 +77,9 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
 
     final stage = project.currentStage;
     final stageState = project.stageStateFor(stage);
+    final nextStage = project.nextEnabledStage(stage);
+    final stepNumber = project.stepNumberFor(stage);
+    final totalSteps = project.enabledSpecStages.length;
     final messages = stageState.messages;
     if (messages.length != _lastMessageCount) {
       _lastMessageCount = messages.length;
@@ -93,6 +96,8 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
       children: [
         _AgentHeader(
           stage: stage,
+          stepNumber: stepNumber,
+          totalSteps: totalSteps,
           stageState: stageState,
           isSending: widget.controller.isSending,
           chatWidthFraction: widget.chatWidthFraction,
@@ -102,10 +107,10 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
             '',
             requestsMoreQuestions: true,
           ),
-          onAdvanceStage: stage.next == null
+          onAdvanceStage: nextStage == null
               ? null
               : () => widget.controller.goToStage(
-                  stage.next!,
+                  nextStage,
                   validateCurrent: true,
                 ),
         ),
@@ -145,7 +150,7 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
                   },
                 ),
         ),
-        if (stageState.readyToAdvance && stage.next != null)
+        if (stageState.readyToAdvance && nextStage != null)
           Container(
             color: colors.tertiaryContainer.withValues(alpha: 0.45),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -179,11 +184,11 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
                   onPressed: widget.controller.isSending
                       ? null
                       : () => widget.controller.goToStage(
-                          stage.next!,
+                          nextStage,
                           validateCurrent: true,
                         ),
                   icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                  label: Text('Passer à : ${stage.next!.shortLabel}'),
+                  label: Text('Passer à : ${nextStage.shortLabel}'),
                 ),
               ],
             ),
@@ -225,6 +230,8 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
 class _AgentHeader extends StatelessWidget {
   const _AgentHeader({
     required this.stage,
+    required this.stepNumber,
+    required this.totalSteps,
     required this.stageState,
     required this.isSending,
     required this.chatWidthFraction,
@@ -235,6 +242,8 @@ class _AgentHeader extends StatelessWidget {
   });
 
   final SpecForgeStage stage;
+  final int stepNumber;
+  final int totalSteps;
   final SpecStageState stageState;
   final bool isSending;
   final double? chatWidthFraction;
@@ -276,7 +285,7 @@ class _AgentHeader extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${stage.agentTitle} · Étape ${stage.stepNumber}/${SpecForgeStage.values.length}',
+                      '${stage.agentTitle} · Étape $stepNumber/$totalSteps',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(

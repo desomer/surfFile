@@ -10,7 +10,6 @@ import '../models/company_glossary.dart';
 import '../models/qa/gherkin_feature_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
 import '../models/spec_forge_project.dart';
-import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/ux/ux_forge_stage.dart';
 import 'qa_stage_agent.dart';
@@ -216,9 +215,9 @@ abstract final class QaPromptBuilder {
         .convert(project.qaSpec.toCompactContextJson(stage));
 
     final previousSummaries = <String>[
-      for (final specStage in SpecForgeStage.values)
+      for (final specStage in project.enabledSpecStages)
         if (project.stageStateFor(specStage).stageSummary.trim().isNotEmpty)
-          '- Spec ${specStage.stepNumber} (${specStage.title}) : '
+          '- Spec ${project.stepNumberFor(specStage)} (${specStage.title}) : '
               '${project.stageStateFor(specStage).stageSummary.trim()}',
       if (project.uxSpec.hasContent)
         for (final uxStage in UxForgeStage.values)

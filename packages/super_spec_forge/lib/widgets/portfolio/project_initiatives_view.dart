@@ -231,6 +231,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
         targetRelease: result.targetRelease,
         priority: result.priority,
         status: result.status,
+        disabledSpecStages: result.disabledSpecStages,
       );
       if (created != null && mounted) {
         setState(() {
@@ -248,6 +249,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
         targetRelease: result.targetRelease,
         priority: result.priority,
         status: result.status,
+        disabledSpecStages: result.disabledSpecStages,
       );
     }
   }
@@ -1321,6 +1323,17 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          _FeatureSpecStagesCard(
+            feature: feature,
+            disabled: widget.controller.isSending,
+            onToggleOptionalStage: (stage, enabled) =>
+                widget.controller.setFeatureStageEnabled(
+                  featureId: feature.id,
+                  stage: stage,
+                  enabled: enabled,
+                ),
+          ),
           const SizedBox(height: 22),
           Row(
             children: [
@@ -1338,7 +1351,7 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Chaque feature dispose de ses propres livrables Cadrage, Cahier des charges, Event Storming, Objets métiers, Example Mapping, Règles, UX, BDD/TDD et Coûts IT, tout en partageant le Lexique métier du projet.',
+            'Chaque feature dispose de ses propres livrables de spécification (${feature.enabledSpecStages.length}/${SpecForgeStage.values.length} étapes actives), UX, BDD/TDD et Coûts IT, tout en partageant le Lexique métier du projet.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -1347,20 +1360,22 @@ class _ProjectInitiativesViewState extends State<ProjectInitiativesView> {
           LayoutBuilder(
             builder: (context, gridConstraints) {
               final twoColumns = gridConstraints.maxWidth >= 500;
+              final enabledStagesSummary = feature.enabledSpecStages
+                  .map((s) => s.shortLabel)
+                  .join(', ');
               final cards = <Widget>[
                 _WizardLaunchCard(
                   cardKey: const ValueKey('portfolio-open-wizard-spec'),
                   icon: Icons.auto_awesome_rounded,
                   title: 'Wizard de spécification',
                   badge:
-                      'Étape ${feature.currentStage.stepNumber}/${SpecForgeStage.values.length} · ${feature.currentStage.shortLabel}',
+                      'Étape ${feature.stepNumberFor(feature.currentStage)}/${feature.enabledSpecStages.length} · ${feature.currentStage.shortLabel}',
                   metrics:
-                      '${feature.validatedFeatureStagesCount}/${SpecFeatureSpec.featureScopedStages.length} étapes validées · '
+                      '${feature.validatedFeatureStagesCount}/${feature.enabledFeatureScopedStages.length} étapes validées · '
                       '${feature.businessObjects.length} objet(s) · '
-                      '${feature.businessRules.length} règle(s) · '
-                      '${feature.exampleMappings.length} Example Map(s)',
-                  description:
-                      'Lexique partagé, Cadrage, Cahier des charges, Event Storming, Objets métiers, Example Mapping et Règles RG.',
+                      '${feature.businessRules.length} règle(s)'
+                      '${feature.isStageEnabled(SpecForgeStage.exampleMapping) ? ' · ${feature.exampleMappings.length} Example Map(s)' : ''}',
+                  description: '$enabledStagesSummary.',
                   buttonLabel: 'Ouvrir le Wizard Spec',
                   isPrimary: true,
                   onOpen: widget.controller.isSending
@@ -1585,6 +1600,162 @@ class _FeatureTreeTile extends StatelessWidget {
                   ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureSpecStagesCard extends StatelessWidget {
+  const _FeatureSpecStagesCard({
+    required this.feature,
+    required this.disabled,
+    required this.onToggleOptionalStage,
+  });
+
+  final SpecFeatureSpec feature;
+  final bool disabled;
+  final void Function(SpecForgeStage stage, bool enabled) onToggleOptionalStage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final enabledCount = feature.enabledSpecStages.length;
+    final hasPreservedDisabledData =
+        (!feature.isStageEnabled(SpecForgeStage.eventStorming) &&
+            feature.eventStorming.hasContent) ||
+        (!feature.isStageEnabled(SpecForgeStage.exampleMapping) &&
+            feature.exampleMappings.isNotEmpty);
+
+    return Card(
+      key: const ValueKey('portfolio-feature-spec-stages-card'),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.tune_rounded, size: 18, color: colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Étapes de spécification ($enabledCount/${SpecForgeStage.values.length} actives)',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Activez ou désactivez les étapes optionnelles (Event Storming, Example Mapping) pour cette feature.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (final stage in SpecForgeStage.values)
+                  if (stage.isOptional)
+                    Tooltip(
+                      message: feature.isStageEnabled(stage)
+                          ? 'Étape optionnelle active — cliquer pour la désactiver sur cette feature'
+                          : 'Étape optionnelle désactivée — cliquer pour l’activer sur cette feature',
+                      child: FilterChip(
+                        key: ValueKey(
+                          'portfolio-feature-stage-toggle-${stage.name}',
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        selected: feature.isStageEnabled(stage),
+                        avatar: feature.isStageEnabled(stage)
+                            ? null
+                            : Icon(
+                                stage.icon,
+                                size: 15,
+                                color: colors.onSurfaceVariant,
+                              ),
+                        label: Text(
+                          feature.isStageEnabled(stage)
+                              ? '${feature.stepNumberFor(stage)}. ${stage.shortLabel} (optionnel)'
+                              : '${stage.shortLabel} (désactivée)',
+                        ),
+                        onSelected: disabled
+                            ? null
+                            : (selected) =>
+                                  onToggleOptionalStage(stage, selected),
+                      ),
+                    )
+                  else
+                    Container(
+                      key: ValueKey(
+                        'portfolio-feature-stage-required-${stage.name}',
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: colors.outlineVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            stage.icon,
+                            size: 14,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${feature.stepNumberFor(stage)}. ${stage.shortLabel}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: colors.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+              ],
+            ),
+            if (hasPreservedDisabledData) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Les données déjà saisies sur une étape désactivée sont conservées et réapparaîtront si vous la réactivez.',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -2071,6 +2242,7 @@ class _FeatureDialogResult {
     required this.targetRelease,
     required this.priority,
     required this.status,
+    required this.disabledSpecStages,
   });
 
   final String initiativeId;
@@ -2080,6 +2252,7 @@ class _FeatureDialogResult {
   final String targetRelease;
   final RequirementPriority priority;
   final SpecPortfolioStatus status;
+  final Set<SpecForgeStage> disabledSpecStages;
 }
 
 class _PortfolioFeatureDialog extends StatefulWidget {
@@ -2108,6 +2281,7 @@ class _PortfolioFeatureDialogState extends State<_PortfolioFeatureDialog> {
   late final TextEditingController _releaseCtrl;
   late RequirementPriority _priority;
   late SpecPortfolioStatus _status;
+  late Set<SpecForgeStage> _disabledSpecStages;
 
   @override
   void initState() {
@@ -2121,6 +2295,9 @@ class _PortfolioFeatureDialogState extends State<_PortfolioFeatureDialog> {
     );
     _priority = widget.existing?.priority ?? RequirementPriority.must;
     _status = widget.existing?.status ?? SpecPortfolioStatus.draft;
+    _disabledSpecStages = Set<SpecForgeStage>.from(
+      widget.existing?.disabledSpecStages ?? const <SpecForgeStage>{},
+    );
   }
 
   @override
@@ -2271,6 +2448,60 @@ class _PortfolioFeatureDialogState extends State<_PortfolioFeatureDialog> {
                   if (val != null) setState(() => _status = val);
                 },
               ),
+              const SizedBox(height: 14),
+              Material(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Étapes de spécification optionnelles',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Choisissez les ateliers facultatifs à inclure dans le Wizard de spécification pour cette feature.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      for (final stage in SpecForgeStage.optionalStages)
+                        CheckboxListTile(
+                          key: ValueKey(
+                            'portfolio-feature-dialog-stage-${stage.name}',
+                          ),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: !_disabledSpecStages.contains(stage),
+                          onChanged: (enabled) => setState(() {
+                            if (enabled ?? true) {
+                              _disabledSpecStages.remove(stage);
+                            } else {
+                              _disabledSpecStages.add(stage);
+                            }
+                          }),
+                          title: Text(stage.title),
+                          subtitle: Text(
+                            stage.agentSubtitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -2293,6 +2524,9 @@ class _PortfolioFeatureDialogState extends State<_PortfolioFeatureDialog> {
                     targetRelease: _releaseCtrl.text,
                     priority: _priority,
                     status: _status,
+                    disabledSpecStages: Set<SpecForgeStage>.unmodifiable(
+                      _disabledSpecStages,
+                    ),
                   ),
                 ),
           child: Text(widget.existing == null ? 'Créer' : 'Enregistrer'),

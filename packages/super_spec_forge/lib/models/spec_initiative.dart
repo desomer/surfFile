@@ -71,7 +71,8 @@ class SpecFeatureSpec {
     this.targetRelease = '',
     this.priority = RequirementPriority.must,
     this.status = SpecPortfolioStatus.draft,
-    this.currentStage = SpecForgeStage.lexicon,
+    SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
@@ -83,7 +84,12 @@ class SpecFeatureSpec {
     UxForgeSpec? uxSpec,
     QaForgeSpec? qaSpec,
     CostForgeSpec? costSpec,
-  }) : vision = vision ?? SpecVision.empty,
+  }) : disabledSpecStages = _normalizeDisabledSpecStages(disabledSpecStages),
+       currentStage = _normalizeCurrentStage(
+         currentStage,
+         _normalizeDisabledSpecStages(disabledSpecStages),
+       ),
+       vision = vision ?? SpecVision.empty,
        cahierDesCharges = cahierDesCharges ?? SpecCahierDesCharges.empty,
        eventStorming = eventStorming ?? EventStormingSpec.empty,
        businessObjects = List<BusinessObjectSpec>.unmodifiable(businessObjects),
@@ -126,6 +132,7 @@ class SpecFeatureSpec {
     String targetRelease = '',
     RequirementPriority priority = RequirementPriority.must,
     SpecPortfolioStatus status = SpecPortfolioStatus.draft,
+    Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
   }) {
     final featureId = (id != null && id.trim().isNotEmpty)
         ? id.trim()
@@ -140,6 +147,7 @@ class SpecFeatureSpec {
       priority: priority,
       status: status,
       currentStage: SpecForgeStage.lexicon,
+      disabledSpecStages: disabledSpecStages,
       vision: trimmedDesc.isNotEmpty
           ? SpecVision(ideaSummary: trimmedDesc)
           : SpecVision.empty,
@@ -157,6 +165,7 @@ class SpecFeatureSpec {
   factory SpecFeatureSpec.createDefault({
     String initialIdea = '',
     SpecForgeStage currentStage = SpecForgeStage.lexicon,
+    Set<SpecForgeStage> disabledSpecStages = const <SpecForgeStage>{},
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
@@ -179,6 +188,7 @@ class SpecFeatureSpec {
       code: defaultFeatureCode,
       name: defaultFeatureName,
       currentStage: currentStage,
+      disabledSpecStages: disabledSpecStages,
       vision: effectiveVision,
       cahierDesCharges: cahierDesCharges,
       eventStorming: eventStorming,
@@ -216,6 +226,50 @@ class SpecFeatureSpec {
 
   /// Étape courante sélectionnée dans le Wizard de spécification pour cette feature.
   final SpecForgeStage currentStage;
+
+  /// Ensemble des étapes optionnelles (ex. Event Storming, Example Mapping)
+  /// désactivées dans le Wizard de spécification pour cette feature.
+  final Set<SpecForgeStage> disabledSpecStages;
+
+  /// Vrai si [stage] est active dans le parcours de spécification de cette feature.
+  bool isStageEnabled(SpecForgeStage stage) =>
+      !disabledSpecStages.contains(stage);
+
+  /// Étapes ordonnées actives dans le Wizard de spécification (incluant le Lexique partagé).
+  List<SpecForgeStage> get enabledSpecStages => <SpecForgeStage>[
+    for (final stage in SpecForgeStage.values)
+      if (isStageEnabled(stage)) stage,
+  ];
+
+  /// Étapes actives propres à cette feature (sous-ensemble de [featureScopedStages]).
+  List<SpecForgeStage> get enabledFeatureScopedStages => <SpecForgeStage>[
+    for (final stage in featureScopedStages)
+      if (isStageEnabled(stage)) stage,
+  ];
+
+  /// Numéro d'ordre dynamique (1-based) de [stage] dans le parcours actif de cette feature.
+  int stepNumberFor(SpecForgeStage stage) {
+    final idx = enabledSpecStages.indexOf(stage);
+    return idx >= 0 ? idx + 1 : stage.stepNumber;
+  }
+
+  /// Étape active suivante après [stage], ou `null` s'il n'y en a aucune.
+  SpecForgeStage? nextEnabledStage(SpecForgeStage stage) {
+    for (var i = stage.index + 1; i < SpecForgeStage.values.length; i++) {
+      final candidate = SpecForgeStage.values[i];
+      if (isStageEnabled(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  /// Étape active précédente avant [stage], ou `null` s'il n'y en a aucune.
+  SpecForgeStage? previousEnabledStage(SpecForgeStage stage) {
+    for (var i = stage.index - 1; i >= 0; i--) {
+      final candidate = SpecForgeStage.values[i];
+      if (isStageEnabled(candidate)) return candidate;
+    }
+    return null;
+  }
 
   /// Livrable de l'étape 2 (Cadrage & Acteurs).
   final SpecVision vision;
@@ -298,27 +352,30 @@ class SpecFeatureSpec {
     return featureScopedStages.every((s) => stageStateFor(s).messages.isEmpty);
   }
 
-  /// Nombre d'étapes métier propres à la feature (étapes 2..8) validées.
+  /// Nombre d'étapes métier propres à la feature (étapes actives parmi 2..8) validées.
   int get validatedFeatureStagesCount => [
-    for (final stage in featureScopedStages)
+    for (final stage in enabledFeatureScopedStages)
       if (stageStateFor(stage).status == SpecStageStatus.validated) stage,
   ].length;
 
   /// Statut effectif affiché (passe automatiquement en `En cours` si `draft` mais déjà travaillée).
   SpecPortfolioStatus get effectiveStatus {
     if (status != SpecPortfolioStatus.draft) return status;
-    if (validatedFeatureStagesCount == featureScopedStages.length) {
+    final scoped = enabledFeatureScopedStages;
+    if (scoped.isNotEmpty && validatedFeatureStagesCount == scoped.length) {
       return SpecPortfolioStatus.validated;
     }
-    final hasWorkedStage = featureScopedStages.any((s) {
+    final hasWorkedStage = scoped.any((s) {
       final st = stageStateFor(s);
       return st.messages.isNotEmpty || st.status == SpecStageStatus.validated;
     });
     if (hasWorkedStage ||
         cahierDesCharges.hasContent ||
-        eventStorming.hasContent ||
+        (isStageEnabled(SpecForgeStage.eventStorming) &&
+            eventStorming.hasContent) ||
         businessObjects.isNotEmpty ||
-        exampleMappings.isNotEmpty ||
+        (isStageEnabled(SpecForgeStage.exampleMapping) &&
+            exampleMappings.isNotEmpty) ||
         businessRules.isNotEmpty ||
         uxSpec.hasContent ||
         qaSpec.hasContent ||
@@ -385,6 +442,7 @@ class SpecFeatureSpec {
     RequirementPriority? priority,
     SpecPortfolioStatus? status,
     SpecForgeStage? currentStage,
+    Set<SpecForgeStage>? disabledSpecStages,
     SpecVision? vision,
     SpecCahierDesCharges? cahierDesCharges,
     EventStormingSpec? eventStorming,
@@ -405,6 +463,7 @@ class SpecFeatureSpec {
     priority: priority ?? this.priority,
     status: status ?? this.status,
     currentStage: currentStage ?? this.currentStage,
+    disabledSpecStages: disabledSpecStages ?? this.disabledSpecStages,
     vision: vision ?? this.vision,
     cahierDesCharges: cahierDesCharges ?? this.cahierDesCharges,
     eventStorming: eventStorming ?? this.eventStorming,
@@ -428,6 +487,8 @@ class SpecFeatureSpec {
     'priority': priority.name,
     'status': status.name,
     'currentStage': currentStage.name,
+    if (disabledSpecStages.isNotEmpty)
+      'disabledSpecStages': [for (final s in disabledSpecStages) s.name],
   };
 
   /// Sérialise la feature complète (métadonnées + livrables des 4 wizards) en JSON.
@@ -478,6 +539,7 @@ class SpecFeatureSpec {
       priority: RequirementPriority.fromJson(raw['priority']),
       status: SpecPortfolioStatus.fromJson(raw['status']),
       currentStage: SpecForgeStage.fromJson(raw['currentStage']),
+      disabledSpecStages: parseDisabledSpecStages(raw['disabledSpecStages']),
       vision: SpecVision.fromJson(raw['vision']),
       cahierDesCharges: SpecCahierDesCharges.fromJson(raw['cahierDesCharges']),
       eventStorming: EventStormingSpec.fromJson(raw['eventStorming']),
@@ -510,6 +572,47 @@ class SpecFeatureSpec {
     return feature;
   }
 
+  /// Désérialise une liste JSON de noms d'étapes optionnelles désactivées.
+  static Set<SpecForgeStage> parseDisabledSpecStages(Object? raw) {
+    if (raw is! Iterable) return const <SpecForgeStage>{};
+    final parsed = <SpecForgeStage>{};
+    for (final item in raw) {
+      final stage = item is SpecForgeStage
+          ? item
+          : SpecForgeStage.tryFromJson(item);
+      if (stage != null && stage.isOptional) {
+        parsed.add(stage);
+      }
+    }
+    return _normalizeDisabledSpecStages(parsed);
+  }
+
+  static Set<SpecForgeStage> _normalizeDisabledSpecStages(
+    Set<SpecForgeStage> source,
+  ) {
+    if (source.isEmpty) return const <SpecForgeStage>{};
+    return Set<SpecForgeStage>.unmodifiable(<SpecForgeStage>{
+      for (final stage in SpecForgeStage.optionalStages)
+        if (source.contains(stage)) stage,
+    });
+  }
+
+  static SpecForgeStage _normalizeCurrentStage(
+    SpecForgeStage stage,
+    Set<SpecForgeStage> disabled,
+  ) {
+    if (!disabled.contains(stage)) return stage;
+    for (var i = stage.index - 1; i >= 0; i--) {
+      final candidate = SpecForgeStage.values[i];
+      if (!disabled.contains(candidate)) return candidate;
+    }
+    for (var i = stage.index + 1; i < SpecForgeStage.values.length; i++) {
+      final candidate = SpecForgeStage.values[i];
+      if (!disabled.contains(candidate)) return candidate;
+    }
+    return SpecForgeStage.lexicon;
+  }
+
   static Map<SpecForgeStage, SpecStageState> _normalizeFeatureStageStates(
     Map<SpecForgeStage, SpecStageState>? source,
   ) => <SpecForgeStage, SpecStageState>{
@@ -526,7 +629,8 @@ class SpecFeatureSpec {
       targetRelease == other.targetRelease &&
       priority == other.priority &&
       status == other.status &&
-      currentStage == other.currentStage;
+      currentStage == other.currentStage &&
+      setEquals(disabledSpecStages, other.disabledSpecStages);
 
   @override
   bool operator ==(Object other) =>
@@ -555,6 +659,7 @@ class SpecFeatureSpec {
     priority,
     status,
     currentStage,
+    Object.hashAll(disabledSpecStages),
     vision,
     cahierDesCharges,
     eventStorming,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
 
@@ -777,20 +778,25 @@ void main() {
     );
 
     testWidgets(
-      'ExampleMappingEditorView : le panneau gauche des stories est redimensionnable et se réinitialise au double-clic',
+      'ExampleMappingEditorView : le panneau gauche des stories est redimensionnable, persiste sa largeur et se réinitialise au double-clic',
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1280, 860));
         addTearDown(() => tester.binding.setSurfaceSize(null));
+        SharedPreferences.setMockInitialValues(<String, Object>{});
 
         final store = _MemProjectStore()..seed(_buildSampleProject());
-        final controller = SpecForgeController(
+        SpecForgeController makeController() => SpecForgeController(
           store: store,
           glossaryStore: _MemGlossaryStore(),
           modelDictionaryStore: _MemDictStore(),
           domainCatalogStore: _MemDomainStore(),
           enterpriseRateCardStore: _MemRateCardStore(),
+          workspaceStore: SpecWorkspaceStore(),
           aiService: _FakeExampleMapperAi(),
         );
+
+        final controller = makeController();
+        addTearDown(controller.dispose);
         await controller.initialize();
 
         await tester.pumpWidget(
@@ -817,11 +823,36 @@ void main() {
         final widened = tester.getSize(paneFinder).width;
         expect(widened, greaterThan(initialWidth));
 
+        // Un nouveau contrôleur recharge la largeur persistée.
+        final reloadedController = makeController();
+        addTearDown(reloadedController.dispose);
+        await reloadedController.initialize();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ExampleMappingEditorView(controller: reloadedController),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.getSize(paneFinder).width, widened);
+
+        // Double-clic réinitialise et persiste la suppression.
         await tester.tap(handleFinder);
         await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(handleFinder);
         await tester.pumpAndSettle();
         expect(tester.getSize(paneFinder).width, initialWidth);
+
+        final resetController = makeController();
+        addTearDown(resetController.dispose);
+        await resetController.initialize();
+        expect(
+          resetController.panelWidth(
+            SpecForgeController.exampleMappingMasterPanelKey,
+          ),
+          isNull,
+        );
       },
     );
   });

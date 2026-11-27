@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_spec_forge/main.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
@@ -60,6 +61,53 @@ class _MemorySpecProjectStore extends SpecProjectStore {
   Future<void> setLastActiveProjectId(String? projectId) async {
     _lastActiveId = projectId;
   }
+}
+
+class _MemoryGlossaryStore extends CompanyGlossaryStore {
+  _MemoryGlossaryStore() : super(Directory('memory_portfolio_store'));
+
+  @override
+  Future<CompanyGlossary> loadGlossary() async => CompanyGlossary.empty;
+
+  @override
+  Future<void> saveGlossary(CompanyGlossary glossary) async {}
+
+  @override
+  Future<List<SpecChatMessage>> loadChatMessages() async => const [];
+
+  @override
+  Future<void> saveChatMessages(List<SpecChatMessage> messages) async {}
+}
+
+class _MemoryDictStore extends ModelDictionaryStore {
+  _MemoryDictStore() : super(Directory('memory_portfolio_store'));
+
+  @override
+  Future<BusinessObjectModelPreferences> load() async =>
+      BusinessObjectModelPreferences.defaults;
+
+  @override
+  Future<void> save(BusinessObjectModelPreferences preferences) async {}
+}
+
+class _MemoryDomainStore extends DomainCatalogStore {
+  _MemoryDomainStore() : super(Directory('memory_portfolio_store'));
+
+  @override
+  Future<DomainCatalog> load() async => DomainCatalog.empty;
+
+  @override
+  Future<void> save(DomainCatalog catalog) async {}
+}
+
+class _MemoryRateCardStore extends EnterpriseRateCardStore {
+  _MemoryRateCardStore() : super(Directory('memory_portfolio_store'));
+
+  @override
+  Future<EnterpriseRateCard> load() async => EnterpriseRateCard.defaults;
+
+  @override
+  Future<void> save(EnterpriseRateCard card) async {}
 }
 
 class _FakePortfolioAiService implements SpecAiService {
@@ -367,13 +415,294 @@ void main() {
 
       await tester.drag(treeHandleFinder, const Offset(90, 0));
       await tester.pumpAndSettle();
-      expect(tester.getSize(treePaneFinder).width, greaterThan(initialTreeWidth));
+      final widenedTreeWidth = tester.getSize(treePaneFinder).width;
+      expect(widenedTreeWidth, greaterThan(initialTreeWidth));
+
+      // Navigation vers un wizard puis retour : la taille du panneau gauche reste conservée.
+      final specCardAfterResize = find.byKey(
+        const ValueKey('portfolio-open-wizard-spec'),
+      );
+      await tester.ensureVisible(specCardAfterResize);
+      await tester.pumpAndSettle();
+      await tester.tap(specCardAfterResize);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(treePaneFinder).width, widenedTreeWidth);
 
       await tester.tap(treeHandleFinder);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(treeHandleFinder);
       await tester.pumpAndSettle();
       expect(tester.getSize(treePaneFinder).width, initialTreeWidth);
+    },
+  );
+
+  testWidgets(
+    'ProjectInitiativesView : la largeur redimensionnée du panneau gauche persiste après redémarrage du contrôleur',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final store = _MemorySpecProjectStore();
+      final project = SpecForgeProject.fromIdea(
+        id: 'proj_persist',
+        name: 'AutoFleet',
+        idea: 'Gestion de flotte',
+      );
+      await store.saveProject(project);
+
+      SpecForgeController makeController() => SpecForgeController(
+        store: store,
+        glossaryStore: _MemoryGlossaryStore(),
+        modelDictionaryStore: _MemoryDictStore(),
+        domainCatalogStore: _MemoryDomainStore(),
+        enterpriseRateCardStore: _MemoryRateCardStore(),
+        workspaceStore: SpecWorkspaceStore(),
+        aiService: _FakePortfolioAiService(),
+      );
+
+      final controller1 = makeController();
+      addTearDown(controller1.dispose);
+      await controller1.initialize();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectInitiativesView(
+              controller: controller1,
+              onOpenWizard: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final treePaneFinder = find.byKey(const ValueKey('portfolio-tree-pane'));
+      final treeHandleFinder = find.byKey(
+        const ValueKey('portfolio-tree-split-handle'),
+      );
+      final initialWidth = tester.getSize(treePaneFinder).width;
+      expect(initialWidth, 370.0);
+
+      await tester.drag(treeHandleFinder, const Offset(90, 0));
+      await tester.pumpAndSettle();
+      final widenedWidth = tester.getSize(treePaneFinder).width;
+      expect(widenedWidth, greaterThan(initialWidth));
+
+      // Nouveau contrôleur rechargé depuis SharedPreferences.
+      final controller2 = makeController();
+      addTearDown(controller2.dispose);
+      await controller2.initialize();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectInitiativesView(
+              controller: controller2,
+              onOpenWizard: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(treePaneFinder).width, widenedWidth);
+
+      // Double-clic réinitialise et efface la préférence persistée.
+      await tester.tap(treeHandleFinder);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(treeHandleFinder);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(treePaneFinder).width, initialWidth);
+
+      final controller3 = makeController();
+      addTearDown(controller3.dispose);
+      await controller3.initialize();
+      expect(
+        controller3.panelWidth(SpecForgeController.portfolioTreePanelKey),
+        isNull,
+      );
+    },
+  );
+
+  testWidgets(
+    'Initiatives & Features : choix par feature des étapes optionnelles (Event Storming & Example Mapping) répercuté dans le Wizard Spec',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final store = _MemorySpecProjectStore();
+      final now = DateTime.utc(2026, 6, 1);
+      final seeded = SpecForgeProject(
+        id: 'proj_stages_ui',
+        name: 'FleetStages',
+        initialIdea: 'Gestion de flotte',
+        createdAt: now,
+        updatedAt: now,
+        initiatives: [
+          SpecInitiative(
+            id: 'init_1',
+            code: 'INIT-01',
+            name: 'Socle',
+            features: [
+              SpecFeatureSpec.create(
+                id: 'feat_a',
+                code: 'FEAT-01',
+                name: 'Feature rapide',
+                description: 'Sans Event Storming ni Example Mapping.',
+              ),
+              SpecFeatureSpec.create(
+                id: 'feat_b',
+                code: 'FEAT-02',
+                name: 'Feature complète',
+                description: 'Conserve toutes les étapes.',
+              ),
+            ],
+          ),
+        ],
+        activeFeatureId: 'feat_a',
+      );
+      await store.saveProject(seeded);
+
+      final controller = SpecForgeController(
+        store: store,
+        glossaryStore: _MemoryGlossaryStore(),
+        modelDictionaryStore: _MemoryDictStore(),
+        domainCatalogStore: _MemoryDomainStore(),
+        enterpriseRateCardStore: _MemoryRateCardStore(),
+        workspaceStore: SpecWorkspaceStore(),
+        aiService: _FakePortfolioAiService(),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+
+      await tester.pumpWidget(SuperSpecForgeApp(controller: controller));
+      await tester.pumpAndSettle();
+
+      // 1. Ouvre la page Initiatives & Features.
+      await tester.tap(find.text(SpecLinksView.initiativesLabel));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('portfolio-feature-spec-stages-card')),
+        findsOneWidget,
+      );
+      expect(find.text('Étapes de spécification (8/8 actives)'), findsOneWidget);
+
+      // 2. Désactive Event Storming puis Example Mapping sur feat_a.
+      await tester.tap(
+        find.byKey(
+          const ValueKey('portfolio-feature-stage-toggle-eventStorming'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Étapes de spécification (7/8 actives)'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('portfolio-feature-stage-toggle-exampleMapping'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Étapes de spécification (6/8 actives)'), findsOneWidget);
+      expect(
+        controller.project!.featureById('feat_a')!.disabledSpecStages,
+        const {SpecForgeStage.eventStorming, SpecForgeStage.exampleMapping},
+      );
+      expect(
+        controller.project!.featureById('feat_b')!.disabledSpecStages,
+        isEmpty,
+      );
+
+      // 3. Crée une 3e feature via le dialogue en décochant Event Storming.
+      await tester.tap(
+        find.byKey(const ValueKey('portfolio-add-feature-btn')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('portfolio-feature-name-field')),
+        'Feature sans ES',
+      );
+      await tester.pump();
+      final esCheckbox = find.byKey(
+        const ValueKey('portfolio-feature-dialog-stage-eventStorming'),
+      );
+      await tester.ensureVisible(esCheckbox);
+      await tester.pumpAndSettle();
+      await tester.tap(esCheckbox);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('portfolio-feature-save-btn')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        controller.project!.activeFeature.disabledSpecStages,
+        const {SpecForgeStage.eventStorming},
+      );
+      expect(find.text('Étapes de spécification (7/8 actives)'), findsOneWidget);
+
+      // 4. Revient sur feat_a (6 étapes actives) et ouvre le Wizard Spec.
+      await tester.tap(
+        find.byKey(const ValueKey('portfolio-feature-tile-feat_a')),
+      );
+      await tester.pumpAndSettle();
+      final openSpecCard = find.byKey(
+        const ValueKey('portfolio-open-wizard-spec'),
+      );
+      await tester.ensureVisible(openSpecCard);
+      await tester.pumpAndSettle();
+      await tester.tap(openSpecCard);
+      await tester.pumpAndSettle();
+
+      // Le stepper masque Event Storming et Example Map.
+      final stepper = find.byType(SpecWizardStepper);
+      expect(stepper, findsOneWidget);
+      expect(
+        find.descendant(of: stepper, matching: find.text('Event Storming')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: stepper, matching: find.text('Example Map')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: stepper, matching: find.text('Objets métiers')),
+        findsOneWidget,
+      );
+
+      // Avance depuis Cahier des charges -> saute directement à Objets métiers,
+      // puis depuis Objets métiers -> saute directement à Règles de gestion.
+      await controller.goToStage(SpecForgeStage.specifications);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Valider & Suivant'));
+      await tester.pumpAndSettle();
+      expect(controller.project!.currentStage, SpecForgeStage.businessObjects);
+
+      await tester.tap(find.text('Valider & Suivant'));
+      await tester.pumpAndSettle();
+      expect(controller.project!.currentStage, SpecForgeStage.businessRules);
+
+      // 5. Bascule sur feat_b (8 étapes actives) via le sélecteur AppBar :
+      // Event Storming et Example Map réapparaissent dans le stepper.
+      await tester.tap(
+        find.byKey(const ValueKey('spec-appbar-feature-switcher')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('spec-appbar-feature-item-feat_b')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: stepper, matching: find.text('Event Storming')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: stepper, matching: find.text('Example Map')),
+        findsOneWidget,
+      );
     },
   );
 }

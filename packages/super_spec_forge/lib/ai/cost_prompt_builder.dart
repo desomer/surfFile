@@ -13,7 +13,6 @@ import '../models/enterprise_rate_card.dart';
 import '../models/event_storming_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
 import '../models/spec_forge_project.dart';
-import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
 import '../models/ux/ux_forge_stage.dart';
 import 'cost_stage_agent.dart';
@@ -248,9 +247,9 @@ abstract final class CostPromptBuilder {
     ).convert(SpecForgeToolRegistry.buildCostSummaryJson(project.costSpec));
 
     final previousSummaries = <String>[
-      for (final specStage in SpecForgeStage.values)
+      for (final specStage in project.enabledSpecStages)
         if (project.stageStateFor(specStage).stageSummary.trim().isNotEmpty)
-          '- Spec ${specStage.stepNumber} (${specStage.title}) : '
+          '- Spec ${project.stepNumberFor(specStage)} (${specStage.title}) : '
               '${project.stageStateFor(specStage).stageSummary.trim()}',
       if (project.uxSpec.hasContent)
         for (final uxStage in UxForgeStage.values)

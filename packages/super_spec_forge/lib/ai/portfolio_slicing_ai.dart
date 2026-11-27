@@ -9,6 +9,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_forge_project.dart';
+import '../models/spec_forge_stage.dart';
 import '../models/spec_initiative.dart';
 import '../models/spec_stage_chat.dart';
 
@@ -142,6 +143,10 @@ Règles de fusion :
                     'targetRelease': feat.targetRelease,
                   'priority': feat.priority.name,
                   'status': feat.status.name,
+                  if (feat.disabledSpecStages.isNotEmpty)
+                    'disabledSpecStages': [
+                      for (final s in feat.disabledSpecStages) s.name,
+                    ],
                   'hasWizardDeliverables': feat.hasDeliverableContent,
                   'objectCount': feat.businessObjects.length,
                   'ruleCount': feat.businessRules.length,
@@ -372,6 +377,11 @@ Règles de fusion :
             final featStatus = rawFeat['status'] != null
                 ? SpecPortfolioStatus.fromJson(rawFeat['status'])
                 : (prevFeat?.status ?? SpecPortfolioStatus.draft);
+            final featDisabledStages = rawFeat.containsKey('disabledSpecStages')
+                ? SpecFeatureSpec.parseDisabledSpecStages(
+                    rawFeat['disabledSpecStages'],
+                  )
+                : (prevFeat?.disabledSpecStages ?? const <SpecForgeStage>{});
 
             final SpecFeatureSpec nextFeat;
             if (prevFeat != null) {
@@ -388,6 +398,7 @@ Règles de fusion :
                 targetRelease: featRelease,
                 priority: featPriority,
                 status: featStatus,
+                disabledSpecStages: featDisabledStages,
                 vision: nextVision,
               );
               updatedFeatures++;
@@ -400,6 +411,7 @@ Règles de fusion :
                 targetRelease: featRelease,
                 priority: featPriority,
                 status: featStatus,
+                disabledSpecStages: featDisabledStages,
               );
               addedFeatures++;
             }

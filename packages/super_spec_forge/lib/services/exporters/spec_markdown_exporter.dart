@@ -7,6 +7,7 @@ import '../../models/company_glossary.dart';
 import '../../models/event_storming_spec.dart';
 import '../../models/spec_coherence_issue.dart';
 import '../../models/spec_forge_project.dart';
+import '../../models/spec_forge_stage.dart';
 import '../cost_calculator.dart';
 import '../spec_coherence_analyzer.dart';
 
@@ -34,9 +35,13 @@ abstract final class SpecMarkdownExporter {
     _writeLexicon(buf, project, companyGlossary: companyGlossary);
     _writeVision(buf, project);
     _writeCahierDesCharges(buf, project);
-    _writeEventStorming(buf, project);
+    if (project.isStageEnabled(SpecForgeStage.eventStorming)) {
+      _writeEventStorming(buf, project);
+    }
     _writeBusinessObjects(buf, project);
-    _writeExampleMapping(buf, project);
+    if (project.isStageEnabled(SpecForgeStage.exampleMapping)) {
+      _writeExampleMapping(buf, project);
+    }
     _writeBusinessRules(buf, project);
     _writeCoherenceReport(buf, project);
     _writeCostSummary(buf, project);

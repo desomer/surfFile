@@ -249,7 +249,8 @@ abstract final class SpecCoherenceAnalyzer {
 
     // 2 bis. Contrôles d'Event Storming DSL v1.0 (Étape 4)
     final es = project.eventStorming;
-    if (es.documents.isNotEmpty) {
+    if (project.isStageEnabled(SpecForgeStage.eventStorming) &&
+        es.documents.isNotEmpty) {
       for (final doc in es.documents) {
         final diagnostics = EventStormingDslCodec.validateDocument(
           doc,
@@ -588,7 +589,8 @@ abstract final class SpecCoherenceAnalyzer {
     }
 
     // 3 bis. Contrôles d'Example Mapping (Étape 6)
-    if (project.exampleMappings.isNotEmpty) {
+    if (project.isStageEnabled(SpecForgeStage.exampleMapping) &&
+        project.exampleMappings.isNotEmpty) {
       final mappedObjectIds = <String>{};
       final rulesByIdOrCode = <String, BusinessRuleSpec>{
         for (final r in project.businessRules) ...{
