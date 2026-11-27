@@ -10,7 +10,6 @@ import '../../models/domain_catalog.dart';
 import '../../services/domain_env_exporter.dart';
 import '../../services/domain_secret_cipher.dart';
 import '../../services/spec_forge_controller.dart';
-import '../build/build_tech_stacks_dialog.dart';
 
 /// Vue de gestion des domaines fonctionnels depuis le menu Design.
 class DomainManagementView extends StatefulWidget {
@@ -158,31 +157,11 @@ class _DomainManagementViewState extends State<DomainManagementView> {
               ),
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 10,
-            children: [
-              OutlinedButton.icon(
-                key: const ValueKey('domain-manage-tech-stacks-btn'),
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-                onPressed: () => showBuildTechStacksDialog(
-                  context,
-                  controller: widget.controller,
-                ),
-                icon: const Icon(Icons.layers_rounded, size: 16),
-                label: Text(
-                  'Stacks techniques (${catalog.techStacks.length})',
-                ),
-              ),
-              Text(
-                'Catalogue local au workspace',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ],
+          Text(
+            'Catalogue local au workspace',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
       ),

@@ -765,6 +765,12 @@ void main() {
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-build-menu-view')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.pumpAndSettle();
 
       expect(find.text('Ajoutez un domaine pour commencer.'), findsOneWidget);
       final manageBtn = find.byKey(const ValueKey('build-manage-domains-btn'));
@@ -774,6 +780,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Design › Gestion des domaines'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('domain-manage-tech-stacks-btn')),
+        findsNothing,
+      );
     },
   );
 
@@ -797,6 +807,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Build'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
       await tester.pumpAndSettle();
 
       // Vérifie l'affichage des 3 sections du premier domaine (Facturation).
@@ -960,7 +972,12 @@ void main() {
         findsOneWidget,
       );
       expect(find.byKey(const ValueKey('build-prompts-crumb')), findsOneWidget);
-      expect(find.text('Build › Sélection des Prompts IA'), findsOneWidget);
+      expect(
+        find.text(
+          'Build › ${BuildLinksView.agenticPromptsLabel} › Sélection des Prompts IA',
+        ),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
         findsOneWidget,
@@ -1076,7 +1093,7 @@ void main() {
       expect(find.text('Sélection des Prompts IA (3)'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
-        findsNothing,
+        findsOneWidget,
       );
 
       // Changement de domaine via le fil d'Ariane -> synchronise activeDesignDomainId.
@@ -1177,6 +1194,15 @@ void main() {
             prompt.promptMarkdown,
             contains('identique au domaine principal'),
           );
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('CONTRAINTES TESTS OBLIGATOIRES'),
+              contains('npm: test:domain'),
+              contains('domain/models/**/*.spec.ts'),
+              contains('@ai-modification-guide'),
+            ),
+          );
         case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.implementation):
           expect(
             prompt.promptMarkdown,
@@ -1196,17 +1222,48 @@ void main() {
         case (BuildTechStackSection.useCaseSaga, BuildHexaPromptRole.unitTest):
           expect(
             prompt.promptMarkdown,
-            contains('identique au domaine principal'),
+            contains('src/\n└── core/\n    └── billing/\n        └── application/'),
+          );
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('CONTRAINTES TESTS OBLIGATOIRES'),
+              contains('src/core/billing/application/**/*.spec.ts'),
+              contains('npm: test:usecase'),
+              contains('@coverage'),
+              contains('compensationMatrix'),
+            ),
           );
         case (BuildTechStackSection.outbound, BuildHexaPromptRole.implementation):
-          expect(prompt.promptMarkdown, contains('└── outbound/'));
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('└── outbound/'),
+              contains('external-api/'),
+              contains('avro/'),
+              contains('storage/'),
+              contains('Anti-Corruption Layer'),
+              contains('core/billing/ports/'),
+              contains('AdapterImpl'),
+            ),
+          );
         case (BuildTechStackSection.outbound, BuildHexaPromptRole.unitTest):
           expect(
             prompt.promptMarkdown,
             contains('identique au domaine principal'),
           );
         case (BuildTechStackSection.inbound, BuildHexaPromptRole.implementation):
-          expect(prompt.promptMarkdown, contains('└── inbound/'));
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('└── inbound/'),
+              contains('dto-in/'),
+              contains('dto-out/'),
+              contains('route_style: restful'),
+              contains('RESTful API Design Guidelines'),
+              contains('DTO → Command → Handler → Domain → Response'),
+            ),
+          );
         case (BuildTechStackSection.inbound, BuildHexaPromptRole.unitTest):
           expect(prompt.promptMarkdown, contains('└── inbound/'));
         case (BuildTechStackSection.persistence, BuildHexaPromptRole.implementation):
@@ -1232,20 +1289,47 @@ void main() {
           );
         case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.implementation):
           expect(prompt.promptMarkdown, contains('├── main.ts'));
-          expect(prompt.promptMarkdown, contains('endpoint de santé (`/health`)'));
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('Fastify comme adapter HTTP'),
+              contains('nestjs-pino'),
+              contains('x-correlation-id'),
+              contains('emitDecoratorMetadata'),
+              contains(r'MONGODB_DB_NAME=$currentApp'),
+            ),
+          );
         case (BuildTechStackSection.boilerplate, BuildHexaPromptRole.unitTest):
           expect(prompt.promptMarkdown, contains('└── shared/'));
         case (BuildTechStackSection.devTools, BuildHexaPromptRole.implementation):
-          expect(prompt.promptMarkdown, contains('eslint.config.mjs'));
-          expect(prompt.promptMarkdown, contains('`typecheck`, `lint`'));
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('eslint.config.mjs'),
+              contains('`typecheck`, `lint`'),
+              contains('docker/mongo'),
+              contains('docker/pubsub'),
+              contains('pubsub-emulator-ui'),
+            ),
+          );
         case (BuildTechStackSection.devTools, BuildHexaPromptRole.unitTest):
           expect(prompt.promptMarkdown, contains('└── architecture/'));
         case (
           BuildTechStackSection.checkIntegration,
           BuildHexaPromptRole.implementation,
         ):
-          expect(prompt.promptMarkdown, contains('└── integration/'));
-          expect(prompt.promptMarkdown, contains('billing.module.ts'));
+          expect(
+            prompt.promptMarkdown,
+            allOf(
+              contains('└── integration/'),
+              contains('billing.module.ts'),
+              contains('MongooseModule.forRoot'),
+              contains('SchemaFactory.createForClass'),
+              contains('LoggerModule'),
+              contains('emitDecoratorMetadata'),
+              contains('*.probe.ts'),
+            ),
+          );
         case (
           BuildTechStackSection.checkIntegration,
           BuildHexaPromptRole.unitTest,
@@ -1317,16 +1401,21 @@ void main() {
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
 
-      // Ouvre l'éditeur de stacks depuis Build (quasi plein écran avec onglets par rôle) et crée une stack personnalisée.
-      await tester.tap(find.byKey(const ValueKey('build-manage-stacks-btn')));
-      await tester.pumpAndSettle();
-      final dialogFinder = find.byKey(
-        const ValueKey('build-tech-stacks-dialog'),
+      // Ouvre la page dédiée « Gestion des Stack technique » depuis le menu Build.
+      expect(
+        find.byKey(const ValueKey('spec-forge-build-menu-view')),
+        findsOneWidget,
       );
-      expect(dialogFinder, findsOneWidget);
-      final dialogSize = tester.getSize(dialogFinder);
-      expect(dialogSize.width, greaterThan(1300));
-      expect(dialogSize.height, greaterThan(800));
+      await tester.tap(find.byKey(const ValueKey('build-link-tech_stacks')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('build-tech-stacks-view')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Build › ${BuildLinksView.techStacksLabel}'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const ValueKey('tech-stack-add-btn')));
       await tester.pumpAndSettle();
@@ -1428,7 +1517,14 @@ void main() {
         isTrue,
       );
 
-      await tester.tap(find.byKey(const ValueKey('tech-stack-close-btn')));
+      // Revient au menu Build via l'AppBar puis ouvre « Génération des prompts agentiques ».
+      await tester.tap(find.byKey(const ValueKey('spec-forge-appbar-back-btn')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('spec-forge-build-menu-view')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
       await tester.pumpAndSettle();
 
       // Sélectionne la nouvelle stack pour le domaine Facturation.
@@ -1520,6 +1616,8 @@ void main() {
 
       await tester.tap(find.text('Build'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.pumpAndSettle();
 
       // Sélectionne un item de Facturation (encore sans stack) puis ouvre Prompts IA.
       await tester.tap(
@@ -1567,6 +1665,102 @@ void main() {
       );
       expect(
         find.textContaining('## Documentation IA'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'Build : éditeur de stack technique bascule entre aperçu Markdown des règles et édition',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final billing = _buildBillingDomain().copyWith(
+        techStackId: BuildTechStackProfile.defaultTsNestJsId,
+      );
+      final controller = _createController(
+        DomainCatalog(domains: <FunctionalDomain>[billing]),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      await tester.pumpWidget(
+        SuperSpecForgeApp(controller: controller, restoreLastProject: false),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Build'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('build-link-tech_stacks')));
+      await tester.pumpAndSettle();
+
+      // À l'ouverture d'une stack existante, l'aperçu Markdown est actif par défaut.
+      expect(
+        find.byKey(const ValueKey('tech-stack-mode-toggle')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-technical-preview')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-ai-documentation-preview')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-technical-field')),
+        findsNothing,
+      );
+
+      // Passe sur l'onglet Domain pour vérifier l'aperçu Markdown des consignes.
+      await tester.tap(find.byKey(const ValueKey('tech-stack-tab-domain')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey('tech-stack-ext-domain-implementation-preview'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('tech-stack-ext-domain-implementation-field'),
+        ),
+        findsNothing,
+      );
+
+      // Bascule en mode Édition et modifie les consignes Markdown.
+      await tester.tap(find.text('Édition'));
+      await tester.pumpAndSettle();
+      final domainExtField = find.byKey(
+        const ValueKey('tech-stack-ext-domain-implementation-field'),
+      );
+      expect(domainExtField, findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('tech-stack-ext-domain-implementation-preview'),
+        ),
+        findsNothing,
+      );
+
+      await tester.enterText(
+        domainExtField,
+        '## Règle customisée\n- Toujours valider via `create()`.',
+      );
+      await tester.pumpAndSettle();
+
+      // Rebascule en mode Aperçu : le Markdown rendu reflète la modification en direct.
+      await tester.tap(find.text('Aperçu'));
+      await tester.pumpAndSettle();
+      final previewFinder = find.byKey(
+        const ValueKey('tech-stack-ext-domain-implementation-preview'),
+      );
+      expect(previewFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: previewFinder,
+          matching: find.textContaining('Règle customisée', findRichText: true),
+        ),
         findsOneWidget,
       );
     },

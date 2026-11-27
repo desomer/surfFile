@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_spec_forge/super_spec_forge.dart';
+import 'package:super_spec_forge/widgets/workspace/event_storming/event_storming_dialogs.dart';
 
 const String _referenceGestionCommandesYaml = '''
 # yaml-language-server: \$schema=./es-dsl.schema.json
@@ -921,6 +922,145 @@ void main() {
           find.byKey(const ValueKey('spec-es-yaml-preview')),
           findsOneWidget,
         );
+      },
+    );
+
+    testWidgets(
+      'showEventStormStepDialog : aucun overflow RenderFlex avec de longs libellés catalogue',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(900, 760));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final doc = EventStormDocument(
+          id: 'long-labels',
+          meta: const EventStormMeta(
+            domain: 'E-Commerce',
+            boundedContext: 'Gestion avancée',
+            date: '2026-11-27',
+          ),
+          catalog: EventStormCatalog(
+            actors: const [
+              EventStormCatalogItem(
+                id: 'ACT-ADMIN-SUPER',
+                name: 'Administrateur plateforme e-commerce multi-boutiques',
+                type: EventStormActorType.human,
+              ),
+            ],
+            aggregates: const [
+              EventStormCatalogItem(
+                id: 'AGG-COMMANDE-CLIENT',
+                name: 'CommandeClientAvecHistoriqueEtValidationComplexe',
+              ),
+            ],
+            externalSystems: const [
+              EventStormCatalogItem(
+                id: 'EXT-PSP-INTERNAT',
+                name: 'Passerelle de Paiement Internationale 3DSecure v2',
+              ),
+            ],
+          ),
+        );
+
+        final initialStep = EventStormStep(
+          step: 1,
+          triggeredBy: EventStormTrigger.single('EVT-00'),
+          actor: 'ACT-ADMIN-SUPER',
+          command: EventStormCommand(name: 'Valider la commande'),
+          aggregate: 'AGG-COMMANDE-CLIENT',
+          externalSystem: 'EXT-PSP-INTERNAT',
+          domainEvent: EventStormDomainEvent(
+            id: 'EVT-01',
+            name: 'Commande validée',
+          ),
+          hotspots: const [
+            EventStormHotspot(
+              id: 'HS-01',
+              question: 'Vérifier le plafond ?',
+              severity: EventStormHotspotSeverity.high,
+              status: EventStormHotspotStatus.open,
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => Center(
+                  child: FilledButton(
+                    key: const ValueKey('open-step-dialog'),
+                    onPressed: () => showEventStormStepDialog(
+                      context,
+                      document: doc,
+                      step: initialStep,
+                    ),
+                    child: const Text('Ouvrir'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.byKey(const ValueKey('open-step-dialog')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Modifier Step 1'), findsOneWidget);
+        expect(find.byKey(const ValueKey('spec-es-step-help-btn')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'EventStormingEditorView : le bouton Aide cartes ouvre le guide détaillant chaque type de carte',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 860));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final store = _MemProjectStore()..seed(_buildSampleProject());
+        final controller = SpecForgeController(
+          store: store,
+          glossaryStore: _MemGlossaryStore(),
+          modelDictionaryStore: _MemDictStore(),
+          domainCatalogStore: _MemDomainStore(),
+          enterpriseRateCardStore: _MemRateCardStore(),
+          aiService: _FakeEventStormingAi(),
+        );
+        await controller.initialize();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: EventStormingEditorView(controller: controller),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('spec-es-help-btn')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('spec-es-help-dialog')), findsOneWidget);
+        expect(
+          find.text('Guide des cartes Event Storming (DSL v1.0)'),
+          findsOneWidget,
+        );
+        for (final badge in [
+          'ACTEUR',
+          'READ MODEL',
+          'POLITIQUE',
+          'COMMANDE',
+          'AGRÉGAT',
+          'SYSTÈME EXTERNE',
+          'ÉVÉNEMENT',
+          'OUTCOMES (OU)',
+          'HOTSPOT',
+        ]) {
+          expect(find.text(badge), findsOneWidget);
+        }
+
+        await tester.tap(find.byKey(const ValueKey('spec-es-help-close-btn')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('spec-es-help-dialog')), findsNothing);
       },
     );
   });

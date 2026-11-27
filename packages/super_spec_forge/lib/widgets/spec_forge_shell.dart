@@ -12,6 +12,8 @@ import '../models/ux/ux_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
 import '../services/spec_project_store.dart';
 import 'build/build_design_items_view.dart';
+import 'build/build_links_view.dart';
+import 'build/build_tech_stacks_dialog.dart';
 import 'cost_stage_ai_chat_pane.dart';
 import 'cost_wizard_stepper.dart';
 import 'design/company_glossary_view.dart';
@@ -103,6 +105,7 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   int _selectedRailIndex = 0;
   String? _activeSpecLinkId;
   String? _activeDesignLinkId;
+  String? _activeBuildLinkId;
   String? _initialModelsDomainId;
   ({SpecProjectStore workspace, String domainId, String? entryId})?
   _designDetail;
@@ -115,13 +118,20 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   }
 
   void _selectRail(int index) {
-    if (index == 2 && _selectedRailIndex == 2 && _buildNavController.level > 0) {
+    if (index == 2 &&
+        _selectedRailIndex == 2 &&
+        _activeBuildLinkId == 'agentic_prompts' &&
+        _buildNavController.level > 0) {
       _buildNavController.goBack();
       return;
     }
     setState(() {
       if (index == 0 && _selectedRailIndex == 0) _activeSpecLinkId = null;
       if (index == 1 && _selectedRailIndex == 1) _activeDesignLinkId = null;
+      if (index == 2 && _selectedRailIndex == 2) {
+        _activeBuildLinkId = null;
+        _buildNavController.reset();
+      }
       if (index != _selectedRailIndex || index == 1) {
         _designDetail = null;
         _modelsNavController.reset();
@@ -150,33 +160,65 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           );
   });
 
-  ({String tooltip, VoidCallback onBack})? _resolveBackAction() {
+  ({
+    String tooltip,
+    VoidCallback onBack,
+    String menuTooltip,
+    VoidCallback onMainMenu,
+  })?
+  _resolveBackAction() {
     switch (_selectedRailIndex) {
       case 0:
         if (_activeSpecLinkId == null) return null;
+        void goToSpecMenu() => setState(() => _activeSpecLinkId = null);
         return (
           tooltip: 'Retour au menu Spec',
-          onBack: () => setState(() => _activeSpecLinkId = null),
+          onBack: goToSpecMenu,
+          menuTooltip: 'Menu Spec',
+          onMainMenu: goToSpecMenu,
         );
       case 1:
         if (_activeDesignLinkId == null) return null;
+        void goToDesignMenu() => _selectDesignPage(null);
         if (_activeDesignLinkId == 'models_contracts') {
           final tooltip = switch (_modelsNavController.level) {
             0 => 'Retour au menu Design',
             1 => 'Retour à la liste des modèles et contrats',
             _ => 'Retour à la fiche du modèle',
           };
-          return (tooltip: tooltip, onBack: _modelsNavController.goBack);
+          return (
+            tooltip: tooltip,
+            onBack: _modelsNavController.goBack,
+            menuTooltip: 'Menu Design',
+            onMainMenu: goToDesignMenu,
+          );
         }
         return (
           tooltip: 'Retour au menu Design',
-          onBack: () => _selectDesignPage(null),
+          onBack: goToDesignMenu,
+          menuTooltip: 'Menu Design',
+          onMainMenu: goToDesignMenu,
         );
       case 2:
-        if (_buildNavController.level <= 0) return null;
+        if (_activeBuildLinkId == null) return null;
+        void goToBuildMenu() => setState(() {
+          _activeBuildLinkId = null;
+          _buildNavController.reset();
+        });
+        if (_activeBuildLinkId == 'agentic_prompts' &&
+            _buildNavController.level > 0) {
+          return (
+            tooltip: 'Retour aux items de design',
+            onBack: _buildNavController.goBack,
+            menuTooltip: 'Menu Build',
+            onMainMenu: goToBuildMenu,
+          );
+        }
         return (
-          tooltip: 'Retour aux items de design',
-          onBack: _buildNavController.goBack,
+          tooltip: 'Retour au menu Build',
+          onBack: goToBuildMenu,
+          menuTooltip: 'Menu Build',
+          onMainMenu: goToBuildMenu,
         );
       default:
         return null;
@@ -227,9 +269,14 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
         }
         return 'Design › $page';
       case 2:
-        return _buildNavController.level > 0
-            ? 'Build › Sélection des Prompts IA'
-            : 'Build';
+        return switch (_activeBuildLinkId) {
+          'tech_stacks' => 'Build › ${BuildLinksView.techStacksLabel}',
+          'agentic_prompts' =>
+            _buildNavController.level > 0
+                ? 'Build › ${BuildLinksView.agenticPromptsLabel} › Sélection des Prompts IA'
+                : 'Build › ${BuildLinksView.agenticPromptsLabel}',
+          _ => 'Build',
+        };
       default:
         return project == null ? 'Question' : 'Question — ${project.name}';
     }
@@ -285,14 +332,37 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
           appBar: AppBar(
             toolbarHeight: Theme.of(context).appBarTheme.toolbarHeight ?? 40,
             automaticallyImplyLeading: false,
+            leadingWidth: backAction != null ? 80 : null,
             leading: backAction != null
-                ? IconButton(
-                    key: const ValueKey('spec-forge-appbar-back-btn'),
-                    tooltip: backAction.tooltip,
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 20,
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    onPressed: backAction.onBack,
+                ? Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: const ValueKey('spec-forge-appbar-back-btn'),
+                          tooltip: backAction.tooltip,
+                          style: IconButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          onPressed: backAction.onBack,
+                        ),
+                        IconButton(
+                          key: const ValueKey('spec-forge-appbar-menu-btn'),
+                          tooltip: backAction.menuTooltip,
+                          style: IconButton.styleFrom(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          icon: const Icon(Icons.apps_rounded),
+                          onPressed: backAction.onMainMenu,
+                        ),
+                      ],
+                    ),
                   )
                 : null,
             title: Row(
@@ -461,22 +531,49 @@ class _SpecForgeShellState extends State<SpecForgeShell> {
   }
 
   Widget _buildBuildContent() {
-    return KeyedSubtree(
-      key: const ValueKey('spec-forge-build-view'),
-      child: BuildDesignItemsView(
+    final catalog = widget.controller.domainCatalog;
+    if (_activeBuildLinkId == 'tech_stacks') {
+      final activeDomainId = widget.controller.activeDesignDomainId;
+      final activeDomain = catalog.domains
+          .where((d) => d.id == activeDomainId)
+          .firstOrNull;
+      return BuildTechStacksView(
         key: ObjectKey(widget.controller.store),
         controller: widget.controller,
-        navigationController: _buildNavController,
-        onManageDomains: () {
+        initialStackId: activeDomain?.techStackId,
+      );
+    }
+    if (_activeBuildLinkId == 'agentic_prompts') {
+      return KeyedSubtree(
+        key: const ValueKey('spec-forge-build-view'),
+        child: BuildDesignItemsView(
+          key: ObjectKey(widget.controller.store),
+          controller: widget.controller,
+          navigationController: _buildNavController,
+          onManageDomains: () {
+            setState(() {
+              _selectedRailIndex = 1;
+              _activeDesignLinkId = 'domain_management';
+              _designDetail = null;
+              _modelsNavController.reset();
+              _buildNavController.reset();
+            });
+          },
+        ),
+      );
+    }
+    return BuildLinksView(
+      key: const ValueKey('spec-forge-build-menu-view'),
+      techStacksCount: catalog.techStacks.length,
+      domainsCount: catalog.domains.length,
+      onLinkTap: (item) {
+        if (item.id == 'tech_stacks' || item.id == 'agentic_prompts') {
           setState(() {
-            _selectedRailIndex = 1;
-            _activeDesignLinkId = 'domain_management';
-            _designDetail = null;
-            _modelsNavController.reset();
+            _activeBuildLinkId = item.id;
             _buildNavController.reset();
           });
-        },
-      ),
+        }
+      },
     );
   }
 

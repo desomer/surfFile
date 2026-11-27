@@ -1,7 +1,7 @@
 /// Dialogues d'édition et d'import/export pour l'atelier Event Storming DSL v1.0
 /// ([showEventStormDocumentDialog], [showEventStormCatalogItemDialog],
 /// [showEventStormStepDialog], [showEventStormYamlImportDialog],
-/// [showEventStormSchemaDialog]).
+/// [showEventStormSchemaDialog], [showEventStormCardsHelpDialog]).
 library;
 
 import 'package:flutter/services.dart';
@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../models/event_storming_spec.dart';
 import '../../../services/event_storming_operations.dart';
 import '../../../services/exporters/event_storming_dsl_codec.dart';
+import 'event_storming_step_column.dart';
 
 /// Catégorie d'entrée dans le bloc `catalog`.
 enum EventStormCatalogCategory {
@@ -93,6 +94,7 @@ Future<EventStormDocument?> showEventStormDocumentDialog(
                 ),
                 DropdownButtonFormField<EventStormFormat>(
                   initialValue: format,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Format d’atelier (`meta.format`)',
                   ),
@@ -100,7 +102,11 @@ Future<EventStormDocument?> showEventStormDocumentDialog(
                     for (final f in EventStormFormat.values)
                       DropdownMenuItem(
                         value: f,
-                        child: Text('${f.label} (${f.yamlValue})'),
+                        child: Text(
+                          '${f.label} (${f.yamlValue})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   onChanged: (v) {
@@ -230,6 +236,7 @@ Future<EventStormCatalogItem?> showEventStormCatalogItemDialog(
               if (category == EventStormCatalogCategory.actor)
                 DropdownButtonFormField<EventStormActorType>(
                   initialValue: actorType,
+                  isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Type d’acteur (`type`)',
                   ),
@@ -237,7 +244,11 @@ Future<EventStormCatalogItem?> showEventStormCatalogItemDialog(
                     for (final t in EventStormActorType.values)
                       DropdownMenuItem(
                         value: t,
-                        child: Text('${t.label} (${t.yamlValue})'),
+                        child: Text(
+                          '${t.label} (${t.yamlValue})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   onChanged: (v) {
@@ -387,10 +398,22 @@ Future<EventStormStep?> showEventStormStepDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) => AlertDialog(
-        title: Text(
-          step == null
-              ? 'Nouvelle étape (Step $nextStepNum)'
-              : 'Modifier Step ${step.step}',
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                step == null
+                    ? 'Nouvelle étape (Step $nextStepNum)'
+                    : 'Modifier Step ${step.step}',
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('spec-es-step-help-btn'),
+              tooltip: 'Aide : rôle et usage des cartes',
+              icon: const Icon(Icons.help_outline_rounded, size: 20),
+              onPressed: () => showEventStormCardsHelpDialog(ctx),
+            ),
+          ],
         ),
         content: SizedBox(
           width: 620,
@@ -456,22 +479,42 @@ Future<EventStormStep?> showEventStormStepDialog(
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         initialValue: triggerKind,
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Déclencheur (`triggered_by`)',
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'none', child: Text('Aucun')),
+                          DropdownMenuItem(
+                            value: 'none',
+                            child: Text(
+                              'Aucun',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           DropdownMenuItem(
                             value: 'single',
-                            child: Text('Événement simple (EVT-* / CTX:EVT-*)'),
+                            child: Text(
+                              'Événement simple (EVT-* / CTX:EVT-*)',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           DropdownMenuItem(
                             value: 'all_of',
-                            child: Text('Synchronisation ET (all_of)'),
+                            child: Text(
+                              'Synchronisation ET (all_of)',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           DropdownMenuItem(
                             value: 'any_of',
-                            child: Text('Convergence OU (any_of)'),
+                            child: Text(
+                              'Convergence OU (any_of)',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                         onChanged: (v) {
@@ -531,15 +574,27 @@ Future<EventStormStep?> showEventStormStepDialog(
                             )
                             ? selectedActor
                             : '',
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Acteur (`ACT-*`)',
                         ),
                         items: [
-                          const DropdownMenuItem(value: '', child: Text('Aucun')),
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text(
+                              'Aucun',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           for (final a in document.catalog.actors)
                             DropdownMenuItem(
                               value: a.id,
-                              child: Text('${a.id} · ${a.name}'),
+                              child: Text(
+                                '${a.id} · ${a.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) =>
@@ -555,15 +610,27 @@ Future<EventStormStep?> showEventStormStepDialog(
                             )
                             ? selectedAggregate
                             : '',
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Agrégat (`AGG-*`)',
                         ),
                         items: [
-                          const DropdownMenuItem(value: '', child: Text('Aucun')),
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text(
+                              'Aucun',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           for (final a in document.catalog.aggregates)
                             DropdownMenuItem(
                               value: a.id,
-                              child: Text('${a.id} · ${a.name}'),
+                              child: Text(
+                                '${a.id} · ${a.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) =>
@@ -579,15 +646,27 @@ Future<EventStormStep?> showEventStormStepDialog(
                             )
                             ? selectedExternal
                             : '',
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Système externe (`EXT-*`)',
                         ),
                         items: [
-                          const DropdownMenuItem(value: '', child: Text('Aucun')),
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text(
+                              'Aucun',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           for (final e in document.catalog.externalSystems)
                             DropdownMenuItem(
                               value: e.id,
-                              child: Text('${e.id} · ${e.name}'),
+                              child: Text(
+                                '${e.id} · ${e.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) =>
@@ -656,13 +735,16 @@ Future<EventStormStep?> showEventStormStepDialog(
 
                 // Sortie : domain_event XOR outcomes
                 const Divider(),
-                Row(
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     Text(
                       'Sortie (Orange — passé composé)',
                       style: Theme.of(ctx).textTheme.labelLarge,
                     ),
-                    const Spacer(),
                     SegmentedButton<bool>(
                       segments: const [
                         ButtonSegment(value: false, label: Text('Événement')),
@@ -806,13 +888,16 @@ Future<EventStormStep?> showEventStormStepDialog(
 
                 // Hotspots (Rose vif)
                 const Divider(),
-                Row(
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
                     Text(
                       'Hotspots (Rose vif — ${hotspotDrafts.length})',
                       style: Theme.of(ctx).textTheme.labelLarge,
                     ),
-                    const Spacer(),
                     TextButton.icon(
                       onPressed: () => setLocal(() {
                         final nextNum =
@@ -862,6 +947,7 @@ Future<EventStormStep?> showEventStormStepDialog(
                                   EventStormHotspotSeverity
                                 >(
                                   initialValue: hotspotDrafts[i].severity,
+                                  isExpanded: true,
                                   decoration: const InputDecoration(
                                     labelText: 'Sévérité',
                                   ),
@@ -870,7 +956,11 @@ Future<EventStormStep?> showEventStormStepDialog(
                                         in EventStormHotspotSeverity.values)
                                       DropdownMenuItem(
                                         value: s,
-                                        child: Text(s.label),
+                                        child: Text(
+                                          s.label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                   ],
                                   onChanged: (v) {
@@ -888,6 +978,7 @@ Future<EventStormStep?> showEventStormStepDialog(
                                   EventStormHotspotStatus
                                 >(
                                   initialValue: hotspotDrafts[i].status,
+                                  isExpanded: true,
                                   decoration: const InputDecoration(
                                     labelText: 'Statut',
                                   ),
@@ -896,7 +987,11 @@ Future<EventStormStep?> showEventStormStepDialog(
                                         in EventStormHotspotStatus.values)
                                       DropdownMenuItem(
                                         value: s,
-                                        child: Text(s.label),
+                                        child: Text(
+                                          s.label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                   ],
                                   onChanged: (v) {
@@ -1106,6 +1201,365 @@ Future<void> showEventStormSchemaDialog(BuildContext context) async {
       ],
     ),
   );
+}
+
+/// Ouvre le guide visuel expliquant le rôle, l'usage et les conventions de chaque
+/// type de carte (post-it) et connecteur de l'atelier Event Storming DSL v1.0.
+Future<void> showEventStormCardsHelpDialog(BuildContext context) async {
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final theme = Theme.of(ctx);
+      final colors = theme.colorScheme;
+      final isDark = theme.brightness == Brightness.dark;
+
+      final cards = <_EventStormCardHelpInfo>[
+        _EventStormCardHelpInfo(
+          badge: 'ACTEUR',
+          colorName: 'Petit Jaune · ACT-*',
+          requirement: 'Catalogue · Optionnel',
+          palette: EventStormPostItColors.actor(isDark),
+          role:
+              'Représente qui (ou quoi) déclenche une commande : utilisateur humain (human), tâche planifiée/CRON (timer) ou automate interne (system).',
+          usage:
+              'Déclaré dans l’onglet Catalogue puis référencé par son code ACT-* dans les étapes initiées par un acteur (souvent après consultation d’un Read Model). Omis lorsqu’une étape est déclenchée automatiquement par une Politique.',
+          example:
+              'ACT-CLIENT · « Client » (human) ou ACT-CRON-RELANCE (timer)',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'READ MODEL',
+          colorName: 'Vert · read_model',
+          requirement: 'Optionnel',
+          palette: EventStormPostItColors.readModel(isDark),
+          role:
+              'Vue, écran ou projection de données consultée par l’acteur pour prendre sa décision avant de lancer une commande.',
+          usage:
+              'Indique les événements sources qui alimentent la vue (source_events) et les champs affichés (fields). Prépare la conception des écrans UX et des DTO de lecture.',
+          example:
+              '« Écran récapitulatif panier » ← EVT-00 (champs : lignes_panier, montant_ttc)',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'POLITIQUE',
+          colorName: 'Violet · policy',
+          requirement: 'Optionnel',
+          palette: EventStormPostItColors.policy(isDark),
+          role:
+              'Règle métier réactive automatique qui réagit à un ou plusieurs événements passés pour déclencher une nouvelle commande sans action humaine directe.',
+          usage:
+              'Formulée selon le modèle « Quand [événement], alors [commande] ». Le bouton « Promouvoir RG » permet de transformer une politique en règle de gestion RG-xxx.',
+          example:
+              '« Déclencher l’encaissement » — Quand Panier validé, alors Demander le paiement',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'COMMANDE',
+          colorName: 'Bleu · command',
+          requirement: 'Obligatoire',
+          palette: EventStormPostItColors.command(isDark),
+          role:
+              'Intention d’action ou ordre envoyé au système pour provoquer un changement d’état.',
+          usage:
+              'Cœur de chaque étape. Doit impérativement être formulée avec un verbe à l’infinitif et préciser ses paramètres d’entrée (payload).',
+          example:
+              '« Valider le panier » (payload : panier_id, mode_paiement_id)',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'AGRÉGAT',
+          colorName: 'Grand Jaune · AGG-*',
+          requirement: 'Catalogue · Optionnel',
+          palette: EventStormPostItColors.aggregate(isDark),
+          role:
+              'Entité ou groupe d’entités métier qui reçoit la commande, vérifie les invariants métier et émet les événements de domaine.',
+          usage:
+              'Déclaré dans le Catalogue (AGG-*). Le bouton « Générer Objets métiers » exploite vos agrégats et événements pour créer/enrichir les objets de l’étape suivante.',
+          example: 'AGG-COMMANDE · « Commande », AGG-STOCK · « StockProduit »',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'SYSTÈME EXTERNE',
+          colorName: 'Rose pâle · EXT-*',
+          requirement: 'Catalogue · Optionnel',
+          palette: EventStormPostItColors.externalSystem(isDark),
+          role:
+              'Service, API ou partenaire tiers hors du contrôle direct du domaine (prestataire de paiement, service d’e-mailing, ERP, transporteur…).',
+          usage:
+              'Déclaré dans le Catalogue (EXT-*) puis associé aux étapes qui délèguent ou notifient un outil externe, souvent avec des outcomes succès/échec.',
+          example:
+              'EXT-STRIPE · « Stripe », EXT-EMAIL · « Service Notification Email »',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'ÉVÉNEMENT',
+          colorName: 'Orange · domain_event',
+          requirement: 'Sortie (exclusif avec Outcomes)',
+          palette: EventStormPostItColors.domainEvent(isDark),
+          role:
+              'Fait métier accompli et immuable produit après exécution de la commande. Sert de déclencheur (triggered_by) aux étapes suivantes.',
+          usage:
+              'Identifié EVT-01, EVT-02… et formulé impérativement au passé composé avec les données émises (data). Utilisé lorsque l’étape produit un résultat unique (sinon utiliser Outcomes).',
+          example:
+              'EVT-01 · « Panier validé » (data : commande_id, montant_ttc)',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'OUTCOMES (OU)',
+          colorName: 'Orange / Orange foncé · outcomes[]',
+          requirement: 'Sortie (min 2 branches)',
+          palette: EventStormPostItColors.errorOutcome(isDark),
+          role:
+              'Embranchement OU exclusif représentant plusieurs issues possibles d’une même commande (cas nominal vs refus ou erreur métier).',
+          usage:
+              'Remplace domain_event lorsqu’une commande peut aboutir à au moins 2 issues distinctes. Chaque branche porte une condition, un indicateur Erreur (is_error) et son événement (EVT-02A, EVT-02B…).',
+          example:
+              'EVT-02A « Commande payée » (succès) ou EVT-02B « Paiement refusé » (is_error: true)',
+        ),
+        _EventStormCardHelpInfo(
+          badge: 'HOTSPOT',
+          colorName: 'Rose vif · hotspots[]',
+          requirement: 'Optionnel (0..n)',
+          palette: EventStormPostItColors.hotspot(isDark),
+          role:
+              'Signale une question ouverte, une zone d’ombre métier, un désaccord ou un risque technique à trancher.',
+          usage:
+              'Identifié HS-01… avec une sévérité (Faible à Bloquant), un responsable (owner) et un statut (Ouvert / Résolu) activable directement sur la carte.',
+          example:
+              'HS-01 · « Appliquer le code promo avant ou après les frais de port ? »',
+        ),
+      ];
+
+      return AlertDialog(
+        key: const ValueKey('spec-es-help-dialog'),
+        title: Row(
+          children: [
+            Icon(
+              Icons.help_outline_rounded,
+              size: 22,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Guide des cartes Event Storming (DSL v1.0)'),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 720,
+          height: 540,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 12,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 6,
+                    children: [
+                      Text(
+                        'Comment lire une étape sur la frise chronologique ?',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'La frise se lit chronologiquement de gauche à droite (Step 1 → Step 2 → …). '
+                        'Chaque colonne suit l’enchaînement causal : Déclencheur → Read Model → Acteur / Politique → Commande → Agrégat / Système externe → Événement (ou Outcomes) + Hotspots.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                for (final card in cards)
+                  _EventStormCardHelpTile(info: card),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 6,
+                    children: [
+                      Text(
+                        'Connecteurs & structure du document',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        '• Déclencheur causal (triggered_by) : relie une étape à un événement simple (EVT-01), un événement d’un autre Bounded Context (CMD:EVT-02A), une synchronisation ET (all_of : attend tous les événements) ou une convergence OU (any_of : déclenché par l’un des événements). Deux étapes partageant le même déclencheur s’exécutent en parallèle.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Text(
+                        '• Backlog (EPIC / Story) : rattache chaque étape à son Epic et à sa User Story PO.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Text(
+                        '• Bounded Context (.es.yaml) : 1 contexte borné = 1 fichier YAML autonome avec son propre Catalogue (ACT-*, AGG-*, EXT-*) et sa frise flow[].',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            key: const ValueKey('spec-es-help-close-btn'),
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _EventStormCardHelpInfo {
+  const _EventStormCardHelpInfo({
+    required this.badge,
+    required this.colorName,
+    required this.requirement,
+    required this.palette,
+    required this.role,
+    required this.usage,
+    required this.example,
+  });
+
+  final String badge;
+  final String colorName;
+  final String requirement;
+  final EventStormPostItColors palette;
+  final String role;
+  final String usage;
+  final String example;
+}
+
+class _EventStormCardHelpTile extends StatelessWidget {
+  const _EventStormCardHelpTile({required this.info});
+
+  final _EventStormCardHelpInfo info;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: info.palette.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: info.palette.border, width: 1.3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 6,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: info.palette.badgeBackground,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  info.badge,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: info.palette.foreground,
+                  ),
+                ),
+              ),
+              Text(
+                info.colorName,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: info.palette.foreground,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: colors.surface.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: info.palette.border.withValues(alpha: 0.6),
+                  ),
+                ),
+                child: Text(
+                  info.requirement,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: colors.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Text.rich(
+            TextSpan(
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: info.palette.foreground,
+              ),
+              children: [
+                const TextSpan(
+                  text: 'Rôle : ',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(text: info.role),
+              ],
+            ),
+          ),
+          Text.rich(
+            TextSpan(
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: info.palette.foreground,
+              ),
+              children: [
+                const TextSpan(
+                  text: 'Usage : ',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(text: info.usage),
+              ],
+            ),
+          ),
+          Text.rich(
+            TextSpan(
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: info.palette.foreground.withValues(alpha: 0.9),
+                fontStyle: FontStyle.italic,
+              ),
+              children: [
+                const TextSpan(
+                  text: 'Exemple : ',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontStyle: FontStyle.normal,
+                  ),
+                ),
+                TextSpan(text: info.example),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 EventStormStep _buildStepFromControllers({

@@ -3,12 +3,16 @@
 /// une stack technique et sa structure de dossiers à un domaine fonctionnel.
 library;
 
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../models/build_tech_stack_profile.dart';
 import '../../models/domain_catalog.dart';
 import '../../services/spec_forge_controller.dart';
+import '../workspace/markdown_viewer_dialog.dart';
+import 'markdown_rules_preview.dart';
 
 final RegExp _stackCodePattern = RegExp(r'^[a-z0-9]+(?:-[a-z0-9]+)*$');
 
@@ -16,7 +20,7 @@ final RegExp _stackCodePattern = RegExp(r'^[a-z0-9]+(?:-[a-z0-9]+)*$');
 typedef BuildTechStackSavedCallback =
     void Function(BuildTechStackProfile profile, {required bool created});
 
-/// Ouvre l'éditeur de profils de stacks techniques du workspace actif.
+/// Ouvre l'éditeur de profils de stacks techniques dans une fenêtre modale.
 Future<void> showBuildTechStacksDialog(
   BuildContext context, {
   required SpecForgeController controller,
@@ -24,10 +28,19 @@ Future<void> showBuildTechStacksDialog(
   BuildTechStackSavedCallback? onStackSaved,
 }) => showDialog<void>(
   context: context,
-  builder: (_) => _BuildTechStacksDialog(
-    controller: controller,
-    initialStackId: initialStackId,
-    onStackSaved: onStackSaved,
+  builder: (_) => Dialog(
+    key: const ValueKey('build-tech-stacks-dialog'),
+    insetPadding: const EdgeInsets.all(16),
+    child: SizedBox(
+      width: double.maxFinite,
+      height: double.maxFinite,
+      child: BuildTechStacksView(
+        controller: controller,
+        initialStackId: initialStackId,
+        onStackSaved: onStackSaved,
+        showCloseButton: true,
+      ),
+    ),
   ),
 );
 
@@ -145,22 +158,36 @@ class DomainTechStackSelector extends StatelessWidget {
   }
 }
 
-class _BuildTechStacksDialog extends StatefulWidget {
-  const _BuildTechStacksDialog({
+/// Éditeur complet des profils de stacks techniques ([BuildTechStacksView]),
+/// utilisable directement comme page dédiée dans Build ou dans la modale
+/// [showBuildTechStacksDialog].
+class BuildTechStacksView extends StatefulWidget {
+  /// Crée l'éditeur des profils de stacks techniques.
+  const BuildTechStacksView({
     required this.controller,
     this.initialStackId,
     this.onStackSaved,
+    this.showCloseButton = false,
+    super.key,
   });
 
+  /// Contrôleur principal exposant le catalogue et la persistance.
   final SpecForgeController controller;
+
+  /// Identifiant optionnel de la stack présélectionnée à l'ouverture.
   final String? initialStackId;
+
+  /// Callback déclenchée après sauvegarde d'un profil.
   final BuildTechStackSavedCallback? onStackSaved;
 
+  /// Affiche un bouton de fermeture lorsque le widget est monté en modale.
+  final bool showCloseButton;
+
   @override
-  State<_BuildTechStacksDialog> createState() => _BuildTechStacksDialogState();
+  State<BuildTechStacksView> createState() => _BuildTechStacksViewState();
 }
 
-class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
+class _BuildTechStacksViewState extends State<BuildTechStacksView>
     with SingleTickerProviderStateMixin {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _codeCtrl = TextEditingController();
@@ -185,6 +212,7 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
   late final TabController _tabController;
   String? _selectedId;
   bool _creatingNew = false;
+  bool _isPreviewMode = true;
   bool _saving = false;
   String? _feedback;
 
@@ -296,12 +324,14 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       _loadIntoForm(basedOn);
       _selectedId = null;
       _creatingNew = true;
+      _isPreviewMode = false;
       _codeCtrl.text = '${basedOn.code}-copy';
       _nameCtrl.text = '${basedOn.name} (copie)';
       return;
     }
     _selectedId = null;
     _creatingNew = true;
+    _isPreviewMode = false;
     _feedback = null;
     _codeCtrl.text = '';
     _nameCtrl.text = '';
@@ -630,150 +660,131 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
             .where((s) => s.id == _selectedId)
             .firstOrNull;
 
-        return Dialog(
-          key: const ValueKey('build-tech-stacks-dialog'),
-          insetPadding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: double.maxFinite,
-            height: double.maxFinite,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 14, 12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.layers_rounded, color: colors.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Stacks techniques & structures de dossiers',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              'Extensions ajoutées en fin de chaque prompt IA selon la stack du domaine.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        key: const ValueKey('tech-stack-close-btn'),
-                        tooltip: 'Fermer',
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        child: Container(
-                          color: colors.surfaceContainerLow.withValues(
-                            alpha: 0.6,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  10,
-                                  8,
-                                  8,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Stacks (${stacks.length})',
-                                        style: theme.textTheme.titleSmall,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      key: const ValueKey('tech-stack-add-btn'),
-                                      tooltip: 'Nouvelle stack',
-                                      onPressed: _saving
-                                          ? null
-                                          : () => setState(_startNewStack),
-                                      icon: const Icon(Icons.add_rounded),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Divider(height: 1),
-                              Expanded(
-                                child: ListView(
-                                  padding: const EdgeInsets.all(8),
-                                  children: [
-                                    for (final stack in stacks)
-                                      _buildStackTile(
-                                        context,
-                                        catalog: catalog,
-                                        stack: stack,
-                                        selected:
-                                            !_creatingNew &&
-                                            stack.id == _selectedId,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              if (currentProfile != null)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    10,
-                                    0,
-                                    10,
-                                    10,
-                                  ),
-                                  child: OutlinedButton.icon(
-                                    key: const ValueKey(
-                                      'tech-stack-duplicate-btn',
-                                    ),
-                                    onPressed: _saving
-                                        ? null
-                                        : () => setState(
-                                            () => _startNewStack(
-                                              basedOn: currentProfile,
-                                            ),
-                                          ),
-                                    icon: const Icon(
-                                      Icons.copy_outlined,
-                                      size: 16,
-                                    ),
-                                    label: const Text('Dupliquer cette stack'),
-                                  ),
-                                ),
-                            ],
+        return Column(
+          key: const ValueKey('build-tech-stacks-view'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 14, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.layers_rounded, color: colors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Stacks techniques & structures de dossiers',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      const VerticalDivider(width: 1),
-                      Expanded(
-                        child: _buildEditorForm(
-                          theme,
-                          colors,
-                          currentProfile: currentProfile,
+                        Text(
+                          'Extensions ajoutées en fin de chaque prompt IA selon la stack du domaine.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  if (widget.showCloseButton)
+                    IconButton(
+                      key: const ValueKey('tech-stack-close-btn'),
+                      tooltip: 'Fermer',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                ],
+              ),
             ),
-          ),
+            const Divider(height: 1),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width: 260,
+                    child: Container(
+                      color: colors.surfaceContainerLow.withValues(alpha: 0.6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Stacks (${stacks.length})',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                ),
+                                IconButton(
+                                  key: const ValueKey('tech-stack-add-btn'),
+                                  tooltip: 'Nouvelle stack',
+                                  onPressed: _saving
+                                      ? null
+                                      : () => setState(_startNewStack),
+                                  icon: const Icon(Icons.add_rounded),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          Expanded(
+                            child: ListView(
+                              padding: const EdgeInsets.all(8),
+                              children: [
+                                for (final stack in stacks)
+                                  _buildStackTile(
+                                    context,
+                                    catalog: catalog,
+                                    stack: stack,
+                                    selected:
+                                        !_creatingNew && stack.id == _selectedId,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (currentProfile != null)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                              child: OutlinedButton.icon(
+                                key: const ValueKey(
+                                  'tech-stack-duplicate-btn',
+                                ),
+                                onPressed: _saving
+                                    ? null
+                                    : () => setState(
+                                        () => _startNewStack(
+                                          basedOn: currentProfile,
+                                        ),
+                                      ),
+                                icon: const Icon(
+                                  Icons.copy_outlined,
+                                  size: 16,
+                                ),
+                                label: const Text('Dupliquer cette stack'),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    child: _buildEditorForm(
+                      theme,
+                      colors,
+                      currentProfile: currentProfile,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
@@ -879,22 +890,54 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
               ],
             ),
           ),
-          TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            tabs: [
-              const Tab(
-                key: ValueKey('tech-stack-tab-general'),
-                icon: Icon(Icons.layers_rounded, size: 17),
-                text: 'Stack technique',
-              ),
-              for (final section in BuildTechStackSection.values)
-                Tab(
-                  key: ValueKey('tech-stack-tab-${section.name}'),
-                  icon: Icon(_iconForSection(section), size: 17),
-                  text: section.label,
+          Row(
+            children: [
+              Expanded(
+                child: TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  tabs: [
+                    const Tab(
+                      key: ValueKey('tech-stack-tab-general'),
+                      icon: Icon(Icons.layers_rounded, size: 17),
+                      text: 'Stack technique',
+                    ),
+                    for (final section in BuildTechStackSection.values)
+                      Tab(
+                        key: ValueKey('tech-stack-tab-${section.name}'),
+                        icon: Icon(_iconForSection(section), size: 17),
+                        text: section.label,
+                      ),
+                  ],
                 ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: SegmentedButton<bool>(
+                  key: const ValueKey('tech-stack-mode-toggle'),
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: const <ButtonSegment<bool>>[
+                    ButtonSegment<bool>(
+                      value: true,
+                      icon: Icon(Icons.visibility_outlined, size: 16),
+                      label: Text('Aperçu'),
+                    ),
+                    ButtonSegment<bool>(
+                      value: false,
+                      icon: Icon(Icons.edit_outlined, size: 16),
+                      label: Text('Édition'),
+                    ),
+                  ],
+                  selected: <bool>{_isPreviewMode},
+                  onSelectionChanged: (selection) {
+                    if (selection.isEmpty) return;
+                    setState(() => _isPreviewMode = selection.first);
+                  },
+                ),
+              ),
             ],
           ),
           Expanded(
@@ -1030,6 +1073,51 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
       'Arborescence et consignes ajoutées en fin des prompts Check Integration — Test unitaire (vérification bout-en-bout & suite complète).',
   };
 
+  Widget _buildMarkdownFieldOrPreview({
+    required Key fieldKey,
+    required Key previewKey,
+    required TextEditingController controller,
+    required String label,
+    String? helperText,
+  }) {
+    if (_isPreviewMode) {
+      return ValueListenableBuilder<TextEditingValue>(
+        key: previewKey,
+        valueListenable: controller,
+        builder: (context, value, _) => MarkdownRulesPreview(
+          markdown: value.text,
+          label: label,
+          helperText: helperText,
+          onOpenFullViewer: value.text.trim().isEmpty
+              ? null
+              : () => unawaited(
+                  showSpecMarkdownViewerDialog(
+                    context,
+                    markdown: value.text,
+                    title: '${_nameCtrl.text.trim().isEmpty ? 'Stack' : _nameCtrl.text.trim()} — $label',
+                    filenameStem: 'stack_${_codeCtrl.text.trim()}_$label',
+                  ),
+                ),
+        ),
+      );
+    }
+
+    return TextFormField(
+      key: fieldKey,
+      controller: controller,
+      expands: true,
+      maxLines: null,
+      minLines: null,
+      textAlignVertical: TextAlignVertical.top,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helperText,
+        alignLabelWithHint: true,
+        border: const OutlineInputBorder(),
+      ),
+    );
+  }
+
   Widget _buildGeneralTab(ThemeData theme, ColorScheme colors) {
     return Padding(
       padding: const EdgeInsets.all(18),
@@ -1056,19 +1144,14 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                     children: [
                       Expanded(
                         flex: 3,
-                        child: TextFormField(
-                          key: const ValueKey('tech-stack-technical-field'),
-                          controller: _techStackCtrl,
-                          expands: true,
-                          maxLines: null,
-                          minLines: null,
-                          textAlignVertical: TextAlignVertical.top,
-                          decoration: const InputDecoration(
-                            labelText:
-                                'Stack technique (langage, frameworks, outils)',
-                            alignLabelWithHint: true,
-                            border: OutlineInputBorder(),
+                        child: _buildMarkdownFieldOrPreview(
+                          fieldKey: const ValueKey('tech-stack-technical-field'),
+                          previewKey: const ValueKey(
+                            'tech-stack-technical-preview',
                           ),
+                          controller: _techStackCtrl,
+                          label:
+                              'Stack technique (langage, frameworks, outils)',
                         ),
                       ),
                       Expanded(
@@ -1076,6 +1159,7 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                         child: TextFormField(
                           key: const ValueKey('tech-stack-folders-field'),
                           controller: _foldersCtrl,
+                          readOnly: _isPreviewMode,
                           expands: true,
                           maxLines: null,
                           minLines: null,
@@ -1098,20 +1182,17 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                   ),
                 ),
                 Expanded(
-                  child: TextFormField(
-                    key: const ValueKey('tech-stack-ai-documentation-field'),
-                    controller: _aiDocCtrl,
-                    expands: true,
-                    maxLines: null,
-                    minLines: null,
-                    textAlignVertical: TextAlignVertical.top,
-                    decoration: const InputDecoration(
-                      labelText: 'Documentation IA',
-                      helperText:
-                          'Ajoutée à la toute fin de chaque prompt généré. Supporte {{domain}} et {{module}}.',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(),
+                  child: _buildMarkdownFieldOrPreview(
+                    fieldKey: const ValueKey(
+                      'tech-stack-ai-documentation-field',
                     ),
+                    previewKey: const ValueKey(
+                      'tech-stack-ai-documentation-preview',
+                    ),
+                    controller: _aiDocCtrl,
+                    label: 'Documentation IA',
+                    helperText:
+                        'Ajoutée à la toute fin de chaque prompt généré. Supporte {{domain}} et {{module}}.',
                   ),
                 ),
               ],
@@ -1172,6 +1253,9 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                     extensionKey: ValueKey(
                       'tech-stack-ext-${section.name}-${subRole.name}-field',
                     ),
+                    extensionPreviewKey: ValueKey(
+                      'tech-stack-ext-${section.name}-${subRole.name}-preview',
+                    ),
                     extensionController:
                         _sectionControllers[(section, subRole)]!.ext,
                   ),
@@ -1191,6 +1275,7 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
     required Key foldersKey,
     required TextEditingController foldersController,
     required Key extensionKey,
+    required Key extensionPreviewKey,
     required TextEditingController extensionController,
   }) {
     return Padding(
@@ -1214,6 +1299,7 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                   child: TextFormField(
                     key: foldersKey,
                     controller: foldersController,
+                    readOnly: _isPreviewMode,
                     expands: true,
                     maxLines: null,
                     minLines: null,
@@ -1232,20 +1318,13 @@ class _BuildTechStacksDialogState extends State<_BuildTechStacksDialog>
                   ),
                 ),
                 Expanded(
-                  child: TextFormField(
-                    key: extensionKey,
+                  child: _buildMarkdownFieldOrPreview(
+                    fieldKey: extensionKey,
+                    previewKey: extensionPreviewKey,
                     controller: extensionController,
-                    expands: true,
-                    maxLines: null,
-                    minLines: null,
-                    textAlignVertical: TextAlignVertical.top,
-                    decoration: InputDecoration(
-                      labelText: 'Consignes spécifiques — $roleTitle',
-                      helperText:
-                          'Ajoutées en fin de prompt après la structure des dossiers.',
-                      alignLabelWithHint: true,
-                      border: const OutlineInputBorder(),
-                    ),
+                    label: 'Consignes spécifiques — $roleTitle',
+                    helperText:
+                        'Ajoutées en fin de prompt après la structure des dossiers.',
                   ),
                 ),
               ],

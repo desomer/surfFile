@@ -1480,13 +1480,32 @@ Facture:
       await tester.pumpAndSettle();
       expect(_appBarText('Build'), findsOneWidget);
       expect(
+        find.byKey(const ValueKey('spec-forge-build-menu-view')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('build-link-tech_stacks')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('build-link-agentic_prompts')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('build-link-agentic_prompts')));
+      await tester.pumpAndSettle();
+      expect(
         find.byKey(const ValueKey('spec-forge-build-view')),
         findsOneWidget,
       );
       expect(find.text('Items de design & avancement'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('spec-forge-appbar-back-btn')),
-        findsNothing,
+        findsOneWidget,
       );
 
       await tester.tap(

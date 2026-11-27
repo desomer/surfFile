@@ -381,6 +381,12 @@ class _EventStormingEditorViewState extends State<EventStormingEditorView> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   OutlinedButton.icon(
+                    key: const ValueKey('spec-es-help-btn'),
+                    onPressed: () => showEventStormCardsHelpDialog(context),
+                    icon: const Icon(Icons.help_outline_rounded, size: 16),
+                    label: const Text('Aide cartes'),
+                  ),
+                  OutlinedButton.icon(
                     key: const ValueKey('spec-es-seed-btn'),
                     onPressed: !project.cahierDesCharges.hasContent
                         ? null

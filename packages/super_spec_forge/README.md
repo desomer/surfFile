@@ -175,7 +175,10 @@ et les contrats/couches Domain du domaine) avec un atelier à 3 onglets à droit
 
 ## Suivi Build par domaine
 
-L'onglet **Build** du `NavigationRail` (`BuildDesignItemsView`) affiche, pour le
+L'onglet **Build** du `NavigationRail` s'ouvre sur une page d'actions dédiée
+(`BuildLinksView`), à l'image de **Spec** et **Design**, proposant deux entrées :
+- **Gestion des Stack technique** (`BuildTechStacksView`) : éditeur complet des profils de stacks techniques, arborescences cibles, règles Markdown (avec bascule **Aperçu** / **Édition**) et **Documentation IA** ;
+- **Génération des prompts agentiques** (`BuildDesignItemsView`) : affiche, pour le
 domaine sélectionné dans le fil d'Ariane (`DesignDomainBreadcrumbBar`, synchronisé
 avec l'espace **Design**), l'ensemble des items de conception porteurs des
 quatre indicateurs d'avancement (`Conception`, `Validation`, `Code`, `Livraison`) :
@@ -213,8 +216,8 @@ spécifiques configurables sur les 8 parties **Domain**, **UseCase / Saga**,
 **Check Integration**, chacune dotée de 2 sous-onglets
 *Implémentation* et *Test unitaire*). Le profil **TypeScript / NestJS**
 (`ts-nestjs`) est fourni par défaut et entièrement personnalisable dans un
-éditeur quasi plein écran depuis **Design › Gestion des domaines** ou directement
-depuis **Build**.
+éditeur complet depuis **Build › Gestion des Stack technique** ou directement
+depuis le sélecteur de stack de **Génération des prompts agentiques**.
 
 ## Lancement & Validation
 
