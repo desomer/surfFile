@@ -35,7 +35,12 @@ class GeminiSpecAiService implements SpecAiService {
   /// Crée le connecteur Gemini pour `super_spec_forge`.
   const GeminiSpecAiService();
 
-  static String _staticGuideFor(SpecForgeStage stage) =>
+  /// Instruction système par défaut pour l'agent de l'étape [stage].
+  static String defaultSystemInstructionFor(SpecForgeStage stage) =>
+      SpecStageAgent.forStage(stage).systemInstruction;
+
+  /// Guide statique par défaut (schéma de patch + guide outils) pour l'étape [stage].
+  static String defaultStaticGuideFor(SpecForgeStage stage) =>
       '${SpecStageAgent.forStage(stage).patchSchemaGuide}\n\n---\n\n${SpecForgeToolRegistry.toolsGuide()}';
 
   @override
@@ -50,11 +55,11 @@ class GeminiSpecAiService implements SpecAiService {
     String? systemInstructionOverride,
     String? staticGuideOverride,
   }) {
-    final agent = SpecStageAgent.forStage(stage);
     return streamGemini(
       prompt,
-      systemInstruction: systemInstructionOverride ?? agent.systemInstruction,
-      staticGuide: staticGuideOverride ?? _staticGuideFor(stage),
+      systemInstruction:
+          systemInstructionOverride ?? defaultSystemInstructionFor(stage),
+      staticGuide: staticGuideOverride ?? defaultStaticGuideFor(stage),
       attachments: attachments,
       speedMode: speedMode,
       tools: tools,
@@ -69,10 +74,9 @@ class GeminiSpecAiService implements SpecAiService {
     VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
     List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
   }) {
-    final agent = SpecStageAgent.forStage(stage);
     return warmUpGemini(
-      systemInstruction: agent.systemInstruction,
-      staticGuide: _staticGuideFor(stage),
+      systemInstruction: defaultSystemInstructionFor(stage),
+      staticGuide: defaultStaticGuideFor(stage),
       speedMode: speedMode,
       tools: tools,
     );

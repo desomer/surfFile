@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_chat_widgets.dart';
 
 /// Conversation avec l'agent qui crée et modifie les attributs d'un seul
@@ -118,48 +119,83 @@ class _ContractModelChatPaneState extends State<ContractModelChatPane> {
         Container(
           color: colors.surfaceContainerLow,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            spacing: 8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_awesome_rounded, size: 18, color: colors.primary),
-              Expanded(
-                child: Text(
-                  'Assistant IA · ${widget.modelName}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+              Row(
+                spacing: 8,
+                children: [
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 18,
+                    color: colors.primary,
                   ),
-                ),
+                  Expanded(
+                    child: Text(
+                      'Assistant IA · ${widget.modelName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (messages.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Effacer la conversation',
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      onPressed: busy
+                          ? null
+                          : () => _controller.clearDomainModelChat(
+                              widget.domainId,
+                              widget.entryId,
+                            ),
+                    ),
+                  IconButton(
+                    key: const ValueKey('$_keyPrefix-collapse'),
+                    tooltip: 'Masquer le chat IA',
+                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    onPressed: widget.onCollapse,
+                  ),
+                ],
               ),
-              if (messages.isNotEmpty) ...[
-                OutlinedButton.icon(
-                  key: const ValueKey('$_keyPrefix-ask-more'),
-                  onPressed: busy
-                      ? null
-                      : () => _send('', requestsMoreQuestions: true),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SpecChatContextButton(
+                    keyPrefix: _keyPrefix,
+                    onPressed: () {
+                      final inspection = _controller
+                          .inspectDomainModelAiContext(
+                            widget.domainId,
+                            widget.entryId,
+                          );
+                      if (inspection != null) {
+                        showSpecAiContextDialog(
+                          context,
+                          inspection: inspection,
+                        );
+                      }
+                    },
                   ),
-                  icon: const Icon(Icons.quiz_outlined, size: 15),
-                  label: const Text('+ Questions'),
-                ),
-                IconButton(
-                  tooltip: 'Effacer la conversation',
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  onPressed: busy
-                      ? null
-                      : () => _controller.clearDomainModelChat(
-                          widget.domainId,
-                          widget.entryId,
-                        ),
-                ),
-              ],
-              IconButton(
-                key: const ValueKey('$_keyPrefix-collapse'),
-                tooltip: 'Masquer le chat IA',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                onPressed: widget.onCollapse,
+                  if (messages.isNotEmpty)
+                    OutlinedButton.icon(
+                      key: const ValueKey('$_keyPrefix-ask-more'),
+                      onPressed: busy
+                          ? null
+                          : () => _send('', requestsMoreQuestions: true),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.quiz_outlined, size: 15),
+                      label: const Text('+ Questions'),
+                    ),
+                ],
               ),
             ],
           ),

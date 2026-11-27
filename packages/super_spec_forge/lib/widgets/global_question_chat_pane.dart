@@ -11,6 +11,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/spec_forge_project.dart';
 import '../models/spec_stage_chat.dart';
 import '../services/spec_forge_controller.dart';
+import 'spec_ai_context_dialog.dart';
 
 /// Chat IA dédié aux questions globales sur le projet (lexique, cadrage, cahier des charges, objets et règles).
 class GlobalQuestionChatPane extends StatefulWidget {
@@ -265,6 +266,13 @@ class _GlobalQuestionChatPaneState extends State<GlobalQuestionChatPane> {
           project: project,
           hasMessages: messages.isNotEmpty,
           sending: widget.controller.isSending,
+          onShowContext: () {
+            final inspection = widget.controller
+                .inspectGlobalQuestionAiContext();
+            if (inspection != null) {
+              showSpecAiContextDialog(context, inspection: inspection);
+            }
+          },
           onClear: widget.controller.clearGlobalChat,
         ),
         Expanded(
@@ -465,12 +473,14 @@ class _GlobalChatHeader extends StatelessWidget {
     required this.project,
     required this.hasMessages,
     required this.sending,
+    required this.onShowContext,
     required this.onClear,
   });
 
   final SpecForgeProject project;
   final bool hasMessages;
   final bool sending;
+  final VoidCallback onShowContext;
   final VoidCallback onClear;
 
   @override
@@ -524,13 +534,24 @@ class _GlobalChatHeader extends StatelessWidget {
               ),
             ],
           ),
-          if (hasMessages)
-            OutlinedButton.icon(
-              key: const ValueKey('spec-global-chat-clear'),
-              onPressed: sending ? null : onClear,
-              icon: const Icon(Icons.delete_sweep_outlined, size: 16),
-              label: const Text('Effacer la discussion'),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SpecChatContextButton(
+                keyPrefix: 'spec-global-chat',
+                onPressed: onShowContext,
+              ),
+              if (hasMessages)
+                OutlinedButton.icon(
+                  key: const ValueKey('spec-global-chat-clear'),
+                  onPressed: sending ? null : onClear,
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                  label: const Text('Effacer la discussion'),
+                ),
+            ],
+          ),
         ],
       ),
     );

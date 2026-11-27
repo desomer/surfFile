@@ -9,6 +9,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../models/domain_catalog.dart';
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_chat_widgets.dart';
 
 /// Conversation unifiée avec l'Architecte Urbaniste SI pour recenser et
@@ -125,61 +126,89 @@ class _SystemsServicesChatPaneState extends State<SystemsServicesChatPane> {
         Container(
           color: colors.surfaceContainerLow,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            spacing: 8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.apps_rounded, size: 18, color: colors.primary),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Architecte Urbaniste · ${widget.domain.name}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      'Focus : $focusLabel',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (messages.isNotEmpty) ...[
-                OutlinedButton.icon(
-                  key: const ValueKey('$_keyPrefix-ask-more'),
-                  onPressed: busy
-                      ? null
-                      : () => _send('', requestsMoreQuestions: true),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: const Icon(Icons.quiz_outlined, size: 15),
-                  label: const Text('+ Questions'),
-                ),
-                IconButton(
-                  key: const ValueKey('$_keyPrefix-clear'),
-                  tooltip: 'Effacer la conversation',
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  onPressed: busy
-                      ? null
-                      : () => _controller.clearSystemsServicesChat(
-                          widget.domain.id,
+              Row(
+                spacing: 8,
+                children: [
+                  Icon(Icons.apps_rounded, size: 18, color: colors.primary),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Architecte Urbaniste · ${widget.domain.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                ),
-              ],
-              IconButton(
-                key: const ValueKey('$_keyPrefix-collapse'),
-                tooltip: 'Masquer le chat IA',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                onPressed: widget.onCollapse,
+                        Text(
+                          'Focus : $focusLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (messages.isNotEmpty)
+                    IconButton(
+                      key: const ValueKey('$_keyPrefix-clear'),
+                      tooltip: 'Effacer la conversation',
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      onPressed: busy
+                          ? null
+                          : () => _controller.clearSystemsServicesChat(
+                              widget.domain.id,
+                            ),
+                    ),
+                  IconButton(
+                    key: const ValueKey('$_keyPrefix-collapse'),
+                    tooltip: 'Masquer le chat IA',
+                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    onPressed: widget.onCollapse,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SpecChatContextButton(
+                    keyPrefix: _keyPrefix,
+                    onPressed: () {
+                      final inspection = _controller
+                          .inspectSystemsServicesAiContext(widget.domain.id);
+                      if (inspection != null) {
+                        showSpecAiContextDialog(
+                          context,
+                          inspection: inspection,
+                        );
+                      }
+                    },
+                  ),
+                  if (messages.isNotEmpty)
+                    OutlinedButton.icon(
+                      key: const ValueKey('$_keyPrefix-ask-more'),
+                      onPressed: busy
+                          ? null
+                          : () => _send('', requestsMoreQuestions: true),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.quiz_outlined, size: 15),
+                      label: const Text('+ Questions'),
+                    ),
+                ],
               ),
             ],
           ),

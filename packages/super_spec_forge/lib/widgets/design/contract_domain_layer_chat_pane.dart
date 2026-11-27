@@ -9,6 +9,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../models/domain_layer_spec.dart';
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_chat_widgets.dart';
 
 /// Conversation unifiée avec l'agent Architecte Couche Domain pour remplir et
@@ -133,62 +134,93 @@ class _ContractDomainLayerChatPaneState
         Container(
           color: colors.surfaceContainerLow,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            spacing: 8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.hexagon_outlined, size: 18, color: colors.primary),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Architecte Domain · ${widget.modelName}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      'Focus : ${widget.activeTab.label}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (messages.isNotEmpty) ...[
-                OutlinedButton.icon(
-                  key: const ValueKey('$_keyPrefix-ask-more'),
-                  onPressed: busy
-                      ? null
-                      : () => _send('', requestsMoreQuestions: true),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: const Icon(Icons.quiz_outlined, size: 15),
-                  label: const Text('+ Questions'),
-                ),
-                IconButton(
-                  key: const ValueKey('$_keyPrefix-clear'),
-                  tooltip: 'Effacer la conversation',
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  onPressed: busy
-                      ? null
-                      : () => _controller.clearDomainLayerChat(
-                          widget.domainId,
-                          widget.entryId,
+              Row(
+                spacing: 8,
+                children: [
+                  Icon(Icons.hexagon_outlined, size: 18, color: colors.primary),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Architecte Domain · ${widget.modelName}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                ),
-              ],
-              IconButton(
-                key: const ValueKey('$_keyPrefix-collapse'),
-                tooltip: 'Masquer le chat IA',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                onPressed: widget.onCollapse,
+                        Text(
+                          'Focus : ${widget.activeTab.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (messages.isNotEmpty)
+                    IconButton(
+                      key: const ValueKey('$_keyPrefix-clear'),
+                      tooltip: 'Effacer la conversation',
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      onPressed: busy
+                          ? null
+                          : () => _controller.clearDomainLayerChat(
+                              widget.domainId,
+                              widget.entryId,
+                            ),
+                    ),
+                  IconButton(
+                    key: const ValueKey('$_keyPrefix-collapse'),
+                    tooltip: 'Masquer le chat IA',
+                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    onPressed: widget.onCollapse,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SpecChatContextButton(
+                    keyPrefix: _keyPrefix,
+                    onPressed: () {
+                      final inspection = _controller
+                          .inspectDomainLayerAiContext(
+                            widget.domainId,
+                            widget.entryId,
+                          );
+                      if (inspection != null) {
+                        showSpecAiContextDialog(
+                          context,
+                          inspection: inspection,
+                        );
+                      }
+                    },
+                  ),
+                  if (messages.isNotEmpty)
+                    OutlinedButton.icon(
+                      key: const ValueKey('$_keyPrefix-ask-more'),
+                      onPressed: busy
+                          ? null
+                          : () => _send('', requestsMoreQuestions: true),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.quiz_outlined, size: 15),
+                      label: const Text('+ Questions'),
+                    ),
+                ],
               ),
             ],
           ),

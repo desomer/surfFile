@@ -47,6 +47,7 @@ import '../models/enterprise_rate_card.dart';
 import '../models/qa/qa_coherence_issue.dart';
 import '../models/qa/qa_forge_spec.dart';
 import '../models/qa/qa_forge_stage.dart';
+import '../models/spec_ai_context_snapshot.dart';
 import '../models/spec_cahier_des_charges.dart';
 import '../models/spec_coherence_issue.dart';
 import '../models/spec_forge_project.dart';
@@ -232,6 +233,10 @@ class SpecForgeController extends ChangeNotifier {
 
   /// `domainId` dont le tour IA « Cas d’usage & orchestration » est en cours.
   String? _sendingUseCaseDomainId;
+
+  /// Dernier contexte IA réellement envoyé, indexé par clé de scope de chat.
+  final Map<String, SpecAiContextSnapshot> _lastSentAiContexts =
+      <String, SpecAiContextSnapshot>{};
 
   /// Onglet actif de la page « Cas d’usage & orchestration », indexé par `domainId`.
   final Map<String, UseCaseOrchestrationTab> _useCaseActiveTab = {};
@@ -852,6 +857,15 @@ class SpecForgeController extends ChangeNotifier {
     _focusedWbsItemId = null;
     _focusedRunItemId = null;
     _focusedRiskItemId = null;
+    _lastSentAiContexts.removeWhere(
+      (key, _) =>
+          key == 'global' ||
+          key == 'portfolio' ||
+          key.startsWith('spec:') ||
+          key.startsWith('ux:') ||
+          key.startsWith('qa:') ||
+          key.startsWith('cost:'),
+    );
   }
 
   void _resetInMemoryState() {
@@ -872,6 +886,7 @@ class SpecForgeController extends ChangeNotifier {
     _rateCardUndoStack.clear();
     _rateCardRedoStack.clear();
     _clearProjectFocusState();
+    _lastSentAiContexts.clear();
     _domainModelFocus.clear();
     _domainLayerActiveTab.clear();
     _sendingDomainLayerKey = null;
@@ -2212,6 +2227,7 @@ class SpecForgeController extends ChangeNotifier {
         readyToAdvance: false,
       ),
     );
+    _lastSentAiContexts.remove(_specStageContextKey(targetStage));
     _project = cleared;
     notifyListeners();
     await _persistProject(cleared);
@@ -2263,6 +2279,7 @@ class SpecForgeController extends ChangeNotifier {
     final current = _project;
     if (current == null || _isSending) return;
     final cleared = current.copyWith(globalChatMessages: const []);
+    _lastSentAiContexts.remove(_globalContextKey);
     _project = cleared;
     notifyListeners();
     await _persistProject(cleared);
@@ -2336,6 +2353,21 @@ class SpecForgeController extends ChangeNotifier {
             var nativeCalls = const <VibeToolCall>[];
             var rawModelParts = const <Map<String, Object?>>[];
 
+            final activeTools = allowTools
+                ? registry.declarations
+                : const <VibeToolDeclaration>[];
+            _recordSentAiContext(
+              scopeKey: _globalContextKey,
+              title: 'Architecte Transverse · Questions globales',
+              systemInstruction: SpecStageAgent.globalQuestionSystemInstruction,
+              staticGuide: SpecForgeToolRegistry.toolsGuide(),
+              prompt: currentPrompt,
+              tools: activeTools,
+              attachments: attachments,
+              conversationContents: conversationContents,
+              enforceJsonResponse: !allowTools,
+            );
+
             final completer = Completer<void>();
             _activeStreamCompleter = completer;
             _activeStreamSubscription = _aiService
@@ -2344,7 +2376,7 @@ class SpecForgeController extends ChangeNotifier {
                   prompt: roundPrompt,
                   attachments: attachments,
                   speedMode: _speedMode,
-                  tools: allowTools ? registry.declarations : const [],
+                  tools: activeTools,
                   conversationContents: conversationContents,
                   enforceJsonResponse: !allowTools,
                   systemInstructionOverride:
@@ -2787,6 +2819,7 @@ class SpecForgeController extends ChangeNotifier {
         ),
       ),
     );
+    _lastSentAiContexts.remove(_uxStageContextKey(targetStage));
     _project = cleared;
     notifyListeners();
     await _persistProject(cleared);
@@ -2899,6 +2932,8 @@ class SpecForgeController extends ChangeNotifier {
             systemInstructionOverride: uxAgent.systemInstruction,
             staticGuideOverride: staticGuide,
             allowedToolNames: SpecForgeToolRegistry.uxStageToolNames,
+            contextScopeKey: _uxStageContextKey(stage),
+            contextTitle: '${stage.agentTitle} · Étape UX',
           );
           if (response == null) {
             final partialText = parser.snapshot().message?.trim() ?? '';
@@ -3314,6 +3349,7 @@ class SpecForgeController extends ChangeNotifier {
         ),
       ),
     );
+    _lastSentAiContexts.remove(_qaStageContextKey(targetStage));
     _project = cleared;
     notifyListeners();
     await _persistProject(cleared);
@@ -3426,6 +3462,8 @@ class SpecForgeController extends ChangeNotifier {
             systemInstructionOverride: qaAgent.systemInstruction,
             staticGuideOverride: staticGuide,
             allowedToolNames: SpecForgeToolRegistry.qaStageToolNames,
+            contextScopeKey: _qaStageContextKey(stage),
+            contextTitle: '${stage.agentTitle} · Étape QA',
           );
           if (response == null) {
             final partialText = parser.snapshot().message?.trim() ?? '';
@@ -3842,6 +3880,7 @@ class SpecForgeController extends ChangeNotifier {
         ),
       ),
     );
+    _lastSentAiContexts.remove(_costStageContextKey(targetStage));
     _project = cleared;
     notifyListeners();
     await _persistProject(cleared);
@@ -3954,6 +3993,8 @@ class SpecForgeController extends ChangeNotifier {
             systemInstructionOverride: costAgent.systemInstruction,
             staticGuideOverride: staticGuide,
             allowedToolNames: SpecForgeToolRegistry.costStageToolNames,
+            contextScopeKey: _costStageContextKey(stage),
+            contextTitle: '${stage.agentTitle} · Étape Chiffrage',
           );
           if (response == null) {
             final partialText = parser.snapshot().message?.trim() ?? '';
@@ -4257,6 +4298,8 @@ class SpecForgeController extends ChangeNotifier {
             attachments: attachments,
             registry: registry,
             toolTraces: turnToolTraces,
+            contextScopeKey: _specStageContextKey(stage),
+            contextTitle: '${stage.agentTitle} · Étape Spec',
           );
           if (response == null) {
             final partialText = parser.snapshot().message?.trim() ?? '';
@@ -4592,6 +4635,22 @@ class SpecForgeController extends ChangeNotifier {
     );
   }
 
+  List<VibeToolDeclaration> _resolveEffectiveToolDeclarations(
+    VibeAppToolRegistry registry,
+    Set<String>? allowedToolNames,
+  ) {
+    if (allowedToolNames == null) return registry.declarations;
+    return [
+      for (final decl in registry.declarations)
+        if (allowedToolNames.contains(decl.name) ||
+            (!SpecForgeToolRegistry.specToolNames.contains(decl.name) &&
+                !SpecForgeToolRegistry.uxToolNames.contains(decl.name) &&
+                !SpecForgeToolRegistry.qaToolNames.contains(decl.name) &&
+                !SpecForgeToolRegistry.costToolNames.contains(decl.name)))
+          decl,
+    ];
+  }
+
   /// Diffuse un tour IA avec function calling : exécute les appels d'outils de
   /// [registry] (tracés dans [toolTraces] et le flux) jusqu'à la réponse JSON
   /// finale, en au plus [maxToolRounds] rounds. Partagé par les agents de la
@@ -4610,21 +4669,19 @@ class SpecForgeController extends ChangeNotifier {
     String? systemInstructionOverride,
     String? staticGuideOverride,
     Set<String>? allowedToolNames,
+    String? contextScopeKey,
+    String? contextTitle,
   }) async {
     var roundPrompt = prompt;
-    final effectiveDeclarations = allowedToolNames == null
-        ? registry.declarations
-        : [
-            for (final decl in registry.declarations)
-              if (allowedToolNames.contains(decl.name) ||
-                  (!SpecForgeToolRegistry.specToolNames.contains(decl.name) &&
-                      !SpecForgeToolRegistry.uxToolNames.contains(decl.name) &&
-                      !SpecForgeToolRegistry.qaToolNames.contains(decl.name) &&
-                      !SpecForgeToolRegistry.costToolNames.contains(
-                        decl.name,
-                      )))
-                decl,
-          ];
+    final effectiveDeclarations = _resolveEffectiveToolDeclarations(
+      registry,
+      allowedToolNames,
+    );
+    final resolvedSystemInstruction =
+        systemInstructionOverride ??
+        GeminiSpecAiService.defaultSystemInstructionFor(stage);
+    final resolvedStaticGuide =
+        staticGuideOverride ?? GeminiSpecAiService.defaultStaticGuideFor(stage);
     final conversationContents = <Map<String, Object?>>[
       <String, Object?>{
         'role': 'user',
@@ -4635,6 +4692,22 @@ class SpecForgeController extends ChangeNotifier {
     for (var round = 0; round <= maxToolRounds; round++) {
       if (_stopRequested) return null;
       final allowTools = round < maxToolRounds;
+      final activeTools = allowTools
+          ? effectiveDeclarations
+          : const <VibeToolDeclaration>[];
+      if (contextScopeKey != null) {
+        _recordSentAiContext(
+          scopeKey: contextScopeKey,
+          title: contextTitle ?? stage.agentTitle,
+          systemInstruction: resolvedSystemInstruction,
+          staticGuide: resolvedStaticGuide,
+          prompt: prompt,
+          tools: activeTools,
+          attachments: attachments,
+          conversationContents: conversationContents,
+          enforceJsonResponse: !allowTools,
+        );
+      }
       parser.reset();
       var nativeCalls = const <VibeToolCall>[];
       var rawModelParts = const <Map<String, Object?>>[];
@@ -4647,7 +4720,7 @@ class SpecForgeController extends ChangeNotifier {
             prompt: roundPrompt,
             attachments: attachments,
             speedMode: _speedMode,
-            tools: allowTools ? effectiveDeclarations : const [],
+            tools: activeTools,
             conversationContents: conversationContents,
             enforceJsonResponse: !allowTools,
             systemInstructionOverride: systemInstructionOverride,
@@ -5052,6 +5125,7 @@ class SpecForgeController extends ChangeNotifier {
   Future<void> clearGlossaryChat() async {
     if (_isSending) return;
     _glossaryChatMessages = const <SpecChatMessage>[];
+    _lastSentAiContexts.remove(_glossaryContextKey);
     notifyListeners();
     await _glossaryStore.saveChatMessages(_glossaryChatMessages);
   }
@@ -5176,6 +5250,7 @@ class SpecForgeController extends ChangeNotifier {
     final next = current.copyWith(
       portfolioChatMessages: const <SpecChatMessage>[],
     );
+    _lastSentAiContexts.remove(_portfolioContextKey);
     _project = next;
     notifyListeners();
     await _persistProject(next);
@@ -5229,6 +5304,15 @@ class SpecForgeController extends ChangeNotifier {
         if (_stopRequested) break;
         final parser = SpecStreamParser();
         try {
+          _recordSentAiContext(
+            scopeKey: _portfolioContextKey,
+            title: 'Découpage Produit IA',
+            systemInstruction: PortfolioSlicingAiAgent.systemInstruction,
+            staticGuide: PortfolioSlicingAiAgent.patchSchemaGuide,
+            prompt: currentPrompt,
+            attachments: attachments,
+            enforceJsonResponse: true,
+          );
           final completer = Completer<void>();
           _activeStreamCompleter = completer;
           _activeStreamSubscription = _aiService
@@ -5428,6 +5512,15 @@ class SpecForgeController extends ChangeNotifier {
         if (_stopRequested) break;
         final parser = SpecStreamParser();
         try {
+          _recordSentAiContext(
+            scopeKey: _glossaryContextKey,
+            title: 'Assistant Glossaire IA',
+            systemInstruction: CompanyGlossaryAiAgent.systemInstruction,
+            staticGuide: CompanyGlossaryAiAgent.patchSchemaGuide,
+            prompt: currentPrompt,
+            attachments: attachments,
+            enforceJsonResponse: true,
+          );
           final completer = Completer<void>();
           _activeStreamCompleter = completer;
           _activeStreamSubscription = _aiService
@@ -5686,6 +5779,7 @@ class SpecForgeController extends ChangeNotifier {
   /// Efface l'historique du chat IA d'un modèle de domaine.
   Future<void> clearDomainModelChat(String domainId, String entryId) async {
     if (_isSending) return;
+    _lastSentAiContexts.remove(_domainModelContextKey(domainId, entryId));
     await _updateDomainModelChat(domainId, entryId, (_) => const []);
   }
 
@@ -5837,6 +5931,8 @@ class SpecForgeController extends ChangeNotifier {
             patchStatus: 'Mise à jour des attributs…',
             systemInstructionOverride: DomainModelAiAgent.systemInstruction,
             staticGuideOverride: DomainModelAiAgent.staticGuide,
+            contextScopeKey: _domainModelContextKey(domainId, entryId),
+            contextTitle: 'Assistant IA · ${entry.name}',
           );
           final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
           if (response == null) {
@@ -6078,6 +6174,7 @@ class SpecForgeController extends ChangeNotifier {
   /// Efface l'historique du chat IA de la couche Domain d'un modèle.
   Future<void> clearDomainLayerChat(String domainId, String entryId) async {
     if (_isSending) return;
+    _lastSentAiContexts.remove(_domainLayerContextKey(domainId, entryId));
     await _updateDomainLayerChat(domainId, entryId, (_) => const []);
   }
 
@@ -6199,6 +6296,8 @@ class SpecForgeController extends ChangeNotifier {
             patchStatus: 'Mise à jour de la couche Domain…',
             systemInstructionOverride: DomainLayerAiAgent.systemInstruction,
             staticGuideOverride: DomainLayerAiAgent.staticGuide,
+            contextScopeKey: _domainLayerContextKey(domainId, entryId),
+            contextTitle: 'Architecte Domain · ${entry.name}',
           );
           final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
           if (response == null) {
@@ -6470,6 +6569,7 @@ class SpecForgeController extends ChangeNotifier {
   /// Efface l'historique du chat IA « Cas d’usage & orchestration » d'un domaine.
   Future<void> clearUseCaseOrchestrationChat(String domainId) async {
     if (_isSending) return;
+    _lastSentAiContexts.remove(_useCaseContextKey(domainId));
     await _updateUseCaseOrchestrationChat(domainId, (_) => const []);
   }
 
@@ -6584,6 +6684,8 @@ class SpecForgeController extends ChangeNotifier {
             allowedToolNames: activeProject != null
                 ? UseCaseOrchestrationAiAgent.toolNames
                 : const <String>{},
+            contextScopeKey: _useCaseContextKey(domainId),
+            contextTitle: 'Architecte Use Cases · ${initialDomain.name}',
           );
           final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
           if (response == null) {
@@ -6843,6 +6945,7 @@ class SpecForgeController extends ChangeNotifier {
   /// Efface l'historique du chat IA « Systèmes & Services » d'un domaine.
   Future<void> clearSystemsServicesChat(String domainId) async {
     if (_isSending) return;
+    _lastSentAiContexts.remove(_systemsServicesContextKey(domainId));
     await _updateSystemsServicesChat(domainId, (_) => const []);
   }
 
@@ -6950,6 +7053,8 @@ class SpecForgeController extends ChangeNotifier {
             allowedToolNames: activeProject != null
                 ? SystemsServicesAiAgent.toolNames
                 : const <String>{},
+            contextScopeKey: _systemsServicesContextKey(domainId),
+            contextTitle: 'Architecte Urbaniste · ${initialDomain.name}',
           );
           final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
           if (response == null) {
@@ -8063,6 +8168,9 @@ class SpecForgeController extends ChangeNotifier {
     String? domainId,
   }) async {
     if (_isSending) return;
+    _lastSentAiContexts.remove(
+      _valueObjectsContextKey(scope: scope, domainId: domainId),
+    );
     await _updateValueObjectsChat(scope, domainId, (_) => const []);
   }
 
@@ -8176,6 +8284,13 @@ class SpecForgeController extends ChangeNotifier {
             allowedToolNames: activeProject != null
                 ? ValueObjectsAiAgent.toolNames
                 : const <String>{},
+            contextScopeKey: _valueObjectsContextKey(
+              scope: scope,
+              domainId: domainId,
+            ),
+            contextTitle: scope == ValueObjectScope.shared
+                ? 'Architecte Value Objects · Shared Kernel'
+                : 'Architecte Value Objects · ${initialDomain!.name}',
           );
           final traces = List<VibeToolTrace>.unmodifiable(turnToolTraces);
           if (response == null) {
@@ -8563,5 +8678,524 @@ class SpecForgeController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  // ===========================================================================
+  // Inspection du contexte IA (aperçu en direct + dernier envoi réel)
+  // ===========================================================================
+
+  static const String _previewPlaceholderUserInput =
+      '<Votre prochain message utilisateur>';
+  static const String _globalContextKey = 'global';
+  static const String _portfolioContextKey = 'portfolio';
+  static const String _glossaryContextKey = 'glossary';
+
+  static String _specStageContextKey(SpecForgeStage stage) =>
+      'spec:${stage.name}';
+  static String _uxStageContextKey(UxForgeStage stage) => 'ux:${stage.name}';
+  static String _qaStageContextKey(QaForgeStage stage) => 'qa:${stage.name}';
+  static String _costStageContextKey(CostForgeStage stage) =>
+      'cost:${stage.name}';
+  static String _domainModelContextKey(String domainId, String entryId) =>
+      'domainModel:$domainId/$entryId';
+  static String _domainLayerContextKey(String domainId, String entryId) =>
+      'domainLayer:$domainId/$entryId';
+  static String _useCaseContextKey(String domainId) => 'useCase:$domainId';
+  static String _systemsServicesContextKey(String domainId) =>
+      'systemsServices:$domainId';
+  String _valueObjectsContextKey({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) => 'valueObjects:${_valueObjectsScopeKey(scope, domainId)}';
+
+  void _recordSentAiContext({
+    required String scopeKey,
+    required String title,
+    required String systemInstruction,
+    required String staticGuide,
+    required String prompt,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    List<VibeChatAttachment> attachments = const <VibeChatAttachment>[],
+    List<Map<String, Object?>> conversationContents =
+        const <Map<String, Object?>>[],
+    required bool enforceJsonResponse,
+  }) {
+    _lastSentAiContexts[scopeKey] = SpecAiContextSnapshot(
+      scopeKey: scopeKey,
+      title: title,
+      isLivePreview: false,
+      capturedAt: DateTime.now().toUtc(),
+      speedMode: _speedMode,
+      questioningLevel: _questioningLevel,
+      enforceJsonResponse: enforceJsonResponse,
+      systemInstruction: systemInstruction,
+      staticGuide: staticGuide,
+      prompt: prompt,
+      tools: tools,
+      attachments: [
+        for (final a in attachments)
+          SpecAiContextAttachmentSummary.fromAttachment(a),
+      ],
+      conversationContents: conversationContents,
+    );
+  }
+
+  List<VibeToolDeclaration> _previewToolDeclarations({
+    Set<String>? toolNames,
+    Set<String>? allowedToolNames,
+    bool requireActiveProject = false,
+  }) {
+    if (requireActiveProject &&
+        _project == null &&
+        _customToolRegistry == null) {
+      return const <VibeToolDeclaration>[];
+    }
+    final registry =
+        _customToolRegistry ??
+        SpecForgeToolRegistry.build(
+          readProject: () => _project,
+          readCompanyGlossary: () => _companyGlossary,
+          readModelPreferences: () => _modelPreferences,
+          onUpdateProject: (_) async {},
+          onNavigateStage: (_) async {},
+          toolNames: toolNames,
+        );
+    return _resolveEffectiveToolDeclarations(registry, allowedToolNames);
+  }
+
+  SpecAiContextInspection _buildInspection({
+    required String scopeKey,
+    required String title,
+    required String systemInstruction,
+    required String staticGuide,
+    required String prompt,
+    List<VibeToolDeclaration> tools = const <VibeToolDeclaration>[],
+    bool? enforceJsonResponse,
+  }) {
+    final preview = SpecAiContextSnapshot(
+      scopeKey: scopeKey,
+      title: title,
+      isLivePreview: true,
+      capturedAt: DateTime.now().toUtc(),
+      speedMode: _speedMode,
+      questioningLevel: _questioningLevel,
+      enforceJsonResponse: enforceJsonResponse ?? tools.isEmpty,
+      systemInstruction: systemInstruction,
+      staticGuide: staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+    return SpecAiContextInspection(
+      preview: preview,
+      lastSent: _lastSentAiContexts[scopeKey],
+    );
+  }
+
+  /// Inspecte le contexte IA complet de l'étape active (ou [stage]) du wizard Spec.
+  SpecAiContextInspection? inspectSpecStageAiContext([SpecForgeStage? stage]) {
+    final current = _project;
+    if (current == null) return null;
+    final targetStage = stage ?? current.currentStage;
+    final prompt = SpecPromptBuilder.buildTurnPrompt(
+      project: current,
+      stage: targetStage,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      companyGlossary: _companyGlossary,
+      domainCatalog: _domainCatalog,
+      modelPreferencesOverride: _modelPreferences,
+      focusedObjectId: _focusedObjectId,
+      focusedAttributePath: _focusedAttributePath,
+      businessObjectFilter: _businessObjectFilter,
+      focusedEventStormFlowId: _focusedEventStormFlowId,
+      focusedEventStormNodeId: _focusedEventStormNodeId,
+      focusedExampleStoryId: _focusedExampleStoryId,
+    );
+    final tools = _previewToolDeclarations();
+    return _buildInspection(
+      scopeKey: _specStageContextKey(targetStage),
+      title: '${targetStage.agentTitle} · Étape Spec',
+      systemInstruction: GeminiSpecAiService.defaultSystemInstructionFor(
+        targetStage,
+      ),
+      staticGuide: GeminiSpecAiService.defaultStaticGuideFor(targetStage),
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat global de questions transverses.
+  SpecAiContextInspection? inspectGlobalQuestionAiContext() {
+    final current = _project;
+    if (current == null) return null;
+    final prompt = SpecPromptBuilder.buildGlobalQuestionPrompt(
+      project: current,
+      userInput: _previewPlaceholderUserInput,
+      companyGlossary: _companyGlossary,
+    );
+    final tools = _previewToolDeclarations();
+    return _buildInspection(
+      scopeKey: _globalContextKey,
+      title: 'Architecte Transverse · Questions globales',
+      systemInstruction: SpecStageAgent.globalQuestionSystemInstruction,
+      staticGuide: SpecForgeToolRegistry.toolsGuide(),
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet de l'étape UX active (ou [stage]).
+  SpecAiContextInspection? inspectUxStageAiContext([UxForgeStage? stage]) {
+    final current = _project;
+    if (current == null) return null;
+    final targetStage = stage ?? current.uxSpec.currentStage;
+    final uxAgent = UxStageAgent.forStage(targetStage);
+    final staticGuide =
+        '${uxAgent.patchSchemaGuide}\n\n---\n\n'
+        '${SpecForgeToolRegistry.toolsGuide(toolNames: SpecForgeToolRegistry.uxStageToolNames)}';
+    final prompt = UxPromptBuilder.buildTurnPrompt(
+      project: current,
+      stage: targetStage,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
+      focusedJourneyId: _focusedJourneyId,
+      focusedRouteId: _focusedRouteId,
+      focusedScreenId: _focusedScreenId,
+      focusedZone: _focusedScreenZone,
+      toolNames: SpecForgeToolRegistry.uxStageToolNames,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: SpecForgeToolRegistry.uxStageToolNames,
+      allowedToolNames: SpecForgeToolRegistry.uxStageToolNames,
+    );
+    return _buildInspection(
+      scopeKey: _uxStageContextKey(targetStage),
+      title: '${targetStage.agentTitle} · Étape UX',
+      systemInstruction: uxAgent.systemInstruction,
+      staticGuide: staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet de l'étape QA active (ou [stage]).
+  SpecAiContextInspection? inspectQaStageAiContext([QaForgeStage? stage]) {
+    final current = _project;
+    if (current == null) return null;
+    final targetStage = stage ?? current.qaSpec.currentStage;
+    final qaAgent = QaStageAgent.forStage(targetStage);
+    final staticGuide =
+        '${qaAgent.patchSchemaGuide}\n\n---\n\n'
+        '${SpecForgeToolRegistry.toolsGuide(toolNames: SpecForgeToolRegistry.qaStageToolNames)}';
+    final prompt = QaPromptBuilder.buildTurnPrompt(
+      project: current,
+      stage: targetStage,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
+      focusedFixtureId: _focusedFixtureId,
+      focusedFeatureId: _focusedFeatureId,
+      focusedScenarioId: _focusedScenarioId,
+      focusedTddSuiteId: _focusedTddSuiteId,
+      toolNames: SpecForgeToolRegistry.qaStageToolNames,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: SpecForgeToolRegistry.qaStageToolNames,
+      allowedToolNames: SpecForgeToolRegistry.qaStageToolNames,
+    );
+    return _buildInspection(
+      scopeKey: _qaStageContextKey(targetStage),
+      title: '${targetStage.agentTitle} · Étape QA',
+      systemInstruction: qaAgent.systemInstruction,
+      staticGuide: staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet de l'étape Chiffrage FinOps active (ou [stage]).
+  SpecAiContextInspection? inspectCostStageAiContext([CostForgeStage? stage]) {
+    final current = _project;
+    if (current == null) return null;
+    final targetStage = stage ?? current.costSpec.currentStage;
+    final costAgent = CostStageAgent.forStage(targetStage);
+    final staticGuide = CostPromptBuilder.buildStaticGuide(targetStage);
+    final prompt = CostPromptBuilder.buildTurnPrompt(
+      project: current,
+      stage: targetStage,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      enterpriseRateCard: _enterpriseRateCard,
+      companyGlossary: _companyGlossary,
+      modelPreferencesOverride: _modelPreferences,
+      focusedProfileId: _focusedCostProfileId,
+      focusedWbsItemId: _focusedWbsItemId,
+      focusedRunItemId: _focusedRunItemId,
+      focusedRiskItemId: _focusedRiskItemId,
+      toolNames: SpecForgeToolRegistry.costStageToolNames,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: SpecForgeToolRegistry.costStageToolNames,
+      allowedToolNames: SpecForgeToolRegistry.costStageToolNames,
+    );
+    return _buildInspection(
+      scopeKey: _costStageContextKey(targetStage),
+      title: '${targetStage.agentTitle} · Étape Chiffrage',
+      systemInstruction: costAgent.systemInstruction,
+      staticGuide: staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat de découpage Produit (Initiatives & Features).
+  SpecAiContextInspection? inspectPortfolioAiContext() {
+    final current = _project;
+    if (current == null) return null;
+    final prompt = PortfolioSlicingAiAgent.buildTurnPrompt(
+      project: current,
+      history: current.portfolioChatMessages,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+    );
+    return _buildInspection(
+      scopeKey: _portfolioContextKey,
+      title: 'Découpage Produit IA',
+      systemInstruction: PortfolioSlicingAiAgent.systemInstruction,
+      staticGuide: PortfolioSlicingAiAgent.patchSchemaGuide,
+      prompt: prompt,
+      enforceJsonResponse: true,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat Glossaire d'entreprise.
+  SpecAiContextInspection inspectGlossaryAiContext() {
+    final prompt = CompanyGlossaryAiAgent.buildTurnPrompt(
+      glossary: _companyGlossary,
+      history: _glossaryChatMessages,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+    );
+    return _buildInspection(
+      scopeKey: _glossaryContextKey,
+      title: 'Assistant Glossaire IA',
+      systemInstruction: CompanyGlossaryAiAgent.systemInstruction,
+      staticGuide: CompanyGlossaryAiAgent.patchSchemaGuide,
+      prompt: prompt,
+      enforceJsonResponse: true,
+    );
+  }
+
+  /// Inspecte le contexte IA complet de la fiche d'un modèle/contrat de domaine.
+  SpecAiContextInspection? inspectDomainModelAiContext(
+    String domainId,
+    String entryId,
+  ) {
+    final contracts = _domainContractsOf(domainId);
+    final entry = contracts?.entryById(entryId);
+    if (contracts == null || entry == null) return null;
+    final domainName =
+        _domainCatalog.domains
+            .where((d) => d.id == domainId)
+            .firstOrNull
+            ?.name ??
+        domainId;
+    final prompt = DomainModelAiAgent.buildTurnPrompt(
+      domainName: domainName,
+      domainId: domainId,
+      contracts: contracts,
+      entry: entry,
+      history: contracts.chats[entryId] ?? const <SpecChatMessage>[],
+      userInput: _previewPlaceholderUserInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      companyGlossary: _companyGlossary,
+      valueObjects: _domainCatalog.resolvedValueObjectsForDomain(domainId),
+      focusedAttributePath: domainModelAttributePath(domainId, entryId),
+      filter: domainModelFilter(domainId, entryId),
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: DomainModelAiAgent.toolNames,
+    );
+    return _buildInspection(
+      scopeKey: _domainModelContextKey(domainId, entryId),
+      title: 'Assistant IA · ${entry.name}',
+      systemInstruction: DomainModelAiAgent.systemInstruction,
+      staticGuide: DomainModelAiAgent.staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat « Couche Domain » d'un modèle.
+  SpecAiContextInspection? inspectDomainLayerAiContext(
+    String domainId,
+    String entryId,
+  ) {
+    final contracts = _domainContractsOf(domainId);
+    final entry = contracts?.entryById(entryId);
+    if (contracts == null || entry == null) return null;
+    final domainName =
+        _domainCatalog.domains
+            .where((d) => d.id == domainId)
+            .firstOrNull
+            ?.name ??
+        domainId;
+    final prompt = DomainLayerAiAgent.buildTurnPrompt(
+      domainName: domainName,
+      contracts: contracts,
+      entry: entry,
+      activeTab: domainLayerActiveTab(domainId, entryId),
+      history: contracts.domainLayerChats[entryId] ?? const <SpecChatMessage>[],
+      userInput: _previewPlaceholderUserInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      companyGlossary: _companyGlossary,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: DomainLayerAiAgent.toolNames,
+    );
+    return _buildInspection(
+      scopeKey: _domainLayerContextKey(domainId, entryId),
+      title: 'Architecte Domain · ${entry.name}',
+      systemInstruction: DomainLayerAiAgent.systemInstruction,
+      staticGuide: DomainLayerAiAgent.staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat « Cas d’usage & orchestration » d'un domaine.
+  SpecAiContextInspection? inspectUseCaseOrchestrationAiContext(
+    String domainId,
+  ) {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) return null;
+    final prompt = UseCaseOrchestrationAiAgent.buildTurnPrompt(
+      domain: domain,
+      catalog: _domainCatalog,
+      activeTab: useCaseOrchestrationActiveTab(domainId),
+      history:
+          domain.useCaseOrchestration?.chatMessages ??
+          const <SpecChatMessage>[],
+      userInput: _previewPlaceholderUserInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      activeProject: _project,
+      companyGlossary: _companyGlossary,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: UseCaseOrchestrationAiAgent.toolNames,
+      allowedToolNames: _project != null
+          ? UseCaseOrchestrationAiAgent.toolNames
+          : const <String>{},
+      requireActiveProject: true,
+    );
+    return _buildInspection(
+      scopeKey: _useCaseContextKey(domainId),
+      title: 'Architecte Use Cases · ${domain.name}',
+      systemInstruction: UseCaseOrchestrationAiAgent.systemInstruction,
+      staticGuide: UseCaseOrchestrationAiAgent.staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat « Systèmes & Services » d'un domaine.
+  SpecAiContextInspection? inspectSystemsServicesAiContext(String domainId) {
+    final domain = _domainCatalog.domains
+        .where((d) => d.id == domainId)
+        .firstOrNull;
+    if (domain == null) return null;
+    final prompt = SystemsServicesAiAgent.buildTurnPrompt(
+      domain: domain,
+      catalog: _domainCatalog,
+      activeFilterKind: systemsServicesActiveFilter(domainId),
+      history: domain.systemsServicesChat,
+      userInput: _previewPlaceholderUserInput,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      activeProject: _project,
+      companyGlossary: _companyGlossary,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: SystemsServicesAiAgent.toolNames,
+      allowedToolNames: _project != null
+          ? SystemsServicesAiAgent.toolNames
+          : const <String>{},
+      requireActiveProject: true,
+    );
+    return _buildInspection(
+      scopeKey: _systemsServicesContextKey(domainId),
+      title: 'Architecte Urbaniste · ${domain.name}',
+      systemInstruction: SystemsServicesAiAgent.systemInstruction,
+      staticGuide: SystemsServicesAiAgent.staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
+  }
+
+  /// Inspecte le contexte IA complet du chat « Value Objects » (Shared Kernel ou Domaine).
+  SpecAiContextInspection? inspectValueObjectsAiContext({
+    required ValueObjectScope scope,
+    String? domainId,
+  }) {
+    final domain = scope == ValueObjectScope.domain
+        ? _domainCatalog.domains.where((d) => d.id == domainId).firstOrNull
+        : null;
+    if (scope == ValueObjectScope.domain && domain == null) return null;
+    final prompt = ValueObjectsAiAgent.buildTurnPrompt(
+      catalog: _domainCatalog,
+      scope: scope,
+      domain: domain,
+      history: valueObjectsChat(scope: scope, domainId: domainId),
+      userInput: _previewPlaceholderUserInput,
+      modelPreferences: _modelPreferences,
+      questioningLevel: _questioningLevel,
+      afterAskUserReply: false,
+      forceFollowUpQuestions: false,
+      activeProject: _project,
+      companyGlossary: _companyGlossary,
+    );
+    final tools = _previewToolDeclarations(
+      toolNames: ValueObjectsAiAgent.toolNames,
+      allowedToolNames: _project != null
+          ? ValueObjectsAiAgent.toolNames
+          : const <String>{},
+      requireActiveProject: true,
+    );
+    return _buildInspection(
+      scopeKey: _valueObjectsContextKey(scope: scope, domainId: domainId),
+      title: scope == ValueObjectScope.shared
+          ? 'Architecte Value Objects · Shared Kernel'
+          : 'Architecte Value Objects · ${domain!.name}',
+      systemInstruction: ValueObjectsAiAgent.systemInstruction,
+      staticGuide: ValueObjectsAiAgent.staticGuide,
+      prompt: prompt,
+      tools: tools,
+    );
   }
 }

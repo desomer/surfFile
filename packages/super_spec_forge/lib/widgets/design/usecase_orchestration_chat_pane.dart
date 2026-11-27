@@ -10,6 +10,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../../models/domain_catalog.dart';
 import '../../models/usecase_orchestration_spec.dart';
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_chat_widgets.dart';
 
 /// Conversation unifiée avec l'Architecte Couche Applicative (DDD, CQRS, Saga)
@@ -127,65 +128,95 @@ class _UseCaseOrchestrationChatPaneState
         Container(
           color: colors.surfaceContainerLow,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            spacing: 8,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.check_circle_outline_rounded,
-                size: 18,
-                color: colors.primary,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Architecte Use Cases · ${widget.domain.name}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      'Focus : ${widget.activeTab.label}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (messages.isNotEmpty) ...[
-                OutlinedButton.icon(
-                  key: const ValueKey('$_keyPrefix-ask-more'),
-                  onPressed: busy
-                      ? null
-                      : () => _send('', requestsMoreQuestions: true),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+              Row(
+                spacing: 8,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline_rounded,
+                    size: 18,
+                    color: colors.primary,
                   ),
-                  icon: const Icon(Icons.quiz_outlined, size: 15),
-                  label: const Text('+ Questions'),
-                ),
-                IconButton(
-                  key: const ValueKey('$_keyPrefix-clear'),
-                  tooltip: 'Effacer la conversation',
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  onPressed: busy
-                      ? null
-                      : () => _controller.clearUseCaseOrchestrationChat(
-                          widget.domain.id,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Architecte Use Cases · ${widget.domain.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                ),
-              ],
-              IconButton(
-                key: const ValueKey('$_keyPrefix-collapse'),
-                tooltip: 'Masquer le chat IA',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                onPressed: widget.onCollapse,
+                        Text(
+                          'Focus : ${widget.activeTab.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (messages.isNotEmpty)
+                    IconButton(
+                      key: const ValueKey('$_keyPrefix-clear'),
+                      tooltip: 'Effacer la conversation',
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      onPressed: busy
+                          ? null
+                          : () => _controller.clearUseCaseOrchestrationChat(
+                              widget.domain.id,
+                            ),
+                    ),
+                  IconButton(
+                    key: const ValueKey('$_keyPrefix-collapse'),
+                    tooltip: 'Masquer le chat IA',
+                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    onPressed: widget.onCollapse,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SpecChatContextButton(
+                    keyPrefix: _keyPrefix,
+                    onPressed: () {
+                      final inspection = _controller
+                          .inspectUseCaseOrchestrationAiContext(
+                            widget.domain.id,
+                          );
+                      if (inspection != null) {
+                        showSpecAiContextDialog(
+                          context,
+                          inspection: inspection,
+                        );
+                      }
+                    },
+                  ),
+                  if (messages.isNotEmpty)
+                    OutlinedButton.icon(
+                      key: const ValueKey('$_keyPrefix-ask-more'),
+                      onPressed: busy
+                          ? null
+                          : () => _send('', requestsMoreQuestions: true),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.quiz_outlined, size: 15),
+                      label: const Text('+ Questions'),
+                    ),
+                ],
               ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../models/spec_forge_stage.dart';
 import '../models/spec_stage_chat.dart';
 import '../services/spec_forge_controller.dart';
+import 'spec_ai_context_dialog.dart';
 import 'spec_chat_widgets.dart';
 
 /// Affiche le dialogue spécialisé de l'étape active, les cartes `VibeAskUserCard`,
@@ -103,6 +104,14 @@ class _StageAiChatPaneState extends State<StageAiChatPane> {
           chatWidthFraction: widget.chatWidthFraction,
           onCycleChatSize: widget.onCycleChatSize,
           onClearChat: widget.controller.clearStageChat,
+          onShowContext: () {
+            final inspection = widget.controller.inspectSpecStageAiContext(
+              stage,
+            );
+            if (inspection != null) {
+              showSpecAiContextDialog(context, inspection: inspection);
+            }
+          },
           onAskMore: () => widget.controller.sendUserMessage(
             '',
             requestsMoreQuestions: true,
@@ -237,6 +246,7 @@ class _AgentHeader extends StatelessWidget {
     required this.chatWidthFraction,
     required this.onCycleChatSize,
     required this.onClearChat,
+    required this.onShowContext,
     required this.onAskMore,
     required this.onAdvanceStage,
   });
@@ -249,6 +259,7 @@ class _AgentHeader extends StatelessWidget {
   final double? chatWidthFraction;
   final VoidCallback? onCycleChatSize;
   final VoidCallback onClearChat;
+  final VoidCallback onShowContext;
   final VoidCallback onAskMore;
   final VoidCallback? onAdvanceStage;
 
@@ -327,34 +338,37 @@ class _AgentHeader extends StatelessWidget {
                 ),
             ],
           ),
-          if (stageState.messages.isNotEmpty || onAdvanceStage != null) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.end,
-              children: [
-                if (stageState.messages.isNotEmpty)
-                  OutlinedButton.icon(
-                    onPressed: isSending ? null : onAskMore,
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.quiz_outlined, size: 15),
-                    label: const Text('+ Questions'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SpecChatContextButton(
+                keyPrefix: specChatKeyPrefix,
+                onPressed: onShowContext,
+              ),
+              if (stageState.messages.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: isSending ? null : onAskMore,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
-                if (onAdvanceStage != null)
-                  FilledButton.tonalIcon(
-                    onPressed: isSending ? null : onAdvanceStage,
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.navigate_next_rounded, size: 17),
-                    label: const Text('Valider & Suivant'),
+                  icon: const Icon(Icons.quiz_outlined, size: 15),
+                  label: const Text('+ Questions'),
+                ),
+              if (onAdvanceStage != null)
+                FilledButton.tonalIcon(
+                  onPressed: isSending ? null : onAdvanceStage,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
-              ],
-            ),
-          ],
+                  icon: const Icon(Icons.navigate_next_rounded, size: 17),
+                  label: const Text('Valider & Suivant'),
+                ),
+            ],
+          ),
         ],
       ),
     );

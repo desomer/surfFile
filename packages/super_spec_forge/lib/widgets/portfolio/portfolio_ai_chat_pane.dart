@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_chat_widgets.dart';
 
 /// Préfixe des clés de widgets du chat IA de portefeuille.
@@ -92,75 +93,103 @@ class _PortfolioAiChatPaneState extends State<PortfolioAiChatPane> {
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: colors.outlineVariant)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.account_tree_rounded,
-                  size: 18,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Découpage Produit IA',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        'Initiatives stratégiques & Vertical Slices',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Tooltip(
-                  message:
-                      'Poser des questions d’arbitrage sur le MVP et les lots',
-                  child: IconButton(
-                    key: const ValueKey('$portfolioChatKeyPrefix-ask-more'),
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    onPressed: sending
-                        ? null
-                        : () => widget.controller.sendPortfolioMessage(
-                            '',
-                            requestsMoreQuestions: true,
-                          ),
-                    icon: const Icon(Icons.quiz_outlined),
-                  ),
-                ),
-                if (messages.isNotEmpty)
-                  Tooltip(
-                    message: 'Effacer l’historique de ce chat',
-                    child: IconButton(
-                      key: const ValueKey('$portfolioChatKeyPrefix-clear'),
-                      visualDensity: VisualDensity.compact,
-                      iconSize: 18,
-                      onPressed: sending
-                          ? null
-                          : widget.controller.clearPortfolioChat,
-                      icon: const Icon(Icons.delete_sweep_outlined),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.account_tree_rounded,
+                      size: 18,
+                      color: colors.primary,
                     ),
-                  ),
-                Tooltip(
-                  message: 'Replier le chat IA',
-                  child: IconButton(
-                    key: const ValueKey('$portfolioChatKeyPrefix-collapse'),
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    onPressed: widget.onCollapse,
-                    icon: const Icon(Icons.chevron_left_rounded),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Découpage Produit IA',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            'Initiatives stratégiques & Vertical Slices',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Tooltip(
+                      message:
+                          'Poser des questions d’arbitrage sur le MVP et les lots',
+                      child: IconButton(
+                        key: const ValueKey('$portfolioChatKeyPrefix-ask-more'),
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        onPressed: sending
+                            ? null
+                            : () => widget.controller.sendPortfolioMessage(
+                                '',
+                                requestsMoreQuestions: true,
+                              ),
+                        icon: const Icon(Icons.quiz_outlined),
+                      ),
+                    ),
+                    if (messages.isNotEmpty)
+                      Tooltip(
+                        message: 'Effacer l’historique de ce chat',
+                        child: IconButton(
+                          key: const ValueKey('$portfolioChatKeyPrefix-clear'),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          onPressed: sending
+                              ? null
+                              : widget.controller.clearPortfolioChat,
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                        ),
+                      ),
+                    Tooltip(
+                      message: 'Replier le chat IA',
+                      child: IconButton(
+                        key: const ValueKey('$portfolioChatKeyPrefix-collapse'),
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        onPressed: widget.onCollapse,
+                        icon: const Icon(Icons.chevron_left_rounded),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SpecChatContextButton(
+                      keyPrefix: portfolioChatKeyPrefix,
+                      onPressed: () {
+                        final inspection = widget.controller
+                            .inspectPortfolioAiContext();
+                        if (inspection != null) {
+                          showSpecAiContextDialog(
+                            context,
+                            inspection: inspection,
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),

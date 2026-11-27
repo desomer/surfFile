@@ -13,6 +13,7 @@ import '../../models/company_glossary.dart';
 import '../../models/spec_stage_chat.dart';
 import '../../services/exporters/company_glossary_codec.dart';
 import '../../services/spec_forge_controller.dart';
+import '../spec_ai_context_dialog.dart';
 import '../spec_split_handle.dart';
 
 /// Éditeur complet du glossaire terminologique d'entreprise avec assistant IA,
@@ -1540,31 +1541,59 @@ class _GlossaryAiChatPaneState extends State<_GlossaryAiChatPane> {
         Container(
           color: colors.surfaceContainerLow,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.auto_awesome_rounded, size: 18, color: colors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Assistant Glossaire IA',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+              Row(
+                children: [
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 18,
+                    color: colors.primary,
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Assistant Glossaire IA',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (messages.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Effacer la conversation',
+                      icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                      onPressed: widget.controller.isSending
+                          ? null
+                          : widget.controller.clearGlossaryChat,
+                    ),
+                  IconButton(
+                    key: const ValueKey('company-glossary-chat-collapse'),
+                    tooltip: 'Masquer le chat IA',
+                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    onPressed: widget.onCollapse,
+                  ),
+                ],
               ),
-              if (messages.isNotEmpty)
-                IconButton(
-                  tooltip: 'Effacer la conversation',
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  onPressed: widget.controller.isSending
-                      ? null
-                      : widget.controller.clearGlossaryChat,
-                ),
-              IconButton(
-                key: const ValueKey('company-glossary-chat-collapse'),
-                tooltip: 'Masquer le chat IA',
-                icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                onPressed: widget.onCollapse,
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SpecChatContextButton(
+                    keyPrefix: 'company-glossary-chat',
+                    onPressed: () => showSpecAiContextDialog(
+                      context,
+                      inspection: widget.controller.inspectGlossaryAiContext(),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -6,6 +6,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import '../models/ux/ux_forge_stage.dart';
 import '../services/spec_forge_controller.dart';
+import 'spec_ai_context_dialog.dart';
 import 'spec_chat_widgets.dart';
 
 /// Préfixe des clés de widgets du chat des étapes du wizard UX.
@@ -104,6 +105,12 @@ class _UxStageAiChatPaneState extends State<UxStageAiChatPane> {
           chatWidthFraction: widget.chatWidthFraction,
           onCycleChatSize: widget.onCycleChatSize,
           onClearChat: widget.controller.clearUxStageChat,
+          onShowContext: () {
+            final inspection = widget.controller.inspectUxStageAiContext(stage);
+            if (inspection != null) {
+              showSpecAiContextDialog(context, inspection: inspection);
+            }
+          },
           onAskMore: () => widget.controller.sendUxUserMessage(
             '',
             requestsMoreQuestions: true,
@@ -232,6 +239,7 @@ class _UxAgentHeader extends StatelessWidget {
     required this.chatWidthFraction,
     required this.onCycleChatSize,
     required this.onClearChat,
+    required this.onShowContext,
     required this.onAskMore,
     required this.onAdvanceStage,
   });
@@ -242,6 +250,7 @@ class _UxAgentHeader extends StatelessWidget {
   final double? chatWidthFraction;
   final VoidCallback? onCycleChatSize;
   final VoidCallback onClearChat;
+  final VoidCallback onShowContext;
   final VoidCallback onAskMore;
   final VoidCallback? onAdvanceStage;
 
@@ -320,36 +329,39 @@ class _UxAgentHeader extends StatelessWidget {
                 ),
             ],
           ),
-          if (stageState.messages.isNotEmpty || onAdvanceStage != null) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.end,
-              children: [
-                if (stageState.messages.isNotEmpty)
-                  OutlinedButton.icon(
-                    key: const ValueKey('ux-stage-ask-more-btn'),
-                    onPressed: isSending ? null : onAskMore,
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.quiz_outlined, size: 15),
-                    label: const Text('+ Questions'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SpecChatContextButton(
+                keyPrefix: uxChatKeyPrefix,
+                onPressed: onShowContext,
+              ),
+              if (stageState.messages.isNotEmpty)
+                OutlinedButton.icon(
+                  key: const ValueKey('ux-stage-ask-more-btn'),
+                  onPressed: isSending ? null : onAskMore,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
-                if (onAdvanceStage != null)
-                  FilledButton.tonalIcon(
-                    key: const ValueKey('ux-stage-validate-next-btn'),
-                    onPressed: isSending ? null : onAdvanceStage,
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    icon: const Icon(Icons.navigate_next_rounded, size: 17),
-                    label: const Text('Valider & Suivant'),
+                  icon: const Icon(Icons.quiz_outlined, size: 15),
+                  label: const Text('+ Questions'),
+                ),
+              if (onAdvanceStage != null)
+                FilledButton.tonalIcon(
+                  key: const ValueKey('ux-stage-validate-next-btn'),
+                  onPressed: isSending ? null : onAdvanceStage,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
-              ],
-            ),
-          ],
+                  icon: const Icon(Icons.navigate_next_rounded, size: 17),
+                  label: const Text('Valider & Suivant'),
+                ),
+            ],
+          ),
         ],
       ),
     );
