@@ -428,7 +428,9 @@ void main() {
       );
     });
 
-    test('BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2x5 autonomes Outbound / Inbound / Boilerplate / Dev Tools / Check Integration', () {
+    test(
+      'BuildHexaPromptGenerator génère 4 prompts pour un Modèle, 2 pour Use Case / Saga et 2x6 autonomes Outbound / Inbound / Boilerplate / Dev Tools / Check Integration / Playground',
+      () {
       final domain = _buildBillingDomain();
       final projection = BuildDomainDesignItems.fromDomain(domain);
       final invoiceItem = projection.models.firstWhere(
@@ -458,7 +460,7 @@ void main() {
         catalog: catalog,
       );
 
-      expect(groups, hasLength(8));
+      expect(groups, hasLength(9));
       expect(groups[3].standaloneSection, BuildTechStackSection.outbound);
       expect(groups[3].item, isNull);
       expect(groups[4].standaloneSection, BuildTechStackSection.inbound);
@@ -469,10 +471,12 @@ void main() {
       expect(groups[6].item, isNull);
       expect(groups[7].standaloneSection, BuildTechStackSection.checkIntegration);
       expect(groups[7].item, isNull);
+      expect(groups[8].standaloneSection, BuildTechStackSection.playground);
+      expect(groups[8].item, isNull);
 
-      // Vérifie la validité YAML et le schéma d'en-tête sur les 18 variantes de prompts.
+      // Vérifie la validité YAML et le schéma d'en-tête sur les 20 variantes de prompts.
       final allGenerated = groups.expand((g) => g.prompts).toList();
-      expect(allGenerated, hasLength(18));
+      expect(allGenerated, hasLength(20));
       expect(
         allGenerated.map((p) {
           final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -514,6 +518,8 @@ void main() {
           'dev-tools-unit-test@1.0.0',
           'check-integration-implementation@1.0.0',
           'check-integration-unit-test@1.0.0',
+          'playground-implementation@1.0.0',
+          'playground-unit-test@1.0.0',
         ]),
       );
 
@@ -738,14 +744,25 @@ void main() {
         groups[7].prompts[0].promptMarkdown,
         contains('4 modèle(s)/contrat(s), 1 cas d’usage et 1 saga(s)'),
       );
+      expect(
+        groups[8].prompts.map((p) => (p.section, p.role)),
+        equals(const <(BuildTechStackSection, BuildHexaPromptRole)>[
+          (BuildTechStackSection.playground, BuildHexaPromptRole.implementation),
+          (BuildTechStackSection.playground, BuildHexaPromptRole.unitTest),
+        ]),
+      );
+      expect(
+        groups[8].prompts[0].promptMarkdown,
+        contains('Playground'),
+      );
 
       final combined = BuildHexaPromptGenerator.combinePromptsMarkdown(
         domain: domain,
         prompts: groups.expand((g) => g.prompts),
       );
-      expect(combined, contains('18 prompts'));
-      expect(combined, contains('Étape 1/18'));
-      expect(combined, contains('Étape 18/18'));
+      expect(combined, contains('20 prompts'));
+      expect(combined, contains('Étape 1/20'));
+      expect(combined, contains('Étape 20/20'));
     });
   });
 
@@ -984,8 +1001,8 @@ void main() {
       );
 
       // Regroupement par élément sélectionné : 4 prompts pour Invoice, 2 pour IssueInvoice,
-      // 2 pour Saga (cochés par défaut = 8) + 2x5 groupes autonomes décochés par défaut = 18 prompts.
-      expect(find.text('8 / 18 prompt(s) · 8 groupe(s)'), findsOneWidget);
+      // 2 pour Saga (cochés par défaut = 8) + 2x6 groupes autonomes décochés par défaut = 20 prompts.
+      expect(find.text('8 / 20 prompt(s) · 9 groupe(s)'), findsOneWidget);
       expect(
         find.byKey(
           ValueKey(
@@ -1040,7 +1057,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('7 / 18 prompt(s) · 8 groupe(s)'), findsOneWidget);
+      expect(find.text('7 / 20 prompt(s) · 9 groupe(s)'), findsOneWidget);
 
       await tester.tap(
         find.byKey(const ValueKey('build-copy-selected-prompts-btn')),
@@ -1051,8 +1068,8 @@ void main() {
       expect(lastClipboardText, contains('7 prompts'));
       expect(lastClipboardText, contains('InvoiceRepository'));
 
-      // Vérifie que les groupes autonomes Outbound, Inbound, Boilerplate, Dev Tools et
-      // Check Integration sont présents en bas de la liste et désactivés par défaut.
+      // Vérifie que les groupes autonomes Outbound, Inbound, Boilerplate, Dev Tools,
+      // Check Integration et Playground sont présents en bas de la liste et désactivés par défaut.
       final promptsScrollable = find.descendant(
         of: find.byKey(const ValueKey('build-prompts-selection-page')),
         matching: find.byType(Scrollable),
@@ -1063,6 +1080,7 @@ void main() {
         'boilerplate',
         'devTools',
         'checkIntegration',
+        'playground',
       ]) {
         final groupKey = ValueKey('build-prompt-group-standalone-$sectionName');
         await tester.scrollUntilVisible(
@@ -1129,7 +1147,7 @@ void main() {
     );
 
     final allPrompts = groups.expand((g) => g.prompts).toList();
-    expect(allPrompts, hasLength(18));
+    expect(allPrompts, hasLength(20));
 
     for (final prompt in allPrompts) {
       final rawYaml = BuildHexaPromptGenerator.extractYamlHeader(
@@ -1153,12 +1171,31 @@ void main() {
       expect(prompt.promptMarkdown, contains('billing'));
       expect(prompt.promptMarkdown, isNot(contains('{{domain}}')));
       expect(prompt.promptMarkdown, isNot(contains('{{module}}')));
-      expect(
-        prompt.promptMarkdown,
-        contains(
-          '### Consignes spécifiques — ${prompt.section.label} (${prompt.role.label})',
-        ),
-      );
+      final hasPresetExtension = BuildTechStackProfile.tsNestJsPreset
+          .extensionFor(
+            prompt.section,
+            prompt.role == BuildHexaPromptRole.implementation
+                ? BuildTechStackSubRole.implementation
+                : BuildTechStackSubRole.unitTest,
+          )
+          .isNotEmpty;
+      if (hasPresetExtension) {
+        expect(
+          prompt.promptMarkdown,
+          contains(
+            '### Consignes spécifiques — ${prompt.section.label} (${prompt.role.label})',
+          ),
+        );
+      } else {
+        expect(
+          prompt.promptMarkdown,
+          isNot(
+            contains(
+              '### Consignes spécifiques — ${prompt.section.label} (${prompt.role.label})',
+            ),
+          ),
+        );
+      }
 
       // La section Documentation IA doit être présente tout à la fin de chaque prompt.
       final extIdx = prompt.promptMarkdown.indexOf(
@@ -1336,8 +1373,45 @@ void main() {
         ):
           expect(prompt.promptMarkdown, contains('└── e2e/'));
           expect(prompt.promptMarkdown, contains('batterie de vérification complète'));
+        case (
+          BuildTechStackSection.playground,
+          BuildHexaPromptRole.implementation,
+        ):
+          expect(
+            prompt.promptMarkdown,
+            contains(
+              'src/\n'
+              '└── infrastructure/\n'
+              '    └── billing/\n'
+              '        └── playground/',
+            ),
+          );
+        case (BuildTechStackSection.playground, BuildHexaPromptRole.unitTest):
+          expect(prompt.promptMarkdown, contains('test/billing/playground/'));
       }
     }
+
+    // Lorsque des consignes Playground personnalisées sont configurées, elles sont injectées.
+    final customPlaygroundStack = BuildTechStackProfile.tsNestJsPreset.copyWith(
+      playgroundImplementationExtension:
+          '- Générer un script `playground/billing/demo.ts` exécutable via `tsx`.',
+    );
+    final customPlaygroundGroups = BuildHexaPromptGenerator.generateGroups(
+      domain: billing,
+      selectedItems: const <BuildDesignItem>[],
+      techStack: customPlaygroundStack,
+    );
+    final playgroundImplPrompt = customPlaygroundGroups
+        .firstWhere((g) => g.standaloneSection == BuildTechStackSection.playground)
+        .prompts
+        .first;
+    expect(
+      playgroundImplPrompt.promptMarkdown,
+      allOf(
+        contains('### Consignes spécifiques — Playground (Implémentation)'),
+        contains('playground/billing/demo.ts'),
+      ),
+    );
 
     // Sans stack affectée au domaine, aucune section d'extension, aucune Documentation IA ni generation.stack.
     final withoutStack = _buildBillingDomain();
@@ -1346,7 +1420,7 @@ void main() {
       selectedItems: <BuildDesignItem>[invoiceItem],
       catalog: DomainCatalog(domains: <FunctionalDomain>[withoutStack]),
     );
-    expect(noStackGroups, hasLength(6));
+    expect(noStackGroups, hasLength(7));
     final noStackPrompt = noStackGroups.first.prompts.first;
     final noStackYaml = loadYaml(
       BuildHexaPromptGenerator.extractYamlHeader(noStackPrompt.promptMarkdown)!,
@@ -1468,6 +1542,10 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('tech-stack-tab-checkIntegration')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('tech-stack-tab-playground')),
         findsOneWidget,
       );
 
@@ -1817,6 +1895,69 @@ void main() {
       );
       expect(backFinder, findsNothing);
       expect(menuFinder, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'Build : éditeur de stack technique affiche des boutons de navigation sur écran étroit pour atteindre les onglets masqués',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1050, 820));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final billing = _buildBillingDomain();
+      final controller = _createController(
+        DomainCatalog(domains: <FunctionalDomain>[billing]),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(restoreLastProject: false);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: BuildTechStacksView(controller: controller)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final leftBtn = find.byKey(
+        const ValueKey('tech-stack-tabs-scroll-left-btn'),
+      );
+      final rightBtn = find.byKey(
+        const ValueKey('tech-stack-tabs-scroll-right-btn'),
+      );
+      final menuBtn = find.byKey(const ValueKey('tech-stack-tabs-menu-btn'));
+
+      expect(leftBtn, findsOneWidget);
+      expect(rightBtn, findsOneWidget);
+      expect(menuBtn, findsOneWidget);
+      expect(tester.widget<IconButton>(leftBtn).onPressed, isNull);
+      expect(tester.widget<IconButton>(rightBtn).onPressed, isNotNull);
+
+      // Le bouton droit fait défiler les onglets vers la droite et active le bouton gauche.
+      await tester.tap(rightBtn);
+      await tester.pumpAndSettle();
+      expect(tester.widget<IconButton>(leftBtn).onPressed, isNotNull);
+
+      // Le menu complet permet de sauter directement sur l'onglet Playground.
+      await tester.tap(menuBtn);
+      await tester.pumpAndSettle();
+      final playgroundIndex = BuildTechStackSection.values.length;
+      await tester.tap(
+        find.byKey(ValueKey('tech-stack-tabs-menu-item-$playgroundIndex')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey('tech-stack-folders-playground-implementation-field'),
+        ),
+        findsOneWidget,
+      );
+
+      // Sur écran large où tous les onglets tiennent, les boutons d'overflow sont masqués.
+      await tester.binding.setSurfaceSize(const Size(2400, 900));
+      await tester.pumpAndSettle();
+      expect(leftBtn, findsNothing);
+      expect(rightBtn, findsNothing);
+      expect(menuBtn, findsNothing);
     },
   );
 }

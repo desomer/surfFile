@@ -15,6 +15,7 @@ import 'prompt_generator/domain_check_integration_prompt_builders.dart';
 import 'prompt_generator/domain_dev_tools_prompt_builders.dart';
 import 'prompt_generator/domain_inbound_prompt_builders.dart';
 import 'prompt_generator/domain_outbound_prompt_builders.dart';
+import 'prompt_generator/domain_playground_prompt_builders.dart';
 import 'prompt_generator/model_implementation_prompt_builder.dart';
 import 'prompt_generator/model_persistence_prompt_builder.dart';
 import 'prompt_generator/model_persistence_unit_test_prompt_builder.dart';
@@ -206,6 +207,29 @@ abstract final class BuildHexaPromptGenerator {
               modelPreferences: modelPreferences,
             ),
             buildDomainCheckIntegrationUnitTestPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+            ),
+          ],
+        ),
+      );
+      groups.add(
+        BuildItemPromptGroup.standalone(
+          section: BuildTechStackSection.playground,
+          kindLabel: 'Bac à sable',
+          subtitle:
+              'Bac à sable local d’expérimentation, scripts de démo et essais manuels',
+          domainCode: domain.domainCode,
+          prompts: <BuildHexaPromptSpec>[
+            buildDomainPlaygroundImplementationPrompt(
+              domain: domain,
+              dates: dates,
+              techStack: effectiveStack,
+              glossary: glossary,
+              modelPreferences: modelPreferences,
+            ),
+            buildDomainPlaygroundUnitTestPrompt(
               domain: domain,
               dates: dates,
               techStack: effectiveStack,

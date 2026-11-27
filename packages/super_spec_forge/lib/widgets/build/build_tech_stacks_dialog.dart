@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
@@ -314,6 +315,13 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
           BuildTechStackSubRole.unitTest,
         ) =>
           profile.checkIntegrationUnitTestFolderStructure,
+        (
+          BuildTechStackSection.playground,
+          BuildTechStackSubRole.implementation,
+        ) =>
+          profile.playgroundImplementationFolderStructure,
+        (BuildTechStackSection.playground, BuildTechStackSubRole.unitTest) =>
+          profile.playgroundUnitTestFolderStructure,
       };
       extCtrl.text = profile.extensionFor(section, subRole);
     }
@@ -395,6 +403,16 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
       'test/{{domain}}/integration/',
     (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
       'test/{{domain}}/e2e/',
+    (
+      BuildTechStackSection.playground,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'src/\n'
+      '└── infrastructure/\n'
+      '    └── {{domain}}/\n'
+      '        └── playground/',
+    (BuildTechStackSection.playground, BuildTechStackSubRole.unitTest) =>
+      'test/{{domain}}/playground/',
   };
 
   String _foldersText(
@@ -495,6 +513,14 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
         BuildTechStackSection.checkIntegration,
         BuildTechStackSubRole.unitTest,
       ),
+      playgroundImplementationFolderStructure: _foldersText(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.implementation,
+      ),
+      playgroundUnitTestFolderStructure: _foldersText(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.unitTest,
+      ),
       domainImplementationExtension: _extText(
         BuildTechStackSection.domain,
         BuildTechStackSubRole.implementation,
@@ -557,6 +583,14 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
       ),
       checkIntegrationUnitTestExtension: _extText(
         BuildTechStackSection.checkIntegration,
+        BuildTechStackSubRole.unitTest,
+      ),
+      playgroundImplementationExtension: _extText(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.implementation,
+      ),
+      playgroundUnitTestExtension: _extText(
+        BuildTechStackSection.playground,
         BuildTechStackSubRole.unitTest,
       ),
     );
@@ -901,10 +935,8 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
           Row(
             children: [
               Expanded(
-                child: TabBar(
+                child: _ScrollableTechStackTabBar(
                   controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
                   tabs: [
                     const Tab(
                       key: ValueKey('tech-stack-tab-general'),
@@ -917,6 +949,11 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
                         icon: Icon(_iconForSection(section), size: 17),
                         text: section.label,
                       ),
+                  ],
+                  tabItems: [
+                    (icon: Icons.layers_rounded, label: 'Stack technique'),
+                    for (final section in BuildTechStackSection.values)
+                      (icon: _iconForSection(section), label: section.label),
                   ],
                 ),
               ),
@@ -1029,6 +1066,7 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
         BuildTechStackSection.boilerplate => Icons.foundation_rounded,
         BuildTechStackSection.devTools => Icons.build_circle_outlined,
         BuildTechStackSection.checkIntegration => Icons.fact_check_outlined,
+        BuildTechStackSection.playground => Icons.play_circle_outline_rounded,
       };
 
   static String _subtitleFor(
@@ -1079,6 +1117,13 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
       'Arborescence et consignes ajoutées en fin des prompts Check Integration — Implémentation (câblage module DI, harnesses d’intégration).',
     (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
       'Arborescence et consignes ajoutées en fin des prompts Check Integration — Test unitaire (vérification bout-en-bout & suite complète).',
+    (
+      BuildTechStackSection.playground,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      'Arborescence et consignes ajoutées en fin des prompts Playground — Implémentation (bac à sable local, scripts de démonstration et essais manuels).',
+    (BuildTechStackSection.playground, BuildTechStackSubRole.unitTest) =>
+      'Arborescence et consignes ajoutées en fin des prompts Playground — Test unitaire (tests de fumée et non-régression du playground).',
   };
 
   Widget _buildMarkdownFieldOrPreview({
@@ -1340,6 +1385,244 @@ class _BuildTechStacksViewState extends State<BuildTechStacksView>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Barre d'onglets horizontale défilable affichant des boutons de navigation
+/// gauche/droite et un menu complet des onglets lorsque la largeur disponible
+/// ne permet pas d'afficher tous les onglets simultanément.
+class _ScrollableTechStackTabBar extends StatefulWidget {
+  const _ScrollableTechStackTabBar({
+    required this.controller,
+    required this.tabs,
+    required this.tabItems,
+  });
+
+  final TabController controller;
+  final List<Tab> tabs;
+  final List<({IconData icon, String label})> tabItems;
+
+  @override
+  State<_ScrollableTechStackTabBar> createState() =>
+      _ScrollableTechStackTabBarState();
+}
+
+class _ScrollableTechStackTabBarState
+    extends State<_ScrollableTechStackTabBar> {
+  final GlobalKey _tabBarKey = GlobalKey();
+  bool _hasOverflow = false;
+  bool _canScrollLeft = false;
+  bool _canScrollRight = false;
+  bool _pendingHasOverflow = false;
+  bool _pendingCanScrollLeft = false;
+  bool _pendingCanScrollRight = false;
+  bool _scheduledUpdate = false;
+  double? _lastWidth;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onTabChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromPosition());
+  }
+
+  @override
+  void didUpdateWidget(_ScrollableTechStackTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onTabChanged);
+      widget.controller.addListener(_onTabChanged);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromPosition());
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromPosition());
+  }
+
+  ScrollPosition? _findTabBarScrollPosition() {
+    ScrollPosition? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element is StatefulElement && element.state is ScrollableState) {
+        final position = (element.state as ScrollableState).position;
+        if (position.axis == Axis.horizontal) {
+          found = position;
+          return;
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    _tabBarKey.currentContext?.visitChildElements(visit);
+    return found;
+  }
+
+  void _syncFromPosition() {
+    if (!mounted) return;
+    final position = _findTabBarScrollPosition();
+    if (position == null || !position.hasContentDimensions) return;
+    _handleMetrics(position);
+  }
+
+  void _handleMetrics(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.horizontal) return;
+    final hasOverflow = metrics.maxScrollExtent > 1.0;
+    final canLeft = metrics.extentBefore > 1.0;
+    final canRight = metrics.extentAfter > 1.0;
+    if (hasOverflow == _hasOverflow &&
+        canLeft == _canScrollLeft &&
+        canRight == _canScrollRight) {
+      _pendingHasOverflow = hasOverflow;
+      _pendingCanScrollLeft = canLeft;
+      _pendingCanScrollRight = canRight;
+      return;
+    }
+    _pendingHasOverflow = hasOverflow;
+    _pendingCanScrollLeft = canLeft;
+    _pendingCanScrollRight = canRight;
+    if (_scheduledUpdate) return;
+    _scheduledUpdate = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduledUpdate = false;
+      if (!mounted) return;
+      if (_hasOverflow == _pendingHasOverflow &&
+          _canScrollLeft == _pendingCanScrollLeft &&
+          _canScrollRight == _pendingCanScrollRight) {
+        return;
+      }
+      setState(() {
+        _hasOverflow = _pendingHasOverflow;
+        _canScrollLeft = _pendingCanScrollLeft;
+        _canScrollRight = _pendingCanScrollRight;
+      });
+    });
+  }
+
+  void _scrollBy(int direction) {
+    final position = _findTabBarScrollPosition();
+    if (position == null || !position.hasPixels) return;
+    final step = math.max(180.0, position.viewportDimension * 0.65);
+    final target = (position.pixels + direction * step).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    unawaited(
+      position.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (_lastWidth != constraints.maxWidth) {
+          _lastWidth = constraints.maxWidth;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _syncFromPosition(),
+          );
+        }
+        return Row(
+          children: [
+            if (_hasOverflow)
+              IconButton(
+                key: const ValueKey('tech-stack-tabs-scroll-left-btn'),
+                tooltip: 'Onglets précédents',
+                visualDensity: VisualDensity.compact,
+                onPressed: _canScrollLeft ? () => _scrollBy(-1) : null,
+                icon: const Icon(Icons.chevron_left_rounded, size: 20),
+              ),
+            Expanded(
+              child: NotificationListener<ScrollMetricsNotification>(
+                onNotification: (notification) {
+                  _handleMetrics(notification.metrics);
+                  return false;
+                },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    _handleMetrics(notification.metrics);
+                    return false;
+                  },
+                  child: TabBar(
+                    key: _tabBarKey,
+                    controller: widget.controller,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.start,
+                    tabs: widget.tabs,
+                  ),
+                ),
+              ),
+            ),
+            if (_hasOverflow) ...[
+              IconButton(
+                key: const ValueKey('tech-stack-tabs-scroll-right-btn'),
+                tooltip: 'Onglets suivants',
+                visualDensity: VisualDensity.compact,
+                onPressed: _canScrollRight ? () => _scrollBy(1) : null,
+                icon: const Icon(Icons.chevron_right_rounded, size: 20),
+              ),
+              PopupMenuButton<int>(
+                key: const ValueKey('tech-stack-tabs-menu-btn'),
+                tooltip: 'Tous les onglets',
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.more_horiz_rounded, size: 20),
+                onSelected: (index) => widget.controller.animateTo(index),
+                itemBuilder: (context) => <PopupMenuEntry<int>>[
+                  for (var i = 0; i < widget.tabItems.length; i++)
+                    PopupMenuItem<int>(
+                      key: ValueKey('tech-stack-tabs-menu-item-$i'),
+                      value: i,
+                      child: Row(
+                        spacing: 8,
+                        children: [
+                          Icon(
+                            widget.tabItems[i].icon,
+                            size: 17,
+                            color: i == widget.controller.index
+                                ? colors.primary
+                                : colors.onSurfaceVariant,
+                          ),
+                          Expanded(
+                            child: Text(
+                              widget.tabItems[i].label,
+                              style: i == widget.controller.index
+                                  ? TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.primary,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                          if (i == widget.controller.index)
+                            Icon(
+                              Icons.check_rounded,
+                              size: 16,
+                              color: colors.primary,
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

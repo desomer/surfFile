@@ -108,7 +108,7 @@ class BuildItemPromptGroup {
        prompts = List<BuildHexaPromptSpec>.unmodifiable(prompts);
 
   /// Crée un groupe autonome sans rattachement à un item (ex. `Outbound`,
-  /// `Inbound`, `Boilerplate`, `Dev Tools`, `Check Integration`).
+  /// `Inbound`, `Boilerplate`, `Dev Tools`, `Check Integration`, `Playground`).
   BuildItemPromptGroup.standalone({
     required BuildTechStackSection section,
     required String subtitle,

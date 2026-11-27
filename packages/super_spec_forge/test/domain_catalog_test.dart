@@ -511,11 +511,15 @@ void main() {
           'src/it/java/com/acme/{{domain}}/',
       checkIntegrationUnitTestFolderStructure:
           'src/e2e/java/com/acme/{{domain}}/',
+      playgroundImplementationFolderStructure: 'playground/{{domain}}/',
+      playgroundUnitTestFolderStructure: 'src/test/playground/{{domain}}/',
       domainImplementationExtension:
           '- Utiliser des Java records pour les Value Objects.',
       boilerplateImplementationExtension: '- Config Spring Boot + Actuator.',
       devToolsImplementationExtension: '- Checkstyle + ArchUnit.',
       checkIntegrationImplementationExtension: '- Testcontainers MongoDB.',
+      playgroundImplementationExtension: '- Scripts CLI de démo locale.',
+      playgroundUnitTestExtension: '- Smoke tests des scripts playground.',
     );
 
     final catalog = DomainCatalog(
@@ -586,6 +590,54 @@ void main() {
         subRole: BuildTechStackSubRole.implementation,
       ),
       'src/it/java/com/acme/billing/',
+    );
+    expect(
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.playground,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
+      'playground/billing/',
+    );
+    expect(
+      customStack.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.playground,
+        subRole: BuildTechStackSubRole.unitTest,
+      ),
+      'src/test/playground/billing/',
+    );
+    expect(
+      customStack.extensionFor(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.implementation,
+      ),
+      '- Scripts CLI de démo locale.',
+    );
+    expect(
+      customStack.extensionFor(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.unitTest,
+      ),
+      '- Smoke tests des scripts playground.',
+    );
+    expect(
+      BuildTechStackProfile.tsNestJsPreset.resolveFolderStructureFor(
+        'billing',
+        section: BuildTechStackSection.playground,
+        subRole: BuildTechStackSubRole.implementation,
+      ),
+      'src/\n'
+      '└── infrastructure/\n'
+      '    └── billing/\n'
+      '        └── playground/',
+    );
+    expect(
+      BuildTechStackProfile.tsNestJsPreset.extensionFor(
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.implementation,
+      ),
+      isEmpty,
     );
     expect(
       customStack.resolveAiDocumentation('billing'),

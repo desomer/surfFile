@@ -30,7 +30,10 @@ enum BuildTechStackSection {
   devTools(label: 'Dev Tools', slug: 'dev-tools'),
 
   /// Vérification d'intégration bout-en-bout, câblage DI et conformité globale.
-  checkIntegration(label: 'Check Integration', slug: 'check-integration');
+  checkIntegration(label: 'Check Integration', slug: 'check-integration'),
+
+  /// Bac à sable local d'expérimentation, scripts de démonstration et essais manuels.
+  playground(label: 'Playground', slug: 'playground');
 
   const BuildTechStackSection({required this.label, required this.slug});
 
@@ -88,6 +91,8 @@ class BuildTechStackProfile {
     this.devToolsUnitTestFolderStructure = '',
     this.checkIntegrationImplementationFolderStructure = '',
     this.checkIntegrationUnitTestFolderStructure = '',
+    this.playgroundImplementationFolderStructure = '',
+    this.playgroundUnitTestFolderStructure = '',
     this.domainImplementationExtension = '',
     this.domainUnitTestExtension = '',
     this.useCaseSagaImplementationExtension = '',
@@ -104,6 +109,8 @@ class BuildTechStackProfile {
     this.devToolsUnitTestExtension = '',
     this.checkIntegrationImplementationExtension = '',
     this.checkIntegrationUnitTestExtension = '',
+    this.playgroundImplementationExtension = '',
+    this.playgroundUnitTestExtension = '',
   });
 
   /// Identifiant stable du profil par défaut TypeScript / NestJS.
@@ -281,6 +288,12 @@ class BuildTechStackProfile {
         'test/\n'
         '└── {{domain}}/\n'
         '    └── e2e/                   # Scénarios bout-en-bout & contrats API (*.e2e-spec.ts)',
+    playgroundImplementationFolderStructure:
+        'src/\n'
+        '└── infrastructure/\n'
+        '    └── {{domain}}/\n'
+        '        └── playground/',
+    playgroundUnitTestFolderStructure: 'test/{{domain}}/playground/',
     domainImplementationExtension:
         '# Contraintes techniques :\n'
         '- Aucun décorateur NestJS.\n'
@@ -1043,6 +1056,12 @@ class BuildTechStackProfile {
   /// Arborescence cible dédiée à *Check Integration > Test unitaire* (`{{domain}}`).
   final String checkIntegrationUnitTestFolderStructure;
 
+  /// Arborescence cible dédiée à *Playground > Implémentation* (`{{domain}}`).
+  final String playgroundImplementationFolderStructure;
+
+  /// Arborescence cible dédiée à *Playground > Test unitaire* (`{{domain}}`).
+  final String playgroundUnitTestFolderStructure;
+
   /// Consignes spécifiques à *Domain > Implémentation*.
   final String domainImplementationExtension;
 
@@ -1090,6 +1109,12 @@ class BuildTechStackProfile {
 
   /// Consignes spécifiques à *Check Integration > Test unitaire*.
   final String checkIntegrationUnitTestExtension;
+
+  /// Consignes spécifiques à *Playground > Implémentation*.
+  final String playgroundImplementationExtension;
+
+  /// Consignes spécifiques à *Playground > Test unitaire*.
+  final String playgroundUnitTestExtension;
 
   /// Indique si ce profil contient au moins un bloc d'extension à injecter
   /// pour le couple ([section], [subRole]).
@@ -1156,6 +1181,13 @@ class BuildTechStackProfile {
         BuildTechStackSubRole.unitTest,
       ) =>
         checkIntegrationUnitTestFolderStructure,
+      (
+        BuildTechStackSection.playground,
+        BuildTechStackSubRole.implementation,
+      ) =>
+        playgroundImplementationFolderStructure,
+      (BuildTechStackSection.playground, BuildTechStackSubRole.unitTest) =>
+        playgroundUnitTestFolderStructure,
     }.trim();
     return specific.isNotEmpty ? specific : folderStructure.trim();
   }
@@ -1200,6 +1232,13 @@ class BuildTechStackProfile {
       checkIntegrationImplementationExtension,
     (BuildTechStackSection.checkIntegration, BuildTechStackSubRole.unitTest) =>
       checkIntegrationUnitTestExtension,
+    (
+      BuildTechStackSection.playground,
+      BuildTechStackSubRole.implementation,
+    ) =>
+      playgroundImplementationExtension,
+    (BuildTechStackSection.playground, BuildTechStackSubRole.unitTest) =>
+      playgroundUnitTestExtension,
   }.trim();
 
   /// Interpole les variables `{{domain}}` et `{{module}}` avec [domainCode].
@@ -1265,6 +1304,8 @@ class BuildTechStackProfile {
       devToolsUnitTestFolderStructure,
       checkIntegrationImplementationFolderStructure,
       checkIntegrationUnitTestFolderStructure,
+      playgroundImplementationFolderStructure,
+      playgroundUnitTestFolderStructure,
       domainImplementationExtension,
       domainUnitTestExtension,
       useCaseSagaImplementationExtension,
@@ -1281,6 +1322,8 @@ class BuildTechStackProfile {
       devToolsUnitTestExtension,
       checkIntegrationImplementationExtension,
       checkIntegrationUnitTestExtension,
+      playgroundImplementationExtension,
+      playgroundUnitTestExtension,
     ];
     for (final field in textFields) {
       if (field.length > 32000) {
@@ -1316,6 +1359,8 @@ class BuildTechStackProfile {
     String? devToolsUnitTestFolderStructure,
     String? checkIntegrationImplementationFolderStructure,
     String? checkIntegrationUnitTestFolderStructure,
+    String? playgroundImplementationFolderStructure,
+    String? playgroundUnitTestFolderStructure,
     String? domainImplementationExtension,
     String? domainUnitTestExtension,
     String? useCaseSagaImplementationExtension,
@@ -1332,6 +1377,8 @@ class BuildTechStackProfile {
     String? devToolsUnitTestExtension,
     String? checkIntegrationImplementationExtension,
     String? checkIntegrationUnitTestExtension,
+    String? playgroundImplementationExtension,
+    String? playgroundUnitTestExtension,
   }) => BuildTechStackProfile(
     id: id ?? this.id,
     code: code ?? this.code,
@@ -1384,6 +1431,12 @@ class BuildTechStackProfile {
     checkIntegrationUnitTestFolderStructure:
         checkIntegrationUnitTestFolderStructure ??
         this.checkIntegrationUnitTestFolderStructure,
+    playgroundImplementationFolderStructure:
+        playgroundImplementationFolderStructure ??
+        this.playgroundImplementationFolderStructure,
+    playgroundUnitTestFolderStructure:
+        playgroundUnitTestFolderStructure ??
+        this.playgroundUnitTestFolderStructure,
     domainImplementationExtension:
         domainImplementationExtension ?? this.domainImplementationExtension,
     domainUnitTestExtension:
@@ -1421,6 +1474,11 @@ class BuildTechStackProfile {
     checkIntegrationUnitTestExtension:
         checkIntegrationUnitTestExtension ??
         this.checkIntegrationUnitTestExtension,
+    playgroundImplementationExtension:
+        playgroundImplementationExtension ??
+        this.playgroundImplementationExtension,
+    playgroundUnitTestExtension:
+        playgroundUnitTestExtension ?? this.playgroundUnitTestExtension,
   );
 
   /// Sérialise le profil en JSON.
@@ -1473,6 +1531,11 @@ class BuildTechStackProfile {
     if (checkIntegrationUnitTestFolderStructure.isNotEmpty)
       'checkIntegrationUnitTestFolderStructure':
           checkIntegrationUnitTestFolderStructure,
+    if (playgroundImplementationFolderStructure.isNotEmpty)
+      'playgroundImplementationFolderStructure':
+          playgroundImplementationFolderStructure,
+    if (playgroundUnitTestFolderStructure.isNotEmpty)
+      'playgroundUnitTestFolderStructure': playgroundUnitTestFolderStructure,
     if (domainImplementationExtension.isNotEmpty)
       'domainImplementationExtension': domainImplementationExtension,
     if (domainUnitTestExtension.isNotEmpty)
@@ -1506,6 +1569,10 @@ class BuildTechStackProfile {
           checkIntegrationImplementationExtension,
     if (checkIntegrationUnitTestExtension.isNotEmpty)
       'checkIntegrationUnitTestExtension': checkIntegrationUnitTestExtension,
+    if (playgroundImplementationExtension.isNotEmpty)
+      'playgroundImplementationExtension': playgroundImplementationExtension,
+    if (playgroundUnitTestExtension.isNotEmpty)
+      'playgroundUnitTestExtension': playgroundUnitTestExtension,
   };
 
   /// Désérialise un profil depuis JSON en assurant la rétrocompatibilité des
@@ -1580,6 +1647,12 @@ class BuildTechStackProfile {
       checkIntegrationUnitTestFolderStructure: readFirst(
         'checkIntegrationUnitTestFolderStructure',
       ),
+      playgroundImplementationFolderStructure: readFirst(
+        'playgroundImplementationFolderStructure',
+      ),
+      playgroundUnitTestFolderStructure: readFirst(
+        'playgroundUnitTestFolderStructure',
+      ),
       domainImplementationExtension: readFirst(
         'domainImplementationExtension',
         'implementationExtension',
@@ -1619,6 +1692,10 @@ class BuildTechStackProfile {
       checkIntegrationUnitTestExtension: readFirst(
         'checkIntegrationUnitTestExtension',
       ),
+      playgroundImplementationExtension: readFirst(
+        'playgroundImplementationExtension',
+      ),
+      playgroundUnitTestExtension: readFirst('playgroundUnitTestExtension'),
     );
     profile.validate();
     return profile;
@@ -1667,6 +1744,10 @@ class BuildTechStackProfile {
               checkIntegrationImplementationFolderStructure &&
           other.checkIntegrationUnitTestFolderStructure ==
               checkIntegrationUnitTestFolderStructure &&
+          other.playgroundImplementationFolderStructure ==
+              playgroundImplementationFolderStructure &&
+          other.playgroundUnitTestFolderStructure ==
+              playgroundUnitTestFolderStructure &&
           other.domainImplementationExtension ==
               domainImplementationExtension &&
           other.domainUnitTestExtension == domainUnitTestExtension &&
@@ -1691,7 +1772,10 @@ class BuildTechStackProfile {
           other.checkIntegrationImplementationExtension ==
               checkIntegrationImplementationExtension &&
           other.checkIntegrationUnitTestExtension ==
-              checkIntegrationUnitTestExtension;
+              checkIntegrationUnitTestExtension &&
+          other.playgroundImplementationExtension ==
+              playgroundImplementationExtension &&
+          other.playgroundUnitTestExtension == playgroundUnitTestExtension;
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
@@ -1718,6 +1802,8 @@ class BuildTechStackProfile {
     devToolsUnitTestFolderStructure,
     checkIntegrationImplementationFolderStructure,
     checkIntegrationUnitTestFolderStructure,
+    playgroundImplementationFolderStructure,
+    playgroundUnitTestFolderStructure,
     domainImplementationExtension,
     domainUnitTestExtension,
     useCaseSagaImplementationExtension,
@@ -1734,5 +1820,7 @@ class BuildTechStackProfile {
     devToolsUnitTestExtension,
     checkIntegrationImplementationExtension,
     checkIntegrationUnitTestExtension,
+    playgroundImplementationExtension,
+    playgroundUnitTestExtension,
   ]);
 }
